@@ -13,21 +13,28 @@ guard-publish.py.)
 
 Blocks a real publish (not --dry-run) of package X when, in the commit range that
 introduced X's current `version:` (that commit .. HEAD), X's `lib/` changed but
-its own pub.dev-facing `packages/X/README.md` did NOT. The README specifically —
-a `website/content/docs/` edit is deliberately NOT accepted as a substitute:
+its own pub.dev-facing `README.md` did NOT. The README specifically — a
+`website/content/docs/` edit is deliberately NOT accepted as a substitute:
 website docs aren't package-scoped, so a sibling package's website change (batch
 release) or a website-only-but-README-skipped change (the agent 0.2.3 miss this
 hook was built for) would otherwise pass. website/README both belong in the
 release, but only README is enforceable per-package here; the Step-12b website
 docs are enforced by review + the DoD checklist.
 
+The package is located from the directory the publish RUNS IN, and every git
+question is asked of THAT repository. Both used to come from $CLAUDE_PROJECT_DIR
+plus a hardcoded `packages/<name>` layout, which meant this hook could not see a
+single-package repo at all (it refused, having no idea what was being published)
+and, working from a second checkout, would have asked its questions of the wrong
+repository. A package that is its own repo is the ordinary case outside this
+monorepo, so `packages/<name>` is now one shape rather than the only one.
+
 This range/boundary logic is only exact when HEAD == the release commit — which is
-always true when this PreToolUse hook actually fires (at `dart pub publish` time).
+always true when this PreToolUse hook actually fires (at publish time).
 It is NOT a general retroactive audit.
 
 Override for a genuine code-only release with no README surface (rare) by putting
-`RELEASE_SKIP_DOCS=<reason>` in the command, e.g.
-  RELEASE_SKIP_DOCS="internal refactor, no public API/behavior change" dart pub publish
+`RELEASE_SKIP_DOCS=<reason>` in the command.
 
 Fail-closed: if git can't be consulted, or the package/version can't be resolved,
 BLOCK — an irreversible publish in an unknown state is not a safe one.
@@ -42,7 +49,7 @@ import subprocess
 import sys
 
 # Mirror guard-publish.py's command-position matcher (MULTILINE is load-bearing:
-# a `cd\n dart pub publish` block must still match).
+# a `cd` line followed by the publish on the next line must still match).
 PUBLISH_RE = re.compile(
     r"(?:^|[;&|(]|&&|\|\|)\s*"
     r"(?:\w+=\S+\s+)*"
@@ -56,21 +63,23 @@ DRY_RUN_RE = re.compile(r"(?<![\w-])--dry-run(?![\w-])")
 SKIP_RE = re.compile(
     r"(?:^|[;&|(]|&&|\|\|)\s*(?:\w+=\S+\s+)*RELEASE_SKIP_DOCS=", re.MULTILINE
 )
-# `packages/<name>` as a path segment — used for both `cd packages/<name>` in the
-# command AND the hook payload's cwd (a bare `dart pub publish` run from the
-# package dir carries no `cd`, so cwd is the fallback).
-PKG_SEG_RE = re.compile(r"(?:^|/)packages/([A-Za-z0-9_]+)(?:/|$)")
-CD_PKG_RE = re.compile(r"cd\s+(\S*packages/[A-Za-z0-9_]+)")
+# Duplicated from guard-publish.py on purpose: hooks are standalone files with
+# no shared import path, and a hook that fails to load is a hook that does not
+# run. Keep the two in step.
+CD_RE = re.compile(
+    r"(?:^|[;&|(]|&&|\|\|)\s*cd\s+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
+    re.MULTILINE,
+)
 
 
 class GitUnavailable(RuntimeError):
     """git could not be consulted — treated as a block, never as 'clean'."""
 
 
-def git(*args):
+def git(repo, *args):
     try:
         r = subprocess.run(
-            ["git", "-C", os.environ.get("CLAUDE_PROJECT_DIR", "."), *args],
+            ["git", "-C", repo, *args],
             capture_output=True,
             text=True,
             timeout=30,
@@ -94,57 +103,81 @@ def _publish_is_exempt(cmd):
     return True
 
 
-def _package_from(cmd, cwd):
-    """Which packages/<name> is being published. None if undeterminable.
+def publish_dir(cmd, payload):
+    """Where the publish will run, or None when that cannot be determined.
 
-    Prefer the LAST `cd .../packages/<name>` on the command (it reflects the
-    effective cwd of the publish); fall back to the payload cwd, which is where a
-    bare `dart pub publish` (no `cd`) actually runs — that is the shape the
-    release skill's Step 10 documents, so it must resolve, not block.
+    Only `cd`s BEFORE the publish count; one after it changes nothing. An
+    unresolvable target (a variable) yields None rather than a guess — asking
+    the right question of the wrong directory is the bug this replaced.
     """
-    last = None
-    for m in CD_PKG_RE.finditer(cmd):
-        last = m.group(1)
-    if last:
-        seg = PKG_SEG_RE.search(last)
-        if seg:
-            return seg.group(1)
-    if cwd:
-        seg = PKG_SEG_RE.search(cwd)
-        if seg:
-            return seg.group(1)
-    return None
+    base = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    first = PUBLISH_RE.search(cmd)
+    limit = first.start() if first else len(cmd)
+
+    for m in CD_RE.finditer(cmd):
+        if m.start() >= limit:
+            break
+        target = m.group(1)
+        if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
+            target = target[1:-1]
+        if "$" in target or "`" in target:
+            return None
+        target = os.path.expanduser(target)
+        base = target if os.path.isabs(target) else os.path.join(base, target)
+
+    return os.path.normpath(base)
 
 
-def _current_version(pkg):
-    root = os.environ.get("CLAUDE_PROJECT_DIR", ".")
-    path = os.path.join(root, "packages", pkg, "pubspec.yaml")
+def _located(cmd, payload):
+    """(repo_root, package_prefix, label) for the package being published.
+
+    `package_prefix` is repo-relative and ends in '/' — or is '' when the
+    package IS the repository root, which is what every single-package repo
+    looks like.
+    """
+    where = publish_dir(cmd, payload)
+    if where is None:
+        raise GitUnavailable(
+            "the `cd` target is built from a variable, so the publish directory "
+            "is unknown — write the path literally"
+        )
+    if not os.path.isfile(os.path.join(where, "pubspec.yaml")):
+        raise GitUnavailable(f"no pubspec.yaml in {where} — nothing to check")
+
+    root = git(where, "rev-parse", "--show-toplevel")
+    rel = os.path.relpath(os.path.realpath(where), os.path.realpath(root))
+    prefix = "" if rel == "." else rel.replace(os.sep, "/") + "/"
+    return root, prefix, (prefix.rstrip("/") or os.path.basename(root))
+
+
+def _current_version(root, prefix):
+    path = os.path.join(root, prefix, "pubspec.yaml")
     with open(path, encoding="utf-8") as fh:
         for line in fh:
             m = re.match(r"version:\s*(\S+)", line)
             if m:
                 return m.group(1)
-    raise GitUnavailable(f"no version: in packages/{pkg}/pubspec.yaml")
+    raise GitUnavailable(f"no version: in {prefix}pubspec.yaml")
 
 
-def _doc_problem(pkg):
+def _doc_problem(root, prefix, label):
     """Return a block-reason string, or None if the release's docs are fine."""
-    version = _current_version(pkg)
+    version = _current_version(root, prefix)
     # The commit that set the CURRENT version is the release boundary. -S finds
     # where the exact `version: V` string entered pubspec.yaml.
     boundary = git(
-        "log", "-1", "--format=%H", "-S", f"version: {version}",
-        "--", f"packages/{pkg}/pubspec.yaml",
+        root, "log", "-1", "--format=%H", "-S", f"version: {version}",
+        "--", f"{prefix}pubspec.yaml",
     )
     if not boundary:
         raise GitUnavailable(
-            f"cannot locate the commit that set version {version} for {pkg}"
+            f"cannot locate the commit that set version {version} for {label}"
         )
     # Files changed in boundary..HEAD, plus the boundary commit itself.
     changed = set(
-        git("diff", "--name-only", f"{boundary}~1", "HEAD").splitlines()
+        git(root, "diff", "--name-only", f"{boundary}~1", "HEAD").splitlines()
     )
-    lib_prefix = f"packages/{pkg}/lib/"
+    lib_prefix = f"{prefix}lib/"
     code_changed = any(f.startswith(lib_prefix) for f in changed)
     if not code_changed:
         return None  # docs-only / no public code change → nothing to enforce
@@ -155,12 +188,12 @@ def _doc_problem(pkg):
     # 0.2.4. Accepting any website edit would also let a co-released package in a
     # batch (e.g. "core + speech") mask another package whose README was skipped.
     # README is package-scoped, so it can't be borrowed from a sibling.
-    readme = f"packages/{pkg}/README.md"
+    readme = f"{prefix}README.md"
     if readme in changed:
         return None
 
     return (
-        f"packages/{pkg}/lib changed since v{version} was set ({boundary[:10]}) "
+        f"{lib_prefix} changed since v{version} was set ({boundary[:10]}) "
         f"but {readme} was not updated.\n"
         "  The release skill (Step 12) requires the pub.dev-facing README to ship\n"
         "  the new/changed API in the SAME release (website/content/docs is not a\n"
@@ -173,7 +206,6 @@ def main():
     try:
         payload = json.load(sys.stdin)
         cmd = (payload.get("tool_input") or {}).get("command") or ""
-        cwd = payload.get("cwd") or ""
     except Exception as e:
         sys.stderr.write(
             f"BLOCKED: guard-release-docs could not read the hook payload ({e!r}).\n"
@@ -187,18 +219,9 @@ def main():
     if SKIP_RE.search(cmd):
         return 0  # explicit, reasoned opt-out
 
-    pkg = _package_from(cmd, cwd)
-    if pkg is None:
-        sys.stderr.write(
-            "BLOCKED: guard-release-docs can't tell which package is being "
-            "published (no `cd .../packages/<name>` and no packages/<name> cwd).\n"
-            "Run the publish from the package dir, or add "
-            'RELEASE_SKIP_DOCS="<reason>" if intentional.\n'
-        )
-        return 2
-
     try:
-        problem = _doc_problem(pkg)
+        root, prefix, label = _located(cmd, payload)
+        problem = _doc_problem(root, prefix, label)
     except (GitUnavailable, OSError) as e:
         sys.stderr.write(
             f"BLOCKED: cannot verify docs shipped with this release — {e}\n"
@@ -210,7 +233,8 @@ def main():
         return 0
 
     sys.stderr.write(
-        "BLOCKED: release is missing its docs.\n  - "
+        "BLOCKED: release is missing its docs.\n"
+        f"  repository: {root}\n  - "
         + problem
         + "\n(guard: .claude/hooks/guard-release-docs.py)\n"
     )
@@ -231,6 +255,21 @@ _TESTS = [
     ('grep -r "dart pub publish" docs/', False, False),
 ]
 
+# (payload, command, expected publish directory). The monorepo shapes the old
+# `packages/<name>` parser handled, plus the single-package repo it could not
+# see at all.
+_DIR_TESTS = [
+    ({"cwd": "/r"}, "cd packages/flutter_edge_ai_agent && dart pub publish",
+     "/r/packages/flutter_edge_ai_agent"),
+    ({"cwd": "/r/packages/flutter_edge_ai"}, "dart pub publish",
+     "/r/packages/flutter_edge_ai"),
+    ({"cwd": "/r"}, "cd packages/a && cd /r/packages/b && dart pub publish",
+     "/r/packages/b"),  # last cd wins
+    ({"cwd": "/elsewhere/large_file_handler"}, "dart pub publish --force",
+     "/elsewhere/large_file_handler"),  # a package that IS the repo
+    ({"cwd": "/r"}, 'cd "$PKG" && dart pub publish', None),
+]
+
 
 def _self_test():
     bad = 0
@@ -243,23 +282,21 @@ def _self_test():
                 f"  FAIL {cmd!r}: match={got_match}(want {want_match}) "
                 f"exempt={got_exempt}(want {want_exempt})"
             )
-    # package resolution: cd-in-command, cwd-fallback (bare publish), last-cd-wins
-    assert _package_from("cd packages/flutter_edge_ai_agent && dart pub publish", "") == (
-        "flutter_edge_ai_agent"
-    ), "cd parse"
-    assert _package_from("dart pub publish", "/repo/packages/flutter_edge_ai") == (
-        "flutter_edge_ai"
-    ), "bare publish resolves via cwd (Step 10 shape)"
-    assert _package_from("dart pub publish", "") is None, "no cd, no cwd -> None"
-    assert _package_from(
-        "cd packages/flutter_edge_ai && cd packages/flutter_edge_ai_agent && dart pub publish", ""
-    ) == "flutter_edge_ai_agent", "last cd wins"
+
+    for payload, cmd, want in _DIR_TESTS:
+        got = publish_dir(cmd, payload)
+        if got != want:
+            bad += 1
+            print(f"  FAIL want_dir={want!r} got={got!r}  {cmd!r}")
+
     # skip must be in command position, not inside an echo/grep
     assert SKIP_RE.search('RELEASE_SKIP_DOCS="reason" dart pub publish'), "skip parse"
     assert not SKIP_RE.search('echo RELEASE_SKIP_DOCS=note && dart pub publish'), (
         "skip must not fire from an echo of the string"
     )
-    print(f"  {len(_TESTS) - bad}/{len(_TESTS)} match-rule cases pass; parse asserts ok")
+
+    total = len(_TESTS) + len(_DIR_TESTS)
+    print(f"  {total - bad}/{total} pass; parse asserts ok")
     return 1 if bad else 0
 
 

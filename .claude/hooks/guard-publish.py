@@ -14,9 +14,20 @@ The first version of this guard was itself reviewed and found to be a no-op on
 the most likely command shape (a two-line `cd` + publish), so the matching and
 every fail-open path below are deliberate and tested — see `_TESTS`.
 
+The repository inspected is the one the publish RUNS IN, not $CLAUDE_PROJECT_DIR.
+Reading the session's project was wrong in both directions, and the harmless
+direction is the one that got noticed: on 2026-08-30 it blocked a clean, pushed
+package in a second checkout because the SESSION repo had unrelated edits. The
+dangerous direction is the same bug with the operands swapped — a dirty package
+in that second checkout would have sailed through whenever the session repo
+happened to be clean, which is precisely the state this guard exists to refuse.
+So the block message now names the repository it looked at; had it done so, the
+mis-scope would have been obvious rather than baffling.
+
 Blocks a real publish (not --dry-run) when:
   * the working tree is dirty      -> the archive matches no commit
   * HEAD is not on origin          -> the published source is unreachable
+  * the publish directory is unknown or outside a git repo -> nothing to check
   * git itself cannot be consulted -> we do not know, and not knowing is a block
 
 Exit 0 allows, exit 2 blocks with the reason on stderr.
@@ -46,16 +57,24 @@ PUBLISH_RE = re.compile(
 # verify-then-ship one-liner and must NOT be exempt.
 DRY_RUN_RE = re.compile(r"(?<![\w-])--dry-run(?![\w-])")
 
+# `cd` in command position. The Bash tool's own cwd persists between calls, but
+# a release is nearly always written as `cd <package>` followed by the publish,
+# so the directory that matters is wherever those leave us.
+CD_RE = re.compile(
+    r"(?:^|[;&|(]|&&|\|\|)\s*cd\s+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
+    re.MULTILINE,
+)
+
 
 class GitUnavailable(RuntimeError):
     """git could not be consulted — treated as a block, never as 'clean'."""
 
 
-def git(*args):
-    """Run git, or raise. Returning '' on failure would read as 'no problems'."""
+def git(repo, *args):
+    """Run git in [repo], or raise. '' on failure would read as 'no problems'."""
     try:
         r = subprocess.run(
-            ["git", "-C", os.environ.get("CLAUDE_PROJECT_DIR", "."), *args],
+            ["git", "-C", repo, *args],
             capture_output=True,
             text=True,
             timeout=30,
@@ -80,18 +99,44 @@ def _publish_is_exempt(cmd):
     return True
 
 
-def _problems():
+def publish_dir(cmd, payload):
+    """Where the publish will run, or None when that cannot be determined.
+
+    Only `cd`s BEFORE the publish count; one after it changes nothing about the
+    archive. An unresolvable target (a variable) yields None rather than a
+    guess: checking the wrong repository is how this guard failed before, and a
+    wrong answer here is worse than no answer.
+    """
+    base = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    first = PUBLISH_RE.search(cmd)
+    limit = first.start() if first else len(cmd)
+
+    for m in CD_RE.finditer(cmd):
+        if m.start() >= limit:
+            break
+        target = m.group(1)
+        if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
+            target = target[1:-1]
+        if "$" in target or "`" in target:
+            return None
+        target = os.path.expanduser(target)
+        base = target if os.path.isabs(target) else os.path.join(base, target)
+
+    return os.path.normpath(base)
+
+
+def _problems(repo):
     """Return a list of reasons to block. Raises GitUnavailable if git fails."""
     out = []
 
-    if git("status", "--porcelain"):
+    if git(repo, "status", "--porcelain"):
         out.append(
             "the working tree is dirty — the published archive would not "
             "correspond to any commit"
         )
 
-    head = git("rev-parse", "HEAD")
-    branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    head = git(repo, "rev-parse", "HEAD")
+    branch = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
 
     if branch == "HEAD":
         out.append("detached HEAD — publish from a branch that exists on origin")
@@ -100,7 +145,7 @@ def _problems():
     # --exit-code + a full refname: `ls-remote --heads origin main` also matches
     # refs/heads/backup/main and can put the wrong SHA first.
     try:
-        line = git("ls-remote", "--exit-code", "origin", f"refs/heads/{branch}")
+        line = git(repo, "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}")
     except GitUnavailable:
         out.append(f"branch '{branch}' does not exist on origin — push it first")
         return out
@@ -111,8 +156,8 @@ def _problems():
 
     # Distinguish ahead / behind / diverged: telling someone to push when they
     # need to pull is how a guard gets switched off.
-    ahead = git("rev-list", "--count", f"{remote}..{head}")
-    behind = git("rev-list", "--count", f"{head}..{remote}")
+    ahead = git(repo, "rev-list", "--count", f"{remote}..{head}")
+    behind = git(repo, "rev-list", "--count", f"{head}..{remote}")
     if ahead != "0" and behind == "0":
         out.append(f"{ahead} unpushed commit(s) — `git push origin {branch}`")
     elif ahead == "0":
@@ -144,11 +189,22 @@ def main():
     if _publish_is_exempt(cmd):
         return 0
 
+    where = publish_dir(cmd, payload)
+    if where is None:
+        sys.stderr.write(
+            "BLOCKED: cannot tell which directory the publish runs in — the "
+            "`cd` target is built from a variable.\n"
+            "Write the path literally so the guard checks the right repository.\n"
+        )
+        return 2
+
     try:
-        problems = _problems()
+        repo = git(where, "rev-parse", "--show-toplevel")
+        problems = _problems(repo)
     except GitUnavailable as e:
         sys.stderr.write(
             f"BLOCKED: cannot verify the commit is on origin — {e}\n"
+            f"Publish directory: {where}\n"
             "A publish is irreversible; an unverifiable state is not a safe one.\n"
         )
         return 2
@@ -158,6 +214,7 @@ def main():
 
     sys.stderr.write(
         "BLOCKED: refusing to publish source that is not on the remote.\n"
+        f"  repository: {repo}\n"
         + "".join(f"  - {p}\n" for p in problems)
         + "(guard: .claude/hooks/guard-publish.py)\n"
     )
@@ -182,6 +239,22 @@ _TESTS = [
     ("git push origin main", False),
 ]
 
+# (payload, command, expected directory) — which repository gets inspected.
+# `None` means the guard must refuse rather than guess.
+_DIR_TESTS = [
+    # The bug this fixes: no `cd`, so the tool's own cwd decides — NOT the
+    # session project, which may be an entirely different checkout.
+    ({"cwd": "/w/pkg"}, "dart pub publish --force", "/w/pkg"),
+    ({"cwd": "/w/a"}, "cd /w/b && dart pub publish", "/w/b"),
+    ({"cwd": "/w/a"}, "cd packages/x && dart pub publish", "/w/a/packages/x"),
+    ({"cwd": "/w/a"}, "cd packages\ncd x\ndart pub publish", "/w/a/packages/x"),
+    # A `cd` after the publish changes nothing about what was published.
+    ({"cwd": "/w/a"}, "dart pub publish\ncd /elsewhere", "/w/a"),
+    # Unresolvable target: refuse instead of inspecting a guessed directory.
+    ({"cwd": "/w/a"}, 'cd "$PKG" && dart pub publish', None),
+    ({"cwd": "/w/a"}, "cd $PKG && dart pub publish", None),
+]
+
 
 def _self_test():
     bad = 0
@@ -190,7 +263,15 @@ def _self_test():
         if got != want:
             bad += 1
             print(f"  FAIL want_block={want} got={got}  {cmd!r}")
-    print(f"  {len(_TESTS) - bad}/{len(_TESTS)} pass")
+
+    for payload, cmd, want in _DIR_TESTS:
+        got = publish_dir(cmd, payload)
+        if got != want:
+            bad += 1
+            print(f"  FAIL want_dir={want!r} got={got!r}  {cmd!r}")
+
+    total = len(_TESTS) + len(_DIR_TESTS)
+    print(f"  {total - bad}/{total} pass")
     return 1 if bad else 0
 
 

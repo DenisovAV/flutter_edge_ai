@@ -34,7 +34,8 @@ final class OnnxEmbeddingBackend extends EmbeddingBackendProvider {
     // Keep in lockstep with hook/build.dart's `_archivesFor` table.
     return (Platform.isMacOS && abi == Abi.macosArm64) ||
         (Platform.isLinux && abi == Abi.linuxX64) ||
-        (Platform.isWindows && abi == Abi.windowsX64) ||
+        (Platform.isWindows &&
+            (abi == Abi.windowsX64 || abi == Abi.windowsArm64)) ||
         (Platform.isAndroid && abi == Abi.androidArm64) ||
         (Platform.isIOS && abi == Abi.iosArm64);
   }
@@ -67,8 +68,8 @@ final class OnnxEmbeddingBackend extends EmbeddingBackendProvider {
       throw EmbeddingLoadException(
         'OnnxEmbeddingBackend: unsupported host '
         '${Platform.operatingSystem}/${Abi.current()} — ONNX embedding native '
-        'archives are macOS-arm64/linux-x64/windows-x64/android-arm64/'
-        'ios-arm64-only.',
+        'archives are macOS-arm64/linux-x64/windows-x64/windows-arm64/'
+        'android-arm64/ios-arm64-only.',
         engine: _onnx,
       );
     }

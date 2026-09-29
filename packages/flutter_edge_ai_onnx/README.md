@@ -62,25 +62,32 @@ Either arm can be registered on its own — they don't depend on each other.
 | macOS (Intel) | ❌ | ❌ |
 | Linux x64 | ✅ bundled | ✅ device-verified |
 | Windows x64 | ✅ bundled | ✅ device-verified |
+| Windows ARM64 | ✅ bundled | ⚠️ hardware smoke test pending |
 | Android (arm64) | ✅ bundled (AAR-extracted) | ✅ device-verified |
 | iOS (arm64) | ✅ bundled | ✅ device-verified |
 | Web | N/A — Transformers.js + onnxruntime-web, no native archive | ✅ both arms |
 
 `OnnxEngine.canHandle`/`OnnxEmbeddingBackend.describe` are gated to
-macOS arm64, Linux x64, Windows x64, Android arm64, and iOS arm64 —
+macOS arm64, Linux x64, Windows x64 and ARM64, Android arm64, and iOS arm64 —
 device-verified end-to-end (generation +
-embeddings) on macOS (~54 tok/s, M4 Pro), Linux (~5.3-5.8 tok/s), Windows
+embeddings) on macOS (~54 tok/s, M4 Pro), Linux (~5.3-5.8 tok/s), Windows x64
 (~3.3 tok/s), and Android (FTL Pixel 8 Pro, ~10.4 tok/s, ~3.74 GB RSS for a
 3.8B int4 model). On iOS the framework-embedding/dlopen path builds, signs,
 installs and launches on a real iPhone, and generation runs (the
 `@executable_path`-anchored dlopen resolves the single self-contained genai
 xcframework — the same proven pattern as `flutter_edge_ai_litertlm`'s iOS
-path). On an unsupported native host (macOS Intel, or any other native ABI)
+path). Windows ARM64 uses the same FFI path and the archives Microsoft publishes
+(checksum-pinned in the hook), but has not run on a Snapdragon/Windows ARM64
+machine yet, so its runtime compatibility and speed are not device-verified.
+On an unsupported native host (macOS Intel, or any other native ABI)
 `OnnxEngine` politely declines (logs why, lets another registered engine —
 or core's own "no engine can handle this" error — take over) instead of
 dlopen-ing a library the app may or may not have bundled. Web has no dlopen
 step at all — `OnnxEngine`/`OnnxEmbeddingBackend` run there via the
 Transformers.js/onnxruntime-web arms below instead.
+Windows ARM64 uses the same FFI path and verified Microsoft archives, but still
+needs a real Snapdragon/Windows ARM64 smoke test before its performance and
+runtime compatibility can be called device-verified.
 `OnnxEmbeddingBackend.canHandle` stays extension-based on every platform for
 a different reason (so a catch-all embedding backend like
 `LiteRtEmbeddingBackend` never silently claims an `.onnx`/`.ort` file); its

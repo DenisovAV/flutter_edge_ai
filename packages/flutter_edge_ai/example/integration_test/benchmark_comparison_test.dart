@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 
+import 'benchmark_peak_sampler.dart';
 import 'inference_test_helpers.dart';
 
 // --- Model configs ---
@@ -26,6 +27,14 @@ const _deviceDir = '/data/local/tmp/flutter_gemma_test';
 /// The backend every phase asks for. Recorded in each result next to the one
 /// that actually ran, so the two cannot drift apart.
 const _requestedBackend = PreferredBackend.gpu;
+
+/// How often the sampled peak reads memory while a load or a prompt runs.
+/// Written to every record next to the peak it produced.
+///
+/// One read of `smaps_rollup` took ~150 ms on the vivo 1933 (Android 11, kernel
+/// 4.9), so this cannot be small: sampling every 250 ms delayed the first token
+/// by +3.8% overall (+14% to +23% on short prompts), every 1000 ms by +1.5%.
+const _peakInterval = Duration(seconds: 1);
 
 const _models = <_BenchmarkModelConfig>[
   _BenchmarkModelConfig(
@@ -106,6 +115,7 @@ class BenchmarkResult {
 typedef LoadMemory = ({
   int? before,
   int? after,
+  PeakReading peak,
   PreferredBackend? activeBackend,
   List<String> errors,
 });
@@ -113,9 +123,16 @@ typedef LoadMemory = ({
 /// What the OS charged this app around one prompt, from
 /// `flutter_edge_ai_diagnostics`.
 ///
-/// Read these as samples at the boundaries, not as a high-water mark: a peak
-/// inside a long generation can be missed, and Android keeps no
-/// anonymous-only peak to read instead.
+/// The `anonymous_bytes` values are single readings at the boundaries of the
+/// load and of the prompt. `sampled_peak_bytes` is the highest anonymous
+/// reading among those and the periodic reads taken every `interval_ms` during
+/// the load and during the prompt. It is a sampled peak, not a high-water
+/// mark: a spike shorter than the interval can be missed, and Android keeps no
+/// anonymous-only peak to read instead. `samples` counts the periodic reads
+/// behind each number, so 0 means only the boundary readings. The reads run on
+/// the main isolate while the stopwatch runs, so they add a small cost to
+/// `first_token_ms` and `duration_ms` (see `_peakInterval` for what was
+/// measured).
 ///
 /// `anonymous_bytes` is memory the OS cannot reclaim by dropping file pages.
 /// It excludes weights read from an mmapped file. On Android it largely
@@ -125,9 +142,9 @@ typedef LoadMemory = ({
 /// land in `Private_Dirty`, so it is not zero either. Compare numbers only
 /// between records with the same `platform` and `backend`.
 ///
-/// `before_load` and `after_load` belong to the phase and repeat in every
-/// record of it: summing load deltas across records counts one load once per
-/// record. `before_prompt` - `after_load` is everything since the load:
+/// `before_load`, `after_load` and the load's sampled peak belong to the phase
+/// and repeat in every record of it: summing load deltas across records counts
+/// one load once per record. `before_prompt` - `after_load` is everything since the load:
 /// creating the chat, plus any earlier prompts in the same phase.
 ///
 /// A null with no entry in `read_errors` means the platform has no such value.
@@ -140,6 +157,8 @@ class BenchmarkMemory {
     this.afterPrompt,
     this.availableAfterPrompt,
     this.activeBackend,
+    this.loadPeak,
+    this.promptPeak,
     this.readErrors = const [],
   });
 
@@ -155,6 +174,10 @@ class BenchmarkMemory {
   /// The backend the model actually ran on, when the runtime says.
   final PreferredBackend? activeBackend;
 
+  /// Sampled peaks over the load and over this prompt; see the class docs.
+  final PeakReading? loadPeak;
+  final PeakReading? promptPeak;
+
   /// Failed reads, as `"<sample>: <error>"`. The load's own errors repeat in
   /// every record of the phase, like `before_load` and `after_load`.
   final List<String> readErrors;
@@ -167,15 +190,26 @@ class BenchmarkMemory {
       'after_prompt': afterPrompt,
     },
     'available_bytes_after_prompt': availableAfterPrompt,
+    'sampled_peak_bytes': {
+      'load': loadPeak?.bytes,
+      'prompt': promptPeak?.bytes,
+      'interval_ms': _peakInterval.inMilliseconds,
+      'samples': {'load': loadPeak?.samples, 'prompt': promptPeak?.samples},
+    },
     'read_errors': readErrors,
   };
 
-  /// One line for the live log: `load +812.3 MiB, prompt +4.1 MiB`.
+  /// One line for the live log:
+  /// `load +812.3 MiB, prompt +4.1 MiB (anonymous), sampled peak 1043.7 MiB`.
   String describe() =>
       'load ${_signedMiB(beforeLoad, afterLoad)}, '
-      'prompt ${_signedMiB(beforePrompt, afterPrompt)} (anonymous)'
+      'prompt ${_signedMiB(beforePrompt, afterPrompt)} (anonymous), '
+      'sampled peak ${_mib(promptPeak?.bytes)}'
       '${readErrors.isEmpty ? '' : ', ${readErrors.length} read error(s)'}';
 }
+
+String _mib(int? bytes) =>
+    bytes == null ? 'n/a' : '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MiB';
 
 String _signedMiB(int? before, int? after) {
   if (before == null || after == null) return 'n/a';
@@ -225,6 +259,25 @@ Future<MemorySnapshot?> _sampleMemory(String label, List<String> errors) async {
   }
 }
 
+/// One anonymous-bytes reading for the peak sampler. Null where the package
+/// does not run; a failed read throws `MemoryReadException`, which the sampler
+/// counts.
+Future<int?> _readAnonymous() async => FlutterEdgeAiDiagnostics.isSupported
+    ? (await FlutterEdgeAiDiagnostics.memorySnapshot()).anonymousBytes
+    : null;
+
+PeakSampler _newPeakSampler() =>
+    PeakSampler(read: _readAnonymous, interval: _peakInterval);
+
+/// A failed periodic read goes into `read_errors` once per window, summarised,
+/// so a persistent failure cannot flood the record.
+List<String> _peakErrors(String label, PeakReading peak) => peak.failures == 0
+    ? const []
+    : [
+        '$label: ${peak.failures} periodic read(s) failed '
+            '(first: ${peak.firstFailure})',
+      ];
+
 /// Loads a model and reports the anonymous memory before and after: what
 /// holding it costs before any prompt runs. Also returns the backend the
 /// runtime says it used, and the errors of the two reads.
@@ -233,13 +286,25 @@ Future<(InferenceModel, LoadMemory)> _measuredLoad(
 ) async {
   final errors = <String>[];
   final before = (await _sampleMemory('before_load', errors))?.anonymousBytes;
-  final model = await load();
+  final sampler = _newPeakSampler()
+    ..observe(before)
+    ..start();
+  final InferenceModel model;
+  try {
+    model = await load();
+  } catch (_) {
+    await sampler.stop();
+    rethrow;
+  }
   final after = (await _sampleMemory('after_load', errors))?.anonymousBytes;
+  final peak = await sampler.stop(last: after);
+  errors.addAll(_peakErrors('peak_sample (load)', peak));
   return (
     model,
     (
       before: before,
       after: after,
+      peak: peak,
       activeBackend: model.activeBackend,
       errors: errors,
     ),
@@ -250,6 +315,7 @@ BenchmarkMemory _promptMemory(
   LoadMemory load,
   MemorySnapshot? before,
   MemorySnapshot? after,
+  PeakReading promptPeak,
   List<String> promptErrors,
 ) => BenchmarkMemory(
   beforeLoad: load.before,
@@ -258,7 +324,13 @@ BenchmarkMemory _promptMemory(
   afterPrompt: after?.anonymousBytes,
   availableAfterPrompt: after?.availableBytes,
   activeBackend: load.activeBackend,
-  readErrors: [...load.errors, ...promptErrors],
+  loadPeak: load.peak,
+  promptPeak: promptPeak,
+  readErrors: [
+    ...load.errors,
+    ...promptErrors,
+    ..._peakErrors('peak_sample (prompt)', promptPeak),
+  ],
 );
 
 Future<Uint8List> _loadTestImage() async {
@@ -291,6 +363,9 @@ Future<BenchmarkResult> _runTextBenchmark({
 }) async {
   final readErrors = <String>[];
   final memoryBefore = await _sampleMemory('before_prompt', readErrors);
+  final peakSampler = _newPeakSampler()
+    ..observe(memoryBefore?.anonymousBytes)
+    ..start();
   final sw = Stopwatch()..start();
   int firstTokenMs = -1;
 
@@ -307,6 +382,7 @@ Future<BenchmarkResult> _runTextBenchmark({
   }
   sw.stop();
   final memoryAfter = await _sampleMemory('after_prompt', readErrors);
+  final promptPeak = await peakSampler.stop(last: memoryAfter?.anonymousBytes);
 
   final result = BenchmarkResult(
     modelName: modelName,
@@ -317,7 +393,13 @@ Future<BenchmarkResult> _runTextBenchmark({
     durationMs: sw.elapsedMilliseconds,
     firstTokenMs: firstTokenMs,
     timestamp: DateTime.now(),
-    memory: _promptMemory(load, memoryBefore, memoryAfter, readErrors),
+    memory: _promptMemory(
+      load,
+      memoryBefore,
+      memoryAfter,
+      promptPeak,
+      readErrors,
+    ),
   );
 
   print('[Benchmark] $modelName / $category / $testName');
@@ -349,6 +431,9 @@ Future<BenchmarkResult> _runVisionBenchmark({
   try {
     final readErrors = <String>[];
     final memoryBefore = await _sampleMemory('before_prompt', readErrors);
+    final peakSampler = _newPeakSampler()
+      ..observe(memoryBefore?.anonymousBytes)
+      ..start();
     final sw = Stopwatch()..start();
     int firstTokenMs = -1;
 
@@ -367,6 +452,9 @@ Future<BenchmarkResult> _runVisionBenchmark({
     }
     sw.stop();
     final memoryAfter = await _sampleMemory('after_prompt', readErrors);
+    final promptPeak = await peakSampler.stop(
+      last: memoryAfter?.anonymousBytes,
+    );
 
     final result = BenchmarkResult(
       modelName: modelName,
@@ -377,7 +465,13 @@ Future<BenchmarkResult> _runVisionBenchmark({
       durationMs: sw.elapsedMilliseconds,
       firstTokenMs: firstTokenMs,
       timestamp: DateTime.now(),
-      memory: _promptMemory(load, memoryBefore, memoryAfter, readErrors),
+      memory: _promptMemory(
+        load,
+        memoryBefore,
+        memoryAfter,
+        promptPeak,
+        readErrors,
+      ),
     );
 
     print('[Benchmark] $modelName / vision / $testName');
@@ -412,6 +506,9 @@ Future<BenchmarkResult> _runAudioBenchmark({
   try {
     final readErrors = <String>[];
     final memoryBefore = await _sampleMemory('before_prompt', readErrors);
+    final peakSampler = _newPeakSampler()
+      ..observe(memoryBefore?.anonymousBytes)
+      ..start();
     final sw = Stopwatch()..start();
     int firstTokenMs = -1;
 
@@ -430,6 +527,9 @@ Future<BenchmarkResult> _runAudioBenchmark({
     }
     sw.stop();
     final memoryAfter = await _sampleMemory('after_prompt', readErrors);
+    final promptPeak = await peakSampler.stop(
+      last: memoryAfter?.anonymousBytes,
+    );
 
     final result = BenchmarkResult(
       modelName: modelName,
@@ -440,7 +540,13 @@ Future<BenchmarkResult> _runAudioBenchmark({
       durationMs: sw.elapsedMilliseconds,
       firstTokenMs: firstTokenMs,
       timestamp: DateTime.now(),
-      memory: _promptMemory(load, memoryBefore, memoryAfter, readErrors),
+      memory: _promptMemory(
+        load,
+        memoryBefore,
+        memoryAfter,
+        promptPeak,
+        readErrors,
+      ),
     );
 
     print('[Benchmark] $modelName / audio / $testName');

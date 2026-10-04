@@ -35,6 +35,13 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # Before the tests, so a red test cannot hide it (~4 s). The tests read
+      # assets from the repo; only the published archive can show one missing.
+      # Every flutter_edge_ai_agent release up to 0.2.6 shipped without its
+      # SKILL.md files and every check here was green (#578).
+      - name: Published packages carry their runtime files
+        run: dart tool/check_published_assets.dart
+
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .
         continue-on-error: true
@@ -55,12 +62,6 @@ jobs:
       # the exact failure the release skill's rule 1f exists to prevent.
       - name: Run tests (all packages)
         run: tool/test_all.sh --coverage
-
-      # The tests read assets from the repo; only the published archive can
-      # show one missing. flutter_edge_ai_agent 0.2.6 shipped without its
-      # SKILL.md files and every check above was green (#578).
-      - name: Declared assets are published
-        run: dart tool/check_published_assets.dart
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

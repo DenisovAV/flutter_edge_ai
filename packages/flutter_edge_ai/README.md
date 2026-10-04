@@ -1,25 +1,33 @@
-# Flutter Edge AI
+# Flutter Edge AI (formerly flutter_gemma)
 
 [![CI Tests](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/test.yml/badge.svg)](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/test.yml)
 [![Release Build](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/release.yml/badge.svg)](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/release.yml)
 [![pub package](https://img.shields.io/pub/v/flutter_edge_ai.svg)](https://pub.dev/packages/flutter_edge_ai)
 
 Flutter Edge AI is a modular on-device AI toolkit for Android, iOS, Web, macOS,
-Windows, and Linux. Its pluggable architecture lets Flutter apps choose and
-switch between inference engines while keeping one consistent API. Use
-downloadable open models, AI models built into the operating system, or both —
-and include only the engine and capabilities your app needs.
+Windows, and Linux. Its pluggable architecture lets Flutter apps combine and
+switch inference engines, embedding backends, speech backends, and RAG vector
+stores through consistent APIs. Use downloadable open models, AI models built
+into the operating system, or both — and include only the runtimes, storage,
+and capabilities your app needs.
 
 Flutter Edge AI was previously known as `flutter_gemma`. The project has been
 renamed, including its package names and Dart imports. Existing users can follow
 the [migration guide](MIGRATION.md) to upgrade.
 
-Choose only the runtimes your app needs:
+Choose only the AI runtimes your app needs:
 
 - **LiteRT-LM + LiteRT:** `.litertlm` text and multimodal generation with CPU, GPU, and supported NPU acceleration, plus `.tflite` embeddings, speech-to-text, and text-to-speech through the LiteRT C API.
 - **MediaPipe GenAI:** `.task` text and multimodal models on Android, iOS, and Web.
 - **ONNX Runtime:** text generation and embeddings out of the box, with the same pluggable backend interfaces available for custom ONNX-powered STT and TTS.
 - **Built-in AI:** Gemini Nano, Apple Foundation Models, Windows AI Foundry, and the Chrome Prompt API using models managed by the operating system.
+
+Choose the vector store for your on-device RAG pipeline:
+
+- **Qdrant Edge:** native vector search through [`flutter_edge_ai_qdrant`](https://pub.dev/packages/flutter_edge_ai_qdrant) on Android, iOS, macOS, Windows, and Linux.
+- **SQLite + sqlite-vec:** portable vector search through [`flutter_edge_ai_sqlite`](https://pub.dev/packages/flutter_edge_ai_sqlite) on Android, iOS, Web, macOS, Windows, and Linux.
+
+Both stores implement the same retrieval API, so you can switch between them without rewriting your RAG pipeline.
 
 Supported model families and on-device pipelines include:
 
@@ -39,7 +47,7 @@ Supported model families and on-device pipelines include:
 
 - **Local Execution:** Run Gemma and other LLMs (Qwen, DeepSeek, Phi, FastVLM, SmolLM, …) directly on user devices for enhanced privacy and offline functionality.
 - **Platform Support:** Compatible with iOS, Android, Web, macOS, Windows, and Linux platforms.
-- **🧩 Modular Packages:** A small `flutter_edge_ai` core plus opt-in packages — add only the engine (`.litertlm` / `.task`), embeddings, RAG, agent, or speech code your app ships. Register them via one `await FlutterEdgeAi.initialize(...)` call. See [MIGRATION.md](MIGRATION.md).
+- **🧩 Modular Packages:** A small `flutter_edge_ai` core plus opt-in inference, embedding, speech, RAG, storage, agent, and diagnostics packages. Register AI runtimes with `FlutterEdgeAi.initialize(...)`; create independently owned RAG indexes with `FlutterEdgeAiRag`. See [MIGRATION.md](MIGRATION.md).
 - **🖥️ Desktop Support:** Native desktop apps (macOS, Windows, Linux) with GPU acceleration via LiteRT-LM, called directly from Dart through `dart:ffi` — no JVM/JRE bundling. See [DESKTOP_SUPPORT.md](DESKTOP_SUPPORT.md) for details.
 - **🖼️ Multimodal Support:** Text + Image input with Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2, and LLaVA-OneVision vision models (Gemma 4 on all platforms via its Web MediaPipe build; Gemma3n, Qwen2-VL, SmolVLM2, and LLaVA-OneVision on Android, iOS, and Desktop; FastVLM on Desktop). Gemma3n's Web `.litertlm` build is text-only.
 - **🎙️ Audio Input:** Record and send audio messages with Gemma 4 and Gemma3n E2B/E4B models (Android, iOS device, macOS/Windows/Linux via LiteRT-LM — not on Web)
@@ -59,8 +67,8 @@ Supported model families and on-device pipelines include:
 - **🔧 Download Reliability:** Automatic restart logic for interrupted downloads (resume not supported by HuggingFace CDN)
 - **📱 Android Foreground Service:** opt in with `foreground: true` for large downloads, to bypass the 9-minute timeout
 - **🔧 Model Replace Policy:** Configurable model replacement system (keep/replace) with automatic model switching
-- **📊 Text Embeddings:** Generate 768-dim vector embeddings with EmbeddingGemma or Gecko (all native platforms + Web) via the unified LiteRT C API
-- **🔎 On-device RAG:** Two vector-store backends — `flutter_edge_ai_qdrant` (qdrant-edge, native) and `flutter_edge_ai_sqlite` (in-SQLite `sqlite-vec`/`vec0` KNN on all six platforms incl. Web). Payload-aware `Filter` (must / should / mustNot) for semantic search.
+- **📊 Text Embeddings:** Generate model-dependent vector embeddings: EmbeddingGemma and Gecko produce 768D through LiteRT, while models such as all-MiniLM-L6-v2 produce 384D through ONNX. A model's query and document paths always return the same dimension.
+- **🔎 On-device RAG:** Independent, instance-scoped orchestration in `flutter_edge_ai_rag`, with pluggable `flutter_edge_ai_qdrant` (qdrant-edge, native) and `flutter_edge_ai_sqlite` (in-SQLite `sqlite-vec`/`vec0`, all six platforms including Web) stores. Payload-aware `Filter` (`must` / `should` / `mustNot`) works through the same retrieval API.
 - **🧩 Genkit Integration:** Use flutter_edge_ai through [Genkit](https://pub.dev/packages/genkit) via [`genkit_flutter_edge_ai`](https://pub.dev/packages/genkit_flutter_edge_ai), and route between on-device and cloud models with [`genkit_hybrid`](https://pub.dev/packages/genkit_hybrid).
 - **🔧 Unified Model Management:** Single system for managing both inference and embedding models with automatic validation
 - **🔐 Typed Download Errors:** Catch the public `DownloadException` sealed type (401/403/404/429/5xx) for gated HuggingFace models instead of substring-matching error strings
@@ -82,7 +90,9 @@ What they cover: registering an engine (core ships none), routing by the declare
 
 - **flutter_gemma is now flutter_edge_ai.** Every package has a new name; models, stores and platform setup carry over unchanged, and the old Dart names still compile as deprecated aliases. See [MIGRATION.md](MIGRATION.md#flutter_gemma--flutter_edge_ai-1114).
 
-Through 1.11.3 this package shipped as `flutter_gemma`; `flutter_edge_ai` continues the numbering at 1.11.4.
+Through 1.11.3 this package shipped as `flutter_gemma`. The renamed package
+started at 1.11.4; the current 1.12 release moves RAG out of core into
+`flutter_edge_ai_rag`.
 
 ## What's new in 1.9.0
 
@@ -231,10 +241,13 @@ model formats and features you need.
       flutter_edge_ai_builtin_ai: latest_version   # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS) / Windows AI Foundry / Chrome Prompt API (Web)
       flutter_edge_ai_onnx: latest_version         # ONNX Runtime — ORT-GenAI text gen + ORT embeddings (FFI, native) / Transformers.js + onnxruntime-web (Web)
 
-      # Optional — text embeddings (EmbeddingGemma / Gecko via flutter_edge_ai_litertlm's
-      # LiteRtEmbeddingBackend — see the "Inference engines" section above) + on-device RAG:
-      flutter_edge_ai_qdrant: latest_version   # RAG vector store (native: qdrant-edge)
-      flutter_edge_ai_sqlite: latest_version   # RAG vector store (sqlite-vec/vec0; all six platforms incl. web)
+      # Optional — embedding tokenizers (the backend comes from LiteRT-LM or ONNX):
+      flutter_edge_ai_embeddings: latest_version
+
+      # Optional — independent RAG orchestration plus one storage provider:
+      flutter_edge_ai_rag: latest_version       # RagIndex + profiles + filters
+      flutter_edge_ai_qdrant: latest_version    # native qdrant-edge provider
+      flutter_edge_ai_sqlite: latest_version    # sqlite-vec provider; all six platforms incl. web
 
       # Optional — on-device agent skills:
       flutter_edge_ai_agent: latest_version        # SKILL.md skills (text / JS / native-intent / MCP) via tool-calling
@@ -255,8 +268,8 @@ model formats and features you need.
     | Run ONNX models — ORT-GenAI (macOS/Linux/Windows/Android/iOS arm64) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
     | Generate text embeddings | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
     | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
-    | On-device RAG on native (fastest on Android/iOS/desktop) | `flutter_edge_ai_qdrant` |
-    | On-device RAG on any platform incl. web (portable `sqlite-vec`) | `flutter_edge_ai_sqlite` |
+    | On-device RAG on native (fastest on Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
+    | On-device RAG on any platform incl. web (portable `sqlite-vec`) | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
     | On-device agent skills (SKILL.md + tool-calling loop) | `flutter_edge_ai_agent` |
     | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
     | Measure what a model costs in memory the OS cannot reclaim (Android + iOS) | `flutter_edge_ai_diagnostics` |
@@ -266,9 +279,9 @@ model formats and features you need.
 
 2.  Run `flutter pub get` to install.
 
-> **Migrating from 0.16.x (monolith)?** See **[MIGRATION.md](MIGRATION.md)** — the
-> only breaking change is adding the opt-in packages and the `initialize(...)`
-> call; every model / session / RAG API is unchanged.
+> **Migrating from `flutter_gemma` or from Flutter Edge AI 1.x?** See
+> **[MIGRATION.md](MIGRATION.md)**. The 2.0 RAG API is intentionally independent
+> from core and requires a small source migration.
 
 ## Platform & Architecture Support
 
@@ -991,7 +1004,6 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_mediapipe/flutter_edge_ai_mediapipe.dart';
-import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1003,7 +1015,7 @@ void main() async {
       MediaPipeEngine(),    // flutter_edge_ai_mediapipe — .task / .bin models
       BuiltInAiEngine(),    // flutter_edge_ai_builtin_ai — Gemini Nano / Apple FM / Windows AI Foundry
     ],
-    // Optional — embeddings (needed for RAG / generateEmbedding):
+    // Optional — embeddings (also usable by an independent RAG index):
     embeddingBackends: const [
       LiteRtEmbeddingBackend(), // flutter_edge_ai_litertlm
     ],
@@ -1012,9 +1024,6 @@ void main() async {
     embeddingTokenizers: const [
       GemmaEmbeddingTokenizers(), // flutter_edge_ai_embeddings
     ],
-    // Optional — RAG vector store (pick one; native here):
-    vectorStore: QdrantVectorStore(), // flutter_edge_ai_qdrant
-
     // Common settings:
     // '' when the define is absent, and an empty token still sends a
     // bare `Authorization: Bearer` header — pass null instead.
@@ -1041,13 +1050,12 @@ void main() async {
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by BOTH embedding backends above |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |
-| `vectorStore: QdrantVectorStore()` | `flutter_edge_ai_qdrant` | native RAG |
-| `vectorStore: SqliteVectorStore()` / `WebSqliteVectorStore()` | `flutter_edge_ai_sqlite` | native / web RAG |
 
-Add only the engines you ship. Passing both `LiteRtLmEngine()` and
+Add only the runtimes you ship. Passing both `LiteRtLmEngine()` and
 `MediaPipeEngine()` lets one app run both formats — the registry routes each
-model to the engine that handles its file type. On web, choose
-`vectorStore: WebSqliteVectorStore()` (`flutter_edge_ai_qdrant` is native-only).
+model to the engine that handles its file type. RAG is not registered here:
+construct `FlutterEdgeAiRag` with a storage provider and own each returned
+`RagIndex` explicitly, as shown below.
 
 **Common settings:**
 - `huggingFaceToken`: Authentication token for gated models (Gemma3n, EmbeddingGemma)
@@ -1769,7 +1777,12 @@ together. Three things are worth knowing:
 
 ### 📊 Text Embedding Models
 
-All embedding models generate **768-dimensional vectors**. The numbers in names (64/256/512/1024/2048) indicate **maximum input sequence length in tokens**, not embedding dimension.
+Embedding dimension is model-dependent. The LiteRT EmbeddingGemma and Gecko
+artifacts listed below produce **768-dimensional vectors**; ONNX models such as
+all-MiniLM-L6-v2 produce **384-dimensional vectors**. Query and document
+embeddings from one model/profile have the same dimension even though they use
+different task prefixes. The numbers in names (64/256/512/1024/2048) indicate
+**maximum input sequence length in tokens**, not embedding dimension.
 
 | Model | Parameters | Dimensions | Max Seq Length | Size | Best For | Auth Required |
 |-------|-----------|------------|----------------|------|----------|---------------|
@@ -1793,72 +1806,73 @@ All embedding models generate **768-dimensional vectors**. The numbers in names 
 
 ## 🔎 On-device RAG / Vector Store
 
-Two vector-store packages implement the same Dart API: `flutter_edge_ai_qdrant` (qdrant-edge, native — fastest on Android/iOS/desktop) and `flutter_edge_ai_sqlite` (in-SQLite `sqlite-vec`/`vec0` KNN, portable across all six platforms incl. Web, since qdrant-edge can't target WASM). Code is the same on both.
+RAG is an independent module. `flutter_edge_ai_rag` owns retrieval orchestration,
+embedding profiles, filters, and `RagIndex`; `flutter_edge_ai_qdrant` and
+`flutter_edge_ai_sqlite` provide interchangeable stores. RAG can borrow the
+active core embedder, use a custom `RagEmbedder`, or run vector-only without
+calling `FlutterEdgeAi.initialize()` at all.
 
 ```dart
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 
-// 1. Install an embedding model (any of Gecko / EmbeddingGemma)
-await FlutterEdgeAi.installEmbedder()
-    .modelFromNetwork(
-      'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq256_mixed-precision.tflite',
-      token: 'hf_...',
-    )
-    .tokenizerFromNetwork(
-      'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/sentencepiece.model',
-      token: 'hf_...',
-    )
-    .install();
-
-// 2. Initialize the vector store (one shard per database path). On native pass
-//    an absolute path: a bare name resolves against the process working
-//    directory, which is not writable on Android or iOS. On web a name is enough.
-final dir = await getApplicationDocumentsDirectory(); // package:path_provider
-await FlutterEdgeAiPlugin.instance.initializeVectorStore('${dir.path}/rag_store');
-
-// 3. Add documents — let the plugin compute embeddings for you
-for (final doc in docs) {
-  await FlutterEdgeAiPlugin.instance.addDocument(
-    id: doc.id,
-    content: doc.content,
-    metadata: '{"category":"science","lang":"en"}',
-  );
-}
-
-// 3b. Or batch-embed yourself and feed pre-computed vectors via
-//     addDocumentWithEmbedding(...) for higher throughput.
-final embedder = FlutterEdgeAiPlugin.instance.initializedEmbeddingModel!;
-final embeddings = await embedder.generateEmbeddings(
-  docs.map((d) => d.content).toList(),
-  taskType: TaskType.retrievalDocument,
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
 );
-for (var i = 0; i < docs.length; i++) {
-  await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
-    id: docs[i].id,
-    content: docs[i].content,
-    embedding: embeddings[i],
-    metadata: '{"category":"science","lang":"en"}',
-  );
-}
-
-// 4. Semantic search, with optional payload-aware Filter (all backends + platforms)
-final results = await FlutterEdgeAiPlugin.instance.searchSimilar(
-  query: 'quantum entanglement',
-  topK: 10,
-  threshold: 0.0,
-  filter: Filter(
-    must: [FieldEquals(key: 'category', value: 'science')],
-    mustNot: [FieldEquals(key: 'lang', value: 'fr')],
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: databasePath,
+    filterSchema: const FilterSchema(fields: [
+      FilterField(name: 'category', type: FilterFieldType.string),
+      FilterField(name: 'lang', type: FilterFieldType.string),
+    ]),
   ),
+  // This ID must version weights, tokenizer, pooling, normalization, and the
+  // retrieval document/query prefix contract. A mutable URL is not an ID.
+  activeEmbedderProfileId:
+      'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+      'retrieval-prefix-meanpool-l2-v1',
 );
 
-// 5. Persist the index while the store stays open (see below)
-await FlutterEdgeAiPlugin.instance.flushVectorStore(); // or FlutterEdgeAi.rag.flush()
+try {
+  await index.addText(
+    id: 'doc-1',
+    content: 'Quantum entanglement links measurement outcomes.',
+    metadata: '{"category":"science","lang":"en"}',
+  );
+  final results = await index.searchText(
+    query: 'quantum entanglement',
+    topK: 10,
+    filter: const Filter(
+      must: [FieldEquals(key: 'category', value: 'science')],
+      mustNot: [FieldEquals(key: 'lang', value: 'fr')],
+    ),
+  );
+  print(results);
+  await index.flush();
+} finally {
+  // Dispose indexes before FlutterEdgeAi.dispose() or a custom embedder.
+  await index.dispose();
+}
 ```
+
+For precomputed vectors, pass an `EmbeddingProfile(id:, dimension:)` to
+`open()`, then use `addVector` and `searchVector`. A custom `RagEmbedder` makes
+text RAG completely independent from the core runtime. One persistent location
+belongs to exactly one profile; use a new, profile-versioned path when weights
+or preprocessing change. A nonempty pre-1.12 store has no profile metadata and
+is never adopted silently: set `allowLegacyProfileAdoption: true` only after
+you have verified its exact original profile, otherwise re-index it.
 
 **Which backend embeddings run on.** `getActiveEmbedder(preferredBackend:)` is accepted and not applied: native embeddings run on CPU — LiteRT's GPU delegate returns all-zero vectors for EmbeddingGemma's int4 weights, and the ONNX client appends no execution provider. Read `EmbeddingModel.activeBackend` for the answer; it survives a release build. It is `cpu` on native and `null` on web, where the runtime picks WebGPU or WASM (see `flutter_edge_ai_litertlm`'s README for the web getters). Since 1.11.0 a class that `implements EmbeddingModel` must add `activeBackend` and `isClosed`; `extends` inherits defaults.
 
-**Call `flush()` after indexing.** `flutter_edge_ai_qdrant` keeps new documents in memory until the store is flushed or closed, so an index built without either is lost when the process ends — an Android app killed in the background is the ordinary case ([#492](https://github.com/DenisovAV/flutter_edge_ai/issues/492)). On native `flutter_edge_ai_sqlite` it is a no-op; on web it drains the IndexedDB storage. A store that cannot persist at all throws `VectorStoreException` instead of returning. Custom `VectorStoreRepository` implementations must declare `flush()`.
+**Call `RagIndex.flush()` after indexing.** qdrant-edge keeps new documents in
+memory until the store is flushed or closed; native SQLite is already durable,
+and Web SQLite drains its IndexedDB storage. On Web, keep one app-owned index
+per location and open it through one shared/single-flight future: the provider
+holds an exclusive Web Lock for the index lifetime. Always dispose the index
+before reopening that location.
 
 A field name is checked by the store, in `configure()`. `SqliteVectorStore` is
 the strict one — `^[A-Za-z][A-Za-z0-9_]*$`, and not a name `vec0` already uses
@@ -1870,7 +1884,8 @@ rejected on any store.
 
 `Filter` supports `must` / `should` / `mustNot` lists of `FieldEquals`, `FieldRange`, `FieldMatchAny` conditions. Both backends honor it: qdrant-edge natively, and the `sqlite-vec`/`vec0` store on all platforms incl. Web (one `Filter` → vec0 declared-column `WHERE`). Filterable fields must be declared as vec0 columns.
 
-**Benchmarks** comparing qdrant-edge to the legacy sqlite + local_hnsw backend across 5 platforms (5 000 documents, EmbeddingGemma 300M, 768-dim): see [example/integration_test/benchmarks/comparison.md](example/integration_test/benchmarks/comparison.md).
+**Benchmarks** comparing qdrant-edge with the current in-SQLite `sqlite-vec`
+backend are in [the benchmark report](../../docs/benchmarks/rag_sqlite_vec_vs_qdrant.md).
 
 ## 🛠️ Model Function Calling Support
 
@@ -1910,7 +1925,7 @@ Function calling is currently supported by the following models:
 | **Image Input (Multimodal)** | ✅ Full | ✅ Full | ✅ MediaPipe | ✅ Full | Web `.litertlm` is text-only; native Gemma 4/Gemma3n verified on desktop GPU |
 | **Audio Input** | ✅ Full | ✅ Full ¹ | ❌ Not supported | ✅ `.litertlm` only | Gemma3n E2B/E4B + Gemma 4; iOS device-only; Desktop via FFI |
 | **Speech-to-Text** | ✅ Full | ✅ Full | ❌ Not supported | ✅ Full | `flutter_edge_ai_speech` (moonshine / Whisper / Parakeet); native only, arm64 on Android |
-| **Text-to-Speech** | ✅ Full | ✅ Full | ❌ Not supported | ✅ Full | `flutter_edge_ai_speech` (Matcha); native only, arm64 on Android |
+| **Text-to-Speech** | ✅ Full | ✅ Full | ❌ Not supported | ✅ Full | `flutter_edge_ai_speech` (Matcha, Qwen3-TTS, Inflect-Nano-v2); native only, arm64 on Android |
 | **Function Calling** | ✅ Select models | ✅ Select models | ✅ Select models | ✅ Select models | Availability depends on the model configuration above |
 | **Thinking Mode** | ✅ Full | ✅ Full | ⚠️ Qwen3 tags | ✅ Full | Core parses emitted Qwen3 `<think>` tags on Web; measured Gemma 4 `.litertlm` Web produces no thinking channel |
 | **Stop Generation** | ✅ Full | ✅ Full | ✅ Full | ✅ Full | Cancel mid-process |

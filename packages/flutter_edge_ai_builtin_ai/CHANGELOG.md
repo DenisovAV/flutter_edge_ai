@@ -1,3 +1,6 @@
+## 0.3.1
+- Support `flutter_edge_ai` 2.x.
+
 ## 0.3.0
 - Renamed from `flutter_gemma_builtin_ai`.
 - **Breaking:** a pure-Dart adapter over `flutter_local_ai` ^0.2.1; the `BuiltInAi*` API is unchanged.

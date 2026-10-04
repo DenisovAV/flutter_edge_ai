@@ -10,8 +10,7 @@ import 'package:flutter_edge_ai_qdrant/src/filter_codec.dart';
 import 'package:flutter_edge_ai_qdrant/src/point_id_hasher.dart';
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
-import 'package:flutter_edge_ai/core/services/vector_store_filter.dart';
-import 'package:flutter_edge_ai/core/services/vector_store_repository.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
@@ -98,7 +97,7 @@ void main() {
           FieldRange(key: 'price', gte: 200.0, lte: 1000.0),
         ],
       ),
-      FilterSchema(
+      const FilterSchema(
         fields: [
           FilterField(name: 'lang', type: FilterFieldType.string),
           FilterField(name: 'price', type: FilterFieldType.number),
@@ -137,19 +136,24 @@ void main() {
   });
 
   // ---------------------------------------------------------------------
-  // QdrantVectorStore — the layer the 2.0 migration actually rewrote, and
+  // QdrantVectorStore — the layer the 1.4.0 migration actually rewrote, and
   // the one every fix in this release lives in. Until these were added, no
   // test touched it on a real device on any of the eight shipped platforms:
   // the cases above drive QdrantEdgeClient directly.
   // ---------------------------------------------------------------------
 
   List<double> vec(int dim, double seed) => List<double>.filled(dim, seed);
+  final storeProfile = EmbeddingProfile(
+    id: 'qdrant-device-smoke-4d-v1',
+    dimension: 4,
+  );
 
   test(
     'store: a reopened store reports its contents before any write',
     () async {
       final first = QdrantVectorStore();
       await first.initialize(shardDir.path);
+      await first.bindEmbeddingProfile(storeProfile);
       for (var i = 0; i < 3; i++) {
         await first.addDocument(
           id: 'doc$i',
@@ -182,6 +186,7 @@ void main() {
     // storage there is slower than a dev box.
     final store = QdrantVectorStore();
     await store.initialize(shardDir.path);
+    await store.bindEmbeddingProfile(storeProfile);
     addTearDown(store.close);
 
     await Future.wait([
@@ -251,6 +256,7 @@ void main() {
     final store = QdrantVectorStore();
     addTearDown(store.close);
     await store.initialize(shardDir.path);
+    await store.bindEmbeddingProfile(storeProfile);
     await store.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
     await store.addDocument(id: 'b', content: 'y', embedding: vec(4, 2));
     expect((await store.getStats()).documentCount, equals(2));
@@ -277,6 +283,7 @@ void main() {
     // place to trust it.
     final seed = QdrantVectorStore();
     await seed.initialize(shardDir.path);
+    await seed.bindEmbeddingProfile(storeProfile);
     await seed.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
     await seed.addDocument(id: 'b', content: 'y', embedding: vec(4, 2));
     await seed.close();
@@ -305,6 +312,7 @@ void main() {
       // edgeAiLog, which is debug-only, so a release build said nothing at all.
       final holder = QdrantVectorStore();
       await holder.initialize(shardDir.path);
+      await holder.bindEmbeddingProfile(storeProfile);
       await holder.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
       addTearDown(holder.close);
 

@@ -1,15 +1,34 @@
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 /// Web stub for VectorStoreRepository
 ///
 /// This stub is used on non-web platforms where dart:js_interop is not available.
 /// The actual web implementation is in web_sqlite_vector_store.dart.
 class WebSqliteVectorStore implements VectorStoreRepository {
+  WebSqliteVectorStore({
+    bool forceBrowserLocksUnavailableForTesting = false,
+    Future<void> Function()? durabilityFenceForTesting,
+  });
+
   @override
   bool get isInitialized => false;
 
   @override
   Future<void> initialize(String databasePath) async {
+    throw UnimplementedError(
+      'WebSqliteVectorStore is only available on web; use SqliteVectorStore',
+    );
+  }
+
+  @override
+  Future<EmbeddingProfile?> readEmbeddingProfile() async {
+    throw UnimplementedError(
+      'WebSqliteVectorStore is only available on web; use SqliteVectorStore',
+    );
+  }
+
+  @override
+  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async {
     throw UnimplementedError(
       'WebSqliteVectorStore is only available on web; use SqliteVectorStore',
     );
@@ -69,14 +88,6 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   Future<void> close() async {
     // No-op for stub
   }
-
-  @override
-  @Deprecated('No-op since vector search moved into SQLite; removed in 2.0')
-  bool get enableHnsw => false;
-
-  @override
-  @Deprecated('No-op since vector search moved into SQLite; removed in 2.0')
-  set enableHnsw(bool value) {}
 
   @override
   FilterSchema get filterSchema => const FilterSchema();

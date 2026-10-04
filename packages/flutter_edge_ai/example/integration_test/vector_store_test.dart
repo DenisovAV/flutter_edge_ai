@@ -1,297 +1,249 @@
 import 'dart:io';
+
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
-import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
-import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 
-/// Integration tests for VectorStore
+/// Integration tests for the public RAG index over SQLite.
 ///
-/// Tests full stack: Dart → sqlite3 dart:ffi (unified across all native platforms)
+/// Tests full stack: RagIndex -> sqlite3 Dart FFI -> sqlite-vec.
 /// Run: flutter test integration_test/vector_store_test.dart -d macos
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  late String databasePath;
+  final rag = FlutterEdgeAiRag(providers: [const SqliteVectorStoreProvider()]);
+  RagIndex? currentIndex;
+  String? currentPath;
 
-  setUpAll(() async {
-    await FlutterEdgeAi.initialize(
-      vectorStore: SqliteVectorStore(),
-      inferenceEngines: const [LiteRtLmEngine()],
-      embeddingBackends: const [LiteRtEmbeddingBackend()],
-      embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
+  Future<RagIndex> openIndex({int dimension = 3}) async {
+    final directory = await getTemporaryDirectory();
+    final path =
+        '${directory.path}/test_vector_store_${DateTime.now().microsecondsSinceEpoch}.db';
+    final index = await rag.open(
+      spec: VectorStoreSpec(providerId: 'sqlite', location: path),
+      embeddingProfile: EmbeddingProfile(
+        id: 'vector-store-${dimension}d-test-v1',
+        dimension: dimension,
+      ),
     );
-    final tempDir = await getTemporaryDirectory();
-    databasePath = '${tempDir.path}/test_vector_store.db';
-  });
-
-  Future<void> initStore() async {
-    await FlutterEdgeAiPlugin.instance.initializeVectorStore(databasePath);
+    currentIndex = index;
+    currentPath = path;
+    return index;
   }
 
   Future<void> cleanupStore() async {
-    try {
-      await FlutterEdgeAiPlugin.instance.clearVectorStore();
-    } catch (_) {}
-    // Close the store so the underlying sqlite3 database handle is released
-    // before deleting the file. On Windows an open handle locks the file and
-    // File.delete throws PathAccessException (errno 32); POSIX allows unlinking
-    // an open file, which masked this. Each test re-opens via initStore().
-    try {
-      await ServiceRegistry.instance.vectorStoreRepository.close();
-    } catch (_) {}
-    final dbFile = File(databasePath);
-    if (await dbFile.exists()) {
+    final index = currentIndex;
+    currentIndex = null;
+    await index?.dispose();
+    final path = currentPath;
+    currentPath = null;
+    if (path == null) return;
+    final file = File(path);
+    if (await file.exists()) {
       try {
-        await dbFile.delete();
+        await file.delete();
       } catch (_) {
-        // Best-effort cleanup; a lingering lock must not fail the test.
+        // Best effort: Windows may briefly retain a native file handle.
       }
     }
   }
 
-  group('VectorStore Integration Tests', () {
-    testWidgets('Test 1: Initialize VectorStore', (tester) async {
-      await initStore();
-      final stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
+  tearDown(cleanupStore);
+
+  group('RagIndex SQLite integration', () {
+    testWidgets('initializes an empty store', (tester) async {
+      final index = await openIndex();
+      final stats = await index.stats();
       expect(stats.documentCount, 0);
       expect(stats.vectorDimension, 0);
-      await cleanupStore();
     });
 
-    testWidgets('Test 2: Add Document with Embedding', (tester) async {
-      await initStore();
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('adds a document with a vector', (tester) async {
+      final index = await openIndex();
+      await index.addVector(
         id: 'doc1',
         content: 'Hello, world!',
-        embedding: [1.0, 0.0, 0.0],
+        embedding: const [1.0, 0.0, 0.0],
         metadata: '{"source": "test"}',
       );
 
-      final stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
+      final stats = await index.stats();
       expect(stats.documentCount, 1);
       expect(stats.vectorDimension, 3);
-      await cleanupStore();
     });
 
-    testWidgets('Test 3: Search Similar Documents', (tester) async {
-      await initStore();
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('searches similar documents', (tester) async {
+      final index = await openIndex();
+      await index.addVector(
         id: 'doc1',
         content: 'Document about cats',
-        embedding: [1.0, 0.0, 0.0],
+        embedding: const [1.0, 0.0, 0.0],
       );
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+      await index.addVector(
         id: 'doc2',
         content: 'Document about dogs',
-        embedding: [0.9, 0.1, 0.0],
+        embedding: const [0.9, 0.1, 0.0],
       );
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+      await index.addVector(
         id: 'doc3',
         content: 'Document about cars',
-        embedding: [0.0, 1.0, 0.0],
+        embedding: const [0.0, 1.0, 0.0],
       );
 
-      final results = await ServiceRegistry.instance.vectorStoreRepository
-          .searchSimilar(
-            queryEmbedding: [1.0, 0.0, 0.0],
-            topK: 2,
-            threshold: 0.5,
-          );
+      final results = await index.searchVector(
+        embedding: const [1.0, 0.0, 0.0],
+        topK: 2,
+        threshold: 0.5,
+      );
 
-      expect(results.length, 2);
+      expect(results, hasLength(2));
       expect(results[0].id, 'doc1');
       expect(results[0].similarity, closeTo(1.0, 0.01));
       expect(results[1].id, 'doc2');
       expect(results[1].similarity, greaterThan(0.9));
-      await cleanupStore();
     });
 
-    testWidgets('Test 4: Get Stats', (tester) async {
-      await initStore();
-      for (int i = 0; i < 5; i++) {
-        await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('reports stats', (tester) async {
+      final index = await openIndex();
+      for (var i = 0; i < 5; i++) {
+        await index.addVector(
           id: 'doc$i',
           content: 'Document $i',
           embedding: [i.toDouble(), 0.0, 0.0],
         );
       }
 
-      final stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
+      final stats = await index.stats();
       expect(stats.documentCount, 5);
       expect(stats.vectorDimension, 3);
-      await cleanupStore();
     });
 
-    testWidgets('Test 5: Clear Store', (tester) async {
-      await initStore();
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('clears documents', (tester) async {
+      final index = await openIndex();
+      await index.addVector(
         id: 'doc1',
         content: 'Document 1',
-        embedding: [1.0, 0.0, 0.0],
+        embedding: const [1.0, 0.0, 0.0],
       );
+      expect((await index.stats()).documentCount, 1);
 
-      var stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
-      expect(stats.documentCount, 1);
-
-      await FlutterEdgeAiPlugin.instance.clearVectorStore();
-
-      stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
-      expect(stats.documentCount, 0);
-      await cleanupStore();
+      await index.clear();
+      expect((await index.stats()).documentCount, 0);
+      expect(index.embeddingProfile?.dimension, 3);
     });
 
-    testWidgets('Test 6: Dimension Validation - Reject Mismatched', (
-      tester,
-    ) async {
-      await initStore();
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('rejects a mismatched vector dimension', (tester) async {
+      final index = await openIndex();
+      await index.addVector(
         id: 'doc1',
         content: 'Document 1',
-        embedding: [1.0, 0.0, 0.0],
+        embedding: const [1.0, 0.0, 0.0],
       );
 
-      // ArgumentError is an Error, not Exception — use throwsA
       await expectLater(
-        () => FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+        index.addVector(
           id: 'doc2',
           content: 'Document 2',
-          embedding: [1.0, 0.0, 0.0, 0.0], // 4D instead of 3D
+          embedding: const [1.0, 0.0, 0.0, 0.0],
         ),
         throwsA(isA<ArgumentError>()),
       );
-      await cleanupStore();
     });
 
-    testWidgets('Test 7: BLOB Compatibility - Round Trip', (tester) async {
-      await initStore();
-      final originalEmbedding = [0.123456789, -0.987654321, 0.5, 0.0, 1.0];
-
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('round-trips float vectors', (tester) async {
+      final index = await openIndex(dimension: 5);
+      const original = [0.123456789, -0.987654321, 0.5, 0.0, 1.0];
+      await index.addVector(
         id: 'doc1',
         content: 'Test document',
-        embedding: originalEmbedding,
+        embedding: original,
       );
 
-      final results = await ServiceRegistry.instance.vectorStoreRepository
-          .searchSimilar(
-            queryEmbedding: originalEmbedding,
-            topK: 1,
-            threshold: 0.0,
-          );
-
-      expect(results.length, 1);
+      final results = await index.searchVector(embedding: original, topK: 1);
+      expect(results, hasLength(1));
       expect(results[0].id, 'doc1');
       expect(results[0].similarity, closeTo(1.0, 0.0001));
-      await cleanupStore();
     });
 
-    testWidgets('Test 8: Metadata Storage and Retrieval', (tester) async {
-      await initStore();
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('returns stored metadata', (tester) async {
+      final index = await openIndex();
+      await index.addVector(
         id: 'doc1',
         content: 'Document with metadata',
-        embedding: [1.0, 0.0, 0.0],
+        embedding: const [1.0, 0.0, 0.0],
         metadata: '{"author": "Alice", "date": "2024-11-18"}',
       );
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+      await index.addVector(
         id: 'doc2',
         content: 'Document without metadata',
-        embedding: [0.9, 0.1, 0.0],
+        embedding: const [0.9, 0.1, 0.0],
       );
 
-      final results = await ServiceRegistry.instance.vectorStoreRepository
-          .searchSimilar(
-            queryEmbedding: [1.0, 0.0, 0.0],
-            topK: 2,
-            threshold: 0.0,
-          );
-
-      expect(results.length, 2);
-      expect(results[0].metadata, isNotNull);
+      final results = await index.searchVector(
+        embedding: const [1.0, 0.0, 0.0],
+        topK: 2,
+      );
+      expect(results, hasLength(2));
       expect(results[0].metadata, contains('Alice'));
       expect(results[1].metadata, isNull);
-      await cleanupStore();
     });
 
-    testWidgets('Test 9: Threshold Filtering', (tester) async {
-      await initStore();
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('applies similarity threshold', (tester) async {
+      final index = await openIndex();
+      await index.addVector(
         id: 'doc1',
         content: 'Very similar',
-        embedding: [1.0, 0.0, 0.0],
+        embedding: const [1.0, 0.0, 0.0],
       );
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+      await index.addVector(
         id: 'doc2',
         content: 'Somewhat similar',
-        embedding: [0.7, 0.7, 0.0],
+        embedding: const [0.7, 0.7, 0.0],
       );
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+      await index.addVector(
         id: 'doc3',
         content: 'Not similar',
-        embedding: [0.0, 1.0, 0.0],
+        embedding: const [0.0, 1.0, 0.0],
       );
 
-      final resultsHighThreshold = await ServiceRegistry
-          .instance
-          .vectorStoreRepository
-          .searchSimilar(
-            queryEmbedding: [1.0, 0.0, 0.0],
-            topK: 10,
-            threshold: 0.8,
-          );
-      expect(resultsHighThreshold.length, 1);
-      expect(resultsHighThreshold[0].id, 'doc1');
+      final high = await index.searchVector(
+        embedding: const [1.0, 0.0, 0.0],
+        topK: 10,
+        threshold: 0.8,
+      );
+      expect(high.map((result) => result.id), ['doc1']);
 
-      final resultsLowThreshold = await ServiceRegistry
-          .instance
-          .vectorStoreRepository
-          .searchSimilar(
-            queryEmbedding: [1.0, 0.0, 0.0],
-            topK: 10,
-            threshold: 0.0,
-          );
-      expect(resultsLowThreshold.length, 3);
-      await cleanupStore();
+      final low = await index.searchVector(
+        embedding: const [1.0, 0.0, 0.0],
+        topK: 10,
+      );
+      expect(low, hasLength(3));
     });
 
-    testWidgets('Test 10: INSERT OR REPLACE - Document Update', (tester) async {
-      await initStore();
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+    testWidgets('upserts a document by id', (tester) async {
+      final index = await openIndex();
+      await index.addVector(
         id: 'doc1',
         content: 'Original content',
-        embedding: [1.0, 0.0, 0.0],
+        embedding: const [1.0, 0.0, 0.0],
         metadata: '{"version": 1}',
       );
-
-      var stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
-      expect(stats.documentCount, 1);
-
-      await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+      await index.addVector(
         id: 'doc1',
         content: 'Updated content',
-        embedding: [0.0, 1.0, 0.0],
+        embedding: const [0.0, 1.0, 0.0],
         metadata: '{"version": 2}',
       );
 
-      stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
-      expect(stats.documentCount, 1);
-
-      final results = await ServiceRegistry.instance.vectorStoreRepository
-          .searchSimilar(
-            queryEmbedding: [0.0, 1.0, 0.0],
-            topK: 1,
-            threshold: 0.0,
-          );
-
-      expect(results.length, 1);
-      expect(results[0].id, 'doc1');
-      expect(results[0].content, 'Updated content');
-      expect(results[0].metadata, contains('version": 2'));
-      await cleanupStore();
+      expect((await index.stats()).documentCount, 1);
+      final results = await index.searchVector(
+        embedding: const [0.0, 1.0, 0.0],
+        topK: 1,
+      );
+      expect(results.single.content, 'Updated content');
+      expect(results.single.metadata, contains('version": 2'));
     });
   });
 }

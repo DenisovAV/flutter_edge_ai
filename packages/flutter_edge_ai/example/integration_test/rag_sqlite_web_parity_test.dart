@@ -39,6 +39,7 @@
 library;
 
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -59,6 +60,9 @@ void main() {
     store.configure(schema);
     // A fresh IndexedDB name per test keeps one case's corpus out of another's.
     await store.initialize('parity_${DateTime.now().microsecondsSinceEpoch}');
+    await store.bindEmbeddingProfile(
+      EmbeddingProfile(id: 'web-parity-v1', dimension: embedding.length),
+    );
     // NOT catchError: close() propagates, and 1.3.0's third fix was a
     // close() gated on a flag the failure path clears. Swallowing a close
     // error here would make a regression of it invisible by construction.
@@ -124,5 +128,56 @@ void main() {
       );
       expect(all, hasLength(docs.length));
     });
+  });
+
+  testWidgets('profile binding persists and survives clear', (tester) async {
+    final location = 'profile_${DateTime.now().microsecondsSinceEpoch}';
+    final profile = EmbeddingProfile(id: 'web-profile-v1', dimension: 4);
+    final first = WebSqliteVectorStore();
+    addTearDown(first.close);
+    await first.initialize(location);
+    expect(await first.readEmbeddingProfile(), isNull);
+    await first.bindEmbeddingProfile(profile);
+    await first.addDocument(
+      id: 'doc',
+      content: 'document',
+      embedding: const [1, 0, 0, 0],
+    );
+    await first.clear();
+    expect(await first.readEmbeddingProfile(), profile);
+    await first.close();
+
+    final second = WebSqliteVectorStore();
+    addTearDown(second.close);
+    await second.initialize(location);
+    expect(await second.readEmbeddingProfile(), profile);
+    expect((await second.getStats()).documentCount, 0);
+    await expectLater(
+      second.bindEmbeddingProfile(
+        EmbeddingProfile(id: 'other-web-profile-v1', dimension: 4),
+      ),
+      throwsA(isA<VectorStoreException>()),
+    );
+  });
+
+  testWidgets('provider opens the web implementation without kIsWeb', (
+    tester,
+  ) async {
+    final location = 'provider_${DateTime.now().microsecondsSinceEpoch}';
+    final profile = EmbeddingProfile(id: 'web-provider-v1', dimension: 4);
+    final rag = FlutterEdgeAiRag(
+      providers: [const SqliteVectorStoreProvider()],
+    );
+    final index = await rag.open(
+      spec: VectorStoreSpec(providerId: 'sqlite', location: location),
+      embeddingProfile: profile,
+    );
+    addTearDown(index.dispose);
+    await index.addVector(
+      id: 'doc',
+      content: 'document',
+      embedding: const [1, 0, 0, 0],
+    );
+    expect((await index.stats()).documentCount, 1);
   });
 }

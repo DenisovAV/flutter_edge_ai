@@ -17,6 +17,7 @@ import '../flutter_edge_ai.dart';
 import '../core/di/service_registry.dart';
 import '../core/services/model_repository.dart' as repo;
 import '../core/model_management/constants/preferences_keys.dart';
+import '../core/model_management/active_embedding_identity.dart';
 import '../core/model_management/utils/download_temp_reclaim.dart';
 import '../core/utils/file_name_utils.dart';
 import '../core/registry/engine_registry.dart';
@@ -942,118 +943,5 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
       completer.completeError(e, st);
       return completer.future;
     }
-  }
-
-  // === RAG Methods Implementation ===
-
-  @override
-  Future<void> initializeVectorStore(String databasePath) async {
-    await ServiceRegistry.instance.vectorStoreRepository.initialize(
-      databasePath,
-    );
-  }
-
-  @override
-  Future<void> flushVectorStore() async {
-    await ServiceRegistry.instance.vectorStoreRepository.flush();
-  }
-
-  @override
-  Future<void> addDocumentWithEmbedding({
-    required String id,
-    required String content,
-    required List<double> embedding,
-    String? metadata,
-  }) async {
-    await ServiceRegistry.instance.vectorStoreRepository.addDocument(
-      id: id,
-      content: content,
-      embedding: embedding,
-      metadata: metadata,
-    );
-  }
-
-  @override
-  Future<void> addDocument({
-    required String id,
-    required String content,
-    String? metadata,
-  }) async {
-    // Generate embedding for content first
-    if (initializedEmbeddingModel == null) {
-      throw StateError(
-        'No embedding model is active. addDocument(content:) and '
-        'searchSimilar(query:) auto-embed text, which requires an embedding '
-        'model. Install and activate one with FlutterEdgeAi.installEmbedder(...) '
-        '(or modelManager.setActiveModel) before calling these methods — or '
-        'pass a precomputed vector to addDocumentWithEmbedding(embedding:).',
-      );
-    }
-    final embedding = await initializedEmbeddingModel!.generateEmbedding(
-      content,
-      taskType: TaskType.retrievalDocument,
-    );
-
-    // Add document with computed embedding
-    await addDocumentWithEmbedding(
-      id: id,
-      content: content,
-      embedding: embedding,
-      metadata: metadata,
-    );
-  }
-
-  @override
-  Future<List<RetrievalResult>> searchSimilar({
-    required String query,
-    int topK = 5,
-    double threshold = 0.0,
-    Filter? filter,
-  }) async {
-    // Generate embedding for query
-    if (initializedEmbeddingModel == null) {
-      throw StateError(
-        'No embedding model is active. addDocument(content:) and '
-        'searchSimilar(query:) auto-embed text, which requires an embedding '
-        'model. Install and activate one with FlutterEdgeAi.installEmbedder(...) '
-        '(or modelManager.setActiveModel) before calling these methods — or '
-        'pass a precomputed vector to addDocumentWithEmbedding(embedding:).',
-      );
-    }
-    final queryEmbedding = await initializedEmbeddingModel!.generateEmbedding(
-      query,
-    );
-
-    // Search similar vectors
-    return await ServiceRegistry.instance.vectorStoreRepository.searchSimilar(
-      queryEmbedding: queryEmbedding,
-      topK: topK,
-      threshold: threshold,
-      filter: filter,
-    );
-  }
-
-  @override
-  Future<VectorStoreStats> getVectorStoreStats() async {
-    return await ServiceRegistry.instance.vectorStoreRepository.getStats();
-  }
-
-  @override
-  Future<void> clearVectorStore() async {
-    await ServiceRegistry.instance.vectorStoreRepository.clear();
-  }
-
-  @override
-  Future<void> removeDocument({required String id}) async {
-    await ServiceRegistry.instance.vectorStoreRepository.removeDocument(id: id);
-  }
-
-  @override
-  bool get enableHnsw =>
-      ServiceRegistry.instance.vectorStoreRepository.enableHnsw;
-
-  @override
-  set enableHnsw(bool value) {
-    ServiceRegistry.instance.vectorStoreRepository.enableHnsw = value;
   }
 }

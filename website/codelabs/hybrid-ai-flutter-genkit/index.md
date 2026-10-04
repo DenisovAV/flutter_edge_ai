@@ -454,14 +454,14 @@ Add `genkit_flutter_edge_ai` and `flutter_edge_ai`:
 
 ```yaml
   # Step 3: On-device AI (LiteRT-LM engine)
-  genkit_flutter_edge_ai: ^0.6.2
-  flutter_edge_ai: ^1.11.4
+  genkit_flutter_edge_ai: ^0.6.3
+  flutter_edge_ai: ^1.12.0
   # flutter_edge_ai 1.x registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
-  flutter_edge_ai_litertlm: ^1.8.6
+  flutter_edge_ai_litertlm: ^1.8.7
   # Step 5 embeds your documents. The engine above runs the forward pass;
   # this package supplies the tokenizers it needs.
-  flutter_edge_ai_embeddings: ^2.2.1
+  flutter_edge_ai_embeddings: ^2.2.2
 ```
 
 Run `flutter pub get`.
@@ -640,7 +640,7 @@ plugins and `flutter_edge_ai_litertlm`) is already in place from Steps 2–3:
 
 ```yaml
   # Hybrid on-device ↔ cloud routing
-  genkit_hybrid: ^0.2.1
+  genkit_hybrid: ^0.2.2
 ```
 
 Run `flutter pub get`.

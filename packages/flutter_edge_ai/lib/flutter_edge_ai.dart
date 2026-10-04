@@ -7,9 +7,6 @@ export 'core/domain/model_source.dart'; // ModelSource sealed type — required 
 export 'core/services/file_system_service.dart'
     show FileSystemService; // custom-storage hook accepted by initialize()
 
-// Vector store filter DSL — passed to searchSimilar to constrain results
-// by payload. Honored on every native platform (qdrant-edge); silently
-// ignored on Web.
 // The embedding seam: contracts an engine implements, the worker that runs
 // them off the UI isolate, and the facade it produces. Contracts only — the
 // tokenizer IMPLEMENTATIONS stay in flutter_edge_ai_embeddings, which core never
@@ -26,8 +23,6 @@ export 'core/embedding/pooling.dart';
 export 'core/embedding/common_embedding_model.dart'
     if (dart.library.js_interop) 'core/embedding/common_embedding_model_stub.dart';
 
-export 'core/services/vector_store_filter.dart';
-export 'core/services/vector_store_repository.dart'; // VectorStoreRepository + VectorStoreException for opt-in RAG packages
 // Agentic skill-executor seam — the opt-in flutter_edge_ai_agent package's
 // SkillExecutor implements this contract and is registered/resolved here.
 export 'core/registry/skill_executor_provider.dart'; // SkillExecutorProvider contract
@@ -42,7 +37,7 @@ export 'core/registry/skill_executor_registry.dart'; // SkillExecutorRegistry (f
 // exception).
 export 'core/registry/hugging_face_resolver.dart'
     show ResolvedHfModel, ResolvedHfFile, ModelRuntimeDefaults;
-export 'core/domain/platform_types.dart'; // PreferredBackend + RAG value types
+export 'core/domain/platform_types.dart'; // PreferredBackend + ActivationDataType
 export 'core/message.dart';
 export 'core/model.dart'; // Export ModelType and other model-related classes
 export 'core/model_response.dart';

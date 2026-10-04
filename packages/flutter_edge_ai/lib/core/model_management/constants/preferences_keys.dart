@@ -68,6 +68,22 @@ class PreferencesKeys {
   static const String activeEmbeddingTokenizerFilename =
       'active_embedding_tokenizer_filename';
 
+  /// Whether [activeEmbeddingFilename] came from an explicit install identity
+  /// rather than the legacy source-derived filename behavior.
+  static const String activeEmbeddingModelFilenameExplicit =
+      'active_embedding_model_filename_explicit';
+
+  /// Whether [activeEmbeddingTokenizerFilename] came from an explicit install
+  /// identity. Restore must not apply legacy tokenizer namespacing when true.
+  static const String activeEmbeddingTokenizerFilenameExplicit =
+      'active_embedding_tokenizer_filename_explicit';
+
+  /// Atomic, versioned JSON record for the complete active embedding identity.
+  /// New code writes only this key; the separate keys above remain a read-only
+  /// fallback for installs created by older releases.
+  static const String activeEmbeddingIdentityRecord =
+      'active_embedding_identity_record';
+
   // ============================================================================
   // Active model source descriptors (web restore needs more than a filename —
   // Cache API / IndexedDB lookups go through the original `ModelSource`)

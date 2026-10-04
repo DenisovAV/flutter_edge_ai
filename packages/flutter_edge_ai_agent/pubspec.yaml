@@ -1,6 +1,6 @@
 name: flutter_edge_ai_agent
 description: "On-device agentic skills (SKILL.md + tool-calling loop) for flutter_edge_ai. Opt-in package adding text/JS/native-intent/MCP skill executors."
-version: 0.2.6
+version: 0.2.7
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_agent
 topics: [agent, skills, llm, tool-calling, on-device]
@@ -33,7 +33,7 @@ dependencies:
   # 1.5.5 added onMaxToolTurns to generateChatResponseWithTools — the reusable
   # tool loop AgentLoop delegates to since 0.2.2; earlier core has no such param
   # and would fail to compile. (1.2.0 first gave the skillExecutors seam.)
-  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai: ^1.12.0
   # SKILL.md frontmatter is YAML; parsed with the standard yaml package.
   yaml: ^3.1.2
   # McpSkillExecutor calls MCP tools over Streamable HTTP (JSON-RPC over POST).

@@ -6,6 +6,7 @@ import 'package:flutter_edge_ai_example/models/base_model.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
+import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
 import 'package:flutter_edge_ai_example/cosine_similarity_screen.dart';
 import 'package:flutter_edge_ai_example/rag_demo_screen.dart';
 
@@ -71,11 +72,21 @@ class _EmbeddingTestScreenState extends State<EmbeddingTestScreen> {
       // Add model source
       switch (widget.model.sourceType) {
         case ModelSourceType.network:
-          builder = builder.modelFromNetwork(widget.model.url, token: token);
+          builder = builder.modelFromNetwork(
+            widget.model.url,
+            token: token,
+            filename: widget.model.filename,
+          );
         case ModelSourceType.asset:
-          builder = builder.modelFromAsset(widget.model.url);
+          builder = builder.modelFromAsset(
+            widget.model.url,
+            filename: widget.model.filename,
+          );
         case ModelSourceType.bundled:
-          builder = builder.modelFromBundled(widget.model.url);
+          builder = builder.modelFromBundled(
+            widget.model.url,
+            filename: widget.model.filename,
+          );
       }
 
       // Add tokenizer source
@@ -84,11 +95,18 @@ class _EmbeddingTestScreenState extends State<EmbeddingTestScreen> {
           builder = builder.tokenizerFromNetwork(
             widget.model.tokenizerUrl,
             token: token,
+            filename: widget.model.tokenizerFilename,
           );
         case ModelSourceType.asset:
-          builder = builder.tokenizerFromAsset(widget.model.tokenizerUrl);
+          builder = builder.tokenizerFromAsset(
+            widget.model.tokenizerUrl,
+            filename: widget.model.tokenizerFilename,
+          );
         case ModelSourceType.bundled:
-          builder = builder.tokenizerFromBundled(widget.model.tokenizerUrl);
+          builder = builder.tokenizerFromBundled(
+            widget.model.tokenizerUrl,
+            filename: widget.model.tokenizerFilename,
+          );
       }
 
       builder = builder
@@ -108,6 +126,7 @@ class _EmbeddingTestScreenState extends State<EmbeddingTestScreen> {
           });
 
       await builder.install();
+      await persistVerifiedEmbeddingCatalogSelection(widget.model);
 
       if (kDebugMode) {
         debugPrint('[EmbeddingTestScreen] Embedding model installed ✅');

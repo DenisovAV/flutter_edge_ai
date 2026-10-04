@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 import 'embed_page.dart';
 import 'rag_store.dart';
@@ -13,10 +14,12 @@ class ChatPage extends StatefulWidget {
   const ChatPage({
     super.key,
     required this.model,
+    required this.ragStore,
     required this.onModelRemoved,
   });
 
   final ModelChoice model;
+  final RagStore ragStore;
 
   /// Lets the gate send the app back to the download screen.
   final VoidCallback onModelRemoved;
@@ -105,7 +108,7 @@ class _ChatPageState extends State<ChatPage> {
       // A search that returns nothing is not an error and not a reason to
       // stop: the model still answers, just from its own weights, and the UI
       // says so by showing no sources under the reply.
-      final hits = await RagStore.search(text);
+      final hits = await widget.ragStore.search(text);
       final prompt = hits.isEmpty
           ? text
           : '''
@@ -204,7 +207,8 @@ Question: $text''';
             tooltip: 'Recipes',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => const EmbedPage(hfToken: hfToken),
+                builder: (_) =>
+                    EmbedPage(hfToken: hfToken, ragStore: widget.ragStore),
               ),
             ),
             icon: const Icon(Icons.restaurant_menu),

@@ -177,6 +177,20 @@ git diff <last-tag> --name-only | grep '/lib/' | cut -d/ -f2 | sort -u
 If empty for a release, the command is wrong — go back and fix it before
 deciding scope.
 
+For RAG releases, treat all three packages as separate publishable units and
+derive their versions from their pubspecs rather than memory:
+
+```bash
+for package in flutter_edge_ai_rag flutter_edge_ai_sqlite flutter_edge_ai_qdrant; do
+  grep -E '^(name|version):' "packages/$package/pubspec.yaml"
+done
+```
+
+The dependency/publish order is `flutter_edge_ai` → `flutter_edge_ai_rag` →
+storage providers (`flutter_edge_ai_sqlite`, `flutter_edge_ai_qdrant`). Publish
+and verify each prerequisite on pub.dev before its dependants; workspace
+resolution and dry-run do not prove the declared hosted floor exists.
+
 If yes → bump pub plugin version, publish to pub.dev. Always true for a release.
 Then **run 1f** for every satellite whose copy of the touched code is stale — a
 fix is not "done" until every duplicate across all 6 packages is patched or
@@ -288,7 +302,8 @@ NEXT_MEDIAPIPE_VERSION"), and run the whole of Steps 2/8/9/10 for each one.
 
 ### 1g. Did a satellite start CALLING a newer core API than its `flutter_edge_ai:` floor allows? → bump the floor
 
-Each satellite (agent / speech / litertlm / mediapipe / embeddings / rag / onnx / builtin_ai)
+Each satellite (agent / speech / litertlm / mediapipe / embeddings /
+`flutter_edge_ai_rag` / sqlite / qdrant / onnx / builtin_ai)
 declares a `flutter_edge_ai: ^X.Y.Z` constraint. In the pub **workspace** the local
 core is always used, so `flutter analyze` / `flutter test` **and
 `dart pub publish --dry-run` all pass with a too-low floor** — everything builds
@@ -670,7 +685,7 @@ dart pub publish --force      # only after user approval; --force is non-interac
 ## Step 10b: Run the Codelabs workflow — after the publish, not before
 
 The codelab step apps depend on **published** packages — a hosted constraint
-such as `flutter_edge_ai: ^1.11.4`, never a `path:` sibling — so their check
+such as `flutter_edge_ai: ^1.12.0`, never a `path:` sibling — so their check
 validates the world users install from rather than this repo's tree. (Floors
 differ per codelab: at 1.8.4 twenty step apps pinned `^1.8.3` and four `^1.8.4`,
 so "the codelabs" are never all on the version you just published.) Two things
@@ -770,7 +785,7 @@ The site hardcodes `^X.Y.Z` in pubspec snippets across the docs — these MUST m
 cd website
 grep -rnE "flutter_edge_ai[a-z_]*: *\^?[0-9]+\.[0-9]+\.[0-9]+" content/
 ```
-Update each `^X.Y.Z` for EVERY package the site pins — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, `flutter_edge_ai_mediapipe`, `flutter_edge_ai_embeddings`, `flutter_edge_ai_qdrant`, `flutter_edge_ai_sqlite`, `flutter_edge_ai_speech`, `flutter_edge_ai_agent`, `flutter_edge_ai_onnx`, `flutter_edge_ai_builtin_ai`, `flutter_edge_ai_diagnostics` — AND the Genkit integration packages (`genkit_flutter_edge_ai`, `genkit_hybrid`) to the just-published versions. Common spots: `installation.md`, `getting-started.md`, `migration.md`, `packages.md`, `genkit.md`. Cross-check against pub.dev so the site never lags the published packages.
+Update each `^X.Y.Z` for EVERY package the site pins — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, `flutter_edge_ai_mediapipe`, `flutter_edge_ai_embeddings`, `flutter_edge_ai_rag`, `flutter_edge_ai_qdrant`, `flutter_edge_ai_sqlite`, `flutter_edge_ai_speech`, `flutter_edge_ai_agent`, `flutter_edge_ai_onnx`, `flutter_edge_ai_builtin_ai`, `flutter_edge_ai_diagnostics` — AND the Genkit integration packages (`genkit_flutter_edge_ai`, `genkit_hybrid`) to the just-published versions. Common spots: `installation.md`, `getting-started.md`, `migration.md`, `packages.md`, `genkit.md`. Cross-check against pub.dev so the site never lags the published packages.
 
 ### 12b. Update docs for any behavior/API change
 - **New / changed public API** → the topic doc that covers it (e.g. a new `createSession` param → `getting-started.md`; multimodal → `multimodal.md`; models → `models.md`).
@@ -870,19 +885,24 @@ litetune` resolves from PyPI. Check PyPI on every release so the instructions do
 not silently remain on an obsolete CLI:
 
 ```bash
+curl -fsSIL https://litetune.dev | grep -E '^HTTP/.* 200'
 LITETUNE_LATEST=$(curl -fsSL https://pypi.org/pypi/litetune/json | \
   python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])')
 printf 'PyPI LiteTune: %s\n' "$LITETUNE_LATEST"
-grep -rnEi 'litetune +v?[0-9]+\.[0-9]+\.[0-9]+' \
-  codelabs website packages --include='*.md' --exclude-dir=build
+grep -rnEi --include='*.md' --exclude-dir=build \
+  'litetune +v?[0-9]+\.[0-9]+\.[0-9]+' codelabs website packages docs
+grep -rnF --include='*.md' --exclude-dir=build \
+  'https://litetune.dev' packages website codelabs docs
 ```
 
 Every current-version claim must equal `$LITETUNE_LATEST`; historical release
 notes may retain the version they describe. If the PyPI version moved, do not
 only replace the number: verify the documented `prepare`, `tune`, `convert`,
 `verify`, and `bundle` commands and their options against that exact release.
-Use [litetune.dev](https://litetune.dev) as the primary user-facing link; the
-GitHub repository may be a secondary source link.
+The HTTP check must succeed, every current version claim must match PyPI, and at
+least one current README/docs fine-tuning entry must link directly to
+[litetune.dev](https://litetune.dev) as the easy fine-tuning source. The GitHub
+repository may be a secondary source link.
 
 ### 12c. Deploy — it's automatic on merge to main
 

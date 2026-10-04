@@ -1,6 +1,6 @@
 // Pure-Dart unit tests for the vec0 filter translator. No sqlite, no FFI —
 // these assert the SQL fragment + bind list shapes only.
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 import 'package:flutter_test/flutter_test.dart';
 

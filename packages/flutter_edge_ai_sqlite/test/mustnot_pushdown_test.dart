@@ -8,7 +8,7 @@
 //
 // So this file asserts on ROWS, from a real vec0 table. Asserting on generated
 // SQL cannot distinguish a filter that runs from one that is thrown away.
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:ffi';
@@ -51,7 +51,7 @@ void main() {
       ''');
     });
 
-    tearDown(() => db.dispose());
+    tearDown(() => db.close());
 
     List<String> search(Filter filter, FilterSchema schema, {int k = 2}) {
       final t = FilterToVec0.translate(filter, schema);

@@ -39,7 +39,7 @@
 //   flutter test test/cross_backend_parity_test.dart
 import 'dart:io';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -67,12 +67,18 @@ void main() {
       sqlite = SqliteVectorStore();
       sqlite.configure(schema);
       await sqlite.initialize('${tmp.path}/vec.db');
+      final profile = EmbeddingProfile(
+        id: 'cross-backend-parity-v1',
+        dimension: embedding.length,
+      );
+      await sqlite.bindEmbeddingProfile(profile);
 
       // qdrant needs no override: the official qdrant_edge SDK's own Native
       // Assets build hook resolves its native library automatically.
       final q = QdrantVectorStore();
       q.configure(schema);
       await q.initialize('${tmp.path}/shard');
+      await q.bindEmbeddingProfile(profile);
       qdrant = q;
 
       for (final doc in docs) {

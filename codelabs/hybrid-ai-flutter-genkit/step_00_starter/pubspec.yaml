@@ -17,7 +17,7 @@ dependencies:
   # genkit_google_genai: ^0.3.1
 
   # Step 3: Uncomment to add On-device AI (LiteRT-LM engine)
-  # genkit_flutter_edge_ai: ^0.6.2
+  # genkit_flutter_edge_ai: ^0.6.3
 
 dev_dependencies:
   flutter_test:

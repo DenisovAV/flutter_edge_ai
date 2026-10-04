@@ -9,6 +9,11 @@ LLaVA-OneVision, Gemma 3, FunctionGemma, Qwen3, Qwen 2.5, Phi-4 (incl. Phi-4 Min
 Reasoning), DeepSeek R1, SmolLM, SmolLM3 and more. Desktop platforms (macOS,
 Windows, Linux) require the `.litertlm` model format.
 
+For a small custom model, [LiteTune](https://litetune.dev) provides the easier
+end-to-end path from Hugging Face data/checkpoints through fine-tuning,
+`.litertlm` conversion, verification, and bundling. It is alpha software, so
+verify the converted model on the devices and backends you plan to ship.
+
 ## Model file types
 
 Flutter Edge AI supports different model file formats, grouped into **two types**
@@ -63,7 +68,7 @@ model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 |---|:---:|:---:|:---:|:---:|---|
 | `.task` | ✅ | ✅ | ✅ | ❌ | Older models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) |
 | `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Newer models (Gemma 4, Qwen3, FastVLM + desktop for all) |
-| `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific builds (e.g. Gemma 4, Gemma3n) |
+| `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4 in the current catalog) |
 | `.bin` | ✅ | ✅ | ✅ | ❌ | Manual chat template formatting required |
 | `.tflite` | ✅ | ✅ | ✅ | ✅ | Embeddings only (EmbeddingGemma, Gecko) |
 | `builtIn` (no file) | ✅ | ✅ | ✅ | ⚠️ ³ | OS/browser model — [Built-in AI](/docs/builtin-ai) |
@@ -73,7 +78,8 @@ devices. The Simulator stays CPU-only because Metal sim has a 256 MB
 single-allocation cap.
 
 ² Web `.litertlm` is an **early preview** via `@litert-lm/core` — text plus function calling. No
-vision, audio, thinking or LoRA; see the feature matrix in
+vision, audio, the Gemma 4 thinking channel, or LoRA; Qwen3 reasoning tags are
+still parsed when the model emits them. See the feature matrix in
 [Troubleshooting](/docs/troubleshooting). For full multimodal on web, use a
 MediaPipe `.task` build.
 

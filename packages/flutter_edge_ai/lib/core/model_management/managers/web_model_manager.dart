@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/infrastructure/web_file_system_service.dart';
 import 'package:flutter_edge_ai/core/infrastructure/web_download_service.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/core/model_management/active_embedding_identity.dart';
 import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 
@@ -26,7 +27,22 @@ import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 /// - No code duplication
 /// - Platform-agnostic (same pattern as MobileModelManager)
 /// - Easier to maintain and test
-class WebModelManager extends ModelFileManager {
+class WebModelManager extends ModelFileManager
+    implements
+        AwaitableEmbeddingModelActivation,
+        ActiveEmbeddingIdentityObserver {
+  WebModelManager({
+    ActiveEmbeddingIdentityPersistence? activeEmbeddingIdentityPersistence,
+  }) : _activeEmbeddingIdentityCoordinator =
+           ActiveEmbeddingIdentityCoordinator.shared(
+             activeEmbeddingIdentityPersistence ??
+                 const SharedPreferencesActiveEmbeddingIdentityPersistence(),
+           ) {
+    _activeEmbeddingIdentityCoordinator.registerObserver(this);
+  }
+
+  final ActiveEmbeddingIdentityCoordinator _activeEmbeddingIdentityCoordinator;
+
   /// Single-flight init guard. Cached so concurrent callers share one
   /// initialization; a restore failure degrades to "no active model" rather
   /// than throwing, so a corrupt/unreadable prefs state never blocks app
@@ -210,7 +226,52 @@ class WebModelManager extends ModelFileManager {
   }
 
   Future<void> _restoreActiveEmbeddingModel() async {
+    final lease = await _activeEmbeddingIdentityCoordinator.readLease();
+    if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+    final encodedRecord = lease.encodedRecord;
+    if (encodedRecord != null) {
+      final record = ActiveEmbeddingIdentityRecord.tryDecode(encodedRecord);
+      if (record != null) {
+        if (!record.active) return;
+        final repository = ServiceRegistry.instance.modelRepository;
+        final modelInstalled = await repository.isInstalled(
+          record.modelFilename!,
+        );
+        if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+        final tokenizerInstalled = await repository.isInstalled(
+          record.tokenizerFilename!,
+        );
+        if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+        if (!modelInstalled || !tokenizerInstalled) {
+          edgeAiLog(
+            '[WebModelManager] active embedding record: file missing — skipping',
+          );
+          return;
+        }
+        final restoredSpec = record.toSpec();
+        if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+        _publishCommittedEmbeddingSpec(restoredSpec, lease.generation);
+        edgeAiLog(
+          '[WebModelManager] restored active embedding record: '
+          '${record.modelFilename}',
+        );
+        return;
+      }
+      edgeAiLog(
+        '[WebModelManager] active embedding record malformed or unsupported — '
+        'failing closed',
+      );
+      return;
+    }
+
+    await _restoreLegacyActiveEmbeddingModel(lease);
+  }
+
+  Future<void> _restoreLegacyActiveEmbeddingModel(
+    ActiveEmbeddingIdentityReadLease lease,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
+    if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
     final modelFilename = prefs.getString(
       PreferencesKeys.activeEmbeddingFilename,
     );
@@ -240,32 +301,59 @@ class WebModelManager extends ModelFileManager {
       return;
     }
 
-    // The model weight keeps its plain basename (only companions are
-    // namespaced); migrate a pre-refactor plain tokenizer to its namespaced
-    // repo identity so the reconstructed spec's namespaced .files lookup finds
-    // it. No-op for post-refactor installs.
-    final effectiveTokenizerFilename = await _migrateLegacyCompanionForRestore(
-      modelId: FileNameUtils.getBaseName(modelFilename),
-      persistedFilename: tokenizerFilename,
-      source: tokenizerSource,
-      repoType: repo.ModelType.embedding,
-      prefsKey: PreferencesKeys.activeEmbeddingTokenizerFilename,
-    );
+    final modelFilenameExplicit =
+        prefs.getBool(PreferencesKeys.activeEmbeddingModelFilenameExplicit) ??
+        false;
+    final tokenizerFilenameExplicit =
+        prefs.getBool(
+          PreferencesKeys.activeEmbeddingTokenizerFilenameExplicit,
+        ) ??
+        false;
+    // Only source-derived tokenizer identities are eligible for the one-time
+    // pre-namespacing migration. Explicit artifact identities are already
+    // authoritative and must not be re-keyed from their basename.
+    final effectiveTokenizerFilename = tokenizerFilenameExplicit
+        ? tokenizerFilename
+        : await _migrateLegacyCompanionForRestore(
+            modelId: FileNameUtils.getBaseName(modelFilename),
+            persistedFilename: tokenizerFilename,
+            source: tokenizerSource,
+            repoType: repo.ModelType.embedding,
+            prefsKey: PreferencesKeys.activeEmbeddingTokenizerFilename,
+          );
+    if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
 
     final repository = ServiceRegistry.instance.modelRepository;
-    if (!await repository.isInstalled(modelFilename) ||
-        !await repository.isInstalled(effectiveTokenizerFilename)) {
+    final modelInstalled = await repository.isInstalled(modelFilename);
+    if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+    final tokenizerInstalled = await repository.isInstalled(
+      effectiveTokenizerFilename,
+    );
+    if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+    if (!modelInstalled || !tokenizerInstalled) {
       edgeAiLog(
         '[WebModelManager] active embedding restore: file missing — skipping',
       );
       return;
     }
 
-    _activeEmbeddingModel = EmbeddingModelSpec(
+    final restoredSpec = EmbeddingModelSpec(
       name: modelFilename,
       modelSource: modelSource,
       tokenizerSource: tokenizerSource,
+      modelFilename: modelFilenameExplicit ? modelFilename : null,
+      tokenizerFilename: tokenizerFilenameExplicit
+          ? effectiveTokenizerFilename
+          : null,
     );
+    if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+    final mutation = _activeEmbeddingIdentityCoordinator.enqueueOrThrow(
+      ActiveEmbeddingIdentityRecord.fromSpec(restoredSpec),
+    );
+    final committed = await mutation.committed;
+    if (committed) {
+      _publishCommittedEmbeddingSpec(restoredSpec, mutation.generation);
+    }
     edgeAiLog(
       '[WebModelManager] restored active embedding model: $modelFilename',
     );
@@ -387,7 +475,7 @@ class WebModelManager extends ModelFileManager {
     if (spec is InferenceModelSpec &&
         (spec.fileType == ModelFileType.onnx ||
             spec.fileType == ModelFileType.builtIn)) {
-      setActiveModel(spec);
+      await _setActiveModelAwaited(spec);
       yield const DownloadProgress(
         currentFileIndex: 1,
         totalFiles: 1,
@@ -449,7 +537,7 @@ class WebModelManager extends ModelFileManager {
     }
 
     // Set as active after successful download
-    setActiveModel(spec);
+    await _setActiveModelAwaited(spec);
 
     // Emit final progress
     yield DownloadProgress(
@@ -731,7 +819,7 @@ class WebModelManager extends ModelFileManager {
       }
     }
 
-    setActiveModel(spec);
+    await _setActiveModelAwaited(spec);
   }
 
   /// Legacy API: Ensures a model is ready for use, handling all necessary operations
@@ -846,6 +934,8 @@ class WebModelManager extends ModelFileManager {
   // Active models (modern API)
   ModelSpec? _activeInferenceModel;
   ModelSpec? _activeEmbeddingModel;
+  int? _activeEmbeddingIdentityGeneration;
+  bool _activeEmbeddingIdentityOptimistic = false;
   ModelSpec? _activeSttModel;
   ModelSpec? _activeTtsModel;
 
@@ -1047,14 +1137,11 @@ class WebModelManager extends ModelFileManager {
 
   @override
   Future<void> clearActiveEmbeddingIdentity() async {
-    await _ensureInitialized();
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(PreferencesKeys.activeEmbeddingFilename);
-      await prefs.remove(PreferencesKeys.activeEmbeddingTokenizerFilename);
-      await prefs.remove(PreferencesKeys.activeEmbeddingSource);
-      await prefs.remove(PreferencesKeys.activeEmbeddingTokenizerSource);
-      _activeEmbeddingModel = null;
+      final mutation = _activeEmbeddingIdentityCoordinator.enqueueOrThrow(
+        const ActiveEmbeddingIdentityRecord.cleared(),
+      );
+      await mutation.committed;
     } catch (e) {
       edgeAiLog('[WebModelManager] clearActiveEmbeddingIdentity failed: $e');
       rethrow;
@@ -1168,9 +1255,21 @@ class WebModelManager extends ModelFileManager {
       edgeAiLog('✅ Set active inference model: ${spec.name}');
       unawaited(_persistActiveInferenceIdentity(spec));
     } else if (spec is EmbeddingModelSpec) {
+      final mutation = _tryEnqueueActiveEmbeddingIdentity(spec);
+      if (mutation == null) {
+        _clearActiveEmbeddingSpec();
+        edgeAiLog(
+          '[WebModelManager] Cannot activate embedding model "${spec.name}": '
+          'active-identity persistence is unavailable after a previous write '
+          'failure. Reload the app before retrying.',
+        );
+        return;
+      }
       _activeEmbeddingModel = spec;
+      _activeEmbeddingIdentityGeneration = mutation.generation;
+      _activeEmbeddingIdentityOptimistic = true;
       edgeAiLog('✅ Set active embedding model: ${spec.name}');
-      unawaited(_persistActiveEmbeddingIdentity(spec));
+      unawaited(_completeOptimisticEmbeddingActivation(spec, mutation));
     } else if (spec is SttModelSpec) {
       _activeSttModel = spec;
       edgeAiLog('✅ Set active STT model: ${spec.name}');
@@ -1182,6 +1281,81 @@ class WebModelManager extends ModelFileManager {
       edgeAiLog('✅ Set active TTS model (web, in-memory only): ${spec.name}');
     } else {
       throw ArgumentError('Unknown ModelSpec type: ${spec.runtimeType}');
+    }
+  }
+
+  @override
+  Future<void> setActiveEmbeddingModel(EmbeddingModelSpec spec) async {
+    final mutation = _enqueueActiveEmbeddingIdentity(spec);
+    final committed = await mutation.committed;
+    if (committed) {
+      _publishCommittedEmbeddingSpec(spec, mutation.generation);
+      edgeAiLog('✅ Set active embedding model: ${spec.name}');
+    }
+  }
+
+  @override
+  void onActiveEmbeddingIdentityEnqueued(int generation) {
+    if (_activeEmbeddingIdentityOptimistic &&
+        _activeEmbeddingIdentityGeneration != generation) {
+      _clearActiveEmbeddingSpec();
+    }
+  }
+
+  @override
+  void onActiveEmbeddingIdentityCommitted(
+    ActiveEmbeddingIdentityRecord record,
+    int generation,
+  ) {
+    _clearActiveEmbeddingSpec();
+  }
+
+  @override
+  void onActiveEmbeddingIdentityPoisoned() {
+    _clearActiveEmbeddingSpec();
+  }
+
+  void _publishCommittedEmbeddingSpec(EmbeddingModelSpec spec, int generation) {
+    _activeEmbeddingModel = spec;
+    _activeEmbeddingIdentityGeneration = generation;
+    _activeEmbeddingIdentityOptimistic = false;
+  }
+
+  void _clearActiveEmbeddingSpec() {
+    _activeEmbeddingModel = null;
+    _activeEmbeddingIdentityGeneration = null;
+    _activeEmbeddingIdentityOptimistic = false;
+  }
+
+  Future<void> _completeOptimisticEmbeddingActivation(
+    EmbeddingModelSpec spec,
+    ActiveEmbeddingIdentityMutation mutation,
+  ) async {
+    var committed = false;
+    try {
+      committed = await mutation.committed;
+      if (committed) {
+        _publishCommittedEmbeddingSpec(spec, mutation.generation);
+      }
+    } catch (error) {
+      edgeAiLog(
+        '[WebModelManager] Embedding activation persistence failed; the model '
+        'was not activated. Reload the app before retrying: $error',
+      );
+    } finally {
+      if (!committed &&
+          _activeEmbeddingIdentityOptimistic &&
+          _activeEmbeddingIdentityGeneration == mutation.generation) {
+        _clearActiveEmbeddingSpec();
+      }
+    }
+  }
+
+  Future<void> _setActiveModelAwaited(ModelSpec spec) async {
+    if (spec is EmbeddingModelSpec) {
+      await setActiveEmbeddingModel(spec);
+    } else {
+      setActiveModel(spec);
     }
   }
 
@@ -1223,38 +1397,17 @@ class WebModelManager extends ModelFileManager {
     }
   }
 
-  Future<void> _persistActiveEmbeddingIdentity(EmbeddingModelSpec spec) async {
-    try {
-      final modelFile = spec.files.firstWhere(
-        (f) => f.prefsKey == PreferencesKeys.embeddingModelFile,
-      );
-      final tokenizerFile = spec.files.firstWhere(
-        (f) => f.prefsKey == PreferencesKeys.embeddingTokenizerFile,
-      );
-      final prefs = await SharedPreferences.getInstance();
-      // One burst — see _persistActiveInferenceIdentity for why (#468).
-      await Future.wait([
-        prefs.setString(
-          PreferencesKeys.activeEmbeddingFilename,
-          modelFile.filename,
-        ),
-        prefs.setString(
-          PreferencesKeys.activeEmbeddingTokenizerFilename,
-          tokenizerFile.filename,
-        ),
-        prefs.setString(
-          PreferencesKeys.activeEmbeddingSource,
-          spec.modelSource.encode(),
-        ),
-        prefs.setString(
-          PreferencesKeys.activeEmbeddingTokenizerSource,
-          spec.tokenizerSource.encode(),
-        ),
-      ]);
-    } catch (e) {
-      edgeAiLog('[WebModelManager] persistActiveEmbeddingIdentity failed: $e');
-    }
-  }
+  ActiveEmbeddingIdentityMutation _enqueueActiveEmbeddingIdentity(
+    EmbeddingModelSpec spec,
+  ) => _activeEmbeddingIdentityCoordinator.enqueueOrThrow(
+    ActiveEmbeddingIdentityRecord.fromSpec(spec),
+  );
+
+  ActiveEmbeddingIdentityMutation? _tryEnqueueActiveEmbeddingIdentity(
+    EmbeddingModelSpec spec,
+  ) => _activeEmbeddingIdentityCoordinator.enqueue(
+    ActiveEmbeddingIdentityRecord.fromSpec(spec),
+  );
 
   Future<void> _persistActiveSttIdentity(SttModelSpec spec) async {
     try {

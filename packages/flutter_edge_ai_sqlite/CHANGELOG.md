@@ -1,3 +1,6 @@
+## 1.5.0
+- Add pluggable RAG provider selection and durable embedding-profile binding.
+
 ## 1.4.0
 - Renamed from `flutter_gemma_rag_sqlite`.
 - Require sqlite3 3.6.0 (needs Flutter 3.47): web `flush()` awaits in-flight writes.

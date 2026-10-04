@@ -21,10 +21,13 @@ dependencies:
   flutter_edge_ai_builtin_ai: latest_version   # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS) / Windows AI Foundry / Chrome Prompt API (Web)
   flutter_edge_ai_onnx: latest_version         # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
 
-  # Optional — text embeddings + on-device RAG:
+  # Optional — text-embedding tokenizer implementations:
   flutter_edge_ai_embeddings: latest_version   # text-embedding pipeline (needs a backend, e.g. LiteRtEmbeddingBackend above)
-  flutter_edge_ai_qdrant: latest_version   # RAG vector store (qdrant-edge; fastest on native)
-  flutter_edge_ai_sqlite: latest_version   # RAG vector store (sqlite-vec / vec0; all platforms, incl. web)
+
+  # Optional — independent RAG orchestration plus one storage provider:
+  flutter_edge_ai_rag: latest_version       # RagIndex, profiles, filters
+  flutter_edge_ai_qdrant: latest_version    # qdrant-edge; fastest on native
+  flutter_edge_ai_sqlite: latest_version    # sqlite-vec / vec0; all platforms incl. web
 
   # Optional — on-device speech (STT + TTS):
   flutter_edge_ai_speech: latest_version       # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
@@ -46,19 +49,21 @@ dependencies:
 | Run ONNX models — ORT-GenAI (native) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
 | Generate text embeddings | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
-| On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_qdrant` |
-| On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_sqlite` |
+| On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
+| On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Run on-device agent skills the model executes itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
 | Measure what a model costs in memory the OS cannot reclaim (Android + iOS) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
 
-Core registers **no** engine by itself — you wire the packages you added in
-`await FlutterEdgeAi.initialize(...)` (below). Run `flutter pub get` to install.
+Core registers **no** AI runtime by itself — wire inference, embedding, and
+speech packages in `FlutterEdgeAi.initialize(...)` below. RAG is independent:
+construct `FlutterEdgeAiRag` with a storage provider. Run `flutter pub get` to
+install.
 
 <Info>
-**Migrating from 0.16.x (monolith)?** See the [Migration guide](/docs/migration) —
-the only breaking change is adding the opt-in packages and the `initialize(...)`
-call; every model / session / RAG API is unchanged.
+**Migrating from `flutter_gemma` or Flutter Edge AI 1.x?** See the
+[Migration guide](/docs/migration). Version 1.12 moves RAG out of core and adds
+durable embedding profiles.
 </Info>
 
 ## 2. Initialize Flutter Edge AI
@@ -76,7 +81,6 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_mediapipe/flutter_edge_ai_mediapipe.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
-import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -88,7 +92,7 @@ void main() async {
       MediaPipeEngine(),    // flutter_edge_ai_mediapipe — .task / .bin models
       BuiltInAiEngine(),    // flutter_edge_ai_builtin_ai — Gemini Nano / Apple FM
     ],
-    // Optional — embeddings (needed for RAG / generateEmbedding):
+    // Optional — embeddings (also usable by an independent RAG index):
     embeddingBackends: const [
       LiteRtEmbeddingBackend(), // flutter_edge_ai_litertlm
     ],
@@ -105,9 +109,6 @@ void main() async {
     ttsBackends: const [
       LiteRtTtsBackend(), // flutter_edge_ai_speech
     ],
-    // Optional — RAG vector store (pick one; native here):
-    vectorStore: QdrantVectorStore(), // flutter_edge_ai_qdrant
-
     // Common settings:
     // String.fromEnvironment yields '' when the define is absent, and an
     // empty token still sends a bare `Authorization: Bearer` header. Pass
@@ -134,15 +135,12 @@ void main() async {
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by BOTH embedding backends above |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |
-| `vectorStore: QdrantVectorStore()` | `flutter_edge_ai_qdrant` | native RAG |
-| `vectorStore: SqliteVectorStore()` / `WebSqliteVectorStore()` | `flutter_edge_ai_sqlite` | sqlite-vec RAG (all platforms; `WebSqliteVectorStore()` on web) |
 
-Add only the engines you ship. Passing both `LiteRtLmEngine()` and
+Add only the runtimes you ship. Passing both `LiteRtLmEngine()` and
 `MediaPipeEngine()` lets one app run both formats — the registry routes each
-model to the engine that handles its file type. The `sqlite-vec` store runs on
-every platform — use `vectorStore: SqliteVectorStore()` on native and
-`WebSqliteVectorStore()` on web. `flutter_edge_ai_qdrant` is native-only (and
-the fastest option there).
+model to the engine that handles its file type. For RAG, register
+`SqliteVectorStoreProvider()` or `QdrantVectorStoreProvider()` on a separate
+`FlutterEdgeAiRag` instance; see [Embeddings & RAG](/docs/embeddings-and-rag).
 
 **Common settings:**
 

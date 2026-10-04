@@ -3,6 +3,78 @@ import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 
 void main() {
   group('FileNameUtils', () {
+    group('validatePortableFileNameSegment', () {
+      test('accepts portable artifact filenames unchanged', () {
+        for (final filename in [
+          'model__rev-abc123.tflite',
+          'sentencepiece.model',
+          'console.bin',
+          'COM10.bin',
+          'model..bin',
+        ]) {
+          expect(
+            FileNameUtils.validatePortableFileNameSegment(filename),
+            filename,
+          );
+        }
+      });
+
+      test(
+        'rejects empty, dot-only, separators, controls, and Windows chars',
+        () {
+          for (final filename in [
+            '',
+            '.',
+            '..',
+            'dir/model.bin',
+            r'dir\model.bin',
+            'model\u0000.bin',
+            'model\u001f.bin',
+            'model\u007f.bin',
+            'model\u0085.bin',
+            'model<1.bin',
+            'model>1.bin',
+            'model:1.bin',
+            'model"1.bin',
+            'model|1.bin',
+            'model?1.bin',
+            'model*1.bin',
+            'model.bin.',
+            'model.bin ',
+          ]) {
+            expect(
+              () => FileNameUtils.validatePortableFileNameSegment(filename),
+              throwsArgumentError,
+              reason: 'must reject ${filename.codeUnits}',
+            );
+          }
+        },
+      );
+
+      test(
+        'rejects Windows device basenames case-insensitively with extensions',
+        () {
+          for (final filename in [
+            'CON',
+            'con.bin',
+            'PrN.model',
+            'AUX.json',
+            'nul.tflite',
+            'COM1.bin',
+            'com9.anything.more',
+            'LPT1',
+            'lPt9.model',
+          ]) {
+            expect(
+              () => FileNameUtils.validatePortableFileNameSegment(filename),
+              throwsArgumentError,
+              reason: 'must reject $filename',
+            );
+          }
+        },
+      );
+    });
+
     group('getBaseName', () {
       test('removes .task extension', () {
         expect(FileNameUtils.getBaseName('gemma-2b.task'), 'gemma-2b');

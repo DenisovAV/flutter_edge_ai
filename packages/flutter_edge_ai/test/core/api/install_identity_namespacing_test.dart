@@ -6,6 +6,7 @@
 //
 // Run: flutter test test/core/api/install_identity_namespacing_test.dart
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -17,11 +18,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/domain/model_source.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/core/model_management/active_embedding_identity.dart';
 import 'package:flutter_edge_ai/core/services/download_service.dart';
 import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
-    show MobileModelManager;
+    show FlutterEdgeAiMobile, MobileModelManager;
 
 // FileSourceHandler enforces a minimum size per extension (1MB for model
 // files, 1KB for small/config extensions like .json) to catch truncated
@@ -114,6 +116,721 @@ void main() {
           isTrue,
         );
         expect(await repository.isInstalled('sentencepiece.model'), isFalse);
+      },
+    );
+
+    test(
+      'EmbeddingInstallationBuilder honors versioned artifact identities',
+      () async {
+        await ServiceRegistry.initialize();
+
+        final modelFile = File(path.join(sourceDir.path, 'model.tflite'));
+        await modelFile.writeAsBytes(_fakeModelBytes);
+        final tokenizerFile = File(
+          path.join(sourceDir.path, 'sentencepiece.model'),
+        );
+        await tokenizerFile.writeAsBytes(_fakeCompanionBytes);
+
+        await FlutterEdgeAi.installEmbedder()
+            .modelFromFile(modelFile.path, filename: 'model__rev-abc123.tflite')
+            .tokenizerFromFile(
+              tokenizerFile.path,
+              filename: 'sentencepiece__rev-abc123.model',
+            )
+            .install();
+
+        final repository = ServiceRegistry.instance.modelRepository;
+        expect(
+          await repository.isInstalled('model__rev-abc123.tflite'),
+          isTrue,
+        );
+        expect(
+          await repository.isInstalled('sentencepiece__rev-abc123.model'),
+          isTrue,
+        );
+        expect(await repository.isInstalled('model.tflite'), isFalse);
+        expect(await repository.isInstalled('sentencepiece.model'), isFalse);
+      },
+    );
+
+    test(
+      'explicit embedding identities survive a native restart unchanged',
+      () async {
+        final fixtureDownload = _FixtureDownloadService(_fakeModelBytes);
+        await ServiceRegistry.initialize(downloadService: fixtureDownload);
+
+        const modelIdentity = 'weights__rev-abc123.tflite';
+        const tokenizerIdentity = 'tokenizer__rev-abc123.model';
+        await FlutterEdgeAi.installEmbedder()
+            .modelFromNetwork(
+              'https://example.com/model.tflite',
+              filename: modelIdentity,
+            )
+            .tokenizerFromNetwork(
+              'https://example.com/sentencepiece.model',
+              filename: tokenizerIdentity,
+            )
+            .install();
+
+        final prefs = await SharedPreferences.getInstance();
+        final persisted = ActiveEmbeddingIdentityRecord.tryDecode(
+          prefs.getString(PreferencesKeys.activeEmbeddingIdentityRecord),
+        );
+        expect(persisted, isNotNull);
+        expect(persisted!.modelFilenameExplicit, isTrue);
+        expect(persisted.tokenizerFilenameExplicit, isTrue);
+        expect(persisted.modelFilename, modelIdentity);
+        expect(persisted.tokenizerFilename, tokenizerIdentity);
+        expect(
+          persisted.modelSource,
+          ModelSource.network('https://example.com/model.tflite').encode(),
+        );
+        expect(
+          persisted.tokenizerSource,
+          ModelSource.network(
+            'https://example.com/sentencepiece.model',
+          ).encode(),
+        );
+        expect(
+          prefs.getString(PreferencesKeys.activeEmbeddingFilename),
+          isNull,
+          reason: 'new installs persist one atomic record, not legacy pieces',
+        );
+        expect(
+          prefs.getString(PreferencesKeys.activeEmbeddingTokenizerFilename),
+          isNull,
+        );
+
+        final freshManager = MobileModelManager();
+        await freshManager.initialize();
+
+        final restored = freshManager.activeEmbeddingModel;
+        expect(restored, isA<EmbeddingModelSpec>());
+        final embeddingSpec = restored! as EmbeddingModelSpec;
+        expect(embeddingSpec.modelFilename, modelIdentity);
+        expect(embeddingSpec.tokenizerFilename, tokenizerIdentity);
+        expect(embeddingSpec.files.map((file) => file.filename), [
+          modelIdentity,
+          tokenizerIdentity,
+        ]);
+        final repository = ServiceRegistry.instance.modelRepository;
+        expect(await repository.isInstalled(tokenizerIdentity), isTrue);
+        expect(
+          await repository.isInstalled(
+            'weights__rev-abc123__tokenizer__rev-abc123.model',
+          ),
+          isFalse,
+          reason: 'restore must not relabel an explicit tokenizer identity',
+        );
+
+        await freshManager.clearActiveEmbeddingIdentity();
+        final cleared = ActiveEmbeddingIdentityRecord.tryDecode(
+          prefs.getString(PreferencesKeys.activeEmbeddingIdentityRecord),
+        );
+        expect(cleared, isNotNull);
+        expect(cleared!.active, isFalse);
+        final afterClear = MobileModelManager();
+        await afterClear.initialize();
+        expect(afterClear.activeEmbeddingModel, isNull);
+      },
+    );
+
+    test(
+      'delayed older persistence cannot overwrite a rapid model switch',
+      () async {
+        final persistence = _DelayedEmbeddingIdentityPersistence();
+        final firstManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final secondManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final first = EmbeddingModelSpec(
+          name: 'first',
+          modelSource: NetworkSource('https://example.com/first.tflite'),
+          tokenizerSource: NetworkSource(
+            'https://example.com/first-tokenizer.model',
+          ),
+          modelFilename: 'first__rev-1.tflite',
+          tokenizerFilename: 'first-tokenizer__rev-1.model',
+        );
+        final second = EmbeddingModelSpec(
+          name: 'second',
+          modelSource: NetworkSource('https://example.com/second.tflite'),
+          tokenizerSource: NetworkSource(
+            'https://example.com/second-tokenizer.model',
+          ),
+          modelFilename: 'second__rev-2.tflite',
+          tokenizerFilename: 'second-tokenizer__rev-2.model',
+        );
+
+        firstManager.setActiveModel(first);
+        await persistence.firstWriteStarted.future;
+        final secondWrite = secondManager.setActiveEmbeddingModel(second);
+        persistence.releaseFirstWrite.complete();
+        await secondWrite;
+
+        final persisted = ActiveEmbeddingIdentityRecord.tryDecode(
+          persistence.encodedRecord,
+        );
+        expect(persisted!.modelFilename, 'second__rev-2.tflite');
+        expect(firstManager.activeEmbeddingModel, isNull);
+        expect(secondManager.activeEmbeddingModel, second);
+      },
+    );
+
+    test('legacy setActiveModel exposes embedding synchronously', () async {
+      final persistence = _DelayedEmbeddingIdentityPersistence();
+      final manager = MobileModelManager(
+        activeEmbeddingIdentityPersistence: persistence,
+      );
+      final spec = _embeddingSpecForTest('immediate');
+
+      manager.setActiveModel(spec);
+
+      expect(manager.activeEmbeddingModel, same(spec));
+      await persistence.firstWriteStarted.future;
+      persistence.releaseFirstWrite.complete();
+      await pumpEventQueue();
+      expect(manager.activeEmbeddingModel, same(spec));
+    });
+
+    test(
+      'legacy optimistic embedding is invalidated on persistence failure',
+      () async {
+        final persistence = _RejectedEmbeddingIdentityPersistence();
+        final manager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final spec = _embeddingSpecForTest('optimistic-failure');
+
+        manager.setActiveModel(spec);
+        expect(manager.activeEmbeddingModel, same(spec));
+        await persistence.reloadCompleted.future;
+        await pumpEventQueue();
+
+        expect(manager.activeEmbeddingModel, isNull);
+      },
+    );
+
+    test(
+      'throwing atomic write reloads cache and poisons every mobile manager',
+      () async {
+        final backing = _EmbeddingIdentityPersistenceBacking();
+        final persistence = _ScriptedEmbeddingIdentityPersistence(
+          backing,
+          failureMode: _EmbeddingIdentityWriteFailure.throwAfterCacheMutation,
+        );
+        final firstManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final secondManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+
+        firstManager.setActiveModel(_embeddingSpecForTest('throwing'));
+        expect(firstManager.activeEmbeddingModel, isNotNull);
+        await persistence.reloadCompleted.future;
+        await pumpEventQueue();
+
+        expect(firstManager.activeEmbeddingModel, isNull);
+        expect(secondManager.activeEmbeddingModel, isNull);
+        expect(backing.cachedRecord, backing.durableRecord);
+        await expectLater(
+          secondManager.setActiveEmbeddingModel(
+            _embeddingSpecForTest('blocked-after-throw'),
+          ),
+          throwsA(
+            isA<ActiveEmbeddingIdentityPersistenceException>()
+                .having(
+                  (error) => error.writeFailure,
+                  'writeFailure',
+                  isA<StateError>(),
+                )
+                .having(
+                  (error) => error.reloadFailure,
+                  'reloadFailure',
+                  isNull,
+                ),
+          ),
+        );
+
+        final freshPersistence = _ScriptedEmbeddingIdentityPersistence(backing);
+        expect(
+          (await ActiveEmbeddingIdentityCoordinator.shared(
+            freshPersistence,
+          ).readLease()).encodedRecord,
+          isNull,
+        );
+      },
+    );
+
+    for (final failureMode in _EmbeddingIdentityWriteFailure.values) {
+      test('superseded durable A plus ${failureMode.name} B fails closed on '
+          'mobile and a fresh coordinator restores only A', () async {
+        final backing = _EmbeddingIdentityPersistenceBacking();
+        final persistence = _ScriptedEmbeddingIdentityPersistence(
+          backing,
+          delayFirstSuccess: true,
+          failureMode: failureMode,
+        );
+        final firstManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final secondManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final first = _embeddingSpecForTest('durable-a-${failureMode.name}');
+        final second = _embeddingSpecForTest('failed-b-${failureMode.name}');
+
+        firstManager.setActiveModel(first);
+        await persistence.firstWriteStarted.future;
+        final failedSecond = secondManager.setActiveEmbeddingModel(second);
+        persistence.releaseFirstWrite.complete();
+        await expectLater(
+          failedSecond,
+          throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
+        );
+
+        expect(firstManager.activeEmbeddingModel, isNull);
+        expect(secondManager.activeEmbeddingModel, isNull);
+        expect(backing.cachedRecord, backing.durableRecord);
+        final durable = ActiveEmbeddingIdentityRecord.tryDecode(
+          backing.durableRecord,
+        );
+        expect(durable, isNotNull);
+        expect(durable!.name, first.name);
+        await expectLater(
+          firstManager.setActiveEmbeddingModel(
+            _embeddingSpecForTest('rejected-after-${failureMode.name}'),
+          ),
+          throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
+        );
+
+        await ServiceRegistry.initialize(
+          fileSystemService: _AlwaysExistingFileSystemService(),
+        );
+        final freshManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence:
+              _ScriptedEmbeddingIdentityPersistence(backing),
+        );
+        await freshManager.initialize();
+        expect(freshManager.activeEmbeddingModel?.name, first.name);
+      });
+    }
+
+    test(
+      'suspended native restore cannot publish after concurrent clear',
+      () async {
+        final oldSpec = _embeddingSpecForTest('restore-old');
+        final persistence = _MemoryEmbeddingIdentityPersistence()
+          ..encodedRecord = ActiveEmbeddingIdentityRecord.fromSpec(
+            oldSpec,
+          ).encode();
+        final fileSystem = _SuspendingFileSystemService();
+        await ServiceRegistry.initialize(fileSystemService: fileSystem);
+        final restoringManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final clearingManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+
+        final restoring = restoringManager.initialize();
+        await fileSystem.firstFileCheckStarted.future;
+        final clearing = clearingManager.clearActiveEmbeddingIdentity();
+        fileSystem.releaseFirstFileCheck.complete();
+        await Future.wait([restoring, clearing]);
+
+        expect(restoringManager.activeEmbeddingModel, isNull);
+        expect(clearingManager.activeEmbeddingModel, isNull);
+        expect(
+          ActiveEmbeddingIdentityRecord.tryDecode(
+            persistence.encodedRecord,
+          )!.active,
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'suspended native restore cannot publish over concurrent switch',
+      () async {
+        final oldSpec = _embeddingSpecForTest('restore-old-switch');
+        final newSpec = _embeddingSpecForTest('restore-new-switch');
+        final persistence = _MemoryEmbeddingIdentityPersistence()
+          ..encodedRecord = ActiveEmbeddingIdentityRecord.fromSpec(
+            oldSpec,
+          ).encode();
+        final fileSystem = _SuspendingFileSystemService();
+        await ServiceRegistry.initialize(fileSystemService: fileSystem);
+        final restoringManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final switchingManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+
+        final restoring = restoringManager.initialize();
+        await fileSystem.firstFileCheckStarted.future;
+        switchingManager.setActiveModel(newSpec);
+        expect(switchingManager.activeEmbeddingModel, same(newSpec));
+        fileSystem.releaseFirstFileCheck.complete();
+        await restoring;
+        await pumpEventQueue();
+
+        expect(restoringManager.activeEmbeddingModel, isNull);
+        expect(switchingManager.activeEmbeddingModel, same(newSpec));
+      },
+    );
+
+    test(
+      'a delayed old manager cannot resurrect identity after another clears',
+      () async {
+        final persistence = _DelayedEmbeddingIdentityPersistence();
+        final oldManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final clearingManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final first = EmbeddingModelSpec(
+          name: 'first',
+          modelSource: NetworkSource('https://example.com/first.tflite'),
+          tokenizerSource: NetworkSource(
+            'https://example.com/first-tokenizer.model',
+          ),
+          modelFilename: 'first__rev-1.tflite',
+          tokenizerFilename: 'first-tokenizer__rev-1.model',
+        );
+
+        oldManager.setActiveModel(first);
+        await persistence.firstWriteStarted.future;
+        final clear = clearingManager.clearActiveEmbeddingIdentity();
+        persistence.releaseFirstWrite.complete();
+        await clear;
+
+        final persisted = ActiveEmbeddingIdentityRecord.tryDecode(
+          persistence.encodedRecord,
+        );
+        expect(persisted, isNotNull);
+        expect(persisted!.active, isFalse);
+        expect(oldManager.activeEmbeddingModel, isNull);
+        expect(clearingManager.activeEmbeddingModel, isNull);
+      },
+    );
+
+    test('committed clear invalidates another manager active spec', () async {
+      await ServiceRegistry.initialize();
+      final persistence = _MemoryEmbeddingIdentityPersistence();
+      final activeManager = MobileModelManager(
+        activeEmbeddingIdentityPersistence: persistence,
+      );
+      final clearingManager = MobileModelManager(
+        activeEmbeddingIdentityPersistence: persistence,
+      );
+      final first = _embeddingSpecForTest('active');
+
+      await activeManager.setActiveEmbeddingModel(first);
+      expect(activeManager.activeEmbeddingModel, first);
+      await clearingManager.clearActiveEmbeddingIdentity();
+
+      expect(activeManager.activeEmbeddingModel, isNull);
+      expect(clearingManager.activeEmbeddingModel, isNull);
+    });
+
+    test(
+      'uninstallEmbedder persists exactly one clear after a successful delete',
+      () async {
+        await ServiceRegistry.initialize();
+        final spec = _embeddingSpecForTest('uninstall-once');
+        final registry = ServiceRegistry.instance;
+        final installedPaths = <String>[];
+        for (final file in spec.files) {
+          final filePath = await registry.fileSystemService.getWriteTargetPath(
+            file.filename,
+          );
+          installedPaths.add(filePath);
+          await Directory(path.dirname(filePath)).create(recursive: true);
+          await File(filePath).writeAsBytes(
+            file.filename.endsWith('.tflite')
+                ? _fakeModelBytes
+                : _fakeCompanionBytes,
+          );
+          await registry.modelRepository.saveModel(
+            repo.ModelInfo(
+              id: file.filename,
+              source: file.source,
+              installedAt: DateTime(2026),
+              sizeBytes: await File(filePath).length(),
+              type: repo.ModelType.embedding,
+              hasLoraWeights: false,
+            ),
+          );
+        }
+
+        final persistence = _FailOnSecondEmbeddingIdentityWritePersistence(
+          ActiveEmbeddingIdentityRecord.fromSpec(spec).encode(),
+        );
+        final manager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        await manager.initialize();
+        expect(manager.activeEmbeddingModel, isNotNull);
+
+        final previousPlugin = FlutterEdgeAiPlugin.instance;
+        FlutterEdgeAiPlugin.instance = _ManagerOverrideMobile(manager);
+        try {
+          await FlutterEdgeAi.uninstallEmbedder();
+        } finally {
+          FlutterEdgeAiPlugin.instance = previousPlugin;
+        }
+
+        expect(
+          persistence.writeCount,
+          1,
+          reason:
+              'deleteModel owns the clear; a facade-level second tombstone '
+              'would hit the injected failure',
+        );
+        expect(
+          ActiveEmbeddingIdentityRecord.tryDecode(
+            persistence.encodedRecord,
+          )?.active,
+          isFalse,
+        );
+        expect(manager.activeEmbeddingModel, isNull);
+        for (var i = 0; i < spec.files.length; i++) {
+          expect(File(installedPaths[i]).existsSync(), isFalse);
+          expect(
+            await registry.modelRepository.isInstalled(spec.files[i].filename),
+            isFalse,
+          );
+        }
+      },
+    );
+
+    test(
+      'committed activation invalidates another manager stale spec',
+      () async {
+        final persistence = _MemoryEmbeddingIdentityPersistence();
+        final firstManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final secondManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final first = _embeddingSpecForTest('first-active');
+        final second = _embeddingSpecForTest('second-active');
+
+        await firstManager.setActiveEmbeddingModel(first);
+        await secondManager.setActiveEmbeddingModel(second);
+
+        expect(firstManager.activeEmbeddingModel, isNull);
+        expect(secondManager.activeEmbeddingModel, second);
+      },
+    );
+
+    test(
+      'installer fails and does not activate when atomic write is rejected',
+      () async {
+        final persistence = _RejectedEmbeddingIdentityPersistence();
+        final manager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final modelFile = File(path.join(sourceDir.path, 'rejected.tflite'));
+        await modelFile.writeAsBytes(_fakeModelBytes);
+        final tokenizerFile = File(
+          path.join(sourceDir.path, 'rejected-tokenizer.model'),
+        );
+        await tokenizerFile.writeAsBytes(_fakeCompanionBytes);
+        await ServiceRegistry.initialize();
+        final previousPlugin = FlutterEdgeAiPlugin.instance;
+        FlutterEdgeAiPlugin.instance = _ManagerOverrideMobile(manager);
+        try {
+          await expectLater(
+            FlutterEdgeAi.installEmbedder()
+                .modelFromFile(
+                  modelFile.path,
+                  filename: 'rejected__rev-1.tflite',
+                )
+                .tokenizerFromFile(
+                  tokenizerFile.path,
+                  filename: 'rejected-tokenizer__rev-1.model',
+                )
+                .install(),
+            throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
+          );
+        } finally {
+          FlutterEdgeAiPlugin.instance = previousPlugin;
+        }
+
+        expect(manager.activeEmbeddingModel, isNull);
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          prefs.getString(PreferencesKeys.activeEmbeddingIdentityRecord),
+          isNull,
+        );
+        expect(persistence.reloadCount, 1);
+        final secondManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        await secondManager.initialize();
+        expect(secondManager.activeEmbeddingModel, isNull);
+        expect(persistence.cachedRecord, isNull);
+      },
+    );
+
+    test(
+      'reload failure poisons shared persistence and fails closed',
+      () async {
+        final persistence = _RejectedEmbeddingIdentityPersistence(
+          reloadFails: true,
+        );
+        final firstManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        final secondManager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+
+        await expectLater(
+          firstManager.setActiveEmbeddingModel(_embeddingSpecForTest('first')),
+          throwsA(
+            isA<ActiveEmbeddingIdentityPersistenceException>()
+                .having(
+                  (error) => error.writeFailure,
+                  'writeFailure',
+                  isA<StateError>(),
+                )
+                .having(
+                  (error) => error.reloadFailure,
+                  'reloadFailure',
+                  isA<StateError>(),
+                ),
+          ),
+        );
+        await secondManager.initialize();
+        expect(secondManager.activeEmbeddingModel, isNull);
+        await expectLater(
+          secondManager.setActiveEmbeddingModel(
+            _embeddingSpecForTest('second'),
+          ),
+          throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
+        );
+        expect(persistence.writeCount, 1);
+        expect(persistence.reloadCount, 1);
+      },
+    );
+
+    test(
+      'legacy mobile activation stays null when coordinator is poisoned',
+      () async {
+        final persistence = _RejectedEmbeddingIdentityPersistence();
+        final manager = MobileModelManager(
+          activeEmbeddingIdentityPersistence: persistence,
+        );
+        await expectLater(
+          manager.setActiveEmbeddingModel(_embeddingSpecForTest('poison')),
+          throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
+        );
+
+        manager.setActiveModel(_embeddingSpecForTest('legacy-after-poison'));
+
+        expect(manager.activeEmbeddingModel, isNull);
+        await pumpEventQueue();
+        expect(manager.activeEmbeddingModel, isNull);
+        expect(persistence.writeCount, 1);
+      },
+    );
+
+    test(
+      'identical resolved embedding filenames fail before storage mutation',
+      () async {
+        final fixtureDownload = _FixtureDownloadService(_fakeModelBytes);
+        await ServiceRegistry.initialize(downloadService: fixtureDownload);
+        final manager = FlutterEdgeAiPlugin.instance.modelManager;
+        final activeBefore = manager.activeEmbeddingModel;
+        final storageDir = await ServiceRegistry.instance.fileSystemService
+            .getModelStorageDirectory();
+
+        await expectLater(
+          FlutterEdgeAi.installEmbedder()
+              .modelFromNetwork(
+                'https://example.com/model.tflite',
+                filename: 'same-artifact.tflite',
+              )
+              .tokenizerFromNetwork(
+                'https://example.com/tokenizer.model',
+                filename: 'same-artifact.tflite',
+              )
+              .install(),
+          throwsArgumentError,
+        );
+
+        expect(fixtureDownload.requestedTargetPaths, isEmpty);
+        expect(
+          await ServiceRegistry.instance.modelRepository.listInstalled(),
+          isEmpty,
+        );
+        expect(Directory(storageDir).listSync(), isEmpty);
+        expect(manager.activeEmbeddingModel, same(activeBefore));
+      },
+    );
+
+    test('builder and spec reject non-portable exact filenames', () {
+      expect(
+        () => FlutterEdgeAi.installEmbedder().modelFromNetwork(
+          'https://example.com/model.tflite',
+          filename: 'CON.tflite',
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => EmbeddingModelSpec(
+          name: 'embedding',
+          modelSource: NetworkSource('https://example.com/model.tflite'),
+          tokenizerSource: NetworkSource('https://example.com/tokenizer.model'),
+          tokenizerFilename: 'bad:name.model',
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test(
+      'versioned network identities download beside legacy URL-basename cache',
+      () async {
+        final fixtureDownload = _FixtureDownloadService(_fakeModelBytes);
+        await ServiceRegistry.initialize(downloadService: fixtureDownload);
+
+        const modelUrl = 'https://example.com/model.tflite';
+        const tokenizerUrl = 'https://example.com/sentencepiece.model';
+        await FlutterEdgeAi.installEmbedder()
+            .modelFromNetwork(modelUrl)
+            .tokenizerFromNetwork(tokenizerUrl)
+            .install();
+        await FlutterEdgeAi.installEmbedder()
+            .modelFromNetwork(modelUrl, filename: 'model__rev-abc123.tflite')
+            .tokenizerFromNetwork(
+              tokenizerUrl,
+              filename: 'model__sentencepiece__rev-abc123.model',
+            )
+            .install();
+
+        final repository = ServiceRegistry.instance.modelRepository;
+        for (final id in [
+          'model.tflite',
+          'model__sentencepiece.model',
+          'model__rev-abc123.tflite',
+          'model__sentencepiece__rev-abc123.model',
+        ]) {
+          expect(
+            await repository.isInstalled(id),
+            isTrue,
+            reason: '$id must remain independently installed',
+          );
+        }
+        expect(fixtureDownload.requestedTargetPaths, hasLength(4));
       },
     );
 
@@ -625,7 +1342,50 @@ void main() {
       expect(active, isNotNull);
       final paths = await manager.getModelFilePaths(active!);
       expect(paths, isNotNull);
+      final migratedRecord = ActiveEmbeddingIdentityRecord.tryDecode(
+        prefs.getString(PreferencesKeys.activeEmbeddingIdentityRecord),
+      );
+      expect(migratedRecord, isNotNull);
+      expect(migratedRecord!.modelFilename, modelName);
+      expect(migratedRecord.tokenizerFilename, namespacedTokenizer);
     });
+
+    test(
+      'present malformed or future embedding record fails closed over legacy',
+      () async {
+        await ServiceRegistry.initialize();
+        final fs = ServiceRegistry.instance.fileSystemService;
+        const modelName = 'legacy-model.tflite';
+        const tokenizerName = 'legacy-tokenizer.model';
+        await File(
+          await fs.getWriteTargetPath(modelName),
+        ).writeAsBytes(_fakeModelBytes);
+        await File(
+          await fs.getWriteTargetPath(tokenizerName),
+        ).writeAsBytes(_fakeCompanionBytes);
+
+        for (final atomicRecord in <String>[
+          '{"schemaVersion":1,"active":true,"name":"partial"}',
+          '{"schemaVersion":2,"active":false}',
+        ]) {
+          SharedPreferences.setMockInitialValues(<String, Object>{
+            PreferencesKeys.activeEmbeddingIdentityRecord: atomicRecord,
+            PreferencesKeys.activeEmbeddingFilename: modelName,
+            PreferencesKeys.activeEmbeddingTokenizerFilename: tokenizerName,
+            PreferencesKeys.activeEmbeddingModelFilenameExplicit: true,
+            PreferencesKeys.activeEmbeddingTokenizerFilenameExplicit: true,
+          });
+
+          final manager = MobileModelManager();
+          await manager.initialize();
+          expect(
+            manager.activeEmbeddingModel,
+            isNull,
+            reason: 'atomic record $atomicRecord must block legacy restore',
+          );
+        }
+      },
+    );
 
     test('idempotent: a post-refactor install (already-namespaced tokenizer) '
         'restores without any migration', () async {
@@ -744,4 +1504,231 @@ class _FixtureDownloadService implements DownloadService {
     await File(targetPath).writeAsBytes(bytes);
     yield 100;
   }
+}
+
+class _DelayedEmbeddingIdentityPersistence
+    implements ActiveEmbeddingIdentityPersistence {
+  final firstWriteStarted = Completer<void>();
+  final releaseFirstWrite = Completer<void>();
+  String? encodedRecord;
+  int _writeCount = 0;
+
+  @override
+  Future<String?> read() async => encodedRecord;
+
+  @override
+  Future<void> reload() async {}
+
+  @override
+  Future<bool> write(String encodedRecord) async {
+    if (_writeCount++ == 0) {
+      firstWriteStarted.complete();
+      await releaseFirstWrite.future;
+    }
+    this.encodedRecord = encodedRecord;
+    return true;
+  }
+}
+
+class _RejectedEmbeddingIdentityPersistence
+    implements ActiveEmbeddingIdentityPersistence {
+  _RejectedEmbeddingIdentityPersistence({this.reloadFails = false});
+
+  final bool reloadFails;
+  String? cachedRecord;
+  int writeCount = 0;
+  int reloadCount = 0;
+  final reloadCompleted = Completer<void>();
+
+  @override
+  Future<String?> read() async => cachedRecord;
+
+  @override
+  Future<void> reload() async {
+    reloadCount++;
+    try {
+      if (reloadFails) throw StateError('reload failed');
+      cachedRecord = null;
+    } finally {
+      if (!reloadCompleted.isCompleted) reloadCompleted.complete();
+    }
+  }
+
+  @override
+  Future<bool> write(String encodedRecord) async {
+    writeCount++;
+    cachedRecord = encodedRecord;
+    return false;
+  }
+}
+
+class _MemoryEmbeddingIdentityPersistence
+    implements ActiveEmbeddingIdentityPersistence {
+  String? encodedRecord;
+
+  @override
+  Future<String?> read() async => encodedRecord;
+
+  @override
+  Future<void> reload() async {}
+
+  @override
+  Future<bool> write(String encodedRecord) async {
+    this.encodedRecord = encodedRecord;
+    return true;
+  }
+}
+
+class _FailOnSecondEmbeddingIdentityWritePersistence
+    implements ActiveEmbeddingIdentityPersistence {
+  _FailOnSecondEmbeddingIdentityWritePersistence(this.encodedRecord);
+
+  String? encodedRecord;
+  int writeCount = 0;
+
+  @override
+  Future<String?> read() async => encodedRecord;
+
+  @override
+  Future<void> reload() async {}
+
+  @override
+  Future<bool> write(String encodedRecord) async {
+    writeCount++;
+    if (writeCount > 1) {
+      throw StateError('unexpected second embedding identity write');
+    }
+    this.encodedRecord = encodedRecord;
+    return true;
+  }
+}
+
+enum _EmbeddingIdentityWriteFailure { falseResult, throwAfterCacheMutation }
+
+final class _EmbeddingIdentityPersistenceBacking {
+  String? durableRecord;
+  String? cachedRecord;
+}
+
+final class _ScriptedEmbeddingIdentityPersistence
+    implements ActiveEmbeddingIdentityPersistence {
+  _ScriptedEmbeddingIdentityPersistence(
+    this.backing, {
+    this.failureMode,
+    this.delayFirstSuccess = false,
+  });
+
+  final _EmbeddingIdentityPersistenceBacking backing;
+  final _EmbeddingIdentityWriteFailure? failureMode;
+  final bool delayFirstSuccess;
+  final firstWriteStarted = Completer<void>();
+  final releaseFirstWrite = Completer<void>();
+  final reloadCompleted = Completer<void>();
+  int _writeCount = 0;
+
+  @override
+  Future<String?> read() async => backing.cachedRecord;
+
+  @override
+  Future<void> reload() async {
+    backing.cachedRecord = backing.durableRecord;
+    if (!reloadCompleted.isCompleted) reloadCompleted.complete();
+  }
+
+  @override
+  Future<bool> write(String encodedRecord) async {
+    final writeIndex = _writeCount++;
+    backing.cachedRecord = encodedRecord;
+    if (delayFirstSuccess && writeIndex == 0) {
+      firstWriteStarted.complete();
+      await releaseFirstWrite.future;
+      backing.durableRecord = encodedRecord;
+      return true;
+    }
+    switch (failureMode) {
+      case _EmbeddingIdentityWriteFailure.falseResult:
+        return false;
+      case _EmbeddingIdentityWriteFailure.throwAfterCacheMutation:
+        throw StateError('write threw after mutating cache');
+      case null:
+        backing.durableRecord = encodedRecord;
+        return true;
+    }
+  }
+}
+
+EmbeddingModelSpec _embeddingSpecForTest(String name) => EmbeddingModelSpec(
+  name: name,
+  modelSource: NetworkSource('https://example.com/$name.tflite'),
+  tokenizerSource: NetworkSource('https://example.com/$name-tokenizer.model'),
+  modelFilename: '${name}__rev-1.tflite',
+  tokenizerFilename: '$name-tokenizer__rev-1.model',
+);
+
+class _SuspendingFileSystemService implements FileSystemService {
+  final firstFileCheckStarted = Completer<void>();
+  final releaseFirstFileCheck = Completer<void>();
+  int _fileCheckCount = 0;
+
+  @override
+  Future<bool> fileExists(String path) async {
+    if (_fileCheckCount++ == 0) {
+      firstFileCheckStarted.complete();
+      await releaseFirstFileCheck.future;
+    }
+    return true;
+  }
+
+  @override
+  Future<String> getReadTargetPath(String filename) async => '/fake/$filename';
+
+  @override
+  Future<String> getWriteTargetPath(String filename) async => '/fake/$filename';
+
+  @override
+  Future<String> getTargetPath(String filename) async => '/fake/$filename';
+
+  @override
+  Future<void> writeFile(String path, Uint8List data) async {}
+
+  @override
+  Future<Uint8List> readFile(String path) async => Uint8List(0);
+
+  @override
+  Future<void> deleteFile(String path) async {}
+
+  @override
+  Future<int> getFileSize(String path) async => _fakeModelBytes.length;
+
+  @override
+  Future<String> getBundledResourcePath(String resourceName) async =>
+      '/fake/$resourceName';
+
+  @override
+  Future<void> registerExternalFile(
+    String filename,
+    String externalPath,
+  ) async {}
+
+  @override
+  Future<String> getModelStorageDirectory() async => '/fake';
+
+  @override
+  Future<bool> adoptLegacyFile(String oldFilename, String newFilename) async =>
+      false;
+}
+
+final class _AlwaysExistingFileSystemService
+    extends _SuspendingFileSystemService {
+  @override
+  Future<bool> fileExists(String path) async => true;
+}
+
+final class _ManagerOverrideMobile extends FlutterEdgeAiMobile {
+  _ManagerOverrideMobile(this._manager);
+
+  final MobileModelManager _manager;
+
+  @override
+  MobileModelManager get modelManager => _manager;
 }

@@ -75,6 +75,8 @@ dependency_overrides:
     path: ../../../packages/flutter_edge_ai_onnx
   flutter_edge_ai_qdrant:
     path: ../../../packages/flutter_edge_ai_qdrant
+  flutter_edge_ai_rag:
+    path: ../../../packages/flutter_edge_ai_rag
   flutter_edge_ai_speech:
     path: ../../../packages/flutter_edge_ai_speech
   flutter_edge_ai_sqlite:

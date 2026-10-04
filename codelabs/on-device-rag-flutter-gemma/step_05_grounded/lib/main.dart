@@ -1,55 +1,35 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
-import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 import 'chat_page.dart';
 import 'download_page.dart';
 import 'model.dart';
+import 'rag_store.dart';
 
-/// Change this one line to run the whole app on a different model. On web
-/// it stays `Models.gemma4Web` — the browser engine only runs `.litertlm`
-/// files exported for it, and that is the only one published.
 const _model = kIsWeb ? Models.gemma4Web : Models.gemma3;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Engines are fully opt-in: the core package registers none by itself.
-  // Without LiteRtLmEngine here, the first model call throws a StateError
-  // that tells you to add an engine package.
   await FlutterEdgeAi.initialize(
     inferenceEngines: [LiteRtLmEngine()],
-    // The embedding backend runs the forward pass. It comes from the same
-    // engine package as the LLM engine above — one native runtime serves both.
     embeddingBackends: [LiteRtEmbeddingBackend()],
-    // ...and the tokenizer comes from somewhere else on purpose. Which
-    // tokenizer a model needs is a property of the MODEL, not of the engine:
-    // EmbeddingGemma wants SentencePiece whether LiteRT or ONNX Runtime runs
-    // it. Leave this out and the first embedding throws a StateError naming
-    // the package to add — it will never quietly tokenize with the wrong
-    // convention and hand you vectors from the wrong point in the space.
     embeddingTokenizers: [GemmaEmbeddingTokenizers()],
-    // The store the vectors go into. Two classes, one per platform arm: the
-    // native one is sqlite3 over dart:ffi with the `vec0` extension loaded,
-    // the web one is the same SQLite compiled to WASM with `vec0` linked in
-    // and its pages kept in IndexedDB. Both implement the same
-    // `VectorStoreRepository`, which is what makes everything after this line
-    // platform-independent — and what makes the swap in Step 3 one line.
-    vectorStore: kIsWeb ? WebSqliteVectorStore() : SqliteVectorStore(),
-    // Which metadata keys the store makes FILTERABLE. This is threaded to the
-    // store before its own initialize(), which is the only moment sqlite-vec
-    // can act on it: each declared field becomes a real typed `vec0` column,
-    // and vec0 has no ALTER. Adding a field later means re-creating the table
-    // and re-indexing — so declare what you might filter on, not only what you
-    // filter on today. (qdrant promotes at write time instead, so there it is
-    // a re-index and not a migration. The schema itself is identical.)
-    //
-    // It is not optional in practice: a Filter over a field that was never
-    // declared is silently DROPPED. The search comes back unfiltered, with no
-    // error and no log in a release build.
+    huggingFaceToken: hfToken.isEmpty ? null : hfToken,
+    webStorageMode: WebStorageMode.streaming,
+  );
+
+  // The path versions both the embedding profile and the physical filter
+  // schema. Do not reuse the old recipes.db: its vectors have no attestable
+  // profile, and sqlite-vec cannot ALTER an existing vec0 filter schema.
+  final ragStore = RagStore(
+    databaseName: 'recipes-embeddinggemma-29888fcee321-filters-v1.db',
     filterSchema: const FilterSchema(
       fields: [
         FilterField(name: 'cuisine', type: FilterFieldType.string),
@@ -57,40 +37,60 @@ Future<void> main() async {
         FilterField(name: 'vegetarian', type: FilterFieldType.bool),
       ],
     ),
-    huggingFaceToken: hfToken.isEmpty ? null : hfToken,
-    // OPFS streaming. On web the model is 2.0 GB, right on the ~2 GB blob
-    // ceiling the default `cacheApi` mode would have to buffer it into.
-    // The other platforms ignore this option.
-    webStorageMode: WebStorageMode.streaming,
   );
 
-  runApp(const QuickstartApp());
+  runApp(QuickstartApp(ragStore: ragStore));
 }
 
-class QuickstartApp extends StatelessWidget {
-  const QuickstartApp({super.key});
+class QuickstartApp extends StatefulWidget {
+  const QuickstartApp({super.key, required this.ragStore});
+
+  final RagStore ragStore;
+
+  @override
+  State<QuickstartApp> createState() => _QuickstartAppState();
+}
+
+class _QuickstartAppState extends State<QuickstartApp> {
+  late final AppLifecycleListener _lifecycle;
+  Future<void>? _shutdown;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(
+      onDetach: () => unawaited(_disposeOwnedResources()),
+    );
+  }
+
+  Future<void> _disposeOwnedResources() => _shutdown ??= () async {
+    // The RagIndex borrows core's active embedder, so ordering is load-bearing.
+    await widget.ragStore.dispose();
+    await FlutterEdgeAi.dispose();
+  }();
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    unawaited(_disposeOwnedResources());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Edge AI Quickstart',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
-      home: const ModelGate(model: _model),
+      home: ModelGate(model: _model, ragStore: widget.ragStore),
     );
   }
 }
 
-/// Asks, on every cold start, whether the model is already installed.
-///
-/// `install()` is idempotent, so the bytes are only ever fetched once. What a
-/// drifted id costs you is this gate: it answers "no" forever, so the app
-/// shows the download screen on every launch, the "download" there finishes
-/// instantly, and you land straight back here. Delete the model with the chat's
-/// delete button and relaunch to watch this branch flip back.
 class ModelGate extends StatefulWidget {
-  const ModelGate({super.key, required this.model});
+  const ModelGate({super.key, required this.model, required this.ragStore});
 
   final ModelChoice model;
+  final RagStore ragStore;
 
   @override
   State<ModelGate> createState() => _ModelGateState();
@@ -113,8 +113,6 @@ class _ModelGateState extends State<ModelGate> {
           );
         }
         if (snapshot.hasError) {
-          // A FutureBuilder that ignores `hasError` renders the download
-          // screen as if nothing had gone wrong. Say what failed instead.
           return _GateError(
             error: snapshot.error!,
             onRetry: () => setState(() => _installed = _check()),
@@ -123,6 +121,7 @@ class _ModelGateState extends State<ModelGate> {
         if (snapshot.data ?? false) {
           return ChatPage(
             model: widget.model,
+            ragStore: widget.ragStore,
             onModelRemoved: () => setState(() => _installed = _check()),
           );
         }
@@ -135,8 +134,6 @@ class _ModelGateState extends State<ModelGate> {
   }
 }
 
-/// Shown when the gate's own check fails, rather than falling through to the
-/// download screen as if the answer had been "no".
 class _GateError extends StatelessWidget {
   const _GateError({required this.error, required this.onRetry});
 

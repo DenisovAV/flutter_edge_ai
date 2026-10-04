@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_qdrant/src/filter_codec.dart';
 
 Map<String, dynamic> _decode(String? json) {
@@ -163,11 +163,10 @@ void main() {
           _schema,
         ),
       );
-      expect(
-        (out['must'] as List).first['range'],
-        {'gte': 1, 'lte': 0},
-        reason: 'unsatisfiable, not a literal string match',
-      );
+      expect((out['must'] as List).first['range'], {
+        'gte': 1,
+        'lte': 0,
+      }, reason: 'unsatisfiable, not a literal string match');
     });
 
     test('a num against a string field', () {

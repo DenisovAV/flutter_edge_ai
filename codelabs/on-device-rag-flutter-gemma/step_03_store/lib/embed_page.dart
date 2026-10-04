@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 import 'model.dart';
 import 'rag_store.dart';
@@ -12,9 +12,10 @@ import 'recipes.dart';
 /// back — the row count at the top is still twelve, and searching works
 /// without embedding anything again.
 class EmbedPage extends StatefulWidget {
-  const EmbedPage({super.key, required this.hfToken});
+  const EmbedPage({super.key, required this.hfToken, required this.ragStore});
 
   final String hfToken;
+  final RagStore ragStore;
 
   @override
   State<EmbedPage> createState() => _EmbedPageState();
@@ -45,7 +46,7 @@ class _EmbedPageState extends State<EmbedPage> {
 
   Future<void> _open() async {
     try {
-      final stats = await RagStore.open();
+      final stats = await widget.ragStore.open();
       if (!mounted) return;
       setState(() {
         _stats = stats;
@@ -76,12 +77,12 @@ class _EmbedPageState extends State<EmbedPage> {
       );
       if (mounted) setState(() => _installProgress = null);
 
-      await RagStore.index(
+      await widget.ragStore.index(
         onStatus: (s) {
           if (mounted) setState(() => _status = s);
         },
       );
-      final stats = await FlutterEdgeAi.rag.stats();
+      final stats = await widget.ragStore.stats();
       if (mounted) setState(() => _stats = stats);
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
@@ -104,7 +105,7 @@ class _EmbedPageState extends State<EmbedPage> {
       _status = 'Searching...';
     });
     try {
-      final hits = await RagStore.search(q);
+      final hits = await widget.ragStore.search(q);
       if (!mounted) return;
       setState(() {
         _hits = hits;
@@ -133,7 +134,7 @@ class _EmbedPageState extends State<EmbedPage> {
               onPressed: _busy
                   ? null
                   : () async {
-                      await RagStore.clear();
+                      await widget.ragStore.clear();
                       if (mounted) await _open();
                     },
               icon: const Icon(Icons.layers_clear),

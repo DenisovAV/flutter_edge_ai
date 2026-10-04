@@ -8,7 +8,7 @@
 // which was always, so its 23 tests had never run.
 import 'dart:io';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -43,7 +43,7 @@ void main() {
       // A `vec_documents` that is not the shape this release expects.
       final raw = sqlite3.open(path);
       raw.execute('CREATE TABLE vec_documents (id TEXT, nonsense INTEGER)');
-      raw.dispose();
+      raw.close();
 
       final store = SqliteVectorStore();
       addTearDown(() => store.close().catchError((Object _) {}));
@@ -81,7 +81,7 @@ void main() {
           } catch (_) {}
         });
 
-        final store = SqliteVectorStore();
+        final store = _TestSqliteVectorStore();
         addTearDown(() => store.close().catchError((Object _) {}));
         await store.initialize('${tmp.path}/a.db');
         await store.addDocument(
@@ -108,7 +108,7 @@ void main() {
 
     setUp(() {
       useHostNativeLibraries();
-      repo = SqliteVectorStore();
+      repo = _TestSqliteVectorStore();
       dbPath =
           '${Directory.systemTemp.path}/test_vec0_store_'
           '${DateTime.now().microsecondsSinceEpoch}.db';
@@ -281,26 +281,36 @@ void main() {
       },
     );
 
-    test('clear removes all documents and resets dimension', () async {
-      await repo.initialize(dbPath);
-      await repo.addDocument(
-        id: 'doc1',
-        content: 'Hello',
-        embedding: [1.0, 0.0, 0.0, 0.0],
-      );
-      await repo.clear();
-      final stats = await repo.getStats();
-      expect(stats.documentCount, 0);
-      expect(stats.vectorDimension, 0);
-      // Re-detect a NEW dimension after clear.
-      await repo.addDocument(
-        id: 'doc2',
-        content: 'New dims',
-        embedding: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-      );
-      final stats2 = await repo.getStats();
-      expect(stats2.vectorDimension, 6);
-    });
+    test(
+      'clear removes documents but preserves the profile dimension',
+      () async {
+        await repo.initialize(dbPath);
+        await repo.addDocument(
+          id: 'doc1',
+          content: 'Hello',
+          embedding: [1.0, 0.0, 0.0, 0.0],
+        );
+        await repo.clear();
+        final stats = await repo.getStats();
+        expect(stats.documentCount, 0);
+        expect(stats.vectorDimension, 0);
+        await expectLater(
+          repo.addDocument(
+            id: 'wrong',
+            content: 'Wrong dims',
+            embedding: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+          ),
+          throwsArgumentError,
+        );
+        await repo.addDocument(
+          id: 'doc2',
+          content: 'Same profile',
+          embedding: [1.0, 0.0, 0.0, 0.0],
+        );
+        final stats2 = await repo.getStats();
+        expect(stats2.vectorDimension, 4);
+      },
+    );
 
     test('close then reinitialize — data persists on disk', () async {
       await repo.initialize(dbPath);
@@ -311,7 +321,7 @@ void main() {
       );
       await repo.close();
 
-      repo = SqliteVectorStore();
+      repo = _TestSqliteVectorStore();
       await repo.initialize(dbPath);
       final stats = await repo.getStats();
       expect(stats.documentCount, 1);
@@ -601,4 +611,51 @@ void main() {
       expect(negated.map((r) => r.id), ['b']);
     });
   }, skip: skip);
+}
+
+/// Keeps profile-less store-behaviour tests focused on vec0 semantics while
+/// profile-specific tests exercise the required explicit binding separately.
+class _TestSqliteVectorStore extends SqliteVectorStore {
+  Future<void> _bindForDimension(int dimension) async {
+    if (await readEmbeddingProfile() == null) {
+      await bindEmbeddingProfile(
+        EmbeddingProfile(
+          id: 'sqlite-vector-store-test-v1',
+          dimension: dimension,
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<void> addDocument({
+    required String id,
+    required String content,
+    required List<double> embedding,
+    String? metadata,
+  }) async {
+    await _bindForDimension(embedding.length);
+    await super.addDocument(
+      id: id,
+      content: content,
+      embedding: embedding,
+      metadata: metadata,
+    );
+  }
+
+  @override
+  Future<List<RetrievalResult>> searchSimilar({
+    required List<double> queryEmbedding,
+    required int topK,
+    double threshold = 0.0,
+    Filter? filter,
+  }) async {
+    await _bindForDimension(queryEmbedding.length);
+    return super.searchSimilar(
+      queryEmbedding: queryEmbedding,
+      topK: topK,
+      threshold: threshold,
+      filter: filter,
+    );
+  }
 }

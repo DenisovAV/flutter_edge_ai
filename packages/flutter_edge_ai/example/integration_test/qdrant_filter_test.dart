@@ -12,14 +12,14 @@ import 'dart:io';
 import 'package:flutter_edge_ai_qdrant/src/filter_codec.dart';
 import 'package:flutter_edge_ai_qdrant/src/point_id_hasher.dart';
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
-import 'package:flutter_edge_ai/core/services/vector_store_filter.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 // Declares every field these tests filter on, so FilterCodec.encode keeps them
 // (an undeclared key is now skipped as a no-op).
-final _schema = FilterSchema(
+const _schema = FilterSchema(
   fields: [
     FilterField(name: 'lang', type: FilterFieldType.string),
     FilterField(name: 'price', type: FilterFieldType.number),

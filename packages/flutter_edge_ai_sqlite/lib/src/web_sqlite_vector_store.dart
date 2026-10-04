@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_log.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_profile_storage.dart';
+import 'package:flutter_edge_ai_sqlite/src/web_store_location_lease.dart';
 import 'package:sqlite3/wasm.dart';
 
 /// Web implementation of [VectorStoreRepository] backed by sqlite-vec (`vec0`)
@@ -26,6 +30,19 @@ import 'package:sqlite3/wasm.dart';
 /// embedding dimension can be learned), or recovered from an existing table on
 /// [initialize].
 class WebSqliteVectorStore implements VectorStoreRepository {
+  WebSqliteVectorStore({
+    @visibleForTesting this.forceBrowserLocksUnavailableForTesting = false,
+    @visibleForTesting this.durabilityFenceForTesting,
+  });
+
+  /// Test seam for the fail-closed browser capability branch.
+  @visibleForTesting
+  final bool forceBrowserLocksUnavailableForTesting;
+
+  /// Test seam for deterministic post-COMMIT persistence failure.
+  @visibleForTesting
+  final Future<void> Function()? durabilityFenceForTesting;
+
   static const String _tableName = 'vec_documents';
 
   /// Where the custom wasm ships in the published package's web assets.
@@ -40,7 +57,21 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   WasmSqlite3? _sqlite3;
   CommonDatabase? _db;
   int? _detectedDimension;
+  EmbeddingProfile? _embeddingProfile;
   bool _isInitialized = false;
+  WebStoreLocationLease? _locationLease;
+
+  /// Serializes initialize/close calls on this instance. The counter changes
+  /// synchronously when a transition is queued, so operations cannot slip in
+  /// before the queued callback starts on the next microtask.
+  Future<void> _lifecycleTail = Future<void>.value();
+  int _pendingLifecycleActions = 0;
+
+  /// Binding and explicit flush cross an await boundary. Lifecycle transitions
+  /// wait for those durability operations; all other store operations execute
+  /// their SQLite work synchronously before their returned Future is observed.
+  int _activeDurabilityOperations = 0;
+  Completer<void>? _durabilityOperationsIdle;
 
   /// Which VFS [_registerPersistentVfs] actually settled on.
   ///
@@ -61,17 +92,8 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   /// (filters are an ignored no-op).
   FilterSchema _filterSchema = const FilterSchema();
 
-  /// No-op since vector search moved into SQLite (`vec0` does exact KNN in C).
   @override
-  @Deprecated('No-op since vector search moved into SQLite; removed in 2.0')
-  bool get enableHnsw => false;
-
-  @override
-  @Deprecated('No-op since vector search moved into SQLite; removed in 2.0')
-  set enableHnsw(bool value) {}
-
-  @override
-  bool get isInitialized => _isInitialized;
+  bool get isInitialized => _isInitialized && _pendingLifecycleActions == 0;
 
   @override
   FilterSchema get filterSchema => _filterSchema;
@@ -94,21 +116,30 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   }
 
   @override
-  Future<void> initialize(String databasePath) async {
+  Future<void> initialize(String databasePath) =>
+      _enqueueLifecycle(() => _initialize(databasePath));
+
+  Future<void> _initialize(String databasePath) async {
+    // A store owns at most one location. Release a previous location before
+    // attempting the next one, then acquire the new lease before opening any
+    // OPFS or IndexedDB handle.
+    await _waitForDurabilityOperations();
+    await _closeResources();
+    _locationLease = await WebStoreLocationLease.acquire(
+      databasePath,
+      forceBrowserLocksUnavailable: forceBrowserLocksUnavailableForTesting,
+    );
     try {
       _sqlite3 = await WasmSqlite3.loadFromUrl(Uri.parse(_wasmUrl));
       await _registerPersistentVfs(_sqlite3!, databasePath);
 
-      // Close the previous handle before overwriting the field, exactly as the
-      // native arm does. Without this a re-initialize dropped a live
-      // connection on the floor — and because the IndexedDB VFS name is
-      // derived from `databasePath`, re-initializing onto the SAME path left
-      // two live connections against one persistent store.
-      _db?.close();
       _db = _sqlite3!.open(_dbFile);
 
+      ensureSqliteEmbeddingProfileTable(_db!);
       // Recover the dimension from an existing vec0 table (page reload).
       _detectExistingTable();
+      _embeddingProfile = readSqliteEmbeddingProfile(_db!);
+      _validateProfileDimension();
 
       _isInitialized = true;
     } catch (e) {
@@ -120,15 +151,9 @@ class WebSqliteVectorStore implements VectorStoreRepository {
       // half fixed if this arm were left alone.
       _isInitialized = false;
       _detectedDimension = null;
-      final failed = _db;
-      _db = null;
-      try {
-        failed?.close();
-      } catch (closeError) {
-        edgeAiLog(
-          '[WebVectorStore] close() during a failed initialize: $closeError',
-        );
-      }
+      _embeddingProfile = null;
+      await _closeResources();
+      if (e is VectorStoreException) rethrow;
       throw VectorStoreException('Failed to initialize SQLite WASM (vec0)', e);
     }
   }
@@ -143,21 +168,6 @@ class WebSqliteVectorStore implements VectorStoreRepository {
     WasmSqlite3 sqlite3,
     String databasePath,
   ) async {
-    // A re-initialize overwrites `_idb` below. Drain the previous VFS first:
-    // dropping it with pages still queued orphans them, and once the field is
-    // gone nothing else holds a reference that could close it. `_persistence`
-    // is left for a branch below to set: clearing it here made a flush() that
-    // landed mid-initialize throw the in-memory error.
-    final previous = _idb;
-    _idb = null;
-    if (previous != null) {
-      try {
-        await previous.close();
-      } catch (e) {
-        edgeAiLog('[WebVectorStore] could not drain the previous VFS: $e');
-      }
-    }
-
     // OPFS first — only available in a dedicated web worker; on the main
     // isolate (the usual Flutter web context) it throws, so we fall through.
     try {
@@ -165,10 +175,10 @@ class WebSqliteVectorStore implements VectorStoreRepository {
       sqlite3.registerVirtualFileSystem(opfs, makeDefault: true);
       _persistence = _WebPersistence.opfs;
       _idb = null;
-      edgeAiLog('[WebVectorStore] Using OPFS VFS for persistence');
+      sqliteLog('[WebVectorStore] Using OPFS VFS for persistence');
       return;
     } catch (e) {
-      edgeAiLog('[WebVectorStore] OPFS VFS unavailable ($e); trying IndexedDB');
+      sqliteLog('[WebVectorStore] OPFS VFS unavailable ($e); trying IndexedDB');
     }
 
     // IndexedDB — main-isolate-safe and persistent. The IndexedDB database name
@@ -180,10 +190,10 @@ class WebSqliteVectorStore implements VectorStoreRepository {
       sqlite3.registerVirtualFileSystem(idb, makeDefault: true);
       _persistence = _WebPersistence.indexedDb;
       _idb = idb;
-      edgeAiLog('[WebVectorStore] Using IndexedDB VFS for persistence');
+      sqliteLog('[WebVectorStore] Using IndexedDB VFS for persistence');
       return;
     } catch (e) {
-      edgeAiLog(
+      sqliteLog(
         '[WebVectorStore] IndexedDB VFS unavailable ($e); '
         'falling back to in-memory (no persistence)',
       );
@@ -192,11 +202,11 @@ class WebSqliteVectorStore implements VectorStoreRepository {
     // Last resort: in-memory — the store works but loses all documents on page
     // reload. Logged explicitly (symmetric with the OPFS/IndexedDB branches) so
     // the durability downgrade is at least visible in debug builds. NOTE:
-    // edgeAiLog is stripped in release, so a production user in a restricted-
+    // sqliteLog is stripped in release, so a production user in a restricted-
     // storage context (private browsing, partitioned storage) gets a
     // non-persistent store silently — surfacing this through a public
     // persistence-mode API is tracked as a follow-up.
-    edgeAiLog(
+    sqliteLog(
       '[WebVectorStore] Neither OPFS nor IndexedDB available — using in-memory '
       'storage. Documents will NOT persist across page reloads.',
     );
@@ -225,14 +235,94 @@ class WebSqliteVectorStore implements VectorStoreRepository {
     // only trace was a `gemmaLog` that does not exist in a release build.
     _detectedDimension = null;
     final exists = _db!.select(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?",
       [_tableName],
     );
     if (exists.isEmpty) return;
+    final createSql = exists.first['sql'];
+    if (createSql is String) {
+      final match = RegExp(
+        r'\bembedding\s+float\[(\d+)\]',
+        caseSensitive: false,
+      ).firstMatch(createSql);
+      final dimension = int.tryParse(match?.group(1) ?? '');
+      if (dimension != null && dimension > 0) {
+        _detectedDimension = dimension;
+        return;
+      }
+    }
     final row = _db!.select('SELECT embedding FROM $_tableName LIMIT 1');
     if (row.isEmpty) return;
     final blob = row.first['embedding'] as Uint8List;
     _detectedDimension = blob.length ~/ 4; // float32 = 4 bytes
+  }
+
+  void _validateProfileDimension() {
+    final profile = _embeddingProfile;
+    final dimension = _detectedDimension;
+    if (profile != null &&
+        dimension != null &&
+        profile.dimension != dimension) {
+      throw VectorStoreException(
+        'The persisted $profile conflicts with the SQLite vec_documents '
+        'dimension $dimension.',
+      );
+    }
+  }
+
+  EmbeddingProfile _requireEmbeddingProfile() {
+    final profile = _embeddingProfile;
+    if (profile == null) {
+      throw StateError(
+        'This SQLite vector store has no embedding profile. Bind one through '
+        'FlutterEdgeAiRag.open() before adding or searching vectors.',
+      );
+    }
+    return profile;
+  }
+
+  @override
+  Future<EmbeddingProfile?> readEmbeddingProfile() async {
+    if (!isInitialized || _db == null) {
+      throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+    final profile = readSqliteEmbeddingProfile(_db!);
+    _embeddingProfile = profile;
+    _validateProfileDimension();
+    return profile;
+  }
+
+  @override
+  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async {
+    if (!isInitialized || _db == null) {
+      throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+    _beginDurabilityOperation();
+    try {
+      final dimension = _detectedDimension;
+      if (dimension != null && dimension != profile.dimension) {
+        throw VectorStoreException(
+          'Cannot bind $profile to a SQLite vec_documents shard with dimension '
+          '$dimension.',
+        );
+      }
+      try {
+        await bindSqliteEmbeddingProfile(
+          _db!,
+          profile,
+          durabilityFence: durabilityFenceForTesting ?? _flushDurably,
+        );
+        _embeddingProfile = profile;
+      } on SqliteProfileDurabilityException {
+        // The SQL COMMIT has already succeeded when the durability fence fails.
+        // Its durable state is now unknown, so this connection must never keep
+        // serving reads or writes from the live-but-unconfirmed snapshot.
+        await _closeResources();
+        rethrow;
+      }
+    } finally {
+      _finishDurabilityOperation();
+    }
   }
 
   /// Builds the `vec0` virtual table for dimension [dimension] with one typed,
@@ -273,8 +363,16 @@ class WebSqliteVectorStore implements VectorStoreRepository {
     required List<double> embedding,
     String? metadata,
   }) async {
-    if (!_isInitialized || _db == null) {
+    if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+
+    final profile = _requireEmbeddingProfile();
+    if (embedding.length != profile.dimension) {
+      throw ArgumentError(
+        'Embedding dimension mismatch: profile ${profile.dimension}, '
+        'got ${embedding.length}',
+      );
     }
 
     // Learn the dimension on the first add, then create the vec0 table.
@@ -378,7 +476,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
 
   @override
   Future<void> removeDocument({required String id}) async {
-    if (!_isInitialized || _db == null) {
+    if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
     try {
@@ -398,8 +496,16 @@ class WebSqliteVectorStore implements VectorStoreRepository {
     double threshold = 0.0,
     Filter? filter,
   }) async {
-    if (!_isInitialized || _db == null) {
+    if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+
+    final profile = _requireEmbeddingProfile();
+    if (queryEmbedding.length != profile.dimension) {
+      throw ArgumentError(
+        'Query dimension mismatch: profile ${profile.dimension}, '
+        'got ${queryEmbedding.length}',
+      );
     }
 
     // No table yet → no documents → empty result (never throws on filter).
@@ -482,7 +588,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
 
   @override
   Future<VectorStoreStats> getStats() async {
-    if (!_isInitialized || _db == null) {
+    if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
 
@@ -504,13 +610,13 @@ class WebSqliteVectorStore implements VectorStoreRepository {
 
   @override
   Future<void> clear() async {
-    if (!_isInitialized || _db == null) {
+    if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
 
     try {
-      // Drop the table so a re-add can re-learn the dimension / re-apply a new
-      // schema (vec0 bakes both into the DDL).
+      // Drop only the document table. The separately persisted embedding
+      // profile deliberately survives clear().
       if (_detectedDimension != null) {
         _db!.execute('DROP TABLE IF EXISTS $_tableName');
       }
@@ -522,6 +628,24 @@ class WebSqliteVectorStore implements VectorStoreRepository {
 
   @override
   Future<void> flush() async {
+    if (!_isInitialized && _idb == null && _pendingLifecycleActions == 0) {
+      return;
+    }
+    if (!isInitialized || _db == null) {
+      throw StateError(
+        'VectorStore lifecycle transition in progress. Await initialize() or '
+        'close() before flushing.',
+      );
+    }
+    _beginDurabilityOperation();
+    try {
+      await _flushDurably();
+    } finally {
+      _finishDurabilityOperation();
+    }
+  }
+
+  Future<void> _flushDurably() async {
     // NOT a no-op here, unlike the native arm, and the difference is the whole
     // reason this method exists on web.
     //
@@ -554,7 +678,6 @@ class WebSqliteVectorStore implements VectorStoreRepository {
     // on `_sqlite3` either — it is set before any VFS is chosen, so a flush
     // landing mid-initialize read `_persistence` unset and threw.
     // Nothing set up at all is the one case that stays quiet, per the contract.
-    if (!_isInitialized && _idb == null) return;
     switch (_persistence) {
       case _WebPersistence.indexedDb:
         try {
@@ -575,7 +698,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
         // persist at all. Returning normally would be the #492 defect wearing
         // a different hat: the caller asks "make this durable", gets a
         // success, and loses the index on reload. The only warning otherwise
-        // is a edgeAiLog that release builds strip.
+        // is a sqliteLog that release builds strip.
         throw const VectorStoreException(
           'This store is running on an in-memory VFS (neither OPFS nor '
           'IndexedDB was available, e.g. private browsing or partitioned '
@@ -586,25 +709,38 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   }
 
   @override
-  Future<void> close() async {
+  Future<void> close() => _enqueueLifecycle(() async {
+    await _waitForDurabilityOperations();
+    await _closeResources();
+  });
+
+  Future<void> _closeResources() async {
     // Deliberately NOT gated on `_isInitialized` alone — same rule as the
     // native arm. A store whose initialize() failed is exactly the one still
     // holding resources nobody else will release, and the flag is false for it.
-    // `_sqlite3` is named here because the failed-initialize path clears `_db`
-    // but not the WASM instance or the VFS it registered.
-    if (_db == null && _sqlite3 == null && !_isInitialized) return;
+    // `_sqlite3` and the lease are named here because initialization can fail
+    // after acquiring either one but before setting `_isInitialized`.
+    if (_db == null &&
+        _sqlite3 == null &&
+        _locationLease == null &&
+        !_isInitialized) {
+      return;
+    }
     // Settle every field BEFORE the await, not in a `finally` after it. While
     // that await ran, `isInitialized` still reported true over an
     // already-closed database, and a `flush()` landing in that window reached
     // a VFS that was closing underneath it.
     final db = _db;
     final idb = _idb;
+    final lease = _locationLease;
     _db = null;
     _sqlite3 = null;
     _idb = null;
+    _locationLease = null;
     _persistence = _WebPersistence.inMemory;
     _isInitialized = false;
     _detectedDimension = null;
+    _embeddingProfile = null;
     try {
       db?.close();
       // The strong drain on web. `IndexedDbFileSystem.close()` queues a close
@@ -615,8 +751,50 @@ class WebSqliteVectorStore implements VectorStoreRepository {
       // cannot act on, and `flush()` is the call that reports failure.
       await idb?.close();
     } catch (e) {
-      edgeAiLog('[WebVectorStore] close() could not drain the VFS: $e');
+      sqliteLog('[WebVectorStore] close() could not drain the VFS: $e');
+    } finally {
+      try {
+        await lease?.release();
+      } catch (e) {
+        sqliteLog('[WebVectorStore] could not release the location lock: $e');
+      }
     }
+  }
+
+  Future<void> _enqueueLifecycle(Future<void> Function() action) {
+    final result = Completer<void>();
+    _pendingLifecycleActions++;
+    _lifecycleTail = _lifecycleTail.then((_) async {
+      try {
+        await action();
+        result.complete();
+      } catch (error, stackTrace) {
+        result.completeError(error, stackTrace);
+      } finally {
+        _pendingLifecycleActions--;
+      }
+    });
+    return result.future;
+  }
+
+  void _beginDurabilityOperation() {
+    if (_activeDurabilityOperations++ == 0) {
+      _durabilityOperationsIdle = Completer<void>();
+    }
+  }
+
+  void _finishDurabilityOperation() {
+    _activeDurabilityOperations--;
+    if (_activeDurabilityOperations == 0) {
+      final idle = _durabilityOperationsIdle;
+      _durabilityOperationsIdle = null;
+      idle?.complete();
+    }
+  }
+
+  Future<void> _waitForDurabilityOperations() async {
+    if (_activeDurabilityOperations == 0) return;
+    await _durabilityOperationsIdle!.future;
   }
 
   // === BLOB encoding (float32 little-endian, identical to native + Kotlin/Swift)

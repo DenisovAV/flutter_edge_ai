@@ -2,6 +2,10 @@
 
 > **⚠️ DEPRECATED:** This API is maintained for backwards compatibility only.
 > For new projects, use the [Modern API](../packages/flutter_edge_ai/README.md#quick-start) instead.
+> The RAG examples in this document describe the pre-1.12 core/plugin API and do
+> **not** compile against current `flutter_edge_ai`. RAG now lives in
+> `flutter_edge_ai_rag`; follow the
+> [1.12 migration guide](../packages/flutter_edge_ai/MIGRATION.md#flutter-edge-ai-111--112-rag-leaves-core).
 >
 > **Why migrate?**
 > - ✅ **Modern API:** Fluent builder pattern, type-safe sources, callback-based progress, better error messages

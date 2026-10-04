@@ -1,6 +1,6 @@
 name: flutter_edge_ai_sqlite
-description: "SQLite vector search (sqlite-vec) on-device RAG vector store for flutter_edge_ai. Opt-in package; implements flutter_edge_ai's VectorStoreRepository."
-version: 1.4.0
+description: "SQLite vector search (sqlite-vec) provider for flutter_edge_ai_rag across native platforms and web."
+version: 1.5.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_sqlite
 topics: [rag, sqlite, vector-search, embeddings, web]
@@ -33,8 +33,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai_rag: ^1.0.0
   sqlite3: ^3.6.0
+  # Web Locks provide one exclusive lifetime lease per persistent database
+  # location across tabs and workers. Web initialization fails closed when the
+  # API is unavailable because a process-local lock cannot protect other tabs.
+  web: ^1.1.1
   # Native Assets hook deps — hook/build.dart fetches the per-platform
   # sqlite-vec (vec0) loadable extension from the native-sqlite-vec-v* GitHub
   # Release and registers it as a CodeAsset resolved by DynamicLibrary.open.
@@ -47,6 +51,10 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Test-only helper for locating Native Assets on host `flutter test` runs.
+  # The published provider graph has no direct dependency on core.
+  flutter_edge_ai:
+    path: ../flutter_edge_ai
   # tool/bench_vector_stores.dart benchmarks the vec0 store against qdrant in
   # the same harness; dev-only, never exported from lib/ (the published package
   # has no qdrant dependency). Path-pinned to the workspace sibling.

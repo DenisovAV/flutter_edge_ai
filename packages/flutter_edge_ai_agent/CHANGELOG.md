@@ -1,3 +1,6 @@
+## 0.2.7
+- Support `flutter_edge_ai` 2.x.
+
 ## 0.2.6
 - Renamed from `flutter_gemma_agent`.
 

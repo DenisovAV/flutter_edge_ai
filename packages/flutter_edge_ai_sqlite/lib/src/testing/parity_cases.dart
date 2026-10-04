@@ -22,7 +22,7 @@
 //       rag_sqlite_web_parity_test.dart            (web: the same rows in Chrome)
 library;
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 /// One document: an id and the metadata JSON it carries.
 typedef Doc = ({String id, String metadata});

@@ -30,11 +30,15 @@
 @TestOn('chrome')
 library;
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'dart:async';
+import 'dart:js_interop';
+
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:sqlite3/wasm.dart';
+import 'package:web/web.dart' as web;
 
 /// Mirrors `WebSqliteVectorStore`'s own IndexedDB naming so a test can reach
 /// the same database the store will open. Deliberately duplicated rather than
@@ -46,6 +50,37 @@ String _idbName(String databasePath) => 'flutter_gemma_rag_$databasePath';
 
 const _dbFile = '/database';
 const _wasmUrl = 'rag/sqlite3.wasm';
+
+Future<bool> _workerCanAcquire(web.Worker worker, String lockName) {
+  final result = Completer<bool>();
+  worker.onmessage = ((web.MessageEvent event) {
+    final message = event.data.dartify();
+    if (message is! Map) {
+      result.completeError(StateError('Worker returned a non-object response'));
+      return;
+    }
+    final error = message['error'];
+    if (error != null) {
+      result.completeError(
+        StateError('Worker Web Locks request failed: $error'),
+      );
+      return;
+    }
+    final acquired = message['acquired'];
+    if (acquired is! bool) {
+      result.completeError(StateError('Worker omitted its acquired result'));
+      return;
+    }
+    result.complete(acquired);
+  }).toJS;
+  worker.onerror = ((web.Event event) {
+    if (!result.isCompleted) {
+      result.completeError(StateError('Web Worker failed to load or execute'));
+    }
+  }).toJS;
+  worker.postMessage({'lockName': lockName}.jsify());
+  return result.future.timeout(const Duration(seconds: 10));
+}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -66,6 +101,9 @@ void main() {
 
       final run = DateTime.now().microsecondsSinceEpoch;
       await store.initialize('redim_a_$run');
+      await store.bindEmbeddingProfile(
+        EmbeddingProfile(id: 'redim-a-v1', dimension: 4),
+      );
       await store.addDocument(
         id: 'a',
         content: 'x',
@@ -73,6 +111,9 @@ void main() {
       );
 
       await store.initialize('redim_b_$run');
+      await store.bindEmbeddingProfile(
+        EmbeddingProfile(id: 'redim-b-v1', dimension: 8),
+      );
       expect(
         (await store.getStats()).vectorDimension,
         0,
@@ -137,13 +178,242 @@ void main() {
         reason: 'an initialize() that threw reported the store as ready',
       );
 
-      // NOT asserted here: that the WASM instance and its VFS were released.
-      // Note the failure path does NOT clear them — it clears `_db` only, which
-      // is exactly why `close()` names `_sqlite3` in its guard. What cannot be
-      // asserted is the RELEASE: sqlite tolerates concurrent connections, so a
-      // leaked handle is not observable from a second open on the same path and
-      // a test written that way passes with the leak intact. The native suite
-      // left the same assertion out, measured on FFI sqlite.
+      // Resource cleanup is covered separately by the exclusive-location test:
+      // after a failed or closed store, a new owner must acquire the same path.
+    });
+
+    testWidgets('one location has exactly one lifetime owner', (tester) async {
+      final location = 'exclusive_${DateTime.now().microsecondsSinceEpoch}';
+      final first = WebSqliteVectorStore();
+      final second = WebSqliteVectorStore();
+      addTearDown(first.close);
+      addTearDown(second.close);
+
+      Future<Object?> tryOpen(WebSqliteVectorStore store) async {
+        try {
+          await store.initialize(location);
+          return null;
+        } catch (error) {
+          return error;
+        }
+      }
+
+      final outcomes = await Future.wait([tryOpen(first), tryOpen(second)]);
+      expect(
+        outcomes.where((outcome) => outcome == null),
+        hasLength(1),
+        reason: 'exactly one concurrent open must own the persistent snapshot',
+      );
+      final failure = outcomes.singleWhere((outcome) => outcome != null);
+      expect(failure, isA<VectorStoreException>());
+      expect(failure.toString(), contains('already open'));
+      expect(failure.toString(), contains('Close the existing'));
+
+      final winner = outcomes.first == null ? first : second;
+      final loser = identical(winner, first) ? second : first;
+      await winner.close();
+      await expectLater(loser.initialize(location), completes);
+      expect(loser.isInitialized, isTrue);
+    });
+
+    testWidgets('concurrent initialize calls are FIFO and leak no leases', (
+      tester,
+    ) async {
+      final run = DateTime.now().microsecondsSinceEpoch;
+      final firstLocation = 'lane_a_$run';
+      final secondLocation = 'lane_b_$run';
+      final store = WebSqliteVectorStore();
+      addTearDown(store.close);
+
+      final firstInitialize = store.initialize(firstLocation);
+      final secondInitialize = store.initialize(secondLocation);
+      expect(
+        store.isInitialized,
+        isFalse,
+        reason: 'queued lifecycle work must hide the previous/live snapshot',
+      );
+      await expectLater(store.getStats(), throwsStateError);
+      await Future.wait([firstInitialize, secondInitialize]);
+      expect(store.isInitialized, isTrue);
+
+      // FIFO makes the second request the defined final owner. The first lease
+      // must already be released; the second must still be exclusively held.
+      final firstProbe = WebSqliteVectorStore();
+      final secondProbe = WebSqliteVectorStore();
+      addTearDown(firstProbe.close);
+      addTearDown(secondProbe.close);
+      await expectLater(firstProbe.initialize(firstLocation), completes);
+      await expectLater(
+        secondProbe.initialize(secondLocation),
+        throwsA(isA<VectorStoreException>()),
+      );
+
+      final closing = store.close();
+      expect(store.isInitialized, isFalse);
+      await expectLater(store.getStats(), throwsStateError);
+      await closing;
+      await firstProbe.close();
+      final reopenedFirst = WebSqliteVectorStore();
+      final reopenedSecond = WebSqliteVectorStore();
+      addTearDown(reopenedFirst.close);
+      addTearDown(reopenedSecond.close);
+      await Future.wait([
+        reopenedFirst.initialize(firstLocation),
+        reopenedSecond.initialize(secondLocation),
+      ]);
+      expect(reopenedFirst.isInitialized, isTrue);
+      expect(reopenedSecond.isInitialized, isTrue);
+    });
+
+    testWidgets('Web Lock excludes a real worker until store close', (
+      tester,
+    ) async {
+      final location = 'worker_${DateTime.now().microsecondsSinceEpoch}';
+      final lockName = 'flutter-edge-ai-sqlite:$location';
+      final store = WebSqliteVectorStore();
+      addTearDown(store.close);
+      await store.initialize(location);
+
+      final worker = web.Worker('rag_lock_worker.js'.toJS);
+      addTearDown(() => worker.terminate());
+      expect(
+        await _workerCanAcquire(worker, lockName),
+        isFalse,
+        reason: 'a distinct worker acquired the store lifetime lock',
+      );
+
+      await store.close();
+      expect(
+        await _workerCanAcquire(worker, lockName),
+        isTrue,
+        reason: 'the store did not release its browser-wide lifetime lock',
+      );
+    });
+
+    testWidgets('failed profile durability fence poisons the store', (
+      tester,
+    ) async {
+      final location = 'fence_${DateTime.now().microsecondsSinceEpoch}';
+      final store = WebSqliteVectorStore(
+        durabilityFenceForTesting: () async {
+          throw StateError('deterministic durability-fence failure');
+        },
+      );
+      addTearDown(store.close);
+      await store.initialize(location);
+
+      await expectLater(
+        store.bindEmbeddingProfile(
+          EmbeddingProfile(id: 'fence-profile-v1', dimension: 4),
+        ),
+        throwsA(
+          isA<VectorStoreException>().having(
+            (error) => error.message,
+            'message',
+            contains('could not be made durable'),
+          ),
+        ),
+      );
+      expect(store.isInitialized, isFalse);
+      await expectLater(store.readEmbeddingProfile(), throwsStateError);
+      await expectLater(
+        store.bindEmbeddingProfile(
+          EmbeddingProfile(id: 'second-profile-v1', dimension: 4),
+        ),
+        throwsStateError,
+      );
+      await expectLater(
+        store.addDocument(
+          id: 'unsafe',
+          content: 'unsafe',
+          embedding: const [1, 0, 0, 0],
+        ),
+        throwsStateError,
+      );
+      await expectLater(
+        store.searchSimilar(queryEmbedding: const [1, 0, 0, 0], topK: 1),
+        throwsStateError,
+      );
+
+      // Poisoning also releases the lifetime lease, so recovery starts from a
+      // fresh handle rather than the uncertain live snapshot.
+      final reopened = WebSqliteVectorStore();
+      addTearDown(reopened.close);
+      await expectLater(reopened.initialize(location), completes);
+    });
+
+    testWidgets('close waits for an active profile durability fence', (
+      tester,
+    ) async {
+      final location = 'close_fence_${DateTime.now().microsecondsSinceEpoch}';
+      final fenceEntered = Completer<void>();
+      final releaseFence = Completer<void>();
+      final store = WebSqliteVectorStore(
+        durabilityFenceForTesting: () async {
+          fenceEntered.complete();
+          await releaseFence.future;
+        },
+      );
+      addTearDown(store.close);
+      await store.initialize(location);
+
+      final binding = store.bindEmbeddingProfile(
+        EmbeddingProfile(id: 'close-fence-v1', dimension: 4),
+      );
+      await fenceEntered.future;
+      var closeCompleted = false;
+      final closing = store.close().then((_) => closeCompleted = true);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(store.isInitialized, isFalse);
+      expect(
+        closeCompleted,
+        isFalse,
+        reason: 'close overtook a durability fence already in flight',
+      );
+      await expectLater(store.getStats(), throwsStateError);
+
+      releaseFence.complete();
+      await binding;
+      await closing;
+      expect(closeCompleted, isTrue);
+
+      final reopened = WebSqliteVectorStore();
+      addTearDown(reopened.close);
+      await expectLater(reopened.initialize(location), completes);
+    });
+
+    testWidgets('missing Web Locks fails closed before opening storage', (
+      tester,
+    ) async {
+      final location = 'no_locks_${DateTime.now().microsecondsSinceEpoch}';
+      final unsupported = WebSqliteVectorStore(
+        forceBrowserLocksUnavailableForTesting: true,
+      );
+      addTearDown(unsupported.close);
+
+      await expectLater(
+        unsupported.initialize(location),
+        throwsA(
+          isA<VectorStoreException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('requires the Web Locks API'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('No database was opened'),
+              ),
+        ),
+      );
+      expect(unsupported.isInitialized, isFalse);
+
+      // A failed capability check must not leak the same-context guard.
+      final supported = WebSqliteVectorStore();
+      addTearDown(supported.close);
+      await expectLater(supported.initialize(location), completes);
     });
   });
 }

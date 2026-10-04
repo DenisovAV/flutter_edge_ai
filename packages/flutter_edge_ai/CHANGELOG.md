@@ -1,3 +1,6 @@
+## 1.12.0
+- Move RAG APIs and storage contracts to `flutter_edge_ai_rag`.
+
 ## 1.11.4
 - Renamed from `flutter_gemma`; `dart fix --apply` migrates, old names deprecated until 2.0.0.
 - Web: keep plain-string SDK responses; an unexpected content shape now fails the stream.
@@ -716,8 +719,6 @@
 - Added opportunity to setup a model before initiation
 ## 0.0.1
 - Initial release
-
-
 
 
 

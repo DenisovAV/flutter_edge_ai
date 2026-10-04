@@ -18,6 +18,7 @@ import 'dart:math' as math;
 // ignore_for_file: deprecated_member_use
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart' as rag;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
@@ -203,6 +204,12 @@ void main() {
 
           final repo = SqliteVectorStore();
           await repo.initialize(dbPath);
+          await repo.bindEmbeddingProfile(
+            rag.EmbeddingProfile(
+              id: 'dart-benchmark-embedding-768d-v1',
+              dimension: vectors.first.length,
+            ),
+          );
 
           // Upsert N points. DartVectorStoreRepository has no batch API — it
           // adds documents one at a time. The single-call overhead is part of

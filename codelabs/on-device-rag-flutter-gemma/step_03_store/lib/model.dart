@@ -97,12 +97,16 @@ abstract final class Models {
 abstract final class Embedders {
   static const embeddingGemma = EmbedderChoice(
     label: 'EmbeddingGemma 300M',
+    profileId:
+        'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+        'retrieval-prefix-meanpool-l2-v1',
     modelUrl:
         'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/'
-        'main/embeddinggemma-300M_seq256_mixed-precision.tflite',
+        '29888fcee3216acadc7e844906e5fe0d79a61875/'
+        'embeddinggemma-300M_seq256_mixed-precision.tflite',
     tokenizerUrl:
         'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/'
-        'main/sentencepiece.model',
+        '29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model',
     sizeLabel: '0.2 GB',
     // Same licence gate as Gemma 3 above, and the same HF_TOKEN covers both.
     requiresToken: true,
@@ -113,6 +117,7 @@ abstract final class Embedders {
 class EmbedderChoice {
   const EmbedderChoice({
     required this.label,
+    required this.profileId,
     required this.modelUrl,
     required this.tokenizerUrl,
     required this.sizeLabel,
@@ -120,6 +125,7 @@ class EmbedderChoice {
   });
 
   final String label;
+  final String profileId;
   final String modelUrl;
   final String tokenizerUrl;
   final String sizeLabel;

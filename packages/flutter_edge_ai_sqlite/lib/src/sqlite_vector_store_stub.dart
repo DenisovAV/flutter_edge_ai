@@ -1,8 +1,10 @@
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 /// Stub for SqliteVectorStore on web/WASM platforms.
 /// Web uses WebSqliteVectorStore (package:sqlite3/wasm + vec0) instead.
 class SqliteVectorStore implements VectorStoreRepository {
+  SqliteVectorStore({Future<void> Function()? durabilityFenceForTesting});
+
   /// Present only so the stub keeps the same surface as the native class.
   ///
   /// A member added to the native arm and not here is an error `flutter test`
@@ -20,14 +22,6 @@ class SqliteVectorStore implements VectorStoreRepository {
   bool get isInitialized => false;
 
   @override
-  @Deprecated('No-op since vector search moved into SQLite; removed in 2.0')
-  bool get enableHnsw => false;
-
-  @override
-  @Deprecated('No-op since vector search moved into SQLite; removed in 2.0')
-  set enableHnsw(bool value) {}
-
-  @override
   FilterSchema get filterSchema => const FilterSchema();
 
   @override
@@ -35,6 +29,18 @@ class SqliteVectorStore implements VectorStoreRepository {
 
   @override
   Future<void> initialize(String databasePath) async =>
+      throw UnimplementedError(
+        'SqliteVectorStore is not available on web; use WebSqliteVectorStore',
+      );
+
+  @override
+  Future<EmbeddingProfile?> readEmbeddingProfile() async =>
+      throw UnimplementedError(
+        'SqliteVectorStore is not available on web; use WebSqliteVectorStore',
+      );
+
+  @override
+  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async =>
       throw UnimplementedError(
         'SqliteVectorStore is not available on web; use WebSqliteVectorStore',
       );

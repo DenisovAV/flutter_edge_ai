@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 /// Non-web stub for [QdrantVectorStore]. qdrant-edge can't compile to WASM,
 /// so on web every method throws; web RAG uses flutter_edge_ai_sqlite's
@@ -14,9 +14,6 @@ class QdrantVectorStore implements VectorStoreRepository {
   @override
   bool get isInitialized => false;
 
-  @override
-  bool enableHnsw = true;
-
   // qdrant-edge can't run on web, so there is nothing to make filterable —
   // [configure] is a no-op and the schema stays empty. (`implements` does not
   // inherit the abstract class's bodied defaults, so these must be declared.)
@@ -28,6 +25,18 @@ class QdrantVectorStore implements VectorStoreRepository {
 
   @override
   Future<void> initialize(String databasePath) async =>
+      throw UnimplementedError(
+        'QdrantVectorStore is native-only; qdrant-edge cannot run on web',
+      );
+
+  @override
+  Future<EmbeddingProfile?> readEmbeddingProfile() async =>
+      throw UnimplementedError(
+        'QdrantVectorStore is native-only; qdrant-edge cannot run on web',
+      );
+
+  @override
+  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async =>
       throw UnimplementedError(
         'QdrantVectorStore is native-only; qdrant-edge cannot run on web',
       );
@@ -73,4 +82,27 @@ class QdrantVectorStore implements VectorStoreRepository {
 
   @override
   Future<void> close() async {}
+}
+
+/// Web-safe provider stub. It never attempts to load qdrant native code.
+class QdrantVectorStoreProvider implements VectorStoreProvider {
+  const QdrantVectorStoreProvider();
+
+  @override
+  String get id => 'qdrant';
+
+  @override
+  String get name => 'qdrant-edge';
+
+  @override
+  int get priority => 0;
+
+  @override
+  bool canHandle(VectorStoreSpec spec) => false;
+
+  @override
+  Future<VectorStoreRepository> createStore(VectorStoreSpec spec) async =>
+      throw UnsupportedError(
+        'QdrantVectorStore is native-only; qdrant-edge cannot run on web',
+      );
 }

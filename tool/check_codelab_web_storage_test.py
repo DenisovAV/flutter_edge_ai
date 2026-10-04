@@ -40,8 +40,8 @@ PUBSPEC = """name: demo
 environment:
   sdk: '>=3.0.0 <4.0.0'
 dependencies:
-  flutter_edge_ai: ^1.11.4
-  flutter_edge_ai_litertlm: ^1.8.6
+  flutter_edge_ai: ^1.12.0
+  flutter_edge_ai_litertlm: ^1.8.7
 """
 
 MAIN = """import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -124,7 +124,7 @@ def with_speech(app: Path, environments: str | None) -> Path:
     """Make the fixture depend on flutter_edge_ai_speech, and give its codelab a
     claat header with this environments line (None: no header at all)."""
     pubspec = app / "pubspec.yaml"
-    pubspec.write_text(pubspec.read_text() + "  flutter_edge_ai_speech: ^0.5.2\n")
+    pubspec.write_text(pubspec.read_text() + "  flutter_edge_ai_speech: ^0.5.3\n")
     if environments is not None:
         header = app.parents[2] / "website" / "codelabs" / app.parent.name / "index.md"
         header.parent.mkdir(parents=True, exist_ok=True)
@@ -218,13 +218,13 @@ MUST_FAIL = {
     ),
     "4-space dependencies block": lambda app: (
         (app / "pubspec.yaml").write_text(
-            PUBSPEC.replace("  flutter_edge_ai: ^1.11.4", "    flutter_edge_ai: ^1.11.4")
+            PUBSPEC.replace("  flutter_edge_ai: ^1.12.0", "    flutter_edge_ai: ^1.12.0")
         ),
         (app / "web" / "cache_api.js").unlink(),
     ),
     "flow-style dependencies": lambda app: (
         (app / "pubspec.yaml").write_text(
-            "name: demo\ndependencies: {flutter_edge_ai: ^1.11.4, flutter_edge_ai_litertlm: ^1.8.6}\n"
+            "name: demo\ndependencies: {flutter_edge_ai: ^1.12.0, flutter_edge_ai_litertlm: ^1.8.7}\n"
         ),
         (app / "web" / "cache_api.js").unlink(),
     ),
@@ -265,7 +265,7 @@ MUST_PASS = {
     ),
     "dev_dependencies only": lambda app: (
         (app / "pubspec.yaml").write_text(
-            "name: demo\ndev_dependencies:\n  flutter_edge_ai: ^1.11.4\n"
+            "name: demo\ndev_dependencies:\n  flutter_edge_ai: ^1.12.0\n"
         ),
         (app / "web" / "cache_api.js").unlink(),
         (app / "web" / "opfs_helper.js").unlink(),

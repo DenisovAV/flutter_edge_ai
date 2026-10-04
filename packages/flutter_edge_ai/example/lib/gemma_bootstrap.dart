@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
@@ -6,8 +5,9 @@ import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_mediapipe/flutter_edge_ai_mediapipe.dart';
 import 'package:flutter_edge_ai_onnx/flutter_edge_ai_onnx.dart';
-import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart' as rag;
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 
 /// The opt-in inference engines the example registers. Single source of truth —
@@ -72,48 +72,50 @@ final kExampleSkillExecutors = <SkillExecutor>[
   NativeIntentExecutor(),
 ];
 
+/// RAG is instance-scoped and independent from [FlutterEdgeAi.initialize].
+/// Each provider creates a fresh store for every opened [rag.RagIndex].
+final exampleRag = rag.FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider(), QdrantVectorStoreProvider()],
+);
+
+const kRagDemoFilterSchema = rag.FilterSchema(
+  fields: [rag.FilterField(name: 'category', type: rag.FilterFieldType.string)],
+);
+
 /// The RAG vector-store backends the example can switch between.
 enum RagBackend {
-  sqlite('SQLite'),
-  qdrant('Qdrant');
+  sqlite('sqlite', 'SQLite'),
+  qdrant('qdrant', 'Qdrant');
 
-  const RagBackend(this.label);
+  const RagBackend(this.providerId, this.label);
+
+  final String providerId;
   final String label;
 
-  /// Qdrant is native-only (no web build). Sqlite runs everywhere.
-  bool get isSupportedOnThisPlatform => this == RagBackend.sqlite || !kIsWeb;
+  /// Provider support is probed through its conditional implementation. App
+  /// code never needs a platform branch to choose a vector-store class.
+  bool get isSupportedOnThisPlatform => exampleRag.canOpen(
+    rag.VectorStoreSpec(providerId: providerId, location: 'support-probe'),
+  );
 
-  /// Storage path passed to `initializeVectorStore`. Sqlite expects a `.db`
-  /// FILE; qdrant-edge treats the path as a shard DIRECTORY (it creates a
-  /// subdir there and `clear()` recursively deletes it), so each backend gets
-  /// its own path shape — they never collide on disk.
-  String get storageName => switch (this) {
-    RagBackend.sqlite => 'rag_demo.db',
-    RagBackend.qdrant => 'rag_demo_qdrant',
+  /// One persistent location represents one embedding space. Including the
+  /// explicit profile ID prevents a later Gecko/EmbeddingGemma selection from
+  /// reopening vectors produced by a different model.
+  String storageName(String embeddingProfileId) => switch (this) {
+    RagBackend.sqlite => 'rag_demo_sqlite_$embeddingProfileId.db',
+    RagBackend.qdrant => 'rag_demo_qdrant_$embeddingProfileId',
   };
 }
 
-/// Builds the VectorStoreRepository for [backend] on the current platform.
-VectorStoreRepository vectorStoreFor(RagBackend backend) {
-  switch (backend) {
-    case RagBackend.sqlite:
-      return kIsWeb ? WebSqliteVectorStore() : SqliteVectorStore();
-    case RagBackend.qdrant:
-      // Native-only; callers must guard with isSupportedOnThisPlatform on web.
-      return QdrantVectorStore();
-  }
-}
-
-/// Single source of truth for FlutterEdgeAi.initialize. Called at app startup
-/// (main.dart) AND when the RAG demo switches the vector store backend
-/// (after FlutterEdgeAi.reset()). Keeps the engine/backend lists DRY.
+/// Single source of truth for [FlutterEdgeAi.initialize], called at app startup.
+/// RAG indexes have their own lifecycle and never reset this runtime.
 ///
 /// `WebStorageMode.streaming` (OPFS-backed) is required for `.litertlm`
-/// web models since flutter_gemma 0.16.2 — the @litert-lm/core engine consumes a
+/// web models since flutter_edge_ai 0.16.2 — the @litert-lm/core engine consumes a
 /// ReadableStream from OPFS, avoiding Chrome's ~2 GB blob-fetch limit
 /// that bites the cacheApi path on Gemma 4 E2B/E4B web variants.
 /// MediaPipe `.task` models also work fine under streaming mode.
-Future<void> bootstrapGemma({required RagBackend ragBackend}) {
+Future<void> bootstrapGemma() {
   return FlutterEdgeAi.initialize(
     webStorageMode: WebStorageMode.streaming,
     inferenceEngines: kExampleInferenceEngines,
@@ -124,6 +126,5 @@ Future<void> bootstrapGemma({required RagBackend ragBackend}) {
     // huggingFaceResolvers: omitted — resolvers auto-register from the engines
     // above (each implements HuggingFaceResolverSource). See the note there.
     skillExecutors: kExampleSkillExecutors,
-    vectorStore: vectorStoreFor(ragBackend),
   );
 }

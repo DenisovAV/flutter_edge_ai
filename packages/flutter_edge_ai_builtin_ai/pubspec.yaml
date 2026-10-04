@@ -1,6 +1,6 @@
 name: flutter_edge_ai_builtin_ai
 description: "Opt-in flutter_edge_ai engine for the OS built-in model: Gemini Nano (Android), Apple Foundation Models (iOS/macOS), Windows AI Foundry, Chrome's Prompt API on Web."
-version: 0.3.0
+version: 0.3.1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_builtin_ai
 topics: [gemma, llm, gemini-nano, on-device, prompt-api]
@@ -30,7 +30,7 @@ dependencies:
   # (supportAudio, loraRanks, maxNumImages, maxConcurrentSessions) predates
   # it — 1.6.1 already compared all ten runtime knobs — and no 1.7.x entry
   # adds one. `openSession` landed in 0.16.2.
-  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai: ^1.12.0
   # Supplies the whole native/web layer this package used to ship itself.
   flutter_local_ai: ^0.2.1
   meta: ^1.15.0

@@ -14,12 +14,12 @@
 
 import 'dart:io';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 // Internal (src/) import, valid within the same package: needed to pin the
 // QdrantException → VectorStoreException wrapping contract directly against
 // QdrantEdgeClient (see 'exception wrapping' group below).
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
@@ -29,6 +29,10 @@ import 'package:path/path.dart' as p;
 /// contract; these tests assert the on-disk layout as a safety property, not
 /// as an API guarantee.
 const _storeDirName = 'qdrant_edge_v1';
+final _testProfile4 = EmbeddingProfile(
+  id: 'qdrant-vector-store-tests-v1',
+  dimension: 4,
+);
 
 void main() {
   late QdrantVectorStore repo;
@@ -39,6 +43,7 @@ void main() {
     shardDir =
         '${Directory.systemTemp.path}/qdrant_unit_${DateTime.now().microsecondsSinceEpoch}';
     await repo.initialize(shardDir);
+    await repo.bindEmbeddingProfile(_testProfile4);
   });
 
   tearDown(() async {
@@ -638,14 +643,6 @@ void main() {
       final stats = await repo.getStats();
       expect(stats.documentCount, equals(0));
     });
-
-    test('enableHnsw is accepted but a no-op (toggle does not throw)', () {
-      expect(repo.enableHnsw, isTrue);
-      repo.enableHnsw = false;
-      expect(repo.enableHnsw, isFalse);
-      repo.enableHnsw = true;
-      expect(repo.enableHnsw, isTrue);
-    });
   });
 
   // ---- Bounded subdir + fail-safe tests (plan §Verification-4) -------------
@@ -680,6 +677,7 @@ void main() {
 
       final store = QdrantVectorStore();
       await store.initialize(dbDir.path);
+      await store.bindEmbeddingProfile(_testProfile4);
       await store.addDocument(
         id: 'doc',
         content: 'doc',
@@ -727,7 +725,7 @@ void main() {
       await store.close();
     });
 
-    test('(b) junk occupying the owned-subdir path makes addDocument throw a '
+    test('(b) junk occupying the owned-subdir path makes profile bind throw a '
         'VectorStoreException, with the junk left untouched', () async {
       // Occupy the exact path the store would create its subdir at, with a
       // plain file instead of a directory — the store can neither mkdir
@@ -739,11 +737,7 @@ void main() {
       await store.initialize(dbDir.path);
 
       await expectLater(
-        () => store.addDocument(
-          id: 'doc',
-          content: 'doc',
-          embedding: const [1.0, 0.0, 0.0, 0.0],
-        ),
+        store.bindEmbeddingProfile(_testProfile4),
         throwsA(isA<VectorStoreException>()),
       );
 
@@ -789,6 +783,9 @@ void main() {
       final store = QdrantVectorStore();
       await store.initialize(
         '${Directory.systemTemp.path}/qdrant_nowrite_${DateTime.now().microsecondsSinceEpoch}',
+      );
+      await store.bindEmbeddingProfile(
+        EmbeddingProfile(id: 'qdrant-empty-search-v1', dimension: 1),
       );
       expect(
         await store.searchSimilar(queryEmbedding: const [1.0], topK: 5),

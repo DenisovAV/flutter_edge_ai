@@ -1,4 +1,4 @@
-// Lifecycle and on-disk-format regressions for the 2.0 UniFFI migration.
+// Lifecycle and on-disk-format regressions for the 1.4.0 provider migration.
 //
 // Every test here pins a failure that the 82-test suite next door could not
 // see, because all of those live inside one process against a `setUp`-fresh
@@ -16,17 +16,29 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 import 'package:flutter_edge_ai_qdrant/src/point_id_hasher.dart';
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qdrant_edge/qdrant_edge.dart' as qe;
 
 /// The owned, format-scoped subdirectory this release keeps its shard in.
 const storeDirName = 'qdrant_edge_v1';
+final testProfile4 = EmbeddingProfile(
+  id: 'qdrant-lifecycle-tests-v1',
+  dimension: 4,
+);
 
 List<double> vec(int dim, double seed) => List<double>.filled(dim, seed);
+
+Future<void> initializeBound4(
+  QdrantVectorStore store,
+  String databasePath,
+) async {
+  await store.initialize(databasePath);
+  await store.bindEmbeddingProfile(testProfile4);
+}
 
 /// Lays out the three entries a 1.x (crate 0.7.x) shard wrote directly at the
 /// caller's databasePath, before this package owned a versioned subdirectory.
@@ -67,7 +79,7 @@ void main() {
         // `Can't init WAL: Kind(WouldBlock)` — losing that document.
         // `Future.wait(docs.map(store.addDocument))` is how you index a corpus.
         final store = QdrantVectorStore();
-        await store.initialize(tmp.path);
+        await initializeBound4(store, tmp.path);
         await Future.wait([
           for (var i = 0; i < 8; i++)
             store.addDocument(
@@ -89,7 +101,7 @@ void main() {
         // shard was never unloaded, and its WAL lock was held until the process
         // exited — every later initialize() on that path failed permanently.
         final store = QdrantVectorStore();
-        await store.initialize(tmp.path);
+        await initializeBound4(store, tmp.path);
         final write = store.addDocument(
           id: 'a',
           content: 'a',
@@ -105,7 +117,7 @@ void main() {
 
         // The decisive part: the lock must be gone, so a fresh store can open.
         final second = QdrantVectorStore();
-        await second.initialize(tmp.path);
+        await initializeBound4(second, tmp.path);
         await second.addDocument(id: 'b', content: 'b', embedding: vec(4, 2));
         expect((await second.getStats()).documentCount, greaterThan(0));
         await second.close();
@@ -119,7 +131,7 @@ void main() {
       // re-opened after an app restart reported 0 documents and 0 hits until
       // something happened to write — retrieval silently returned nothing.
       final first = QdrantVectorStore();
-      await first.initialize(tmp.path);
+      await initializeBound4(first, tmp.path);
       for (var i = 0; i < 5; i++) {
         await first.addDocument(
           id: 'doc$i',
@@ -130,7 +142,7 @@ void main() {
       await first.close();
 
       final reopened = QdrantVectorStore();
-      await reopened.initialize(tmp.path);
+      await initializeBound4(reopened, tmp.path);
       expect((await reopened.getStats()).documentCount, 5);
       expect(
         await reopened.searchSimilar(queryEmbedding: vec(4, 1), topK: 10),
@@ -143,13 +155,13 @@ void main() {
       // Before: removeDocument() returned early with only a log line when the
       // client had not been opened yet, and the document survived.
       final first = QdrantVectorStore();
-      await first.initialize(tmp.path);
+      await initializeBound4(first, tmp.path);
       await first.addDocument(id: 'keep', content: 'k', embedding: vec(4, 1));
       await first.addDocument(id: 'drop', content: 'd', embedding: vec(4, 2));
       await first.close();
 
       final reopened = QdrantVectorStore();
-      await reopened.initialize(tmp.path);
+      await initializeBound4(reopened, tmp.path);
       await reopened.removeDocument(id: 'drop');
       expect((await reopened.getStats()).documentCount, 1);
       await reopened.close();
@@ -158,7 +170,7 @@ void main() {
 
   group('a store written by 1.x', () {
     test('initialize() itself refuses, not just the first write', () async {
-      // Before: 2.0 only ever looks under its owned subdir, so a 1.x shard was
+      // Before: 1.4.0 only looked under its owned subdir, so a 1.x shard was
       // invisible — no error, no log, an empty index, and the old corpus still
       // occupying disk.
       //
@@ -224,10 +236,10 @@ void main() {
       // qdrant-edge holds the WAL exclusively. A second store on the same path
       // — a second isolate, a second app process, a store the caller forgot to
       // close — cannot adopt the shard. Before: adoption failure went to
-      // edgeAiLog, which is `if (!kDebugMode) return;`, so a RELEASE build told
+      // ragLog, which is debug-only, so a RELEASE build told
       // nobody and every read answered "empty" over an intact corpus.
       final holder = QdrantVectorStore();
-      await holder.initialize(tmp.path);
+      await initializeBound4(holder, tmp.path);
       await holder.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
       addTearDown(holder.close);
 
@@ -254,7 +266,7 @@ void main() {
 
     test('a genuinely cold store stays quiet', () async {
       // NOT a regression pin: the pre-fix code passes this too, because back
-      // then adoption threw, was swallowed into edgeAiLog, and getStats()
+      // then adoption threw, was swallowed into ragLog, and getStats()
       // returned 0 — which is what this asserts. What it actually guards is
       // the fix OVER-correcting. qdrant-edge raises the same error for
       // "nothing here" as for "here but unreadable", so a latch that keyed on
@@ -263,7 +275,7 @@ void main() {
       // the first half (a fresh store) asserts nothing and is kept only as the
       // baseline the second half is read against.
       final store = QdrantVectorStore();
-      await store.initialize(tmp.path);
+      await initializeBound4(store, tmp.path);
       expect((await store.getStats()).documentCount, 0);
       expect(
         await store.searchSimilar(queryEmbedding: vec(4, 1), topK: 5),
@@ -273,7 +285,7 @@ void main() {
 
       Directory('${tmp.path}/qdrant_edge_v1').createSync(recursive: true);
       final overLeftover = QdrantVectorStore();
-      await overLeftover.initialize(tmp.path);
+      await initializeBound4(overLeftover, tmp.path);
       expect(
         (await overLeftover.getStats()).documentCount,
         0,
@@ -294,7 +306,7 @@ void main() {
       // re-initialize its own fail-closed path prescribes laundered it into a
       // confident zero.
       final seed = QdrantVectorStore();
-      await seed.initialize(tmp.path);
+      await initializeBound4(seed, tmp.path);
       await seed.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
       await seed.addDocument(id: 'b', content: 'y', embedding: vec(4, 2));
       await seed.close();
@@ -302,7 +314,7 @@ void main() {
       File('${tmp.path}/$storeDirName/edge_config.json').deleteSync();
 
       final reopened = QdrantVectorStore();
-      await reopened.initialize(tmp.path);
+      await initializeBound4(reopened, tmp.path);
       expect(
         (await reopened.getStats()).documentCount,
         2,
@@ -317,7 +329,7 @@ void main() {
       // unreadable was erasable by an ordinary addDocument, which then merged
       // into the very shard just reported as empty.
       final holder = QdrantVectorStore();
-      await holder.initialize(tmp.path);
+      await initializeBound4(holder, tmp.path);
       await holder.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
       addTearDown(holder.close);
 
@@ -367,7 +379,7 @@ void main() {
           } catch (_) {}
         });
         final holder = QdrantVectorStore();
-        await holder.initialize(tmp.path);
+        await initializeBound4(holder, tmp.path);
         await holder.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
         addTearDown(holder.close);
 
@@ -392,7 +404,7 @@ void main() {
       // latched the store unreadable over an intact corpus — while BOTH
       // reported success.
       final seed = QdrantVectorStore();
-      await seed.initialize(tmp.path);
+      await initializeBound4(seed, tmp.path);
       await seed.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
       await seed.addDocument(id: 'b', content: 'y', embedding: vec(4, 2));
       await seed.close();
@@ -467,7 +479,7 @@ void main() {
       Directory('${tmp.path}/$storeDirName').createSync(recursive: true);
       final store = QdrantVectorStore();
       addTearDown(store.close);
-      await store.initialize(tmp.path);
+      await initializeBound4(store, tmp.path);
       expect(
         (await store.getStats()).documentCount,
         0,
@@ -487,7 +499,7 @@ void main() {
         File('${tmp.path}/edge_config.json').writeAsStringSync('not our file');
         final store = QdrantVectorStore();
         addTearDown(store.close);
-        await store.initialize(tmp.path);
+        await initializeBound4(store, tmp.path);
         await store.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
         expect((await store.getStats()).documentCount, 1);
         expect(
@@ -566,7 +578,7 @@ void main() {
         // which of the three this is.
         final store = QdrantVectorStore();
         addTearDown(store.close);
-        await store.initialize(tmp.path);
+        await initializeBound4(store, tmp.path);
         await expectLater(store.removeDocument(id: 'never-added'), completes);
       },
     );
@@ -585,7 +597,7 @@ void main() {
         // behind is usable.
         final store = QdrantVectorStore();
         addTearDown(store.close);
-        await store.initialize(tmp.path);
+        await initializeBound4(store, tmp.path);
         await store.addDocument(id: 'seed', content: 's', embedding: vec(4, 1));
 
         final outcomes = await Future.wait([
@@ -612,7 +624,7 @@ void main() {
       // store on that path fails WouldBlock — which this release now latches,
       // so it would present as "your corpus is unreadable" forever.
       final store = QdrantVectorStore();
-      await store.initialize(tmp.path);
+      await initializeBound4(store, tmp.path);
       await Future.wait([
         store.close().catchError((Object e) {}),
         store
@@ -622,7 +634,7 @@ void main() {
 
       final reopened = QdrantVectorStore();
       addTearDown(reopened.close);
-      await reopened.initialize(tmp.path);
+      await initializeBound4(reopened, tmp.path);
       await expectLater(
         reopened.getStats(),
         completes,
@@ -637,7 +649,7 @@ void main() {
       // shape — and the one the lane's own comment cites. Advancing the lane
       // with `run.then((_) {}, onError: (_) {})` registered a listener on the
       // CALLER's future, which marks the error handled globally: no zone
-      // error, no FlutterError.onError, no crash reporter, and edgeAiLog is
+      // error, no FlutterError.onError, no crash reporter, and ragLog is
       // debug-only. The release's headline error went nowhere at all, and the
       // same lane ate clear()'s partial-delete report — which throws instead
       // of logging for exactly that reason.
@@ -773,7 +785,7 @@ void main() {
         // files to remove is an instruction that destroys data just as well as
         // a deleteSync does, and we cannot tell whose files these are.
         try {
-          await store.initialize(tmp.path);
+          await initializeBound4(store, tmp.path);
           fail('initialize() accepted a directory it does not own');
         } on VectorStoreException catch (e) {
           expect(e.message, contains('did not write'));
@@ -790,7 +802,7 @@ void main() {
       File('${tmp.path}/edge_config.json').writeAsStringSync('{}');
       final store = QdrantVectorStore();
       addTearDown(store.close);
-      await store.initialize(tmp.path);
+      await initializeBound4(store, tmp.path);
       await store.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
       expect((await store.getStats()).documentCount, 1);
     });
@@ -808,7 +820,7 @@ void main() {
       // reset at the top of initialize() and the adoption-success path — and
       // removing either alone leaves this green. Removing BOTH kills it.
       final holder = QdrantVectorStore();
-      await holder.initialize(tmp.path);
+      await initializeBound4(holder, tmp.path);
       await holder.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
 
       final second = QdrantVectorStore();
@@ -823,7 +835,7 @@ void main() {
       );
 
       await holder.close(); // the cause goes away
-      await second.initialize(tmp.path); // the message says to do this
+      await initializeBound4(second, tmp.path); // the message says to do this
 
       expect(second.isInitialized, isTrue);
       expect(
@@ -888,7 +900,7 @@ void main() {
         // The sibling constant (the UUIDv5 namespace) already has a golden test;
         // this is the same instinct applied to the keys next to it.
         final store = QdrantVectorStore();
-        await store.initialize(tmp.path);
+        await initializeBound4(store, tmp.path);
         await store.addDocument(
           id: 'doc-1',
           content: 'the body',
@@ -958,7 +970,7 @@ void main() {
 
     test('writes the id tracker the next open needs', () async {
       final store = QdrantVectorStore();
-      await store.initialize(tmp.path);
+      await initializeBound4(store, tmp.path);
       await write(store, 20);
 
       // `idTrackerFiles` answers `const []` for a missing directory, so assert
@@ -999,7 +1011,7 @@ void main() {
       // This asserts the contract's outcome rather than this engine's file
       // names, so it survives a qdrant release that reorganises its segments.
       final store = QdrantVectorStore();
-      await store.initialize(tmp.path);
+      await initializeBound4(store, tmp.path);
       await write(store, 20);
 
       Future<Directory> snapshot(String suffix) async {
@@ -1024,7 +1036,7 @@ void main() {
       await store.close();
 
       final unflushed = QdrantVectorStore();
-      await unflushed.initialize(beforeFlush.path);
+      await initializeBound4(unflushed, beforeFlush.path);
       expect(
         (await unflushed.getStats()).documentCount,
         0,
@@ -1033,7 +1045,7 @@ void main() {
       await unflushed.close();
 
       final flushed = QdrantVectorStore();
-      await flushed.initialize(afterFlush.path);
+      await initializeBound4(flushed, afterFlush.path);
       expect((await flushed.getStats()).documentCount, 20);
       await flushed.close();
     }, skip: Platform.isWindows ? 'shells out to cp' : null);
@@ -1046,7 +1058,7 @@ void main() {
       // passes with the flush call deleted. The id-tracker test above is the
       // one that pins persistence, and it is the one mutation-checked.
       final store = QdrantVectorStore();
-      await store.initialize(tmp.path);
+      await initializeBound4(store, tmp.path);
       await write(store, 5);
       await store.flush();
 
@@ -1056,7 +1068,7 @@ void main() {
       await store.close();
 
       final reopened = QdrantVectorStore();
-      await reopened.initialize(tmp.path);
+      await initializeBound4(reopened, tmp.path);
       expect((await reopened.getStats()).documentCount, 6);
       await reopened.close();
     });
@@ -1076,7 +1088,7 @@ void main() {
         // VectorStoreException` — would miss every flush failure if the raw type
         // leaked. Every other method here translates; this one has to as well.
         final store = QdrantVectorStore();
-        await store.initialize(tmp.path);
+        await initializeBound4(store, tmp.path);
         await write(store, 5);
 
         // Pull the shard directory out from under the open store. The engine
@@ -1094,7 +1106,7 @@ void main() {
 
     test('is quiet after close, and when called twice', () async {
       final store = QdrantVectorStore();
-      await store.initialize(tmp.path);
+      await initializeBound4(store, tmp.path);
       await write(store, 3);
       await expectLater(store.flush(), completes);
       await expectLater(store.flush(), completes);

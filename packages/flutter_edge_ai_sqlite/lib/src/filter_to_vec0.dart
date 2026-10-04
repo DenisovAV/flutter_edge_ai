@@ -3,8 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_log.dart';
 
 /// Translates a [Filter] into a SQL `WHERE` fragment over vec0's declared
 /// typed metadata columns, plus the ordered bind list.
@@ -788,7 +788,7 @@ class FilterToVec0 {
         // return documents that never carried the field. Unfixable in the
         // storage (any string is writable) — see absentText — so the least
         // dishonest thing is to say it happened.
-        edgeAiLog(
+        sqliteLog(
           '[FilterToVec0] metadata["${field.name}"] equals the absent-value '
           'sentinel — this document is indistinguishable from one missing the '
           'field, and filters on it will answer accordingly',
@@ -807,7 +807,7 @@ class FilterToVec0 {
         // there has list semantics and DOES match; vec0 has a single scalar
         // column and no way to express that. Neither can imitate the other, so
         // the honest move is to say so at the moment the value is dropped.
-        edgeAiLog(
+        sqliteLog(
           '[FilterToVec0] metadata["${field.name}"] is a ${raw.runtimeType} '
           'but the field is declared ${field.type.name} — stored as absent, '
           'so filters on it will not match this document',

@@ -8,6 +8,7 @@ environment:
 # `resolution: workspace` in its own pubspec.yaml.
 workspace:
   - packages/flutter_edge_ai
+  - packages/flutter_edge_ai_rag
   - packages/flutter_edge_ai_sqlite
   - packages/flutter_edge_ai_qdrant
   - packages/flutter_edge_ai_litertlm

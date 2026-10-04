@@ -1,6 +1,6 @@
 name: flutter_edge_ai_speech
 description: "On-device speech (STT + TTS) for flutter_edge_ai via the LiteRT C API + dart:ffi. Opt-in Stt/TtsBackendProvider."
-version: 0.5.2
+version: 0.5.3
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_speech
 topics: [speech, stt, gemma, litert, on-device]
@@ -30,7 +30,7 @@ dependencies:
   # `getActiveStt(language:)`. On an older core it resolves, compiles and
   # transcribes — always in English — so the feature would be advertised and
   # silently inert.
-  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai: ^1.12.0
   # ^1.7.0: every tensor this package builds goes through litertlm's
   # LiteRtRankedTensorTypeView, and before 1.7.0 that view still used the MSVC
   # LiteRtLayout on Windows — STT/TTS failed there with status 3.

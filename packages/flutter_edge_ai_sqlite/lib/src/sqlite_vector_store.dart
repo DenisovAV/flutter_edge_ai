@@ -1,18 +1,21 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_log.dart';
+import 'package:flutter_edge_ai_sqlite/src/sqlite_profile_storage.dart';
 
 /// On-device RAG vector store backed by sqlite3 (dart:ffi) + the `sqlite-vec`
 /// (`vec0`) virtual table. Native platforms only; web uses
-/// [WebSqliteVectorStore]. Implements flutter_edge_ai's [VectorStoreRepository].
+/// [WebSqliteVectorStore]. Implements flutter_edge_ai_rag's
+/// [VectorStoreRepository].
 ///
 /// KNN runs inside SQLite (C via `sqlite-vec`) — there is no Dart brute-force
 /// or in-memory index. The `vec0` table carries the embedding plus auxiliary
@@ -20,9 +23,18 @@ import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 /// [FilterField], so `searchSimilar` returns the document and its metadata in a
 /// single query and pushes [Filter] predicates down to the engine.
 class SqliteVectorStore implements VectorStoreRepository {
+  SqliteVectorStore({@visibleForTesting this.durabilityFenceForTesting});
+
+  /// Test seam for suspending the post-COMMIT bind await deterministically.
+  @visibleForTesting
+  final Future<void> Function()? durabilityFenceForTesting;
+
   Database? _db;
   int? _detectedDimension;
+  EmbeddingProfile? _embeddingProfile;
   bool _isInitialized = false;
+  Future<void> _lifecycleTail = Future<void>.value();
+  int _pendingLifecycleActions = 0;
 
   /// vec0 virtual table holding `id TEXT PRIMARY KEY`, `embedding float[D]`,
   /// the auxiliary `+content`/`+metadata` columns, and one typed column per
@@ -35,15 +47,7 @@ class SqliteVectorStore implements VectorStoreRepository {
   FilterSchema _filterSchema = const FilterSchema();
 
   @override
-  @Deprecated('No-op since vector search moved into SQLite; removed in 2.0')
-  bool get enableHnsw => false;
-
-  @override
-  @Deprecated('No-op since vector search moved into SQLite; removed in 2.0')
-  set enableHnsw(bool value) {}
-
-  @override
-  bool get isInitialized => _isInitialized;
+  bool get isInitialized => _isInitialized && _pendingLifecycleActions == 0;
 
   @override
   FilterSchema get filterSchema => _filterSchema;
@@ -132,7 +136,10 @@ class SqliteVectorStore implements VectorStoreRepository {
   }
 
   @override
-  Future<void> initialize(String databasePath) async {
+  Future<void> initialize(String databasePath) =>
+      _enqueueLifecycle(() => _initialize(databasePath));
+
+  Future<void> _initialize(String databasePath) async {
     try {
       _ensureVec0Loaded();
       // Ensure the parent directory exists before sqlite3 opens the file.
@@ -146,7 +153,10 @@ class SqliteVectorStore implements VectorStoreRepository {
       }
       _db?.close();
       _db = sqlite3.open(databasePath);
+      ensureSqliteEmbeddingProfileTable(_db!);
       _detectDimensionFromExistingTable();
+      _embeddingProfile = readSqliteEmbeddingProfile(_db!);
+      _validateProfileDimension();
       // Last, and only once everything above succeeded. Setting it before
       // `_detectDimensionFromExistingTable()` — which throws on a schema this
       // release does not expect — meant a caller who did
@@ -167,6 +177,7 @@ class SqliteVectorStore implements VectorStoreRepository {
       // resurrecting the exact bug this change exists to fix.
       _isInitialized = false;
       _detectedDimension = null;
+      _embeddingProfile = null;
       final failed = _db;
       _db = null;
       try {
@@ -174,7 +185,7 @@ class SqliteVectorStore implements VectorStoreRepository {
       } catch (closeError) {
         // Nothing to act on: the store is already being reported as failed,
         // and the primary error is the one the caller needs.
-        edgeAiLog(
+        sqliteLog(
           '[SqliteVectorStore] close() during a failed initialize: $closeError',
         );
       }
@@ -193,14 +204,94 @@ class SqliteVectorStore implements VectorStoreRepository {
     // that database never had.
     _detectedDimension = null;
     final exists = _db!.select(
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
       [_tableName],
     );
     if (exists.isEmpty) return;
+    final createSql = exists.first['sql'];
+    if (createSql is String) {
+      final match = RegExp(
+        r'\bembedding\s+float\[(\d+)\]',
+        caseSensitive: false,
+      ).firstMatch(createSql);
+      final dimension = int.tryParse(match?.group(1) ?? '');
+      if (dimension != null && dimension > 0) {
+        _detectedDimension = dimension;
+        return;
+      }
+    }
     final row = _db!.select('SELECT embedding FROM $_tableName LIMIT 1');
     if (row.isEmpty) return;
     final blob = row.first['embedding'] as Uint8List;
     _detectedDimension = blob.length ~/ 4; // float32 = 4 bytes
+  }
+
+  void _validateProfileDimension() {
+    final profile = _embeddingProfile;
+    final dimension = _detectedDimension;
+    if (profile != null &&
+        dimension != null &&
+        profile.dimension != dimension) {
+      throw VectorStoreException(
+        'The persisted $profile conflicts with the SQLite vec_documents '
+        'dimension $dimension.',
+      );
+    }
+  }
+
+  EmbeddingProfile _requireEmbeddingProfile() {
+    final profile = _embeddingProfile;
+    if (profile == null) {
+      throw StateError(
+        'This SQLite vector store has no embedding profile. Bind one through '
+        'FlutterEdgeAiRag.open() before adding or searching vectors.',
+      );
+    }
+    return profile;
+  }
+
+  @override
+  Future<EmbeddingProfile?> readEmbeddingProfile() async {
+    if (!isInitialized || _db == null) {
+      throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+    final profile = readSqliteEmbeddingProfile(_db!);
+    _embeddingProfile = profile;
+    _validateProfileDimension();
+    return profile;
+  }
+
+  @override
+  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async {
+    if (!isInitialized || _db == null) {
+      throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+    await _enqueueLifecycle(() => _bindEmbeddingProfile(profile));
+  }
+
+  Future<void> _bindEmbeddingProfile(EmbeddingProfile profile) async {
+    final db = _db;
+    if (!_isInitialized || db == null) {
+      throw StateError('VectorStore closed before profile binding started.');
+    }
+    final dimension = _detectedDimension;
+    if (dimension != null && dimension != profile.dimension) {
+      throw VectorStoreException(
+        'Cannot bind $profile to a SQLite vec_documents shard with dimension '
+        '$dimension.',
+      );
+    }
+    await bindSqliteEmbeddingProfile(
+      db,
+      profile,
+      durabilityFence: durabilityFenceForTesting,
+    );
+    if (!_isInitialized || !identical(_db, db)) {
+      throw StateError(
+        'SQLite location changed while its embedding profile was binding.',
+      );
+    }
+    _embeddingProfile = profile;
   }
 
   /// Lazily creates the vec0 virtual table once the embedding dimension is
@@ -249,8 +340,16 @@ class SqliteVectorStore implements VectorStoreRepository {
     required List<double> embedding,
     String? metadata,
   }) async {
-    if (!_isInitialized) {
+    if (!isInitialized) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+
+    final profile = _requireEmbeddingProfile();
+    if (embedding.length != profile.dimension) {
+      throw ArgumentError(
+        'Embedding dimension mismatch: profile ${profile.dimension}, '
+        'got ${embedding.length}',
+      );
     }
 
     // Dimension validation / lazy table creation on the first add.
@@ -304,7 +403,7 @@ class SqliteVectorStore implements VectorStoreRepository {
 
   @override
   Future<void> removeDocument({required String id}) async {
-    if (!_isInitialized) {
+    if (!isInitialized) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
     if (_detectedDimension == null) return; // table not created yet → no-op
@@ -318,8 +417,16 @@ class SqliteVectorStore implements VectorStoreRepository {
     double threshold = 0.0,
     Filter? filter,
   }) async {
-    if (!_isInitialized) {
+    if (!isInitialized) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
+    }
+
+    final profile = _requireEmbeddingProfile();
+    if (queryEmbedding.length != profile.dimension) {
+      throw ArgumentError(
+        'Query dimension mismatch: profile ${profile.dimension}, '
+        'got ${queryEmbedding.length}',
+      );
     }
 
     if (_detectedDimension == null) {
@@ -410,7 +517,7 @@ class SqliteVectorStore implements VectorStoreRepository {
         fetch < totalRows &&
         fetch >= topK * FilterToVec0.maxOverFetchFactor;
     if (rowsReturned < topK && hitTheCap) {
-      edgeAiLog(
+      sqliteLog(
         '[SqliteVectorStore] searchSimilar found $rowsReturned of the '
         'requested $topK after over-fetching '
         '${topK * FilterToVec0.maxOverFetchFactor} candidates. This filter '
@@ -425,7 +532,7 @@ class SqliteVectorStore implements VectorStoreRepository {
 
   @override
   Future<VectorStoreStats> getStats() async {
-    if (!_isInitialized) {
+    if (!isInitialized) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
     final count = _detectedDimension == null
@@ -442,27 +549,29 @@ class SqliteVectorStore implements VectorStoreRepository {
 
   @override
   Future<void> clear() async {
-    if (!_isInitialized) {
+    if (!isInitialized) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
     if (_detectedDimension != null) {
-      // vec0 bakes the dimension into the DDL; drop the table so the next add
-      // re-detects the dimension and recreates it (resets the schema cleanly).
+      // Drop only the document table. The separately persisted embedding
+      // profile deliberately survives clear().
       _db!.execute('DROP TABLE IF EXISTS $_tableName');
     }
     _detectedDimension = null;
   }
 
   @override
-  Future<void> flush() async {
+  Future<void> flush() => _enqueueLifecycle(() async {
     // Nothing to do, and that is a property of sqlite3 rather than an omission
     // here: the connection runs in autocommit, so every statement addDocument
     // issues is its own transaction and is durable by the time it returns.
     // There is no in-memory segment for this store to settle up.
-  }
+  });
 
   @override
-  Future<void> close() async {
+  Future<void> close() => _enqueueLifecycle(_close);
+
+  Future<void> _close() async {
     // Deliberately NOT gated on `_isInitialized` alone. A store whose
     // initialize() failed is the one holding a handle nobody else will close,
     // and gating on the flag made close() a no-op for it. The catch in
@@ -481,7 +590,31 @@ class SqliteVectorStore implements VectorStoreRepository {
       _db = null;
       _isInitialized = false;
       _detectedDimension = null;
+      _embeddingProfile = null;
     }
+  }
+
+  Future<void> _enqueueLifecycle(Future<void> Function() action) {
+    final result = Completer<void>();
+    _pendingLifecycleActions++;
+    _lifecycleTail = _lifecycleTail.then((_) async {
+      Object? failure;
+      StackTrace? failureStack;
+      try {
+        await action();
+      } catch (error, stackTrace) {
+        failure = error;
+        failureStack = stackTrace;
+      } finally {
+        _pendingLifecycleActions--;
+      }
+      if (failure != null) {
+        result.completeError(failure, failureStack!);
+      } else {
+        result.complete();
+      }
+    });
+    return result.future;
   }
 
   // === BLOB Encoding (float32 little-endian, same as Kotlin/Swift) ===

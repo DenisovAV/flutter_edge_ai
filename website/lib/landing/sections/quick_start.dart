@@ -7,7 +7,6 @@ const _code = '''await FlutterEdgeAi.initialize(
   inferenceEngines: [LiteRtLmEngine(), MediaPipeEngine()],
   embeddingBackends: [LiteRtEmbeddingBackend()],
   embeddingTokenizers: [GemmaEmbeddingTokenizers()],
-  vectorStore: QdrantVectorStore(),
 );
 
 await FlutterEdgeAi.installModel(

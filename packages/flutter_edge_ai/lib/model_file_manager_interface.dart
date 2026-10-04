@@ -18,7 +18,10 @@ abstract class ModelFileManager {
   /// Downloads a model without progress tracking
   Future<void> downloadModel(ModelSpec spec, {String? token});
 
-  /// Deletes a model and all its files
+  /// Deletes a model and all its files.
+  ///
+  /// This is a storage operation only. The caller that owns an active-model
+  /// lifecycle is responsible for clearing its identity after deletion.
   Future<void> deleteModel(ModelSpec spec);
 
   /// Gets all installed models for a specific type
@@ -154,4 +157,12 @@ abstract class ModelFileManager {
 
   /// Gets the currently active TTS model specification.
   ModelSpec? get activeTtsModel;
+}
+
+/// Optional capability for managers that can await durable embedder activation.
+///
+/// Kept separate from [ModelFileManager] so existing third-party classes that
+/// use `implements ModelFileManager` remain source-compatible.
+abstract interface class AwaitableEmbeddingModelActivation {
+  Future<void> setActiveEmbeddingModel(EmbeddingModelSpec spec);
 }

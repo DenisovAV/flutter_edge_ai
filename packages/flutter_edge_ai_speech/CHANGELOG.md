@@ -1,3 +1,6 @@
+## 0.5.3
+- Support `flutter_edge_ai` 2.x.
+
 ## 0.5.2
 - Renamed from `flutter_gemma_speech`.
 - Inflect TTS: speech was garbled — the encoder now gets the blank tokens it was trained with.

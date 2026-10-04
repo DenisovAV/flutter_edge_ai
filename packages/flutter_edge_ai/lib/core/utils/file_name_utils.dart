@@ -11,6 +11,53 @@
 ///
 /// Platform Support: All (web + mobile)
 class FileNameUtils {
+  static final RegExp _portableControlCharacters = RegExp(
+    r'[\u0000-\u001F\u007F-\u009F]',
+  );
+  static final RegExp _windowsInvalidCharacters = RegExp(r'[<>:"|?*]');
+  static final RegExp _windowsDeviceBasename = RegExp(
+    r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])$',
+    caseSensitive: false,
+  );
+
+  /// Validates that [filename] is one portable filesystem path segment.
+  ///
+  /// The accepted subset is safe as a leaf filename on POSIX and Windows:
+  /// path separators, control characters, Windows-invalid punctuation,
+  /// trailing dots/spaces, and reserved Windows device basenames are rejected.
+  /// Device names stay reserved when an extension is present (`CON.bin`).
+  /// Returns [filename] unchanged when valid.
+  static String validatePortableFileNameSegment(
+    String filename, {
+    String parameterName = 'filename',
+  }) {
+    final hasPathSeparator = filename.contains('/') || filename.contains('\\');
+    final hasInvalidCharacter =
+        _portableControlCharacters.hasMatch(filename) ||
+        _windowsInvalidCharacters.hasMatch(filename);
+    final hasInvalidEnding = filename.endsWith('.') || filename.endsWith(' ');
+    final basename = filename.split('.').first;
+    final isWindowsDeviceName = _windowsDeviceBasename.hasMatch(basename);
+
+    if (filename.isEmpty ||
+        filename == '.' ||
+        filename == '..' ||
+        hasPathSeparator ||
+        hasInvalidCharacter ||
+        hasInvalidEnding ||
+        isWindowsDeviceName) {
+      throw ArgumentError.value(
+        filename,
+        parameterName,
+        'must be a portable filename segment: non-empty, not dot-only, '
+        'without path separators, control characters, Windows-invalid '
+        'characters or trailing dots/spaces, and not a reserved Windows '
+        'device basename',
+      );
+    }
+    return filename;
+  }
+
   /// Supported model file extensions (SINGLE SOURCE OF TRUTH)
   ///
   /// This list defines all file extensions that Flutter Edge AI recognizes

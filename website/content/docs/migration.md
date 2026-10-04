@@ -4,7 +4,88 @@ description: Move from flutter_gemma to flutter_edge_ai, and from the 0.16.x mon
 image: https://flutteredge.ai/images/og-image.png
 ---
 
-## flutter_gemma → flutter_edge_ai (1.11.4)
+## Flutter Edge AI 1.11 → 1.12: RAG leaves core
+
+Flutter Edge AI 1.12 keeps inference, embeddings, speech, installation, and
+model lifecycle in `flutter_edge_ai`, but moves RAG orchestration and all
+vector-store contracts to `flutter_edge_ai_rag`. RAG is instance-scoped and can
+use the active core embedder, a custom embedder, or precomputed vectors without
+initializing core.
+
+```
+dependencies:
+  flutter_edge_ai: ^1.12.0
+  flutter_edge_ai_rag: ^1.0.0
+  flutter_edge_ai_sqlite: ^1.5.0 # or flutter_edge_ai_qdrant: ^1.4.0
+```
+
+Remove `vectorStore:` and `filterSchema:` from `FlutterEdgeAi.initialize()`.
+Register only AI runtimes there, then create and own RAG independently:
+
+```dart
+await FlutterEdgeAi.initialize(
+  inferenceEngines: const [LiteRtLmEngine()],
+  embeddingBackends: const [LiteRtEmbeddingBackend()],
+  embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
+);
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: databasePath,
+    filterSchema: const FilterSchema(fields: [
+      FilterField(name: 'category', type: FilterFieldType.string),
+    ]),
+  ),
+  activeEmbedderProfileId:
+      'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+      'retrieval-prefix-meanpool-l2-v1',
+);
+
+try {
+  await index.addText(id: 'doc-1', content: 'Text to retrieve');
+  final hits = await index.searchText(query: 'What should I retrieve?');
+  await index.flush();
+  print(hits);
+} finally {
+  await index.dispose();
+}
+```
+
+| 1.11 core RAG | 1.12 `RagIndex` |
+|---|---|
+| `FlutterEdgeAi.rag.initialize(location)` | `FlutterEdgeAiRag(...).open(spec: VectorStoreSpec(location: ...))` |
+| `addDocument(...)` | `addText(...)` |
+| `addDocumentWithEmbedding(...)` | `addVector(...)` |
+| `searchSimilar(query: ...)` | `searchText(query: ...)` |
+| low-level vector search | `searchVector(embedding: ...)` |
+| `removeDocument(id: ...)` | `remove(id: ...)` |
+| `stats()` / `flush()` / `clear()` | same methods on the owned index |
+| core/plugin teardown | `RagIndex.dispose()` before core/embedder teardown |
+
+### Embedding profiles and persistent data
+
+Every persistent location is durably bound to an `EmbeddingProfile`. Its ID
+must version the weights, tokenizer, pooling, normalization, and document/query
+prefix contract. For batch/precomputed vectors, pass an explicit profile; if
+later text searches borrow the active core embedder, also pass the same ID as
+`activeEmbedderProfileId`. A vector-only index omits it. Independent text RAG
+passes a custom `RagEmbedder` whose `profile` reports that stable identity.
+
+A nonempty 1.11 store has no profile metadata. Prefer a new, profile-versioned
+location and re-index. If you can independently attest the old model and
+preprocessing, open once with `allowLegacyProfileAdoption: true` and the
+verified profile; the provider checks the stored dimension before binding it.
+
+SQLite filter fields are physical `vec0` columns, so a schema change needs a
+new schema-versioned location and re-index. On Web, keep one app-owned index per
+location because SQLite holds an exclusive Web Lock. Dispose RAG indexes before
+`FlutterEdgeAi.dispose()` or before disposing a custom embedder.
+
+## Historical: flutter_gemma → flutter_edge_ai (1.11.4)
 
 The project is now **Flutter Edge AI**. Every package moved to a new name; the
 code, the platforms and the on-device data are the same.
@@ -50,7 +131,8 @@ What does not change:
 
 - Installed models, the model directory and the Web cache stay where they are,
   so nothing downloads again.
-- Existing Qdrant and SQLite vector stores open as before.
+- Existing Qdrant and SQLite vector stores opened as before in 1.11.4. Moving
+  onward to 1.12 requires the embedding-profile migration above.
 - The Android package `dev.flutterberlin.*`, the platform channels and the
   macOS `post_install` snippet in your Podfile are unchanged.
 
@@ -68,13 +150,13 @@ and the build fails. An old satellite you did not move (say
 `flutter_edge_ai_sqlite` needs Flutter 3.47. An app on Flutter 3.44 that uses
 the SQLite store upgrades Flutter first.
 
-## flutter_gemma 0.x → 1.0
+## Historical: flutter_gemma 0.x → 1.0
 
 1.0 split the monolithic `flutter_gemma` plugin into a small **core** package
 plus **opt-in** packages, so your app only ships the native weight it actually
 uses. This is the **only breaking change**: you add the packages you need and one
-`initialize(...)` call. **Every model / session / chat / embedding / RAG API is
-unchanged** — your existing inference code keeps working as-is.
+`initialize(...)` call. Model/session/chat/embedding APIs stayed compatible in
+that release; RAG later changed in 1.12 as documented above.
 
 ## TL;DR
 
@@ -218,39 +300,85 @@ migration you missed.
 `metadata` in a plain table, all still readable. Move it once at startup — no
 re-embedding, no model needed:
 
+Before copying anything, identify the exact embedder that produced the old
+vectors. The profile ID must version its weights, tokenizer, pooling,
+normalization, and document/query prefixes; the dimension must equal that
+embedder's output dimension. Do not infer identity from the database path or
+reuse the example values below without verifying them.
+
 ```dart
 import 'dart:typed_data';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';   // add sqlite3 to your own pubspec
 
+final documentsDirectory = await getApplicationDocumentsDirectory();
+final databasePath = '${documentsDirectory.path}/rag.db';
+
+// This example is exact only for the pinned EmbeddingGemma pipeline named
+// here. Replace both constants if another embedder produced the legacy rows.
+const sourceEmbeddingProfileId =
+    'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+    'retrieval-prefix-meanpool-l2-v1';
+const sourceEmbeddingDimension = 768;
+final sourceEmbeddingProfile = EmbeddingProfile(
+  id: sourceEmbeddingProfileId,
+  dimension: sourceEmbeddingDimension,
+);
+
 final store = SqliteVectorStore();
-await store.initialize(path);
+await store.initialize(databasePath);
 
-final db = sqlite3.open(path);
-final hasLegacy = db
-    .select("SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='documents'")
-    .isNotEmpty;
+final db = sqlite3.open(databasePath);
+try {
+  final hasLegacy = db
+      .select("SELECT name FROM sqlite_master "
+              "WHERE type='table' AND name='documents'")
+      .isNotEmpty;
 
-if (hasLegacy) {
-  for (final row
-      in db.select('SELECT id, content, embedding, metadata FROM documents')) {
-    // 1.0.x wrote each element with setFloat32(..., Endian.little); read it
-    // back the same way. ByteData.sublistView needs no 4-byte alignment,
-    // which a raw asFloat32List view of the BLOB would.
-    final bytes = ByteData.sublistView(row['embedding'] as Uint8List);
-    await store.addDocument(
-      id: row['id'] as String,
-      content: row['content'] as String,
-      embedding: List<double>.generate(
-        bytes.lengthInBytes ~/ 4,
-        (i) => bytes.getFloat32(i * 4, Endian.little),
-      ),
-      metadata: row['metadata'] as String?,
+  if (hasLegacy) {
+    final legacyRows = db.select(
+      'SELECT id, content, embedding, metadata FROM documents',
     );
+    if (legacyRows.isNotEmpty) {
+      final firstEmbedding = legacyRows.first['embedding'] as Uint8List;
+      final storedDimension = firstEmbedding.lengthInBytes ~/ 4;
+      if (firstEmbedding.lengthInBytes % 4 != 0 ||
+          storedDimension != sourceEmbeddingDimension) {
+        throw StateError(
+          'Legacy vectors do not match $sourceEmbeddingProfile',
+        );
+      }
+      // Bind the verified space before the first addDocument call.
+      await store.bindEmbeddingProfile(sourceEmbeddingProfile);
+    }
+
+    for (final row in legacyRows) {
+      // 1.0.x wrote each element with setFloat32(..., Endian.little); read it
+      // back the same way. ByteData.sublistView needs no 4-byte alignment,
+      // which a raw asFloat32List view of the BLOB would.
+      final bytes = ByteData.sublistView(row['embedding'] as Uint8List);
+      if (bytes.lengthInBytes % 4 != 0 ||
+          bytes.lengthInBytes ~/ 4 != sourceEmbeddingDimension) {
+        throw StateError('Legacy row ${row['id']} has the wrong dimension');
+      }
+      await store.addDocument(
+        id: row['id'] as String,
+        content: row['content'] as String,
+        embedding: List<double>.generate(
+          bytes.lengthInBytes ~/ 4,
+          (i) => bytes.getFloat32(i * 4, Endian.little),
+        ),
+        metadata: row['metadata'] as String?,
+      );
+    }
+    db.execute('DROP TABLE documents');   // only after the loop succeeds
   }
-  db.execute('DROP TABLE documents');   // only after the loop succeeds
+} finally {
+  db.close();
+  await store.close();
 }
-db.close();
 ```
 
 Guard it with your own "already migrated" flag if you prefer, but the
@@ -295,7 +423,7 @@ try {
 
 <Warning>
 Catch `QdrantLegacyStoreException`, not the base `VectorStoreException`.
-`initialize()` also throws the base type when a 2.0 shard is present but will
+`initialize()` also throws the base type when a 1.4.0 shard is present but will
 not open right now — a WAL held by another store, a permission problem — and
 treating that as "the old format is here" is how a recovery step can act on a
 store that is perfectly fine.
@@ -309,7 +437,7 @@ If your app has no re-indexing path of its own, do the re-index behind the same
 progress UI you use for the first run — from the user's side this is a rebuild
 of the index, not a migration they can be asked to wait through silently.
 
-## 2. main.dart — the one new call
+## 2. main.dart — current 1.12 composition
 
 **Before (0.16.x):** engines were bundled into core; `initialize()` was optional.
 
@@ -321,7 +449,8 @@ void main() {
 }
 ```
 
-**After (1.0):** register the packages you added.
+**Current (1.12):** register only AI runtimes with core. Construct RAG with its
+own provider registry and own the returned index separately.
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -329,6 +458,7 @@ import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_mediapipe/flutter_edge_ai_mediapipe.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -337,7 +467,6 @@ void main() async {
     inferenceEngines: const [LiteRtLmEngine(), MediaPipeEngine()],
     embeddingBackends: const [LiteRtEmbeddingBackend()], // flutter_edge_ai_litertlm
     embeddingTokenizers: const [GemmaEmbeddingTokenizers()], // flutter_edge_ai_embeddings
-    vectorStore: QdrantVectorStore(),          // or WebSqliteVectorStore() on web
     // '' when the define is absent — an empty token still sends a bare
     // `Authorization: Bearer` header, so pass null instead.
     huggingFaceToken: const String.fromEnvironment('HUGGINGFACE_TOKEN').isNotEmpty
@@ -345,19 +474,32 @@ void main() async {
         : null,
   );
 
-  runApp(MyApp());
+  final rag = FlutterEdgeAiRag(
+    providers: const [QdrantVectorStoreProvider()],
+  );
+  final index = await rag.open(
+    spec: VectorStoreSpec(
+      providerId: 'qdrant',
+      location: ragDirectory,
+    ),
+    activeEmbedderProfileId:
+        'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+        'retrieval-prefix-meanpool-l2-v1',
+  );
+
+  runApp(MyApp(ragIndex: index));
 }
 ```
 
 Only list what you ship. If you don't do embeddings, omit `embeddingBackends`; if
-you don't do RAG, omit `vectorStore`.
+you don't do RAG, do not create an index. A vector-only or custom-embedder RAG
+pipeline can run without initializing core at all. Dispose every `RagIndex`
+before `FlutterEdgeAi.dispose()` or before disposing its custom embedder.
 
-## 3. Everything else is unchanged
+## 3. Model/chat stays compatible; RAG uses `RagIndex`
 
-Model, session and chat calls keep the exact same API — no edits needed. Your
-0.16.x RAG calls on `FlutterEdgeAiPlugin.instance` (`initializeVectorStore`, …)
-still compile; since 1.5 the canonical entry is the `FlutterEdgeAi.rag`
-namespace shown below, and `flush()` arrived in 1.8.1:
+Model, session, chat, and embedding installation calls keep their API. Replace
+the removed singleton RAG facade with calls on the app-owned index:
 
 ```dart
 // install + run a model
@@ -374,18 +516,24 @@ await FlutterEdgeAi.installEmbedder()
     .modelFromNetwork(modelUrl, token: token)
     .tokenizerFromNetwork(tokenizerUrl, token: token)
     .install();
-final dir = await getApplicationDocumentsDirectory(); // native; on web pass a bare name
-await FlutterEdgeAi.rag.initialize('${dir.path}/rag_store');
-await FlutterEdgeAi.rag.addDocument(/* ... */);
-await FlutterEdgeAi.rag.flush();   // qdrant: required, or the index dies with the process
-final hits = await FlutterEdgeAi.rag.searchSimilar(query: query, topK: 5);
+await index.addText(id: 'doc-1', content: document);
+await index.flush(); // required for qdrant; Web SQLite durability fence
+final hits = await index.searchText(query: query, topK: 5);
+
+// Shutdown order: the index borrows its embedder.
+await index.dispose();
+await FlutterEdgeAi.dispose();
 ```
 
 ## What you'll see if you forget step 2
 
 - Calling `getActiveModel()` with no matching `inferenceEngines` registered throws a `StateError` naming the model's `ModelFileType` and the engines that are registered — add the engine package for that file type.
-- `createEmbeddingModel()` / auto-embedding RAG with no `embeddingBackends` throws a clear "add `flutter_edge_ai_litertlm`" error.
-- RAG calls with no `vectorStore` throw "add a RAG package" (the default store is an unconfigured sentinel).
+- `createEmbeddingModel()` or default text RAG with no matching
+  `embeddingBackends` throws a clear error naming the runtime package to add.
+- `FlutterEdgeAiRag.open()` with no matching registered provider throws and
+  lists the registered provider IDs. Text RAG with the default active embedder
+  also requires a stable `activeEmbedderProfileId`; raw vectors require an
+  explicit `embeddingProfile` when a new location is created.
 
 ## Platform setup
 

@@ -2,11 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_qdrant/src/atomic_directory_record.dart';
 import 'package:flutter_edge_ai_qdrant/src/filter_codec.dart';
 import 'package:flutter_edge_ai_qdrant/src/point_id_hasher.dart';
+import 'package:flutter_edge_ai_qdrant/src/profile_operation_test_hook.dart';
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:path/path.dart' as p;
 
 /// Thrown when a store written by `flutter_edge_ai_qdrant` 1.x is found at
@@ -14,11 +15,11 @@ import 'package:path/path.dart' as p;
 ///
 /// It is a separate type because the two things `initialize` can refuse over
 /// want opposite responses. This one is permanent and needs the old files
-/// removed; a plain [VectorStoreException] means a 2.0 shard is present and
+/// removed; a plain [VectorStoreException] means a 1.4.0 shard is present and
 /// will not open right now — a WAL held by another store, a permission
 /// problem — which usually clears on its own. For a moment this package threw
 /// the base type for both, and the recipe in its own README consequently
-/// destroyed an intact 2.0 corpus whenever the store happened to be open
+/// destroyed an intact 1.4.0 corpus whenever the store happened to be open
 /// elsewhere. Measured, with two documents.
 ///
 /// The message names what to remove, and it only names files when the marker
@@ -30,7 +31,7 @@ class QdrantLegacyStoreException extends VectorStoreException {
 
 /// Native-only RAG vector store backed by the official `qdrant_edge` SDK.
 /// Implements
-/// flutter_edge_ai's [VectorStoreRepository]. Its HNSW index makes it the fastest
+/// flutter_edge_ai_rag's [VectorStoreRepository]. Its HNSW index makes it the fastest
 /// native option — roughly 5–11× faster search than the in-SQLite sqlite-vec
 /// store at 1k–10k docs (with identical top-K results). Web is unsupported
 /// (qdrant-edge can't compile to WASM); use flutter_edge_ai_sqlite there.
@@ -46,11 +47,6 @@ class QdrantLegacyStoreException extends VectorStoreException {
 ///   parse it eagerly — we forward the raw string into the payload under
 ///   the key `metadata`. Filtering by metadata fields therefore requires
 ///   that callers pass valid JSON; this matches the existing constraint.
-/// * `enableHnsw` is accepted but ignored — qdrant decides indexing
-///   internally based on its `indexing_threshold` (~20k points). Below
-///   that it brute-forces a plain segment, which is already faster than
-///   our Dart HNSW for typical RAG corpora.
-///
 /// Distance defaults to cosine, matching the historical behaviour.
 ///
 /// ### On-disk layout
@@ -79,6 +75,10 @@ class QdrantVectorStore implements VectorStoreRepository {
   /// Cached for [getStats] — the shim never exposes the configured dim,
   /// only the count. We keep it in Dart-land instead.
   final Distance _distance = Distance.cosine;
+
+  /// Once observed, a durable profile cannot be replaced by contract.
+  /// Absence is deliberately not cached so another store can bind this path.
+  EmbeddingProfile? _embeddingProfile;
 
   /// The path passed to [initialize]. The store never opens or deletes this
   /// path directly — only the owned subdirectory under it (see [_storeDirFor]).
@@ -171,9 +171,6 @@ class QdrantVectorStore implements VectorStoreRepository {
   /// Cleared once an open succeeds, and on initialize/clear/close.
   String? _unusableReason;
 
-  /// `enableHnsw` is part of the contract but a no-op for qdrant.
-  bool _enableHnsw = true;
-
   /// Declared filterable-metadata schema (via [configure]). Empty by default,
   /// so callers that never declare a schema get byte-identical payloads. When
   /// non-empty, [addDocument] promotes each declared field to a TOP-LEVEL
@@ -202,18 +199,29 @@ class QdrantVectorStore implements VectorStoreRepository {
   /// opens it, refuses to start over it, and can remove it via [clear].
   static const _storeDirName = 'qdrant_edge_v1';
 
+  /// Immutable embedding-space records stored beside the shard.
+  ///
+  /// Each fixed path is a non-empty directory published by a same-parent
+  /// directory rename. That operation is one filesystem publication point:
+  /// concurrent isolates and processes can only install one record, and a
+  /// losing rename cannot replace the winner's non-empty directory on POSIX
+  /// or Windows. Unique temp directories are never read as records, so a
+  /// crash exposes neither partial JSON nor a stale lock owner.
+  static const _profileDirectoryName =
+      '.flutter_edge_ai_rag.embedding_profile.v1';
+  static const _dimensionDirectoryName =
+      '.flutter_edge_ai_rag.embedding_dimension.v1';
+  static const _recordTempPrefix = '.flutter_edge_ai_rag.record.tmp.';
+  static const _profileSchema = 'flutter_edge_ai_rag.embedding_profile';
+  static const _dimensionSchema = 'flutter_edge_ai_rag.embedding_dimension';
+  static const _profileVersion = 1;
+
   @override
   /// The contract is "true if [initialize] was called successfully" — so a
   /// store whose initialize() threw must answer false, even though the path is
   /// still armed so clear() can reach it. Answering true told a caller it was
   /// ready when every operation on it refuses.
   bool get isInitialized => _databasePath != null && _unusableReason == null;
-
-  @override
-  bool get enableHnsw => _enableHnsw;
-
-  @override
-  set enableHnsw(bool value) => _enableHnsw = value;
 
   @override
   FilterSchema get filterSchema => _filterSchema;
@@ -263,11 +271,13 @@ class QdrantVectorStore implements VectorStoreRepository {
       try {
         await existing.close();
       } on QdrantException catch (e) {
-        edgeAiLog('[QdrantVectorStore] close() failed (best-effort): $e');
+        ragLog('[QdrantVectorStore] close() failed (best-effort): $e');
       }
     }
     _client = null;
+    _opening = null;
     _dim = null;
+    _embeddingProfile = null;
     _unusableReason = null;
     _generation++;
     _databasePath = databasePath;
@@ -334,7 +344,7 @@ class QdrantVectorStore implements VectorStoreRepository {
       // be why it failed. What can: an exclusive WAL held elsewhere, a
       // corrupted config, permissions. None of those are resolved by a write,
       // so a write must not paper over them either — addDocument asserts the
-      // latch too. edgeAiLog alone would not do: it is debug-only, so in a
+      // latch too. ragLog alone would not do: it is debug-only, so in a
       // release build nobody is told at all.
       // Two different situations, two different things to tell the caller.
       // They arrived as one generic error until the SDK gave the lock its own
@@ -350,7 +360,7 @@ class QdrantVectorStore implements VectorStoreRepository {
                 'this store cannot tell you whether it is empty — reporting no '
                 'results would hide an intact corpus. Call initialize() again '
                 'once the cause is cleared. Underlying error: $e';
-      edgeAiLog('[QdrantVectorStore] could not adopt existing shard: $e');
+      ragLog('[QdrantVectorStore] could not adopt existing shard: $e');
       // And REPORT it. The contract says initialize() throws
       // VectorStoreException when initialization fails, and this failed: a
       // shard is on disk and we could not open it. Returning normally left the
@@ -366,6 +376,12 @@ class QdrantVectorStore implements VectorStoreRepository {
   /// itself.
   static String _storeDirFor(String databasePath) =>
       p.join(databasePath, _storeDirName);
+
+  static String _profileDirectoryFor(String databasePath) =>
+      p.join(_storeDirFor(databasePath), _profileDirectoryName);
+
+  static String _dimensionDirectoryFor(String databasePath) =>
+      p.join(_storeDirFor(databasePath), _dimensionDirectoryName);
 
   /// Entries a 1.x store (crate 0.7.x) wrote DIRECTLY at [_databasePath],
   /// before this package owned a format-scoped subdirectory. `edge_config.json`
@@ -412,7 +428,16 @@ class QdrantVectorStore implements VectorStoreRepository {
   void _latchOpenFailure(String storeDir, Object cause) {
     // Nothing on disk means nothing is being hidden; a cold store that simply
     // failed to create its shard must not be latched.
-    if (!Directory(storeDir).existsSync()) return;
+    try {
+      if (!Directory(storeDir).existsSync()) return;
+    } on FileSystemException catch (inspectionError) {
+      _unusableReason =
+          'Opening the qdrant shard at $storeDir failed, and the store could '
+          'not determine whether data remains there. Refusing to report an '
+          'empty corpus. Open error: $cause. Inspection error: '
+          '$inspectionError';
+      return;
+    }
     _unusableReason = cause is QdrantShardLockedException
         ? 'The qdrant shard at $storeDir is open elsewhere, so this store '
               'cannot read it — and reporting no results would hide an intact '
@@ -425,14 +450,14 @@ class QdrantVectorStore implements VectorStoreRepository {
   }
 
   static void _refuseIfNotOurs(String databasePath, String storeDir) {
-    if (_existsOrThrow(Directory(storeDir), 'the qdrant shard')) return;
+    if (_ownedDirectoryContainsShardData(storeDir)) return;
     switch (_whatIsAt(databasePath)) {
       case _AtPath.nothingOfOurs:
         return;
       case _AtPath.legacyStore:
         throw QdrantLegacyStoreException(
           'Found a store written by flutter_gemma_rag_qdrant 1.x at '
-          '$databasePath. Its on-disk format is not readable by 2.0, and this '
+          '$databasePath. Its on-disk format is not readable by 1.4.0, and this '
           'release never deletes files it cannot read: remove '
           '"${_legacyEntries.join('", "')}" from that directory yourself, then '
           're-index. Anything else you keep there is left alone.',
@@ -451,8 +476,31 @@ class QdrantVectorStore implements VectorStoreRepository {
     }
   }
 
+  /// A profile can be bound before the first vector is written. The sidecar
+  /// creates `qdrant_edge_v1`, but does not prove a qdrant shard exists and
+  /// must not hide a legacy bare-path store.
+  static bool _ownedDirectoryContainsShardData(String storeDir) {
+    final directory = Directory(storeDir);
+    if (!_existsOrThrow(directory, 'the qdrant shard directory')) return false;
+    try {
+      return directory
+          .listSync(followLinks: false)
+          .any((entry) => !_isProfileArtifact(p.basename(entry.path)));
+    } on FileSystemException catch (e) {
+      throw VectorStoreException(
+        'Cannot inspect the qdrant shard directory at "$storeDir", so this '
+        'store will not guess that it is empty: $e',
+      );
+    }
+  }
+
+  static bool _isProfileArtifact(String name) =>
+      name == _profileDirectoryName ||
+      name == _dimensionDirectoryName ||
+      name.startsWith(_recordTempPrefix);
+
   /// True when [databasePath] holds a shard written by 1.x. Such a store is
-  /// invisible to this release — 2.0 only ever opens the owned subdir — so
+  /// invisible to this release — 1.4.0 only opens the owned subdir — so
   /// without this check the app comes up with an empty index, no error, and
   /// the old corpus still occupying disk.
   /// What sits at the bare [databasePath], for the purpose of what to TELL the
@@ -516,13 +564,287 @@ class QdrantVectorStore implements VectorStoreRepository {
     }
   }
 
-  Future<QdrantEdgeClient> _ensureClient({required int dim}) async {
-    final databasePath = _databasePath;
-    if (databasePath == null) {
-      throw const VectorStoreException(
-        'Vector store not initialized — call initialize(path) first.',
+  @override
+  Future<EmbeddingProfile?> readEmbeddingProfile() =>
+      _serializeLifecycle(_readEmbeddingProfile);
+
+  Future<EmbeddingProfile?> _readEmbeddingProfile() async {
+    _assertUsable('readEmbeddingProfile');
+    final databasePath = _databasePath!;
+    final profile = await _readEmbeddingProfileRecord(
+      _profileDirectoryFor(databasePath),
+    );
+    final dimension = await _readDimensionRecord(
+      _dimensionDirectoryFor(databasePath),
+    );
+    if (profile != null &&
+        dimension != null &&
+        profile.dimension != dimension) {
+      throw VectorStoreException(
+        'The persisted $profile conflicts with the location\'s '
+        '${dimension}D dimension reservation.',
       );
     }
+    _embeddingProfile = profile;
+    return profile;
+  }
+
+  @override
+  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) =>
+      _serializeLifecycle(() => _bindEmbeddingProfile(profile));
+
+  Future<void> _bindEmbeddingProfile(EmbeddingProfile profile) async {
+    _assertUsable('bindEmbeddingProfile');
+    final databasePath = _databasePath!;
+    final shardDimension = _dim;
+    if (shardDimension != null && shardDimension != profile.dimension) {
+      throw VectorStoreException(
+        'Cannot bind $profile to a ${shardDimension}D qdrant shard.',
+      );
+    }
+
+    // The dimension record is the cross-isolate/process transaction point
+    // shared with first shard creation. Whichever operation publishes it
+    // first fixes the only vector size this location may use.
+    await _claimDimension(databasePath, profile.dimension);
+
+    final profileDirectory = _profileDirectoryFor(databasePath);
+    final existing = await _readEmbeddingProfileRecord(profileDirectory);
+    if (existing != null) {
+      _requireSameProfile(existing, profile);
+      _embeddingProfile = existing;
+      return;
+    }
+
+    await _publishRecord(
+      storeDirectory: _storeDirFor(databasePath),
+      finalDirectory: profileDirectory,
+      json: {
+        'schema': _profileSchema,
+        'version': _profileVersion,
+        'id': profile.id,
+        'dimension': profile.dimension,
+      },
+    );
+    final persisted = await _readEmbeddingProfileRecord(profileDirectory);
+    if (persisted == null) {
+      throw VectorStoreException(
+        'The embedding profile was not persisted at $profileDirectory.',
+      );
+    }
+    _requireSameProfile(persisted, profile);
+    _embeddingProfile = persisted;
+  }
+
+  static void _requireSameProfile(
+    EmbeddingProfile persisted,
+    EmbeddingProfile requested,
+  ) {
+    if (persisted != requested) {
+      throw VectorStoreException(
+        'This qdrant location is already bound to $persisted and cannot be '
+        'rebound to $requested.',
+      );
+    }
+  }
+
+  static Future<EmbeddingProfile?> _readEmbeddingProfileRecord(
+    String profileDirectory,
+  ) async {
+    final decoded = await _readRecord(
+      directoryPath: profileDirectory,
+      schema: _profileSchema,
+      expectedKeys: const {'schema', 'version', 'id', 'dimension'},
+    );
+    if (decoded == null) return null;
+    try {
+      if (decoded['id'] is! String || decoded['dimension'] is! int) {
+        throw const FormatException('invalid profile fields');
+      }
+      return EmbeddingProfile(
+        id: decoded['id'] as String,
+        dimension: decoded['dimension'] as int,
+      );
+    } on Object catch (error) {
+      throw VectorStoreException(
+        'The embedding profile sidecar at $profileDirectory is corrupt.',
+        error,
+      );
+    }
+  }
+
+  static Future<int?> _readDimensionRecord(String dimensionDirectory) async {
+    final decoded = await _readRecord(
+      directoryPath: dimensionDirectory,
+      schema: _dimensionSchema,
+      expectedKeys: const {'schema', 'version', 'dimension'},
+    );
+    if (decoded == null) return null;
+    final dimension = decoded['dimension'];
+    if (dimension is! int || dimension <= 0) {
+      throw VectorStoreException(
+        'The embedding dimension record at $dimensionDirectory is corrupt.',
+      );
+    }
+    return dimension;
+  }
+
+  static Future<Map<String, dynamic>?> _readRecord({
+    required String directoryPath,
+    required String schema,
+    required Set<String> expectedKeys,
+  }) async {
+    try {
+      return await AtomicDirectoryRecord.read(
+        directoryPath: directoryPath,
+        schema: schema,
+        version: _profileVersion,
+        expectedKeys: expectedKeys,
+      );
+    } on AtomicDirectoryRecordException catch (error) {
+      throw VectorStoreException(error.message, error.cause);
+    }
+  }
+
+  /// Publishes one immutable record without a process- or isolate-local lock.
+  ///
+  /// The JSON is written and flushed inside a unique same-parent temp
+  /// directory. Renaming that non-empty directory to the fixed destination is
+  /// the compare-and-set: exactly one contender can win and a loser cannot
+  /// overwrite it. A crash before rename leaves only an ignored temp
+  /// directory; a crash after rename leaves the complete record.
+  static Future<void> _publishRecord({
+    required String storeDirectory,
+    required String finalDirectory,
+    required Map<String, Object> json,
+  }) async {
+    try {
+      await AtomicDirectoryRecord.publish(
+        parentDirectory: storeDirectory,
+        finalDirectory: finalDirectory,
+        tempPrefix: _recordTempPrefix,
+        json: json,
+      );
+    } on AtomicDirectoryRecordException catch (error) {
+      throw VectorStoreException(error.message, error.cause);
+    }
+  }
+
+  Future<void> _claimDimension(String databasePath, int dimension) async {
+    final profile =
+        _embeddingProfile ??
+        await _readEmbeddingProfileRecord(_profileDirectoryFor(databasePath));
+    if (profile != null && profile.dimension != dimension) {
+      throw ArgumentError(
+        'Embedding dimension mismatch: this location is bound to '
+        '${profile.dimension}D by $profile and was given a vector of length '
+        '$dimension.',
+      );
+    }
+    if (profile != null) _embeddingProfile = profile;
+
+    final dimensionDirectory = _dimensionDirectoryFor(databasePath);
+    var persisted = await _readDimensionRecord(dimensionDirectory);
+    if (persisted == null) {
+      await _publishRecord(
+        storeDirectory: _storeDirFor(databasePath),
+        finalDirectory: dimensionDirectory,
+        json: {
+          'schema': _dimensionSchema,
+          'version': _profileVersion,
+          'dimension': dimension,
+        },
+      );
+      persisted = await _readDimensionRecord(dimensionDirectory);
+    }
+    if (persisted != dimension) {
+      throw ArgumentError(
+        'Embedding dimension mismatch: this location is reserved for '
+        '${persisted}D vectors and was given a vector of length $dimension.',
+      );
+    }
+  }
+
+  Future<_ProfileLease> _requireEmbeddingProfile(String operation) async {
+    final databasePath = _databasePath!;
+    final generation = _generation;
+    final profile =
+        _embeddingProfile ??
+        await _readEmbeddingProfileRecord(_profileDirectoryFor(databasePath));
+    if (profile == null) {
+      throw StateError(
+        '$operation requires a bound EmbeddingProfile. Call '
+        'bindEmbeddingProfile() first, or open this location through '
+        'FlutterEdgeAiRag with embeddingProfile/activeEmbedderProfileId. '
+        'For a nonempty legacy store, explicitly verify its model and enable '
+        'allowLegacyProfileAdoption.',
+      );
+    }
+    final dimension = await _readDimensionRecord(
+      _dimensionDirectoryFor(databasePath),
+    );
+    _assertProfileContextCurrent(
+      databasePath: databasePath,
+      generation: generation,
+      operation: operation,
+    );
+    if (dimension != null && dimension != profile.dimension) {
+      throw VectorStoreException(
+        'The persisted $profile conflicts with the location\'s '
+        '${dimension}D dimension reservation.',
+      );
+    }
+    _embeddingProfile = profile;
+    return _ProfileLease(
+      databasePath: databasePath,
+      generation: generation,
+      profile: profile,
+    );
+  }
+
+  void _assertProfileContextCurrent({
+    required String databasePath,
+    required int generation,
+    required String operation,
+  }) {
+    if (_generation != generation || _databasePath != databasePath) {
+      throw VectorStoreException(
+        '$operation was interrupted by initialize() or close(); retry against '
+        'the current vector-store location.',
+      );
+    }
+  }
+
+  void _assertProfileLeaseCurrent(_ProfileLease lease, String operation) =>
+      _assertProfileContextCurrent(
+        databasePath: lease.databasePath,
+        generation: lease.generation,
+        operation: operation,
+      );
+
+  Future<QdrantEdgeClient> _ensureClient({
+    required int dim,
+    required _ProfileLease lease,
+  }) async {
+    _assertProfileLeaseCurrent(lease, 'addDocument');
+    final databasePath = lease.databasePath;
+    if (dim <= 0) {
+      throw ArgumentError.value(
+        dim,
+        'embedding.length',
+        'must be greater than zero',
+      );
+    }
+    final knownDimension = _dim;
+    if (knownDimension != null && knownDimension != dim) {
+      throw ArgumentError(
+        'Embedding dimension mismatch: this shard stores '
+        '$knownDimension-dimensional vectors and was given one of length '
+        '$dim. qdrant bakes the vector size into the shard.',
+      );
+    }
+    await _claimDimension(databasePath, dim);
+    _assertProfileLeaseCurrent(lease, 'addDocument');
     final existing = _client;
     if (existing != null) {
       if (_dim != dim) {
@@ -556,23 +878,18 @@ class QdrantVectorStore implements VectorStoreRepository {
       //   * with _dim nulled by that transition, the dim comparison below
       //     reported "shard was opened with dim=null" — blaming the caller's
       //     vector for a lifecycle event.
-      final gen = _generation;
       final QdrantEdgeClient c;
       try {
         c = await inFlight;
       } on QdrantException catch (e) {
+        _assertProfileLeaseCurrent(lease, 'addDocument');
         _latchOpenFailure(_storeDirFor(databasePath), e);
         throw VectorStoreException(
           'Failed to open qdrant shard at ${_storeDirFor(databasePath)}',
           e,
         );
       }
-      if (_generation != gen) {
-        throw const VectorStoreException(
-          'Vector store was re-initialized or closed while opening — '
-          'retry the operation.',
-        );
-      }
+      _assertProfileLeaseCurrent(lease, 'addDocument');
       if (_dim != dim) {
         throw ArgumentError(
           'Embedding dimension mismatch: this shard stores $_dim-dimensional '
@@ -610,7 +927,6 @@ class QdrantVectorStore implements VectorStoreRepository {
         'Failed to create qdrant shard directory at $storeDir: $e',
       );
     }
-    final gen = _generation;
     try {
       final future = QdrantEdgeClient.open(
         path: storeDir,
@@ -624,7 +940,8 @@ class QdrantVectorStore implements VectorStoreRepository {
       } finally {
         if (identical(_opening, future)) _opening = null;
       }
-      if (_generation != gen) {
+      if (_generation != lease.generation ||
+          _databasePath != lease.databasePath) {
         // initialize()/clear()/close() ran while we were opening. Installing
         // this client now would either resurrect a store the caller closed —
         // keeping its WAL lock until the process exits — or bind `_client` to
@@ -654,6 +971,7 @@ class QdrantVectorStore implements VectorStoreRepository {
       // client that was not closed, a changed embedding dimension — and only
       // the last is corruption. Blanket "clear and re-index" advice told users
       // to destroy a working index to fix a lock.
+      _assertProfileLeaseCurrent(lease, 'addDocument');
       _latchOpenFailure(storeDir, e);
       throw VectorStoreException('Failed to open qdrant shard at $storeDir', e);
     }
@@ -671,7 +989,18 @@ class QdrantVectorStore implements VectorStoreRepository {
     // successful open would clear the latch — erasing the only signal the user
     // ever gets.
     _assertUsable('addDocument');
-    final c = await _ensureClient(dim: embedding.length);
+    final lease = await _requireEmbeddingProfile('addDocument');
+    final checkpoint = qdrantProfileOperationCheckpointForTesting;
+    if (checkpoint != null) await checkpoint('addDocument');
+    _assertProfileLeaseCurrent(lease, 'addDocument');
+    if (embedding.length != lease.profile.dimension) {
+      throw ArgumentError.value(
+        embedding.length,
+        'embedding.length',
+        'must match the bound profile dimension ${lease.profile.dimension}',
+      );
+    }
+    final c = await _ensureClient(dim: embedding.length, lease: lease);
     final payload = <String, dynamic>{
       _userIdKey: id,
       _contentKey: content,
@@ -709,14 +1038,14 @@ class QdrantVectorStore implements VectorStoreRepository {
     try {
       decoded = jsonDecode(metadata);
     } on FormatException catch (e) {
-      edgeAiLog(
+      ragLog(
         '[QdrantVectorStore] metadata is not valid JSON — filter fields not '
         'promoted (round-trip blob kept): $e',
       );
       return;
     }
     if (decoded is! Map<String, dynamic>) {
-      edgeAiLog(
+      ragLog(
         '[QdrantVectorStore] metadata JSON is not an object — filter fields '
         'not promoted (round-trip blob kept)',
       );
@@ -732,6 +1061,10 @@ class QdrantVectorStore implements VectorStoreRepository {
   @override
   Future<void> removeDocument({required String id}) async {
     _assertUsable('removeDocument');
+    final lease = await _requireEmbeddingProfile('removeDocument');
+    final checkpoint = qdrantProfileOperationCheckpointForTesting;
+    if (checkpoint != null) await checkpoint('removeDocument');
+    _assertProfileLeaseCurrent(lease, 'removeDocument');
     final c = _client;
     // Initialized, no shard on disk: deleting from an empty store is the
     // documented no-op. Reachable only when nothing was ever written.
@@ -751,6 +1084,17 @@ class QdrantVectorStore implements VectorStoreRepository {
     Filter? filter,
   }) async {
     _assertUsable('searchSimilar');
+    final lease = await _requireEmbeddingProfile('searchSimilar');
+    final checkpoint = qdrantProfileOperationCheckpointForTesting;
+    if (checkpoint != null) await checkpoint('searchSimilar');
+    _assertProfileLeaseCurrent(lease, 'searchSimilar');
+    if (queryEmbedding.length != lease.profile.dimension) {
+      throw ArgumentError.value(
+        queryEmbedding.length,
+        'queryEmbedding.length',
+        'must match the bound profile dimension ${lease.profile.dimension}',
+      );
+    }
     final c = _client;
     if (c == null || _dim == null) {
       // No documents yet — nothing to retrieve. Genuinely empty: _assertUsable
@@ -829,13 +1173,14 @@ class QdrantVectorStore implements VectorStoreRepository {
     // and re-openable. So clear() no longer closes the client, no longer
     // touches the filesystem, and cannot delete anything that is not a point
     // it wrote — which retires the whole class of bug that reached a caller's
-    // own `wal/` and `segments/` twice, and an intact 2.0 corpus once.
+    // own `wal/` and `segments/` twice, and an intact 1.4.0 corpus once.
     // Same refusal, same helper, same choice of type. This branch used to
     // carry its OWN hardcoded copy of the message — which meant the
     // "delete these three files" instruction went to every caller the guard
     // fired for, including the ones whose data we had just admitted we could
     // not identify.
     _refuseIfNotOurs(databasePath, _storeDirFor(databasePath));
+    await _requireEmbeddingProfile('clear');
 
     try {
       final open = _client;
@@ -855,7 +1200,9 @@ class QdrantVectorStore implements VectorStoreRepository {
       // dimension, and inventing one here would CREATE a shard in order to
       // report it empty.
       final storeDir = _storeDirFor(databasePath);
-      if (!Directory(storeDir).existsSync()) return; // never written to
+      if (!_existsOrThrow(Directory(storeDir), 'the qdrant shard directory')) {
+        return; // never written to
+      }
       final opened = await QdrantEdgeClient.openExisting(path: storeDir);
       if (opened == null) return; // a directory, but no shard in it
       _client = opened.client;
@@ -903,7 +1250,9 @@ class QdrantVectorStore implements VectorStoreRepository {
   Future<void> _close() async {
     final c = _client;
     _client = null;
+    _opening = null;
     _dim = null;
+    _embeddingProfile = null;
     _unusableReason = null;
     _generation++;
     _databasePath = null;
@@ -911,10 +1260,43 @@ class QdrantVectorStore implements VectorStoreRepository {
       try {
         await c.close();
       } on QdrantException catch (e) {
-        edgeAiLog('[QdrantVectorStore] close() failed (best-effort): $e');
+        ragLog('[QdrantVectorStore] close() failed (best-effort): $e');
       }
     }
   }
+}
+
+class _ProfileLease {
+  const _ProfileLease({
+    required this.databasePath,
+    required this.generation,
+    required this.profile,
+  });
+
+  final String databasePath;
+  final int generation;
+  final EmbeddingProfile profile;
+}
+
+/// Creates native qdrant vector stores for [FlutterEdgeAiRag].
+class QdrantVectorStoreProvider implements VectorStoreProvider {
+  const QdrantVectorStoreProvider();
+
+  @override
+  String get id => 'qdrant';
+
+  @override
+  String get name => 'qdrant-edge';
+
+  @override
+  int get priority => 0;
+
+  @override
+  bool canHandle(VectorStoreSpec spec) => spec.providerId == id;
+
+  @override
+  Future<VectorStoreRepository> createStore(VectorStoreSpec spec) async =>
+      QdrantVectorStore();
 }
 
 /// What [QdrantVectorStore._whatIsAt] found at the bare `databasePath`.

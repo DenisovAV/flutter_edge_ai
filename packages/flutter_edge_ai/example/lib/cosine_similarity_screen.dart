@@ -5,6 +5,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
+import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
 
 class CosineSimilarityScreen extends StatefulWidget {
   final example_embedding_model.EmbeddingModel model;
@@ -92,8 +93,16 @@ class _CosineSimilarityScreenState extends State<CosineSimilarityScreen> {
       }
 
       await FlutterEdgeAi.installEmbedder()
-          .modelFromNetwork(widget.model.url, token: token)
-          .tokenizerFromNetwork(widget.model.tokenizerUrl, token: token)
+          .modelFromNetwork(
+            widget.model.url,
+            token: token,
+            filename: widget.model.filename,
+          )
+          .tokenizerFromNetwork(
+            widget.model.tokenizerUrl,
+            token: token,
+            filename: widget.model.tokenizerFilename,
+          )
           .withModelProgress((percent) {
             if (!mounted) return;
             setState(() {
@@ -109,6 +118,7 @@ class _CosineSimilarityScreenState extends State<CosineSimilarityScreen> {
             });
           })
           .install();
+      await persistVerifiedEmbeddingCatalogSelection(widget.model);
 
       if (kDebugMode) {
         debugPrint('[CosineSimilarityScreen] Embedding model installed ✅');

@@ -40,7 +40,7 @@
 import 'dart:io';
 import 'dart:math';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 // Dev-only import (qdrant is a dev_dependency, never exported from lib/). The
 // qdrant arm is gated at runtime: it is probed at startup (open a throwaway
@@ -324,6 +324,9 @@ Future<int> runBench(BenchConfig cfg, IOSink out) async {
     try {
       final probe = QdrantVectorStore();
       await probe.initialize('${probeDir.path}/shard');
+      await probe.bindEmbeddingProfile(
+        EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+      );
       await probe.addDocument(
         id: 'probe',
         content: 'probe',
@@ -395,6 +398,9 @@ Future<int> runBench(BenchConfig cfg, IOSink out) async {
       final dbFile = File('${Directory.systemTemp.path}/bench_vec0_$size.db');
       if (dbFile.existsSync()) dbFile.deleteSync();
       await vec0.initialize(dbFile.path);
+      await vec0.bindEmbeddingProfile(
+        EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+      );
       addThroughputVec0[size] = await _populate(vec0, size, cfg);
       for (final topK in cfg.topKs) {
         final m = await _measureSearch(vec0, size, topK, cfg);
@@ -416,6 +422,9 @@ Future<int> runBench(BenchConfig cfg, IOSink out) async {
       );
       if (shardDir.existsSync()) shardDir.deleteSync(recursive: true);
       await qdrant.initialize('${shardDir.path}/shard');
+      await qdrant.bindEmbeddingProfile(
+        EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+      );
       addThroughputQdrant[size] = await _populate(qdrant, size, cfg);
       for (final topK in cfg.topKs) {
         final m = await _measureSearch(qdrant, size, topK, cfg);

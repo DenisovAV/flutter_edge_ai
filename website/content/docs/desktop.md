@@ -142,8 +142,9 @@ For the high-level chat API with history + thinking + tool calling, use
 
 ### macOS
 
-Native libs are fetched and bundled automatically via Native Assets. The **only
-manual step** is adding a `post_install` block to your app's `macos/Podfile` so
+Native libs are fetched and bundled automatically via Native Assets — except
+the Apple companion libraries, which an Xcode build phase stages. That phase is
+installed by a `post_install` block in your app's `macos/Podfile`, so
 the upstream companion dylibs get wrapped into `.framework` bundles (and
 re-signed) inside `Contents/Frameworks/`, and `LiteRtLm.dylib`'s `LC_LOAD_DYLIB`
 reference is re-pointed at the new framework path (LiteRT-LM's `gpu_registry`
@@ -152,8 +153,26 @@ companion dylibs are never bundled, and `LiteRtLm.dylib` — which links
 `libGemmaModelConstraintProvider.dylib` directly — fails to load on every
 backend, CPU included.
 
-Paste this into your `macos/Podfile` (replacing any existing `post_install`
-block) and run `pod install`:
+Flutter 3.44+ uses Swift Package Manager by default, and an SPM-only app has no
+`macos/Podfile`. So on macOS there are two steps:
+
+1. Turn SPM off for the app in `pubspec.yaml`, then run `flutter pub get` (it
+   writes `macos/Podfile`):
+
+```
+flutter:
+  config:
+    enable-swift-package-manager: false
+```
+
+2. Replace that Podfile's `post_install` block with the one below; the next
+   build runs `pod install` itself.
+
+A green build proves nothing: without the block the first model load fails with
+`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If the app already has a `macos/Podfile` (another plugin needs
+CocoaPods), keep SPM on and just paste the block. Use the pubspec setting rather
+than `flutter config --no-enable-swift-package-manager`, which changes only one
+machine — not your teammates' or CI.
 
 ```
 post_install do |installer|

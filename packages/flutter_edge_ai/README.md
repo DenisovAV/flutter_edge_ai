@@ -124,9 +124,24 @@ LiteRT-LM run on WebGPU; ONNX also runs on CPU (WASM).
 
 ### macOS
 
-Paste this into `macos/Podfile` (replacing any existing `post_install` block)
-and run `pod install`. It stages the LiteRT-LM companion libraries into the
-built app ([why](https://flutteredge.ai/docs/desktop)):
+macOS needs a build step that stages the LiteRT-LM companion libraries into
+the app ([why](https://flutteredge.ai/docs/desktop)), and it runs from a
+CocoaPods Podfile. Flutter 3.44+ uses Swift Package Manager by default, so a new
+app has no `macos/Podfile`: turn SPM off for the app in `pubspec.yaml`:
+
+```yaml
+flutter:
+  config:
+    enable-swift-package-manager: false
+```
+
+Run `flutter pub get` (it writes `macos/Podfile`), then replace that Podfile's
+`post_install` block with the one below; the next build runs `pod install`
+itself. A green build proves nothing: without the block the first model load
+fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If your app already has a `macos/Podfile` (another plugin
+needs CocoaPods), keep SPM on and just paste the block. Prefer the pubspec
+setting to `flutter config --no-enable-swift-package-manager`, which changes
+only your machine — not your teammates' or CI.
 
 ```ruby
 post_install do |installer|

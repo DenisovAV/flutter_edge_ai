@@ -104,14 +104,18 @@ companion libraries into the app: the package deliberately keeps them out of
 Native Assets, so nothing else puts them in the bundle.
 
 With CocoaPods, paste this into `macos/Podfile`, replacing any existing
-`post_install` block, then run `pod install`.
+`post_install` block; the next build runs `pod install` itself. A green build
+proves nothing: without it the first model load fails with
+`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`.
 
 **A Swift Package Manager app has no `macos/Podfile` to paste into.** SPM is the
 default since Flutter 3.44, and an app whose plugins all ship a `Package.swift` —
 core does, and `flutter_edge_ai_litertlm` is not a plugin at all — never gets one
-generated. Either turn SPM off for the project
-(`flutter config --no-enable-swift-package-manager`, then
-`flutter build macos --config-only`, which writes the Podfile), or add the same
+generated. Either turn SPM off for the project in `pubspec.yaml` —
+`flutter: config: enable-swift-package-manager: false`, committed with the app,
+so teammates and CI get it too, unlike the machine-wide
+`flutter config --no-enable-swift-package-manager` — then run `flutter pub get`,
+which writes `macos/Podfile`; or add the same
 step by hand in Xcode: a Run Script phase on the Runner target named
 `[flutter_gemma] Setup LiteRT-LM macOS`, carrying the `shell_script`, input path
 and output path from the block below. The `flutter_gemma` phase, cache and stamp

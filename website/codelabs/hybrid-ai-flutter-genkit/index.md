@@ -384,12 +384,14 @@ The build phase is the part unique to macOS. Every step app from this one on
 ships a `macos/Podfile` whose `post_install` block stages the runtime's
 companion libraries into the built `.app`. A macOS build that succeeds proves
 nothing here — the app compiles, links, signs and launches without the staging
-too, and the failure arrives at the first model load. One trap, measured: with
-Swift Package Manager on and no other CocoaPods plugin in the app, Flutter
-prints **Removing CocoaPods integration**, the `post_install` block never runs,
-and nothing is staged. Either turn SPM off with
-`flutter config --no-enable-swift-package-manager`, or keep one CocoaPods
-plugin in the app.
+too, and the failure arrives at the first model load. One trap, measured:
+Flutter 3.44+ uses Swift Package Manager by default, and an app with no
+CocoaPods plugin gets no `macos/Podfile`, so nothing runs the block. The step
+apps' `pubspec.yaml` sets `flutter: config: enable-swift-package-manager: false`
+for that reason; an app of your own needs the same lines, then
+`flutter pub get` (which writes the Podfile) and the block. Prefer that to
+`flutter config --no-enable-swift-package-manager`, which changes only your
+machine.
 
 **Windows** — nothing in the app, and x86_64 only: there is no Windows arm64
 build of the runtime. Nothing needs installing: nothing in the bundle needs a C++

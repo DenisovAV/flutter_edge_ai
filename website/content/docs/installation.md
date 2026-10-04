@@ -181,9 +181,11 @@ resolution with a message naming the `flutter_local_ai` pod rather than the
 package you added.
 
 **Where you set it depends on the dependency manager.** Swift Package Manager is the
-default since Flutter 3.44 (opt-in before that), and an SPM-only app has no `Podfile` at all — set **iOS
+default since Flutter 3.44 (opt-in before that), and an SPM-only app has no `Podfile` at all.
+Flutter 3.47+ creates (and migrates) apps at iOS 15.0; on 3.44.x the template is 13.0 — set **iOS
 Deployment Target** on the Runner target in Xcode, or the build fails with `requires
-minimum platform version 15.0 … but this target supports 13.0`.
+minimum platform version 15.0 … but this target supports 13.0`. iOS needs no Podfile
+step; macOS does — see [Desktop → macOS](/docs/desktop#macos).
 `flutter_edge_ai_mediapipe` ships no `Package.swift`, so an app using it also gets a
 `Podfile`; set the platform there as well:
 
@@ -467,6 +469,12 @@ projection itself; running needs Windows 11 25H2+ on Copilot+-class hardware and
 a packaged app); not on Linux. What
 holds across all of desktop: there is no MediaPipe engine on desktop — `.task` /
 `.bin` models are **NOT compatible** with desktop.
+
+**macOS needs one extra step:** turn Swift Package Manager off for the app
+(`flutter: config: enable-swift-package-manager: false` in `pubspec.yaml`) and
+paste a `post_install` block into the generated `macos/Podfile` — see
+[Desktop → macOS](/docs/desktop#macos). Without it the build succeeds and the
+first model load fails.
 
 See [Desktop Support](/docs/desktop) for the full per-platform reference (macOS
 `Podfile` `post_install`, entitlements, Windows DLL loading — no VC++

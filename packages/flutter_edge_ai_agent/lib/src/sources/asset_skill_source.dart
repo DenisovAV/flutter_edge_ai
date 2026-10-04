@@ -25,6 +25,25 @@ const List<String> bundledSkillNames = [
   'kitchen-adventure',
 ];
 
+/// Thrown by [AssetSkillSource.load] when a requested skill does not yield a
+/// [Skill]. A [StateError], like the package's other configuration and
+/// packaging failures, so `on StateError` keeps catching it; [failures] says
+/// which skills failed and why.
+class BundledSkillLoadError extends StateError {
+  BundledSkillLoadError(this.failures)
+    : super(
+        'Bundled skills could not be loaded:\n'
+        '${failures.entries.map((e) => '  ${e.key}: ${e.value}').join('\n')}\n'
+        'A name outside bundledSkillNames, a copy of $_packageName published '
+        'without its SKILL.md files (every version up to 0.2.6), or a build or '
+        'web deployment that does not serve the package assets '
+        '(assets/packages/$_packageName/assets/skills/) causes this.',
+      );
+
+  /// Skill name to the reason it did not load, in requested order.
+  final Map<String, String> failures;
+}
+
 /// This package's name — the prefix Flutter prepends to assets declared by a
 /// dependency. A bundled asset at `assets/skills/<name>/...` in this package is
 /// addressed from the host app as `packages/flutter_edge_ai_agent/assets/...`.
@@ -69,52 +88,57 @@ class AssetSkillSource {
   static String scriptKey(String name, [String scriptName = 'index.html']) =>
       'packages/$_packageName/assets/skills/$name/scripts/$scriptName';
 
-  /// Load + parse every bundled [names] entry into a [Skill]. Each skill's
-  /// asset name (its directory) is preserved as [Skill.name] via the SKILL.md
-  /// frontmatter, so it matches what [jsSkillSourceFor] expects.
+  /// Loads and parses the SKILL.md of every [names] entry, returning one
+  /// [Skill] per name in [names] order. Each skill's [Skill.name] must equal
+  /// its directory name, which is what [jsSkillSourceFor] builds keys from.
   ///
-  /// Skips a skill whose SKILL.md loads but fails to parse — a malformed
-  /// bundled skill must not take down the whole catalog. Returns the
-  /// successfully-parsed skills in [names] order.
-  ///
-  /// Throws a [StateError] naming every skill whose SKILL.md asset cannot be
-  /// loaded at all. For a bundled name that means this package was published
-  /// without it (0.2.6 shipped none of them); for a custom [names] entry, that
-  /// it is not a bundled skill. Either way an empty catalog with no error is
-  /// the wrong answer. On web, a host that rewrites unknown paths to the app's
-  /// `index.html` answers a missing asset with that page; it counts as missing
-  /// too, not as a malformed skill.
+  /// Throws a [BundledSkillLoadError] naming every skill that did not yield a
+  /// [Skill], with the reason: the asset could not be loaded (the original
+  /// error is kept), the server returned an HTML page in its place, the file
+  /// does not parse, or its frontmatter name is not its directory. Every
+  /// bundled SKILL.md is tested to parse, so any of these means the files
+  /// that reached the app are not the ones this package ships — and a quiet
+  /// skip is what let every version up to 0.2.6 return an empty catalog.
   Future<List<Skill>> load() async {
     final skills = <Skill>[];
-    final missing = <String>[];
+    final failures = <String, String>{};
     for (final name in names) {
+      final key = skillMdKey(name);
       final String content;
       try {
-        content = await _bundle.loadString(skillMdKey(name));
-      } catch (_) {
-        missing.add(name);
+        content = await _bundle.loadString(key);
+      } catch (e) {
+        // A cached failed future would repeat this error for the rest of the
+        // session, even once its cause (binding, network) is gone.
+        _bundle.evict(key);
+        failures[name] = 'could not be loaded: $e';
         continue;
       }
       if (_isHtmlPage(content)) {
-        missing.add(name);
+        _bundle.evict(key);
+        failures[name] =
+            'the server answered with an HTML page instead (a web host that '
+            'rewrites unknown paths to index.html)';
         continue;
       }
+      final Skill skill;
       try {
-        skills.add(parseSkillMd(content));
-      } catch (_) {
-        // Malformed bundled skill — skip it rather than fail the catalog.
+        skill = parseSkillMd(content);
+      } catch (e) {
+        failures[name] = 'is not a valid SKILL.md: $e';
         continue;
       }
+      if (skill.name != name) {
+        failures[name] =
+            'its frontmatter name "${skill.name}" is not its directory name';
+        continue;
+      }
+      skills.add(skill);
     }
-    if (missing.isNotEmpty) {
-      // A StateError rather than a logged skip: an empty catalog makes the
-      // agent answer skill requests itself, with no sign anything is wrong.
-      throw StateError(
-        'Bundled skill asset not found for ${missing.join(', ')} '
-        '(${missing.map(skillMdKey).join(', ')}). Either the name is not one '
-        'of bundledSkillNames, or this copy of $_packageName was published '
-        'without its SKILL.md files.',
-      );
+    if (failures.isNotEmpty) {
+      // An error rather than a logged skip: an empty catalog makes the agent
+      // answer skill requests itself, with no sign anything is wrong.
+      throw BundledSkillLoadError(failures);
     }
     return skills;
   }

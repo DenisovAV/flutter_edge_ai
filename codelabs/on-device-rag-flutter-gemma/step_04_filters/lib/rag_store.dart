@@ -47,26 +47,31 @@ class RagStore {
   }
 
   Future<RagIndex> _openOnce() async {
-    final embedder = Embedders.embeddingGemma;
-    final index = await _rag.open(
-      spec: VectorStoreSpec(
-        providerId: SqliteVectorStoreProvider.providerId,
-        location: await databasePath(),
-        filterSchema: filterSchema,
-      ),
-      // Batch indexing below writes raw vectors first, so bind the new store
-      // explicitly. The same ID lets searchText borrow the active core model.
-      embeddingProfile: EmbeddingProfile(
-        id: embedder.profileId,
-        dimension: 768,
-      ),
-      activeEmbedderProfileId: embedder.profileId,
-    );
-    if (_disposeRequested) {
-      await index.dispose();
-      throw StateError('RagStore was disposed while it was opening.');
+    try {
+      final embedder = Embedders.embeddingGemma;
+      final index = await _rag.open(
+        spec: VectorStoreSpec(
+          providerId: SqliteVectorStoreProvider.providerId,
+          location: await databasePath(),
+          filterSchema: filterSchema,
+        ),
+        // Batch indexing below writes raw vectors first, so bind the new store
+        // explicitly. The same ID lets searchText borrow the active core model.
+        embeddingProfile: EmbeddingProfile(
+          id: embedder.profileId,
+          dimension: 768,
+        ),
+        activeEmbedderProfileId: embedder.profileId,
+      );
+      if (_disposeRequested) {
+        await index.dispose();
+        throw StateError('RagStore was disposed while it was opening.');
+      }
+      return index;
+    } catch (_) {
+      _opening = null;
+      rethrow;
     }
-    return index;
   }
 
   /// Batch-embeds the corpus, then writes profile-compatible vectors.

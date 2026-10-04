@@ -6,6 +6,12 @@
 - Always propose changes first, show diff/code, **WAIT FOR APPROVAL**
 - Only after user says "yes"/"go ahead"/"ok" → apply changes
 
+## Rule 1b: NEVER CHANGE ARCHITECTURE OR PUBLIC API WITHOUT SPECIFIC APPROVAL ⛔
+- General approval to implement or fix findings is **NOT** approval to change architecture or public API
+- Before changing package/module boundaries, dependency direction, ownership, lifecycle, initialization flow, public types, signatures, exports, or documented API semantics: explain the proposed design and compatibility impact, then **WAIT FOR EXPLICIT APPROVAL OF THAT DESIGN**
+- Do not introduce a new public abstraction, compatibility layer, fallback, or alternate API path as an incidental fix
+- If an approved implementation reveals that an architecture or API change is needed, stop and request approval before making it
+
 ## Rule 2: NEVER USE `git checkout` ⛔
 - Use Edit tool to manually revert changes. User manages git.
 

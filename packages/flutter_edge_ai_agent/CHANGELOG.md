@@ -1,6 +1,6 @@
 ## 0.2.7
 
-- fix: the package shipped without its bundled skills; `AssetSkillSource.load()` now throws instead.
+- fix: bundled SKILL.md files now ship; `AssetSkillSource.load()` throws when one is missing.
 
 ## 0.2.6
 - Renamed from `flutter_gemma_agent`.

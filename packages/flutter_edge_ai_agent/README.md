@@ -104,6 +104,10 @@ final registry = SkillRegistry()..addAll(skills, selected: true);
 final js = JsSkillExecutor(sourceFor: source.jsSkillSourceFor);
 ```
 
+`load()` returns one skill per bundled name or throws a `BundledSkillLoadError` (a
+`StateError`) whose `failures` names each skill that did not load and why. On web,
+a deployment that does not serve `assets/packages/flutter_edge_ai_agent/` causes it.
+
 ## Quick start
 
 ```dart

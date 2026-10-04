@@ -91,7 +91,7 @@ silently do the other thing.
 [ ] 7   CHANGELOG: one short line per package, every published package
 [ ] 8   dart pub publish --dry-run → 0 warnings, every package; AND
         `dart tool/check_published_assets.dart` exits 0 — pub never checks that
-        assets/skills ship, and every agent release up to 0.2.6 passed
+        runtime files ship, and every agent release up to 0.2.6 passed
         "0 warnings" with no SKILL.md in the archive (#578)
 [ ] 8b  native bundle moved? → litertlm_native_tools_test.dart green on every
         platform in the release (the smoke suite never passes a tool), else N/A
@@ -599,6 +599,10 @@ dart pub publish --dry-run     # 0 warnings (package size is informational — t
                                # FFI bindings + pigeon + example already push it
                                # to ~700 KB on 0.16.x; the old <=100 KB ceiling
                                # predates 0.14.0 and no longer applies)
+dart tool/check_published_assets.dart   # from the repo root: every file apps read
+                                        # from the archive (agent skills, core
+                                        # skills/ and web/, litertlm web/, sqlite
+                                        # wasm) is in the dry-run file list
 ```
 
 **NEVER publish without dry-run first.** Publishing is IRREVERSIBLE.

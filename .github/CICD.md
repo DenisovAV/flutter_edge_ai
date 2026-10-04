@@ -15,6 +15,8 @@ This repository uses GitHub Actions for continuous integration and automated rel
 **Jobs:**
 
 #### `analyze-and-test`
+- Checks that every file apps read from the published packages is in
+  `pub publish --dry-run`'s file list (`tool/check_published_assets.dart`)
 - Runs Flutter analyzer
 - Executes all unit tests with coverage
 - Uploads coverage to Codecov (optional)

@@ -64,9 +64,9 @@ class Examples extends StatelessComponent {
           'running locally with Gemma 4.',
       accent: Brand.orange,
       videoBase: '/demos/multimodal',
-      // The live web example app ships both Qwen3 and Gemma 4.
-      ctaLabel: '▶ Try it live',
-      ctaHref: '/try',
+      // The web app has no audio input, so point at the docs instead of /try.
+      ctaLabel: 'Learn more →',
+      ctaHref: '/docs/multimodal',
     ),
     _Example(
       id: 'agent',

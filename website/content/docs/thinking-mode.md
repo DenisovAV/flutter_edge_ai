@@ -1,6 +1,6 @@
 ---
 title: Thinking Mode
-description: View the reasoning process of DeepSeek, Gemma 4, Qwen3, SmolLM3, and Phi-4 Mini Reasoning models with thinking blocks.
+description: View the reasoning process of DeepSeek, Gemma 4, and Qwen3 models with thinking blocks.
 image: https://flutteredge.ai/images/og-image.png
 ---
 
@@ -75,6 +75,7 @@ removing model-specific tokens. This is handled automatically by the chat API,
 but is available if you need it:
 
 ```dart
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/core/extensions.dart';
 
 String cleanedResponse = ModelThinkingFilter.cleanResponse(

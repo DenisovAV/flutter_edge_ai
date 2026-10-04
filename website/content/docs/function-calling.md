@@ -13,9 +13,8 @@ and then continue the conversation with the result.
 ### Models with function calling support
 
 - **Gemma 4** (E2B, E4B) — full support (native function-call tokens).
-- **Gemma3n E4B `.litertlm`** — the only downloadable/network Gemma3n catalog
-  entry with function calling enabled. An intentional local E2B `.task` fixture
-  also enables it; the downloadable E2B and MediaPipe entries do not.
+- **Gemma3n E4B** — function calling on the downloadable E4B `.litertlm` build;
+  not on E2B or the MediaPipe `.task` builds.
 - **FunctionGemma 270M** — Google's specialized function-calling model.
 - **DeepSeek R1** — function calling + thinking mode.
 - **Qwen** models (0.5B, 0.6B, 1.5B) — full support.
@@ -24,7 +23,7 @@ and then continue the conversation with the result.
 ### Models without function calling support
 
 - **Gemma 3 270M** — text generation only.
-- **Gemma 3 1B** — text generation only in the current catalog.
+- **Gemma 3 1B** — text generation only.
 - **SmolLM 135M** — text generation only.
 - **LFM2.5 230M** — text generation only.
 - **SmolLM3 3B** — text generation with reasoning, no function calling.
@@ -35,9 +34,9 @@ and then continue the conversation with the result.
 - **LLaVA-OneVision 0.5B** — vision model, no function calling.
 
 <Info>
-When you pass tools to an unsupported model, the plugin logs a warning and
-ignores the tools — the model still works normally for text generation. Check the
-`supportsFunctionCalls` property in your model configuration.
+If you pass `tools` with `supportsFunctionCalls: false`, the chat logs a warning
+and does not inject them — the model still works normally for text generation.
+Pass `supportsFunctionCalls: true` for models that support it.
 </Info>
 
 ### Built-in AI (OS models)
@@ -191,6 +190,11 @@ until the model produces a final call-free answer (bounded by `maxToolTurns`).
 You only implement the tools; the parse → execute → feed-back loop is handled.
 
 ```dart
+// Stage the user message first, as for generateChatResponseAsync.
+await chat.addQueryChunk(
+  Message.text(text: 'Make the background blue', isUser: true),
+);
+
 final stream = chat.generateChatResponseWithTools(
   onToolCall: (call) async {
     // Run whatever tool the model asked for; return its result map.

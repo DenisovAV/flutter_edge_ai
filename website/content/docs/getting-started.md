@@ -49,6 +49,10 @@ SmolLM and more — see [Models](/docs/models) for the full list.
   embedding-pipeline identity, and app-owned indexes have explicit disposal.
   See [Embeddings & RAG](/docs/embeddings-and-rag) and
   [Migration](/docs/migration).
+- **The `flutter_gemma` aliases are gone.** The old Dart names no longer
+  compile; `dart fix --apply` still renames them.
+- **`ModelFileManager.setActiveModel` is removed** — use
+  `ensureModelReadyFromSpec`.
 
 ## Historical release notes (1.x): Flutter Gemma became Flutter Edge AI
 
@@ -127,25 +131,37 @@ Complete the [platform setup](/docs/installation) before running this code.
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
-// Install model. The URL below uses the .litertlm variant so the same code
-// works on Desktop (Windows/macOS/Linux) and mobile/web. For web only, the
-// `.task` / `-web.task` variants of the same model also work.
+// Once, in main(): core has no engine of its own. Gemma 3 1B is gated, so
+// pass a token — never hard-code it.
+await FlutterEdgeAi.initialize(
+  inferenceEngines: const [LiteRtLmEngine()],
+  huggingFaceToken: const String.fromEnvironment('HUGGINGFACE_TOKEN').isEmpty
+      ? null
+      : const String.fromEnvironment('HUGGINGFACE_TOKEN'),
+);
+
+// Install model. The URL below uses the .litertlm variant, which runs on
+// Android, iOS and Desktop (Windows/macOS/Linux). Web uses web builds — see
+// the note below.
 await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
   fileType: ModelFileType.litertlm,
 ).fromNetwork(
   'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
-  token: 'your_hf_token',
 ).withProgress((progress) {
   print('Downloading: $progress%');
 }).install();
 ```
 
 <Info>
-**Mobile/Web shortcut:** if you don't target Desktop, you can substitute the URL
-with the `.task` build of the same model. Desktop targets need the `.litertlm`
-build — `.task` and `.bin` are MediaPipe-only.
+**MediaPipe alternative:** on mobile you can install the `.task` build of the
+same model instead — drop `fileType` (it defaults to `ModelFileType.task`) and
+register `MediaPipeEngine()` from `flutter_edge_ai_mediapipe`. On Web, use the
+`-web.task` build (`gemma3-1b-it-int4-web.task`) with `MediaPipeEngine()`.
+Desktop targets need the `.litertlm` build — `.task` and `.bin` are
+MediaPipe-only.
 </Info>
 
 ### 2. Create and Use a Model (Multiple Times)
@@ -323,7 +339,9 @@ final SttModelSpec? stt = FlutterEdgeAi.activeSttSpec;
 final TtsModelSpec? tts = FlutterEdgeAi.activeTtsSpec;
 
 // Absolute on-device path of an installed file (a URL/OPFS handle on web):
-final path = await FlutterEdgeAi.getModelPath('Gemma3-1B-IT_..._ekv4096.litertlm');
+final path = await FlutterEdgeAi.getModelPath(
+  'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
+);
 ```
 
 ### Storage & cleanup
@@ -401,6 +419,6 @@ chat.generateChatResponseAsync().listen((response) {
 
 - [Installation](/docs/installation) — per-platform setup and engine registration.
 - [Models](/docs/models) — supported models, file formats, and capabilities.
-- [Migration (0.x → 1.0)](/docs/migration) — upgrade from the monolith.
+- [Migration](/docs/migration) — upgrade from `flutter_gemma` or Flutter Edge AI 1.x.
 
 **Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-inference`](/docs/package-skills), the skill that teaches it engines, installing a model, sessions and chats, streaming, and the platform setup for all six targets.

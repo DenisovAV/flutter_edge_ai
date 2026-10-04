@@ -59,7 +59,7 @@ Auth errors (401/403/404) fail fast after one attempt — they are not retried. 
 
 `maxTokens` (on `getActiveModel`/`createModel`) is the **context window** — the total budget shared by the input (system prompt + history + your message) **and** the generated output (the KV-cache size). It is **not** the reply length.
 
-`.litertlm` models require a context window of at least **1024**. Passing a smaller `maxTokens` (e.g. `100`) used to crash with `DYNAMIC_UPDATE_SLICE failed to prepare` / `Failed to allocate tensors` (even on CPU — the failure is at graph compile, before the backend runs). As of **1.0.2** a too-small `maxTokens` is clamped up to 1024 automatically with a log warning.
+`.litertlm` models require a context window of at least **1024**. Passing a smaller `maxTokens` (e.g. `100`) used to crash with `DYNAMIC_UPDATE_SLICE failed to prepare` / `Failed to allocate tensors` (even on CPU — the failure is at graph compile, before the backend runs). As of **`flutter_gemma_litertlm` 1.0.2** a too-small `maxTokens` is clamped up to 1024 automatically with a log warning — except on `PreferredBackend.npu`, where the context is baked into the compiled bundle (see [NPU](#npu)).
 
 To limit how many tokens the model **generates**, use `maxOutputTokens` on `createSession`/`openSession`/`createChat`/`openChat` instead:
 
@@ -68,7 +68,7 @@ final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024); // context wi
 final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 ```
 
-(`maxOutputTokens` is honored on `.litertlm`; the MediaPipe `.task` path has no session-level output cap and ignores it.)
+(`maxOutputTokens` is honored on `.litertlm` and ONNX; the MediaPipe `.task` path has no session-level output cap and ignores it.)
 
 ## iOS
 
@@ -78,7 +78,7 @@ final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 ## Android
 
 - **`.litertlm` models require minSdk 30.** `libLiteRtLm.so` depends on API 30+ Bionic syscalls (`pthread_cond_clockwait`, `sem_clockwait`) that can't be shimmed on older devices. MediaPipe `.task` models work on lower API levels.
-- **`.litertlm` / embeddings / vision are `arm64-v8a` only.** MediaPipe text inference (`.task` / `.bin`) also runs on `x86_64` and `armeabi-v7a`. If you only use arm64-only features, add `ndk { abiFilters 'arm64-v8a' }` so the Play Store doesn't offer broken APKs. See [Installation → Android architecture](/docs/installation#android-architecture-support).
+- **`.litertlm` / embeddings / vision are `arm64-v8a` only.** MediaPipe text inference (`.task` / `.bin`) also runs on `x86_64` and `armeabi-v7a`. If you only use arm64-only features, add `ndk { abiFilters 'arm64-v8a' }` (in `build.gradle.kts`: `ndk { abiFilters += listOf("arm64-v8a") }`) so the Play Store doesn't offer broken APKs. See [Installation → Android architecture](/docs/installation#android-architecture-support).
 - **GPU:** nothing to add — the OpenCL `<uses-native-library>` entries come from the core plugin's own manifest (`flutter_gemma` 1.2.0+) through the manifest merger. If the GPU backend still falls back, check that the merged manifest contains `libvndksupport.so` and `libOpenCL.so`. See [Installation → Android](/docs/installation#android).
 - **Google Play rejects the release: "Your app does not support 16 KB memory page sizes".** Fixed in `flutter_gemma_litertlm` 1.8.0. Nothing fails at build or run time — the rejection happens at submission. The Qualcomm Hexagon DSP blobs this package bundles for the NPU path (`libQnnHtpV{73,75,79,81}Skel.so`) arrived from the QAIRT SDK with a 4 KB `p_align`, and they ship in every APK because the NPU libraries are bundled unconditionally; Play scans `lib/**/*.so` without caring that a Hexagon image is loaded by the DSP rather than mapped by the kernel. Upgrade to 1.8.0 and check your own build with Google’s `check_elf_alignment.sh` against the APK. See [#529](https://github.com/DenisovAV/flutter_edge_ai/issues/529).
 - **GPU backend crashes at `engine_create` on Mali GPUs (`SIGSEGV`, `pc 0` in `libLiteRtOpenClAccelerator.so`).** Fixed in `flutter_gemma_litertlm` 1.8.2. In 1.7.0–1.8.1 the OpenCL and GPU accelerators called `AHardwareBuffer_allocate` without declaring `libandroid.so`, so Android bound the call to address 0; only Mali GPUs (Samsung A-series, MediaTek, Google Tensor) take that path, so CPU and Adreno were unaffected. Upgrade to 1.8.2. See [#545](https://github.com/DenisovAV/flutter_edge_ai/issues/545).
@@ -298,4 +298,4 @@ inside the package.
 
 ## Function calling
 
-- Function calling is supported only by select downloadable catalog entries (Gemma 4, Gemma3n E4B `.litertlm`, FunctionGemma, DeepSeek, Qwen, Phi-4 Mini). The intentional local Gemma3n E2B `.task` fixture also enables it. Unsupported models log a warning and ignore tools — they still work for text generation. Check `supportsFunctionCalls`. See [Function Calling](/docs/function-calling).
+- Function calling is supported by Gemma 4, Gemma3n E4B (`.litertlm` build), FunctionGemma, DeepSeek, Qwen and Phi-4 Mini. If you pass `tools` with `supportsFunctionCalls: false`, the chat logs a warning and does not inject them — the model still works for text generation. Pass `supportsFunctionCalls: true` for models that support it. See [Function Calling](/docs/function-calling).

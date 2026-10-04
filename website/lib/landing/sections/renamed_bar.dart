@@ -15,8 +15,7 @@ class RenamedBar extends StatelessComponent {
         span(classes: 'renamed-text', [
           strong([Component.text('Flutter Gemma is now Flutter Edge AI.')]),
           Component.text(
-            ' Same code, same models, a name that fits every on-device model '
-            'it runs. ',
+            ' Same models, new name — 2.0 moves RAG into flutter_edge_ai_rag. ',
           ),
         ]),
         a(

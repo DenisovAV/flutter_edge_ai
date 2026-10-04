@@ -42,7 +42,7 @@ dependencies:
   flutter_edge_ai_litertlm: ^1.8.7   # an inference engine (LiteRtLmEngine)
 ```
 
-The agent is **unverified on Web** — nothing disables it, but it has never been driven in a browser. See the note below.
+The agent is **not supported on Web** — never verified end-to-end, and the example app disables it. See the note below.
 
 ## The four skill mechanisms
 
@@ -60,11 +60,8 @@ execution mechanisms:
 [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
 (pre-installed on Windows 11). ² Linux has no embeddable webview, so JS skills
 return an `ErrorResult`; text / native-intent / MCP skills work on Linux.
-³ Unverified on Web rather than disabled: nothing in the package gates on the
-platform, and the web `.litertlm` path does emit well-formed tool calls. What is
-missing is a run of the agent itself (see the note below). On web, native-intent
-skills open `mailto:` / `sms:` links and a Google Calendar event page instead of
-OS surfaces.
+³ Not supported on Web — never verified end-to-end, and the example app
+disables it (see the note below).
 
 JS skills run in a headless, sandboxed webview. To grant a secure context (so
 skills using `crypto.subtle` and other secure-context Web APIs work), the package
@@ -73,16 +70,12 @@ serves each skill's assets over a loopback HTTP server (`http://127.0.0.1`, a W3
 WebView2 / WKWebView / Android WebView, verified on hardware. On the web the skill
 runs in a sandboxed `<iframe>`.
 
-> **Web is unverified.** The columns above describe where each skill *type* can
-> execute once invoked, and the pieces the loop needs are in place: the web
-> `.litertlm` path emits well-formed tool calls and survives the
-> call → result → continue round-trip. What is missing is a run of the agent
-> itself in a browser — that has never been done, and the loop's context
-> balancing leans on `sizeInTokens`, which is approximate on web. On web,
-> native-intent skills open `mailto:` / `sms:` links and a Google Calendar event
-> page rather than OS surfaces. The agent is verified on **Android, iOS,
-> macOS, and Windows** — use those until a web run exists. The example app
-> disables the agent on web accordingly.
+> **Not supported on Web** — never verified end-to-end, and the example app
+> disables it. The web `.litertlm` path emits well-formed tool calls and
+> survives the call → result → continue round-trip, but the agent loop itself
+> has never run in a browser, and its context balancing leans on
+> `sizeInTokens`, which is approximate on web. The agent is verified on
+> **Android, iOS, macOS, and Windows**.
 
 ## Quick start
 

@@ -76,10 +76,10 @@ Map<String, Object?> _softwareApplicationSchema() => {
   '@type': 'SoftwareApplication',
   'name': 'Flutter Edge AI',
   'description':
-      'A Flutter plugin to run Gemma and other LLMs on-device — '
-      'Android, iOS, Web, and Desktop. Multimodal vision & audio, '
-      'function calling, on-device agent skills, thinking mode, '
-      'GPU acceleration, embeddings, and RAG.',
+      'On-device AI for Flutter: run Gemma and other LLMs on '
+      'Android, iOS, Web, macOS, Windows and Linux. Multimodal, '
+      'function calling, agent skills, thinking mode, embeddings, '
+      'RAG and speech.',
   'url': kSiteOrigin,
   'applicationCategory': 'DeveloperApplication',
   'operatingSystem': 'Android, iOS, Web, macOS, Windows, Linux',

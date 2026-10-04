@@ -139,9 +139,10 @@ matrix.
 - Check device memory — multimodal models require more RAM.
 - Use the GPU backend for faster text decoding. Image encoding runs on CPU by
   default; move audio encoding to GPU with `preferredAudioBackend: PreferredBackend.gpu`.
-- If image input fails at model load on a GPU backend on an older release, upgrade
-  to `flutter_gemma_litertlm` 1.4.2 — the vision encoder now defaults to CPU.
+- Image input no longer fails at model load on a GPU backend: the vision encoder
+  defaults to CPU in every `flutter_edge_ai_litertlm` release (the fix shipped in
+  `flutter_gemma_litertlm` 1.4.2).
 - After `stopGeneration()` on a `.litertlm` model on Android, iOS or desktop the
-  chat keeps working (`flutter_gemma_litertlm` 1.8.1+), but it continues from a text copy of the
+  chat keeps working (every `flutter_edge_ai_litertlm` release includes it), but it continues from a text copy of the
   history: images and audio from earlier turns are gone. Send the image again
   if the next question is about it.

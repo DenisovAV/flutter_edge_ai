@@ -30,9 +30,9 @@ import 'main.server.options.dart';
 
 const String _landingDescription =
     'Run Gemma and other LLMs on-device in your Flutter app — '
-    'Android, iOS, Web, and Desktop. Multimodal vision & audio, '
-    'function calling, on-device agent skills, thinking mode, '
-    'GPU acceleration, embeddings, and RAG.';
+    'Android, iOS, Web, macOS, Windows and Linux. Multimodal, '
+    'function calling, agent skills, thinking mode, embeddings, '
+    'RAG and speech.';
 
 const String _codelabsDescription =
     'Hands-on, step-by-step guides for running language models inside a '
@@ -172,7 +172,7 @@ void main() {
                   links: [
                     SidebarLink(text: 'Packages', href: '/docs/packages'),
                     SidebarLink(text: 'Desktop Support', href: '/docs/desktop'),
-                    SidebarLink(text: 'Migration (0.x → 1.0)', href: '/docs/migration'),
+                    SidebarLink(text: 'Migration', href: '/docs/migration'),
                     SidebarLink(text: 'Troubleshooting', href: '/docs/troubleshooting'),
                   ],
                 ),

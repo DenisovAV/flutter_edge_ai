@@ -22,12 +22,12 @@ dependencies:
   flutter_edge_ai_onnx: latest_version         # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
 
   # Optional — text-embedding tokenizer implementations:
-  flutter_edge_ai_embeddings: latest_version   # text-embedding pipeline (needs a backend, e.g. LiteRtEmbeddingBackend above)
+  flutter_edge_ai_embeddings: latest_version   # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
 
   # Optional — independent RAG orchestration plus one storage provider:
   flutter_edge_ai_rag: latest_version       # RagIndex, profiles, filters
   flutter_edge_ai_qdrant: latest_version    # qdrant-edge; fastest on native
-  flutter_edge_ai_sqlite: latest_version    # sqlite-vec / vec0; all platforms incl. web
+  flutter_edge_ai_sqlite: latest_version    # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
 
   # Optional — on-device speech (STT + TTS):
   flutter_edge_ai_speech: latest_version       # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
@@ -50,7 +50,7 @@ dependencies:
 | Generate text embeddings | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
 | On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
-| On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
+| On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` (Flutter 3.47+) |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Run on-device agent skills the model executes itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
 | Measure what a model costs in memory the OS cannot reclaim (Android + iOS) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
@@ -70,7 +70,7 @@ durable embedding profiles.
 
 Call `await FlutterEdgeAi.initialize(...)` once in `main()` and **register the opt-in
 packages you added** to `pubspec.yaml`. Core registers no engine on its own, so
-without this step `getActiveModel()` / `createEmbeddingModel()` throw a clear
+without this step `getActiveModel()` / `getActiveEmbedder()` throw a clear
 "add the engine package" error.
 
 ```dart
@@ -248,6 +248,10 @@ keeps `Runner.app/Frameworks/` App-Store-clean (fixes ITMS-90432).
 
 ### Android
 
+Release builds need `<uses-permission android:name="android.permission.INTERNET"/>`
+in `android/app/src/main/AndroidManifest.xml` to download models (Flutter's
+template adds it only to the debug and profile manifests).
+
 **Add-to-app hosts must declare the Kotlin Gradle Plugin themselves.** Flutter
 auto-applies KGP to plugin modules only when the host provides it, so a Java-only native
 host fails with `Could not find method kotlin()`. Add KGP to the host's root
@@ -326,6 +330,16 @@ Play Store does not offer broken APKs to incompatible devices:
 android {
     defaultConfig {
         ndk { abiFilters 'arm64-v8a' }
+    }
+}
+```
+
+In a Kotlin build script (`build.gradle.kts`):
+
+```
+android {
+    defaultConfig {
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 }
 ```
@@ -448,12 +462,15 @@ package's Native-Assets hook (no manual download/bundling). **`flutter_edge_ai_o
 (macOS/Windows/Linux), and the OS built-in model is available via
 **`flutter_edge_ai_builtin_ai`** on **macOS** ([Apple Foundation
 Models](/docs/builtin-ai)) and on **Windows** ([AI Foundry](/docs/builtin-ai) —
-opt-in: the app supplies the Windows App SDK projections); not on Linux. What
+nothing to configure to build: `flutter_local_ai` resolves the Windows App SDK
+projection itself; running needs Windows 11 25H2+ on Copilot+-class hardware and
+a packaged app); not on Linux. What
 holds across all of desktop: there is no MediaPipe engine on desktop — `.task` /
 `.bin` models are **NOT compatible** with desktop.
 
 See [Desktop Support](/docs/desktop) for the full per-platform reference (macOS
-`Podfile` `post_install`, entitlements, Windows VC++ runtime, Linux Vulkan
+`Podfile` `post_install`, entitlements, Windows DLL loading — no VC++
+redistributable needed since `flutter_gemma_litertlm` 1.7.1 — Linux Vulkan
 driver, and known limitations).
 
 ## Platform & architecture support

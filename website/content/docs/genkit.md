@@ -64,7 +64,7 @@ final ai = Genkit(plugins: [
   GenkitFlutterEdgeAiPlugin(
     models: [
       FlutterEdgeAiModelConfig(
-        name: 'gemma-3-nano',
+        name: 'gemma-3-1b',
         modelType: ModelType.gemmaIt,
       ),
     ],
@@ -75,11 +75,15 @@ final ai = Genkit(plugins: [
 ]);
 ```
 
+Model and embedder ids are `flutter-edge-ai/<name>` (they were
+`flutter-gemma/<name>`), and 0.7.0 drops the old `genkit_flutter_gemma` Dart
+names — `dart fix --apply` renames them.
+
 ### Generate text
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Hello!',
 );
 print(response.text);
@@ -89,7 +93,7 @@ print(response.text);
 
 ```dart
 final stream = ai.generateStream(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Write a short story.',
 );
 
@@ -125,10 +129,10 @@ Pass `FlutterEdgeAiModelOptions` to tune inference:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
-    maxTokens: 2048,
+    maxTokens: 2048,                // context window (input + output), not reply length
     temperature: 0.5,
     topK: 40,
     supportImage: true,
@@ -162,7 +166,7 @@ populates `response.output`. Pass an `outputSchema` and read the parsed object:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
 );
@@ -180,7 +184,7 @@ always keeping every system message and the most recent message:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Continue our conversation…',
   messages: longHistory,
   use: [trimContext(maxInputTokens: 800)],
@@ -360,6 +364,6 @@ final response = await ai.generate(model: smart, prompt: 'Explain quantum tunnel
 
 <Info>
 `genkit_hybrid` works with **any** Genkit models, not just flutter_edge_ai. You
-can combine `gemini-1.5-flash` (cloud) with a local Ollama model, or any other
+can combine `gemini-2.5-flash` (cloud) with a local Ollama model, or any other
 pair that Genkit supports.
 </Info>

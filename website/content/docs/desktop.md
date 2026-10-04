@@ -15,8 +15,9 @@ generation + ORT embeddings) also runs on all three desktop OSes
 (macOS/Windows/Linux), and the OS built-in model is available through
 **`flutter_edge_ai_builtin_ai`** ([Built-in AI](/docs/builtin-ai)) on **macOS**
 (Apple Foundation Models) and, since 0.3.0, on **Windows** (AI Foundry / Phi
-Silica — opt-in: the host app supplies the Windows App SDK 2.0+ projections and
-runtime bootstrap, and the default build reports the backend as unavailable).
+Silica — nothing to configure to build: `flutter_local_ai` resolves the Windows
+App SDK projection itself; running needs Windows 11 25H2+ on Copilot+-class
+hardware and a packaged app).
 Linux has no OS built-in model. What holds across all of desktop is the narrower
 statement: **there is no MediaPipe engine on desktop.** See
 [Installation](/docs/installation) and [Packages](/docs/packages).

@@ -23,7 +23,7 @@ use flutter_edge_ai.
 
 ## Install
 
-From your app's root, once `flutter_edge_ai` 1.11.4 or later is a dependency:
+From your app's root, once `flutter_edge_ai` 2.0.0 or later is a dependency (the skills follow the installed version):
 
 ```
 dart run skills@ get --all
@@ -76,11 +76,11 @@ on its own; there is no command to remember.
 |-------|--------|
 | `flutter-edge-ai-inference` | engines, installing a model from Hugging Face, sessions and chats, streaming, system prompts, images and audio, backends — and the platform setup for Android, iOS, macOS, Windows, Linux and web |
 | `flutter-edge-ai-function-calling` | declaring tools, `FunctionCallResponse`, the built-in tool loop, returning errors as results |
-| `flutter-edge-ai-rag` | embedding models, `flutter_edge_ai_sqlite` and `flutter_edge_ai_qdrant`, metadata filters and their schema |
+| `flutter-edge-ai-rag` | embedding models, `flutter_edge_ai_rag` (`RagIndex`, embedding profiles), SQLite/Qdrant providers, filters and their schema, ownership |
 | `flutter-edge-ai-speech` | Whisper, moonshine and Parakeet STT; Matcha, Qwen3 and Inflect TTS; 16 kHz PCM; `VoiceSession` |
 | `flutter-edge-ai-mediapipe` | `.task` and `.bin` models on Android, iOS and web |
 | `flutter-edge-ai-onnx` | ORT-GenAI generation and ONNX embeddings, native and through Transformers.js |
-| `flutter-edge-ai-builtin-ai` | Gemini Nano on Android and in desktop Chrome, Phi-4-mini in Edge, Apple Foundation Models on iPhone, iPad and Mac; availability, falling back to a downloaded model |
+| `flutter-edge-ai-builtin-ai` | Gemini Nano on Android and in desktop Chrome, Phi-4-mini in Edge, Apple Foundation Models on iPhone, iPad and Mac, Phi Silica on Windows; availability, falling back to a downloaded model |
 | `flutter-edge-ai-diagnostics` | measuring what a model costs in memory with `flutter_edge_ai_diagnostics`: what the OS kills on per platform, null versus `MemoryReadException` |
 
 ## What they prevent

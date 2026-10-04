@@ -1,6 +1,6 @@
 ---
 title: Migration
-description: Move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the 1.0 modular packages.
+description: Upgrade to Flutter Edge AI 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
 image: https://flutteredge.ai/images/og-image.png
 ---
 
@@ -18,6 +18,15 @@ dependencies:
   flutter_edge_ai_rag: ^1.0.0
   flutter_edge_ai_sqlite: ^2.0.0 # or flutter_edge_ai_qdrant: ^2.0.0
 ```
+
+Also breaking in 2.0:
+
+- `Filter`, `FilterSchema`, `RetrievalResult`, `VectorStoreRepository` and the
+  other RAG types now import from `package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart`,
+  not from core.
+- `ModelFileManager.setActiveModel` is removed — use `ensureModelReadyFromSpec`.
+- The deprecated `flutter_gemma` name aliases (`FlutterGemma`, `GemmaLogLevel`, …)
+  are removed. `dart fix --apply` still renames them.
 
 Remove `vectorStore:` and `filterSchema:` from `FlutterEdgeAi.initialize()`.
 Register only AI runtimes there, then create and own RAG independently:
@@ -77,8 +86,9 @@ passes a custom `RagEmbedder` whose `profile` reports that stable identity.
 
 A nonempty 1.11 store has no profile metadata. Prefer a new, profile-versioned
 location and re-index. If you can independently attest the old model and
-preprocessing, open once with `allowLegacyProfileAdoption: true` and the
-verified profile; the provider checks the stored dimension before binding it.
+preprocessing, open once with `allowLegacyProfileAdoption: true` on the
+`VectorStoreSpec` and the verified `embeddingProfile`; the provider checks the
+stored dimension before binding it.
 
 SQLite filter fields are physical `vec0` columns, so a schema change needs a
 new schema-versioned location and re-index. On Web, keep one app-owned index per
@@ -112,9 +122,13 @@ To move:
 
 1. Replace each `flutter_gemma*` dependency in `pubspec.yaml` with its new name
    and the version from the table.
-2. Replace `package:flutter_gemma` with `package:flutter_edge_ai` in your
-   imports — the same for every other package in the table. A project-wide
-   search and replace does it.
+2. In your import lines, replace `flutter_gemma_rag_` with `flutter_edge_ai_`
+   first (`flutter_gemma_rag_sqlite` → `flutter_edge_ai_sqlite`,
+   `flutter_gemma_rag_qdrant` → `flutter_edge_ai_qdrant`), then `flutter_gemma`
+   with `flutter_edge_ai` everywhere — in the package name and in the file name:
+   `package:flutter_gemma/flutter_gemma.dart` becomes
+   `package:flutter_edge_ai/flutter_edge_ai.dart`. A project-wide search and
+   replace does it.
 3. Run `dart fix --apply` (Flutter 3.44 or newer). It renames `FlutterGemma`,
    `FlutterGemmaPlugin`, `FlutterGemmaDesktop`, `GemmaLogLevel`,
    `FlutterGemmaDiagnostics` and the genkit names to their new spellings. In 1.11.4
@@ -172,27 +186,28 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**After (1.0):**
+**After (current 2.0 set):**
 
 ```
 dependencies:
-  flutter_edge_ai: ^1.11.4                 # core — always required
-  flutter_edge_ai_litertlm: ^1.8.6        # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
-  flutter_edge_ai_mediapipe: ^1.0.8       # add if you run .task / .bin models
-  flutter_edge_ai_embeddings: ^2.2.1      # add if you compute embeddings (needs a backend, see above)
-  flutter_edge_ai_qdrant: ^1.3.2      # add for native on-device RAG (qdrant)
-  flutter_edge_ai_sqlite: ^1.4.0      # add for on-device RAG (sqlite-vec; all platforms incl. web) — needs Flutter 3.47
+  flutter_edge_ai: ^2.0.0                 # core — always required
+  flutter_edge_ai_litertlm: ^1.8.7        # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai_mediapipe: ^1.0.9       # add if you run .task / .bin models
+  flutter_edge_ai_embeddings: ^2.2.2      # add if you compute embeddings (tokenizers; needs a backend, see above)
+  flutter_edge_ai_rag: ^1.0.0             # add for on-device RAG (RagIndex) + one store below
+  flutter_edge_ai_qdrant: ^2.0.0          # native on-device RAG store (qdrant)
+  flutter_edge_ai_sqlite: ^2.0.0          # RAG store (sqlite-vec; all platforms incl. web) — needs Flutter 3.47
 ```
 
 Pick by what you actually used in 0.16.x:
 
-| In 0.16.x you used… | Add in 1.0 |
+| In 0.16.x you used… | Add |
 |---|---|
 | `.litertlm` models (Gemma 4, Qwen3, FastVLM, any desktop) | `flutter_edge_ai_litertlm` |
 | `.task` / `.bin` models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4, …) | `flutter_edge_ai_mediapipe` |
 | `generateEmbedding()` / `installEmbedder()` | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
-| RAG (`addDocument` / `searchSimilar`), fastest on native | `flutter_edge_ai_qdrant` |
-| RAG on web (or a portable store on any platform) | `flutter_edge_ai_sqlite` |
+| RAG (`addDocument` / `searchSimilar`), fastest on native | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
+| RAG on web (or a portable store on any platform) | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 
 <Info>
 Not sure which format your models are? Desktop is always `.litertlm`
@@ -216,10 +231,10 @@ file type.
 <Warning>
 `flutter_gemma_embeddings` **2.0.0** is a breaking change, independent of the
 0.16.x → 1.0 migration above. As of `flutter_gemma_litertlm` **1.5.0**,
-`flutter_edge_ai_embeddings` no longer ships a concrete embedding backend — it's
-now a runtime-agnostic pipeline (tokenizer, pooling, isolate worker) that any
-engine package can implement. `LiteRtEmbeddingBackend` moved to
-`flutter_edge_ai_litertlm`.
+`flutter_edge_ai_embeddings` no longer ships a concrete embedding backend —
+`LiteRtEmbeddingBackend` moved to `flutter_edge_ai_litertlm`. Since 2.2.0 the
+package holds only the embedding tokenizer implementations; the pipeline,
+pooling and isolate worker live in core.
 </Warning>
 
 If your app registers `LiteRtEmbeddingBackend()`, fix the import and bump both
@@ -235,8 +250,8 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 ```
 dependencies:
-  flutter_edge_ai_embeddings: ^2.2.1   # runtime-agnostic pipeline (still required)
-  flutter_edge_ai_litertlm: ^1.8.6     # now provides LiteRtEmbeddingBackend
+  flutter_edge_ai_embeddings: ^2.2.2   # tokenizer implementations (still required)
+  flutter_edge_ai_litertlm: ^1.8.7     # now provides LiteRtEmbeddingBackend
 ```
 
 `LiteRtEmbeddingBackend()` itself is unchanged — only where the class is
@@ -244,8 +259,8 @@ imported from. Since litertlm 1.8.0 it also needs a tokenizer registered
 beside it: add `flutter_edge_ai_embeddings` to your pubspec and pass
 `embeddingTokenizers: [GemmaEmbeddingTokenizers()]`, or the first embedding
 throws a `StateError` naming that step. You still depend on
-`flutter_edge_ai_embeddings` (it owns the tokenizer/pooling/worker); you just no
-longer import a backend class from it. If you'd rather run embeddings over an
+`flutter_edge_ai_embeddings` (it owns the tokenizers); you just no longer import
+a backend class from it. If you'd rather run embeddings over an
 ONNX/ORT model instead, `flutter_edge_ai_onnx`'s `OnnxEmbeddingBackend` is a
 drop-in alternative — see [Packages](/docs/packages#onnx-runtime-engine).
 
@@ -422,8 +437,9 @@ try {
 
 <Warning>
 Catch `QdrantLegacyStoreException`, not the base `VectorStoreException`.
-`initialize()` also throws the base type when a 1.4.0 shard is present but will
-not open right now — a WAL held by another store, a permission problem — and
+`initialize()` also throws the base type when a current-layout (1.3.0 and later)
+shard is present but will not open right now — a WAL held by another store, a
+permission problem — and
 treating that as "the old format is here" is how a recovery step can act on a
 store that is perfectly fine.
 </Warning>
@@ -527,7 +543,7 @@ await FlutterEdgeAi.dispose();
 ## What you'll see if you forget step 2
 
 - Calling `getActiveModel()` with no matching `inferenceEngines` registered throws a `StateError` naming the model's `ModelFileType` and the engines that are registered — add the engine package for that file type.
-- `createEmbeddingModel()` or default text RAG with no matching
+- `FlutterEdgeAi.getActiveEmbedder()` or default text RAG with no matching
   `embeddingBackends` throws a clear error naming the runtime package to add.
 - `FlutterEdgeAiRag.open()` with no matching registered provider throws and
   lists the registered provider IDs. Text RAG with the default active embedder
@@ -548,10 +564,10 @@ inference engine. See the full [Installation guide](/docs/installation).
 ## Troubleshooting
 
 **`dlopen` "library not found" after removing a package:** if you had both
-`flutter_edge_ai_litertlm` and `flutter_edge_ai_embeddings` and removed one, run
+`flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` and removed one, run
 `flutter clean` and delete `~/Library/Caches/flutter_gemma/native` (Linux:
 `~/.cache/flutter_gemma/native`, Windows: `%LOCALAPPDATA%\flutter_gemma\native`),
 then `flutter pub get`.
 `flutter_edge_ai_litertlm` owns the native LiteRT library;
-`flutter_edge_ai_embeddings` (and `flutter_edge_ai_speech`) consume it
-transitively — they have no Native-Assets hook of their own.
+`flutter_edge_ai_speech` consumes it transitively — it has no Native-Assets hook
+of its own. `flutter_edge_ai_embeddings` has no native code at all.

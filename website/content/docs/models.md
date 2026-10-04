@@ -6,8 +6,9 @@ image: https://flutteredge.ai/images/og-image.png
 
 flutter_edge_ai supports Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2,
 LLaVA-OneVision, Gemma 3, FunctionGemma, Qwen3, Qwen 2.5, Phi-4 (incl. Phi-4 Mini
-Reasoning), DeepSeek R1, SmolLM, SmolLM3 and more. Desktop platforms (macOS,
-Windows, Linux) require the `.litertlm` model format.
+Reasoning), DeepSeek R1, SmolLM, SmolLM3 and more. On desktop (macOS, Windows,
+Linux) LiteRT-LM models must be `.litertlm` — there is no MediaPipe engine there;
+ONNX models and the OS built-in model also run on desktop.
 
 For a small custom model, [LiteTune](https://litetune.dev) provides the easier
 end-to-end path from Hugging Face data/checkpoints through fine-tuning,
@@ -16,7 +17,7 @@ verify the converted model on the devices and backends you plan to ship.
 
 ## Model file types
 
-Flutter Edge AI supports different model file formats, grouped into **two types**
+Flutter Edge AI supports different model file formats, grouped into **three types**
 based on how chat templates are handled.
 
 ### Type 1: SDK-managed templates
@@ -40,13 +41,14 @@ Both formats require **manual chat template formatting** in your code.
 
 **Gemini Nano** (Android, via AICore / ML Kit GenAI), **Apple Foundation Models**
 (iOS 26+/macOS), **Windows AI Foundry / Phi Silica** (Windows), and **Gemini Nano
-via the Chrome Prompt API** (Web — desktop Chrome/Edge) are **built into the
+via the browser Prompt API** (Web — Gemini Nano in Chrome, Phi-4-mini in Edge) are **built into the
 OS/browser** — there is no model file to bundle or download; the platform owns the
 weights. Add [`flutter_edge_ai_builtin_ai`](/docs/packages), register
 `BuiltInAiEngine()`, and use `ModelFileType.builtIn`. Availability is
 device-gated — Gemini Nano needs Pixel 9+/Galaxy S25+, Apple FM needs Apple
-Intelligence enabled on iPhone 15 Pro+/M-series, and Windows needs Copilot+ class
-hardware plus an app that supplies the Windows App SDK projections. On Android
+Intelligence enabled on iPhone 15 Pro+/M-series, and Windows needs Windows 11
+25H2+ on Copilot+-class hardware and a packaged app (nothing to configure to
+build — `flutter_local_ai` resolves the Windows App SDK projection itself). On Android
 the package requires **`minSdk 26`** and Kotlin 2.3.21.
 
 👉 See **[Built-in AI](/docs/builtin-ai)** for the full setup, the availability
@@ -58,7 +60,8 @@ guidance.
 name. `installModel` defaults it to `ModelFileType.task`, so declare it
 explicitly: `ModelFileType.litertlm` for `.litertlm` files (omitting it routes the
 model to MediaPipe, which cannot read that format), `ModelFileType.task` for
-`.task`, `ModelFileType.binary` for `.bin` and `.tflite`, and
+`.task`, `ModelFileType.binary` for `.bin` and `.tflite`, `ModelFileType.onnx`
+for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 `ModelFileType.builtIn` for OS-provided models.
 </Info>
 
@@ -71,6 +74,7 @@ model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 | `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4 in the current catalog) |
 | `.bin` | ✅ | ✅ | ✅ | ❌ | Manual chat template formatting required |
 | `.tflite` | ✅ | ✅ | ✅ | ✅ | Embeddings only (EmbeddingGemma, Gecko) |
+| `onnx` | ✅ | ✅ | ✅ | ✅ | ONNX models — an ORT-GenAI model directory on native, a Hugging Face repo via Transformers.js on Web — [ONNX](/docs/onnx) |
 | `builtIn` (no file) | ✅ | ✅ | ✅ | ⚠️ ³ | OS/browser model — [Built-in AI](/docs/builtin-ai) |
 
 ¹ iOS `.litertlm` runs on the FFI engine — vision and audio supported on physical
@@ -84,7 +88,8 @@ still parsed when the model emits them. See the feature matrix in
 MediaPipe `.task` build.
 
 ³ On desktop the OS model exists on **macOS** (Apple Foundation Models) and
-**Windows** (AI Foundry, opt-in) — not on Linux. Every platform still gates it at
+**Windows** (AI Foundry; Windows 11 25H2+ on Copilot+-class hardware, packaged
+app) — not on Linux. Every platform still gates it at
 runtime: probe with `BuiltInAi.availability()`.
 
 ## Model capabilities
@@ -117,9 +122,8 @@ and Desktop only. The measured Web `.litertlm` test receives no Gemma 4
 Qwen3 is different: core parses its emitted `<think>` tags on every platform,
 including Web.
 
-² Among downloadable/network catalog entries, function calling is enabled only
-for Gemma3n E4B `.litertlm`. The intentional local E2B `.task` fixture also sets
-`supportsFunctionCalls: true`; the downloadable E2B and MediaPipe entries do not.
+² Gemma3n function calling: on the downloadable E4B `.litertlm` build; not on
+E2B or the MediaPipe `.task` builds.
 
 ‡ **Reasons, but emits no `ThinkingResponse`.** These models run as
 `ModelType.general`, which has no reasoning parser — their thinking blocks
@@ -358,7 +362,7 @@ foreground service needed.
 ### Cancelling downloads
 
 ```dart
-import 'package:flutter_edge_ai/core/model_management/cancel_token.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart'; // exports CancelToken
 
 final cancelToken = CancelToken();
 

@@ -8,8 +8,8 @@ image: https://flutteredge.ai/images/og-image.png
 no engine by default — you opt in by registering `LiteRtLmEngine()`.) It runs
 `.litertlm` models through `dart:ffi` straight onto the **LiteRT-LM C API** — no
 JVM, no gRPC — and it is the **primary desktop engine** (macOS, Windows, Linux);
-[ONNX Runtime](/docs/onnx) also runs on desktop, and macOS can additionally use
-[Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
+[ONNX Runtime](/docs/onnx) also runs on desktop, and macOS and Windows can additionally
+use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
 **Native Assets** (SHA256-verified, from the `native-v0.17.1-a` GitHub release), so
 there's no manual native setup.
 
@@ -27,7 +27,7 @@ embedding backend — see [Embeddings & RAG](/docs/embeddings-and-rag).
 | Web | ⚠️ early preview via `@litert-lm/core` (text-only) |
 
 > **Web is a text-only preview.** It runs through `@litert-lm/core` (WebGPU/WASM)
-> supports function calling, but **not** vision, audio, Gemma 4's thinking channel or LoRA. Qwen3's emitted `<think>` tags are parsed by core on Web. Native platforms have the full feature set. On web you also need the JS
+> and supports function calling, but **not** vision, audio, Gemma 4's thinking channel or LoRA. Qwen3's emitted `<think>` tags are parsed by core on Web. Native platforms have the full feature set. On web you also need the JS
 > handshake in `web/index.html` (see [Web setup](#web-setup)).
 
 ## Setup

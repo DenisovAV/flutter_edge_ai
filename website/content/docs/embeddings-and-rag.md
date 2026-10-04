@@ -28,12 +28,20 @@ dependencies:
   # flutter_edge_ai_qdrant: ^2.0.0 # native alternative
 ```
 
+**flutter_edge_ai_sqlite** 2.0.0 needs Flutter 3.47 or later. On Web, embeddings
+and SQLite RAG need files copied into your app's **web/** — the LiteRT.js loader
+and **rag/sqlite3.wasm**; see [Installation → Web](/docs/installation#web).
+
 Initialize only the embedding runtime in core:
 
 ```dart
 await FlutterEdgeAi.initialize(
   embeddingBackends: const [LiteRtEmbeddingBackend()],
   embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
+  // EmbeddingGemma is gated; never hard-code the token.
+  huggingFaceToken: const String.fromEnvironment('HUGGINGFACE_TOKEN').isEmpty
+      ? null
+      : const String.fromEnvironment('HUGGINGFACE_TOKEN'),
 );
 ```
 
@@ -48,6 +56,9 @@ maximum input sequence length, not the vector dimension.
 Pin both files to an immutable revision. The stable profile used by the vector
 store must describe the exact weights, tokenizer, pooling, normalization, and
 document/query prefix contract.
+
+EmbeddingGemma is a gated repository: the Hugging Face account behind the token
+must accept the Gemma license on the model page before the download succeeds.
 
 ```dart
 const revision = '29888fcee3216acadc7e844906e5fe0d79a61875';
@@ -114,8 +125,15 @@ final hits = await index.searchText(
 await index.flush();
 ```
 
-The default adapter resolves **FlutterEdgeAi.getActiveEmbedder()** lazily and
-borrows the returned model; it never closes core-owned state. The explicit
+**location** is an absolute path on native — a database file for SQLite, a
+directory for Qdrant; build it from **getApplicationDocumentsDirectory()** — and
+a plain name on Web. path_provider has no Web implementation, so call it only
+off-web (see the sample under Independent text RAG).
+
+**open()** pins the embedder that is active at that moment: install the embedder
+before opening the index, and after switching embedders open a new index at a
+new location. The default adapter borrows the model returned by
+**FlutterEdgeAi.getActiveEmbedder()**; it never closes core-owned state. The explicit
 profile ID prevents vectors created by different model bytes or preprocessing
 from being mixed after an app restart.
 
@@ -181,10 +199,17 @@ class AppEmbedder implements RagEmbedder {
       model.embed('query: $text');
 }
 
+// kIsWeb: package:flutter/foundation.dart; p: package:path/path.dart.
+// path_provider has no Web implementation, so call it only off-web.
 final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
-    location: 'custom-profile-v1.db',
+    location: kIsWeb
+        ? 'custom-profile-v1.db'
+        : p.join(
+            (await getApplicationDocumentsDirectory()).path,
+            'custom-profile-v1.db',
+          ),
   ),
   embedder: AppEmbedder(myEmbeddingModel),
 );

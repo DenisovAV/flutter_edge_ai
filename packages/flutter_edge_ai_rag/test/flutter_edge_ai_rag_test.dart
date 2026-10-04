@@ -214,6 +214,35 @@ void main() {
       },
     );
 
+    test('active adapter rejects a switch before first resolution', () async {
+      final specA = _embeddingSpec('a');
+      final specB = _embeddingSpec('b');
+      var activeSpec = specA;
+      var resolveCalls = 0;
+      final adapter = FlutterEdgeAiActiveEmbedder(
+        profileId: 'weights-a-tokenizer-a-prefix-v1',
+        specResolver: () => activeSpec,
+        modelResolver: () async {
+          resolveCalls++;
+          return _FakeEmbeddingModel(dimension: 2);
+        },
+      );
+
+      activeSpec = specB;
+
+      await expectLater(
+        adapter.profile,
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('changed after the RAG index was opened'),
+          ),
+        ),
+      );
+      expect(resolveCalls, 0);
+    });
+
     test('vector-only operations never resolve an embedder', () async {
       final store = _FakeStore();
       final embedder = _FakeEmbedder(

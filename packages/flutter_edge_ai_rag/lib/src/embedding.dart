@@ -76,11 +76,14 @@ class FlutterEdgeAiActiveEmbedder implements RagEmbedder {
            modelResolver ??
            (() => FlutterEdgeAi.getActiveEmbedder(
              preferredBackend: preferredBackend,
-           ));
+           )) {
+    _expectedSpec = _specResolver();
+  }
 
   final String _profileId;
   final ActiveEmbedderSpecResolver _specResolver;
   final ActiveEmbeddingModelResolver _modelResolver;
+  late final EmbeddingModelSpec? _expectedSpec;
   Future<_ResolvedEmbedder>? _resolution;
 
   Future<_ResolvedEmbedder> _resolve() {
@@ -102,17 +105,25 @@ class FlutterEdgeAiActiveEmbedder implements RagEmbedder {
   }
 
   Future<_ResolvedEmbedder> _resolveOnce() async {
-    final before = _specResolver();
-    if (before == null) {
+    final expected = _expectedSpec;
+    if (expected == null) {
       throw StateError(
-        'No active embedding model is configured. Install one with '
-        'FlutterEdgeAi.installEmbedder(), or pass an explicit RagEmbedder.',
+        'No active embedding model was configured when the RAG index was '
+        'opened. Install one first, or pass an explicit RagEmbedder.',
+      );
+    }
+
+    final before = _specResolver();
+    if (before != expected) {
+      throw StateError(
+        'The active embedding model changed after the RAG index was opened. '
+        'Open a new RagIndex for the new embedding profile.',
       );
     }
 
     final model = await _modelResolver();
     final after = _specResolver();
-    if (after != before) {
+    if (after != expected) {
       throw StateError(
         'The active embedding model changed while the RAG embedder was '
         'being resolved. Open a new RagIndex after model switching completes.',

@@ -32,6 +32,28 @@ class _DiskBundle extends AssetBundle {
   }
 }
 
+/// Serves [malformed] skills' SKILL.md as text with no frontmatter, everything
+/// else from [inner].
+class _MalformedOverlayBundle extends AssetBundle {
+  _MalformedOverlayBundle(this.inner, this.malformed);
+
+  final AssetBundle inner;
+  final Set<String> malformed;
+
+  @override
+  Future<String> loadString(String key, {bool cache = true}) {
+    for (final name in malformed) {
+      if (key == AssetSkillSource.skillMdKey(name)) {
+        return Future.value('not a skill: no frontmatter');
+      }
+    }
+    return inner.loadString(key, cache: cache);
+  }
+
+  @override
+  Future<ByteData> load(String key) => inner.load(key);
+}
+
 void main() {
   group('AssetSkillSource — bundled starter skills', () {
     test('bundledSkillNames covers all four skill mechanisms', () {
@@ -83,12 +105,36 @@ void main() {
       },
     );
 
+    // 0.2.6 was published without any SKILL.md and load() returned an empty
+    // catalog with no error, so nobody noticed. A missing asset must say so.
+    test('load() names every skill whose SKILL.md asset is missing', () async {
+      final source = AssetSkillSource(
+        bundle: _DiskBundle(),
+        names: const ['calculate-hash', 'does-not-exist', 'also-missing'],
+      );
+
+      await expectLater(
+        source.load(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('does-not-exist'),
+              contains('also-missing'),
+              isNot(contains('calculate-hash')),
+            ),
+          ),
+        ),
+      );
+    });
+
     test(
-      'load() skips a missing skill rather than failing the catalog',
+      'load() still skips a SKILL.md that loads but fails to parse',
       () async {
         final source = AssetSkillSource(
-          bundle: _DiskBundle(),
-          names: const ['calculate-hash', 'does-not-exist'],
+          bundle: _MalformedOverlayBundle(_DiskBundle(), {'qr-code'}),
+          names: const ['calculate-hash', 'qr-code'],
         );
         final skills = await source.load();
 

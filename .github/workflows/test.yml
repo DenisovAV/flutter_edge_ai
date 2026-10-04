@@ -56,6 +56,12 @@ jobs:
       - name: Run tests (all packages)
         run: tool/test_all.sh --coverage
 
+      # The tests read assets from the repo; only the published archive can
+      # show one missing. flutter_edge_ai_agent 0.2.6 shipped without its
+      # SKILL.md files and every check above was green (#578).
+      - name: Declared assets are published
+        run: dart tool/check_published_assets.dart
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:

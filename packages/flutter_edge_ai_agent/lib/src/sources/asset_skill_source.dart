@@ -73,19 +73,40 @@ class AssetSkillSource {
   /// asset name (its directory) is preserved as [Skill.name] via the SKILL.md
   /// frontmatter, so it matches what [jsSkillSourceFor] expects.
   ///
-  /// Skips (does not throw on) a skill whose asset is missing or whose SKILL.md
-  /// fails to parse — a malformed bundled skill must not take down the whole
-  /// catalog. Returns the successfully-parsed skills in [names] order.
+  /// Skips a skill whose SKILL.md loads but fails to parse — a malformed
+  /// bundled skill must not take down the whole catalog. Returns the
+  /// successfully-parsed skills in [names] order.
+  ///
+  /// Throws a [StateError] naming every skill whose SKILL.md asset cannot be
+  /// loaded at all. For a bundled name that means this package was published
+  /// without it (0.2.6 shipped none of them); for a custom [names] entry, that
+  /// it is not a bundled skill. Either way an empty catalog with no error is
+  /// the wrong answer.
   Future<List<Skill>> load() async {
     final skills = <Skill>[];
+    final missing = <String>[];
     for (final name in names) {
+      final String content;
       try {
-        final content = await _bundle.loadString(skillMdKey(name));
-        skills.add(parseSkillMd(content));
+        content = await _bundle.loadString(skillMdKey(name));
       } catch (_) {
-        // Missing/invalid bundled skill — skip it rather than fail the catalog.
+        missing.add(name);
         continue;
       }
+      try {
+        skills.add(parseSkillMd(content));
+      } catch (_) {
+        // Malformed bundled skill — skip it rather than fail the catalog.
+        continue;
+      }
+    }
+    if (missing.isNotEmpty) {
+      throw StateError(
+        'Bundled skill asset not found for ${missing.join(', ')} '
+        '(${missing.map(skillMdKey).join(', ')}). Either the name is not one '
+        'of bundledSkillNames, or this copy of $_packageName was published '
+        'without its SKILL.md files.',
+      );
     }
     return skills;
   }

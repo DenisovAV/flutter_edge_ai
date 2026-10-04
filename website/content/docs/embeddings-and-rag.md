@@ -86,7 +86,7 @@ final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: databasePath,
-    filterSchema: const FilterSchema(fields: [
+    filterSchema: FilterSchema(fields: [
       FilterField(name: 'category', type: FilterFieldType.string),
       FilterField(name: 'year', type: FilterFieldType.number),
       FilterField(name: 'archived', type: FilterFieldType.bool),
@@ -105,7 +105,7 @@ final hits = await index.searchText(
   query: 'Where does Flutter run?',
   topK: 5,
   threshold: 0.3,
-  filter: const Filter(
+  filter: Filter(
     must: [FieldEquals(key: 'category', value: 'flutter')],
     mustNot: [FieldEquals(key: 'archived', value: true)],
   ),

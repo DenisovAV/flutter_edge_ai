@@ -25,14 +25,14 @@ void main() {
     });
 
     test('Filter() with no buckets → empty', () {
-      final out = FilterToVec0.translate(const Filter(), _schema);
+      final out = FilterToVec0.translate(Filter(), _schema);
       expect(out.whereSql, '');
       expect(out.binds, isEmpty);
     });
 
     test('empty bucket lists → empty', () {
       final out = FilterToVec0.translate(
-        const Filter(must: [], should: [], mustNot: []),
+        Filter(must: [], should: [], mustNot: []),
         _schema,
       );
       expect(out.whereSql, '');
@@ -41,7 +41,7 @@ void main() {
 
     test('undeclared key only → empty (skipped, never throws)', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [FieldEquals(key: 'unknown', value: 'x')],
         ),
         _schema,
@@ -52,10 +52,10 @@ void main() {
 
     test('empty schema skips every declared key', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [FieldEquals(key: 'lang', value: 'en')],
         ),
-        const FilterSchema(),
+        FilterSchema.empty,
       );
       expect(out.whereSql, '');
       expect(out.binds, isEmpty);
@@ -65,7 +65,7 @@ void main() {
   group('FieldEquals', () {
     test('string', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [FieldEquals(key: 'lang', value: 'en')],
         ),
         _schema,
@@ -76,7 +76,7 @@ void main() {
 
     test('number binds as double (vec0 FLOAT column rejects an int)', () {
       final out = FilterToVec0.translate(
-        const Filter(must: [FieldEquals(key: 'price', value: 42)]),
+        Filter(must: [FieldEquals(key: 'price', value: 42)]),
         _schema,
       );
       expect(out.whereSql, '"price" = ?');
@@ -85,7 +85,7 @@ void main() {
 
     test('bool true binds as 1', () {
       final out = FilterToVec0.translate(
-        const Filter(must: [FieldEquals(key: 'archived', value: true)]),
+        Filter(must: [FieldEquals(key: 'archived', value: true)]),
         _schema,
       );
       expect(out.whereSql, '"archived" = ?');
@@ -94,7 +94,7 @@ void main() {
 
     test('bool false binds as 0', () {
       final out = FilterToVec0.translate(
-        const Filter(must: [FieldEquals(key: 'archived', value: false)]),
+        Filter(must: [FieldEquals(key: 'archived', value: false)]),
         _schema,
       );
       expect(out.whereSql, '"archived" = ?');
@@ -105,7 +105,7 @@ void main() {
   group('FieldRange', () {
     test('two-sided → BETWEEN', () {
       final out = FilterToVec0.translate(
-        const Filter(must: [FieldRange(key: 'price', gte: 10.0, lte: 100.0)]),
+        Filter(must: [FieldRange(key: 'price', gte: 10.0, lte: 100.0)]),
         _schema,
       );
       expect(out.whereSql, '"price" BETWEEN ? AND ?');
@@ -114,7 +114,7 @@ void main() {
 
     test('lower bound only → >=', () {
       final out = FilterToVec0.translate(
-        const Filter(must: [FieldRange(key: 'price', gte: 10.0)]),
+        Filter(must: [FieldRange(key: 'price', gte: 10.0)]),
         _schema,
       );
       expect(out.whereSql, '"price" >= ?');
@@ -123,7 +123,7 @@ void main() {
 
     test('upper bound only → <=', () {
       final out = FilterToVec0.translate(
-        const Filter(must: [FieldRange(key: 'price', lte: 100.0)]),
+        Filter(must: [FieldRange(key: 'price', lte: 100.0)]),
         _schema,
       );
       // The second conjunct excludes the absent-number sentinel: -Infinity is
@@ -137,7 +137,7 @@ void main() {
 
     test('no bounds → skipped (empty)', () {
       final out = FilterToVec0.translate(
-        const Filter(must: [FieldRange(key: 'price')]),
+        Filter(must: [FieldRange(key: 'price')]),
         _schema,
       );
       expect(out.whereSql, '');
@@ -148,7 +148,7 @@ void main() {
       // `lang` is declared as a string column; a range over it would silently
       // mis-filter, so it is treated as unsupported and skipped.
       final out = FilterToVec0.translate(
-        const Filter(must: [FieldRange(key: 'lang', gte: 1.0)]),
+        Filter(must: [FieldRange(key: 'lang', gte: 1.0)]),
         _schema,
       );
       expect(out.whereSql, '');
@@ -159,7 +159,7 @@ void main() {
   group('FieldMatchAny', () {
     test('multiple values → IN list', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'lang', values: ['en', 'fr', 'de']),
           ],
@@ -172,7 +172,7 @@ void main() {
 
     test('single value → IN with one placeholder', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'lang', values: ['en']),
           ],
@@ -185,7 +185,7 @@ void main() {
 
     test('bool values bind as 0/1', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'archived', values: [true, false]),
           ],
@@ -198,7 +198,7 @@ void main() {
 
     test('empty values → match-nothing literal, no binds', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [FieldMatchAny(key: 'lang', values: [])],
         ),
         _schema,
@@ -211,7 +211,7 @@ void main() {
   group('buckets', () {
     test('must → AND-joined', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [
             FieldEquals(key: 'lang', value: 'en'),
             FieldRange(key: 'price', gte: 10.0, lte: 100.0),
@@ -225,7 +225,7 @@ void main() {
 
     test('should → OR-joined inside a parenthesised group', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'lang', value: 'en'),
             FieldEquals(key: 'lang', value: 'fr'),
@@ -239,7 +239,7 @@ void main() {
 
     test('mustNot → NOT (...)', () {
       final out = FilterToVec0.translate(
-        const Filter(mustNot: [FieldEquals(key: 'archived', value: true)]),
+        Filter(mustNot: [FieldEquals(key: 'archived', value: true)]),
         _schema,
       );
       expect(out.whereSql, '"archived" != ?');
@@ -250,7 +250,7 @@ void main() {
       'mustNot with multiple → OR-joined inside NOT (exclude if ANY match)',
       () {
         final out = FilterToVec0.translate(
-          const Filter(
+          Filter(
             mustNot: [
               FieldEquals(key: 'lang', value: 'en'),
               FieldEquals(key: 'archived', value: true),
@@ -267,7 +267,7 @@ void main() {
 
     test('must + should + mustNot combine, AND-joined, binds in order', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [FieldEquals(key: 'lang', value: 'en')],
           should: [
             FieldEquals(key: 'category', value: 'news'),
@@ -286,7 +286,7 @@ void main() {
 
     test('undeclared keys skipped within a populated bucket', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [
             FieldEquals(key: 'unknown', value: 'x'),
             FieldEquals(key: 'lang', value: 'en'),
@@ -301,7 +301,7 @@ void main() {
 
     test('mixed condition types across buckets bind in SQL order', () {
       final out = FilterToVec0.translate(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'lang', values: ['en', 'fr']),
             FieldRange(key: 'year', gte: 2000.0),

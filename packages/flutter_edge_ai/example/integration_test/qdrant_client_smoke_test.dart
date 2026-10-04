@@ -91,13 +91,13 @@ void main() {
 
     // Filter: english docs priced 200-1000.
     final filterJson = FilterCodec.encode(
-      const Filter(
+      Filter(
         must: [
           FieldEquals(key: 'lang', value: 'en'),
           FieldRange(key: 'price', gte: 200.0, lte: 1000.0),
         ],
       ),
-      const FilterSchema(
+      FilterSchema(
         fields: [
           FilterField(name: 'lang', type: FilterFieldType.string),
           FilterField(name: 'price', type: FilterFieldType.number),

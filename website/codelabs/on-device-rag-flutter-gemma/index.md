@@ -487,7 +487,7 @@ query rather than around it.
 ```dart
 final ragStore = RagStore(
   databaseName: 'recipes-embeddinggemma-29888fcee321-filters-v1.db',
-  filterSchema: const FilterSchema(
+  filterSchema: FilterSchema(
     fields: [
       FilterField(name: 'cuisine', type: FilterFieldType.string),
       FilterField(name: 'minutes', type: FilterFieldType.number),
@@ -518,7 +518,7 @@ Filter? buildFilter({
       FieldMatchAny(key: 'cuisine', values: cuisines.toList()),
     if (maxMinutes != null)
       FieldRange(key: 'minutes', lte: maxMinutes.toDouble()),
-    if (vegetarianOnly) const FieldEquals(key: 'vegetarian', value: true),
+    if (vegetarianOnly) FieldEquals(key: 'vegetarian', value: true),
   ];
   return must.isEmpty ? null : Filter(must: must);
 }
@@ -637,7 +637,7 @@ grounded without visiting the recipes page first:
 await FlutterEdgeAi.initialize(/* inference and embedding runtimes */);
 final ragStore = RagStore(
   databaseName: 'recipes-embeddinggemma-29888fcee321-filters-v1.db',
-  filterSchema: const FilterSchema(fields: [
+  filterSchema: FilterSchema(fields: [
     FilterField(name: 'cuisine', type: FilterFieldType.string),
     FilterField(name: 'minutes', type: FilterFieldType.number),
     FilterField(name: 'vegetarian', type: FilterFieldType.bool),

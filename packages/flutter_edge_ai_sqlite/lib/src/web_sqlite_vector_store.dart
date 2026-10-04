@@ -90,7 +90,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   /// Declared filterable-metadata schema (via [configure]). Empty by default,
   /// so callers that never declare a schema keep the historical behaviour
   /// (filters are an ignored no-op).
-  FilterSchema _filterSchema = const FilterSchema();
+  FilterSchema _filterSchema = FilterSchema.empty;
 
   @override
   bool get isInitialized => _isInitialized && _pendingLifecycleActions == 0;

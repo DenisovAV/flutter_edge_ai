@@ -391,7 +391,7 @@ void main() {
           final got = await repo.searchSimilar(
             queryEmbedding: [1.0, 0.0, 0.0, 0.0],
             topK: 2,
-            filter: const Filter(
+            filter: Filter(
               should: [
                 FieldEquals(key: 'lang', value: 'fr'),
                 FieldEquals(key: 'year', value: 2020),
@@ -440,7 +440,7 @@ void main() {
         final results = await repo.searchSimilar(
           queryEmbedding: [1.0, 0.0, 0.0, 0.0],
           topK: 10,
-          filter: const Filter(
+          filter: Filter(
             must: [FieldEquals(key: 'lang', value: 'en')],
           ),
         );
@@ -453,7 +453,7 @@ void main() {
         final results = await repo.searchSimilar(
           queryEmbedding: [1.0, 0.0, 0.0, 0.0],
           topK: 10,
-          filter: const Filter(must: [FieldRange(key: 'year', gte: 2000.0)]),
+          filter: Filter(must: [FieldRange(key: 'year', gte: 2000.0)]),
         );
         expect(results.map((r) => r.id).toSet(), {'en2020', 'fr2020'});
       });
@@ -464,7 +464,7 @@ void main() {
         final results = await repo.searchSimilar(
           queryEmbedding: [1.0, 0.0, 0.0, 0.0],
           topK: 10,
-          filter: const Filter(
+          filter: Filter(
             must: [
               FieldMatchAny(key: 'lang', values: ['fr', 'de']),
             ],
@@ -479,9 +479,7 @@ void main() {
         final results = await repo.searchSimilar(
           queryEmbedding: [1.0, 0.0, 0.0, 0.0],
           topK: 10,
-          filter: const Filter(
-            mustNot: [FieldEquals(key: 'archived', value: true)],
-          ),
+          filter: Filter(mustNot: [FieldEquals(key: 'archived', value: true)]),
         );
         expect(results.map((r) => r.id).toSet(), {'en2020', 'fr2020'});
       });
@@ -498,7 +496,7 @@ void main() {
         final results = await repo.searchSimilar(
           queryEmbedding: [1.0, 0.0, 0.0, 0.0],
           topK: 10,
-          filter: const Filter(
+          filter: Filter(
             mustNot: [
               FieldEquals(key: 'lang', value: 'fr'),
               FieldRange(key: 'year', lte: 1999.0),
@@ -515,7 +513,7 @@ void main() {
         final results = await repo.searchSimilar(
           queryEmbedding: [1.0, 0.0, 0.0, 0.0],
           topK: 10,
-          filter: const Filter(
+          filter: Filter(
             must: [FieldRange(key: 'year', gte: 2000.0)],
             should: [
               FieldEquals(key: 'lang', value: 'en'),
@@ -533,7 +531,7 @@ void main() {
         final results = await repo.searchSimilar(
           queryEmbedding: [1.0, 0.0, 0.0, 0.0],
           topK: 10,
-          filter: const Filter(
+          filter: Filter(
             must: [FieldEquals(key: 'not_declared', value: 'x')],
           ),
         );
@@ -587,7 +585,7 @@ void main() {
       final equals = await repo.searchSimilar(
         queryEmbedding: [1.0, 0.0],
         topK: 10,
-        filter: const Filter(
+        filter: Filter(
           must: [FieldEquals(key: 'order', value: 'desc')],
         ),
       );
@@ -596,7 +594,7 @@ void main() {
       final range = await repo.searchSimilar(
         queryEmbedding: [1.0, 0.0],
         topK: 10,
-        filter: const Filter(must: [FieldRange(key: 'select', lte: 1.0)]),
+        filter: Filter(must: [FieldRange(key: 'select', lte: 1.0)]),
       );
       expect(range.map((r) => r.id), ['a']);
 
@@ -604,7 +602,7 @@ void main() {
       final negated = await repo.searchSimilar(
         queryEmbedding: [1.0, 0.0],
         topK: 10,
-        filter: const Filter(
+        filter: Filter(
           mustNot: [FieldEquals(key: 'order', value: 'asc')],
         ),
       );

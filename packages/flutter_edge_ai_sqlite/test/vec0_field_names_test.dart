@@ -76,7 +76,7 @@ void main() {
       final store = SqliteVectorStore();
       expect(
         () => store.configure(
-          const FilterSchema(
+          FilterSchema(
             fields: [
               FilterField(name: 'content', type: FilterFieldType.string),
             ],

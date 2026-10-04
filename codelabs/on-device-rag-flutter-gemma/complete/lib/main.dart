@@ -30,7 +30,7 @@ Future<void> main() async {
   // profile, and sqlite-vec cannot ALTER an existing vec0 filter schema.
   final ragStore = RagStore(
     databaseName: 'recipes-embeddinggemma-29888fcee321-filters-v1.db',
-    filterSchema: const FilterSchema(
+    filterSchema: FilterSchema(
       fields: [
         FilterField(name: 'cuisine', type: FilterFieldType.string),
         FilterField(name: 'minutes', type: FilterFieldType.number),

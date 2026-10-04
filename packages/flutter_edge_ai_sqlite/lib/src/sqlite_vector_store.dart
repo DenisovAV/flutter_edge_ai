@@ -44,7 +44,7 @@ class SqliteVectorStore implements VectorStoreRepository {
   /// Declared filterable-metadata schema (via [configure]). Empty by default,
   /// so callers that never declare a schema get a table with no filter columns
   /// and the historical "filters are a safe no-op" behaviour.
-  FilterSchema _filterSchema = const FilterSchema();
+  FilterSchema _filterSchema = FilterSchema.empty;
 
   @override
   bool get isInitialized => _isInitialized && _pendingLifecycleActions == 0;

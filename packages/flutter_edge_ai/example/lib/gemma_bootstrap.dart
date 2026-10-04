@@ -78,7 +78,7 @@ final exampleRag = rag.FlutterEdgeAiRag(
   providers: const [SqliteVectorStoreProvider(), QdrantVectorStoreProvider()],
 );
 
-const kRagDemoFilterSchema = rag.FilterSchema(
+final kRagDemoFilterSchema = rag.FilterSchema(
   fields: [rag.FilterField(name: 'category', type: rag.FilterFieldType.string)],
 );
 

@@ -22,7 +22,7 @@ class SqliteVectorStore implements VectorStoreRepository {
   bool get isInitialized => false;
 
   @override
-  FilterSchema get filterSchema => const FilterSchema();
+  FilterSchema get filterSchema => FilterSchema.empty;
 
   @override
   void configure(FilterSchema schema) {}

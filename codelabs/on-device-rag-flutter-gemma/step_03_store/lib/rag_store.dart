@@ -17,7 +17,7 @@ import 'recipes.dart';
 class RagStore {
   RagStore({
     required this.databaseName,
-    this.filterSchema = const FilterSchema(),
+    this.filterSchema = FilterSchema.empty,
   });
 
   final String databaseName;
@@ -176,7 +176,7 @@ Filter? buildFilter({
       FieldMatchAny(key: 'cuisine', values: cuisines.toList()),
     if (maxMinutes != null)
       FieldRange(key: 'minutes', lte: maxMinutes.toDouble()),
-    if (vegetarianOnly) const FieldEquals(key: 'vegetarian', value: true),
+    if (vegetarianOnly) FieldEquals(key: 'vegetarian', value: true),
   ];
   return must.isEmpty ? null : Filter(must: must);
 }

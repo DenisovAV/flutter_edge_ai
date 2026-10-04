@@ -41,7 +41,7 @@ final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: databasePath,
-    filterSchema: const FilterSchema(fields: [
+    filterSchema: FilterSchema(fields: [
       FilterField(name: 'category', type: FilterFieldType.string),
     ]),
   ),

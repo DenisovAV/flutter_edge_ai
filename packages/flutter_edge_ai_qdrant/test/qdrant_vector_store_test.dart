@@ -166,7 +166,7 @@ void main() {
         final hits = await repo.searchSimilar(
           queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
           topK: 5,
-          filter: const Filter(
+          filter: Filter(
             must: [FieldEquals(key: 'nonexistent_field', value: 'foo')],
           ),
         );
@@ -207,7 +207,7 @@ void main() {
         final en = await repo.searchSimilar(
           queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
           topK: 5,
-          filter: const Filter(
+          filter: Filter(
             must: [FieldEquals(key: 'lang', value: 'en')],
           ),
         );
@@ -257,7 +257,7 @@ void main() {
       final hits = await repo.searchSimilar(
         queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
         topK: 5,
-        filter: const Filter(
+        filter: Filter(
           mustNot: [
             FieldEquals(key: 'lang', value: 'fr'),
             FieldEquals(key: 'archived', value: true),
@@ -316,7 +316,7 @@ void main() {
       final hits = await repo.searchSimilar(
         queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
         topK: 5,
-        filter: const Filter(must: [FieldEquals(key: 'archived', value: true)]),
+        filter: Filter(must: [FieldEquals(key: 'archived', value: true)]),
       );
       expect(
         hits.map((h) => h.id).toSet(),
@@ -346,7 +346,7 @@ void main() {
       final hits = await repo.searchSimilar(
         queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
         topK: 5,
-        filter: const Filter(must: [FieldEquals(key: 'year', value: 2020)]),
+        filter: Filter(must: [FieldEquals(key: 'year', value: 2020)]),
       );
       expect(hits.map((h) => h.id).toSet(), equals({'doc_2020'}));
     });
@@ -381,7 +381,7 @@ void main() {
         final hits = await repo.searchSimilar(
           queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
           topK: 5,
-          filter: const Filter(
+          filter: Filter(
             must: [
               FieldMatchAny(key: 'tag', values: ['a', 'c']),
             ],
@@ -421,7 +421,7 @@ void main() {
         final hits = await repo.searchSimilar(
           queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
           topK: 5,
-          filter: const Filter(
+          filter: Filter(
             must: [FieldRange(key: 'price', gte: 10.0, lte: 100.0)],
           ),
         );
@@ -462,7 +462,7 @@ void main() {
       final hits = await repo.searchSimilar(
         queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
         topK: 5,
-        filter: const Filter(must: [FieldEquals(key: 'price', value: 5.5)]),
+        filter: Filter(must: [FieldEquals(key: 'price', value: 5.5)]),
       );
       expect(hits.map((h) => h.id).toSet(), equals({'doc_cheap'}));
     });
@@ -495,7 +495,7 @@ void main() {
       final hits = await repo.searchSimilar(
         queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
         topK: 5,
-        filter: const Filter(
+        filter: Filter(
           should: [
             FieldEquals(key: 'lang', value: 'en'),
             FieldEquals(key: 'lang', value: 'fr'),
@@ -548,7 +548,7 @@ void main() {
         final hits = await repo.searchSimilar(
           queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
           topK: 5,
-          filter: const Filter(
+          filter: Filter(
             must: [FieldEquals(key: 'undeclared', value: 'x')],
           ),
         );
@@ -597,7 +597,7 @@ void main() {
         final hits = await repo.searchSimilar(
           queryEmbedding: const [1.0, 0.0, 0.0, 0.0],
           topK: 5,
-          filter: const Filter(
+          filter: Filter(
             must: [FieldEquals(key: 'lang', value: 'en')],
           ),
         );

@@ -77,7 +77,7 @@ final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: databasePath,
-    filterSchema: const FilterSchema(fields: [
+    filterSchema: FilterSchema(fields: [
       FilterField(name: 'lang', type: FilterFieldType.string),
       FilterField(name: 'year', type: FilterFieldType.number),
     ]),
@@ -102,7 +102,7 @@ final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: 'knowledge-embeddinggemma-29888fcee321-v1.db',
-    filterSchema: const FilterSchema(fields: [
+    filterSchema: FilterSchema(fields: [
       FilterField(name: 'lang', type: FilterFieldType.string),
       FilterField(name: 'year', type: FilterFieldType.number),
     ]),
@@ -119,7 +119,7 @@ final hits = await index.searchText(
   query: question,
   topK: 5,
   threshold: 0.3,
-  filter: const Filter(
+  filter: Filter(
     must: [FieldEquals(key: 'lang', value: 'en')],
     mustNot: [FieldRange(key: 'year', lte: 2010)],
   ),

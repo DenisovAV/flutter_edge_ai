@@ -129,7 +129,6 @@ String _chunk(math.Random rng, int wordCount) {
   );
   return words.join(' ');
 }
-
 class _LatencyStats {
   final List<int> samplesUs;
   _LatencyStats(this.samplesUs);
@@ -268,10 +267,10 @@ void main() {
           // 100 filtered searches — same queries, plus a category filter.
           final filterSamples = <int>[];
           final filterJson = FilterCodec.encode(
-            const rag.Filter(
+            rag.Filter(
               must: [rag.FieldEquals(key: 'category', value: 'science')],
             ),
-            const rag.FilterSchema(
+            rag.FilterSchema(
               fields: [
                 rag.FilterField(
                   name: 'category',

@@ -113,7 +113,7 @@ final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: 'sqlite',
     location: databasePath,
-    filterSchema: const FilterSchema(fields: [
+    filterSchema: FilterSchema(fields: [
       FilterField(name: 'lang', type: FilterFieldType.string),
       FilterField(name: 'year', type: FilterFieldType.number),
       FilterField(name: 'archived', type: FilterFieldType.bool),
@@ -126,7 +126,7 @@ final index = await rag.open(
 final hits = await index.searchVector(
   embedding: queryVec,
   topK: 10,
-  filter: const Filter(
+  filter: Filter(
     must:    [FieldRange(key: 'year', gte: 2000)],
     mustNot: [FieldEquals(key: 'archived', value: true)],
   ),

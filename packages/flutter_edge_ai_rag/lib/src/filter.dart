@@ -4,7 +4,13 @@
 /// documents matching any [mustNot] condition are excluded. Backends ignore
 /// conditions for fields that are not declared in the store's [FilterSchema].
 class Filter {
-  const Filter({this.must, this.should, this.mustNot});
+  Filter({
+    List<Condition>? must,
+    List<Condition>? should,
+    List<Condition>? mustNot,
+  }) : must = _snapshotNullable(must),
+       should = _snapshotNullable(should),
+       mustNot = _snapshotNullable(mustNot);
 
   final List<Condition>? must;
   final List<Condition>? should;
@@ -25,11 +31,10 @@ sealed class Condition {
 
 /// Exact scalar equality against a metadata field.
 class FieldEquals extends Condition {
-  const FieldEquals({required this.key, required this.value})
-    : assert(
-        value is String || value is num || value is bool,
-        'FieldEquals.value must be String, num, or bool',
-      );
+  FieldEquals({required this.key, required this.value}) {
+    _validateKey(key);
+    _validateScalar(value, 'value');
+  }
 
   @override
   final String key;
@@ -38,21 +43,11 @@ class FieldEquals extends Condition {
 
 /// Inclusive numeric range against a metadata field.
 class FieldRange extends Condition {
-  const FieldRange({required this.key, this.gte, this.lte})
-    : assert(
-        gte == null ||
-            gte != double.infinity &&
-                gte != double.negativeInfinity &&
-                gte == gte,
-        'FieldRange.gte must be finite',
-      ),
-      assert(
-        lte == null ||
-            lte != double.infinity &&
-                lte != double.negativeInfinity &&
-                lte == lte,
-        'FieldRange.lte must be finite',
-      );
+  FieldRange({required this.key, this.gte, this.lte}) {
+    _validateKey(key);
+    _validateFinite(gte, 'gte');
+    _validateFinite(lte, 'lte');
+  }
 
   @override
   final String key;
@@ -62,7 +57,13 @@ class FieldRange extends Condition {
 
 /// Set-membership predicate against a metadata field.
 class FieldMatchAny extends Condition {
-  const FieldMatchAny({required this.key, required this.values});
+  FieldMatchAny({required this.key, required List<Object> values})
+    : values = List<Object>.unmodifiable(values) {
+    _validateKey(key);
+    for (final value in values) {
+      _validateScalar(value, 'values');
+    }
+  }
 
   @override
   final String key;
@@ -73,8 +74,11 @@ enum FilterFieldType { string, number, bool }
 
 /// A metadata field promoted to a backend-native filterable field.
 class FilterField {
-  const FilterField({required this.name, required this.type})
-    : assert(name != '', 'FilterField.name must not be empty');
+  FilterField({required this.name, required this.type}) {
+    if (name.trim().isEmpty) {
+      throw ArgumentError.value(name, 'name', 'must not be empty');
+    }
+  }
 
   final String name;
   final FilterFieldType type;
@@ -103,7 +107,12 @@ class FilterField {
 
 /// Metadata fields a vector store should make filterable.
 class FilterSchema {
-  const FilterSchema({this.fields = const []});
+  FilterSchema({List<FilterField> fields = const []})
+    : fields = List<FilterField>.unmodifiable(fields);
+
+  const FilterSchema._empty() : fields = const [];
+
+  static const empty = FilterSchema._empty();
 
   final List<FilterField> fields;
 
@@ -114,5 +123,29 @@ class FilterSchema {
       if (field.name == name) return field;
     }
     return null;
+  }
+}
+
+List<T>? _snapshotNullable<T>(List<T>? values) =>
+    values == null ? null : List<T>.unmodifiable(values);
+
+void _validateKey(String key) {
+  if (key.trim().isEmpty) {
+    throw ArgumentError.value(key, 'key', 'must not be empty');
+  }
+}
+
+void _validateScalar(Object value, String name) {
+  if (value is! String && value is! num && value is! bool) {
+    throw ArgumentError.value(value, name, 'must be String, num, or bool');
+  }
+  if (value is num && !value.isFinite) {
+    throw ArgumentError.value(value, name, 'must be finite');
+  }
+}
+
+void _validateFinite(double? value, String name) {
+  if (value != null && !value.isFinite) {
+    throw ArgumentError.value(value, name, 'must be finite');
   }
 }

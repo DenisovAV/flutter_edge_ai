@@ -18,7 +18,7 @@ class QdrantVectorStore implements VectorStoreRepository {
   // [configure] is a no-op and the schema stays empty. (`implements` does not
   // inherit the abstract class's bodied defaults, so these must be declared.)
   @override
-  FilterSchema get filterSchema => const FilterSchema();
+  FilterSchema get filterSchema => FilterSchema.empty;
 
   @override
   void configure(FilterSchema schema) {}

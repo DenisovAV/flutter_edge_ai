@@ -176,7 +176,7 @@ class QdrantVectorStore implements VectorStoreRepository {
   /// non-empty, [addDocument] promotes each declared field to a TOP-LEVEL
   /// payload key (alongside the opaque [_metadataKey] blob) so qdrant's
   /// [FilterCodec] — which already targets top-level keys — can match on them.
-  FilterSchema _filterSchema = const FilterSchema();
+  FilterSchema _filterSchema = FilterSchema.empty;
 
   /// Payload key under which we stash the original String id sent by the
   /// caller. qdrant point ids are UUID-hashed for storage; this lets

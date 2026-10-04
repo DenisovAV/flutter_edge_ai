@@ -19,7 +19,7 @@ import 'package:path_provider/path_provider.dart';
 
 // Declares every field these tests filter on, so FilterCodec.encode keeps them
 // (an undeclared key is now skipped as a no-op).
-const _schema = FilterSchema(
+final _schema = FilterSchema(
   fields: [
     FilterField(name: 'lang', type: FilterFieldType.string),
     FilterField(name: 'price', type: FilterFieldType.number),
@@ -88,7 +88,7 @@ void main() {
 
   test('must FieldEquals narrows to a single value', () async {
     final ids = await matchedHashedIds(
-      const Filter(
+      Filter(
         must: [FieldEquals(key: 'lang', value: 'en')],
       ),
     );
@@ -100,7 +100,7 @@ void main() {
 
   test('must FieldRange narrows by inclusive bounds', () async {
     final ids = await matchedHashedIds(
-      const Filter(must: [FieldRange(key: 'price', gte: 100.0, lte: 250.0)]),
+      Filter(must: [FieldRange(key: 'price', gte: 100.0, lte: 250.0)]),
     );
     expect(ids, hasLength(2));
     expect(ids, contains(PointIdHasher.hash('en_book_200')));
@@ -109,7 +109,7 @@ void main() {
 
   test('must with multiple conditions is AND', () async {
     final ids = await matchedHashedIds(
-      const Filter(
+      Filter(
         must: [
           FieldEquals(key: 'lang', value: 'en'),
           FieldEquals(key: 'type', value: 'book'),
@@ -123,7 +123,7 @@ void main() {
 
   test('should with FieldMatchAny is OR over values', () async {
     final ids = await matchedHashedIds(
-      const Filter(
+      Filter(
         should: [
           FieldMatchAny(key: 'lang', values: ['fr', 'de']),
         ],
@@ -136,7 +136,7 @@ void main() {
 
   test('mustNot excludes matching docs', () async {
     final ids = await matchedHashedIds(
-      const Filter(
+      Filter(
         mustNot: [FieldEquals(key: 'lang', value: 'en')],
       ),
     );
@@ -148,7 +148,7 @@ void main() {
   test('must + mustNot combines AND + NOT', () async {
     // English docs but exclude audio.
     final ids = await matchedHashedIds(
-      const Filter(
+      Filter(
         must: [FieldEquals(key: 'lang', value: 'en')],
         mustNot: [FieldEquals(key: 'type', value: 'audio')],
       ),
@@ -160,7 +160,7 @@ void main() {
 
   test('range one-sided (gte only) is honored', () async {
     final ids = await matchedHashedIds(
-      const Filter(must: [FieldRange(key: 'price', gte: 200.0)]),
+      Filter(must: [FieldRange(key: 'price', gte: 200.0)]),
     );
     expect(ids, hasLength(2));
     expect(ids, contains(PointIdHasher.hash('en_book_200')));
@@ -169,7 +169,7 @@ void main() {
 
   test('non-matching filter narrows to zero hits without error', () async {
     final ids = await matchedHashedIds(
-      const Filter(
+      Filter(
         must: [FieldEquals(key: 'lang', value: 'xx')],
       ),
     );

@@ -39,7 +39,7 @@ void main() {
       // left `should: [A]`, which is strictly narrower than no filter at all —
       // the condition that was supposed to be ignored changed the answer.
       final out = FilterCodec.encode(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'lang', value: 'en'),
             FieldRange(key: 'price'),
@@ -56,7 +56,7 @@ void main() {
       // unfiltered top-k instead.
       final out = _decode(
         FilterCodec.encode(
-          const Filter(mustNot: [FieldRange(key: 'price')]),
+          Filter(mustNot: [FieldRange(key: 'price')]),
           _schema,
         ),
       );
@@ -70,7 +70,7 @@ void main() {
       () {
         final out = _decode(
           FilterCodec.encode(
-            const Filter(
+            Filter(
               should: [FieldMatchAny(key: 'tag', values: [])],
             ),
             _schema,
@@ -84,7 +84,7 @@ void main() {
       // The mirror image: excluding what no point matches is no constraint.
       expect(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             mustNot: [FieldMatchAny(key: 'tag', values: [])],
           ),
           _schema,
@@ -102,10 +102,7 @@ void main() {
       // Was: _MatchesAll -> "excluding what everything satisfies" -> the whole
       // filter unsatisfiable. sqlite returned every document for this filter.
       expect(
-        FilterCodec.encode(
-          const Filter(mustNot: [FieldRange(key: 'lang')]),
-          _schema,
-        ),
+        FilterCodec.encode(Filter(mustNot: [FieldRange(key: 'lang')]), _schema),
         isNull,
         reason: 'ignored in every bucket, so no filter is sent',
       );
@@ -114,7 +111,7 @@ void main() {
     test('should: an ignored range does not make the bucket always-true', () {
       final out = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             should: [
               FieldRange(key: 'lang'),
               FieldEquals(key: 'lang', value: 'en'),
@@ -131,7 +128,7 @@ void main() {
     test('must: a bounded range on a string field is ignored', () {
       expect(
         FilterCodec.encode(
-          const Filter(must: [FieldRange(key: 'lang', gte: 1)]),
+          Filter(must: [FieldRange(key: 'lang', gte: 1)]),
           _schema,
         ),
         isNull,
@@ -148,7 +145,7 @@ void main() {
     test('a String against a number field', () {
       expect(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [FieldEquals(key: 'price', value: '10')],
           ),
           _schema,
@@ -157,7 +154,7 @@ void main() {
       );
       final out = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [FieldEquals(key: 'price', value: '10')],
           ),
           _schema,
@@ -172,7 +169,7 @@ void main() {
     test('a num against a string field', () {
       final out = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldEquals(key: 'lang', value: 5)]),
+          Filter(must: [FieldEquals(key: 'lang', value: 5)]),
           _schema,
         ),
       );
@@ -182,7 +179,7 @@ void main() {
     test('off-type members of a match-any set are dropped, not matched', () {
       final out = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [
               FieldMatchAny(key: 'price', values: ['10', 20]),
             ],
@@ -199,7 +196,7 @@ void main() {
       // The common case must not pay for the gate above.
       final out = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [
               FieldMatchAny(key: 'tag', values: ['a', 'b']),
             ],
@@ -236,7 +233,7 @@ void main() {
     test('a non-bool-ish string on a bool field matches nothing', () {
       final out = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [FieldEquals(key: 'archived', value: 'yes')],
           ),
           _schema,
@@ -265,13 +262,13 @@ void main() {
       // the same JSON — the arms are spliced, not nested.
       final eq = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldEquals(key: 'archived', value: true)]),
+          Filter(must: [FieldEquals(key: 'archived', value: true)]),
           _schema,
         ),
       );
       final any = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [
               FieldMatchAny(key: 'archived', values: [true]),
             ],
@@ -288,7 +285,7 @@ void main() {
       // filter failed to deserialize and searchSimilar threw.
       final out = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [
               FieldMatchAny(key: 'lang', values: ['a', true]),
             ],
@@ -313,14 +310,14 @@ void main() {
       // `must` correctly yields no filter at all.
       expect(
         FilterCodec.encode(
-          const Filter(should: [FieldRange(key: 'lang', gte: 1)]),
+          Filter(should: [FieldRange(key: 'lang', gte: 1)]),
           _schema,
         ),
         isNull,
       );
       expect(
         FilterCodec.encode(
-          const Filter(must: [FieldRange(key: 'lang', gte: 1)]),
+          Filter(must: [FieldRange(key: 'lang', gte: 1)]),
           _schema,
         ),
         isNull,
@@ -331,7 +328,7 @@ void main() {
       // The other half of the distinction — this one must still sink it.
       final out = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             should: [FieldMatchAny(key: 'tag', values: [])],
           ),
           _schema,
@@ -347,7 +344,7 @@ void main() {
       // and searchSimilar throws, reopening the never-throws hole.
       final out = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [
               FieldEquals(key: 'not a key!', value: 'x'),
               FieldMatchAny(key: 'tag', values: []),
@@ -374,7 +371,7 @@ void main() {
     test('FieldEquals(1) on a bool field accepts true and 1', () {
       final out = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldEquals(key: 'archived', value: 1)]),
+          Filter(must: [FieldEquals(key: 'archived', value: 1)]),
           _schema,
         ),
       );
@@ -386,13 +383,13 @@ void main() {
     test('FieldEquals(1) and FieldMatchAny([1]) agree', () {
       final eq = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldEquals(key: 'archived', value: 1)]),
+          Filter(must: [FieldEquals(key: 'archived', value: 1)]),
           _schema,
         ),
       );
       final any = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [
               FieldMatchAny(key: 'archived', values: [1]),
             ],
@@ -404,50 +401,24 @@ void main() {
     });
   });
 
-  group('non-finite numbers match nothing instead of throwing', () {
-    // jsonEncode refuses NaN and ±Infinity outright (measured:
-    // JsonUnsupportedObjectError), so these used to throw out of
-    // searchSimilar and break the contract that a filter never throws.
-    // No JSON payload can hold one, so the honest answer is "matches nothing".
+  group('non-finite numbers are rejected by the public filter API', () {
     for (final v in [double.nan, double.infinity, double.negativeInfinity]) {
-      test('FieldEquals($v) is unsatisfiable, not an exception', () {
-        final out = _decode(
-          FilterCodec.encode(
-            Filter(
-              must: [FieldEquals(key: 'price', value: v)],
-            ),
-            _schema,
-          ),
-        );
-        expect((out['must'] as List).first['range'], {'gte': 1, 'lte': 0});
+      test('FieldEquals($v) throws ArgumentError', () {
+        expect(() => FieldEquals(key: 'price', value: v), throwsArgumentError);
       });
     }
 
-    test('a non-finite member of match-any is dropped, the rest survive', () {
-      final out = _decode(
-        FilterCodec.encode(
-          Filter(
-            must: [
-              FieldMatchAny(key: 'price', values: [4, double.nan, 9]),
-            ],
-          ),
-          _schema,
-        ),
+    test('FieldMatchAny rejects a non-finite member', () {
+      expect(
+        () => FieldMatchAny(key: 'price', values: [4, double.nan, 9]),
+        throwsArgumentError,
       );
-      final arms = (out['must'] as List).first['should'] as List;
-      expect(arms, hasLength(2), reason: 'NaN adds nothing to a disjunction');
-      expect(arms.first['range'], {'gte': 4, 'lte': 4});
-      expect(arms.last['range'], {'gte': 9, 'lte': 9});
     });
 
-    test('FieldRange asserts a non-finite bound in debug', () {
-      // FieldRange carries an assert the other two conditions do not — an
-      // early warning at the call site, not a different semantic. Asserts
-      // vanish in release, so the codec above still has to answer correctly
-      // there; this pins the dev-time half so the two do not drift apart.
+    test('FieldRange rejects a non-finite bound', () {
       expect(
         () => FieldRange(key: 'price', gte: double.nan),
-        throwsA(isA<AssertionError>()),
+        throwsArgumentError,
       );
     });
   });
@@ -460,7 +431,7 @@ void main() {
     test('FieldEquals(true) accepts true and 1', () {
       final out = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldEquals(key: 'archived', value: true)]),
+          Filter(must: [FieldEquals(key: 'archived', value: true)]),
           _schema,
         ),
       );
@@ -472,7 +443,7 @@ void main() {
     test('FieldEquals(false) accepts false and 0', () {
       final out = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldEquals(key: 'archived', value: false)]),
+          Filter(must: [FieldEquals(key: 'archived', value: false)]),
           _schema,
         ),
       );
@@ -488,7 +459,7 @@ void main() {
     });
 
     test('empty filter → null output (skips the FFI filter branch)', () {
-      expect(FilterCodec.encode(const Filter(), _schema), isNull);
+      expect(FilterCodec.encode(Filter(), _schema), isNull);
     });
 
     test('undeclared key → null output (no-op, same hits as filter:null)', () {
@@ -496,7 +467,7 @@ void main() {
       // is skipped rather than narrowing the search to zero.
       expect(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [FieldEquals(key: 'not_declared', value: 'x')],
           ),
           _schema,
@@ -508,7 +479,7 @@ void main() {
     test('declared + undeclared in one bucket → only declared survives', () {
       final json = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [
               FieldEquals(key: 'lang', value: 'en'),
               FieldEquals(key: 'not_declared', value: 'x'),
@@ -524,7 +495,7 @@ void main() {
     test('FieldEquals encodes to match.value', () {
       final json = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [FieldEquals(key: 'lang', value: 'en')],
           ),
           _schema,
@@ -543,7 +514,7 @@ void main() {
     test('FieldMatchAny encodes to match.any', () {
       final json = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             should: [
               FieldMatchAny(key: 'tag', values: ['a', 'b', 'c']),
             ],
@@ -566,7 +537,7 @@ void main() {
     test('FieldRange encodes to range with optional gte/lte', () {
       final both = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldRange(key: 'price', gte: 10.0, lte: 100.0)]),
+          Filter(must: [FieldRange(key: 'price', gte: 10.0, lte: 100.0)]),
           _schema,
         ),
       );
@@ -574,7 +545,7 @@ void main() {
 
       final gteOnly = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldRange(key: 'price', gte: 10.0)]),
+          Filter(must: [FieldRange(key: 'price', gte: 10.0)]),
           _schema,
         ),
       );
@@ -583,7 +554,7 @@ void main() {
 
       final lteOnly = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldRange(key: 'price', lte: 100.0)]),
+          Filter(must: [FieldRange(key: 'price', lte: 100.0)]),
           _schema,
         ),
       );
@@ -594,7 +565,7 @@ void main() {
     test('mustNot serializes to snake_case must_not (qdrant wire format)', () {
       final json = _decode(
         FilterCodec.encode(
-          const Filter(mustNot: [FieldEquals(key: 'archived', value: true)]),
+          Filter(mustNot: [FieldEquals(key: 'archived', value: true)]),
           _schema,
         ),
       );
@@ -605,7 +576,7 @@ void main() {
     test('combined must + mustNot serializes all buckets', () {
       final json = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [
               FieldEquals(key: 'lang', value: 'en'),
               FieldRange(key: 'price', gte: 50.0),
@@ -627,7 +598,7 @@ void main() {
     test('empty buckets are omitted from output', () {
       final json = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [FieldEquals(key: 'rank', value: 1)],
             should: [],
           ),
@@ -671,7 +642,7 @@ void _crossBackendParityTests() {
     test('a string equality still uses match', () {
       final json = _decode(
         FilterCodec.encode(
-          const Filter(
+          Filter(
             must: [FieldEquals(key: 'lang', value: 'en')],
           ),
           _schema,
@@ -685,7 +656,7 @@ void _crossBackendParityTests() {
       // Not `range: {}` — qdrant reads that as an existence test and excludes
       // every non-numeric document, the opposite of the SQLite arm's no-op.
       final json = FilterCodec.encode(
-        const Filter(must: [FieldRange(key: 'price')]),
+        Filter(must: [FieldRange(key: 'price')]),
         _schema,
       );
       expect(json, isNull, reason: 'a no-op condition leaves nothing to send');
@@ -694,7 +665,7 @@ void _crossBackendParityTests() {
     test('a one-sided range still encodes that bound', () {
       final json = _decode(
         FilterCodec.encode(
-          const Filter(must: [FieldRange(key: 'price', gte: 10)]),
+          Filter(must: [FieldRange(key: 'price', gte: 10)]),
           _schema,
         ),
       );

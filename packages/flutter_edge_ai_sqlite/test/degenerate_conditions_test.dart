@@ -77,7 +77,7 @@ void main() {
       // just the unbounded range left `lang = 'en'`, so a condition meant to
       // constrain nothing narrowed the result from four rows to one.
       final got = search(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'lang', value: 'en'),
             FieldRange(key: 'year'),
@@ -89,13 +89,13 @@ void main() {
 
     test('an always-true condition in mustNot excludes everything', () {
       // "no condition may match" over a condition every document satisfies.
-      expect(search(const Filter(mustNot: [FieldRange(key: 'year')])), isEmpty);
+      expect(search(Filter(mustNot: [FieldRange(key: 'year')])), isEmpty);
     });
 
     test('a should bucket whose every arm matches nothing returns nothing', () {
       expect(
         search(
-          const Filter(
+          Filter(
             should: [FieldMatchAny(key: 'lang', values: [])],
           ),
         ),
@@ -110,12 +110,12 @@ void main() {
       // returned nothing. The existing test above has a surviving arm, which
       // is exactly why it never caught this.
       expect(
-        search(const Filter(should: [FieldRange(key: 'lang', gte: 1)])),
+        search(Filter(should: [FieldRange(key: 'lang', gte: 1)])),
         hasLength(4),
       );
       // And the identical condition in `must` must agree.
       expect(
-        search(const Filter(must: [FieldRange(key: 'lang', gte: 1)])),
+        search(Filter(must: [FieldRange(key: 'lang', gte: 1)])),
         hasLength(4),
       );
     });
@@ -124,7 +124,7 @@ void main() {
       // An undeclared key is ignored as if never written — a contract choice,
       // not a truth value — so the remaining arm still constrains.
       final got = search(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'lang', value: 'en'),
             FieldEquals(key: 'undeclared', value: 'x'),
@@ -136,7 +136,7 @@ void main() {
 
     test('a range on a TEXT field is ignored, in should too', () {
       final got = search(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'lang', value: 'en'),
             FieldRange(key: 'lang', gte: 1),
@@ -147,42 +147,16 @@ void main() {
     });
 
     test('FieldRange rejects a non-finite bound at construction', () {
-      // The first version of this test tried to push `gte: -double.infinity`
-      // through translate() to exercise the release-mode guard. It cannot:
-      // FieldRange asserts finite bounds in its constructor, and `flutter
-      // test` always runs with asserts on, so the value never reaches the
-      // translator. The comment claiming otherwise was simply wrong.
-      //
-      // So this pins the dev-time half. The release half — _isFiniteBound in
-      // filter_to_vec0.dart, which stops -Infinity (the absent-value
-      // sentinel) from being bound as a range bound once the assert is gone —
-      // is NOT covered by a test, and cannot be under this runner. Saying so
-      // is better than a test that looks like it covers it.
       expect(
         () => FieldRange(key: 'year', gte: double.negativeInfinity),
-        throwsA(isA<AssertionError>()),
+        throwsArgumentError,
       );
     });
 
-    test('a non-finite equality matches nothing, not the absent sentinel', () {
-      // -Infinity IS the absent-number sentinel, so this used to return every
-      // document that has no `year` — the opposite of a filter on year. Here
-      // every row HAS a year, so the correct answer is no rows either way;
-      // the row inserted below is the one that made the old behaviour visible.
-      // -9e999 is how SQLite spells -Infinity as a literal; Dart's
-      // "-Infinity" is not valid SQL. This row stands in for a document that
-      // was inserted WITHOUT a year — the store writes the same sentinel.
-      db.execute(
-        "INSERT INTO v(id, embedding, lang, year) VALUES "
-        "('absent', '[0.8,0.2,0,0]', 'en', -9e999)",
-      );
+    test('FieldEquals rejects a non-finite value at construction', () {
       expect(
-        search(
-          Filter(
-            must: [FieldEquals(key: 'year', value: double.negativeInfinity)],
-          ),
-        ),
-        isEmpty,
+        () => FieldEquals(key: 'year', value: double.negativeInfinity),
+        throwsArgumentError,
       );
     });
   }, skip: skip);

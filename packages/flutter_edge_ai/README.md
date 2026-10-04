@@ -1823,7 +1823,7 @@ final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: databasePath,
-    filterSchema: const FilterSchema(fields: [
+    filterSchema: FilterSchema(fields: [
       FilterField(name: 'category', type: FilterFieldType.string),
       FilterField(name: 'lang', type: FilterFieldType.string),
     ]),
@@ -1844,7 +1844,7 @@ try {
   final results = await index.searchText(
     query: 'quantum entanglement',
     topK: 10,
-    filter: const Filter(
+    filter: Filter(
       must: [FieldEquals(key: 'category', value: 'science')],
       mustNot: [FieldEquals(key: 'lang', value: 'fr')],
     ),

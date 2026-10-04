@@ -6,7 +6,7 @@ class VectorStoreSpec {
   VectorStoreSpec({
     required this.providerId,
     required this.location,
-    this.filterSchema = const FilterSchema(),
+    this.filterSchema = FilterSchema.empty,
     this.allowLegacyProfileAdoption = false,
   }) {
     if (providerId.trim().isEmpty) {

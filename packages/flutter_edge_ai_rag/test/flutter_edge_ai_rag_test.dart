@@ -144,9 +144,7 @@ void main() {
       () async {
         final store = _FakeStore();
         final schema = FilterSchema(
-          fields: [
-            const FilterField(name: 'lang', type: FilterFieldType.string),
-          ],
+          fields: [FilterField(name: 'lang', type: FilterFieldType.string)],
         );
         final index = await _ragFor(store).open(
           spec: VectorStoreSpec(
@@ -742,6 +740,38 @@ void main() {
       await index.dispose();
     });
 
+    test('raw vector operations snapshot vectors before queueing', () async {
+      final store = _FakeStore(blockFlush: true);
+      final index = await _ragFor(store).open(
+        spec: VectorStoreSpec(providerId: 'memory', location: 'index'),
+        embeddingProfile: _profile2,
+      );
+
+      final flush = index.flush();
+      await _pump();
+      final addVector = <double>[1, 0];
+      final queryVector = <double>[0, 1];
+      final add = index.addVector(
+        id: 'doc',
+        content: 'content',
+        embedding: addVector,
+      );
+      final search = index.searchVector(embedding: queryVector);
+      addVector[0] = 9;
+      queryVector[0] = 9;
+
+      store.releaseFlush();
+      await Future.wait<void>([flush, add, search.then((_) {})]);
+
+      expect(store.addedEmbeddings, [
+        [1.0, 0.0],
+      ]);
+      expect(store.queryEmbeddings, [
+        [0.0, 1.0],
+      ]);
+      await index.dispose();
+    });
+
     test('flush is an exclusive barrier', () async {
       final store = _FakeStore(blockAdds: true, blockFlush: true);
       final index = await _ragFor(store).open(
@@ -1050,7 +1080,7 @@ class _FakeStore implements VectorStoreRepository {
   @override
   bool isInitialized = false;
   @override
-  FilterSchema filterSchema = const FilterSchema();
+  FilterSchema filterSchema = FilterSchema.empty;
   int initializeCalls = 0;
   int closeCalls = 0;
   int flushCalls = 0;
@@ -1059,6 +1089,8 @@ class _FakeStore implements VectorStoreRepository {
   int activeAdds = 0;
   final List<String> events = [];
   final List<String> startedAddIds = [];
+  final List<List<double>> addedEmbeddings = [];
+  final List<List<double>> queryEmbeddings = [];
   Completer<void>? _addGate;
   Completer<void>? _flushGate;
 
@@ -1115,6 +1147,7 @@ class _FakeStore implements VectorStoreRepository {
         _addGate ??= Completer<void>();
         await _addGate!.future;
       }
+      addedEmbeddings.add(List<double>.of(embedding));
       documentCount++;
       vectorDimension = embedding.length;
     } finally {
@@ -1135,6 +1168,7 @@ class _FakeStore implements VectorStoreRepository {
     Filter? filter,
   }) async {
     events.add('search');
+    queryEmbeddings.add(List<double>.of(queryEmbedding));
     return const [];
   }
 

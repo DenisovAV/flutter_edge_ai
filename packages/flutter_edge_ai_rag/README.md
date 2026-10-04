@@ -21,7 +21,7 @@ final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: 'sqlite',
     location: 'knowledge.db',
-    filterSchema: const FilterSchema(fields: [
+    filterSchema: FilterSchema(fields: [
       FilterField(name: 'topic', type: FilterFieldType.string),
     ]),
   ),
@@ -37,7 +37,7 @@ await index.addText(
 );
 final hits = await index.searchText(
   query: 'Where does Flutter run?',
-  filter: const Filter(
+  filter: Filter(
     must: [FieldEquals(key: 'topic', value: 'flutter')],
   ),
 );

@@ -72,25 +72,29 @@ class RagIndex {
   }) {
     _ensureUsable();
     _validateId(id);
-    _validateEmbedding(embedding);
+    final embeddingSnapshot = List<double>.unmodifiable(embedding);
+    _validateEmbedding(embeddingSnapshot);
     final profile = _boundProfile;
     if (profile == null && _textProfileClaim == null) {
       _requireBoundProfile();
     }
     if (profile != null) {
-      _validateEmbedding(embedding, expectedDimension: profile.dimension);
+      _validateEmbedding(
+        embeddingSnapshot,
+        expectedDimension: profile.dimension,
+      );
     }
     return _accept(
       () => _gate.runShared(() async {
         final boundProfile = _requireBoundProfile();
         _validateEmbedding(
-          embedding,
+          embeddingSnapshot,
           expectedDimension: boundProfile.dimension,
         );
         await _store.addDocument(
           id: id,
           content: content,
-          embedding: embedding,
+          embedding: embeddingSnapshot,
           metadata: metadata,
         );
       }),
@@ -125,23 +129,27 @@ class RagIndex {
   }) {
     _ensureUsable();
     _validateSearch(topK: topK, threshold: threshold);
-    _validateEmbedding(embedding);
+    final embeddingSnapshot = List<double>.unmodifiable(embedding);
+    _validateEmbedding(embeddingSnapshot);
     final profile = _boundProfile;
     if (profile == null && _textProfileClaim == null) {
       _requireBoundProfile();
     }
     if (profile != null) {
-      _validateEmbedding(embedding, expectedDimension: profile.dimension);
+      _validateEmbedding(
+        embeddingSnapshot,
+        expectedDimension: profile.dimension,
+      );
     }
     return _accept(
       () => _gate.runShared(() {
         final boundProfile = _requireBoundProfile();
         _validateEmbedding(
-          embedding,
+          embeddingSnapshot,
           expectedDimension: boundProfile.dimension,
         );
         return _store.searchSimilar(
-          queryEmbedding: embedding,
+          queryEmbedding: embeddingSnapshot,
           topK: topK,
           threshold: threshold,
           filter: filter,

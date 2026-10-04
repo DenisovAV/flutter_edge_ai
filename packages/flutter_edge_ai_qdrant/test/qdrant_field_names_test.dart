@@ -42,7 +42,7 @@ void main() {
     test('core still catches what is wrong on every backend', () {
       expect(
         () => FilterField.validateSchema(
-          const FilterSchema(
+          FilterSchema(
             fields: [
               FilterField(name: 'lang', type: FilterFieldType.string),
               FilterField(name: 'lang', type: FilterFieldType.string),

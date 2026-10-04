@@ -127,7 +127,11 @@ class RagStore {
 
   Future<VectorStoreStats> stats() async => (await _index()).stats();
 
-  Future<void> clear() async => (await _index()).clear();
+  Future<void> clear() async {
+    final index = await _index();
+    await index.clear();
+    await index.flush();
+  }
 
   /// Dispose this before FlutterEdgeAi.dispose(), whose embedder the index borrows.
   Future<void> dispose() => _disposing ??= _disposeOnce();

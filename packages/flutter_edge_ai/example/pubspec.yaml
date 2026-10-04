@@ -25,6 +25,8 @@ dependencies:
   flutter_bloc: ^8.0.1
   flutter_edge_ai:
     path: ../
+  flutter_edge_ai_rag:
+    path: ../../flutter_edge_ai_rag
   flutter_edge_ai_sqlite:
     path: ../../flutter_edge_ai_sqlite
   flutter_edge_ai_qdrant:
@@ -79,6 +81,8 @@ dependencies:
 dependency_overrides:
   flutter_edge_ai:
     path: ../
+  flutter_edge_ai_rag:
+    path: ../../flutter_edge_ai_rag
   flutter_edge_ai_litertlm:
     path: ../../flutter_edge_ai_litertlm
   flutter_edge_ai_embeddings:

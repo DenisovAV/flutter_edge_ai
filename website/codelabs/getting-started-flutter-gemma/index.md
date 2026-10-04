@@ -222,29 +222,25 @@ model this size does not need them. macOS support is Apple Silicon only.
 The build phase is the part unique to macOS. Every step app from this one on
 ships a `macos/Podfile`, and its `post_install` block stages the runtime's
 companion libraries into the built `.app` and repoints LiteRT-LM at them. It is
-not cosmetic, and how it bites depends on how much of the staging is missing.
-With a Podfile that installs pods but carries no such block, LiteRT-LM itself
-loads and only its Metal companion is absent: `engine_create` returns null on
-the GPU backend and the model silently falls back to CPU. With nothing staged at
-all — the SPM case below — `LiteRtLm.framework` is the only thing in
-`Contents/Frameworks`, the dynamic loader cannot resolve the companions it
-links against, and the first model load fails outright. Copy the block from any
-step app's `macos/Podfile` — or
-from the [desktop docs](/docs/desktop), which quote it in full with the
-reasoning for each line — and run `pod install`.
+not cosmetic. Without the block — whether the Podfile lacks it or there is no
+Podfile at all — nothing is staged, `LiteRtLm.framework` is the only thing in
+`Contents/Frameworks`, the dynamic loader cannot resolve the companion it links
+against, and the first model load fails on every backend, CPU included. Copy the
+block from any step app's `macos/Podfile` — or from the
+[desktop docs](/docs/desktop), which quote it in full with the reasoning for
+each line; the next build runs `pod install` itself.
 
-One trap, measured on these very apps. With Swift Package Manager enabled
-(`flutter config --enable-swift-package-manager`) and no other CocoaPods plugin
-in the app, Flutter resolves every plugin through SPM and prints **Removing
-CocoaPods integration** — which is exactly what it does. The Podfile stops being
-part of the build, the `post_install` block never runs, nothing is staged, and
-the model fails to load with nothing in the error mentioning CocoaPods. A macOS
-build that succeeds proves nothing here: the app compiles, links, signs and
-launches either way, and the failure —
-`Failed to load dynamic library 'LiteRtLm.framework/LiteRtLm'` — arrives at the
-first model load, which no build log will ever warn you about. For this project,
-either turn SPM off with `flutter config --no-enable-swift-package-manager`, or
-keep one CocoaPods plugin in the app.
+One trap, measured. Flutter 3.44+ uses Swift Package Manager by default, and
+an app whose plugins all ship a `Package.swift` — core does, and
+`flutter_edge_ai_litertlm` is not a plugin at all — gets no `macos/Podfile`, so
+nothing runs the block. That is why every step app's `pubspec.yaml` carries
+`flutter: config: enable-swift-package-manager: false`. For an app of your own,
+add the same lines, run `flutter pub get` (it writes `macos/Podfile`), and paste
+the block. A macOS build that succeeds proves nothing here: the app compiles,
+links, signs and launches either way, and the failure —
+`Failed to load dynamic library 'LiteRtLm.framework/LiteRtLm'` … `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib` — arrives at the first model load, which no build log warns you about.
+Prefer the pubspec setting to `flutter config --no-enable-swift-package-manager`:
+that one changes only your machine, not your teammates' or CI.
 
 **Windows** — nothing in the app, and x86_64 only: there is no Windows arm64
 build of the runtime, so a Snapdragon-X machine is out. Nothing needs installing:
@@ -805,15 +801,21 @@ core API is the entry point to everything else the plugin does:
   way on native platforms — on the web, only a file exported for the browser
   engine does
 * **run a different engine** — the OS built-in model (Gemini Nano, Apple
-  Foundation Models) needs no download at all
+  Foundation Models) needs no download at all:
+  [Inference Engines](/codelabs/inference-engines-flutter-gemma)
 * **send images and audio** — `Message.withImages` / `Message.withAudio`, on
-  models that accept them
-* **let the model call your Dart functions** — tools and the call/response loop
-* **ground answers in your own documents** — embeddings and on-device vector search
-* **run it as a voice loop** — speech-to-text in, text-to-speech out
+  models that accept them: [Multimodal Inference](/codelabs/multimodal-flutter-gemma)
+* **let the model call your Dart functions** — tools and the call/response loop:
+  [Function Calling](/codelabs/function-calling-flutter-gemma)
+* **ground answers in your own documents** — embeddings and on-device vector
+  search: [On-Device RAG](/codelabs/on-device-rag-flutter-gemma)
+* **run it as a voice loop** — speech-to-text in, text-to-speech out:
+  [Voice Assistant](/codelabs/voice-assistant-flutter-gemma)
+* **route between the cloud and the device** — Gemini and the on-device model
+  behind one Genkit call: [Hybrid AI with Genkit](/codelabs/hybrid-ai-flutter-genkit)
 
-Most of these have a codelab in the [catalogue](/codelabs) — some published,
-some still being written.
+Every one of those codelabs is published; the [catalogue](/codelabs) lists
+them all.
 
 ### Reference
 

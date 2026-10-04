@@ -130,10 +130,10 @@ class AiEngine {
     bool downloadEmbedder = true,
   }) async {
     // RAG runs on every platform, web included. The four LiteRT.js files in
-    // web/ come from flutter_edge_ai_litertlm 1.8.0, which is where that bundle
-    // lives; the WASM runtime behind them is fetched from a CDN, so there is
-    // nothing else to host. The only thing left that can turn embeddings off
-    // here is the test seam.
+    // web/ are copied from flutter_edge_ai_litertlm's own web/, which is where
+    // that bundle lives; the WASM runtime behind them is fetched from a CDN, so
+    // there is nothing else to host. The only thing left that can turn
+    // embeddings off here is the test seam.
     final embeddingsSupported = downloadEmbedder;
 
     // Declarative plugin config — always includes the on-device plugin (its
@@ -176,7 +176,7 @@ class AiEngine {
     }
 
     // LOCAL: register the on-device engine, then install + resolve the LLM.
-    // flutter_edge_ai 1.x registers no engines by default; that registration
+    // flutter_edge_ai registers no engines by default; that registration
     // now lives inside this try/catch (not before Genkit is built) so an
     // engine-init failure only suppresses localReady, never cloud.
     try {
@@ -192,9 +192,9 @@ class AiEngine {
         embeddingBackends: embeddingsSupported
             ? [LiteRtEmbeddingBackend()]
             : const [],
-        // Since flutter_edge_ai 1.9.0 a backend no longer carries a tokenizer:
-        // which one a model needs is a property of the model, so the app
-        // registers it. Without this the first embedding throws a StateError.
+        // A backend carries no tokenizer: which one a model needs is a
+        // property of the model, so the app registers it. Without this the
+        // first embedding throws a StateError.
         embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
       );
 

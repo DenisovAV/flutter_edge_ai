@@ -50,7 +50,10 @@ void main() {
     expect(await FlutterEdgeAi.isModelInstalled(model.fileName), isTrue);
 
     // Nothing tool-related on this call: tools belong to the session.
-    final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
+    final inference = await FlutterEdgeAi.getActiveModel(
+      maxTokens: model.maxTokens,
+      preferredBackend: model.preferredBackend,
+    );
     final chat = await inference.createChat(
       modelType: model.modelType,
       tools: toolbox,

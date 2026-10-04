@@ -104,9 +104,8 @@ Six increments, each a directory you can open and run:
 
 On the web, `kOnDevice` is a different, larger model — Gemma 3 1B has no
 browser build, so `AiEngine` installs Gemma 4 E2B's web export instead. Step 3
-covers why. EmbeddingGemma is part of that plugin only off web — Step 5
-explains why on-device embeddings, and the RAG built on them, don't run in a
-browser yet.
+covers why. EmbeddingGemma is part of that plugin on every platform, the web
+included — Step 5 lists the four files a browser needs for it.
 
 `genkit_hybrid` composes both branches into one routable `Model` —
 `hybridModel()` / `cascadeModel()` — selected by a `PolicyMode`: cloud, local,
@@ -287,6 +286,21 @@ await for (final chunk in _service.generateResponseStream(text)) {
 }
 ```
 
+### Let Android reach the network
+
+The Gemini call is an ordinary HTTPS request, and on Android an app gets no
+network unless its manifest asks. Debug builds hide this — Flutter's
+`android/app/src/debug/AndroidManifest.xml` grants `INTERNET` so the tooling
+can talk to the app — so a missing line only shows up in a release build. Add
+it to `android/app/src/main/AndroidManifest.xml`, above `<application>`:
+
+```xml
+    <uses-permission android:name="android.permission.INTERNET" />
+```
+
+`step_01_cloud_ai` already has it. On macOS the sandbox's equivalent,
+`com.apple.security.network.client`, is already in the starter's entitlements.
+
 ### Run with your API key
 
 ```bash
@@ -305,21 +319,16 @@ Duration: 20
 
 ### Platform setup
 
-This is the only step with platform configuration in it, and it is less than
-you would expect on any of the six. Read the subsection for the platform you
+This step holds nearly all of the platform configuration — Step 2's network
+permission and Step 4.5's file-picker entitlement are the only other pieces —
+and it is less than you would expect on any of the six. Read the subsection for the platform you
 are running on and skip the others. [Getting Started](/codelabs/getting-started-flutter-gemma)
 covers each of them at length in its Step 2; what follows is what *this* app
 needs.
 
-**Android** — one line, because both the model download and the Gemini call
-are ordinary HTTPS requests (`android/app/src/main/AndroidManifest.xml`):
-
-```xml
-    <uses-permission android:name="android.permission.INTERNET" />
-```
-
-…and the API floor in `android/app/build.gradle.kts`, because the on-device
-half of the app loads `libLiteRtLm.so`:
+**Android** — the `INTERNET` permission you added in Step 2 already covers the
+model download. What is new is the API floor in `android/app/build.gradle.kts`,
+because the on-device half of the app loads `libLiteRtLm.so`:
 
 ```kotlin
 defaultConfig {
@@ -375,12 +384,14 @@ The build phase is the part unique to macOS. Every step app from this one on
 ships a `macos/Podfile` whose `post_install` block stages the runtime's
 companion libraries into the built `.app`. A macOS build that succeeds proves
 nothing here — the app compiles, links, signs and launches without the staging
-too, and the failure arrives at the first model load. One trap, measured: with
-Swift Package Manager on and no other CocoaPods plugin in the app, Flutter
-prints **Removing CocoaPods integration**, the `post_install` block never runs,
-and nothing is staged. Either turn SPM off with
-`flutter config --no-enable-swift-package-manager`, or keep one CocoaPods
-plugin in the app.
+too, and the failure arrives at the first model load. One trap, measured:
+Flutter 3.44+ uses Swift Package Manager by default, and an app with no
+CocoaPods plugin gets no `macos/Podfile`, so nothing runs the block. The step
+apps' `pubspec.yaml` sets `flutter: config: enable-swift-package-manager: false`
+for that reason; an app of your own needs the same lines, then
+`flutter pub get` (which writes the Podfile) and the block. Prefer that to
+`flutter config --no-enable-swift-package-manager`, which changes only your
+machine.
 
 **Windows** — nothing in the app, and x86_64 only: there is no Windows arm64
 build of the runtime. Nothing needs installing: nothing in the bundle needs a C++
@@ -420,8 +431,9 @@ friends) to put model bytes into browser storage. Without them a web model
 install fails. Copy both files into your app's `web/` directory alongside
 `index.html`. Browser storage is not a permanent install, though: the bytes
 survive a reload, the app's in-memory handle on them does not, so a reloaded
-tab still reports the model installed and fetches it again. This app never
-calls `installEmbedder()` on web, though — Step 5 explains why.
+tab still reports the model installed and fetches it again. From Step 4 on,
+`AiEngine` calls `installEmbedder()` as well — on the web too — so the
+embedding model takes the same path into browser storage.
 
 The matching Dart-side change is `webStorageMode: WebStorageMode.streaming`
 on `FlutterEdgeAi.initialize()`, and size is the reason for it: streaming
@@ -454,14 +466,14 @@ Add `genkit_flutter_edge_ai` and `flutter_edge_ai`:
 
 ```yaml
   # Step 3: On-device AI (LiteRT-LM engine)
-  genkit_flutter_edge_ai: ^0.6.2
-  flutter_edge_ai: ^1.11.4
-  # flutter_edge_ai 1.x registers no engine by default — opt into LiteRT-LM
+  genkit_flutter_edge_ai: ^0.7.0
+  flutter_edge_ai: ^2.0.0
+  # flutter_edge_ai registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
-  flutter_edge_ai_litertlm: ^1.8.6
+  flutter_edge_ai_litertlm: ^1.8.7
   # Step 5 embeds your documents. The engine above runs the forward pass;
   # this package supplies the tokenizers it needs.
-  flutter_edge_ai_embeddings: ^2.2.1
+  flutter_edge_ai_embeddings: ^2.2.2
 ```
 
 Run `flutter pub get`.
@@ -469,10 +481,19 @@ Run `flutter pub get`.
 ### Get a HuggingFace token
 
 Go to [huggingface.co](https://huggingface.co), sign in, and create a
-read-access token at **Settings → Access Tokens**. Native platforms need it
-because `litert-community/Gemma3-1B-IT` is gated; on the web, the app
-installs Gemma 4 E2B's web build from an ungated repository instead (see the
-Web setup above), so the token is optional there.
+read-access token at **Settings → Access Tokens**. Native platforms need it from
+this step on, because `litert-community/Gemma3-1B-IT` is gated. On the web this
+step installs Gemma 4 E2B's web build from an ungated repository instead (see
+the Web setup above), so for Step 3 alone the token is optional there — but
+from Step 4 on `AiEngine` also installs EmbeddingGemma from
+`litert-community/embeddinggemma-300m`, which is gated on every platform, the
+web included.
+
+Accept the licence on **both** gated repos —
+[Gemma3-1B-IT](https://huggingface.co/litert-community/Gemma3-1B-IT) and
+[embeddinggemma-300m](https://huggingface.co/litert-community/embeddinggemma-300m)
+— with the account the token belongs to. A token alone is not enough: without
+the accepted licence the download is refused all the same.
 
 ### Create LocalAIService
 
@@ -524,7 +545,7 @@ class LocalAIService implements AIService {
   Future<void> initialize({void Function(int)? onProgress}) async {
     if (_isInitialized) return;
 
-    // flutter_edge_ai 1.x registers no engine by default — opt into LiteRT-LM.
+    // flutter_edge_ai registers no engine by default — opt into LiteRT-LM.
     // `webStorageMode: streaming` (OPFS-backed) is what the size demands: the
     // 2.0 GB web build sits right on the ~2 GB blob ceiling the default
     // cacheApi mode would have to buffer it into, so the @litert-lm/core
@@ -601,6 +622,64 @@ ahead of, though: nothing in this app, now or later in its short life,
 computes an embedding, so there's nothing to gain from downloading one.
 Step 4's `AiEngine` installs it for real, once RAG is actually on the way.
 
+### Wire it up in chat_screen.dart
+
+Keep `CloudAIService` and add the new service beside it — `_service` from Step 2
+becomes `_cloudService` — with a Cloud/Local toggle in the app bar to choose
+between them:
+
+```dart
+import '../services/local_ai_service.dart';
+
+// in _ChatScreenState:
+late final CloudAIService _cloudService;
+late final LocalAIService _localService;
+
+bool _useLocal = false;
+
+// in initState:
+_cloudService = CloudAIService();
+_localService = LocalAIService();
+_initServices();
+
+// in _initServices, after the cloud service, in its own try/catch so a
+// failed download never takes the cloud chat down with it:
+await _localService.initialize(
+  onProgress: (progress) {
+    if (mounted) {
+      setState(() => _statusMessage = 'Downloading model: $progress%');
+    }
+  },
+);
+
+// in _sendMessage:
+final service = _useLocal ? _localService : _cloudService;
+await for (final chunk in service.generateResponseStream(text)) {
+  buffer.write(chunk);
+  // ... the throttled setState loop, unchanged
+}
+
+// in build, as the AppBar's `bottom:` (inside a PreferredSize):
+SegmentedButton<bool>(
+  segments: const [
+    ButtonSegment(value: false, label: Text('Cloud'), icon: Icon(Icons.cloud)),
+    ButtonSegment(
+      value: true,
+      label: Text('Local'),
+      icon: Icon(Icons.phone_android),
+    ),
+  ],
+  selected: {_useLocal},
+  onSelectionChanged: (_isGenerating || _isInitializing)
+      ? null
+      : (s) => setState(() => _useLocal = s.first),
+),
+```
+
+`_statusMessage` stops being `final` — the download now writes to it — and
+`dispose()` disposes both services. `step_02_local_ai/lib/screens/chat_screen.dart`
+has the whole file.
+
 ### Run with HuggingFace token
 
 ```bash
@@ -640,7 +719,7 @@ plugins and `flutter_edge_ai_litertlm`) is already in place from Steps 2–3:
 
 ```yaml
   # Hybrid on-device ↔ cloud routing
-  genkit_hybrid: ^0.2.1
+  genkit_hybrid: ^0.2.2
 ```
 
 Run `flutter pub get`.
@@ -795,10 +874,10 @@ class AiEngine {
     bool downloadEmbedder = true,
   }) async {
     // RAG runs on every platform, web included. The four LiteRT.js files in
-    // web/ come from flutter_edge_ai_litertlm, which owns that bundle; the
-    // WASM runtime behind them is fetched from a CDN, so there is
-    // nothing else to host. The only thing left that can turn embeddings off
-    // here is the test seam.
+    // web/ are copied from flutter_edge_ai_litertlm's own web/, which is where
+    // that bundle lives; the WASM runtime behind them is fetched from a CDN, so
+    // there is nothing else to host. The only thing left that can turn
+    // embeddings off here is the test seam.
     final embeddingsSupported = downloadEmbedder;
 
     // Declarative plugin config — always includes the on-device plugin (its
@@ -841,12 +920,12 @@ class AiEngine {
     }
 
     // LOCAL: register the on-device engine, then install + resolve the LLM.
-    // flutter_edge_ai 1.x registers no engines by default; that registration
+    // flutter_edge_ai registers no engines by default; that registration
     // now lives inside this try/catch (not before Genkit is built) so an
     // engine-init failure only suppresses localReady, never cloud.
     try {
-      // Opt into LiteRT-LM (.litertlm inference) +, off web, its LiteRT
-      // embedding backend (see embeddingsSupported above). `webStorageMode:
+      // Opt into LiteRT-LM (.litertlm inference) and its LiteRT embedding
+      // backend, on every platform (see embeddingsSupported above). `webStorageMode:
       // streaming` (OPFS-backed) is what the size demands: the 2.0 GB web
       // build sits right on the ~2 GB blob ceiling the default cacheApi
       // mode would have to buffer it into, so the @litert-lm/core engine
@@ -857,9 +936,9 @@ class AiEngine {
         embeddingBackends: embeddingsSupported
             ? [LiteRtEmbeddingBackend()]
             : const [],
-        // A backend no longer carries a tokenizer: which one a model needs is
-        // a property of the model, so the app
-        // registers it. Without this the first embedding throws a StateError.
+        // A backend carries no tokenizer: which one a model needs is a
+        // property of the model, so the app registers it. Without this the
+        // first embedding throws a StateError.
         embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
       );
 
@@ -1083,8 +1162,9 @@ the prompt it changes nothing you can observe.
 
 ### Add the policy picker
 
-In `chat_screen.dart`, replace the strategy toggle with a `DropdownButton`
-over all five `PolicyMode` values. There's nothing to hand-write per mode:
+In `chat_screen.dart`, replace Step 3's Cloud/Local `SegmentedButton` with a
+`DropdownButton` over all five `PolicyMode` values — and the two services with
+one `AiEngine _engine` and a `PolicyMode _policy`. There's nothing to hand-write per mode:
 the enum already knows its own label and its own prerequisites, so the item
 list is a loop and a new policy shows up in the picker the moment you add it
 to the enum.
@@ -1183,6 +1263,19 @@ actually decide.
 ```
 
 Run `flutter pub get`.
+
+On **macOS** the picker is a file dialog (`image_picker` uses `file_selector`
+there), and the app sandbox only lets the app read a file the user picked if
+it holds the read-only user-selected-files entitlement. Add it to **both**
+`macos/Runner/DebugProfile.entitlements` and
+`macos/Runner/Release.entitlements`, beside the network key from Step 2:
+
+```xml
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+```
+
+`step_04_smart_routing` and every step after it already carry it.
 
 ### Attach an image
 

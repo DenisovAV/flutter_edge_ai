@@ -26,8 +26,6 @@ import 'package:flutter_edge_ai/core/registry/embedding_tokenizer_registry.dart'
 import 'package:flutter_edge_ai/core/registry/stt_backend_provider.dart';
 import 'package:flutter_edge_ai/core/registry/tts_backend_provider.dart';
 import 'package:flutter_edge_ai/core/registry/skill_executor_provider.dart';
-import 'package:flutter_edge_ai/core/services/vector_store_repository.dart';
-import 'package:flutter_edge_ai/core/services/vector_store_filter.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
@@ -118,7 +116,7 @@ class FlutterEdgeAi {
   ///   - none: No caching (ephemeral, for development)
   ///   Note: This parameter only affects web platform, ignored on mobile
   /// - [enableWebCache]: DEPRECATED - Use webStorageMode instead.
-  ///   Converts to webStorageMode internally; scheduled for removal in 1.0.
+  ///   Converts to webStorageMode internally; still accepted in 2.0.
   ///
   /// Example:
   /// ```dart
@@ -140,8 +138,7 @@ class FlutterEdgeAi {
     String? huggingFaceToken,
     int maxDownloadRetries = 10,
     WebStorageMode webStorageMode = WebStorageMode.cacheApi,
-    @Deprecated('Use webStorageMode instead. Scheduled for removal in 1.0.')
-    bool? enableWebCache,
+    @Deprecated('Use webStorageMode instead.') bool? enableWebCache,
     // Opt-in registration. Engines/backends are FULLY opt-in: core registers
     // NONE by default. Pass the providers from the packages you use, e.g.
     // `LiteRtLmEngine()` (flutter_edge_ai_litertlm), `MediaPipeEngine()`
@@ -149,9 +146,7 @@ class FlutterEdgeAi {
     // (flutter_edge_ai_litertlm), `GemmaEmbeddingTokenizers()`
     // (flutter_edge_ai_embeddings). If the lists are empty, the first
     // createModel / createEmbeddingModel throws a clear "add the engine
-    // package" StateError. vectorStore null → ServiceRegistry's
-    // UnconfiguredVectorStore sentinel (RAG is opt-in; it throws a clear "add a
-    // RAG package" error on first use).
+    // package" StateError.
     List<InferenceEngineProvider> inferenceEngines = const [],
     List<EmbeddingBackendProvider> embeddingBackends = const [],
     // Which tokenizer a model needs is a property of the MODEL, not of the
@@ -175,14 +170,6 @@ class FlutterEdgeAi {
     // [resolveHuggingFace]; empty default is a no-op (that call then throws a
     // clear "no resolver registered" error).
     List<HuggingFaceResolver> huggingFaceResolvers = const [],
-    VectorStoreRepository? vectorStore,
-    // Declares which metadata fields the configured [vectorStore] should make
-    // filterable. Threaded to the store via `configure()` at registration,
-    // BEFORE its `initialize()`, so it can promote the declared fields to typed
-    // storage columns (sqlite/vec0) or top-level payload keys (qdrant). The
-    // empty default keeps every store in its existing "filters are a safe
-    // no-op" mode.
-    FilterSchema filterSchema = const FilterSchema(),
 
     /// Optional host-provided broadcast of download task updates (mobile).
     ///
@@ -202,8 +189,9 @@ class FlutterEdgeAi {
 
     /// Optional custom model file storage (e.g. outside Documents).
     ///
-    /// [FileSystemService] is defined in core but not exported from the
-    /// public barrel; pass an implementation from your app or tests.
+    /// [FileSystemService] is exported from the public barrel
+    /// (`package:flutter_edge_ai/flutter_edge_ai.dart`); pass an
+    /// implementation from your app or tests.
     FileSystemService? fileSystemService,
   }) async {
     // Migration: enableWebCache takes precedence if provided (for backward compatibility)
@@ -215,8 +203,6 @@ class FlutterEdgeAi {
       huggingFaceToken: huggingFaceToken,
       maxDownloadRetries: maxDownloadRetries,
       webStorageMode: effectiveStorageMode,
-      vectorStoreRepository: vectorStore,
-      filterSchema: filterSchema,
       downloadUpdatesStream: downloadUpdatesStream,
       fileSystemService: fileSystemService,
     );
@@ -991,6 +977,10 @@ class FlutterEdgeAi {
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final spec = manager.activeEmbeddingModel;
     if (spec == null) return;
+    // The manager deletes every artifact in the spec. Clear only after the
+    // whole delete succeeds, so a partial storage failure leaves the identity
+    // available for a retry. The facade is the sole owner of this clear: one
+    // awaited tombstone, regardless of which platform manager is installed.
     await manager.deleteModel(spec);
     await manager.clearActiveEmbeddingIdentity();
   }
@@ -1030,25 +1020,6 @@ class FlutterEdgeAi {
   /// Delete orphaned files; returns the number of files removed.
   static Future<int> cleanupStorage() =>
       FlutterEdgeAiPlugin.instance.modelManager.cleanupStorage();
-
-  /// Retrieval-augmented-generation (vector store) operations, namespaced.
-  ///
-  /// Opt-in: requires a RAG package (`flutter_edge_ai_qdrant` /
-  /// `flutter_edge_ai_sqlite`) registered via
-  /// `FlutterEdgeAi.initialize(vectorStore: ...)`. Without one, every call
-  /// throws a clear "add a RAG package" error.
-  ///
-  /// ```dart
-  /// // Native: an absolute path in a writable directory. A bare name resolves
-  /// // against the process working directory, which is not writable on
-  /// // Android or iOS. Web: a bare name is fine.
-  /// final dir = await getApplicationDocumentsDirectory(); // path_provider
-  /// await FlutterEdgeAi.rag.initialize('${dir.path}/rag.db');
-  /// await FlutterEdgeAi.rag.addDocument(id: '1', content: 'hello');
-  /// final hits = await FlutterEdgeAi.rag.searchSimilar(query: 'hi');
-  /// await FlutterEdgeAi.rag.removeDocument(id: '1');
-  /// ```
-  static const GemmaRag rag = GemmaRag._();
 
   /// Check if OPFS streaming mode is supported by the current browser
   ///
@@ -1104,105 +1075,29 @@ class FlutterEdgeAi {
     }
   }
 
-  /// Reset ServiceRegistry (primarily for testing)
-  ///
-  /// Nulls the DI singleton WITHOUT closing the active vector store. Prefer
-  /// [dispose] when a real store is live (e.g. switching RAG backends at
-  /// runtime) so its native handle is released; [reset] alone would leak it.
+  /// Reset ServiceRegistry (primarily for testing).
   static void reset() {
-    ServiceRegistry.reset();
+    _resetCoreState();
   }
 
-  /// Closes the active vector store (releasing its native handle — qdrant-edge
-  /// shard / sqlite connection) and then resets the DI singleton.
+  /// Resets Flutter Edge AI's core services.
   ///
-  /// Use this instead of [reset] when a configured vector store is live and you
-  /// intend to re-[initialize] afterwards (e.g. swapping RAG backends). Safe to
-  /// call when uninitialized (no-op). The installed embedder + active inference
-  /// model survive — they live in the platform plugin instance + prefs, not the
-  /// DI singleton.
+  /// RAG indexes have an independent lifecycle in `flutter_edge_ai_rag` and
+  /// must be disposed by their owner. This method never closes them. Installed
+  /// models and loaded runtimes also survive: they live in the platform plugin
+  /// instance and persistent model repository, not the DI singleton.
   static Future<void> dispose() async {
-    try {
-      await ServiceRegistry.instance.dispose();
-    } on StateError {
-      // Not initialized — nothing to dispose.
-    }
-    ServiceRegistry.reset();
+    _resetCoreState();
   }
-}
 
-/// RAG (retrieval-augmented generation) operations, reached via
-/// [FlutterEdgeAi.rag]. Thin, stateless delegator over the vector store;
-/// opt-in (see [FlutterEdgeAi.rag]). Modelled as a single const instance
-/// purely to give the operations a `rag.` namespace on the facade — it holds
-/// no state and is not itself a test seam. To fake RAG in tests, substitute
-/// [FlutterEdgeAiPlugin.instance] (which every method here delegates to).
-class GemmaRag {
-  const GemmaRag._();
-
-  /// Initialize the vector store database.
-  Future<void> initialize(String databasePath) =>
-      FlutterEdgeAiPlugin.instance.initializeVectorStore(databasePath);
-
-  /// Persist what has been indexed so far, keeping the store open.
-  ///
-  /// Call it after a bulk index, and from wherever the app learns it is going
-  /// away. On qdrant this is what makes an index survive the process at all —
-  /// without it the points sit in the shard's in-RAM segment and a background
-  /// kill takes them. See [VectorStoreRepository.flush] for the other backends.
-  Future<void> flush() => FlutterEdgeAiPlugin.instance.flushVectorStore();
-
-  /// Add a document; its embedding is computed automatically (needs an active
-  /// embedding model).
-  Future<void> addDocument({
-    required String id,
-    required String content,
-    String? metadata,
-  }) => FlutterEdgeAiPlugin.instance.addDocument(
-    id: id,
-    content: content,
-    metadata: metadata,
-  );
-
-  /// Add a document with a precomputed embedding.
-  Future<void> addDocumentWithEmbedding({
-    required String id,
-    required String content,
-    required List<double> embedding,
-    String? metadata,
-  }) => FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
-    id: id,
-    content: content,
-    embedding: embedding,
-    metadata: metadata,
-  );
-
-  /// Search for similar documents. [filter] constrains by declared payload
-  /// fields (see [FlutterEdgeAiPlugin.searchSimilar]).
-  Future<List<RetrievalResult>> searchSimilar({
-    required String query,
-    int topK = 5,
-    double threshold = 0.0,
-    Filter? filter,
-  }) => FlutterEdgeAiPlugin.instance.searchSimilar(
-    query: query,
-    topK: topK,
-    threshold: threshold,
-    filter: filter,
-  );
-
-  /// Remove a single document by ID. No-op if the ID is absent.
-  ///
-  /// Call after [initialize]. Before the store is initialized, behavior is
-  /// backend-specific (the SQLite store throws a `StateError`; the Qdrant
-  /// store logs and no-ops) — don't rely on either.
-  Future<void> removeDocument({required String id}) =>
-      FlutterEdgeAiPlugin.instance.removeDocument(id: id);
-
-  /// Vector store statistics.
-  Future<VectorStoreStats> stats() =>
-      FlutterEdgeAiPlugin.instance.getVectorStoreStats();
-
-  /// Remove all documents from the vector store.
-  Future<void> clear() => FlutterEdgeAiPlugin.instance.clearVectorStore();
+  static void _resetCoreState() {
+    ServiceRegistry.reset();
+    EngineRegistry.instance.reset();
+    EmbeddingRegistry.instance.reset();
+    EmbeddingTokenizerRegistry.instance.reset();
+    SttRegistry.instance.reset();
+    TtsRegistry.instance.reset();
+    SkillExecutorRegistry.instance.reset();
+    HuggingFaceResolverRegistry.instance.reset();
+  }
 }

@@ -43,13 +43,13 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.17.1`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.17.1-a`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
 dylibs get wrapped into `.framework` bundles (and re-signed) inside the app's
 `Contents/Frameworks/` for LiteRT-LM's `gpu_registry` to find them — see
-[macOS setup in the README](README.md#macos-setup) for the exact block.
+[macOS setup in the README](README.md#macos) for the exact block.
 Linux and Windows are fully self-contained (no manual setup).
 
 The Dart FFI layer is shared with mobile — Android and iOS use the same
@@ -58,9 +58,10 @@ loading sequence differs per platform (handled in `litert_lm_client.dart`).
 
 > **⚠️ Model format**
 >
-> Desktop accepts only LiteRT-LM `.litertlm` files. MediaPipe `.bin` / `.task`
-> models used on web won't load on desktop. See
-> [litert-community on Hugging Face](https://huggingface.co/litert-community) for compatible models.
+> The LiteRT-LM engine accepts only `.litertlm` files; MediaPipe `.bin` / `.task`
+> models used on web won't load on desktop. ONNX Runtime (`flutter_edge_ai_onnx`)
+> also runs on all three desktops, and built-in AI on macOS and Windows. See
+> [litert-community on Hugging Face](https://huggingface.co/litert-community) for compatible `.litertlm` models.
 
 ---
 
@@ -85,7 +86,7 @@ For mobile platforms see the main [README](README.md).
 
 - **Flutter** ≥ 3.44.0
 - **Dart SDK** ≥ 3.12.0
-- **macOS**: 10.14+, Apple Silicon (arm64)
+- **macOS**: 11+ (Apple Silicon, arm64); 12.0 with `flutter_edge_ai_builtin_ai`
 - **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed since `flutter_gemma_litertlm` 1.7.1 (see below).
 - **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
 - **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available
@@ -99,8 +100,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^1.11.4            # core
-  flutter_edge_ai_litertlm: ^1.8.6   # .litertlm engine — required on desktop
+  flutter_edge_ai: ^2.0.0            # core
+  flutter_edge_ai_litertlm: ^1.8.7   # .litertlm engine
 ```
 
 ```dart
@@ -108,7 +109,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 Future<void> chat() async {
-  // Register the LiteRT-LM engine (desktop is .litertlm only).
+  // Register the LiteRT-LM engine (it takes .litertlm files only).
   await FlutterEdgeAi.initialize(inferenceEngines: const [LiteRtLmEngine()]);
 
   // Install model (downloads on first run, cached after).
@@ -156,7 +157,7 @@ Native libs are fetched and bundled automatically via Native Assets. The
 `LiteRtLm.dylib`'s `LC_LOAD_DYLIB` reference is re-pointed at the new
 framework path (LiteRT-LM's `gpu_registry` resolves the Metal accelerator
 through that framework). See the
-[macOS setup snippet in the README](README.md#macos-setup) for the exact
+[macOS setup snippet in the README](README.md#macos) for the exact
 block. Without it the companion dylibs are never bundled, and
 `LiteRtLm.dylib` — which links `libGemmaModelConstraintProvider.dylib`
 directly — fails to load on every backend, CPU included.
@@ -297,9 +298,9 @@ The plugin avoids this by:
 
 If you do need to swap models at runtime, call `model.close()` first, then
 `getActiveModel(...)` again with the new active model's spec. On Linux, this
-works thanks to the CPU-sampler fallback above; on macOS / Windows it works
-because their per-token sampling already runs on CPU (see Known Limitations
-below).
+works thanks to the CPU-sampler fallback above; on macOS it works because
+per-token sampling already runs on CPU there. Windows preloads the GPU sampler
+(see Known Limitations below), so a model swap on Windows GPU is unverified.
 
 ### Switching backend (CPU ↔ GPU)
 
@@ -438,12 +439,13 @@ neither DLL imports one. Look at the GPU driver instead.
 
 ### Model file not found / `Cannot find: gemma-...litertlm`
 
-On all desktop platforms the model is downloaded to the platform's standard
-"app support" directory:
+On desktop the model is downloaded to a `flutter_gemma/` folder outside
+`Documents/` (the folder keeps that name across the rename):
 
-- macOS: `~/Library/Containers/<bundle-id>/Data/Documents/`
-- Windows: `%USERPROFILE%\AppData\Roaming\<app-name>\`
-- Linux: `~/.local/share/<bundle-id>/`
+- macOS: `~/Library/Application Support/<bundle-id>/flutter_gemma/` (`getApplicationSupportDirectory()`;
+  a sandboxed app: `~/Library/Containers/<bundle-id>/Data/Library/Application Support/<bundle-id>/flutter_gemma/`)
+- Windows: `%LOCALAPPDATA%\flutter_gemma\`
+- Linux: `~/.local/share/<app-id>/flutter_gemma/` (`getApplicationSupportDirectory()`)
 
 Use `FlutterEdgeAi.installModel(...).fromNetwork(...).install()` to download,
 or `.fromFile(absolutePath)` if you already have it locally.

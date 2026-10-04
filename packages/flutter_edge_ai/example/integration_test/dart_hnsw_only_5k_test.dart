@@ -8,6 +8,7 @@ import 'dart:math' as math;
 
 // ignore_for_file: deprecated_member_use
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
@@ -67,6 +68,12 @@ void main() {
           '${base.path}/dart_hnsw_only_${DateTime.now().microsecondsSinceEpoch}.db';
       final repo = SqliteVectorStore();
       await repo.initialize(dbPath);
+      await repo.bindEmbeddingProfile(
+        EmbeddingProfile(
+          id: 'dart-hnsw-embedding-768d-v1',
+          dimension: _expectedDim,
+        ),
+      );
 
       final upsertSw = Stopwatch()..start();
       for (var i = 0; i < _totalDocs; i++) {

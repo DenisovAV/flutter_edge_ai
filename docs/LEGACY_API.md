@@ -1,13 +1,21 @@
 # Legacy API (Deprecated) ⚠️
 
-> **⚠️ DEPRECATED:** This API is maintained for backwards compatibility only.
+> **⚠️ DEPRECATED:** This document describes removed and legacy APIs, kept for
+> reference only. **Many examples no longer compile** against current
+> `flutter_edge_ai`: `downloadModelFromNetwork`,
+> `downloadModelFromNetworkWithProgress`, `downloadLoraWeightsFromNetwork`,
+> `installLoraWeightsFromAsset`, `loadAssetModel` / `loadNetworkModel` and the
+> model manager's `setReplacePolicy` / `replacePolicy` no longer exist.
 > For new projects, use the [Modern API](../packages/flutter_edge_ai/README.md#quick-start) instead.
+> The RAG examples describe the pre-2.0 core/plugin API; RAG now lives in
+> `flutter_edge_ai_rag`; follow the
+> [2.0 migration guide](../packages/flutter_edge_ai/MIGRATION.md#flutter-edge-ai-1x--20-rag-leaves-core).
 >
 > **Why migrate?**
 > - ✅ **Modern API:** Fluent builder pattern, type-safe sources, callback-based progress, better error messages
 > - ⚠️ **Legacy API:** Direct method calls, stream-based progress, manual state management
 >
-> **Migration Guide:** See [Migration from Legacy to Modern API](../packages/flutter_edge_ai/README.md#migration-from-legacy-to-modern-api-) section.
+> **Migration Guide:** See [Migration from Legacy to Modern API](#migration-from-legacy-to-modern-api) at the end of this document.
 
 
 The new API splits functionality into two parts:
@@ -353,7 +361,7 @@ chat.generateChatResponseAsync().listen((ModelResponse response) {
 
 8. **🛠️ Function Calling**
 
-Enable your models to call external functions and integrate with other services. **Note: Function calling is only supported by specific models - see the [Model Support](#model-function-calling-support) section below.**
+Enable your models to call external functions and integrate with other services. **Note: Function calling is only supported by specific models - see [models with function calling support](https://flutteredge.ai/docs/function-calling#models-with-function-calling-support).**
 
 **Step 1: Define Tools**
 
@@ -550,9 +558,9 @@ final chat = await model.createChat(
 You can fine-tune FunctionGemma for your custom functions using the provided Colab notebooks:
 
 **Pipeline:**
-1. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/colabs/functiongemma_finetuning.ipynb) Fine-tune the model on your training data
-2. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/colabs/functiongemma_to_tflite.ipynb) Convert PyTorch → TFLite
-3. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/colabs/functiongemma_tflite_to_task.ipynb) Bundle TFLite → MediaPipe `.task`
+1. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/colabs/functiongemma_finetuning.ipynb) Fine-tune the model on your training data
+2. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/colabs/functiongemma_to_tflite.ipynb) Convert PyTorch → TFLite
+3. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/colabs/functiongemma_tflite_to_task.ipynb) Bundle TFLite → MediaPipe `.task`
 
 **Training Data Format** (`training_data.jsonl`):
 ```json
@@ -939,3 +947,164 @@ await inferenceModel.close();
 ```
 
 If you need to use the inference again later, remember to call `createModel` again before generating responses.
+
+## Migration from Legacy to Modern API
+
+If you're upgrading from the Legacy API, here are common migration patterns:
+
+### Installing Models
+
+<table>
+<tr>
+<th>Legacy API</th>
+<th>Modern API</th>
+</tr>
+<tr>
+<td>
+
+```dart
+// Network download
+final spec = MobileModelManager.createInferenceSpec(
+  name: 'model.bin',
+  modelUrl: 'https://example.com/model.bin',
+);
+
+await FlutterEdgeAiPlugin.instance.modelManager
+  .downloadModelWithProgress(spec, token: token)
+  .listen((progress) {
+    print('${progress.overallProgress}%');
+  });
+```
+
+</td>
+<td>
+
+```dart
+// Network download
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemmaIt,
+)
+  .fromNetwork(
+    'https://example.com/model.bin',
+    token: token,
+  )
+  .withProgress((progress) {
+    print('$progress%');
+  })
+  .install();
+```
+
+</td>
+</tr>
+<tr>
+<td>
+
+```dart
+// From assets
+await modelManager.installModelFromAssetWithProgress(
+  'model.bin',
+  loraPath: 'lora.bin',
+).listen((progress) {
+  print('$progress%');
+});
+```
+
+</td>
+<td>
+
+```dart
+// From assets
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemmaIt,
+)
+  .fromAsset('model.bin')
+  .withProgress((progress) {
+    print('$progress%');
+  })
+  .install();
+
+// LoRA weights can be installed with the model
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemmaIt,
+)
+  .fromAsset('model.bin')
+  .withLoraFromAsset('lora.bin')
+  .install();
+```
+
+</td>
+</tr>
+</table>
+
+### Checking Model Installation
+
+<table>
+<tr>
+<th>Legacy API</th>
+<th>Modern API</th>
+</tr>
+<tr>
+<td>
+
+```dart
+final spec = MobileModelManager.createInferenceSpec(
+  name: 'model.bin',
+  modelUrl: url,
+);
+
+final isInstalled = await FlutterEdgeAiPlugin
+  .instance.modelManager
+  .isModelInstalled(spec);
+```
+
+</td>
+<td>
+
+```dart
+final isInstalled = await FlutterEdgeAi
+  .isModelInstalled('model.bin');
+```
+
+</td>
+</tr>
+</table>
+
+### Key Migration Notes
+
+- ✅ **Simpler imports**: Use `package:flutter_edge_ai/core/api/flutter_edge_ai.dart`
+- ✅ **Builder pattern**: Chain methods for cleaner code
+- ✅ **Callback-based progress**: Simpler than streams for most cases
+- ✅ **Type-safe sources**: Compile-time validation of source types
+- ⚠️ **Breaking change**: Progress values are now `int` (0-100) instead of `DownloadProgress` object
+- ⚠️ **Separate files**: Model and LoRA weights installed independently
+
+### Model Creation and Inference
+
+**Modern API (Recommended):**
+
+```dart
+// Create model with runtime configuration
+final inferenceModel = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 2048,
+  preferredBackend: PreferredBackend.gpu,
+);
+
+final chat = await inferenceModel.createChat();
+await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
+final response = await chat.generateChatResponse();
+```
+
+**Legacy API (Still supported):**
+
+```dart
+// Works with both Legacy and Modern installation methods
+final inferenceModel = await FlutterEdgeAiPlugin.instance.createModel(
+  modelType: ModelType.gemmaIt,
+  preferredBackend: PreferredBackend.gpu,
+  maxTokens: 2048,
+);
+
+final chat = await inferenceModel.createChat();
+await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
+final response = await chat.generateChatResponse();
+```

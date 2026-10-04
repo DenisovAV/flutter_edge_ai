@@ -77,7 +77,7 @@ fi
 # NOTE: the cross-backend parity suite needs no wiring here. qdrant-edge's
 # library is DOWNLOADED by a Native Assets hook and `flutter test` runs hooks,
 # so it is already on disk by the time the suite opens a store. Since
-# flutter_gemma_rag_qdrant 2.0.0 that hook belongs to the official `qdrant_edge`
+# flutter_gemma_rag_qdrant 1.3.0 that hook belongs to the official `qdrant_edge`
 # SDK — the package carries no hook/ and no native/ of its own, and there is no
 # locator file to point at. An earlier draft exported $QDRANT_DYLIB from a cargo
 # target directory and told CI to build Rust; that was solving a problem the

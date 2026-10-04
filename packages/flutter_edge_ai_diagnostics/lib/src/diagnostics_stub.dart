@@ -13,10 +13,3 @@ abstract final class FlutterEdgeAiDiagnostics {
         'flutter_edge_ai_diagnostics supports Android and iOS, not the web.',
       );
 }
-
-@Deprecated(
-  'Use FlutterEdgeAiDiagnostics: flutter_gemma_diagnostics was renamed to '
-  'flutter_edge_ai_diagnostics (dart fix --apply migrates). Removed in '
-  'flutter_edge_ai_diagnostics 0.2.0.',
-)
-typedef FlutterGemmaDiagnostics = FlutterEdgeAiDiagnostics;

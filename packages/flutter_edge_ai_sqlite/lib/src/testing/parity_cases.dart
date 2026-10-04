@@ -22,7 +22,7 @@
 //       rag_sqlite_web_parity_test.dart            (web: the same rows in Chrome)
 library;
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 /// One document: an id and the metadata JSON it carries.
 typedef Doc = ({String id, String metadata});
@@ -65,7 +65,7 @@ const docs = <Doc>[
 final cases = <Case>[
   (
     name: 'equality on a string field',
-    filter: const Filter(
+    filter: Filter(
       must: [FieldEquals(key: 'lang', value: 'en')],
     ),
     expected: ['en_cheap'],
@@ -73,18 +73,18 @@ final cases = <Case>[
   (
     name: 'equality compares numbers by value, not by JSON spelling',
     // 50 and 50.0 are the same number; a store must not disagree.
-    filter: const Filter(must: [FieldEquals(key: 'price', value: 50.0)]),
+    filter: Filter(must: [FieldEquals(key: 'price', value: 50.0)]),
     expected: ['de_arch', 'es_arch1'],
   ),
   (
     name: 'a missing field never satisfies a condition',
-    filter: const Filter(must: [FieldRange(key: 'price', gte: 0)]),
+    filter: Filter(must: [FieldRange(key: 'price', gte: 0)]),
     expected: ['en_cheap', 'fr_dear', 'de_arch', 'es_arch1'],
   ),
   (
     name: 'mustNot RETURNS the document that lacks the field',
     // The rule core documents: must excludes it, mustNot keeps it.
-    filter: const Filter(mustNot: [FieldRange(key: 'price', gte: 60)]),
+    filter: Filter(mustNot: [FieldRange(key: 'price', gte: 60)]),
     expected: [
       'en_cheap',
       'de_arch',
@@ -96,13 +96,13 @@ final cases = <Case>[
   ),
   (
     name: 'both JSON spellings of a bool are one value',
-    filter: const Filter(must: [FieldEquals(key: 'archived', value: true)]),
+    filter: Filter(must: [FieldEquals(key: 'archived', value: true)]),
     expected: ['de_arch', 'es_arch1'],
   ),
   (
     name: 'a value that cannot inhabit the declared type matches nothing',
     // qdrant used to match str_price here and sqlite did not.
-    filter: const Filter(
+    filter: Filter(
       must: [FieldEquals(key: 'price', value: 'cheap')],
     ),
     expected: [],
@@ -110,12 +110,12 @@ final cases = <Case>[
   (
     name: 'a non-bool-ish number is not a bool',
     // `value == 1` made 2 mean false, matching every unarchived document.
-    filter: const Filter(must: [FieldEquals(key: 'archived', value: 2)]),
+    filter: Filter(must: [FieldEquals(key: 'archived', value: 2)]),
     expected: [],
   ),
   (
     name: 'set membership over a string field',
-    filter: const Filter(
+    filter: Filter(
       must: [
         FieldMatchAny(key: 'lang', values: ['en', 'de']),
       ],
@@ -124,7 +124,7 @@ final cases = <Case>[
   ),
   (
     name: 'set membership over a number field',
-    filter: const Filter(
+    filter: Filter(
       must: [
         FieldMatchAny(key: 'price', values: [10, 90]),
       ],
@@ -133,7 +133,7 @@ final cases = <Case>[
   ),
   (
     name: 'an off-type member of a set is dropped, not matched',
-    filter: const Filter(
+    filter: Filter(
       must: [
         FieldMatchAny(key: 'price', values: ['cheap', 10]),
       ],
@@ -142,7 +142,7 @@ final cases = <Case>[
   ),
   (
     name: 'an undeclared key is a no-op, not a narrowing',
-    filter: const Filter(
+    filter: Filter(
       must: [
         FieldEquals(key: 'lang', value: 'en'),
         FieldEquals(key: 'nosuchfield', value: 'x'),
@@ -152,7 +152,7 @@ final cases = <Case>[
   ),
   (
     name: 'an undeclared key in should does not narrow either',
-    filter: const Filter(
+    filter: Filter(
       should: [
         FieldEquals(key: 'lang', value: 'en'),
         FieldEquals(key: 'nosuchfield', value: 'x'),
@@ -162,7 +162,7 @@ final cases = <Case>[
   ),
   (
     name: 'an unbounded range constrains nothing',
-    filter: const Filter(
+    filter: Filter(
       must: [
         FieldEquals(key: 'lang', value: 'en'),
         FieldRange(key: 'price'),
@@ -172,7 +172,7 @@ final cases = <Case>[
   ),
   (
     name: 'an always-true arm makes the whole should bucket true',
-    filter: const Filter(
+    filter: Filter(
       should: [
         FieldEquals(key: 'lang', value: 'en'),
         FieldRange(key: 'price'),
@@ -190,7 +190,7 @@ final cases = <Case>[
   ),
   (
     name: 'an ignored range on a string field is skipped in should',
-    filter: const Filter(
+    filter: Filter(
       should: [
         FieldEquals(key: 'lang', value: 'en'),
         FieldRange(key: 'lang', gte: 1),
@@ -200,14 +200,14 @@ final cases = <Case>[
   ),
   (
     name: 'an empty set matches nothing',
-    filter: const Filter(
+    filter: Filter(
       must: [FieldMatchAny(key: 'lang', values: [])],
     ),
     expected: [],
   ),
   (
     name: 'excluding an empty set excludes nothing',
-    filter: const Filter(
+    filter: Filter(
       mustNot: [FieldMatchAny(key: 'lang', values: [])],
     ),
     expected: [
@@ -226,12 +226,12 @@ final cases = <Case>[
     // guard has to really be the lowest finite value — bound as a double it
     // became 0 on the web, so everything negative came back.
     name: 'mustNot with an upper bound excludes the negative value too',
-    filter: const Filter(mustNot: [FieldRange(key: 'price', lte: 20)]),
+    filter: Filter(mustNot: [FieldRange(key: 'price', lte: 20)]),
     expected: ['fr_dear', 'de_arch', 'es_arch1', 'no_price', 'str_price'],
   ),
   (
     name: 'mustNot over a set',
-    filter: const Filter(
+    filter: Filter(
       mustNot: [
         FieldMatchAny(key: 'lang', values: ['en', 'fr']),
       ],
@@ -240,7 +240,7 @@ final cases = <Case>[
   ),
   (
     name: 'must and mustNot compose',
-    filter: const Filter(
+    filter: Filter(
       must: [FieldRange(key: 'price', gte: 10, lte: 90)],
       mustNot: [FieldEquals(key: 'lang', value: 'fr')],
     ),

@@ -51,7 +51,7 @@ and subtract.
 
 ```
 dependencies:
-  flutter_edge_ai_diagnostics: ^0.1.0
+  flutter_edge_ai_diagnostics: ^0.2.0
 ```
 
 If only `test/` or `integration_test/` uses it, put it under `dev_dependencies`

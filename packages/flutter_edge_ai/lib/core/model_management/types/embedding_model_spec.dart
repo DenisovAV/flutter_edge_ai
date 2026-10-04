@@ -1,5 +1,24 @@
 part of '../model_specs.dart';
 
+String? _validateEmbeddingFilename(String? filename, String parameterName) {
+  if (filename == null) return null;
+  return FileNameUtils.validatePortableFileNameSegment(
+    filename,
+    parameterName: parameterName,
+  );
+}
+
+void _rejectEmbeddingFilenameCollision(EmbeddingModelSpec spec) {
+  final files = spec.files;
+  if (files[0].filename == files[1].filename) {
+    throw ArgumentError.value(
+      files[1].filename,
+      'tokenizerFilename',
+      'must differ from the resolved model filename',
+    );
+  }
+}
+
 /// Model file for embedding models (.bin files)
 class EmbeddingModelFile extends ModelFile {
   final ModelSource _source;
@@ -71,17 +90,35 @@ class EmbeddingModelSpec extends ModelSpec {
   final String _name;
   final ModelSource _modelSource;
   final ModelSource _tokenizerSource;
+  final String? _modelFilename;
+  final String? _tokenizerFilename;
   final ModelReplacePolicy _replacePolicy;
 
+  /// [modelFilename] and [tokenizerFilename] optionally pin the exact install
+  /// identities independently from source URL basenames. Use them for
+  /// immutable/versioned artifacts. Each must be a plain basename; when
+  /// omitted, the historical source-derived namespacing behavior is retained.
   EmbeddingModelSpec({
     required String name,
     required ModelSource modelSource,
     required ModelSource tokenizerSource,
+    String? modelFilename,
+    String? tokenizerFilename,
     ModelReplacePolicy replacePolicy = ModelReplacePolicy.keep,
   }) : _name = name,
        _modelSource = modelSource,
        _tokenizerSource = tokenizerSource,
-       _replacePolicy = replacePolicy;
+       _modelFilename = _validateEmbeddingFilename(
+         modelFilename,
+         'modelFilename',
+       ),
+       _tokenizerFilename = _validateEmbeddingFilename(
+         tokenizerFilename,
+         'tokenizerFilename',
+       ),
+       _replacePolicy = replacePolicy {
+    _rejectEmbeddingFilenameCollision(this);
+  }
 
   /// Legacy compatibility constructor for String URLs
   factory EmbeddingModelSpec.fromLegacyUrl({
@@ -109,17 +146,27 @@ class EmbeddingModelSpec extends ModelSpec {
 
   @override
   List<ModelFile> get files {
-    final modelFile = EmbeddingModelFile.fromSource(_modelSource);
+    final modelFile = _modelFilename == null
+        ? EmbeddingModelFile.fromSource(_modelSource)
+        : EmbeddingModelFile(source: _modelSource, filename: _modelFilename);
     final modelId = FileNameUtils.getBaseName(modelFile.filename);
     return [
       modelFile,
-      EmbeddingTokenizerFile.fromSource(_tokenizerSource, modelId: modelId),
+      if (_tokenizerFilename == null)
+        EmbeddingTokenizerFile.fromSource(_tokenizerSource, modelId: modelId)
+      else
+        EmbeddingTokenizerFile(
+          source: _tokenizerSource,
+          filename: _tokenizerFilename,
+        ),
     ];
   }
 
   /// Modern type-safe getters
   ModelSource get modelSource => _modelSource;
   ModelSource get tokenizerSource => _tokenizerSource;
+  String? get modelFilename => _modelFilename;
+  String? get tokenizerFilename => _tokenizerFilename;
 
   /// Legacy getters for backward compatibility (WEB PLATFORM ONLY)
   @Deprecated('Use modelSource instead. Web platform compatibility only.')
@@ -136,11 +183,20 @@ class EmbeddingModelSpec extends ModelSpec {
     return _name == other._name &&
         _modelSource == other._modelSource &&
         _tokenizerSource == other._tokenizerSource &&
+        _modelFilename == other._modelFilename &&
+        _tokenizerFilename == other._tokenizerFilename &&
         _replacePolicy == other._replacePolicy;
   }
 
   @override
   int get hashCode {
-    return Object.hash(_name, _modelSource, _tokenizerSource, _replacePolicy);
+    return Object.hash(
+      _name,
+      _modelSource,
+      _tokenizerSource,
+      _modelFilename,
+      _tokenizerFilename,
+      _replacePolicy,
+    );
   }
 }

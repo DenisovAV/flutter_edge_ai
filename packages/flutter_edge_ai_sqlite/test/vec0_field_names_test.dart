@@ -8,7 +8,7 @@
 // The trade-off is deliberate and visible here: qdrant accepts every name this
 // file rejects. The portable set is vec0's, and core's FilterField dartdoc says
 // so; the sqlite store enforces it at configure(), naming itself.
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,7 +76,7 @@ void main() {
       final store = SqliteVectorStore();
       expect(
         () => store.configure(
-          const FilterSchema(
+          FilterSchema(
             fields: [
               FilterField(name: 'content', type: FilterFieldType.string),
             ],

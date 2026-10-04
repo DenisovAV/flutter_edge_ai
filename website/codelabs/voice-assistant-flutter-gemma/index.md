@@ -51,7 +51,10 @@ between them:
 * About 2.8 GB free: Gemma 4 E2B is 2.59 GB, speech recognition 109 MB and the
   voice about 36 MB. On a phone, **6 GB of RAM or more** — the language model
   alone takes about 2.4 GB of it
-* No Hugging Face account: all three models are ungated
+* No Hugging Face account from Step 2 on: all three models this codelab adds
+  are ungated. Step 1 is Getting Started's finished app unchanged, and it still
+  downloads that codelab's licence-gated Gemma 3 1B — Step 1 shows how to run
+  it with a token, or without one
 
 **Watch out:** This codelab starts from the finished app of [Getting Started with On-Device LLMs](/codelabs/getting-started-flutter-gemma) — byte for byte, a CI check enforces it. If you have not done that codelab, `step_01_starter` still runs on its own; you will just be meeting the download-and-chat code for the first time.
 
@@ -83,11 +86,20 @@ Open `step_01_starter` and run it.
 
 ```bash
 cd step_01_starter
-flutter run
+flutter run --dart-define=HF_TOKEN=hf_your_token
 ```
 
 It is the finished app from Getting Started: it downloads a model once, then
 chats with it offline, streaming the reply as it is generated.
+
+The token is for that download. The starter is Getting Started's app byte for
+byte, so its model is still Gemma 3 1B, whose Hugging Face repository is
+behind a licence gate: accept the terms on the
+[model page](https://huggingface.co/litert-community/Gemma3-1B-IT) once and
+pass a read token as above. No Hugging Face account? Point the `_model` line in
+`main.dart` at `Models.gemma4` instead and run a plain `flutter run` — it is
+ungated, and it is the model every later step uses anyway. From Step 2 on,
+nothing in this codelab needs a token.
 
 A voice assistant is that chat with two more models wrapped around it:
 
@@ -721,9 +733,10 @@ Duration: 3
 Everything above runs on the device. Prove it: switch on airplane mode and
 restart the app.
 
-* The gate finds all three models already installed and goes straight to the
-  chat.
-* The launch-time `install()` calls download nothing — they only re-activate.
+* The gate checks the language model and the speech recognizer, finds both
+  installed, and goes straight to the chat.
+* The launch-time `install()` calls for the recognizer and the voice download
+  nothing — the first run fetched their files, so they only re-activate.
 * Listening, answering, speaking, interrupting and both tools work as before.
 
 What needs the network is the first run's download, and nothing else.

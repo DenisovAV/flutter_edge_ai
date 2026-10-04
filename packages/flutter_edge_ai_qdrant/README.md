@@ -1,10 +1,14 @@
 # flutter_edge_ai_qdrant
 
-> **Renamed from [`flutter_gemma_rag_qdrant`](https://pub.dev/packages/flutter_gemma_rag_qdrant).** Same package, new name:
-> swap the dependency and the `package:flutter_gemma_rag_qdrant/` imports; nothing on the device
-> changes. See the [migration guide](https://flutteredge.ai/docs/migration).
+> **Renamed from [`flutter_gemma_rag_qdrant`](https://pub.dev/packages/flutter_gemma_rag_qdrant).**
+> Version 2.0.0 also moves the RAG API into `flutter_edge_ai_rag`: replace the
+> old dependency/imports, add `flutter_edge_ai_rag`, and register
+> `QdrantVectorStoreProvider()` in `FlutterEdgeAiRag`. Existing profile-less
+> stores require explicit legacy adoption with a verified, stable profile ID.
+> See the [migration guide](https://flutteredge.ai/docs/migration).
 
-qdrant-edge on-device RAG vector store for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai).
+qdrant-edge on-device vector-store provider for
+[flutter_edge_ai_rag](https://pub.dev/packages/flutter_edge_ai_rag).
 Opt-in package implementing `VectorStoreRepository` on top of the official
 [`qdrant_edge`](https://pub.dev/packages/qdrant_edge) UniFFI Dart SDK
 (a binding over the `qdrant-edge` Rust crate). qdrant's HNSW index makes it the fastest **native** RAG store —
@@ -25,30 +29,76 @@ than peak speed, use `flutter_edge_ai_sqlite`.
 dart run skills@ get --all
 ```
 
-Installs the agent skills `flutter_edge_ai` bundles — this package depends on it, so they come with it. One of them, `flutter-edge-ai-rag`, covers embedding models, both vector stores, and the metadata filters — including the `filterSchema` trap that silently returns unfiltered results.
+Installs the Flutter Edge AI agent skills, including `flutter-edge-ai-rag` for
+embedding profiles, vector stores, and metadata filters.
 
 ## Usage
 
 ```dart
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:path_provider/path_provider.dart';
 
-await FlutterEdgeAi.initialize(
-  vectorStore: QdrantVectorStore(),
+final rag = FlutterEdgeAiRag(
+  providers: [QdrantVectorStoreProvider()],
+);
+
+final dir = await getApplicationDocumentsDirectory();
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: 'qdrant',
+    location: '${dir.path}/rag_store', // a directory
+  ),
+  embeddingProfile: EmbeddingProfile(
+    id: 'my-embedder-v1',
+    dimension: 4,
+  ),
+);
+
+await index.addVector(
+  id: 'intro',
+  content: 'Flutter runs on-device.',
+  embedding: const [1.0, 0.0, 0.0, 0.0],
+);
+final hits = await index.searchVector(
+  embedding: const [1.0, 0.0, 0.0, 0.0],
+);
+await index.flush();
+await index.dispose();
+```
+
+`providerId` is the string `'qdrant'` (`QdrantVectorStoreProvider().id`); unlike
+`SqliteVectorStoreProvider`, there is no static `providerId` constant.
+
+This vector-only form is independent from the main inference runtime. To use
+`addText` and `searchText`, initialize `FlutterEdgeAi`, install an active
+embedding model, and open the index with a stable identity for that model:
+
+```dart
+final textIndex = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: 'qdrant',
+    location: '${dir.path}/text_rag_store',
+  ),
+  activeEmbedderProfileId:
+      'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+      'retrieval-prefix-meanpool-l2-v1',
 );
 ```
 
-Then use the unchanged RAG API:
-
-```dart
-await FlutterEdgeAiPlugin.instance.initializeVectorStore('rag_store'); // a directory
-await FlutterEdgeAiPlugin.instance.addDocument(/* ... */);
-final hits = await FlutterEdgeAiPlugin.instance.searchSimilar(query: query, topK: 5);
-await FlutterEdgeAiPlugin.instance.flushVectorStore(); // after indexing — see below
-```
+The ID must version the weights, tokenizer, pooling, normalization, and
+document/query prefix contract; a mutable file path or URL is not an identity.
+The index borrows the active or custom embedder, so dispose the index before
+disposing that embedder or calling `FlutterEdgeAi.dispose()`.
 
 `QdrantVectorStore` also honors the payload-aware `Filter` DSL on
-`searchSimilar(..., filter: Filter(must: [FieldEquals(key: 'lang', value: 'en')], mustNot: [...]))`.
+`searchSimilar` and `RagIndex.searchText`/`searchVector`. It remains exported
+as a low-level `VectorStoreRepository` for applications that need direct vector
+operations.
+Low-level callers must first call `bindEmbeddingProfile()` with the stable ID
+and dimension for their embedding space; add, search, remove, and clear refuse
+an unbound location. `getStats()` remains available before binding so migration
+code can inspect a legacy store before explicitly adopting it.
 
 Field names here are almost unrestricted — payload keys are free-form UTF-8 —
 with one exception: a name containing `.` is rejected, because qdrant reads it
@@ -56,13 +106,14 @@ as a nested payload path, so `doc.type` would mean "`type` inside `doc`" here
 and a flat column on sqlite. Note this store accepts names `SqliteVectorStore`
 refuses; if a schema must work on both, keep it inside sqlite's narrower set.
 
-> The storage path passed to `initializeVectorStore` is treated as a **shard
-> directory** (qdrant creates files under it), not a single `.db` file. Use a
-> distinct path from any sqlite store so they don't collide on disk.
+> `VectorStoreSpec.location` is an absolute path to a **shard
+> directory** (qdrant creates files under it), not a single `.db` file; build it
+> from `getApplicationDocumentsDirectory()`. Use a distinct path from any sqlite
+> store so they don't collide on disk.
 
 ## Behavior notes
 
-- **Call `flushVectorStore()` (or `FlutterEdgeAi.rag.flush()`) after indexing.**
+- **Call `RagIndex.flush()` after indexing.**
   New points stay in the shard's in-memory segment until it is flushed or
   closed. A process that ends without either — an Android app killed in the
   background — loses them, and the corpus is embedded again on the next launch
@@ -70,35 +121,61 @@ refuses; if a schema must work on both, keep it inside sqlite's narrower set.
   persists too, but logs a failed save; `flush()` throws it as
   `VectorStoreException`.
 - **Cross-platform web is not supported** — `QdrantVectorStore` is native-only.
-- `enableHnsw` is accepted but a no-op: qdrant decides indexing internally
-  (brute-forces below ~20k points, which is already faster than the Dart HNSW
-  for typical RAG corpora).
 - `addDocument`'s `metadata` is forwarded as a raw JSON string into the payload;
   filtering by metadata fields requires valid JSON.
 - Distance defaults to cosine.
+- Every location is durably bound to one `EmbeddingProfile`.
+
+## Adopting an existing profile-less store
+
+A nonempty `qdrant_edge_v1` shard created before 2.0.0 has vectors but no durable
+embedding profile. `FlutterEdgeAiRag` refuses to guess. After independently
+verifying the exact model that created the vectors, adopt it explicitly once:
+
+```dart
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: 'qdrant',
+    location: '${dir.path}/rag_store',
+    allowLegacyProfileAdoption: true,
+  ),
+  embeddingProfile: EmbeddingProfile(
+    id: 'embeddinggemma-300m-v1',
+    dimension: 768,
+  ),
+);
+```
+
+The binding survives `clear()`, close, and reopen. To use a different
+embedding space, create a different location.
 
 
-## Upgrading from 1.x
+## Upgrading the older shard layout
 
-**1.3 cannot read a store written by 1.2 or earlier.** The shard format changed with the
+**The current package cannot read a store written by 1.2 or earlier.** The shard format changed with the
 move to crate 0.8.0, and this release keeps its data in an owned
-`qdrant_edge_v1/` subdirectory rather than directly at the path you pass to
-`initialize()`.
+`qdrant_edge_v1/` subdirectory rather than directly at the path you pass as
+`location`.
 
-`initialize()` throws a `QdrantLegacyStoreException` naming the situation — not
-the first write, so a read-only session hits it too. It names the three entries
-a 1.x shard owns (`edge_config.json`, `wal/`, `segments/`); remove those from
-the directory yourself, then re-index.
+`rag.open()` throws a `QdrantLegacyStoreException` naming the situation — it
+comes from the store's `initialize()`, not the first write, so a read-only
+session hits it too. It names the three entries a 1.x shard owns
+(`edge_config.json`, `wal/`, `segments/`); remove those from the directory
+yourself, then re-index.
 
 ```dart
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
-final store = QdrantVectorStore();
+final RagIndex index;
 try {
-  await store.initialize(path);
+  index = await rag.open(
+    spec: VectorStoreSpec(providerId: 'qdrant', location: path),
+    embeddingProfile: profile,
+  );
 } on QdrantLegacyStoreException catch (e) {
   // e.message names exactly what to remove. Do it with the file APIs you
-  // already use for `path`, then initialize() again and re-index.
+  // already use for `path`, then call rag.open() again and re-index.
   rethrow;
 }
 ```
@@ -111,9 +188,10 @@ belonged to the caller rather than to the store; the deletion is gone, and with
 it that whole class of mistake.
 
 Catch `QdrantLegacyStoreException`, never the base `VectorStoreException`:
-`initialize()` also throws the base type when a 2.0 shard is present but will
-not open right now — a WAL held by another store, a permission problem — and
-that is not a store you want to act destructively on.
+`rag.open()` also throws the base type when a current-layout
+(`qdrant_edge_v1/`, 1.3.0 and later) shard is present but will not open right
+now — a WAL held by another store, a permission problem — and that is not a
+store you want to act destructively on.
 
 ## Platforms
 

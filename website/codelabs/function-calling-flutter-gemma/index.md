@@ -80,8 +80,9 @@ call. That is the rule the loop in Step 3 exists to keep.
 * Room for **284 MB** — one download, shared by Steps 1, 2 and 3 — and for
   **2.59 GB** more in Step 5, plus the memory to open the larger one, roughly
   6 GB of RAM. A 4 GB phone is killed by the OS rather than told no
-* Step 4 is optional and costs CPU time instead of megabytes: **Linux or
-  macOS**, Python 3.10–3.12, and about 2.2 GB of cached Python environments.
+* Step 4 is optional and costs CPU time instead of megabytes: **Linux x86_64
+  or an Apple Silicon Mac** for the whole run (Windows runs every stage but
+  `convert`), Python 3.10–3.12, and about 2.9 GB of cached Python environments.
   It is the one part of this codelab that *does* need a Hugging Face token,
   because the base checkpoint it fine-tunes is gated and the approval is
   manual — **request access before you start it**, see that step's own
@@ -1093,6 +1094,19 @@ One simplification stated out loud: a model opened from disk is assumed to be a
 fine-tuned FunctionGemma, because that is what Step 4 produces and nothing on
 disk records which family a `.litertlm` belongs to. Tune a different base and
 `ModelChoice.fromDisk` is the line to change.
+
+The three also disagree about how to be opened, so each `ModelChoice` carries
+that too. FunctionGemma's download keeps Step 2's `maxTokens: 1024` on the CPU
+— the `<pad>` workaround belongs to that one file — while Gemma 4 and a model
+you converted in Step 4 get a 4096-token context and the engine's default
+backend:
+
+```dart
+      final inference = await FlutterEdgeAi.getActiveModel(
+        maxTokens: widget.model.maxTokens,
+        preferredBackend: widget.model.preferredBackend,
+      );
+```
 
 ### Where this runs
 

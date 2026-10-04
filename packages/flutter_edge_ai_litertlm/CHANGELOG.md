@@ -1,3 +1,6 @@
+## 1.8.7
+- Require `flutter_edge_ai` 2.x.
+
 ## 1.8.6
 - Renamed from `flutter_gemma_litertlm`.
 - Web: fail the response stream when LiteRT-LM returns an unexpected content shape.

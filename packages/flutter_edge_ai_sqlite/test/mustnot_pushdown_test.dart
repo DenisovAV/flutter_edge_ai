@@ -8,7 +8,7 @@
 //
 // So this file asserts on ROWS, from a real vec0 table. Asserting on generated
 // SQL cannot distinguish a filter that runs from one that is thrown away.
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'dart:ffi';
@@ -51,7 +51,7 @@ void main() {
       ''');
     });
 
-    tearDown(() => db.dispose());
+    tearDown(() => db.close());
 
     List<String> search(Filter filter, FilterSchema schema, {int k = 2}) {
       final t = FilterToVec0.translate(filter, schema);
@@ -81,7 +81,7 @@ void main() {
       );
 
       final got = search(
-        const Filter(
+        Filter(
           mustNot: [FieldEquals(key: 'category', value: 'a')],
         ),
         schema,
@@ -97,7 +97,7 @@ void main() {
       );
 
       final got = search(
-        const Filter(
+        Filter(
           must: [FieldEquals(key: 'category', value: 'a')],
         ),
         schema,
@@ -110,7 +110,7 @@ void main() {
       // The regression: `NOT (category = 'a')` returned ZERO rows here, because
       // vec0 handed SQLite d1 and d2 and both were then discarded.
       final got = search(
-        const Filter(
+        Filter(
           mustNot: [FieldEquals(key: 'category', value: 'a')],
         ),
         schema,
@@ -124,7 +124,7 @@ void main() {
       // FieldMatchAny negates to a chain of `!=`, not `NOT IN` — measured,
       // vec0 pushes the former and not the latter.
       final got = search(
-        const Filter(
+        Filter(
           mustNot: [
             FieldMatchAny(key: 'category', values: ['a', 'b']),
           ],
@@ -137,7 +137,7 @@ void main() {
 
     test('two mustNot conditions compose', () {
       final got = search(
-        const Filter(
+        Filter(
           mustNot: [
             FieldEquals(key: 'category', value: 'a'),
             FieldEquals(key: 'category', value: 'b'),
@@ -152,7 +152,7 @@ void main() {
     test('an empty match-any excludes nothing', () {
       // "match none of []" is no constraint, so the nearest rows come back.
       final got = search(
-        const Filter(
+        Filter(
           mustNot: [FieldMatchAny(key: 'category', values: [])],
         ),
         schema,

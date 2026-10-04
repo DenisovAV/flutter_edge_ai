@@ -83,7 +83,7 @@ void main() {
 
     // Before the fix a builtIn spec fell into the per-file handler loop and the
     // bundled handler tried to fetch '/gemini-nano'; now it short-circuits to
-    // setActiveModel + a single 100% progress event, like ONNX.
+    // awaited identity activation + a single 100% progress event, like ONNX.
     final progress = await manager.downloadModelWithProgress(spec).toList();
     expect(progress, isNotEmpty);
     expect(progress.last.currentFileProgress, 100);

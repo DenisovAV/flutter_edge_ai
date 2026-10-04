@@ -1,43 +1,52 @@
 # flutter_edge_ai_sqlite example
 
-`flutter_edge_ai_sqlite` is an opt-in vector store for
-[`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai) that works on every
+`flutter_edge_ai_sqlite` is an opt-in vector-store provider for
+[`flutter_edge_ai_rag`](https://pub.dev/packages/flutter_edge_ai_rag) that works on every
 platform: in-SQLite `sqlite-vec`/`vec0` KNN on native (`sqlite3` via dart:ffi)
 and web (`package:sqlite3/wasm` + a custom `sqlite3.wasm`).
-Register it once at startup, then use the unchanged RAG API on
-`FlutterEdgeAiPlugin.instance`.
+Register it once and open independently owned RAG indexes.
 
 ```dart
-import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Native uses SqliteVectorStore; web uses WebSqliteVectorStore.
-  await FlutterEdgeAi.initialize(
-    vectorStore: kIsWeb ? WebSqliteVectorStore() : SqliteVectorStore(),
+Future<void> buildIndex() async {
+  final rag = FlutterEdgeAiRag(
+    providers: [const SqliteVectorStoreProvider()],
+  );
+  // An absolute file path on native, a plain name on Web (path_provider has
+  // no Web implementation, so it is only called on native).
+  final location = kIsWeb
+      ? 'knowledge.db'
+      : p.join((await getApplicationDocumentsDirectory()).path, 'knowledge.db');
+  final index = await rag.open(
+    spec: VectorStoreSpec(providerId: 'sqlite', location: location),
+    embeddingProfile: EmbeddingProfile(
+      id: 'my-embedder-v1',
+      dimension: 768,
+    ),
   );
 
-  final gemma = FlutterEdgeAiPlugin.instance;
-
-  await gemma.initializeVectorStore('rag_store.db');
-
   // Add a document with a pre-computed embedding (e.g. from
-  // flutter_edge_ai_embeddings).
-  await gemma.addDocumentWithEmbedding(
+  // flutter_edge_ai_litertlm or flutter_edge_ai_onnx).
+  await index.addVector(
     id: 'doc-1',
-    content: 'Gemma runs fully on-device.',
+    content: 'Flutter Edge AI runs fully on-device.',
     embedding: List<double>.filled(768, 0.0), // your real embedding here
     metadata: '{"lang":"en"}',
   );
 
-  final hits = await gemma.searchSimilar(query: 'on-device LLM', topK: 5);
+  final hits = await index.searchVector(
+    embedding: List<double>.filled(768, 0.0), // your real query vector
+    topK: 5,
+  );
   for (final h in hits) {
     print('${h.id}: ${h.content} (score ${h.similarity})');
   }
+  await index.dispose();
 }
 ```
 

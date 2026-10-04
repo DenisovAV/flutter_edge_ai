@@ -6,6 +6,12 @@
 - Always propose changes first, show diff/code, **WAIT FOR APPROVAL**
 - Only after user says "yes"/"go ahead"/"ok" → apply changes
 
+## Rule 1b: NEVER CHANGE ARCHITECTURE OR PUBLIC API WITHOUT SPECIFIC APPROVAL ⛔
+- General approval to implement or fix findings is **NOT** approval to change architecture or public API
+- Before changing package/module boundaries, dependency direction, ownership, lifecycle, initialization flow, public types, signatures, exports, or documented API semantics: explain the proposed design and compatibility impact, then **WAIT FOR EXPLICIT APPROVAL OF THAT DESIGN**
+- Do not introduce a new public abstraction, compatibility layer, fallback, or alternate API path as an incidental fix
+- If an approved implementation reveals that an architecture or API change is needed, stop and request approval before making it
+
 ## Rule 2: NEVER USE `git checkout` ⛔
 - Use Edit tool to manually revert changes. User manages git.
 
@@ -51,14 +57,14 @@
 ## Architecture Quick Reference
 
 ### Core Principles
-- **1.0 six-package split** (monorepo, Dart pub workspace): core `flutter_edge_ai` (no engine) + opt-in `flutter_edge_ai_litertlm` (.litertlm FFI), `flutter_edge_ai_embeddings` (embedding tokenizers), `flutter_edge_ai_mediapipe` (.task), `flutter_edge_ai_qdrant` (native RAG), `flutter_edge_ai_sqlite` (web RAG). **Packages normally depend only on core.** Core never depends on an opt-in package, and opt-in packages do not depend on one another except for one intentional runtime-sharing edge: `flutter_edge_ai_speech` depends on `flutter_edge_ai_litertlm` because it imports `LiteRtBindings` directly and consumes the native bundle owned by litertlm. Contracts AND the mechanism that picks an implementation live in core; the implementation lives in a package and the app wires it in `initialize()`. When nothing is wired, core fails loudly and names the package to add (`UnconfiguredVectorStore`). Unnecessary sibling imports create release-cadence coupling: it is how litertlm 1.8.0 came to delete two web files its own `flutter_gemma_embeddings: ^2.0.0` floor still promised — resolvable, compilable, and 404 at first use. Engines/backends register via `FlutterEdgeAi.initialize(inferenceEngines:, embeddingBackends:, vectorStore:)`; core registers none by default.
+- **2.0 modular split** (monorepo, Dart pub workspace): core `flutter_edge_ai` owns model installation and inference/embedding/speech registries, but no engine and no RAG API. Engines/backends register through `FlutterEdgeAi.initialize(...)`. Independent `flutter_edge_ai_rag` instances own RAG orchestration and the vector-store contract; `flutter_edge_ai_qdrant` and `flutter_edge_ai_sqlite` depend on RAG and provide pluggable stores through `FlutterEdgeAiRag(providers:).open(...)`. Core never creates or disposes a `RagIndex`. The one intentional runtime-sharing edge remains `flutter_edge_ai_speech` → `flutter_edge_ai_litertlm`, because speech imports `LiteRtBindings` and consumes litertlm's native bundle.
 - **`flutter_edge_ai_builtin_ai`** (opt-in): OS built-in AI engine — Gemini Nano via ML Kit GenAI/AICore (Android), Apple Foundation Models (iOS/macOS), Phi Silica via Windows AI Foundry (Windows) and the Chrome Prompt API (web). Since 0.3.0 a pure-Dart adapter over the external `flutter_local_ai` package, which owns every native layer; `flutter_local_ai` never depends on flutter_edge_ai. Registers via `inferenceEngines: [BuiltInAiEngine()]`; models use `ModelFileType.builtIn` (core has no file to install — the OS owns the weights).
-- **`flutter_edge_ai_onnx`** (new, opt-in): ONNX Runtime engines — text generation via ORT-GenAI (`OnnxEngine`) + embeddings via plain ORT (`OnnxEmbeddingBackend`), both `dart:ffi` worker-isolate. `hook/build.dart` bundles native archives for macOS arm64, linux_x64, windows_x64, android_arm64 (ORT from Maven `onnxruntime-android`, genai from the `onnxruntime-genai` GitHub release), and iOS arm64 (device + Apple-Silicon sim slices from the single self-contained `onnxruntime-genai-ios` xcframework — ORT statically linked in, one binary exporting both `Oga*` and `OrtGetApiBase`, so no separate ORT and no co-location problem); `OnnxEngine.canHandle`/`OnnxEmbeddingBackend._isSupportedHost` are gated to **macOS arm64 + linux x64 + windows x64 + android arm64 + iOS arm64** (in lockstep with the hook table). All five arm/x64 hosts are **device-verified**: ORT-GenAI generation + embeddings run end-to-end (macOS ~54 tok/s M4 Pro, **Android ~10.4 tok/s Pixel 8 Pro FTL**, Linux ~5.3-5.8, Windows ~3.3 tok/s on the CPU test VMs; Phi-3.5-mini 3.8B int4 ≈3.74 GB peak RSS → needs a 6GB+ phone). On **iOS** the app builds, signs, installs and launches on a real iPhone, and the `@executable_path`-anchored dlopen resolves the framework + generation runs. **Co-location** (genai's bare-name `dlopen("libonnxruntime")` resolving to the sibling CodeAsset): macOS+Linux via the `ORT_LIB_PATH`/`dladdr` export in `gen_ai_client.dart` (`_exportOrtLibPath`, mac/linux only), **Windows + Android resolve on their own** (genai's self-directory dlopen finds the co-located lib under Flutter's flat CodeAsset layout), **iOS has no second lib** (ORT static in genai; the Dart loader opens the one framework via the `@executable_path/Frameworks/…framework/…` anchor iOS dyld 4 requires — bare `.framework` names don't resolve). `OnnxEngine.canHandle` declines + logs off-host; `OnnxEmbeddingBackend.canHandle` stays extension-based on every platform (so LiteRT's catch-all can't silently claim an `.onnx` file) and gates in `createModel` instead. ORT-GenAI model installs are a DIRECTORY (`genai_config.json` + `.onnx`[+`.onnx_data`] + tokenizer) — single-file network install doesn't cover this yet.
-- **`flutter_edge_ai_diagnostics`** (opt-in, 0.1.0, contributed in #541 for #517): `MemorySnapshot(anonymousBytes, availableBytes, takenAt)` read from the OS — Android `Private_Dirty + SwapPss` (`/proc/self/smaps_rollup`) + `MemAvailable`; iOS `phys_footprint` (`task_info(TASK_VM_INFO)`, offset 144 / REV1 count 38) + `os_proc_available_memory()`. Pure `dart:io`/`dart:ffi`, no native code, **no dependency on core** (it measures the process, whichever engine runs in it). Android + iOS only; elsewhere `memorySnapshot()` throws `UnsupportedError`. A null field = the value does not exist on this platform/OS version; a failed read throws `MemoryReadException` — never collapse the two. Android GPU memory (KGSL/Mali/dmabuf) is mostly outside `anonymousBytes`.
+- **`flutter_edge_ai_onnx`** (opt-in): ONNX Runtime engines — text generation via ORT-GenAI (`OnnxEngine`) + embeddings via plain ORT (`OnnxEmbeddingBackend`), both `dart:ffi` worker-isolate. `hook/build.dart` bundles native archives for macOS arm64, linux_x64, windows_x64, android_arm64 (ORT from Maven `onnxruntime-android`, genai from the `onnxruntime-genai` GitHub release), and iOS arm64 (device + Apple-Silicon sim slices from the single self-contained `onnxruntime-genai-ios` xcframework — ORT statically linked in, one binary exporting both `Oga*` and `OrtGetApiBase`, so no separate ORT and no co-location problem); `OnnxEngine.canHandle`/`OnnxEmbeddingBackend._isSupportedHost` are gated to **macOS arm64 + linux x64 + windows x64 + android arm64 + iOS arm64** (in lockstep with the hook table). All five arm/x64 hosts are **device-verified**: ORT-GenAI generation + embeddings run end-to-end (macOS ~54 tok/s M4 Pro, **Android ~10.4 tok/s Pixel 8 Pro FTL**, Linux ~5.3-5.8, Windows ~3.3 tok/s on the CPU test VMs; Phi-3.5-mini 3.8B int4 ≈3.74 GB peak RSS → needs a 6GB+ phone). On **iOS** the app builds, signs, installs and launches on a real iPhone, and the `@executable_path`-anchored dlopen resolves the framework + generation runs. **Co-location** (genai's bare-name `dlopen("libonnxruntime")` resolving to the sibling CodeAsset): macOS+Linux via the `ORT_LIB_PATH`/`dladdr` export in `gen_ai_client.dart` (`_exportOrtLibPath`, mac/linux only), **Windows + Android resolve on their own** (genai's self-directory dlopen finds the co-located lib under Flutter's flat CodeAsset layout), **iOS has no second lib** (ORT static in genai; the Dart loader opens the one framework via the `@executable_path/Frameworks/…framework/…` anchor iOS dyld 4 requires — bare `.framework` names don't resolve). `OnnxEngine.canHandle` declines + logs off-host; `OnnxEmbeddingBackend.canHandle` stays extension-based on every platform (so LiteRT's catch-all can't silently claim an `.onnx` file) and gates in `createModel` instead. ORT-GenAI model installs are a DIRECTORY (`genai_config.json` + `.onnx`[+`.onnx_data`] + tokenizer) — `installModel(…).fromHuggingFace(repo)` installs the whole directory (the ONNX resolver carried by `OnnxEngine` picks a CPU execution-provider folder).
+- **`flutter_edge_ai_diagnostics`** (opt-in, contributed in #541 for #517): `MemorySnapshot(anonymousBytes, availableBytes, takenAt)` read from the OS — Android `Private_Dirty + SwapPss` (`/proc/self/smaps_rollup`) + `MemAvailable`; iOS `phys_footprint` (`task_info(TASK_VM_INFO)`, offset 144 / REV1 count 38) + `os_proc_available_memory()`. Pure `dart:io`/`dart:ffi`, no native code, **no dependency on core** (it measures the process, whichever engine runs in it). Android + iOS only; elsewhere `memorySnapshot()` throws `UnsupportedError`. A null field = the value does not exist on this platform/OS version; a failed read throws `MemoryReadException` — never collapse the two. Android GPU memory (KGSL/Mali/dmabuf) is mostly outside `anonymousBytes`.
 - **Probe-chain registry**: `EngineRegistry`/`EmbeddingRegistry` select a provider by `canHandle(spec)` + `priority` (descending priority, ascending registration index). Engines are pure factories; core owns singleton lifecycle via `CloseNotifier`/`addCloseListener`.
 - **ModelSource**: Type-safe sealed class (`NetworkSource`, `AssetSource`, `BundledSource`, `FileSource`). See `packages/flutter_edge_ai/lib/core/domain/`
 - **Install vs Runtime separation**: Installation stores identity (modelType + fileType), runtime accepts config (maxTokens, backend, etc.) via `RuntimeConfig`
-- **Engine selection by declared `ModelFileType`** (via `canHandle(spec)` — NOT by sniffing the file name): `task`/`binary` → MediaPipe, `litertlm` → LiteRT-LM, `builtIn` → BuiltInAi. `installModel` defaults `fileType` to `task`, so `.litertlm` must be declared explicitly or it is routed to MediaPipe
+- **Engine selection by declared `ModelFileType`** (via `canHandle(spec)` — NOT by sniffing the file name): `task`/`binary` → MediaPipe, `litertlm` → LiteRT-LM, `builtIn` → BuiltInAi, `onnx` → OnnxEngine. `installModel` defaults `fileType` to `task`, so `.litertlm` must be declared explicitly or it is routed to MediaPipe
 - **All five platforms (Android/iOS/macOS/Linux/Windows)**: Dart → `dart:ffi` → LiteRT-LM C API for inference and LiteRT C API for embeddings, both implemented in `flutter_edge_ai_litertlm`. `flutter_edge_ai_embeddings` contains tokenizer implementations only; it owns no native backend or bundle. Native prebuilts are fetched at build time from GitHub release `native-v0.17.1-a` (Native Assets). `flutter_edge_ai_litertlm/hook/build.dart` is the **sole** hook carrying the LiteRT native version; `flutter_edge_ai_speech` has no hook of its own and consumes the bundle through its direct litertlm dependency. The cycle-fix `stage()` in the hooks is **Apple-only** (Xcode `directoryTreeSignature` cycle; staging on Windows splits companion DLLs and hangs cancel/close).
 
 ### Supported Models
@@ -157,7 +163,7 @@ Core has NO pigeon (dropped at the 1.0 cut; its value types are hand-written in 
 - **LiteRT-LM**: native libs from `native-v0.17.1-a` GitHub Release (= `native-v0.17.1` plus the two Android GPU accelerators patched with `libandroid.so` in `DT_NEEDED` — without it Mali GPUs SIGSEGV at `engine_create`, #545; `build_android.sh` step 8d lints every import against its NEEDED chain). LiteRT-LM pin `5e58e9a0` = upstream v0.17.1, LiteRT pin `9fe5be45` unchanged since v0.17.0, companion prebuilts from upstream main `4453b286` — the v0.17.x tags carry a `libGemmaModelConstraintProvider` built against the pre-`ComputeMask` `Constraint`, so with a runtime built from their own source every tool call segfaults in `CompositeLogitMask::Apply`). v0.17.1: a tool-call argument declared `"type": "integer"` reaches the app as an integer instead of `1000.0`; the Android tarball's four Qualcomm Skel blobs are raised to `p_align=0x4000`, because at 4 KB Google Play rejects every app that ships them (#529). v0.17.0: the GPU samplers' `Create` gained a leading `runtime_c_api` argument (upstream refreshed the prebuilt samplers); `LiteRtLayout` has been one layout on every compiler since LiteRT `d84656955` (already in the v0.16.0 pin) — our Windows-only MSVC mirror broke Windows embeddings and speech from native-v0.16.0 until litertlm 1.7.0 dropped it. Android tarball bundles the Qualcomm QNN dispatch stack and Windows tarball bundles Intel NPU dispatch (`LiteRtDispatch.dll` + OpenVino runtime + TBB) for `PreferredBackend.npu` (Qualcomm Snapdragon / Intel LunarLake/PantherLake) — both dispatch libs are **rebuilt from the pin every release**; carrying them forward is what silently broke NPU on both platforms (see the `build-native` skill). v0.16.0: fixes the Android OpenCL per-turn memory leak (LiteRT-LM #2699, #348/#402); v0.15.0 **broke the stream-callback ABI** (4-arg → 2-arg chunk object) with no compat path, handled by a runtime probe in `stream_proxy.c`. Windows discrete GPU works again — the crash was our own dead `litert_link_capi_so` Bazel define, not an upstream regression (#2957 retracted).
 - **sqlite-vec**: `flutter_edge_ai_sqlite` fetches the per-platform `vec0` loadable from the `native-sqlite-vec-v<X>` GitHub Release (`sqlite-vec-<target>.tar.gz` + `checksums_sqlite_vec.txt`), SHA256-verified by its `hook/build.dart`. `<X>` names the **upstream sqlite-vec release** the bytes were built from; a letter suffix (`0.1.9-a`) is only for RE-releasing changed bytes under an already-published number. The loadables are NOT committed — `native/sqlite_vec/prebuilt/` is a maintainer override produced by `build_local.sh`, gitignored and `.pubignore`d.
 - **large_file_handler**: `^0.5.0` (core dep; 0.5.0 declares all 6 platforms — needed for pana platform support + the dart2wasm-clean web graph)
-- **Current Version**: core `flutter_edge_ai` `1.11.4`, `flutter_edge_ai_sqlite` `1.4.0`, `flutter_edge_ai_qdrant` `1.3.2`; `flutter_edge_ai_litertlm` `1.8.6`, `flutter_edge_ai_mediapipe` `1.0.8`, `flutter_edge_ai_embeddings` `2.2.1`, `flutter_edge_ai_speech` `0.5.2`; `flutter_edge_ai_agent` `0.2.7`, `flutter_edge_ai_builtin_ai` `0.3.0`, `flutter_edge_ai_onnx` `0.5.1`, `flutter_edge_ai_diagnostics` `0.1.0`; `genkit_flutter_edge_ai` `0.6.2`, `genkit_hybrid` `0.2.2`. The family shipped as `flutter_gemma*` up to core 1.11.3 / litertlm 1.8.5 and the numbers the others still carry; the renamed packages continue that numbering (core and litertlm one patch higher, for a web fix); the old names stay published as they are
+- **Current Version**: core `flutter_edge_ai` `2.0.0`, RAG `flutter_edge_ai_rag` `1.0.0`, `flutter_edge_ai_sqlite` `2.0.0`, `flutter_edge_ai_qdrant` `2.0.0`; `flutter_edge_ai_litertlm` `1.8.7`, `flutter_edge_ai_mediapipe` `1.0.9`, `flutter_edge_ai_embeddings` `2.2.2`, `flutter_edge_ai_speech` `0.5.3`; `flutter_edge_ai_agent` `0.2.7`, `flutter_edge_ai_builtin_ai` `0.3.1`, `flutter_edge_ai_onnx` `0.5.2`, `flutter_edge_ai_diagnostics` `0.2.0`; `genkit_flutter_edge_ai` `0.7.0`, `genkit_hybrid` `0.2.2`. The family shipped as `flutter_gemma*` up to core 1.11.3 / litertlm 1.8.5; the old names stay published as they are.
 - **0.15.2**: embedding unified on LiteRT C API via Dart FFI on all native platforms (Android + iOS + Desktop). Drops `localagents-rag` JVM dep on Android and the separate TFLite C 0.12.7 tarball on Desktop; `TensorFlowLiteC` pod no longer needed on iOS. Single source of truth for `TaskType.prefix` in Dart, fixes cross-platform embedding drift (#264).
 
 ## Platform-Specific Setup
@@ -243,7 +249,7 @@ tool/test_all.sh     # every package, each from its own directory
 
 ## Before Committing
 ```bash
-flutter analyze && dart format . && tool/test_all.sh
+flutter analyze packages/ && dart format . && tool/test_all.sh
 ```
 
 ## Key Files
@@ -264,13 +270,12 @@ flutter analyze && dart format . && tool/test_all.sh
 | `lib/core/lifecycle/close_notifier.dart` | `CloseNotifier` mixin (addCloseListener / fireCloseListeners) |
 | `lib/core/embedding/` | The embedding seam engines implement: `EmbeddingForwardPass` + `ForwardResult` + `ForwardPassDescriptor`, the `EmbeddingTokenizer` adapter, `meanPoolAndNormalize`, and the isolate worker behind `CommonEmbeddingModel` — tokenizer IMPLEMENTATIONS stay in `flutter_edge_ai_embeddings`. Plus two pieces core OWNS rather than exposes: `EmbedderCache` (cached embedder + its params as one field, the reuse rule, and the lane serialising the entry point — each shell holds one instead of its own hand-rolled model/params bookkeeping) and `noticeEmbedderBackendIgnored` (says once per isolate that `preferredBackend` reached nothing; debug-only, so `EmbeddingModel.activeBackend` is the release answer) |
 | `lib/core/registry/embedding_tokenizer_{provider,registry}.dart` | Probe chain for tokenizers, so an engine asks for one instead of naming one (which is what made it depend on a sibling package) |
-| `lib/core/services/vector_store_filter.dart` | Sealed `Condition` + `Filter` envelope (must/should/mustNot) |
-| `lib/core/infrastructure/unconfigured_vector_store.dart` | Default `VectorStoreRepository` sentinel — throws "add a RAG package" |
 | `lib/mobile/flutter_edge_ai_mobile.dart` | Mobile shell — registry-dispatch createModel + EmbeddingModelSpec |
 | `lib/web/flutter_edge_ai_web.dart` | Web shell — registry-dispatch |
 | `lib/desktop/flutter_edge_ai_desktop.dart` | Desktop shell — registry-dispatch |
-| `lib/web/web_model_source.dart`, `web_model_manager.dart` | Public shared web infra (imported by litertlm-web + mediapipe-web) |
-| `lib/core/domain/platform_types.dart` | Plain-Dart `PreferredBackend` enum + RAG value types (RetrievalResult/VectorStoreStats/DocumentWithEmbedding). Core has NO pigeon/PlatformService — these were hand-written off pigeon at the 1.0 cut so the public graph stays dart:io/wasm-clean |
+| `lib/web/web_model_source.dart`, `lib/web/web_image_format.dart` | Public shared web infra (imported by litertlm-web + mediapipe-web) |
+| `lib/core/model_management/managers/web_model_manager.dart` | Web model manager (install/storage on web) |
+| `lib/core/domain/platform_types.dart` | Plain-Dart `PreferredBackend` and `ActivationDataType`. Core has NO pigeon/PlatformService; only `flutter_edge_ai_mediapipe` owns a Pigeon bridge. |
 | `hook/build.dart` | Native Assets hook — empty bundle list (core owns no native lib) |
 | `android/src/.../FlutterEdgeAiPlugin.kt`, `{ios,macos}/flutter_edge_ai/Sources/flutter_edge_ai/FlutterEdgeAiPlugin.swift` | Slim native plugin — hosts only the `flutter_gemma_bundled` channel (file-ops + litertlm NPU `getNativeLibraryDir`) |
 | `example/lib/gemma_bootstrap.dart` | Single source of truth for the example's engine/backend lists + RAG switcher |
@@ -289,7 +294,7 @@ flutter analyze && dart format . && tool/test_all.sh
 | `hook/build.dart` | Native Assets hook — OWNS the litertlm bundle; `stage()` is **Apple-only** (Xcode cycle) |
 | `native/litert_lm/{build_ios.sh,patch_c_api.sh,stream_proxy.c}` | iOS dylib rebuild + C API patcher + preload helper |
 
-**`packages/flutter_edge_ai_embeddings/` (tokenizer implementations — 2.2.1; depends ONLY on core, and NOTHING depends on it: engines get a tokenizer from core's registry, which the app fills from here):**
+**`packages/flutter_edge_ai_embeddings/` (tokenizer implementations — 2.2.2; depends ONLY on core, and NOTHING depends on it: engines get a tokenizer from core's registry, which the app fills from here):**
 
 | File | Purpose |
 |------|---------|
@@ -307,6 +312,15 @@ flutter analyze && dart format . && tool/test_all.sh
 | `pigeon.dart` | Package pigeon: `PlatformService` HostApi + redeclared `PreferredBackend` |
 | `android/src/.../FlutterEdgeAiMediaPipePlugin.kt`, `PlatformServiceImpl.kt`, `engines/*` | Android MediaPipe (own pluginClass + channel) |
 | `ios/Classes/FlutterEdgeAiMediaPipePlugin.swift`, `PlatformServiceImpl.swift`, `InferenceModel.swift` | iOS MediaPipe |
+
+**`packages/flutter_edge_ai_rag/` (instance-scoped RAG orchestration and provider contracts):**
+
+| File | Purpose |
+|------|---------|
+| `lib/src/flutter_edge_ai_rag.dart` | `FlutterEdgeAiRag` provider registry and `open()` validation |
+| `lib/src/rag_index.dart` | Owned `RagIndex` lifecycle, text/vector operations and concurrency gate |
+| `lib/src/embedding.dart` | `EmbeddingProfile`, custom `RagEmbedder`, and borrowed active-core adapter |
+| `lib/src/{vector_store,vector_store_provider,filter}.dart` | Store/provider contracts and backend-neutral filter DSL |
 
 **`packages/flutter_edge_ai_qdrant/` (native RAG via the official `qdrant_edge` UniFFI SDK; no web):**
 
@@ -367,22 +381,24 @@ flutter_edge_ai/                     # Dart pub workspace (monorepo root)
 ├── packages/
 │   ├── flutter_edge_ai/               # CORE — no engine; registry, contracts, shells, slim native plugin
 │   │   ├── lib/{core,mobile,web,desktop}/   # registry-dispatch shells + contracts
-│   │   ├── android/ ios/ windows/   # slim native plugin (bundled channel only)
+│   │   ├── android/ ios/ macos/ linux/ windows/   # slim native plugin (bundled channel only)
 │   │   ├── hook/build.dart          # empty bundle list
-│   │   └── example/                 # example app + integration tests + MIGRATION.md/README.md
+│   │   ├── MIGRATION.md README.md   # migration guide + package README
+│   │   └── example/                 # example app + integration tests
 │   ├── flutter_edge_ai_litertlm/      # .litertlm FFI (owns libLiteRtLm) + native/litert_lm/ build scripts
 │   ├── flutter_edge_ai_embeddings/    # tokenizer implementations only; no engine or native bundle
 │   ├── flutter_edge_ai_mediapipe/     # .task MediaPipe (own pigeon + Kotlin + Swift + web JS)
+│   ├── flutter_edge_ai_rag/           # instance-scoped RAG orchestration + contracts
 │   ├── flutter_edge_ai_qdrant/    # native RAG (official qdrant_edge UniFFI SDK)
 │   ├── flutter_edge_ai_sqlite/    # SQLite RAG — in-SQLite vec0 KNN (native sqlite3 FFI + web wasm)
 │   ├── flutter_edge_ai_builtin_ai/    # OS built-in AI over flutter_local_ai — Gemini Nano / Apple FM / Phi Silica / Chrome Prompt API
 │   ├── flutter_edge_ai_onnx/          # ONNX Runtime — native arm64/x64 hosts + Transformers.js/ORT Web
 │   ├── flutter_edge_ai_diagnostics/   # opt-in memory diagnostics (anonymous footprint + available memory, Android + iOS; no core dependency)
-│   ├── flutter_edge_ai_speech/        # opt-in on-device STT (moonshine) + TTS (Matcha) via LiteRT C API (shares libLiteRtLm)
+│   ├── flutter_edge_ai_speech/        # opt-in on-device STT (moonshine/Whisper/Parakeet) + TTS (Matcha/Qwen3/Inflect) via LiteRT C API (shares libLiteRtLm)
 │   ├── flutter_edge_ai_agent/         # opt-in on-device agent skills (SKILL.md: text/JS/native-intent/MCP) over the function-calling loop
 │   ├── genkit_flutter_edge_ai/        # Firebase Genkit integration (flutter_edge_ai runtime + converters)
 │   └── genkit_hybrid/               # Genkit hybrid on-device + cloud helpers
-└── docs/                            # design docs, testing, benchmarks
+└── docs/                            # LEGACY_API.md + benchmarks/
 ```
 
 ## Repository

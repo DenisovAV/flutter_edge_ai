@@ -5,11 +5,10 @@ import 'package:flutter_edge_ai_example/home_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Flutter Edge AI via the shared bootstrap helper (single source of
-  // truth for the engine/backend lists, shared with the RAG demo's runtime
-  // store switcher). RAG is opt-in as of 1.0; the example starts on the sqlite
-  // store and lets the RAG demo switch to qdrant at runtime on native platforms.
-  await bootstrapGemma(ragBackend: RagBackend.sqlite);
+  // Initialize inference, embedding, speech, and skill runtimes. The RAG demo
+  // owns its indexes independently and can switch storage without resetting
+  // these core services.
+  await bootstrapGemma();
 
   runApp(const ChatApp());
 }

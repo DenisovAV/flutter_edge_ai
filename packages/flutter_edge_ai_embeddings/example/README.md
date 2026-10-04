@@ -1,15 +1,14 @@
 # flutter_edge_ai_embeddings example
 
-`flutter_edge_ai_embeddings` is the runtime-agnostic on-device text-embedding
-*pipeline* for [`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai) —
-tokenization, the background-isolate worker, and pooling/normalization, over
-an `EmbeddingForwardPass` seam. It does not ship a concrete backend itself
-(since 2.0.0); pair it with an engine package that provides one, e.g.
+`flutter_edge_ai_embeddings` supplies the embedding **tokenizers** for
+[`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai) — Gemma
+SentencePiece and BERT-family WordPiece. Since 2.2.0 that is all it is: the
+forward-pass seam, the background-isolate worker and the pooling live in
+`flutter_edge_ai` itself, and the backend comes from an engine package, e.g.
 [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm)'s
 `LiteRtEmbeddingBackend` (Gecko / EmbeddingGemma `.tflite` via the LiteRT C
-API — dart:ffi on the 5 native platforms, LiteRT.js on web). Register the
-backend once at startup, then embed text and feed the vectors into any RAG
-vector store.
+API — dart:ffi on the 5 native platforms, LiteRT.js on web). Register both once
+at startup, then embed text and feed the vectors into a RAG index.
 
 ```dart
 import 'package:flutter/widgets.dart';
@@ -42,7 +41,9 @@ Future<void> main() async {
 }
 ```
 
-Pair this with a RAG vector store (`flutter_edge_ai_qdrant` on native,
-`flutter_edge_ai_sqlite` for web) to build on-device retrieval. A full runnable
+For on-device retrieval, use
+[`flutter_edge_ai_rag`](https://pub.dev/packages/flutter_edge_ai_rag) with a
+storage provider: `flutter_edge_ai_sqlite` (all six platforms, Web included) or
+`flutter_edge_ai_qdrant` (native only). A full runnable
 app lives in the
 [`flutter_edge_ai` example](https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai/example).

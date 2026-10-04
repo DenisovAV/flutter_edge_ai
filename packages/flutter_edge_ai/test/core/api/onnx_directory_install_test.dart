@@ -140,11 +140,8 @@ void main() {
       fileType: ModelFileType.onnx,
     ).fromHuggingFace('org/repo').install();
 
-    // setActiveModel persists the active identity fire-and-forget
-    // (`unawaited`); let that SharedPreferences write flush before a cold
-    // relaunch reads it. (In production the app restarts long after; only a
-    // tight test races the two.)
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    // Installation persists the active identity before completing, so a cold
+    // relaunch can read it immediately without an artificial delay.
 
     // Cold relaunch: a fresh manager restores from persisted identity + repo.
     final fresh = MobileModelManager();

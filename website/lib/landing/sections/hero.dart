@@ -39,7 +39,7 @@ class Hero extends StatelessComponent {
             ]),
             div(classes: 'hero-install', [
               span(classes: 'install-prompt', [Component.text('\$')]),
-              span(classes: 'install-cmd', [Component.text(' flutter pub add flutter_edge_ai')]),
+              span(classes: 'install-cmd', [Component.text(' flutter pub add flutter_edge_ai flutter_edge_ai_litertlm')]),
             ]),
           ]),
           // Right column

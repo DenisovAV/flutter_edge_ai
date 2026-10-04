@@ -36,14 +36,15 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # The engine-agnostic core: registry, install/runtime API, chat.
-  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai: ^2.0.0
   # The .litertlm inference engine. Engines are opt-in — core
   # registers none, so this package must be added explicitly.
-  flutter_edge_ai_litertlm: ^1.8.6
+  flutter_edge_ai_litertlm: ^1.8.7
   # The OS built-in engine: Gemini Nano (Android, Chrome), Apple
   # Foundation Models (iOS, macOS). No file to download — the OS or the
-  # browser owns the weights. Windows and Linux have no built-in arm.
-  flutter_edge_ai_builtin_ai: ^0.3.0
+  # browser owns the weights. The package also covers Windows AI Foundry,
+  # which this codelab leaves out; Linux has no built-in model.
+  flutter_edge_ai_builtin_ai: ^0.3.1
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +64,10 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # Swift Package Manager off: on macOS the LiteRT-LM companion libraries are
+  # staged by the Podfile post_install block, and an SPM-only app has no Podfile.
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

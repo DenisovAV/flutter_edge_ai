@@ -1,3 +1,6 @@
+## 2.2.2
+- Require `flutter_edge_ai` 2.x.
+
 ## 2.2.1
 - Renamed from `flutter_gemma_embeddings`.
 - README: engine authors pass `activeBackend:` to `ForwardPassDescriptor`.

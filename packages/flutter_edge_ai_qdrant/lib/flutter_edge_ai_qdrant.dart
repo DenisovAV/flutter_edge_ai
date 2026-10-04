@@ -1,13 +1,15 @@
-/// qdrant-edge on-device RAG vector store for flutter_edge_ai (native FFI).
+/// qdrant-edge on-device RAG vector store for flutter_edge_ai_rag (native FFI).
 ///
-/// Opt-in package, native platforms only. Add it to pubspec.yaml and pass an
-/// instance to `FlutterEdgeAi.initialize(vectorStore: ...)`:
+/// Opt-in package, native platforms only. Register its provider with an
+/// instance-scoped `FlutterEdgeAiRag`:
 ///
 /// ```dart
-/// import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+/// import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 /// import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 ///
-/// await FlutterEdgeAi.initialize(vectorStore: QdrantVectorStore());
+/// final rag = FlutterEdgeAiRag(
+///   providers: [QdrantVectorStoreProvider()],
+/// );
 /// ```
 library;
 

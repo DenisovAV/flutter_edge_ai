@@ -1,3 +1,6 @@
+## 2.0.0
+- **Breaking:** now a `flutter_edge_ai_rag` storage provider; a location binds one embedding profile.
+
 ## 1.3.2
 - Renamed from `flutter_gemma_rag_qdrant`.
 - Use qdrant_edge 0.8.0-dev.4 to prevent native result and argument leaks.

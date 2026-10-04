@@ -3,6 +3,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'embed_page.dart';
 import 'model.dart';
+import 'rag_store.dart';
 
 /// A chat that shows the reply as it is generated.
 ///
@@ -12,10 +13,12 @@ class ChatPage extends StatefulWidget {
   const ChatPage({
     super.key,
     required this.model,
+    required this.ragStore,
     required this.onModelRemoved,
   });
 
   final ModelChoice model;
+  final RagStore ragStore;
 
   /// Lets the gate send the app back to the download screen.
   final VoidCallback onModelRemoved;
@@ -178,7 +181,8 @@ class _ChatPageState extends State<ChatPage> {
             tooltip: 'Recipes',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => const EmbedPage(hfToken: hfToken),
+                builder: (_) =>
+                    EmbedPage(hfToken: hfToken, ragStore: widget.ragStore),
               ),
             ),
             icon: const Icon(Icons.restaurant_menu),

@@ -1,6 +1,7 @@
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/core/model_management/model_activation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
 
@@ -147,7 +148,7 @@ class TtsInstallationBuilder {
 
     // AUTO-SET as active TTS model (even if already installed).
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
-    manager.setActiveModel(spec);
+    await activateInstalledModel(manager, spec);
 
     edgeAiLog('✅ TTS model installed and set as active: ${spec.name}');
 

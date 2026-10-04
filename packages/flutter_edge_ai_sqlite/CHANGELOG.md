@@ -1,3 +1,6 @@
+## 2.0.0
+- **Breaking:** now a `flutter_edge_ai_rag` storage provider; a location binds one embedding profile.
+
 ## 1.4.0
 - Renamed from `flutter_gemma_rag_sqlite`.
 - Require sqlite3 3.6.0 (needs Flutter 3.47): web `flush()` awaits in-flight writes.

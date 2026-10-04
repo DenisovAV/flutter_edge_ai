@@ -1,309 +1,298 @@
 ---
 title: Embeddings & RAG
-description: Generate text embeddings and run on-device retrieval-augmented generation (RAG) with a payload-aware Filter API.
+description: Generate embeddings and build profile-safe on-device RAG with pluggable SQLite or Qdrant storage.
 image: https://flutteredge.ai/images/og-image.png
 ---
 
-flutter_edge_ai can generate vector embeddings from text (EmbeddingGemma / Gecko on
-LiteRT, or BERT / MiniLM / WordPiece models via the ONNX backend)
-and run on-device RAG with a vector store. Two stores are available, both with
-the same Dart API: **qdrant-edge** — the fastest store on native (HNSW
-approximate nearest-neighbour) — and **sqlite-vec** — a portable, exact store
-that runs on **all six platforms (Android, iOS, macOS, Linux, Windows, Web)**,
-and the only store that runs on Web. Your code is portable across both.
+Flutter Edge AI separates three concerns:
 
-## Setup
+- **flutter_edge_ai** installs and runs embedding models.
+- **flutter_edge_ai_rag** owns instance-scoped retrieval orchestration, stable
+  embedding profiles, filters, and **RagIndex**.
+- **flutter_edge_ai_sqlite** and **flutter_edge_ai_qdrant** provide
+  interchangeable vector stores.
 
-Embeddings need the `flutter_edge_ai_embeddings` package plus a backend that
-implements it — `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` (or
-`flutter_edge_ai_onnx`'s `OnnxEmbeddingBackend` for ONNX/ORT models, which also
-runs on Web via onnxruntime-web). RAG also
-needs a vector store package — `flutter_edge_ai_qdrant` (native, fastest) or
-`flutter_edge_ai_sqlite` (sqlite-vec; all platforms, including Web). Register
-them in `await FlutterEdgeAi.initialize(...)`:
+RAG can borrow the active core embedder, use an application-provided
+**RagEmbedder**, or run entirely on precomputed vectors. It does not require an
+inference model and is not initialized through **FlutterEdgeAi.initialize()**.
+
+## Packages
+
+```
+dependencies:
+  flutter_edge_ai: ^2.0.0
+  flutter_edge_ai_litertlm: ^1.8.7
+  flutter_edge_ai_embeddings: ^2.2.2
+  flutter_edge_ai_rag: ^1.0.0
+  flutter_edge_ai_sqlite: ^2.0.0 # all six platforms, including Web
+  # flutter_edge_ai_qdrant: ^2.0.0 # native alternative
+```
+
+**flutter_edge_ai_sqlite** 2.0.0 needs Flutter 3.47 or later. On Web, embeddings
+and SQLite RAG need files copied into your app's **web/** — the LiteRT.js loader
+and **rag/sqlite3.wasm**; see [Installation → Web](/docs/installation#web).
+
+Initialize only the embedding runtime in core:
 
 ```dart
 await FlutterEdgeAi.initialize(
-  inferenceEngines: const [LiteRtLmEngine()],
-  embeddingBackends: const [LiteRtEmbeddingBackend()], // flutter_edge_ai_litertlm
-  embeddingTokenizers: const [GemmaEmbeddingTokenizers()], // flutter_edge_ai_embeddings
-  vectorStore: QdrantVectorStore(),                    // or WebSqliteVectorStore() on web
+  embeddingBackends: const [LiteRtEmbeddingBackend()],
+  embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
+  // EmbeddingGemma is gated; never hard-code the token.
+  huggingFaceToken: const String.fromEnvironment('HUGGINGFACE_TOKEN').isEmpty
+      ? null
+      : const String.fromEnvironment('HUGGINGFACE_TOKEN'),
 );
 ```
 
-See [Installation](/docs/installation) for the full registration reference. On
-web, `LiteRtEmbeddingBackend` also needs its LiteRT.js loader script in
-`web/index.html` — see [Installation → Web](/docs/installation#web).
+The LiteRT backend runs EmbeddingGemma and Gecko. ONNX models use
+**OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. Dimensions are
+model-dependent: LiteRT EmbeddingGemma/Gecko produce 768-dimensional vectors;
+all-MiniLM-L6-v2 produces 384. A number such as 256 in an artifact name is the
+maximum input sequence length, not the vector dimension.
 
-## Text embeddings
+## Install an embedding model
 
-The embedding **dimension depends on the model and backend**. The LiteRT models
-(EmbeddingGemma / Gecko) generate **768-dimensional vectors**; with
-`OnnxEmbeddingBackend` the dimension is model-dependent (e.g. all-MiniLM-L6-v2 is
-384-dim). The number in a model name (64/256/512/1024/2048) is the max input
-sequence length in tokens, not the embedding dimension. See
-[Models](/docs/models#text-embedding-models) for the full list.
+Pin both files to an immutable revision. The stable profile used by the vector
+store must describe the exact weights, tokenizer, pooling, normalization, and
+document/query prefix contract.
 
-### Install an embedding model
+EmbeddingGemma is a gated repository: the Hugging Face account behind the token
+must accept the Gemma license on the model page before the download succeeds.
 
 ```dart
+const revision = '29888fcee3216acadc7e844906e5fe0d79a61875';
+const profileId =
+    'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+    'retrieval-prefix-meanpool-l2-v1';
+
 await FlutterEdgeAi.installEmbedder()
     .modelFromNetwork(
-      'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq256_mixed-precision.tflite',
-      token: 'hf_...',
+      'https://huggingface.co/litert-community/embeddinggemma-300m/'
+      'resolve/$revision/embeddinggemma-300M_seq256_mixed-precision.tflite',
     )
     .tokenizerFromNetwork(
-      'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/sentencepiece.model',
-      token: 'hf_...',
+      'https://huggingface.co/litert-community/embeddinggemma-300m/'
+      'resolve/$revision/sentencepiece.model',
     )
     .install();
 ```
 
-### Generate embeddings
+On native, current LiteRT and ONNX embedding paths run on CPU. On Web they try
+WebGPU and can fall back to WASM. **preferredBackend** is accepted by
+**getActiveEmbedder** for API symmetry but is not applied; inspect
+**EmbeddingModel.activeBackend** when the selected backend matters.
+
+## RAG with the active core embedder
 
 ```dart
-final embedder = await FlutterEdgeAi.getActiveEmbedder();
-final embeddings = await embedder.generateEmbeddings(
-  docs.map((d) => d.content).toList(),
-  taskType: TaskType.retrievalDocument,
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
 );
-```
 
-<Info>
-On native, `LiteRtEmbeddingBackend` runs embedding on **CPU only**: EmbeddingGemma
-is an int4 `.tflite` model, and the TFLite GPU delegate cannot run int4 — so GPU
-embedding is not possible for that model format. The ONNX backend is CPU-only too:
-it appends no execution provider, so it runs ORT's default. On web both backends
-try **WebGPU** first and fall back to WASM (LiteRT.js, onnxruntime-web). On native,
-embedding runs on a background isolate so it doesn't block the UI thread; on web
-it runs on the main thread.
-</Info>
-
-`getActiveEmbedder(preferredBackend:)` is accepted for symmetry with
-`getActiveModel` and **never applied** — no embedding backend reads it. Core logs
-one line per isolate saying so, but only in debug builds. Read
-`EmbeddingModel.activeBackend` when it matters:
-
-```dart
-final embedder = await FlutterEdgeAi.getActiveEmbedder(
-  preferredBackend: PreferredBackend.gpu, // accepted, not applied
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: databasePath,
+    filterSchema: FilterSchema(fields: [
+      FilterField(name: 'category', type: FilterFieldType.string),
+      FilterField(name: 'year', type: FilterFieldType.number),
+      FilterField(name: 'archived', type: FilterFieldType.bool),
+    ]),
+  ),
+  activeEmbedderProfileId: profileId,
 );
-print(embedder.activeBackend); // PreferredBackend.cpu on native
-```
 
-That answer survives a release build, which the log line does not. It is `null` on
-web, where the runtime picks for itself and does not report back synchronously; the
-LiteRT web bundle exposes `window.getLiteRtEmbeddingAccelerator()` and
-`window.getLiteRtEmbeddingFullyAccelerated()` for that, and the ONNX web arm has
-no equivalent.
-
-## On-device RAG / vector store
-
-All RAG operations live on the `FlutterEdgeAi.rag` namespace — the canonical
-entry point. (The store is opt-in: register a `vectorStore:` in
-`await FlutterEdgeAi.initialize(...)`, or every `rag` call except `flush()` throws
-a clear "add a RAG package" error — `flush()` returns without doing anything.)
-
-```dart
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-
-// 1. Install an embedding model (any of Gecko / EmbeddingGemma) — see above.
-
-// 2. Initialize the vector store (one shard per database path). On native pass
-//    an absolute path: a bare name resolves against the process working
-//    directory, which is not writable on Android or iOS. On web a name is enough.
-final dir = await getApplicationDocumentsDirectory(); // package:path_provider
-await FlutterEdgeAi.rag.initialize('${dir.path}/rag_store');
-
-// 3. Add documents — let flutter_edge_ai compute embeddings for you
-for (final doc in docs) {
-  await FlutterEdgeAi.rag.addDocument(
-    id: doc.id,
-    content: doc.content,
-    metadata: '{"category":"science","lang":"en"}',
-  );
-}
-
-// 3b. Or batch-embed yourself and feed pre-computed vectors via
-//     addDocumentWithEmbedding(...) for higher throughput.
-final embedder = await FlutterEdgeAi.getActiveEmbedder();
-final embeddings = await embedder.generateEmbeddings(
-  docs.map((d) => d.content).toList(),
-  taskType: TaskType.retrievalDocument,
+await index.addText(
+  id: 'doc-1',
+  content: 'Flutter runs on six platforms.',
+  metadata: '{"category":"flutter","year":2026,"archived":false}',
 );
-for (var i = 0; i < docs.length; i++) {
-  await FlutterEdgeAi.rag.addDocumentWithEmbedding(
-    id: docs[i].id,
-    content: docs[i].content,
-    embedding: embeddings[i],
-    metadata: '{"category":"science","lang":"en"}',
-  );
-}
 
-// 3c. Persist what you indexed while the store stays open (see below)
-await FlutterEdgeAi.rag.flush();
-
-// 4. Semantic search, with optional payload-aware Filter
-final results = await FlutterEdgeAi.rag.searchSimilar(
-  query: 'quantum entanglement',
-  topK: 10,
-  threshold: 0.0,
+final hits = await index.searchText(
+  query: 'Where does Flutter run?',
+  topK: 5,
+  threshold: 0.3,
   filter: Filter(
-    must: [FieldEquals(key: 'category', value: 'science')],
-    mustNot: [FieldEquals(key: 'lang', value: 'fr')],
+    must: [FieldEquals(key: 'category', value: 'flutter')],
+    mustNot: [FieldEquals(key: 'archived', value: true)],
   ),
 );
 
-// 5. Maintain the store: remove one document (no-op if the id is absent),
-//    read stats, or clear everything.
-await FlutterEdgeAi.rag.removeDocument(id: 'doc-42');
-final stats = await FlutterEdgeAi.rag.stats();
-await FlutterEdgeAi.rag.clear();
+await index.flush();
 ```
 
-### Persisting the index: `flush()`
+**location** is an absolute path on native — a database file for SQLite, a
+directory for Qdrant; build it from **getApplicationDocumentsDirectory()** — and
+a plain name on Web. path_provider has no Web implementation, so call it only
+off-web (see the sample under Independent text RAG).
 
-Call `FlutterEdgeAi.rag.flush()` after indexing. What it does depends on the store:
+**open()** pins the embedder that is active at that moment: install the embedder
+before opening the index, and after switching embedders open a new index at a
+new location. The default adapter borrows the model returned by
+**FlutterEdgeAi.getActiveEmbedder()**; it never closes core-owned state. The explicit
+profile ID prevents vectors created by different model bytes or preprocessing
+from being mixed after an app restart.
 
-- **qdrant-edge** — required. New documents stay in memory until the store is
-  flushed or closed, so an index built without either is lost when the process
-  ends — an Android app killed in the background is the ordinary case. `close()`
-  persists too, but only logs a failed save; `flush()` throws it.
-- **sqlite-vec, native** — a no-op: every statement is on disk when it returns.
-- **sqlite-vec, web** — drains the IndexedDB storage and waits for it. `sqlite3`
-  3.4.0 through 3.5.2 returned early over a write batch already in flight
-  ([upstream #408](https://github.com/simolus3/sqlite3.dart/issues/408)), which
-  is why `flutter_gemma_rag_sqlite` 1.4.0 requires sqlite3 3.6.0 and, with it,
-  **Flutter 3.47** — a higher floor than every other package here. On Flutter
-  3.44 only the old `flutter_gemma_rag_sqlite` 1.3.2 resolves, with the partial drain;
-  `close()` is the full drain on every version.
+## Batch or vector-only RAG
 
-A store that cannot persist at all (the web in-memory fallback) throws
-`VectorStoreException` rather than returning. A custom store that `implements`
-`VectorStoreRepository` must declare `flush()`; one that `extends` it inherits an
-empty default — override it if your store buffers writes.
-
-## The Filter API
-
-`Filter` supports `must` / `should` / `mustNot` lists of conditions:
-
-- `FieldEquals` — exact match on a payload field.
-- `FieldRange` — numeric range on a payload field.
-- `FieldMatchAny` — match against any value in a set.
-
-Both stores honor `Filter` on **all platforms**, and both need the filterable
-fields declared up front in a `FilterSchema` (see below). qdrant-edge promotes
-exactly the declared fields to payload keys at write time; sqlite-vec creates
-them as columns at table-creation time. On either store a condition on an
-undeclared field is **dropped**, as if it had never been written: the search
-returns the same hits as `filter: null`, and a filter mixing declared and
-undeclared fields narrows only by the declared ones. A missing declaration
-therefore looks like "my filter had no effect" — too many results, never an
-error and never zero.
-
-### Declaring filter fields
-
-The sqlite-vec store filters over declared columns. Describe them with a
-`FilterSchema` of `FilterField`s, and pass it either to `initialize(...)`:
+When the first write is a precomputed vector, bind the profile at open time.
+Pass the matching **activeEmbedderProfileId** too if later text searches should
+borrow the active core embedder.
 
 ```dart
-await FlutterEdgeAi.initialize(
-  vectorStore: SqliteVectorStore(),
-  filterSchema: const FilterSchema(fields: [
-    FilterField(name: 'category', type: FilterFieldType.string),
-    FilterField(name: 'lang', type: FilterFieldType.string),
-    FilterField(name: 'year', type: FilterFieldType.number),
-  ]),
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: databasePath,
+  ),
+  embeddingProfile: EmbeddingProfile(id: profileId, dimension: 768),
+  activeEmbedderProfileId: profileId,
+);
+
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final vectors = await embedder.generateEmbeddings(
+  documents,
+  taskType: TaskType.retrievalDocument,
+);
+for (var i = 0; i < documents.length; i++) {
+  await index.addVector(
+    id: 'doc-$i',
+    content: documents[i],
+    embedding: vectors[i],
+  );
+}
+
+final queryVector = await embedder.generateEmbedding(
+  'search text',
+  taskType: TaskType.retrievalQuery,
+);
+final hits = await index.searchVector(embedding: queryVector);
+```
+
+A purely vector-based app can omit **activeEmbedderProfileId** and never
+initialize Flutter Edge AI.
+
+## Independent text RAG
+
+Implement **RagEmbedder** when retrieval has its own embedding lifecycle:
+
+```dart
+class AppEmbedder implements RagEmbedder {
+  AppEmbedder(this.model);
+
+  final MyEmbeddingModel model;
+
+  @override
+  Future<EmbeddingProfile> get profile async =>
+      EmbeddingProfile(id: 'my-model-and-pipeline-v1', dimension: 384);
+
+  @override
+  Future<List<double>> embedDocument(String text) =>
+      model.embed('document: $text');
+
+  @override
+  Future<List<double>> embedQuery(String text) =>
+      model.embed('query: $text');
+}
+
+// kIsWeb: package:flutter/foundation.dart; p: package:path/path.dart.
+// path_provider has no Web implementation, so call it only off-web.
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: kIsWeb
+        ? 'custom-profile-v1.db'
+        : p.join(
+            (await getApplicationDocumentsDirectory()).path,
+            'custom-profile-v1.db',
+          ),
+  ),
+  embedder: AppEmbedder(myEmbeddingModel),
 );
 ```
 
-…or at runtime via `configure(...)` on the `VectorStoreRepository` — it returns
-`void`, so do not `await` it:
+The index borrows a custom embedder too. Dispose the index before disposing the
+embedder.
+
+## Profiles, locations, and migration
+
+One persistent location belongs to exactly one **EmbeddingProfile**. Use a new,
+profile-versioned location after changing weights, tokenizer, pooling,
+normalization, prefixes, or dimensions. **clear()** deletes documents but keeps
+the profile binding.
+
+A nonempty database created before 2.0 has no stored profile. Prefer a new
+location and re-index. If you can independently verify the exact original
+embedding pipeline, explicit adoption is available:
 
 ```dart
-store.configure(FilterSchema(fields: [
-  FilterField(name: 'category', type: FilterFieldType.string),
-]));
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: legacyPath,
+    allowLegacyProfileAdoption: true,
+  ),
+  embeddingProfile: EmbeddingProfile(id: verifiedProfileId, dimension: 768),
+);
 ```
 
-`FilterFieldType` has exactly three values: `string`, `number`, `bool`.
+The dimension is checked before the profile is persisted. The flag is an
+attestation, not automatic detection.
 
-What a field may be NAMED is decided by the store, and the two differ — the
-check runs in `configure()`, so you find out when you hand the schema over, not
-at the first insert.
+SQLite filter fields are physical **vec0** columns. Changing a schema requires a
+new schema-versioned location and re-indexing; opening a database without a
+schema and later reopening it with one cannot add columns.
 
-`SqliteVectorStore` is the strict one: a name must match
-`^[A-Za-z][A-Za-z0-9_]*$` and must not be one vec0 already uses (`id`,
-`embedding`, `content`, `metadata`, `distance`, `k`). The name becomes a real
-`vec0` column and sqlite-vec's DDL grammar has no quoted identifier form, so
-`doc-type` is unrepresentable there rather than merely unescaped.
+## Filters
 
-`QdrantVectorStore` accepts far more — payload keys are free-form UTF-8 — with
-two rules of its own: no `.`, which qdrant reads as a nested-path separator, and
-none of the keys the store uses itself (`__flutter_gemma_id`,
-`__flutter_gemma_content`, `__flutter_gemma_metadata`).
+**Filter** combines **must** (AND), **should** (OR), and **mustNot** (NOT):
 
-So the portable set is sqlite's. If you may ever switch backends, stay inside
-it. Regardless of store, a schema with a duplicate or empty name is rejected.
+- **FieldEquals** for scalar equality.
+- **FieldRange** for inclusive numeric bounds.
+- **FieldMatchAny** for set membership.
 
-A `Filter` over the declared fields is then applied inside the store; a filter
-referencing an **undeclared** field is silently ignored (no-op, never throws).
+Only fields declared in **VectorStoreSpec.filterSchema** are filterable.
+Conditions on undeclared fields are ignored. SQLite names must match
+^[A-Za-z][A-Za-z0-9_]*$ and cannot reuse **id**, **embedding**, **content**,
+**metadata**, **distance**, or **k**; this narrower set is portable to Qdrant.
 
-<Warning>
-Declare a `FilterSchema` on **both** stores. Neither store filters on a field it
-was not told about: the condition is dropped and the search comes back
-unfiltered, with no error and no log in a release build. The difference between
-the two is not "schema optional": sqlite-vec needs the schema at table-creation
-time, while qdrant promotes at write time.
-</Warning>
+## Ownership and durability
 
-## Platform support
+**RagIndex** owns its vector store and must be disposed. It borrows its embedder.
+The shutdown order is therefore:
 
-| Feature | Android | iOS | Web | Desktop |
-|---|---|---|---|---|
-| Text Embeddings | ✅ | ✅ | ✅ | ✅ |
-| VectorStore — qdrant-edge | ✅ | ✅ | ❌ | ✅ |
-| VectorStore — sqlite-vec | ✅ | ✅ | ✅ | ✅ |
-| Payload `Filter` | ✅ | ✅ | ✅ | ✅ |
+```dart
+await index.flush();
+await index.dispose();
+await FlutterEdgeAi.dispose(); // or dispose the custom embedder
+```
 
-Both stores expose the identical Dart API, so you can swap one for the other by
-changing only the `vectorStore:` you register.
+Keep one app-owned index per persistent location. Make opening single-flight and
+share its future across widgets. This is mandatory on Web, where the SQLite
+provider holds an exclusive Web Lock for the location until **dispose()**.
 
-| | qdrant-edge | sqlite-vec (`vec0`) |
+**flush()** is required for qdrant-edge, drains IndexedDB for Web SQLite, and is
+a no-op for native SQLite. **clear()** is an exclusive operation and preserves
+the profile binding.
+
+## Choosing a store
+
+| | qdrant-edge | SQLite + sqlite-vec |
 |---|---|---|
-| **Platforms** | Native only (Android, iOS, macOS, Linux, Windows) | All six — native **+ Web** |
-| **KNN** | HNSW approximate | Exact (brute-force inside SQLite) |
-| **Speed** | Fastest native (~5–11× faster search at 1k–10k docs) | Portable, identical results everywhere |
-| **When to use** | Native throughput at scale | Web reach, or exact results across every platform |
+| Platforms | Android, iOS, macOS, Linux, Windows | Android, iOS, Web, macOS, Linux, Windows |
+| Search | HNSW approximate | Exact KNN inside SQLite |
+| Best fit | Native throughput at larger scale | Web, portability, deterministic exact results |
+| Provider ID | qdrant | sqlite |
 
-<Info>
-**`sqlite-vec` fetches its native library at build time (1.3.0+).** The
-per-platform `vec0` extension comes from this repository's
-`native-sqlite-vec-v*` GitHub Release, downloaded and SHA256-verified by the
-package's build hook the first time you build for a given platform, then cached
-under `~/.cache/flutter_gemma/native/` (`~/Library/Caches/…` on macOS,
-`%LOCALAPPDATA%\…` on Windows). So the **first** build of each platform needs
-`github.com` reachable; later builds do not. `flutter_edge_ai_litertlm` has always
-worked this way — as of 1.3.0 both packages behave the same.
+The providers implement the same RAG contract, so switching storage changes the
+registered provider and **VectorStoreSpec.providerId**, not the retrieval
+pipeline. Current measurements show qdrant-edge roughly 5–11× faster at
+1k–10k documents; see the
+[benchmark report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/docs/benchmarks/rag_sqlite_vec_vs_qdrant.md).
 
-Before 1.3.0 the loadables were committed into the package, which shipped all
-seven platforms' binaries to every consumer to use one of them. If you build in
-an air-gapped environment, copy the whole `flutter_gemma/native` cache directory
-from a machine that built the same package versions, including its hidden
-version-marker files — a folder copied without them is discarded and fetched
-again. There is no setting that points the build at archives you vendor
-yourself.
-</Info>
-
-**Which store?** `qdrant-edge` is the fastest **native** option — benchmarked
-~5–11× faster search than the `sqlite-vec` store at 1k–10k documents — using HNSW
-approximate nearest-neighbour. `sqlite-vec` is exact (brute-force KNN inside
-SQLite via the `vec0` extension), portable across all six platforms, and the only
-store that runs on Web. Pick qdrant-edge for native throughput; pick sqlite-vec
-for exact results or cross-platform / web reach.
-
-Benchmarks comparing the two stores across platforms (EmbeddingGemma 300M,
-768-dim) are in the
-[repo benchmarks](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/example/integration_test/benchmarks/comparison.md).
-
-**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-rag`](/docs/package-skills), the skill that teaches it embedding models, both vector stores, and the metadata filters above — including the `filterSchema` trap that returns unfiltered results.
+**Writing this with a coding assistant?** **dart run skills@ get --all** installs
+the **flutter-edge-ai-rag** skill with these profile, ownership, and filter rules.

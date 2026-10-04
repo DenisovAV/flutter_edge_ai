@@ -11,7 +11,6 @@ import 'package:flutter_edge_ai/core/registry/stt_registry.dart';
 import 'package:flutter_edge_ai/core/registry/stt_backend_provider.dart';
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
@@ -217,7 +216,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       // No active embedding model - user must set one first
       if (activeModel == null) {
         throw StateError(
-          'No active embedding model set. Use `FlutterEdgeAi.installEmbedder()` or `modelManager.setActiveModel()` to set a model first',
+          'No active embedding model set. Use `FlutterEdgeAi.installEmbedder()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
       }
 
@@ -337,7 +336,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       // No active STT model - user must set one first
       if (activeModel == null) {
         throw StateError(
-          'No active STT model set. Use `FlutterEdgeAi.installStt()` or `modelManager.setActiveModel()` to set a model first',
+          'No active STT model set. Use `FlutterEdgeAi.installStt()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
       }
 
@@ -465,114 +464,5 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     throw UnsupportedError(
       'On-device TTS is not supported on web (flutter_edge_ai_speech TTS is native-only).',
     );
-  }
-
-  @override
-  Future<void> initializeVectorStore(String databasePath) async {
-    await ServiceRegistry.instance.vectorStoreRepository.initialize(
-      databasePath,
-    );
-  }
-
-  @override
-  Future<void> flushVectorStore() async {
-    await ServiceRegistry.instance.vectorStoreRepository.flush();
-  }
-
-  @override
-  Future<void> addDocumentWithEmbedding({
-    required String id,
-    required String content,
-    required List<double> embedding,
-    String? metadata,
-  }) async {
-    await ServiceRegistry.instance.vectorStoreRepository.addDocument(
-      id: id,
-      content: content,
-      embedding: embedding,
-      metadata: metadata,
-    );
-  }
-
-  @override
-  Future<void> addDocument({
-    required String id,
-    required String content,
-    String? metadata,
-  }) async {
-    final embedder = _embedderCache.model;
-    if (embedder == null) {
-      throw StateError(
-        'No embedding model is active. addDocument(content:) and '
-        'searchSimilar(query:) auto-embed text, which requires an embedding '
-        'model. Install and activate one with FlutterEdgeAi.installEmbedder(...) '
-        '(or modelManager.setActiveModel) before calling these methods — or '
-        'pass a precomputed vector to addDocumentWithEmbedding(embedding:).',
-      );
-    }
-
-    // Generate embedding and add document
-    final embedding = await embedder.generateEmbedding(
-      content,
-      taskType: TaskType.retrievalDocument,
-    );
-    await ServiceRegistry.instance.vectorStoreRepository.addDocument(
-      id: id,
-      content: content,
-      embedding: embedding,
-      metadata: metadata,
-    );
-  }
-
-  @override
-  Future<List<RetrievalResult>> searchSimilar({
-    required String query,
-    int topK = 5,
-    double threshold = 0.0,
-    Filter? filter,
-  }) async {
-    final embedder = _embedderCache.model;
-    if (embedder == null) {
-      throw StateError(
-        'No embedding model is active. addDocument(content:) and '
-        'searchSimilar(query:) auto-embed text, which requires an embedding '
-        'model. Install and activate one with FlutterEdgeAi.installEmbedder(...) '
-        '(or modelManager.setActiveModel) before calling these methods — or '
-        'pass a precomputed vector to addDocumentWithEmbedding(embedding:).',
-      );
-    }
-
-    // Generate query embedding and search
-    final queryEmbedding = await embedder.generateEmbedding(query);
-    return await ServiceRegistry.instance.vectorStoreRepository.searchSimilar(
-      queryEmbedding: queryEmbedding,
-      topK: topK,
-      threshold: threshold,
-      filter: filter,
-    );
-  }
-
-  @override
-  Future<VectorStoreStats> getVectorStoreStats() async {
-    return await ServiceRegistry.instance.vectorStoreRepository.getStats();
-  }
-
-  @override
-  Future<void> clearVectorStore() async {
-    await ServiceRegistry.instance.vectorStoreRepository.clear();
-  }
-
-  @override
-  Future<void> removeDocument({required String id}) async {
-    await ServiceRegistry.instance.vectorStoreRepository.removeDocument(id: id);
-  }
-
-  @override
-  bool get enableHnsw =>
-      ServiceRegistry.instance.vectorStoreRepository.enableHnsw;
-
-  @override
-  set enableHnsw(bool value) {
-    ServiceRegistry.instance.vectorStoreRepository.enableHnsw = value;
   }
 }

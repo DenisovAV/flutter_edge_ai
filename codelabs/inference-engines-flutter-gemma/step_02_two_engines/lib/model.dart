@@ -106,14 +106,15 @@ abstract final class Models {
   /// browser owns the weights, so [url] is null and [sizeLabel] says so.
   ///
   /// A getter, not a const: the ready-made specs are chosen per platform.
-  /// Windows and Linux have no built-in arm at all, so there this throws
-  /// rather than quietly offering a model that cannot exist.
+  /// This codelab leaves out the package's Windows AI Foundry spec, and Linux
+  /// has no OS built-in model, so on both this throws rather than quietly
+  /// offering a model the sample did not configure.
   static ModelChoice get builtIn {
     // `kIsWeb` is asked BEFORE `defaultTargetPlatform`, which on the web
     // reports the host OS — a Chrome on a Mac would otherwise be handed the
     // Apple Foundation Models arm, which only a native app can reach.
     final (spec, label) = kIsWeb
-        ? (BuiltInAiModels.geminiNano, 'Gemini Nano (Chrome)')
+        ? (BuiltInAiModels.chromePromptApi, 'Gemini Nano (Chrome)')
         : switch (defaultTargetPlatform) {
             TargetPlatform.android => (
               BuiltInAiModels.geminiNano,

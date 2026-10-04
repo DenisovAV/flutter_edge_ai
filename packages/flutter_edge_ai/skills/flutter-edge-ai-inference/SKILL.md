@@ -24,9 +24,12 @@ flutter pub add flutter_edge_ai flutter_edge_ai_litertlm
 ```
 
 ```dart
+import 'package:flutter/widgets.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
+// In main(), before runApp: initialize() needs the Flutter binding.
+WidgetsFlutterBinding.ensureInitialized();
 await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);
 
 await FlutterEdgeAi.installModel(
@@ -80,6 +83,10 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 - Symptom: `Undefined name 'FlutterEdgeAi'`, `Undefined class 'InferenceModel'`, with only the engine package imported.
 - Fix: `import 'package:flutter_edge_ai/flutter_edge_ai.dart';` as well.
 
+**flutter_gemma names after upgrading to 2.0**
+- Symptom: `Undefined name 'FlutterGemma'`, `Undefined name 'GemmaLogLevel'`, or a `package:flutter_gemma/...` import that does not resolve.
+- Fix: the flutter_gemma names are gone in 2.0. Rename the dependencies and imports (`flutter_gemma*` → `flutter_edge_ai*`; `flutter_gemma_rag_sqlite` and `flutter_gemma_rag_qdrant` become `flutter_edge_ai_sqlite` and `flutter_edge_ai_qdrant`), then run `dart fix --apply`, which renames the old class names. Delete the old `flutter-gemma-*` skill directories and run `dart run skills@ get --all` again — they still teach the old names. RAG also left core in 2.0: see the flutter-edge-ai-rag skill.
+
 **No engine registered**
 - Symptom: `StateError: No inference engine can handle this model (ModelFileType.litertlm). Add the engine package to pubspec.yaml and pass it in inferenceEngines: of FlutterEdgeAi.initialize(...)`
 - Fix: add the engine package and register its provider — or fix `fileType` if the wrong engine is registered.
@@ -108,6 +115,7 @@ Use 4096 or more with images or audio — one image costs hundreds of tokens.
 **Same reply every time**
 - Symptom: identical output for identical input. `createSession` and `createChat` default to `topK: 1`, which is greedy decoding.
 - Fix: pass `topK` (e.g. 40) and a `temperature`. Set them on the first session after `getActiveModel` — on `.litertlm` the first session's sampler settings can stay in effect for later ones.
+- Exception: decoding stays greedy whatever you pass on `.litertlm` running on the NPU (`activeBackend == PreferredBackend.npu`) and on ONNX, native and web. Those ignore the sampling parameters; only a debug log says so on the NPU.
 
 **`Session is closed`**
 - Symptom: `StateError: Session is closed` from a session or chat that is still in use.
@@ -173,7 +181,7 @@ The chat keeps the history: add the next user message and generate again. `gener
 
 `createSession` and `createChat` fill a single slot on the model, so a second one closes the first. For concurrent conversations use `openSession` / `openChat`, and close each one.
 
-They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` if the chat sends images) explicitly, or the chat runs as `ModelType.gemmaIt` with images off. They work on `.litertlm` (native and web) and on MediaPipe Android and iOS; everywhere else they throw `UnsupportedError`.
+They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` if the chat sends images) explicitly, or the chat runs as `ModelType.gemmaIt` with images off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, and on built-in AI; everywhere else — ONNX and MediaPipe web — they throw `UnsupportedError`.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);
@@ -196,8 +204,8 @@ Pass `isThinking: true` to `createChat`. Reasoning arrives as
 `<think>` tags into `ThinkingResponse`. Do not extend that claim to Gemma 4:
 the measured `.litertlm` Web test receives only text even though the engine
 passes `extra_context` and filter config. MediaPipe Web has no thinking API,
-ONNX Web ignores `enableThinking`, and the catalog's DeepSeek R1 `.task` model
-has no Web entry.
+ONNX Web ignores `enableThinking`, and DeepSeek R1 thinks on Android and iOS
+only — it ships as a mobile `.task` build.
 
 ```dart
 final chat = await model.createChat(isThinking: true, modelType: ModelType.qwen3);

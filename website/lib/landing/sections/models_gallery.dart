@@ -39,7 +39,7 @@ const _models = [
   ),
   _ModelData(
     name: 'Gemma3n E2B/E4B',
-    bestFor: 'Multimodal chat — image & audio',
+    bestFor: 'Multimodal chat — image & audio; function calling on E4B .litertlm',
     size: '3–6 GB',
     fc: true,
     vision: true,
@@ -80,7 +80,6 @@ const _models = [
     name: 'Gemma 3 1B',
     bestFor: 'Balanced text — all platforms',
     size: '0.5 GB',
-    fc: true,
   ),
   _ModelData(
     name: 'Gemma 3 270M',

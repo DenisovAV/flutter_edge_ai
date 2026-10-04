@@ -28,12 +28,9 @@ import 'package:flutter_edge_ai/core/infrastructure/flutter_asset_loader_stub.da
     if (dart.library.io) 'package:flutter_edge_ai/core/infrastructure/flutter_asset_loader.dart';
 import 'package:flutter_edge_ai/core/infrastructure/shared_preferences_model_repository.dart';
 import 'package:flutter_edge_ai/core/infrastructure/in_memory_model_repository.dart';
-import 'package:flutter_edge_ai/core/services/vector_store_repository.dart';
 import 'package:flutter_edge_ai/core/di/download_hub/configure_download_updates_stream_mobile.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/core/di/download_hub/configure_download_updates_stream_stub.dart'
     as download_hub;
-import 'package:flutter_edge_ai/core/services/vector_store_filter.dart';
-import 'package:flutter_edge_ai/core/infrastructure/unconfigured_vector_store.dart';
 import 'package:flutter_edge_ai/core/infrastructure/web_download_service_stub.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/core/infrastructure/web_download_service.dart';
 import 'package:flutter_edge_ai/core/infrastructure/web_js_interop_stub.dart'
@@ -84,7 +81,6 @@ class ServiceRegistry {
   late final DownloadService _downloadService;
   late final ModelRepository _modelRepository;
   late final ProtectedFilesRegistry _protectedFilesRegistry;
-  late final VectorStoreRepository _vectorStoreRepository;
 
   // Handlers (created once with dependencies)
   late final SourceHandler
@@ -256,8 +252,6 @@ class ServiceRegistry {
     DownloadService? downloadService,
     ModelRepository? modelRepository,
     ProtectedFilesRegistry? protectedFilesRegistry,
-    VectorStoreRepository? vectorStoreRepository,
-    FilterSchema filterSchema = const FilterSchema(),
   }) async {
     // Initialize file system service first
     final fileSystem = fileSystemService ?? _createDefaultFileSystemService();
@@ -287,8 +281,6 @@ class ServiceRegistry {
       downloadService: download,
       modelRepository: modelRepository,
       protectedFilesRegistry: protectedFilesRegistry,
-      vectorStoreRepository: vectorStoreRepository,
-      filterSchema: filterSchema,
     );
   }
 
@@ -301,8 +293,6 @@ class ServiceRegistry {
     required DownloadService downloadService,
     ModelRepository? modelRepository,
     ProtectedFilesRegistry? protectedFilesRegistry,
-    VectorStoreRepository? vectorStoreRepository,
-    FilterSchema filterSchema = const FilterSchema(),
   }) {
     // Initialize infrastructure services
     _fileSystemService = fileSystemService;
@@ -320,20 +310,6 @@ class ServiceRegistry {
 
     _protectedFilesRegistry =
         protectedFilesRegistry ?? SharedPreferencesProtectedRegistry();
-
-    // RAG is opt-in as of 1.0. Core ships no built-in vector store on any
-    // platform. Pass vectorStore: to initialize() from a RAG package
-    // (flutter_edge_ai_sqlite / flutter_edge_ai_qdrant). When omitted,
-    // UnconfiguredVectorStore throws a clear "add a RAG package" error on first
-    // Core ships no vector-store impl — sqlite and qdrant are opt-in packages
-    // (flutter_edge_ai_sqlite / flutter_edge_ai_qdrant).
-    _vectorStoreRepository = vectorStoreRepository ?? UnconfiguredVectorStore();
-
-    // Declare the filterable-metadata schema at registration, BEFORE the store
-    // is initialized, so it can promote the declared fields to typed storage
-    // columns (sqlite/vec0) or top-level payload keys (qdrant). Default empty
-    // schema is a no-op (filters stay a safe no-op; never throws).
-    _vectorStoreRepository.configure(filterSchema);
 
     // Initialize handlers with dependencies
     _networkHandler = _createNetworkSourceHandler(
@@ -409,9 +385,6 @@ class ServiceRegistry {
   ///   Note: Auth errors (401/403/404) fail after 1 attempt regardless
   /// - [webStorageMode]: Storage mode for web platform (default: WebStorageMode.cacheApi)
   ///   Note: This parameter only affects web platform, ignored on mobile
-  /// - [vectorStoreRepository]: Optional custom repository (for testing)
-  /// - [filterSchema]: Declared filterable-metadata fields; applied to the
-  ///   vector store via `configure()` before its `initialize()` (default empty)
   /// - [downloadUpdatesStream]: Optional host download hub (mobile only).
   ///   Events must be `background_downloader` [TaskUpdate] values. Ignored on
   ///   web. Non-broadcast streams are wrapped internally.
@@ -427,8 +400,6 @@ class ServiceRegistry {
     DownloadService? downloadService,
     ModelRepository? modelRepository,
     ProtectedFilesRegistry? protectedFilesRegistry,
-    VectorStoreRepository? vectorStoreRepository,
-    FilterSchema filterSchema = const FilterSchema(),
     Stream<Object>? downloadUpdatesStream,
   }) async {
     // Make idempotent - skip if already initialized
@@ -458,8 +429,6 @@ class ServiceRegistry {
       downloadService: downloadService,
       modelRepository: modelRepository,
       protectedFilesRegistry: protectedFilesRegistry,
-      vectorStoreRepository: vectorStoreRepository,
-      filterSchema: filterSchema,
     );
   }
 
@@ -467,20 +436,6 @@ class ServiceRegistry {
   static void reset() {
     download_hub.clearDownloadUpdatesStream();
     _instance = null;
-  }
-
-  /// Disposes all services and releases resources
-  ///
-  /// Should be called when shutting down the application.
-  /// After calling dispose(), you must call initialize() again to use the registry.
-  Future<void> dispose() async {
-    download_hub.clearDownloadUpdatesStream();
-    // Close VectorStore database connection
-    try {
-      await _vectorStoreRepository.close();
-    } catch (e) {
-      edgeAiLog('Warning: Failed to close VectorStore: $e');
-    }
   }
 
   // Public getters for services
@@ -496,9 +451,6 @@ class ServiceRegistry {
   ModelRepository get modelRepository => _modelRepository;
 
   ProtectedFilesRegistry get protectedFilesRegistry => _protectedFilesRegistry;
-
-  /// Access VectorStoreRepository for document embedding storage
-  VectorStoreRepository get vectorStoreRepository => _vectorStoreRepository;
 
   // Handlers (if needed directly)
 

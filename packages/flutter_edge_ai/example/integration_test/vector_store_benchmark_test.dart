@@ -25,6 +25,7 @@ import 'package:flutter_edge_ai_qdrant/src/filter_codec.dart';
 import 'package:flutter_edge_ai_qdrant/src/point_id_hasher.dart';
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart' as rag;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
@@ -128,7 +129,6 @@ String _chunk(math.Random rng, int wordCount) {
   );
   return words.join(' ');
 }
-
 class _LatencyStats {
   final List<int> samplesUs;
   _LatencyStats(this.samplesUs);
@@ -267,12 +267,15 @@ void main() {
           // 100 filtered searches — same queries, plus a category filter.
           final filterSamples = <int>[];
           final filterJson = FilterCodec.encode(
-            const Filter(
-              must: [FieldEquals(key: 'category', value: 'science')],
+            rag.Filter(
+              must: [rag.FieldEquals(key: 'category', value: 'science')],
             ),
-            FilterSchema(
+            rag.FilterSchema(
               fields: [
-                FilterField(name: 'category', type: FilterFieldType.string),
+                rag.FilterField(
+                  name: 'category',
+                  type: rag.FilterFieldType.string,
+                ),
               ],
             ),
           );

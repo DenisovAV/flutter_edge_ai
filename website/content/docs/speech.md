@@ -30,8 +30,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^1.11.4
-  flutter_edge_ai_speech: ^0.5.2
+  flutter_edge_ai: ^2.0.0
+  flutter_edge_ai_speech: ^0.5.3
 ```
 
 ## Register the backend
@@ -79,10 +79,8 @@ await recognizer.close();
 ### Output language (Whisper)
 
 Whisper's shipped checkpoints are multilingual, and the output language is one
-token in the decoder's seed prompt. Set a default, or override a single call:
-
-The install above is moonshine, which has no language token — `language:` throws
-`ArgumentError` on it. Install Whisper first:
+token in the decoder's seed prompt. The install above is moonshine, which has no
+language token — `language:` throws `ArgumentError` on it. Install Whisper first:
 
 ```dart
 await FlutterEdgeAi.installStt()
@@ -91,6 +89,8 @@ await FlutterEdgeAi.installStt()
     .ofType(SttModelType.whisper)
     .install();
 ```
+
+Then set a default, or override a single call:
 
 ```dart
 final recognizer = await FlutterEdgeAi.getActiveStt(language: 'de');
@@ -290,7 +290,7 @@ halt the agent loop before the next tool.
 | Linux | ✅ FFI |
 | Web | 🚧 follow-on (the web arm is a stub that throws `UnsupportedError`) |
 
-On Android, STT (like everything backed by `libLiteRtLm`) is **arm64-only** and
+On Android, speech (STT + TTS), like everything backed by `libLiteRtLm`, is **arm64-only** and
 requires **minSdk 30** — see
 [Installation → Android architecture](/docs/installation#android-architecture-support).
 

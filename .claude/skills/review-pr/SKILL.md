@@ -46,10 +46,16 @@ From the diff, detect which package(s)/area(s) are affected:
 - `flutter_edge_ai_litertlm/` — `.litertlm` FFI engine; `native/litert_lm/` build scripts, `lib/src/ffi/`, `hook/build.dart`
 - `flutter_edge_ai_embeddings/` — embedding tokenizers (pure Dart; the app registers them)
 - `flutter_edge_ai_mediapipe/` — `.task` MediaPipe; owns pigeon (`lib/pigeon.g.dart`) + Kotlin/Swift + web JS
+- `flutter_edge_ai_rag/` — instance-scoped RAG orchestration and contracts.
+  It may depend on core for the default active-embedder adapter; it must not
+  depend on either storage provider.
 - `flutter_edge_ai_qdrant/` — native RAG over the official `qdrant_edge`
-  UniFFI SDK. Since 2.0.0 the package owns NO native code and NO hook: the
-  engine and its Native Assets hook live in the SDK. `lib/src/` only.
+  UniFFI SDK. Since 1.4.0 the package owns NO native code and NO hook: the
+  engine and its Native Assets hook live in the SDK. It depends on
+  `flutter_edge_ai_rag`, never directly on core. `lib/src/` only.
 - `flutter_edge_ai_sqlite/` — sqlite-vec `vec0` KNN on all six platforms; native via `package:sqlite3` FFI, web via `package:sqlite3/wasm.dart` (wa-sqlite was dropped in flutter_gemma_rag_sqlite 1.1.0)
+  It depends on `flutter_edge_ai_rag`, never directly on core in its published
+  dependency graph.
 - `flutter_edge_ai_speech/` — opt-in STT (moonshine / Whisper / Parakeet) + TTS (Matcha / Qwen3 / Inflect) over the LiteRT C API; shares the litertlm bundle
 - `flutter_edge_ai_agent/` — opt-in SKILL.md agent skills over the function-calling loop (no Web)
 - `flutter_edge_ai_builtin_ai/` — OS models: Gemini Nano (Android), Apple Foundation Models (iOS/macOS), Windows AI Foundry, Chrome Prompt API (Web). Pure Dart since 0.3.0: no native sources and no pigeon of its own — it adapts the `flutter_local_ai` plugin, which owns every backend.
@@ -62,6 +68,13 @@ From the diff, detect which package(s)/area(s) are affected:
 **Desktop:** `packages/*/lib/desktop/` + FFI in `flutter_edge_ai_litertlm`
 **Site:** `website/` — Jaspr landing + docs (deployed to flutteredge.ai; CI `.github/workflows/firebase-hosting-merge.yml`)
 **Repo-level:** `.github/workflows/`, `.claude/skills/`, root `pubspec.yaml` (workspace + melos)
+
+For RAG diffs, review these invariants explicitly: core exposes no RAG facade or
+vector-store contracts; providers depend only on `flutter_edge_ai_rag`; every
+persistent index is bound to a stable embedding profile; raw-vector creation
+cannot infer an identity; legacy adoption is explicit and dimension-checked;
+Web SQLite has one live owner per location; open is single-flight; and indexes
+are disposed before their borrowed core/custom embedder.
 
 ### Ground rules for every agent — REVIEWERS DO NOT WRITE
 

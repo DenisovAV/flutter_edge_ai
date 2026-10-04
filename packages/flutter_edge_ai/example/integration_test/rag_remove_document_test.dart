@@ -1,16 +1,12 @@
-// Covers the FlutterEdgeAi.rag.* namespace and removeDocument (interface →
-// platform shell → vectorStoreRepository): add 2 docs, remove one, assert the
-// store reports one left, and that removing an absent id is a no-op.
+// Proves that RAG can initialize independently from FlutterEdgeAi.initialize:
+// open a vector-only index, add two documents, remove one, and close it.
 //
 // Run: flutter test integration_test/rag_remove_document_test.dart -d macos
 library;
 
 import 'dart:io';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
-import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -18,59 +14,45 @@ import 'package:path_provider/path_provider.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  late String dbPath;
-
-  setUpAll(() async {
-    await FlutterEdgeAi.initialize(
-      vectorStore: SqliteVectorStore(),
-      inferenceEngines: const [LiteRtLmEngine()],
-      embeddingBackends: const [LiteRtEmbeddingBackend()],
-      embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
-    );
-    dbPath = '${(await getTemporaryDirectory()).path}/e_removedoc.db';
-  });
 
   testWidgets(
-    'FlutterEdgeAi.rag namespace + removeDocument',
-    (t) async {
-      await FlutterEdgeAi.rag.initialize(dbPath);
-      await FlutterEdgeAi.rag.clear();
+    'independent RagIndex removes one document and ignores an absent id',
+    (tester) async {
+      final dbPath =
+          '${(await getTemporaryDirectory()).path}/e_removedoc_${DateTime.now().microsecondsSinceEpoch}.db';
+      final rag = FlutterEdgeAiRag(
+        providers: [const SqliteVectorStoreProvider()],
+      );
+      final index = await rag.open(
+        spec: VectorStoreSpec(providerId: 'sqlite', location: dbPath),
+        embeddingProfile: EmbeddingProfile(
+          id: 'remove-document-test-v1',
+          dimension: 3,
+        ),
+      );
+      addTearDown(() async {
+        await index.dispose();
+        final file = File(dbPath);
+        if (await file.exists()) await file.delete();
+      });
 
-      await FlutterEdgeAi.rag.addDocumentWithEmbedding(
+      await index.addVector(
         id: 'a',
         content: 'apple',
-        embedding: [1.0, 0.0, 0.0],
+        embedding: const [1.0, 0.0, 0.0],
       );
-      await FlutterEdgeAi.rag.addDocumentWithEmbedding(
+      await index.addVector(
         id: 'b',
         content: 'banana',
-        embedding: [0.0, 1.0, 0.0],
+        embedding: const [0.0, 1.0, 0.0],
       );
 
-      var stats = await FlutterEdgeAi.rag.stats();
-      print('[E] after add: count=${stats.documentCount}');
-      expect(stats.documentCount, 2);
+      expect((await index.stats()).documentCount, 2);
+      await index.remove(id: 'a');
+      expect((await index.stats()).documentCount, 1);
 
-      // The new plumbed path: rag.removeDocument → plugin → shell → repo.
-      await FlutterEdgeAi.rag.removeDocument(id: 'a');
-
-      stats = await FlutterEdgeAi.rag.stats();
-      print('[E] after removeDocument(a): count=${stats.documentCount}');
-      expect(stats.documentCount, 1, reason: 'exactly one doc removed');
-
-      // removing an absent id is a no-op (must not throw)
-      await FlutterEdgeAi.rag.removeDocument(id: 'a');
-
-      await FlutterEdgeAi.rag.clear();
-      try {
-        await ServiceRegistry.instance.vectorStoreRepository.close();
-      } catch (_) {}
-      final f = File(dbPath);
-      if (await f.exists()) {
-        try {
-          await f.delete();
-        } catch (_) {}
-      }
+      await index.remove(id: 'a');
+      expect((await index.stats()).documentCount, 1);
     },
     timeout: const Timeout(Duration(minutes: 4)),
   );

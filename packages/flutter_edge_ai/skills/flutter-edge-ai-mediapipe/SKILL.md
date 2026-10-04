@@ -49,7 +49,7 @@ With Swift Package Manager, also set **iOS Deployment Target** to 16.0 on the Ru
 
 Core and the other engines build from iOS 15.0. If the app does not use `.task` models, leave this package out and stay on 15.
 
-Large models also need **Extended Virtual Addressing** and **Increased Memory Limit**, added in Xcode under **Signing & Capabilities**, or the app is killed for memory.
+Large models also need **Extended Virtual Addressing**, **Increased Memory Limit** and **Increased Debugging Memory Limit**, added in Xcode under **Signing & Capabilities**, or the app is killed for memory.
 
 ## Images and audio
 
@@ -83,6 +83,8 @@ await session.close();
 ```
 
 ## Web
+
+Load a web build of the model — the `-web.task` file, e.g. `gemma3-1b-it-int4-web.task` rather than `gemma3-1b-it-int4.task`. Mobile `.task` files generally do not run on web, so install a separate URL there.
 
 Add to `web/index.html` `<head>`, before Flutter boots:
 

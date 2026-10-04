@@ -34,7 +34,7 @@ If you experience or witness unacceptable behavior, please open an issue or cont
 ### Prerequisites
 
 **Required:**
-- Flutter **3.44.0** or higher
+- Flutter **3.47.0** or higher to work on the monorepo (apps can use 3.44)
 - Dart **3.12.0** or higher
 - Platform-specific toolchains:
   - **Android**: Android Studio / Android SDK
@@ -43,7 +43,7 @@ If you experience or witness unacceptable behavior, please open an issue or cont
   - **Desktop**:
     - **macOS**: Xcode, CocoaPods (Apple Silicon only)
     - **Windows**: Visual Studio 2019/2022 with "Desktop development with C++" workload, PowerShell 5.1+
-    - **Linux**: GCC 9+ or Clang 10+, CMake 3.14+ (planned)
+    - **Linux**: GCC 9+ or Clang 10+, CMake 3.14+
 
 **Optional but Recommended:**
 - Hugging Face account + token (for testing gated models like Gemma 3 Nano, EmbeddingGemma)
@@ -60,7 +60,7 @@ If you experience or witness unacceptable behavior, please open an issue or cont
 
 2. **Run the example app:**
    ```bash
-   cd example
+   cd packages/flutter_edge_ai/example
    flutter pub get
    
    # Run on your preferred platform:
@@ -74,7 +74,7 @@ If you experience or witness unacceptable behavior, please open an issue or cont
 3. **Follow platform-specific setup:**
    - See `README.md` for general setup instructions (incl. the opt-in package model)
    - See `DESKTOP_SUPPORT.md` for desktop-specific setup
-   - See `../../docs/TESTING.md` for the release-gate smoke tests
+   - Run `tool/test_all.sh` from the repo root for the unit tests CI runs
 
 ---
 
@@ -85,12 +85,11 @@ We welcome contributions in many forms:
 ### 🐛 Bug Fixes & Improvements
 - Fix issues reported in the issue tracker
 - Improve error messages and user experience
-- Address technical debt items in `TODO.md`
+- Pick up GitHub issues labelled `good first issue`
 - Performance optimizations
 
 ### ✨ Features
 - Support for new models
-- Desktop platform features (embeddings, VectorStore/RAG)
 - Quality-of-life improvements in the example app
 - New API methods or utilities
 
@@ -141,14 +140,14 @@ Use descriptive branch names:
 
 ```bash
 # Run analyzer
-flutter analyze
+flutter analyze packages/
 
-# Run tests
-flutter test
+# Run tests (every package, as CI does)
+tool/test_all.sh
 
 # Run example app integration tests
-cd example
-flutter test integration_test
+cd packages/flutter_edge_ai/example
+flutter test integration_test/<file>.dart -d <device-id>
 ```
 
 ### 5. Commit Your Changes
@@ -170,35 +169,13 @@ Use conventional commit messages:
 
 ## Project Structure
 
-Understanding the codebase layout will help you contribute effectively:
+Understanding the codebase layout will help you contribute effectively.
+The repo is a Dart pub workspace: every package lives in `packages/<pkg>/` —
+the core `flutter_edge_ai` plus the opt-in engine, RAG, speech, agent and
+Genkit packages. See [Project Structure in `AGENTS.md`](../../AGENTS.md#project-structure)
+for the full layout and which package owns what.
 
-```
-flutter_edge_ai/
-├── lib/
-│   ├── core/                    # Core functionality
-│   │   ├── api/                 # Public API (FlutterEdgeAi class)
-│   │   ├── handlers/            # Model source handlers
-│   │   ├── infrastructure/      # Download, storage, web services
-│   │   ├── model_management/    # Model installation & management
-│   │   └── ...                  # Models, messages, tools, etc.
-│   ├── mobile/                  # Mobile platform implementation
-│   ├── web/                     # Web platform implementation
-│   ├── desktop/                 # Desktop platform implementation
-│   └── flutter_edge_ai.dart       # Main entry point
-├── example/                     # Example application
-│   ├── lib/                     # Example app code
-│   └── integration_test/        # Integration tests
-├── test/                        # Unit tests
-├── native/litert_lm/            # LiteRT-LM native build scripts + C API patcher
-│   ├── prebuilt/                # Per-platform .so/.dylib/.dll committed for local dev
-│   ├── patch_c_api.sh           # Source-level patches applied at build time
-│   └── stream_proxy.c           # RTLD_GLOBAL/LoadLibraryEx preload helper
-├── hook/build.dart              # Native Assets hook (downloads native libs from GitHub release at build time)
-├── web/                         # Web-specific JS files
-└── [platform]/                  # Platform-specific code (macos/, windows/, linux/, android/, ios/)
-```
-
-**Key Files to Know:**
+**Key core files** (under `packages/flutter_edge_ai/`):
 - `lib/flutter_edge_ai.dart` - Main public API
 - `lib/core/api/flutter_edge_ai.dart` - Modern API implementation
 - `lib/mobile/flutter_edge_ai_mobile.dart` - Mobile implementation
@@ -221,7 +198,7 @@ flutter_edge_ai/
 
 Any changes to public APIs should:
 - Maintain backward compatibility when possible
-- Be documented in `README.md`
+- Be documented in `website/content/docs/`
 - Include usage examples
 - Be tested thoroughly
 
@@ -241,7 +218,7 @@ Any changes to public APIs should:
 
 - Keep behavior consistent across platforms when possible
 - If a feature isn't supported on a platform, throw `UnsupportedError` with a clear message
-- Document platform limitations in `README.md`
+- Document platform limitations in `website/content/docs/`
 
 ---
 
@@ -257,7 +234,7 @@ If you're working on desktop support:
 2. **Understand the architecture:**
    - Since 0.14.0 desktop runs LiteRT-LM directly via `dart:ffi` against the C API. No JVM/JRE/gRPC.
    - The FFI client lives in `flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart` (used by all five platforms)
-   - Native libs are downloaded by `flutter_edge_ai_litertlm/hook/build.dart` (the sole hook) at build time from the `native-v0.17.1` GitHub release; SHA256-verified and bundled by Native Assets
+   - Native libs are downloaded by `flutter_edge_ai_litertlm/hook/build.dart` (the sole hook) at build time from the `native-v0.17.1-a` GitHub release; SHA256-verified and bundled by Native Assets
 
 3. **Test your changes:**
    - Test on macOS (Apple Silicon) and/or Windows x64 / Linux x86_64
@@ -269,7 +246,7 @@ If you're working on desktop support:
 If you're working on web support:
 
 1. **Understand web limitations:**
-   - GPU backend only (CPU not supported by MediaPipe)
+   - MediaPipe and LiteRT-LM run on the GPU (WebGPU); ONNX also runs on CPU (WASM)
    - Models stored in IndexedDB/Cache API
    - No local file system access
 
@@ -325,15 +302,14 @@ void main() {
 ### Running Tests
 
 ```bash
-# All unit tests
-flutter test
+# All unit tests (every package, as CI does) — from the repo root
+tool/test_all.sh
 
-# Specific test file
-flutter test test/core/model_management/model_manager_test.dart
+# Specific test file — from packages/flutter_edge_ai/
+flutter test test/core/model_management/cancel_token_test.dart
 
-# Integration tests
-cd example
-flutter test integration_test
+# Integration tests — from packages/flutter_edge_ai/example/
+flutter test integration_test/<file>.dart -d <device-id>
 ```
 
 ### Test Coverage
@@ -350,8 +326,8 @@ Aim for:
 ### Before Submitting
 
 - [ ] Code builds successfully on at least one platform
-- [ ] `flutter analyze` passes with no errors
-- [ ] `flutter test` passes
+- [ ] `flutter analyze packages/` passes with no errors
+- [ ] `tool/test_all.sh` passes
 - [ ] New features have tests
 - [ ] Documentation is updated (if needed)
 - [ ] Commit messages follow conventional commits
@@ -373,7 +349,7 @@ Brief description of what this PR does.
 - [ ] Tested on Android
 - [ ] Tested on iOS
 - [ ] Tested on Web
-- [ ] Tested on Desktop (macOS/Windows)
+- [ ] Tested on Desktop (macOS/Windows/Linux)
 
 ## Checklist
 - [ ] Code follows style guidelines
@@ -397,13 +373,10 @@ Brief description of what this PR does.
 
 Looking for a place to start? Check out:
 
-1. **`TODO.md`** - Technical debt and improvement opportunities
-   - Save `contentLength` for authenticated web downloads
-   - Extract duplicated progress simulation code
-   - Add HTTP HEAD support for public URLs
+1. **GitHub issues** labelled [`good first issue`](https://github.com/DenisovAV/flutter_edge_ai/labels/good%20first%20issue)
 
 2. **Documentation improvements:**
-   - Add more examples to `README.md`
+   - Add more examples to the docs in `website/content/docs/`
    - Improve platform-specific setup guides
    - Add troubleshooting tips
 

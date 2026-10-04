@@ -1,3 +1,6 @@
+## 1.0.9
+- Require `flutter_edge_ai` 2.x.
+
 ## 1.0.8
 - Renamed from `flutter_gemma_mediapipe`.
 - Web loads the GenAI WASM from `@mediapipe/tasks-genai` 0.10.29.

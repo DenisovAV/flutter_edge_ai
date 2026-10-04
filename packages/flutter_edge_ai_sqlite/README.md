@@ -1,14 +1,19 @@
 # flutter_edge_ai_sqlite
 
-> **Renamed from [`flutter_gemma_rag_sqlite`](https://pub.dev/packages/flutter_gemma_rag_sqlite).** Same package, new name:
-> swap the dependency and the `package:flutter_gemma_rag_sqlite/` imports; nothing on the device
-> changes. See the [migration guide](https://flutteredge.ai/docs/migration).
+> **Renamed from [`flutter_gemma_rag_sqlite`](https://pub.dev/packages/flutter_gemma_rag_sqlite).**
+> Version 2.0.0 also moves RAG orchestration and contracts into
+> `flutter_edge_ai_rag`: replace the old dependency/imports, add
+> `flutter_edge_ai_rag`, and register `SqliteVectorStoreProvider()` in
+> `FlutterEdgeAiRag`. Existing profile-less stores require verified, explicit
+> adoption or re-indexing. See the
+> [migration guide](https://flutteredge.ai/docs/migration).
 
-First-class SQLite vector store for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai).
+First-class SQLite vector-store provider for
+[flutter_edge_ai_rag](https://pub.dev/packages/flutter_edge_ai_rag).
 KNN runs **inside SQLite** via [`sqlite-vec`](https://github.com/asg017/sqlite-vec)
 (`vec0` virtual table) — no Dart brute-force, no in-memory index.
 
-Opt-in package implementing `VectorStoreRepository`:
+Register `SqliteVectorStoreProvider` once; it selects the implementation:
 - **Native** (Android/iOS/macOS/Linux/Windows): `SqliteVectorStore` — `package:sqlite3`
   (dart:ffi) + the per-platform `vec0` loadable extension.
 - **Web**: `WebSqliteVectorStore` — `package:sqlite3/wasm.dart` driving a custom
@@ -24,25 +29,67 @@ PRIMARY KEY`, so KNN returns the document id directly — no JOIN, no rowid brid
 dart run skills@ get --all
 ```
 
-Installs the agent skills `flutter_edge_ai` bundles — this package depends on it, so they come with it. One of them, `flutter-edge-ai-rag`, covers embedding models, both vector stores, and the metadata filters — including the `filterSchema` trap that silently returns unfiltered results.
+Installs the agent skills from the Flutter Edge AI package graph. The
+`flutter-edge-ai-rag` skill covers embedding models, both vector stores, and
+metadata filters.
 
 ## Usage
 
 ```dart
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
-await FlutterEdgeAi.initialize(
-  vectorStore: kIsWeb ? WebSqliteVectorStore() : SqliteVectorStore(),
+final rag = FlutterEdgeAiRag(
+  providers: [const SqliteVectorStoreProvider()],
 );
+// An absolute file path on native, a plain name on Web (path_provider has no
+// Web implementation, so it is only called on native).
+final databasePath = kIsWeb
+    ? 'knowledge.db'
+    : p.join((await getApplicationDocumentsDirectory()).path, 'knowledge.db');
+final index = await rag.open(
+  spec: VectorStoreSpec(providerId: 'sqlite', location: databasePath),
+  embeddingProfile: EmbeddingProfile(
+    id: 'my-embedder-v1',
+    dimension: 768,
+  ),
+);
+
+await index.addVector(
+  id: 'doc-1',
+  content: 'Flutter Edge AI runs on-device.',
+  embedding: documentVector,
+);
+final hits = await index.searchVector(embedding: queryVector);
+await index.dispose();
 ```
 
-`searchSimilar` returns **cosine similarity** (1 = identical, higher = better),
-sorted descending, filtered by `threshold` — the same contract as the qdrant
-store (vec0 returns distance; the store converts `1 - distance` at the boundary).
+For text RAG with the active core embedder, replace `embeddingProfile` with a
+stable `activeEmbedderProfileId` and use `addText` / `searchText`. For a custom
+embedder, pass `embedder:` to `open()`; neither path makes the RAG registry a
+singleton. Dispose the index before `FlutterEdgeAi.dispose()` or before
+disposing the borrowed custom embedder.
 
-`flush()` (`FlutterEdgeAi.rag.flush()`) is a no-op on native: the connection
+The provider removes the application-level `kIsWeb` branch between the native
+and web stores; only the `location` differs. Use a stable
+profile ID that versions the weights, tokenizer, pooling, normalization, and
+document/query prefix contract. The profile is stored beside the vectors and
+prevents a location from being reopened with an incompatible embedder.
+
+Databases created before 2.0.0 contain vectors but no stored profile. Open a known
+legacy database with `allowLegacyProfileAdoption: true` only after verifying
+the exact embedder that created it; the RAG layer checks its dimension before
+persisting the first profile. Leave the flag false for unverified data.
+
+`RagIndex.searchText` / `searchVector` return **cosine similarity** in
+`RetrievalResult.similarity` (1 = identical, higher = better), sorted
+descending, filtered by `threshold` — the same contract as the qdrant store
+(vec0 returns distance; the store converts `1 - distance` at the boundary).
+
+`index.flush()` is a no-op on native: the connection
 autocommits, so a statement that returned is on disk. On web it drains the
 IndexedDB storage and waits for it. `sqlite3` 3.4.0 through 3.5.2 returned
 early over a write batch already in flight (upstream
@@ -51,28 +98,45 @@ is why this package requires 3.6.0 and, with it, Flutter 3.47; `close()` drains
 on every version. When neither OPFS nor IndexedDB is available
 the store runs in memory, and `flush()` throws `VectorStoreException`.
 
+On web, one `location` may be open by only one `WebSqliteVectorStore` at a
+time. The store holds an exclusive [Web Lock](https://developer.mozilla.org/docs/Web/API/Web_Locks_API)
+for its complete lifetime, so another tab, worker, or store instance fails
+immediately with an actionable `VectorStoreException` instead of opening a
+second IndexedDB/OPFS snapshot. Current Chrome, Edge, Firefox, and Safari
+releases expose Web Locks. The API is feature-detected: a runtime or insecure
+context without `navigator.locks` fails closed with `VectorStoreException`
+before opening OPFS or IndexedDB, because it cannot safely coordinate another
+tab or worker. Always call `index.dispose()` or `store.close()` before reopening
+that location. The in-memory VFS remains a last resort only when Web Locks are
+available but persistent browser storage is not; it cannot bind a durable
+embedding profile, so `FlutterEdgeAiRag.open()` rejects it.
+
 ## Declared-column filters
 
 `vec0` filters KNN only on **declared, typed metadata columns** (not arbitrary
-JSON). Declare the filterable fields once at init via `filterSchema:`; the store
+JSON). Declare the filterable fields in `VectorStoreSpec.filterSchema`; the store
 promotes those fields out of each document's metadata JSON into real columns and
 translates `Filter` (`must`/`should`/`mustNot`) into a vec0 `WHERE`:
 
 ```dart
-await FlutterEdgeAi.initialize(
-  vectorStore: kIsWeb ? WebSqliteVectorStore() : SqliteVectorStore(),
-  filterSchema: const FilterSchema(fields: [
-    FilterField(name: 'lang', type: FilterFieldType.string),
-    FilterField(name: 'year', type: FilterFieldType.number),
-    FilterField(name: 'archived', type: FilterFieldType.bool),
-  ]),
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: 'sqlite',
+    location: databasePath,
+    filterSchema: FilterSchema(fields: [
+      FilterField(name: 'lang', type: FilterFieldType.string),
+      FilterField(name: 'year', type: FilterFieldType.number),
+      FilterField(name: 'archived', type: FilterFieldType.bool),
+    ]),
+  ),
+  embeddingProfile: EmbeddingProfile(id: 'my-embedder-v1', dimension: 768),
 );
 
 // later, at query time:
-final hits = await store.searchSimilar(
-  queryEmbedding: queryVec,
+final hits = await index.searchVector(
+  embedding: queryVec,
   topK: 10,
-  filter: const Filter(
+  filter: Filter(
     must:    [FieldRange(key: 'year', gte: 2000)],
     mustNot: [FieldEquals(key: 'archived', value: true)],
   ),
@@ -81,8 +145,9 @@ final hits = await store.searchSimilar(
 
 `FilterField.name` must match `^[A-Za-z][A-Za-z0-9_]*$`, and must not be a name
 vec0 already declares: `id`, `embedding`, `content`, `metadata`, and the hidden
-`distance` and `k`. `configure()` throws an `ArgumentError` otherwise — at that
-call, not at the first `addDocument`, which is when the table is really built.
+`distance` and `k`. Otherwise `rag.open()` throws an `ArgumentError` (from the
+store's `configure()`) — at open, not at the first write, which is when the
+table is really built.
 
 The name becomes a real `vec0` column, and sqlite-vec's DDL grammar accepts no
 quoted identifier form (`"doc-type"`, `[doc-type]` and `` `doc-type` `` all
@@ -104,47 +169,12 @@ reports 0 documents, `searchSimilar()` returns no hits, and the old rows sit
 untouched in `documents`. This was not called out when 1.1.0 shipped.
 
 Your data is intact and needs no re-embedding — 1.0.x stored the vector as a
-`Float32` BLOB alongside the id, content and metadata. Move it once:
-
-```dart
-import 'dart:typed_data';
-import 'package:sqlite3/sqlite3.dart';   // add sqlite3 to your own pubspec
-
-final store = SqliteVectorStore();
-await store.initialize(path);
-
-final db = sqlite3.open(path);
-final hasLegacy = db
-    .select("SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='documents'")
-    .isNotEmpty;
-
-if (hasLegacy) {
-  for (final row
-      in db.select('SELECT id, content, embedding, metadata FROM documents')) {
-    // 1.0.x wrote each element with setFloat32(..., Endian.little); read it
-    // back the same way. ByteData.sublistView needs no 4-byte alignment,
-    // which a raw asFloat32List view of the BLOB would.
-    final bytes = ByteData.sublistView(row['embedding'] as Uint8List);
-    await store.addDocument(
-      id: row['id'] as String,
-      content: row['content'] as String,
-      embedding: List<double>.generate(
-        bytes.lengthInBytes ~/ 4,
-        (i) => bytes.getFloat32(i * 4, Endian.little),
-      ),
-      metadata: row['metadata'] as String?,
-    );
-  }
-  db.execute('DROP TABLE documents');   // only after the loop succeeds
-}
-db.close();
-```
-
-Dropping the table is what makes the block a no-op on later launches. There is
-no built-in migration call — this is a one-time fix for an upgrade that has
-already happened. Full write-up in the
-[migration guide](https://flutteredge.ai/docs/migration).
+`Float32` BLOB alongside the id, content and metadata. The one-time copy (verify
+the embedder that produced the old vectors, bind its profile, re-add the rows,
+then drop `documents`) is in the
+[migration guide](https://flutteredge.ai/docs/migration). There is no built-in
+migration call — this is a one-time fix for an upgrade that has already
+happened.
 
 ## Setup
 
@@ -164,12 +194,14 @@ build in an air-gapped environment, pre-populate that cache directory.
 **Web** ships the custom `sqlite3.wasm` (with `sqlite-vec` linked in) as the
 package web asset `web/rag/sqlite3.wasm`. Copy it into your app's web root so it
 sits next to `index.html` at `rag/sqlite3.wasm` — that's the URL
-`WasmSqlite3.loadFromUrl` fetches. Resolve the package directory with
-`dart pub deps`/`flutter pub` (the path printed by your IDE) and copy the asset:
+`WasmSqlite3.loadFromUrl` fetches. After `flutter pub get`, the package
+directory is the `rootUri` printed under its name in your app's
+`.dart_tool/package_config.json`:
 
 ```sh
+grep -A1 '"name": "flutter_edge_ai_sqlite"' .dart_tool/package_config.json
+# <pkg> = that rootUri without file:// (a relative one is relative to .dart_tool/)
 mkdir -p web/rag
-# <pkg> = the flutter_edge_ai_sqlite directory in your pub cache / workspace
 cp <pkg>/web/rag/sqlite3.wasm web/rag/sqlite3.wasm
 ```
 

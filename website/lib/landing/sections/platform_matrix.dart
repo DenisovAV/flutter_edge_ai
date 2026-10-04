@@ -53,7 +53,8 @@ class PlatformMatrix extends StatelessComponent {
           ]),
           p(classes: 'matrix-note', [
             Component.text(
-              'NPU support requires Intel LunarLake/PantherLake (Windows). '
+              'NPU support covers supported Qualcomm Snapdragon devices on Android '
+              'and Intel LunarLake/PantherLake on Windows. '
               'iOS GPU runs on Metal on device; the Simulator is CPU-only '
               '(256 MB Metal allocation cap).',
             ),

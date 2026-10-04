@@ -7,14 +7,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:flutter_edge_ai/core/services/vector_store_filter.dart';
-
 import '../flutter_edge_ai_interface.dart';
 import '../model_file_manager_interface.dart';
 import '../core/domain/platform_types.dart';
 
 import '../core/model.dart';
-import '../core/di/service_registry.dart';
 import '../core/domain/model_source.dart';
 import '../core/registry/engine_registry.dart';
 import '../core/registry/embedding_registry.dart';
@@ -152,7 +149,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     final activeModel = _modelManager.activeInferenceModel;
     if (activeModel == null) {
       throw StateError(
-        'No active inference model set. Use `FlutterEdgeAi.installModel()` or `modelManager.setActiveModel()` first',
+        'No active inference model set. Use `FlutterEdgeAi.installModel()` or `modelManager.ensureModelReadyFromSpec()` first',
       );
     }
 
@@ -838,113 +835,6 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
       return completer.future;
     }
   }
-
-  // === RAG Methods ===
-
-  @override
-  Future<void> initializeVectorStore(String databasePath) async {
-    await ServiceRegistry.instance.vectorStoreRepository.initialize(
-      databasePath,
-    );
-  }
-
-  @override
-  Future<void> flushVectorStore() async {
-    await ServiceRegistry.instance.vectorStoreRepository.flush();
-  }
-
-  @override
-  Future<void> addDocumentWithEmbedding({
-    required String id,
-    required String content,
-    required List<double> embedding,
-    String? metadata,
-  }) async {
-    await ServiceRegistry.instance.vectorStoreRepository.addDocument(
-      id: id,
-      content: content,
-      embedding: embedding,
-      metadata: metadata,
-    );
-  }
-
-  @override
-  Future<void> addDocument({
-    required String id,
-    required String content,
-    String? metadata,
-  }) async {
-    if (initializedEmbeddingModel == null) {
-      throw StateError(
-        'No embedding model is active. addDocument(content:) and '
-        'searchSimilar(query:) auto-embed text, which requires an embedding '
-        'model. Install and activate one with FlutterEdgeAi.installEmbedder(...) '
-        '(or modelManager.setActiveModel) before calling these methods — or '
-        'pass a precomputed vector to addDocumentWithEmbedding(embedding:).',
-      );
-    }
-    final embedding = await initializedEmbeddingModel!.generateEmbedding(
-      content,
-      taskType: TaskType.retrievalDocument,
-    );
-    await addDocumentWithEmbedding(
-      id: id,
-      content: content,
-      embedding: embedding,
-      metadata: metadata,
-    );
-  }
-
-  @override
-  Future<List<RetrievalResult>> searchSimilar({
-    required String query,
-    int topK = 5,
-    double threshold = 0.0,
-    Filter? filter,
-  }) async {
-    if (initializedEmbeddingModel == null) {
-      throw StateError(
-        'No embedding model is active. addDocument(content:) and '
-        'searchSimilar(query:) auto-embed text, which requires an embedding '
-        'model. Install and activate one with FlutterEdgeAi.installEmbedder(...) '
-        '(or modelManager.setActiveModel) before calling these methods — or '
-        'pass a precomputed vector to addDocumentWithEmbedding(embedding:).',
-      );
-    }
-    final queryEmbedding = await initializedEmbeddingModel!.generateEmbedding(
-      query,
-    );
-    return await ServiceRegistry.instance.vectorStoreRepository.searchSimilar(
-      queryEmbedding: queryEmbedding,
-      topK: topK,
-      threshold: threshold,
-      filter: filter,
-    );
-  }
-
-  @override
-  Future<VectorStoreStats> getVectorStoreStats() async {
-    return await ServiceRegistry.instance.vectorStoreRepository.getStats();
-  }
-
-  @override
-  Future<void> clearVectorStore() async {
-    await ServiceRegistry.instance.vectorStoreRepository.clear();
-  }
-
-  @override
-  Future<void> removeDocument({required String id}) async {
-    await ServiceRegistry.instance.vectorStoreRepository.removeDocument(id: id);
-  }
-
-  @override
-  bool get enableHnsw =>
-      ServiceRegistry.instance.vectorStoreRepository.enableHnsw;
-
-  @override
-  set enableHnsw(bool value) {
-    ServiceRegistry.instance.vectorStoreRepository.enableHnsw = value;
-  }
 }
 
 /// Check if current platform is desktop
@@ -952,9 +842,3 @@ bool get isDesktop {
   if (kIsWeb) return false;
   return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 }
-
-@Deprecated(
-  'Use FlutterEdgeAiDesktop: flutter_gemma was renamed to flutter_edge_ai '
-  '(dart fix --apply migrates). Removed in flutter_edge_ai 2.0.0.',
-)
-typedef FlutterGemmaDesktop = FlutterEdgeAiDesktop;

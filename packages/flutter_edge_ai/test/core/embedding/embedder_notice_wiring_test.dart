@@ -289,12 +289,12 @@ void main() {
       // not reach. Without this, every later desktop test in this file inherits
       // an active embedder it never asked for.
       addTearDown(plugin.modelManager.clearModelCache);
-      // The other half. `setActiveModel` also persists the identity to
-      // preferences, unawaited, and `clearModelCache` only clears the in-memory
-      // field — so a later case building a fresh manager could read back an
-      // active embedder it never asked for.
+      // The other half. Activation also persists the identity, and
+      // `clearModelCache` only clears the in-memory field — so a later case
+      // building a fresh manager could read back an active embedder it never
+      // asked for.
       addTearDown(plugin.modelManager.clearActiveEmbeddingIdentity);
-      plugin.modelManager.setActiveModel(
+      await (plugin.modelManager as MobileModelManager).activateInstalledModel(
         EmbeddingModelSpec(
           name: 'unrelated-active-embedder',
           modelSource: ModelSource.file('/other.tflite'),

@@ -54,9 +54,9 @@ class _EnginesAppState extends State<EnginesApp> {
   Future<void> _pickAtStartup() async {
     // First: does this platform have a built-in arm at all? `Models.builtIn`
     // throws where it does not, so asking it is the cheap way to find out —
-    // and where it throws there is nothing to probe either. The package
-    // registers no plugin on Windows or Linux, so `availability()` there has
-    // no OS model to ask and only reports unavailable. Skip it.
+    // and where it throws this codelab has nothing to probe. The sample omits
+    // the package's Windows AI Foundry spec; Linux has no OS built-in model.
+    // Skip the probe and use the downloaded model.
     final ModelChoice builtIn;
     try {
       builtIn = Models.builtIn;

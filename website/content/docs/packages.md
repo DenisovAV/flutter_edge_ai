@@ -1,15 +1,13 @@
 ---
 title: Packages
-description: The 1.0 modular architecture — a small core plus opt-in engine, embedding, and RAG packages.
+description: Modular inference, embedding, speech, RAG orchestration, and storage packages for Flutter Edge AI.
 image: https://flutteredge.ai/images/og-image.png
 ---
 
-As of **1.0**, the monolithic `flutter_gemma` plugin was split into a small
-**core** package plus **opt-in** packages for each engine / backend. Your app
-ships only the native weight it actually uses. All packages live in one monorepo
-(a Dart pub workspace). The opt-in packages depend on core and never on each
-other: core owns the contracts and picks the implementation, a package provides
-it, and your app wires the two together in `FlutterEdgeAi.initialize(...)`.
+The former `flutter_gemma` monolith is now a set of opt-in modules. Core owns
+model installation plus inference, embedding, and speech registries. Since 2.0,
+RAG orchestration has its own instance-scoped package and storage providers
+depend on it. Apps ship only the runtimes and vector stores they use.
 
 ## The packages
 
@@ -20,19 +18,21 @@ it, and your app wires the two together in `FlutterEdgeAi.initialize(...)`.
 | **`flutter_edge_ai_mediapipe`** | `.task` / `.bin` inference via MediaPipe. | Mobile + Web |
 | **`flutter_edge_ai_builtin_ai`** | System OS models — Gemini Nano (Android / AICore), Apple Foundation Models (iOS 26+/macOS), Windows AI Foundry (Phi Silica), and Gemini Nano via the Chrome Prompt API (Web). No model file to bundle or download. A thin adapter over [`flutter_local_ai`](https://pub.dev/packages/flutter_local_ai), which owns the native layer — not a plugin itself. | Android + iOS + macOS + Windows + Web |
 | **`flutter_edge_ai_onnx`** | Text generation (`OnnxEngine`) + embeddings (`OnnxEmbeddingBackend`) — ORT-GenAI/ORT via `dart:ffi` on native, Transformers.js/onnxruntime-web on Web. | macOS, Linux, Windows, Android, iOS (arm64) + Web |
-| **`flutter_edge_ai_embeddings`** | Runtime-agnostic text-embedding pipeline (tokenizer, pooling, isolate worker). Needs a backend — `LiteRtEmbeddingBackend` (`flutter_edge_ai_litertlm`) or `OnnxEmbeddingBackend` (`flutter_edge_ai_onnx`). | All |
-| **`flutter_edge_ai_qdrant`** | On-device RAG vector store (qdrant-edge, via the official qdrant_edge UniFFI SDK). Fastest on native. | Native (no Web) |
-| **`flutter_edge_ai_sqlite`** | On-device RAG vector store — in-SQLite KNN via the `sqlite-vec` (`vec0`) extension. Exact + portable. | All (incl. Web) |
+| **`flutter_edge_ai_embeddings`** | Embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via `embeddingTokenizers:`. Needs a backend — `LiteRtEmbeddingBackend` (`flutter_edge_ai_litertlm`) or `OnnxEmbeddingBackend` (`flutter_edge_ai_onnx`). | All |
+| **`flutter_edge_ai_rag`** | Instance-scoped RAG orchestration, `RagIndex`, stable embedding profiles, filters, and vector-store provider contracts. | All |
+| **`flutter_edge_ai_qdrant`** | qdrant-edge provider for `flutter_edge_ai_rag`, via the official qdrant_edge UniFFI SDK. Fastest on native. | Native (no Web) |
+| **`flutter_edge_ai_sqlite`** | SQLite + `sqlite-vec` provider for `flutter_edge_ai_rag`. Exact + portable. | All (incl. Web) |
 | **`flutter_edge_ai_agent`** | On-device [agent skills](/docs/agent) — SKILL.md catalog + tool-calling loop (text / JS / native-intent / MCP). | Native, no Web (JS skills: no Linux) |
 | **`flutter_edge_ai_speech`** | On-device [speech](/docs/speech) — speech-to-text + text-to-speech + a `VoiceSession` voice loop (moonshine/Whisper/Parakeet STT + Matcha/Qwen3/Inflect TTS) via the LiteRT C API + `dart:ffi`. | Native (no Web) |
 | **`flutter_edge_ai_diagnostics`** | [Memory diagnostics](/docs/diagnostics) — the anonymous footprint (the memory the OS cannot reclaim) and the memory still available, read from the OS. No native code, no dependency on core. | Android + iOS |
 
 ## How it works
 
-- **Core registers no engine by itself.** You wire the packages you added through
-  `FlutterEdgeAi.initialize(inferenceEngines:, embeddingBackends:, embeddingTokenizers:,
-  vectorStore:)`.
-  See [Installation](/docs/installation).
+- **Core registers no AI runtime by itself.** Wire inference, embedding,
+  tokenizer, and speech packages through `FlutterEdgeAi.initialize(...)`.
+- **RAG is independently owned.** Create `FlutterEdgeAiRag(providers:)`, open
+  one or more profile-bound indexes, and dispose them before core/custom embedders.
+  See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Probe-chain registry.** Engines and backends are pure factories that declare
   `canHandle(spec)` + a priority. The registry selects a provider per model by
   declared `ModelFileType` — `task` / `binary` → MediaPipe, `litertlm` → LiteRT-LM,
@@ -56,8 +56,8 @@ it, and your app wires the two together in `FlutterEdgeAi.initialize(...)`.
 | Run ONNX models — ORT-GenAI (native) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
 | Generate text embeddings | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
-| On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_qdrant` |
-| On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_sqlite` |
+| On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
+| On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 | On-device agent skills the model runs itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Measure what a model costs in memory the OS cannot reclaim (Android + iOS) | `flutter_edge_ai_diagnostics` |
@@ -67,14 +67,15 @@ Desktop is served **primarily** by [`flutter_edge_ai_litertlm`](/docs/litertlm)
 (`.litertlm`) — the default engine. [`flutter_edge_ai_onnx`](/docs/onnx) also runs
 on all three desktop OSes (macOS/Windows/Linux), and the OS built-in model is
 available via [`flutter_edge_ai_builtin_ai`](/docs/builtin-ai) on **macOS** (Apple
-Foundation Models) and on **Windows** (AI Foundry — opt-in, the app supplies the
-Windows App SDK projections); not on Linux. There is no MediaPipe engine on
+Foundation Models) and on **Windows** (AI Foundry — nothing to configure to
+build: `flutter_local_ai` resolves the Windows App SDK projection itself; running
+needs Windows 11 25H2+ on Copilot+-class hardware and a packaged app); not on
+Linux. There is no MediaPipe engine on
 desktop. See [Desktop Support](/docs/desktop).
 </Info>
 
-Migrating from the 0.16.x monolith is just adding these packages plus one
-`initialize(...)` call — every model / session / chat / embedding / RAG API is
-unchanged. See [Migration (0.x → 1.0)](/docs/migration).
+See [Migration](/docs/migration) for the rename and the 2.0 extraction of RAG
+from core.
 
 ## ONNX Runtime engine
 

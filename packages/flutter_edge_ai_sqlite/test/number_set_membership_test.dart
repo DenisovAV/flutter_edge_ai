@@ -20,7 +20,7 @@
 // the scan can reach past them.
 import 'dart:ffi';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -69,7 +69,7 @@ void main() {
       ''');
     });
 
-    tearDown(() => db.dispose());
+    tearDown(() => db.close());
 
     final schema = FilterSchema(
       fields: [
@@ -92,7 +92,7 @@ void main() {
       // The regression: this threw out of prepare with
       // `'xxx in (...)' is only available on INTEGER or TEXT metadata columns.`
       final got = search(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'year', values: [2021, 2022]),
           ],
@@ -107,14 +107,14 @@ void main() {
       // `2021` and `2021.0` are the same FLOAT column value; the codec doubles
       // both, so the caller's Dart literal type cannot change the result.
       final ints = search(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'year', values: [2021, 2022]),
           ],
         ),
       );
       final doubles = search(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'year', values: [2021.0, 2022.0]),
           ],
@@ -126,7 +126,7 @@ void main() {
     test('a should bucket of FieldEquals on one number field runs', () {
       // Nobody wrote `IN` here. SQLite's OR-to-IN rewrite did, and vec0 threw.
       final got = search(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'year', value: 2021),
             FieldEquals(key: 'year', value: 2022),
@@ -140,7 +140,7 @@ void main() {
       // Fusing has to cover this too: a one-member FieldMatchAny renders as
       // `=`, so `year = ? OR year = ?` would re-form and fold to IN again.
       final got = search(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'year', value: 2021),
             FieldMatchAny(key: 'year', values: [2022]),
@@ -163,7 +163,7 @@ void main() {
       // translator, so it asks for a window wide enough that the post-filter
       // can see the matches.
       final got = search(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'year', value: 2020),
             FieldEquals(key: 'lang', value: 'fr'),
@@ -176,7 +176,7 @@ void main() {
 
     test('a single-member set is pushed, not post-filtered', () {
       final got = search(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'year', values: [2020]),
           ],
@@ -191,7 +191,7 @@ void main() {
       // `CASE` drops d2 afterwards. Recall suffers (this is the documented
       // cost: fewer than k rows), but a wrong row must never come back.
       final got = search(
-        const Filter(
+        Filter(
           must: [
             FieldMatchAny(key: 'year', values: [2020, 2022]),
           ],
@@ -205,7 +205,7 @@ void main() {
     test('an empty set matches nothing instead of throwing', () {
       expect(
         search(
-          const Filter(
+          Filter(
             must: [FieldMatchAny(key: 'year', values: [])],
           ),
         ),
@@ -218,7 +218,7 @@ void main() {
       // value. That is "matches nothing", not an error and not a NULL bind.
       expect(
         search(
-          const Filter(
+          Filter(
             must: [
               FieldMatchAny(key: 'year', values: ['not a year']),
             ],
@@ -232,7 +232,7 @@ void main() {
       // The negated side needs no rewrite — a conjunction of `!=` is exactly
       // what vec0 pushes. Excluding the two nearest must still yield k rows.
       final got = search(
-        const Filter(
+        Filter(
           mustNot: [
             FieldMatchAny(key: 'year', values: [1998, 1999]),
           ],
@@ -246,7 +246,7 @@ void main() {
       // come back. Binding NULL into the pushed `!=` would have excluded
       // everything instead.
       final got = search(
-        const Filter(
+        Filter(
           mustNot: [
             FieldMatchAny(key: 'year', values: ['not a year']),
           ],
@@ -260,7 +260,7 @@ void main() {
       // cost them their pushdown.
       expect(
         search(
-          const Filter(
+          Filter(
             must: [
               FieldMatchAny(key: 'lang', values: ['en', 'fr']),
             ],
@@ -270,7 +270,7 @@ void main() {
       );
       expect(
         search(
-          const Filter(
+          Filter(
             must: [
               FieldMatchAny(key: 'archived', values: [true]),
             ],
@@ -282,7 +282,7 @@ void main() {
 
     test('a should bucket of FieldEquals on a string field is pushed', () {
       final got = search(
-        const Filter(
+        Filter(
           should: [
             FieldEquals(key: 'lang', value: 'en'),
             FieldEquals(key: 'lang', value: 'fr'),

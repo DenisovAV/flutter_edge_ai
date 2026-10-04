@@ -13,6 +13,7 @@ description: Use when running ONNX models with flutter_edge_ai_onnx (ModelFileTy
 4. Native generation runs on macOS arm64, Linux x64, Windows x64, Android arm64 and iOS arm64. On any other native host no engine accepts the model and `getActiveModel` throws `No inference engine can handle this model`. Web is a separate arm with its own rules (below).
 5. Android needs `minSdk 24` — the build hook fails the build below it. Phi-3.5-mini peaks near 3.7 GB of RAM, so target 8 GB devices.
 6. Text only: no images, no audio, no LoRA.
+7. Decoding is greedy, native and web: `temperature`, `topK` and `topP` are accepted and ignored, so the same prompt gives the same reply. On native `activeBackend` is `null` — ORT-GenAI picks the execution provider from `genai_config.json`, which the engine does not read; on web it reports the backend that loaded.
 
 ## Setup
 
@@ -88,3 +89,5 @@ window.ortReady = (async () => {
 ## Embeddings
 
 `OnnxEmbeddingBackend` handles single-file `.onnx` or `.ort` embedding models, installed with `FlutterEdgeAi.installEmbedder()` like any other — see the flutter-edge-ai-rag skill for the indexing flow.
+
+On native it takes WordPiece (BERT-style, e.g. all-MiniLM-L6-v2) and SentencePiece (e.g. EmbeddingGemma-300M-ONNX) models and runs on CPU: `activeBackend` is `PreferredBackend.cpu` and `preferredBackend` is not applied. On web it takes WordPiece models only — all-MiniLM-L6-v2 works there, EmbeddingGemma-300M-ONNX is native-only.

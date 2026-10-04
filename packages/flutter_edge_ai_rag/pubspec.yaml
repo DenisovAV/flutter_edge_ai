@@ -1,0 +1,27 @@
+name: flutter_edge_ai_rag
+description: "Pluggable on-device RAG for Flutter Edge AI, with independent vector-store providers and embedders."
+version: 1.0.0
+resolution: workspace
+homepage: https://flutteredge.ai
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_rag
+topics: [rag, vector-search, embeddings, on-device, ai]
+
+platforms:
+  android:
+  ios:
+  web:
+  macos:
+  windows:
+  linux:
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter_edge_ai: ^2.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

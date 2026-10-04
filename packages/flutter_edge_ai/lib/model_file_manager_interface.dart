@@ -18,7 +18,10 @@ abstract class ModelFileManager {
   /// Downloads a model without progress tracking
   Future<void> downloadModel(ModelSpec spec, {String? token});
 
-  /// Deletes a model and all its files
+  /// Deletes a model and all its files.
+  ///
+  /// This is a storage operation only. The caller that owns an active-model
+  /// lifecycle is responsible for clearing its identity after deletion.
   Future<void> deleteModel(ModelSpec spec);
 
   /// Gets all installed models for a specific type
@@ -133,9 +136,6 @@ abstract class ModelFileManager {
   /// Legacy API: Deletes current active model (legacy method without parameters)
   @Deprecated('Use deleteModel(spec) with ModelSpec instead')
   Future<void> deleteCurrentModel();
-
-  /// Sets the active model for subsequent inference operations
-  void setActiveModel(ModelSpec spec);
 
   /// Ensures the manager is fully initialized — active model/embedder state
   /// restored from storage (#227). Idempotent and safe to call concurrently;

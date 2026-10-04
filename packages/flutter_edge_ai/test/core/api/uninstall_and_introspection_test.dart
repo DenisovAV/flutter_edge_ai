@@ -171,7 +171,123 @@ void main() {
       await FlutterEdgeAi.uninstallEmbedder();
       expect(FlutterEdgeAi.hasActiveEmbedder(), isFalse);
     });
+
+    test(
+      'third-party manager deletes both artifacts then clears exactly once',
+      () async {
+        final spec = EmbeddingModelSpec(
+          name: 'third-party',
+          modelSource: NetworkSource('https://example.com/model.tflite'),
+          tokenizerSource: NetworkSource('https://example.com/tokenizer.model'),
+          modelFilename: 'third-party-model.tflite',
+          tokenizerFilename: 'third-party-tokenizer.model',
+        );
+        final manager = _ThirdPartyEmbeddingManager(spec);
+        final previousPlugin = FlutterEdgeAiPlugin.instance;
+        FlutterEdgeAiPlugin.instance = _ThirdPartyPlugin(manager);
+        try {
+          await FlutterEdgeAi.uninstallEmbedder();
+        } finally {
+          FlutterEdgeAiPlugin.instance = previousPlugin;
+        }
+
+        expect(manager.deletedArtifacts, [
+          'third-party-model.tflite',
+          'third-party-tokenizer.model',
+        ]);
+        expect(manager.clearCalls, 1);
+        expect(manager.clearCompleted, isTrue);
+        expect(manager.events, [
+          'delete:third-party-model.tflite',
+          'delete:third-party-tokenizer.model',
+          'clear:start',
+          'clear:done',
+        ]);
+      },
+    );
+
+    test(
+      'third-party partial delete failure does not clear identity',
+      () async {
+        final spec = EmbeddingModelSpec(
+          name: 'third-party-failure',
+          modelSource: NetworkSource('https://example.com/model.tflite'),
+          tokenizerSource: NetworkSource('https://example.com/tokenizer.model'),
+          modelFilename: 'failure-model.tflite',
+          tokenizerFilename: 'failure-tokenizer.model',
+        );
+        final manager = _ThirdPartyEmbeddingManager(spec, failDeleteAt: 1);
+        final previousPlugin = FlutterEdgeAiPlugin.instance;
+        FlutterEdgeAiPlugin.instance = _ThirdPartyPlugin(manager);
+        try {
+          await expectLater(
+            FlutterEdgeAi.uninstallEmbedder(),
+            throwsA(isA<StateError>()),
+          );
+        } finally {
+          FlutterEdgeAiPlugin.instance = previousPlugin;
+        }
+
+        expect(manager.deleteAttempts, 2);
+        expect(manager.deletedArtifacts, ['failure-model.tflite']);
+        expect(manager.clearCalls, 0);
+        expect(manager.activeEmbeddingModel, same(spec));
+      },
+    );
   });
+}
+
+final class _ThirdPartyPlugin extends FlutterEdgeAiPlugin {
+  _ThirdPartyPlugin(this._manager);
+
+  final ModelFileManager _manager;
+
+  @override
+  ModelFileManager get modelManager => _manager;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _ThirdPartyEmbeddingManager extends ModelFileManager {
+  _ThirdPartyEmbeddingManager(this._activeEmbeddingModel, {this.failDeleteAt});
+
+  ModelSpec? _activeEmbeddingModel;
+  final int? failDeleteAt;
+  final List<String> deletedArtifacts = [];
+  final List<String> events = [];
+  int deleteAttempts = 0;
+  int clearCalls = 0;
+  bool clearCompleted = false;
+
+  @override
+  ModelSpec? get activeEmbeddingModel => _activeEmbeddingModel;
+
+  @override
+  Future<void> deleteModel(ModelSpec spec) async {
+    for (var i = 0; i < spec.files.length; i++) {
+      deleteAttempts++;
+      if (failDeleteAt == i) {
+        throw StateError('artifact delete failed at index $i');
+      }
+      final filename = spec.files[i].filename;
+      deletedArtifacts.add(filename);
+      events.add('delete:$filename');
+    }
+  }
+
+  @override
+  Future<void> clearActiveEmbeddingIdentity() async {
+    clearCalls++;
+    events.add('clear:start');
+    await Future<void>.delayed(Duration.zero);
+    _activeEmbeddingModel = null;
+    clearCompleted = true;
+    events.add('clear:done');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FakeEmbeddingBackend implements EmbeddingBackendProvider {

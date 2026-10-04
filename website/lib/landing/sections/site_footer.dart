@@ -69,6 +69,14 @@ class SiteFooter extends StatelessComponent {
                 ]),
                 li([
                   a(
+                    href: 'https://pub.dev/packages/flutter_edge_ai_rag',
+                    classes: 'footer-link',
+                    attributes: {'target': '_blank', 'rel': 'noopener'},
+                    [Component.text('flutter_edge_ai_rag')],
+                  ),
+                ]),
+                li([
+                  a(
                     href: 'https://pub.dev/packages/flutter_edge_ai_qdrant',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
@@ -154,7 +162,7 @@ class SiteFooter extends StatelessComponent {
                   a(href: '/docs/embeddings-and-rag', classes: 'footer-link', [Component.text('Embeddings & RAG')]),
                 ]),
                 li([
-                  a(href: '/docs/migration', classes: 'footer-link', [Component.text('Migration (0.x → 1.0)')]),
+                  a(href: '/docs/migration', classes: 'footer-link', [Component.text('Migration (1.x → 2.0)')]),
                 ]),
               ]),
             ]),

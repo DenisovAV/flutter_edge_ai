@@ -1,51 +1,73 @@
 # flutter_edge_ai_qdrant example
 
-`flutter_edge_ai_qdrant` is an opt-in vector store for
-[`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai). Register it once at
-startup, then use the unchanged RAG API on `FlutterEdgeAiPlugin.instance`.
+`flutter_edge_ai_qdrant` is an opt-in native vector-store provider for
+[`flutter_edge_ai_rag`](https://pub.dev/packages/flutter_edge_ai_rag).
 
 ```dart
 import 'package:flutter/widgets.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:path_provider/path_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Opt into the qdrant-edge native vector store.
-  await FlutterEdgeAi.initialize(
-    vectorStore: QdrantVectorStore(),
+  final rag = FlutterEdgeAiRag(
+    providers: [QdrantVectorStoreProvider()],
   );
 
-  final gemma = FlutterEdgeAiPlugin.instance;
+  // An absolute path to a shard directory, not a .db file.
+  final dir = await getApplicationDocumentsDirectory();
+  final index = await rag.open(
+    spec: VectorStoreSpec(
+      providerId: 'qdrant',
+      location: '${dir.path}/rag_store',
+      filterSchema: FilterSchema(
+        fields: [FilterField(name: 'lang', type: FilterFieldType.string)],
+      ),
+    ),
+    embeddingProfile: EmbeddingProfile(
+      id: 'my-embedder-v1',
+      dimension: 4,
+    ),
+  );
 
-  // `path` is a shard DIRECTORY (qdrant creates files under it), not a .db file.
-  await gemma.initializeVectorStore('rag_store');
-
-  // Add documents with pre-computed embeddings (e.g. from
-  // flutter_edge_ai_embeddings). `metadata` is a raw JSON string.
-  await gemma.addDocumentWithEmbedding(
+  await index.addVector(
     id: 'doc-1',
     content: 'Gemma runs fully on-device.',
-    embedding: List<double>.filled(768, 0.0), // your real embedding here
+    embedding: const [1.0, 0.0, 0.0, 0.0],
     metadata: '{"lang":"en"}',
   );
 
-  // Plain similarity search.
-  final hits = await gemma.searchSimilar(query: 'on-device LLM', topK: 5);
+  final hits = await index.searchVector(
+    embedding: const [1.0, 0.0, 0.0, 0.0],
+    topK: 5,
+  );
   for (final h in hits) {
     print('${h.id}: ${h.content} (score ${h.similarity})');
   }
 
   // Payload-aware filtering (native only).
-  final enHits = await gemma.searchSimilar(
-    query: 'on-device LLM',
+  final enHits = await index.searchVector(
+    embedding: const [1.0, 0.0, 0.0, 0.0],
     topK: 5,
     filter: Filter(must: [FieldEquals(key: 'lang', value: 'en')]),
   );
   print('English hits: ${enHits.length}');
+
+  await index.flush();
+  await index.dispose();
 }
 ```
+
+This example is vector-only and does not initialize the main inference
+runtime. For `addText` and `searchText`, first initialize `FlutterEdgeAi` and
+install its active embedding model, then pass a stable
+`activeEmbedderProfileId` to `rag.open()`. The ID must version the weights,
+tokenizer, pooling, normalization, and document/query prefix contract.
+
+For an existing nonempty store created without profile metadata, pass an
+explicit `EmbeddingProfile` and set `allowLegacyProfileAdoption: true` only
+after verifying which embedding model created those vectors.
 
 See the [package README](https://pub.dev/packages/flutter_edge_ai_qdrant) for
 platform support and behavior notes. A full runnable app that wires every engine

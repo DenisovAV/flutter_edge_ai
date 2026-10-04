@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/core/model_management/model_activation.dart';
 import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
@@ -369,7 +370,7 @@ class InferenceInstallationBuilder {
         fileType: _fileType,
       );
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      manager.setActiveModel(spec);
+      await activateInstalledModel(manager, spec);
       edgeAiLog('✅ Built-in model set as active: ${spec.name}');
       return InferenceInstallation(
         spec: spec,
@@ -401,7 +402,7 @@ class InferenceInstallationBuilder {
         fileType: _fileType,
       );
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      manager.setActiveModel(spec);
+      await activateInstalledModel(manager, spec);
       edgeAiLog(
         '✅ ONNX web model set as active (Transformers.js owns the weights): '
         '${spec.name}',
@@ -475,7 +476,7 @@ class InferenceInstallationBuilder {
 
     // AUTO-SET as active inference model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
-    manager.setActiveModel(spec);
+    await activateInstalledModel(manager, spec);
 
     edgeAiLog('✅ Inference model installed and set as active: ${spec.name}');
 
@@ -656,7 +657,7 @@ class InferenceInstallationBuilder {
     }
 
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
-    manager.setActiveModel(spec);
+    await activateInstalledModel(manager, spec);
     edgeAiLog('✅ ONNX directory model installed and set as active: $modelId');
 
     return InferenceInstallation(spec: spec, runtime: runtime, notes: notes);

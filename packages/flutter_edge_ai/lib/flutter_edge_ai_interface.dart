@@ -6,7 +6,6 @@ import 'package:flutter_edge_ai/core/tool.dart';
 import 'package:flutter_edge_ai/core/chat.dart';
 import 'package:flutter_edge_ai/core/message.dart';
 import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/services/vector_store_filter.dart';
 import 'package:flutter_edge_ai/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/core/domain/platform_types.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -27,7 +26,7 @@ const supportedLoraRanks = [4, 8, 16];
 ///
 /// **App code should use the `FlutterEdgeAi` static facade instead** — it is the
 /// canonical, complete entry point (install / run / introspect / uninstall /
-/// storage, plus RAG via `FlutterEdgeAi.rag`). `FlutterEdgeAiPlugin.instance` is
+/// storage). `FlutterEdgeAiPlugin.instance` is
 /// retained for engine authors, the federated-plugin mock seam, and backward
 /// compatibility; every consumer-facing operation here is also exposed on the
 /// facade.
@@ -106,7 +105,8 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// Creates and returns a new [EmbeddingModel] instance.
   ///
   /// Modern API: If paths are not provided, uses the active embedding model set via
-  /// `FlutterEdgeAi.installEmbedder()` or `modelManager.setActiveModel()`.
+  /// `FlutterEdgeAi.installEmbedder()` or
+  /// `modelManager.ensureModelReadyFromSpec()`.
   ///
   /// Legacy API: Provide explicit paths for backward compatibility.
   ///
@@ -122,7 +122,8 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// Creates and returns a new [SpeechRecognizer] instance.
   ///
   /// Modern API: If paths are not provided, uses the active STT model set via
-  /// `FlutterEdgeAi.installStt()` or `modelManager.setActiveModel()`.
+  /// `FlutterEdgeAi.installStt()` or
+  /// `modelManager.ensureModelReadyFromSpec()`.
   ///
   /// [modelPath] — path to the STT model file (optional if active model set).
   /// [tokenizerPath] — path to the tokenizer file (optional if active model set).
@@ -145,7 +146,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// Creates and returns a new [SpeechSynthesizer] for the active TTS model.
   ///
   /// Uses the active TTS model set via `FlutterEdgeAi.installTts()` /
-  /// `modelManager.setActiveModel()`. Native-only — throws on web.
+  /// `modelManager.ensureModelReadyFromSpec()`. Native-only — throws on web.
   ///
   /// [language] is TTS-only (Qwen3; ignored by Matcha) — see
   /// `RuntimeConfig.language`'s doc. Forwarded into the `RuntimeConfig` the
@@ -157,63 +158,6 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
     PreferredBackend? preferredBackend,
     String? language,
   });
-
-  /// === RAG functionality ===
-
-  /// Initialize vector store database.
-  Future<void> initializeVectorStore(String databasePath);
-
-  /// Persist everything written to the vector store so far, without closing it.
-  ///
-  /// See [VectorStoreRepository.flush] for what this means per backend — it is
-  /// required on qdrant, a no-op on native SQLite, and a partial drain on web.
-  Future<void> flushVectorStore();
-
-  /// Add document to vector store with pre-computed embedding.
-  Future<void> addDocumentWithEmbedding({
-    required String id,
-    required String content,
-    required List<double> embedding,
-    String? metadata,
-  });
-
-  /// Add document to vector store (will compute embedding automatically).
-  Future<void> addDocument({
-    required String id,
-    required String content,
-    String? metadata,
-  });
-
-  /// Search for similar documents.
-  ///
-  /// [filter] is an optional payload predicate, honored over the fields
-  /// declared filterable via [FilterSchema] (qdrant-edge on native, sqlite-vec
-  /// `vec0` columns on native and web). A condition on an undeclared field is a
-  /// no-op: passing such a filter returns the same hits as `filter: null` and
-  /// never throws.
-  Future<List<RetrievalResult>> searchSimilar({
-    required String query,
-    int topK = 5,
-    double threshold = 0.0,
-    Filter? filter,
-  });
-
-  /// Get vector store statistics.
-  Future<VectorStoreStats> getVectorStoreStats();
-
-  /// Clear all documents from vector store.
-  Future<void> clearVectorStore();
-
-  /// Remove a single document from the vector store by ID. No-op if absent.
-  Future<void> removeDocument({required String id});
-
-  /// Legacy no-op kept for source compatibility.
-  ///
-  /// Vector search now runs inside the store's engine (qdrant-edge, or
-  /// sqlite-vec/`vec0`), so there is no Dart-side HNSW to toggle. The get/set is
-  /// accepted but ignored. Scheduled for removal in 2.0.
-  bool get enableHnsw;
-  set enableHnsw(bool value);
 }
 
 /// Represents an LLM model instance.

@@ -1,6 +1,6 @@
 name: flutter_edge_ai_qdrant
-description: "qdrant-edge on-device RAG vector store for flutter_edge_ai, via the official qdrant_edge UniFFI SDK. Opt-in VectorStoreRepository with payload filtering. Native platforms only (no web)."
-version: 1.3.2
+description: "qdrant-edge on-device vector-store provider for flutter_edge_ai_rag, via the official qdrant_edge UniFFI SDK. Native platforms only."
+version: 2.0.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_qdrant
 topics: [rag, qdrant, vector-search, embeddings, on-device]
@@ -24,7 +24,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai_rag: ^1.0.0
   uuid: ^4.0.0
   # For the store's owned-subdir path handling (qdrant_edge_v1).
   path: ^1.9.0

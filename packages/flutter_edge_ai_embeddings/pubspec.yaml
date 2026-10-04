@@ -1,6 +1,6 @@
 name: flutter_edge_ai_embeddings
 description: "Embedding tokenizers for flutter_edge_ai: Gemma SentencePiece and BERT WordPiece, as a registrable provider. The pipeline they feed lives in flutter_edge_ai."
-version: 2.2.1
+version: 2.2.2
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_embeddings
 topics: [embeddings, gemma, litert, rag, on-device]
@@ -28,7 +28,7 @@ dependencies:
   # ^1.9.0: this version needs core's embedding seam and the tokenizer
   # registry (`EmbeddingTokenizerRegistry`), which land in 1.9.0. An older
   # core resolves and then fails to compile — better here than there.
-  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai: ^2.0.0
   # Floor is 1.4.1, not 1.3.3, and that is deliberate. 1.4.0 added
   # `pre_tokenizer` validation with no `Split` case and rejected the
   # Gemma-family tokenizer.json this package loads (upstream #35); 1.4.1 accepts

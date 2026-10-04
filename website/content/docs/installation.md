@@ -21,10 +21,13 @@ dependencies:
   flutter_edge_ai_builtin_ai: latest_version   # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS) / Windows AI Foundry / Chrome Prompt API (Web)
   flutter_edge_ai_onnx: latest_version         # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
 
-  # Optional — text embeddings + on-device RAG:
-  flutter_edge_ai_embeddings: latest_version   # text-embedding pipeline (needs a backend, e.g. LiteRtEmbeddingBackend above)
-  flutter_edge_ai_qdrant: latest_version   # RAG vector store (qdrant-edge; fastest on native)
-  flutter_edge_ai_sqlite: latest_version   # RAG vector store (sqlite-vec / vec0; all platforms, incl. web)
+  # Optional — text-embedding tokenizer implementations:
+  flutter_edge_ai_embeddings: latest_version   # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
+
+  # Optional — independent RAG orchestration plus one storage provider:
+  flutter_edge_ai_rag: latest_version       # RagIndex, profiles, filters
+  flutter_edge_ai_qdrant: latest_version    # qdrant-edge; fastest on native
+  flutter_edge_ai_sqlite: latest_version    # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
 
   # Optional — on-device speech (STT + TTS):
   flutter_edge_ai_speech: latest_version       # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
@@ -46,26 +49,28 @@ dependencies:
 | Run ONNX models — ORT-GenAI (native) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
 | Generate text embeddings | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
-| On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_qdrant` |
-| On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_sqlite` |
+| On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
+| On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` (Flutter 3.47+) |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Run on-device agent skills the model executes itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
 | Measure what a model costs in memory the OS cannot reclaim (Android + iOS) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
 
-Core registers **no** engine by itself — you wire the packages you added in
-`await FlutterEdgeAi.initialize(...)` (below). Run `flutter pub get` to install.
+Core registers **no** AI runtime by itself — wire inference, embedding, and
+speech packages in `FlutterEdgeAi.initialize(...)` below. RAG is independent:
+construct `FlutterEdgeAiRag` with a storage provider. Run `flutter pub get` to
+install.
 
 <Info>
-**Migrating from 0.16.x (monolith)?** See the [Migration guide](/docs/migration) —
-the only breaking change is adding the opt-in packages and the `initialize(...)`
-call; every model / session / RAG API is unchanged.
+**Migrating from `flutter_gemma` or Flutter Edge AI 1.x?** See the
+[Migration guide](/docs/migration). Version 2.0 moves RAG out of core and adds
+durable embedding profiles.
 </Info>
 
 ## 2. Initialize Flutter Edge AI
 
 Call `await FlutterEdgeAi.initialize(...)` once in `main()` and **register the opt-in
 packages you added** to `pubspec.yaml`. Core registers no engine on its own, so
-without this step `getActiveModel()` / `createEmbeddingModel()` throw a clear
+without this step `getActiveModel()` / `getActiveEmbedder()` throw a clear
 "add the engine package" error.
 
 ```dart
@@ -76,7 +81,6 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_mediapipe/flutter_edge_ai_mediapipe.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
-import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -88,7 +92,7 @@ void main() async {
       MediaPipeEngine(),    // flutter_edge_ai_mediapipe — .task / .bin models
       BuiltInAiEngine(),    // flutter_edge_ai_builtin_ai — Gemini Nano / Apple FM
     ],
-    // Optional — embeddings (needed for RAG / generateEmbedding):
+    // Optional — embeddings (also usable by an independent RAG index):
     embeddingBackends: const [
       LiteRtEmbeddingBackend(), // flutter_edge_ai_litertlm
     ],
@@ -105,9 +109,6 @@ void main() async {
     ttsBackends: const [
       LiteRtTtsBackend(), // flutter_edge_ai_speech
     ],
-    // Optional — RAG vector store (pick one; native here):
-    vectorStore: QdrantVectorStore(), // flutter_edge_ai_qdrant
-
     // Common settings:
     // String.fromEnvironment yields '' when the define is absent, and an
     // empty token still sends a bare `Authorization: Bearer` header. Pass
@@ -134,15 +135,12 @@ void main() async {
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by BOTH embedding backends above |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |
-| `vectorStore: QdrantVectorStore()` | `flutter_edge_ai_qdrant` | native RAG |
-| `vectorStore: SqliteVectorStore()` / `WebSqliteVectorStore()` | `flutter_edge_ai_sqlite` | sqlite-vec RAG (all platforms; `WebSqliteVectorStore()` on web) |
 
-Add only the engines you ship. Passing both `LiteRtLmEngine()` and
+Add only the runtimes you ship. Passing both `LiteRtLmEngine()` and
 `MediaPipeEngine()` lets one app run both formats — the registry routes each
-model to the engine that handles its file type. The `sqlite-vec` store runs on
-every platform — use `vectorStore: SqliteVectorStore()` on native and
-`WebSqliteVectorStore()` on web. `flutter_edge_ai_qdrant` is native-only (and
-the fastest option there).
+model to the engine that handles its file type. For RAG, register
+`SqliteVectorStoreProvider()` or `QdrantVectorStoreProvider()` on a separate
+`FlutterEdgeAiRag` instance; see [Embeddings & RAG](/docs/embeddings-and-rag).
 
 **Common settings:**
 
@@ -183,9 +181,11 @@ resolution with a message naming the `flutter_local_ai` pod rather than the
 package you added.
 
 **Where you set it depends on the dependency manager.** Swift Package Manager is the
-default since Flutter 3.44 (opt-in before that), and an SPM-only app has no `Podfile` at all — set **iOS
+default since Flutter 3.44 (opt-in before that), and an SPM-only app has no `Podfile` at all.
+Flutter 3.47+ creates (and migrates) apps at iOS 15.0; on 3.44.x the template is 13.0 — set **iOS
 Deployment Target** on the Runner target in Xcode, or the build fails with `requires
-minimum platform version 15.0 … but this target supports 13.0`.
+minimum platform version 15.0 … but this target supports 13.0`. iOS needs no Podfile
+step; macOS does — see [Desktop → macOS](/docs/desktop#macos).
 `flutter_edge_ai_mediapipe` ships no `Package.swift`, so an app using it also gets a
 `Podfile`; set the platform there as well:
 
@@ -249,6 +249,10 @@ keeps `Runner.app/Frameworks/` App-Store-clean (fixes ITMS-90432).
 </Info>
 
 ### Android
+
+Release builds need `<uses-permission android:name="android.permission.INTERNET"/>`
+in `android/app/src/main/AndroidManifest.xml` to download models (Flutter's
+template adds it only to the debug and profile manifests).
 
 **Add-to-app hosts must declare the Kotlin Gradle Plugin themselves.** Flutter
 auto-applies KGP to plugin modules only when the host provides it, so a Java-only native
@@ -328,6 +332,16 @@ Play Store does not offer broken APKs to incompatible devices:
 android {
     defaultConfig {
         ndk { abiFilters 'arm64-v8a' }
+    }
+}
+```
+
+In a Kotlin build script (`build.gradle.kts`):
+
+```
+android {
+    defaultConfig {
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 }
 ```
@@ -450,12 +464,21 @@ package's Native-Assets hook (no manual download/bundling). **`flutter_edge_ai_o
 (macOS/Windows/Linux), and the OS built-in model is available via
 **`flutter_edge_ai_builtin_ai`** on **macOS** ([Apple Foundation
 Models](/docs/builtin-ai)) and on **Windows** ([AI Foundry](/docs/builtin-ai) —
-opt-in: the app supplies the Windows App SDK projections); not on Linux. What
+nothing to configure to build: `flutter_local_ai` resolves the Windows App SDK
+projection itself; running needs Windows 11 25H2+ on Copilot+-class hardware and
+a packaged app); not on Linux. What
 holds across all of desktop: there is no MediaPipe engine on desktop — `.task` /
 `.bin` models are **NOT compatible** with desktop.
 
+**macOS needs one extra step:** turn Swift Package Manager off for the app
+(`flutter: config: enable-swift-package-manager: false` in `pubspec.yaml`) and
+paste a `post_install` block into the generated `macos/Podfile` — see
+[Desktop → macOS](/docs/desktop#macos). Without it the build succeeds and the
+first model load fails.
+
 See [Desktop Support](/docs/desktop) for the full per-platform reference (macOS
-`Podfile` `post_install`, entitlements, Windows VC++ runtime, Linux Vulkan
+`Podfile` `post_install`, entitlements, Windows DLL loading — no VC++
+redistributable needed since `flutter_gemma_litertlm` 1.7.1 — Linux Vulkan
 driver, and known limitations).
 
 ## Platform & architecture support

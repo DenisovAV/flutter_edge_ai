@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai_example/models/base_model.dart'; // For ModelSou
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
+import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
 import 'package:path_provider/path_provider.dart';
 
 class EmbeddingModelDownloadService {
@@ -32,28 +33,13 @@ class EmbeddingModelDownloadService {
   /// Checks if both model and tokenizer files exist and match remote file sizes.
   Future<bool> checkModelExistence(String token) async {
     try {
-      // Extract SAME filenames that Modern API will use during download
-      String extractFilename(String url, ModelSourceType sourceType) {
-        if (sourceType == ModelSourceType.network) {
-          final uri = Uri.parse(url);
-          return uri.pathSegments.isNotEmpty
-              ? uri.pathSegments.last
-              : model.filename;
-        }
-        // For asset/bundled, use the path as-is
-        return url.split('/').last;
-      }
-
-      final modelFilename = extractFilename(model.url, model.sourceType);
-      final tokenizerFilename = extractFilename(
-        model.tokenizerUrl,
-        model.sourceType,
+      // Catalog identities are intentionally versioned. Never treat the old
+      // URL basename cache as this immutable revision.
+      final modelInstalled = await FlutterEdgeAi.isModelInstalled(
+        model.filename,
       );
-
-      // Check if both files are installed using actual filenames
-      final modelInstalled = await FlutterEdgeAi.isModelInstalled(modelFilename);
       final tokenizerInstalled = await FlutterEdgeAi.isModelInstalled(
-        tokenizerFilename,
+        model.tokenizerFilename,
       );
 
       final installed = modelInstalled && tokenizerInstalled;
@@ -91,11 +77,18 @@ class EmbeddingModelDownloadService {
       switch (model.sourceType) {
         case ModelSourceType.network:
           final authToken = token.isEmpty ? null : token;
-          builder = builder.modelFromNetwork(model.url, token: authToken);
+          builder = builder.modelFromNetwork(
+            model.url,
+            token: authToken,
+            filename: model.filename,
+          );
         case ModelSourceType.asset:
-          builder = builder.modelFromAsset(model.url);
+          builder = builder.modelFromAsset(model.url, filename: model.filename);
         case ModelSourceType.bundled:
-          builder = builder.modelFromBundled(model.url);
+          builder = builder.modelFromBundled(
+            model.url,
+            filename: model.filename,
+          );
       }
 
       // Add tokenizer source based on sourceType
@@ -105,11 +98,18 @@ class EmbeddingModelDownloadService {
           builder = builder.tokenizerFromNetwork(
             model.tokenizerUrl,
             token: authToken,
+            filename: model.tokenizerFilename,
           );
         case ModelSourceType.asset:
-          builder = builder.tokenizerFromAsset(model.tokenizerUrl);
+          builder = builder.tokenizerFromAsset(
+            model.tokenizerUrl,
+            filename: model.tokenizerFilename,
+          );
         case ModelSourceType.bundled:
-          builder = builder.tokenizerFromBundled(model.tokenizerUrl);
+          builder = builder.tokenizerFromBundled(
+            model.tokenizerUrl,
+            filename: model.tokenizerFilename,
+          );
       }
 
       // Add progress callbacks and install
@@ -123,6 +123,7 @@ class EmbeddingModelDownloadService {
             onProgress(modelProgress, tokenizerProgress);
           })
           .install();
+      await persistVerifiedEmbeddingCatalogSelection(model);
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Error downloading embedding model: $e');
@@ -134,26 +135,18 @@ class EmbeddingModelDownloadService {
   /// Deletes both downloaded files and metadata.
   Future<void> deleteModel() async {
     try {
-      // Extract actual filenames used by Modern API
-      String extractFilename(String url, ModelSourceType sourceType) {
-        if (sourceType == ModelSourceType.network) {
-          final uri = Uri.parse(url);
-          return uri.pathSegments.isNotEmpty
-              ? uri.pathSegments.last
-              : model.filename;
-        }
-        return url.split('/').last;
-      }
-
-      final modelFilename = extractFilename(model.url, model.sourceType);
-      final tokenizerFilename = extractFilename(
-        model.tokenizerUrl,
-        model.sourceType,
-      );
-
+      final wasActive =
+          FlutterEdgeAi.activeEmbedderSpec?.files.any(
+            (file) => file.filename == model.filename,
+          ) ??
+          false;
       // Use Modern API to properly uninstall (deletes metadata + files)
-      await FlutterEdgeAi.uninstallModel(modelFilename);
-      await FlutterEdgeAi.uninstallModel(tokenizerFilename);
+      await FlutterEdgeAi.uninstallModel(model.filename);
+      await FlutterEdgeAi.uninstallModel(model.tokenizerFilename);
+      if (wasActive) {
+        await FlutterEdgeAi.clearActiveEmbeddingIdentity();
+        await clearEmbeddingCatalogProvenance();
+      }
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Error deleting embedding model: $e');

@@ -94,7 +94,14 @@ class _ChatPageState extends State<ChatPage> {
       // of the multimodal codelab there is nothing to set in two places —
       // `getActiveModel` builds the engine, and nothing about the weights
       // changes when you declare a function.
-      final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
+      //
+      // Both arguments come from the model, not from this page: FunctionGemma's
+      // download needs 1024 and the CPU, exactly as in Steps 1–3, while Gemma 4
+      // and a model you converted yourself get 4096 and the engine's default.
+      final inference = await FlutterEdgeAi.getActiveModel(
+        maxTokens: widget.model.maxTokens,
+        preferredBackend: widget.model.preferredBackend,
+      );
       // Hold the runtime before opening a chat on it: `createChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.

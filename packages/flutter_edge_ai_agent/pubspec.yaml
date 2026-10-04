@@ -33,7 +33,7 @@ dependencies:
   # 1.5.5 added onMaxToolTurns to generateChatResponseWithTools — the reusable
   # tool loop AgentLoop delegates to since 0.2.2; earlier core has no such param
   # and would fail to compile. (1.2.0 first gave the skillExecutors seam.)
-  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai: ^2.0.0
   # SKILL.md frontmatter is YAML; parsed with the standard yaml package.
   yaml: ^3.1.2
   # McpSkillExecutor calls MCP tools over Streamable HTTP (JSON-RPC over POST).

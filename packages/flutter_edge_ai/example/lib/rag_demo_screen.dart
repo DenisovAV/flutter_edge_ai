@@ -1,26 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart' show FlutterEdgeAi;
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 import 'gemma_bootstrap.dart';
 import 'rag_demo/rag_demo_data.dart';
+import 'rag_demo/rag_storage_location.dart';
 import 'rag_demo/widgets/status_card.dart';
 import 'rag_demo/widgets/knowledge_base_section.dart';
 import 'rag_demo/widgets/search_section.dart';
 import 'rag_demo/widgets/result_card.dart';
-
-/// Get database path - returns virtual path on web, real path on mobile
-Future<String> _getDatabasePath(String filename) async {
-  if (kIsWeb) {
-    return filename;
-  } else {
-    final appDir = await getApplicationDocumentsDirectory();
-    return '${appDir.path}/$filename';
-  }
-}
+import 'utils/installed_model_lookup.dart';
 
 class RagDemoScreen extends StatefulWidget {
   const RagDemoScreen({super.key});
@@ -34,12 +26,10 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
     text: 'What is Flutter?',
   );
 
-  /// The active RAG vector-store backend. Switched at runtime via the
-  /// SegmentedButton below: `FlutterEdgeAi.reset()` tears down the DI singleton
-  /// (and the current store), then [bootstrapGemma] re-initializes with the new
-  /// store. The installed embedder + active model survive (they live in the
-  /// platform plugin instance + prefs, not the DI singleton).
+  /// The active RAG vector-store backend. Switching closes only this screen's
+  /// independently-owned [RagIndex]; inference and embedding stay initialized.
   RagBackend _ragBackend = RagBackend.sqlite;
+  RagIndex? _index;
 
   bool _isInitialized = false;
   bool _isLoading = false;
@@ -66,30 +56,46 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
 
   @override
   void dispose() {
+    final index = _index;
+    _index = null;
+    if (index != null) {
+      // State.dispose cannot await. RagIndex rejects new work immediately and
+      // waits for already accepted operations before it closes the store.
+      unawaited(
+        index.dispose().catchError((Object error, StackTrace stackTrace) {
+          debugPrint(
+            '[RagDemo] Error closing VectorStore during dispose: $error',
+          );
+        }),
+      );
+    }
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _checkEmbeddingModel() async {
-    // Check if embedding model is already initialized
-    final hasModel =
-        FlutterEdgeAiPlugin.instance.initializedEmbeddingModel != null;
+    final hasActiveModel = FlutterEdgeAi.activeEmbedderSpec != null;
+    final profileId = await activeEmbeddingProfileId();
+    final hasKnownProfile = profileId != null;
 
+    if (!mounted) return;
     setState(() {
-      _hasEmbeddingModel = hasModel;
-      _statusMessage = hasModel
-          ? 'Embedding model ready. Initialize VectorStore to begin.'
-          : 'WARNING: No embedding model!\n'
-                'Please create an embedding model first from the Embedding Models screen.';
+      _hasEmbeddingModel = hasActiveModel && hasKnownProfile;
+      _statusMessage = switch ((hasActiveModel, hasKnownProfile)) {
+        (false, _) =>
+          'WARNING: No embedding model!\n'
+              'Please create one from the Embedding Models screen.',
+        (true, false) =>
+          'The active embedding model has no stable RAG profile in the '
+              'example catalog. Re-select a catalog model before indexing.',
+        (true, true) =>
+          'Embedding model ready. Initialize VectorStore to begin.',
+      };
     });
   }
 
-  /// Swap the active vector-store backend at runtime. Tears down the current
-  /// store + DI singleton via [FlutterEdgeAi.reset], then re-bootstraps with the
-  /// new store. The installed embedder + active model survive (held in the
-  /// platform plugin instance + prefs, not the DI singleton). The switch resets
-  /// the demo to an uninitialized state — the new store is empty, so the user
-  /// re-initializes + re-adds documents.
+  /// Swap the active vector-store backend without resetting Flutter Edge AI.
+  /// Each backend/profile pair has its own persistent location.
   Future<void> _switchBackend(RagBackend next) async {
     if (next == _ragBackend) return;
     if (!next.isSupportedOnThisPlatform) {
@@ -102,17 +108,15 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
       _statusMessage = 'Switching to ${next.label}...';
     });
 
-    final previous = _ragBackend;
     try {
-      // Close the current store (release its native handle) AND reset the
-      // singleton before re-bootstrapping — dispose() does both, so the
-      // qdrant-edge shard / sqlite connection isn't leaked.
-      await FlutterEdgeAi.dispose();
-      await bootstrapGemma(ragBackend: next);
+      final previousIndex = _index;
+      _index = null;
+      await previousIndex?.dispose();
+      if (!mounted) return;
 
       setState(() {
         _ragBackend = next;
-        _isInitialized = false; // user must re-init the (new, empty) store
+        _isInitialized = false;
         _stats = null;
         _results = [];
         _categoryFilter = null;
@@ -126,40 +130,29 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Switching backend resets the knowledge base.'),
+            content: Text(
+              'Each backend keeps a separate persistent knowledge base.',
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } catch (e) {
       debugPrint('[RagDemo] Error switching backend: $e');
-      // The new backend failed AFTER reset(), so the DI singleton is null and
-      // every RAG call would now throw "not initialized". Re-bootstrap the
-      // PREVIOUS backend so the app stays usable (with a fresh, empty store of
-      // the previous type — the prior data is gone with the closed store).
-      var recovered = false;
-      try {
-        await FlutterEdgeAi.dispose();
-        await bootstrapGemma(ragBackend: previous);
-        recovered = true;
-      } catch (e2) {
-        debugPrint('[RagDemo] Recovery re-init also failed: $e2');
-      }
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _isInitialized = false;
         _stats = null;
         _results = [];
-        _statusMessage = recovered
-            ? 'Failed to switch to ${next.label}: $e\n'
-                  'Reverted to ${previous.label} — re-initialize the VectorStore.'
-            : 'Failed to switch backend and could not recover: $e\n'
-                  'Please restart the app.';
+        _statusMessage =
+            'Failed to close the current VectorStore: $e\n'
+            'Reopen the RAG screen before continuing.';
       });
     }
   }
 
-  Future<void> _initializeVectorStore() async {
+  Future<void> _openRagIndex() async {
     if (!_hasEmbeddingModel) {
       _showError('Please install an embedding model first!');
       return;
@@ -171,23 +164,53 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
     });
 
     try {
-      // Per-backend storage path: sqlite wants a `.db` FILE, qdrant-edge wants
-      // a shard DIRECTORY. RagBackend.storageName encodes the right shape so
-      // the two stores never collide on disk.
-      final dbPath = await _getDatabasePath(_ragBackend.storageName);
-      await FlutterEdgeAiPlugin.instance.initializeVectorStore(dbPath);
+      final profileId = await activeEmbeddingProfileId();
+      if (profileId == null) {
+        throw StateError(
+          'The active embedder is not a versioned model from the example '
+          'catalog. Re-select an embedding model before opening RAG.',
+        );
+      }
+      final location = await resolveRagStorageLocation(
+        _ragBackend.storageName(profileId),
+      );
+      final spec = VectorStoreSpec(
+        providerId: _ragBackend.providerId,
+        location: location,
+        filterSchema: kRagDemoFilterSchema,
+      );
+      if (!exampleRag.canOpen(spec)) {
+        throw UnsupportedError(
+          '${_ragBackend.label} is unavailable on this platform.',
+        );
+      }
 
-      final stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
+      final index = await exampleRag.open(
+        spec: spec,
+        activeEmbedderProfileId: profileId,
+      );
+      try {
+        final stats = await index.stats();
+        if (!mounted) {
+          await index.dispose();
+          return;
+        }
 
-      setState(() {
-        _isInitialized = true;
-        _stats = stats;
-        _statusMessage =
-            'VectorStore initialized! ${stats.documentCount} documents stored.';
-        _isLoading = false;
-      });
+        setState(() {
+          _index = index;
+          _isInitialized = true;
+          _stats = stats;
+          _statusMessage =
+              'VectorStore initialized! ${stats.documentCount} documents stored.';
+          _isLoading = false;
+        });
+      } catch (_) {
+        await index.dispose();
+        rethrow;
+      }
     } catch (e) {
       debugPrint('[RagDemo] Error initializing VectorStore: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _statusMessage = 'Error initializing VectorStore: $e';
@@ -209,34 +232,26 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
     final stopwatch = Stopwatch()..start();
 
     try {
-      // Collect all content texts
-      final contents = sampleDocuments.map((d) => d['content']!).toList();
+      final index = _index;
+      if (index == null) throw StateError('RAG index is not open.');
 
-      // Batch embedding - one call instead of multiple
-      final embeddingModel =
-          FlutterEdgeAiPlugin.instance.initializedEmbeddingModel!;
-      final embeddings = await embeddingModel.generateEmbeddings(
-        contents,
-        taskType: TaskType.retrievalDocument,
-      );
-
-      // Add documents with pre-computed embeddings. The `category` is
-      // serialised into the payload so the search step can filter on it via
-      // qdrant-edge's `Filter` DSL.
+      // The index borrows the active embedder and applies the document task
+      // prefix. `category` is promoted through the declared FilterSchema.
       for (int i = 0; i < sampleDocuments.length; i++) {
         final category = sampleDocuments[i]['category'] ?? 'general';
-        await FlutterEdgeAiPlugin.instance.addDocumentWithEmbedding(
+        await index.addText(
           id: sampleDocuments[i]['id']!,
           content: sampleDocuments[i]['content']!,
-          embedding: embeddings[i],
           metadata: jsonEncode({'category': category}),
         );
       }
+      await index.flush();
 
       stopwatch.stop();
 
-      final stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
+      final stats = await index.stats();
 
+      if (!mounted) return;
       setState(() {
         _stats = stats;
         _addTimeMs = stopwatch.elapsedMilliseconds;
@@ -247,6 +262,7 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
     } catch (e) {
       stopwatch.stop();
       debugPrint('[RagDemo] Error adding documents: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _statusMessage = 'Error adding documents: $e';
@@ -266,10 +282,13 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
     });
 
     try {
-      await FlutterEdgeAiPlugin.instance.clearVectorStore();
+      final index = _index;
+      if (index == null) throw StateError('RAG index is not open.');
+      await index.clear();
 
-      final stats = await FlutterEdgeAiPlugin.instance.getVectorStoreStats();
+      final stats = await index.stats();
 
+      if (!mounted) return;
       setState(() {
         _stats = stats;
         _results = [];
@@ -278,6 +297,7 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
       });
     } catch (e) {
       debugPrint('[RagDemo] Error clearing documents: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _statusMessage = 'Error clearing documents: $e';
@@ -305,8 +325,10 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
     final stopwatch = Stopwatch()..start();
 
     try {
-      // Build payload predicate from the selected category. `null` means no
-      // filter — qdrant-edge returns the global top-K.
+      final index = _index;
+      if (index == null) throw StateError('RAG index is not open.');
+
+      // Build a backend-independent payload predicate. `null` means no filter.
       final category = _categoryFilter;
       final filter = category == null
           ? null
@@ -314,7 +336,7 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
               must: [FieldEquals(key: 'category', value: category)],
             );
 
-      final results = await FlutterEdgeAiPlugin.instance.searchSimilar(
+      final results = await index.searchText(
         query: query,
         topK: _topK,
         threshold: _threshold,
@@ -323,6 +345,7 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
 
       stopwatch.stop();
 
+      if (!mounted) return;
       setState(() {
         _results = results;
         _searchTimeMs = stopwatch.elapsedMilliseconds;
@@ -336,6 +359,7 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
     } catch (e) {
       stopwatch.stop();
       debugPrint('[RagDemo] Search error: $e');
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _statusMessage = 'Search error: $e';
@@ -407,10 +431,9 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Runtime vector-store switcher: SQLite <-> Qdrant. Qdrant is
-            // native-only, so its segment is disabled on web (with a tooltip).
-            // Switching calls FlutterEdgeAi.reset() + re-bootstraps with the new
-            // store while preserving the installed embedder + active model.
+            // Runtime vector-store switcher: SQLite <-> Qdrant. Provider probes
+            // disable unsupported choices without an app-level platform branch.
+            // Switching closes only this screen's independently-owned index.
             _buildBackendSwitcher(),
             const SizedBox(height: 16),
 
@@ -426,7 +449,7 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
               ElevatedButton.icon(
                 onPressed: _isLoading || !_hasEmbeddingModel
                     ? null
-                    : _initializeVectorStore,
+                    : _openRagIndex,
                 icon: _isLoading
                     ? const SizedBox(
                         width: 16,
@@ -441,10 +464,9 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
               ),
 
             if (_isInitialized) ...[
-              // Payload Filter chips — demonstrates qdrant-edge's Filter DSL.
+              // Payload Filter chips — shared by both storage providers.
               // Selecting a category constrains the next search to docs whose
-              // payload metadata matches `category == <selected>`. On the
-              // legacy backend / Web the filter is silently ignored.
+              // payload metadata matches `category == <selected>`.
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -452,7 +474,7 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Search Filter (qdrant-edge payload Filter)',
+                        'Search Filter (portable payload Filter)',
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),

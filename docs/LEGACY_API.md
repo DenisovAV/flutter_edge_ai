@@ -11,7 +11,7 @@
 > - ✅ **Modern API:** Fluent builder pattern, type-safe sources, callback-based progress, better error messages
 > - ⚠️ **Legacy API:** Direct method calls, stream-based progress, manual state management
 >
-> **Migration Guide:** See [Migration from Legacy to Modern API](../packages/flutter_edge_ai/README.md#migration-from-legacy-to-modern-api-) section.
+> **Migration Guide:** See [Migration from Legacy to Modern API](#migration-from-legacy-to-modern-api) at the end of this document.
 
 
 The new API splits functionality into two parts:
@@ -943,3 +943,164 @@ await inferenceModel.close();
 ```
 
 If you need to use the inference again later, remember to call `createModel` again before generating responses.
+
+## Migration from Legacy to Modern API
+
+If you're upgrading from the Legacy API, here are common migration patterns:
+
+### Installing Models
+
+<table>
+<tr>
+<th>Legacy API</th>
+<th>Modern API</th>
+</tr>
+<tr>
+<td>
+
+```dart
+// Network download
+final spec = MobileModelManager.createInferenceSpec(
+  name: 'model.bin',
+  modelUrl: 'https://example.com/model.bin',
+);
+
+await FlutterEdgeAiPlugin.instance.modelManager
+  .downloadModelWithProgress(spec, token: token)
+  .listen((progress) {
+    print('${progress.overallProgress}%');
+  });
+```
+
+</td>
+<td>
+
+```dart
+// Network download
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemmaIt,
+)
+  .fromNetwork(
+    'https://example.com/model.bin',
+    token: token,
+  )
+  .withProgress((progress) {
+    print('$progress%');
+  })
+  .install();
+```
+
+</td>
+</tr>
+<tr>
+<td>
+
+```dart
+// From assets
+await modelManager.installModelFromAssetWithProgress(
+  'model.bin',
+  loraPath: 'lora.bin',
+).listen((progress) {
+  print('$progress%');
+});
+```
+
+</td>
+<td>
+
+```dart
+// From assets
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemmaIt,
+)
+  .fromAsset('model.bin')
+  .withProgress((progress) {
+    print('$progress%');
+  })
+  .install();
+
+// LoRA weights can be installed with the model
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemmaIt,
+)
+  .fromAsset('model.bin')
+  .withLoraFromAsset('lora.bin')
+  .install();
+```
+
+</td>
+</tr>
+</table>
+
+### Checking Model Installation
+
+<table>
+<tr>
+<th>Legacy API</th>
+<th>Modern API</th>
+</tr>
+<tr>
+<td>
+
+```dart
+final spec = MobileModelManager.createInferenceSpec(
+  name: 'model.bin',
+  modelUrl: url,
+);
+
+final isInstalled = await FlutterEdgeAiPlugin
+  .instance.modelManager
+  .isModelInstalled(spec);
+```
+
+</td>
+<td>
+
+```dart
+final isInstalled = await FlutterEdgeAi
+  .isModelInstalled('model.bin');
+```
+
+</td>
+</tr>
+</table>
+
+### Key Migration Notes
+
+- ✅ **Simpler imports**: Use `package:flutter_edge_ai/core/api/flutter_edge_ai.dart`
+- ✅ **Builder pattern**: Chain methods for cleaner code
+- ✅ **Callback-based progress**: Simpler than streams for most cases
+- ✅ **Type-safe sources**: Compile-time validation of source types
+- ⚠️ **Breaking change**: Progress values are now `int` (0-100) instead of `DownloadProgress` object
+- ⚠️ **Separate files**: Model and LoRA weights installed independently
+
+### Model Creation and Inference
+
+**Modern API (Recommended):**
+
+```dart
+// Create model with runtime configuration
+final inferenceModel = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 2048,
+  preferredBackend: PreferredBackend.gpu,
+);
+
+final chat = await inferenceModel.createChat();
+await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
+final response = await chat.generateChatResponse();
+```
+
+**Legacy API (Still supported):**
+
+```dart
+// Works with both Legacy and Modern installation methods
+final inferenceModel = await FlutterEdgeAiPlugin.instance.createModel(
+  modelType: ModelType.gemmaIt,
+  preferredBackend: PreferredBackend.gpu,
+  maxTokens: 2048,
+);
+
+final chat = await inferenceModel.createChat();
+await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
+final response = await chat.generateChatResponse();
+```

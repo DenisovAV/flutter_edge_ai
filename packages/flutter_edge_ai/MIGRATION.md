@@ -325,7 +325,7 @@ Native setup moved to the package that owns it:
 
 The iOS/Android entitlements and manifest entries from the main README still
 apply when you ship an inference engine. See the
-[README Setup section](README.md#setup) for the full list.
+[README platform setup](README.md#platform-setup) for the full list.
 
 ## Embedder decoupling (litertlm 1.5.0)
 

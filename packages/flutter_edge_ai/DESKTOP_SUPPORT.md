@@ -49,7 +49,7 @@ into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
 dylibs get wrapped into `.framework` bundles (and re-signed) inside the app's
 `Contents/Frameworks/` for LiteRT-LM's `gpu_registry` to find them — see
-[macOS setup in the README](README.md#macos-setup) for the exact block.
+[macOS setup in the README](README.md#macos) for the exact block.
 Linux and Windows are fully self-contained (no manual setup).
 
 The Dart FFI layer is shared with mobile — Android and iOS use the same
@@ -156,7 +156,7 @@ Native libs are fetched and bundled automatically via Native Assets. The
 `LiteRtLm.dylib`'s `LC_LOAD_DYLIB` reference is re-pointed at the new
 framework path (LiteRT-LM's `gpu_registry` resolves the Metal accelerator
 through that framework). See the
-[macOS setup snippet in the README](README.md#macos-setup) for the exact
+[macOS setup snippet in the README](README.md#macos) for the exact
 block. Without it the companion dylibs are never bundled, and
 `LiteRtLm.dylib` — which links `libGemmaModelConstraintProvider.dylib`
 directly — fails to load on every backend, CPU included.

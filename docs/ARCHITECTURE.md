@@ -1,8 +1,8 @@
 # Architecture
 
-**Status:** draft, revised 2026-10-04 after the first question round. The pure-Dart layer
-described in sections 5 and 6 exists (untested until a Dart SDK is installed); the Flutter
-app does not yet. Open items are tagged `Q#` / `TQ#`.
+**Status:** draft, revised 2026-10-04 after the second question round. The pure-Dart layer
+(sections 5 and 6) exists with passing tests; the Flutter app has its scaffold: Riverpod,
+go_router with the disclosure gate, disclosure screens, and the three-state surface. Open items are tagged `Q#` / `TQ#`.
 
 ## 1. The idea in one paragraph
 
@@ -139,25 +139,36 @@ Three states, one widget tree, a toggle control the user owns:
   be zoomed independently.
 - Keyboard insets are handled at the scaffold so the input never hides.
 
-## 8. Tone and conversation (Q9, Q16, Q17)
+## 8. Interaction model, shopping mode and conversation (Q9, Q16, Q17, Q28–Q30, Q34)
 
-- First turn offers `question_chips`: "Practical, stretch, or just for fun?" The answer sets
-  `BuyerProfile.tone`; the persona prompt adapts (sympathetic and concrete for practical,
-  supportive but realistic for stretch, playful for fun, precise for budgeting). Tone can be
-  changed any time and the advisor mirrors the user's register.
-- Needs versus wants: the advisor records items as `unlabeled` unless the user framed them;
-  it may ask "need or nice-to-have?" and the user can ignore the question.
-- Conversations are persisted (drift). A history list and a "new conversation" action
-  behave like other AI apps. The structured profile is shared across conversations;
-  transcripts are per conversation.
+- **Structured first.** When the answer is one of a few options or a number, the advisor
+  presents a `choice`, `multi_choice` or `input_form` rather than asking in prose. Fewer
+  tokens, faster turns, exact values. Every such prompt carries an implicit "something
+  else" that opens free text; the global toggle lets the user expand or collapse the
+  advisor at any time. The person is never trapped in the model's options.
+- **Shopping mode, not tone.** `BuyerProfile.mode` is one of browsing (just looking),
+  dreaming (dream car, for fun), practical, buying (buying now, detailed budgeting). The
+  advisor infers it from what the user says, may confirm it with a `choice` on the first
+  turn, and updates it when intent shifts ("ok, maybe I do want this"). Tone follows mode
+  and mirrors the user's register.
+- Needs versus wants: items are `unlabeled` unless the user framed them; the advisor may
+  ask with a `choice` and the user can ignore it.
+- **Conversation titles are dynamic.** A new conversation is titled by time ("Today at
+  3:45 PM"); as a vehicle, class or theme surfaces, the title is regenerated from content
+  ("My 2015 Civic trade-in", "Sept 3 · SUV shopping"). Never the first message. History
+  list newest first, swipe to delete, "new conversation" action. The structured profile is
+  shared across conversations; transcripts are per conversation.
 
 ## 9. Content area and vehicle discovery (Q7, Q10, Q11, Q15)
 
 - Modes: **vehicles** (list, detail, compare rendered from `find_vehicles`), **browser**
   (`flutter_inappwebview`, works on iOS and Android), **compare**.
-- `InventorySource`: `BundledInventory` (sample JSON, labeled) first. Live listings come
-  from the browser: a **curated site list** the project tests, each with an extraction
-  recipe; unknown sites fall back to generic text extraction.
+- **No sample inventory** (Q41). Listings come from pages the user opens: a **curated site
+  list** the project tests, each with an extraction recipe (closer to an HTML pre-rendering
+  step than scraping); unknown sites fall back to generic extraction. `find_vehicles`
+  searches the listings read so far in this session and earlier ones the user kept. For
+  the airplane-mode demo, pages read while online are cached locally and remain usable
+  offline (Q40).
 - **Browser-assisted data entry** is the core pattern: the user finds a trade-in value,
   insurance quote or listing on a site they trust; the assistant reads the page and offers
   the figures as *inputs* to the finance tools, labeled with the source URL. The app does
@@ -181,24 +192,25 @@ Three states, one widget tree, a toggle control the user owns:
 
 `docs/MODELS.md` covers candidates. The catalog is an OTA manifest (id, size, checksum,
 URL, minimum RAM, capabilities); sources are Hugging Face (token entered in-app) or a
-self-hosted mirror. An in-app diagnostics screen measures and exports JSON, with an
-optional upload if a collection endpoint exists.
+self-hosted mirror at `motormind.sirisdevelopment.com` (TQ31). An in-app diagnostics screen
+measures and exports JSON, with an optional upload to the same host.
 
 ## 12. Build flavors: demo and store (Q22)
 
 Advertising is a **build-time** decision. The `demo` flavor compiles no ad SDK and shows no
-slot; the `store` flavor includes a fixed, labeled ad slot in the same place on every screen.
-Implemented as a `--dart-define=MOTORMIND_ADS=true` flag plus platform flavors so the ad SDK
-is absent from demo binaries. Ads never appear inside the chat or inside a result component,
-and never affect ranking.
+slot; the `store` flavor includes a fixed, labeled AdMob banner **across the top** of every
+screen, which hides while the keyboard is up (AdMob policy forbids ads adjacent to the
+keyboard). Implemented as a `--dart-define=MOTORMIND_ADS=true` flag plus platform flavors so
+the ad SDK is absent from demo binaries. Ads never appear inside the chat or inside a result
+component, and never affect ranking.
 
 ## 13. Privacy, storage, analytics (Q21, TQ21, TQ22)
 
 - drift (SQLite) for profile, conversations, allowlist, reference cache; secure storage for
   the Hugging Face token; shared preferences for small flags.
-- Analytics: anonymous event counts (screen views, tool names called, model id, surface
-  transitions), no free text, no financial values, opt-in, disclosed in the gate and the
-  terms. Provider to be chosen (Q33).
+- Analytics: Firebase Analytics (Q33), anonymous event counts (screen views, tool names
+  called, model id, surface transitions, component ids presented, download outcomes), no
+  free text, no financial values, opt-in, disclosed in the gate and the terms.
 - A debug network audit logs every outbound host; a test fails on an unexpected host.
 
 ## 14. Risks and unknowns

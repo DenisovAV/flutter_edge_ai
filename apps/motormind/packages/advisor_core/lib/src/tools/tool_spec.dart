@@ -17,20 +17,26 @@ class ToolSpec {
   final bool changesUi;
 
   Map<String, Object?> toJson() => {
-        'name': name,
-        'description': description,
-        'parameters': parameters,
-      };
+    'name': name,
+    'description': description,
+    'parameters': parameters,
+  };
 }
 
 Map<String, Object?> _number(String description) => {'type': 'number', 'description': description};
-Map<String, Object?> _integer(String description) => {'type': 'integer', 'description': description};
+Map<String, Object?> _integer(String description) => {
+  'type': 'integer',
+  'description': description,
+};
 Map<String, Object?> _string(String description, {List<String>? enumValues}) => {
-      'type': 'string',
-      'description': description,
-      if (enumValues != null) 'enum': enumValues,
-    };
-Map<String, Object?> _boolean(String description) => {'type': 'boolean', 'description': description};
+  'type': 'string',
+  'description': description,
+  'enum': ?enumValues,
+};
+Map<String, Object?> _boolean(String description) => {
+  'type': 'boolean',
+  'description': description,
+};
 
 /// Every tool Motormind offers the model, in the order they are described in
 /// the system prompt. Descriptions tell the model WHEN to call; keep them
@@ -59,15 +65,22 @@ abstract final class AdvisorTools {
         'properties': {
           'price': _number('Vehicle price in dollars before tax and fees.'),
           'term_months': _integer('Loan term in months, e.g. 60.'),
-          'credit_band': _string('The user\'s credit band.', enumValues: ['excellent', 'good', 'fair', 'poor', 'rebuilding']),
-          'apr': _number('Optional exact APR as a decimal (0.065 for 6.5%). Omit to use the band rate.'),
+          'credit_band': _string(
+            'The user\'s credit band.',
+            enumValues: ['excellent', 'good', 'fair', 'poor', 'rebuilding'],
+          ),
+          'apr': _number(
+            'Optional exact APR as a decimal (0.065 for 6.5%). Omit to use the band rate.',
+          ),
           'is_new': _boolean('True for a new vehicle, false for used. Default false.'),
           'down_payment': _number('Cash down in dollars. Default 0.'),
           'sales_tax_rate': _number('Sales tax rate as a decimal. Default 0.'),
           'fees': _number('Dealer, doc, title and registration fees in dollars. Default 0.'),
           'trade_value': _number('Estimated value of the trade-in, if any.'),
           'trade_payoff': _number('Amount still owed on the trade-in, if any.'),
-          'roll_negative_equity': _boolean('Finance any negative equity (true) or pay it in cash (false). Default true.'),
+          'roll_negative_equity': _boolean(
+            'Finance any negative equity (true) or pay it in cash (false). Default true.',
+          ),
         },
         'required': ['price', 'term_months', 'credit_band'],
       },
@@ -82,7 +95,10 @@ abstract final class AdvisorTools {
         'properties': {
           'payment_ceiling': _number('Maximum monthly payment in dollars.'),
           'term_months': _integer('Loan term in months.'),
-          'credit_band': _string('The user\'s credit band.', enumValues: ['excellent', 'good', 'fair', 'poor', 'rebuilding']),
+          'credit_band': _string(
+            'The user\'s credit band.',
+            enumValues: ['excellent', 'good', 'fair', 'poor', 'rebuilding'],
+          ),
           'apr': _number('Optional exact APR as a decimal.'),
           'is_new': _boolean('True for new, false for used. Default false.'),
         },
@@ -156,15 +172,21 @@ abstract final class AdvisorTools {
           'insurance_band': _string('Insurance cost band.', enumValues: ['low', 'average', 'high']),
           'sales_tax_rate': _number('Sales tax rate as a decimal. Default 0.'),
         },
-        'required': ['vehicle_class', 'purchase_price', 'miles_per_year', 'fuel_type', 'efficiency'],
+        'required': [
+          'vehicle_class',
+          'purchase_price',
+          'miles_per_year',
+          'fuel_type',
+          'efficiency',
+        ],
       },
     ),
     ToolSpec(
       name: updateProfile,
       description:
           'Record facts the user shared about themselves or what they are looking for. Call this as '
-          'soon as the user states a need, a want, a budget, a credit band, a trade-in or a tone '
-          'preference. Do not label an item as a need or a want unless the user did.',
+          'soon as the user states a need, a want, a budget, a credit band, a trade-in, or shifts how '
+          'they are shopping. Do not label an item as a need or a want unless the user did.',
       parameters: {
         'type': 'object',
         'properties': {
@@ -175,19 +197,32 @@ abstract final class AdvisorTools {
               'type': 'object',
               'properties': {
                 'label': _string('Short description, e.g. "seats 7" or "heated seats".'),
-                'kind': _string('How the user framed it.', enumValues: ['need', 'want', 'unlabeled']),
+                'kind': _string(
+                  'How the user framed it.',
+                  enumValues: ['need', 'want', 'unlabeled'],
+                ),
               },
               'required': ['label', 'kind'],
             },
           },
           'payment_ceiling': _number('Maximum monthly payment the user stated.'),
           'down_payment': _number('Cash the user can put down.'),
-          'credit_band': _string('Credit band.', enumValues: ['excellent', 'good', 'fair', 'poor', 'rebuilding']),
-          'credit_score': _integer('Numeric score if the user gave one; it will be mapped to a band.'),
+          'credit_band': _string(
+            'Credit band.',
+            enumValues: ['excellent', 'good', 'fair', 'poor', 'rebuilding'],
+          ),
+          'credit_score': _integer(
+            'Numeric score if the user gave one; it will be mapped to a band.',
+          ),
           'monthly_gross_income': _number('Gross monthly income if the user shared it.'),
           'trade_value': _number('Estimated value of a trade-in.'),
           'trade_payoff': _number('Payoff on a trade-in.'),
-          'tone': _string('Conversation tone the user asked for.', enumValues: ['practical', 'stretch', 'fun', 'budgeting']),
+          'shopping_mode': _string(
+            'How the user is shopping, inferred from what they say and updated when it shifts: '
+            'browsing (just looking), dreaming (dream car, for fun), practical (realistic options), '
+            'buying (buying now, detailed budgeting).',
+            enumValues: ['browsing', 'dreaming', 'practical', 'buying'],
+          ),
         },
       },
     ),
@@ -226,24 +261,38 @@ abstract final class AdvisorTools {
       name: present,
       changesUi: true,
       description:
-          'Show a result on screen. Call this after a finance tool returns, naming the component to '
-          'render and the result to render it from. Use "fullscreen" for breakdowns with several '
-          'numbers and "docked" for a single card.',
+          'Put something on screen. Two uses: (1) after a finance or search tool returns, show its '
+          'result with a result component and its result_id; (2) when you need an answer or values '
+          'from the user, offer a "choice", "multi_choice" or "input_form" with props instead of '
+          'asking in prose. Structured answers are faster for the user and for you; always prefer '
+          'them when the answer is one of a few options or a number. Use "fullscreen" for '
+          'breakdowns with several numbers and "docked" for a single card or a question.',
       parameters: {
         'type': 'object',
         'properties': {
           'component': _string('Component id from the registry.'),
-          'result_id': _string('The id of the tool result to render.'),
+          'result_id': _string('The id of the tool result to render (result components only).'),
           'surface': _string('Where to show it.', enumValues: ['docked', 'fullscreen']),
           'title': _string('Short title for the card or screen.'),
+          'highlights': {
+            'type': 'array',
+            'description': 'Field names in the result to emphasize, e.g. ["monthlyPayment"].',
+            'items': {'type': 'string'},
+          },
+          'props': {
+            'type': 'object',
+            'description':
+                'For interaction components: {question, options:[{id,label}]} for choice and '
+                'multi_choice; {title, fields:[{id,label,type,options?}]} for input_form.',
+          },
         },
-        'required': ['component', 'result_id'],
+        'required': ['component'],
       },
     ),
   ];
 
   static ToolSpec byName(String name) => all.firstWhere(
-        (t) => t.name == name,
-        orElse: () => throw ArgumentError.value(name, 'name', 'unknown tool'),
-      );
+    (t) => t.name == name,
+    orElse: () => throw ArgumentError.value(name, 'name', 'unknown tool'),
+  );
 }

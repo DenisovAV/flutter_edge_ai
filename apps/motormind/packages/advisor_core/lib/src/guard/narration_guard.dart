@@ -80,6 +80,7 @@ class NarrationGuard {
         v.forEach(walk);
       }
     }
+
     sources.forEach(walk);
     // A percentage in results may be narrated as a decimal or vice versa.
     for (final v in out.toList()) {
@@ -105,7 +106,10 @@ class NarrationGuard {
   GuardReport check({required String narration, required Iterable<Object?> sources}) {
     final allowed = allowedValues(sources);
     final mentions = extract(narration);
-    final unmatched = [for (final m in mentions) if (!_matches(m.value, allowed)) m];
+    final unmatched = [
+      for (final m in mentions)
+        if (!_matches(m.value, allowed)) m,
+    ];
     return GuardReport(mentions: mentions, unmatched: unmatched);
   }
 }

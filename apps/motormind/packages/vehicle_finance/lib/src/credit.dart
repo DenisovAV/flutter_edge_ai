@@ -104,18 +104,21 @@ class AprTable {
   }
 }
 
-/// PLACEHOLDER table. These are round numbers in the right neighborhood, not
-/// sourced figures. Replace via `AprTable.fromJson` with a cited table
-/// (TECH_QUESTIONS TQ12) before showing to anyone outside the project.
-const AprTable placeholderAprTable = AprTable(
-  source: 'PLACEHOLDER — not yet sourced; see TQ12',
-  asOf: '2026-10-04',
+/// Average APRs by credit tier, new and used, from Experian's *State of the
+/// Automotive Finance Market*, Q2 2026, as transcribed by the project owner on
+/// 2026-10-04. Averages, not quotes: labeled illustrative in every result.
+const AprTable experianQ2_2026AprTable = AprTable(
+  source: 'Experian State of the Automotive Finance Market, Q2 2026 (averages by tier)',
+  asOf: '2026-06-30',
   illustrative: true,
   rates: {
-    CreditBand.excellent: AprRates(newVehicle: 0.055, usedVehicle: 0.070),
-    CreditBand.good: AprRates(newVehicle: 0.070, usedVehicle: 0.090),
-    CreditBand.fair: AprRates(newVehicle: 0.100, usedVehicle: 0.140),
-    CreditBand.poor: AprRates(newVehicle: 0.130, usedVehicle: 0.190),
-    CreditBand.rebuilding: AprRates(newVehicle: 0.160, usedVehicle: 0.220),
+    CreditBand.excellent: AprRates(newVehicle: 0.0441, usedVehicle: 0.0629),
+    CreditBand.good: AprRates(newVehicle: 0.0615, usedVehicle: 0.0881),
+    CreditBand.fair: AprRates(newVehicle: 0.0971, usedVehicle: 0.1393),
+    CreditBand.poor: AprRates(newVehicle: 0.1352, usedVehicle: 0.1910),
+    CreditBand.rebuilding: AprRates(newVehicle: 0.1611, usedVehicle: 0.2162),
   },
 );
+
+/// The table the app uses unless a newer one is loaded via [AprTable.fromJson].
+const AprTable defaultAprTable = experianQ2_2026AprTable;

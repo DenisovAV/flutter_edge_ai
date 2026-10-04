@@ -7,44 +7,32 @@ SDK present at `~/Library/Android/sdk` (platform 37, no system images, no Java),
 The repo pins Flutter in `.fvmrc`. Use that version; the `flutter_edge_ai_sqlite` package
 needs 3.47 or newer and the rest need 3.44 or newer.
 
-## 1. Flutter via FVM
+## 1. Flutter
 
-FVM (Flutter Version Management) keeps per-project Flutter versions so this repo's pin
-does not fight other projects.
-
-```bash
-brew tap leoafarias/fvm && brew install fvm
-```
+Installed 2026-10-04: Flutter 3.47.6 (stable) at `~/flutter`, and a standalone Dart SDK via
+Homebrew. `~/.zshrc` puts `~/flutter/bin` on the PATH (a backup of the previous file is at
+`~/.zshrc.bak-2026-10-04`). Open a new terminal, then:
 
 ```bash
-cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo" && fvm install && fvm use
+flutter --version
 ```
 
-`fvm install` reads `.fvmrc` and downloads that Flutter (about 1 GB). `fvm use` links it
-at `.fvm/flutter_sdk`, which is git-ignored. From then on run every Flutter and Dart
-command through FVM:
-
-```bash
-fvm flutter --version
-```
-
-Optional: add `alias flutter="fvm flutter"` and `alias dart="fvm dart"` to `~/.zshrc`, or
-put `.fvm/flutter_sdk/bin` on your PATH while in this repo. The docs below spell out `fvm`.
+FVM is optional. `.fvmrc` pins 3.47.0 for anyone who uses it; the installed 3.47.6 is the
+same minor version and is what CI will use.
 
 ## 2. Verify the pure-Dart packages first
 
 These need only the Dart that ships inside Flutter. No device, no Xcode.
 
 ```bash
-cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind/packages/vehicle_finance" && fvm dart pub get && fvm dart test
+cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind/packages/vehicle_finance" && dart pub get && dart test
 ```
 
 ```bash
-cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind/packages/advisor_core" && fvm dart pub get && fvm dart test
+cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind/packages/advisor_core" && dart pub get && dart test
 ```
 
-If either fails, paste the output into the chat; the code was written before a Dart SDK
-was available on this machine and has not been compiled yet.
+Both pass as of 2026-10-04 (31 and 27 tests).
 
 ## 3. Android
 
@@ -56,20 +44,20 @@ was available on this machine and has not been compiled yet.
 2. Java: Android Studio bundles a JDK. Point Flutter at it:
 
 ```bash
-fvm flutter config --jdk-dir "/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+flutter config --jdk-dir "/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ```
 
 3. Accept licenses:
 
 ```bash
-fvm flutter doctor --android-licenses
+flutter doctor --android-licenses
 ```
 
 4. Create an emulator (Device Manager, Pixel 8 Pro, API 35, arm64) with at least **6 GB
    RAM** so a 2.4 GB model fits with headroom.
 
 Real device: enable developer options and USB debugging on the Samsung Fold 4, plug in,
-`fvm flutter devices`.
+`flutter devices`.
 
 ## 4. iOS
 
@@ -94,24 +82,31 @@ brew install cocoapods
 ## 5. Check everything
 
 ```bash
-fvm flutter doctor -v
+flutter doctor -v
 ```
 
 Everything except "Chrome" and "VS Code" should be green. Paste the output into the chat if
 not.
 
-## 6. Create the app (first time only)
+## 6. The app
 
-The app scaffold has not been generated yet because `flutter create` needs the SDK. When
-the toolchain is ready, the first engineering story (VA-0.3.1 in `BACKLOG.md`) runs:
+`apps/motormind` was generated on 2026-10-04 with
+`flutter create --org com.sirisdevelopment --project-name motormind --platforms android,ios --empty`
+and is a member of the root pub workspace. Resolve and test from the repo root:
 
 ```bash
-cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps" && fvm flutter create --org com.sirisdevelopment --project-name motormind --platforms android,ios motormind
+cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo" && flutter pub get && flutter analyze apps/motormind
 ```
 
-That command does not overwrite `apps/motormind/packages/`, which already exists.
-Afterwards the root `pubspec.yaml` gets `apps/motormind` added to its `workspace:` list and
-the app's `pubspec.yaml` gets `resolution: workspace`.
+```bash
+cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind" && flutter test
+```
+
+Run on a device or arm64 emulator:
+
+```bash
+cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind" && flutter run
+```
 
 ## 7. Hugging Face token (for Gemma models)
 

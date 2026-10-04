@@ -1,7 +1,7 @@
 # Motormind AI
 
-> **Status:** architecture and foundation, October 2026. The pure-Dart finance and advisor
-> layers exist with tests; the Flutter app is next. Work happens on `develop`.
+> **Status:** foundation, October 2026. The pure-Dart finance and advisor layers exist with
+> passing tests; the Flutter app scaffold exists and is being wired. Work happens on `develop`.
 > Backlog: [BACKLOG.md](BACKLOG.md). Docs: [docs/](docs/README.md).
 
 An on-device AI companion for finding and financing a personal vehicle, built in Flutter.
@@ -9,9 +9,12 @@ The language model runs **on the phone**. The financial math runs in **determini
 unit-tested Dart**. The app is **a tool, not a salesperson**: it does not sell, lease,
 finance or refer, and it is paid by no one for any transaction.
 
-The use case comes from Deloitte's *The AI Dossier* ("AI assistant for vehicle buying and
-leasing"); see [docs/DELOITTE_MAPPING.md](docs/DELOITTE_MAPPING.md) for how the design maps
-to its pillars and trust principles. The broader idea the project explores is **UI composed
+The use case comes from Deloitte's *The AI Dossier* (2026), which describes an "AI assistant
+for vehicle buying and leasing": agents that match a buyer to vehicles, analyze total cost
+of ownership and lease terms with full transparency, and guide the buyer through a decision
+most people find intimidating. [docs/DELOITTE_MAPPING.md](docs/DELOITTE_MAPPING.md) maps
+this design to that use case's pillars and trust principles. Motormind AI is not affiliated
+with or endorsed by Deloitte. The broader idea the project explores is **UI composed
 at runtime from the conversation** rather than pre-designed screens
 ([ADR 0006](docs/adr/0006-generative-ui.md)).
 
@@ -53,7 +56,7 @@ results or ranking. The demo build has none.
 |---|---|
 | `apps/motormind/packages/vehicle_finance/` | Pure Dart finance engine with tests |
 | `apps/motormind/packages/advisor_core/` | Pure Dart tool specs, finance tool handlers, narration guard, policy check, disclosures, buyer profile, component registry; with tests |
-| `apps/motormind/` | *(next)* the Flutter app |
+| `apps/motormind/` | The Flutter app (scaffold; Riverpod 3, go_router, workspace member) |
 | `packages/` | Upstream `flutter_edge_ai` packages: inference engines, agent loop, speech, RAG, diagnostics |
 | `docs/` | Architecture, setup, models, decisions ([index](docs/README.md)) |
 | `BACKLOG.md` | Epics, features and user stories |
@@ -78,4 +81,5 @@ cd apps/motormind/packages/advisor_core && dart pub get && dart test
 ## Attribution and license
 
 Upstream `flutter_edge_ai` is MIT licensed, copyright Sasha Denisov. See [LICENSE](LICENSE).
-Project-specific code and documentation are by James Baker.
+Project-specific code and documentation are by James Baker, built with AI coding
+assistance; the architecture, product decisions and review are his.

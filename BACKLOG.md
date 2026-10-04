@@ -2,7 +2,7 @@
 
 Organized the way a Jira project would be: **Epics** → **Features** → **User Stories**.
 IDs are stable (`VA-3.2` is Epic 3, Feature 2; `VA-3.2.1` its first story). Revised
-2026-10-04 after the first question round; scope is prioritized rather than timeboxed (Q3).
+2026-10-04 after the second question round; scope is prioritized rather than timeboxed (Q3).
 
 Conventions:
 
@@ -27,8 +27,7 @@ VA-10, then VA-8 and VA-12.
   AC: root `flutter pub get` resolves the app. (ADR 0005)
 - **VA-0.1.2** As a maintainer, I want the fork trimmed of upstream's codelabs, website,
   tooling, workflows and agent files on `develop`, so that a reviewer sees the app first.
-  AC: directories removed; `docs/UPSTREAM.md` lists what went. *in progress: deletion
-  command handed to the owner*
+  **done**
 - **VA-0.1.3** As a maintainer, I want `AGENTS.md`/`CLAUDE.md` to describe this project's
   rules. **done**
 - **VA-0.1.4** As a maintainer, I want `docs/` tracked and `.fvm/` ignored. **done**
@@ -39,8 +38,7 @@ VA-10, then VA-8 and VA-12.
 ### VA-0.2 Toolchain and CI (P0)
 
 - **VA-0.2.1** As a developer, I want a documented toolchain install (FVM, Flutter, Android
-  arm64 emulator, Xcode, CocoaPods). AC: `docs/SETUP.md`; `flutter doctor` green. *doc
-  done; install pending (TQ3)*
+  arm64 emulator, Xcode, CocoaPods). AC: `docs/SETUP.md`; `flutter doctor` green. **done** (Flutter 3.47.6 at ~/flutter)
 - **VA-0.2.2** As a developer, I want CI to format-check, analyze and test the pure
   packages and (once it exists) the app on every push to `develop`. AC:
   `.github/workflows/motormind-ci.yml` green. *workflow written; unverified*
@@ -51,15 +49,15 @@ VA-10, then VA-8 and VA-12.
 
 - **VA-0.3.1** As a developer, I want a Material 3 app with go_router, Riverpod 3, build
   flavors (`demo`, `store`) and the feature-first layout in `docs/ARCHITECTURE.md`. AC: app
-  boots to the disclosure gate then a placeholder home. (ADR 0003, 0004)
+  boots to the disclosure gate then a placeholder home. **done except flavors** (ADR 0003, 0004)
 - **VA-0.3.2** As a developer, I want `vehicle_finance` and `advisor_core` with real tests.
-  **done, unverified until a Dart SDK is installed**
+  **done** (31 + 27 tests passing)
 
 ---
 
 ## Epic VA-3 — Financial engine (deterministic)
 
-### VA-3.1 Core calculators (P0) — **done, unverified**
+### VA-3.1 Core calculators (P0) — **done**
 
 - **VA-3.1.1** monthly payment from principal, APR, term (0% handled). **done**
 - **VA-3.1.2** maximum principal for a payment ceiling. **done**
@@ -112,10 +110,10 @@ VA-10, then VA-8 and VA-12.
 - **VA-4.1.1** disclosure wording registry with versions. **done** (`Disclosures`)
 - **VA-4.1.2** As a buyer, I want a short disclaimer gate before first use that I
   acknowledge, with a link to the full text, so that I know what this is. AC: shown once per
-  `gateVersion`; acknowledgement stored locally. (Q18)
+  `gateVersion`; acknowledgement stored locally. **done** (widget-tested)
 - **VA-4.1.3** As a buyer, I want the full disclosures in-app from every screen and on a
-  public web page, so that they are permanent. AC: settings entry; `docs/DISCLOSURES.md`
-  published at a URL (Q36).
+  public web page, so that they are permanent. AC: app-bar entry **done**; GitHub Pages
+  publication of `docs/DISCLOSURES.md` pending (Q36).
 - **VA-4.1.4** As a buyer, I want a short disclaimer and an assumptions link on every
   financial component.
 
@@ -136,9 +134,10 @@ VA-10, then VA-8 and VA-12.
   **done**
 - **VA-4.3.2** As a buyer, I want a visible banner when a reply tripped the policy check,
   while still seeing the reply, so that the tool is honest about itself. (TQ15)
-- **VA-4.3.3** As a buyer, I want to pick a tone up front (practical, stretch, fun,
-  budgeting) via tappable chips and change it any time, so that the advisor matches my
-  intent. AC: tone in profile; persona prompt adapts; advisor mirrors register. (Q16)
+- **VA-4.3.3** As a buyer, I want the advisor to recognize how I am shopping (browsing,
+  dreaming, practical, buying), confirm it with a tappable choice when unsure, and shift when
+  my intent shifts, so that its tone matches me. AC: `ShoppingMode` in profile **done**;
+  persona prompt adapts; advisor mirrors register. (Q16, Q30)
 - **VA-4.3.4** As a buyer, I want the advisor to say what it does not know rather than fill
   gaps. AC: evaluation prompts in `advisor_core/test/`.
 
@@ -174,8 +173,8 @@ VA-10, then VA-8 and VA-12.
 - **VA-1.3.2** As a buyer, I want in-app Hugging Face token entry for gated models, with
   Qwen3 as the no-token path. (TQ10)
 - **VA-1.3.3** As a maintainer, I want a remote model manifest (id, size, SHA-256, URL,
-  minimum RAM, capabilities) so models can be added or mirrored without an app release.
-  (TQ31)
+  minimum RAM, capabilities) hosted at `motormind.sirisdevelopment.com`, so models can be
+  added or mirrored without an app release. (TQ31)
 
 ### VA-1.4 Measurement (P1)
 
@@ -193,22 +192,30 @@ VA-10, then VA-8 and VA-12.
 - **VA-2.1.2** docked bottom sheet (30–60%) with the content area above.
 - **VA-2.1.3** fullscreen for breakdowns with an explicit way back.
 - **VA-2.1.4** a persistent expand/contract toggle the user owns, with pin; the model's
-  `present` is a request. (Q8)
-- **VA-2.1.5** state machine as a Riverpod notifier; transitions animated and
-  keyboard-safe.
+  `present` is a request. **state machine and toggle done**; pin UI pending (Q8)
+- **VA-2.1.5** state machine as a Riverpod notifier **done**; transitions animated and
+  keyboard-safe pending.
+- **VA-2.1.6** As a buyer, I want the split between content, advisor and keyboard to adapt
+  to what is being shown and to what I am doing (typing, reading a page, reviewing a
+  breakdown), so that the chat area is never a fixed size. AC: layout allocator with model
+  priority hints; keyboard-up rule shows the thing being answered. (Q29)
 
 ### VA-2.2 Chat (P0)
 
 - **VA-2.2.1** streamed replies with stop.
 - **VA-2.2.2** tool activity shown as status chips.
-- **VA-2.2.3** `question_chips` component for advisor questions (tone, need or want, yes or
-  no).
+- **VA-2.2.3** `choice`, `multi_choice` and `input_form` interaction components with the
+  implicit "something else" escape, so the advisor asks with options and forms rather than
+  prose. **registry and validation done**; widgets pending.
 
 ### VA-2.3 Conversation history (P1)
 
-- **VA-2.3.1** As a buyer, I want a "new conversation" action and a history list, like
-  other AI apps, so that I can start over or return. AC: transcripts persisted per
-  conversation; profile shared. (Q9)
+- **VA-2.3.1** As a buyer, I want a "new conversation" action and a history list, so that
+  I can start over or return. AC: transcripts persisted per conversation; profile shared.
+  (Q9)
+- **VA-2.3.2** As a buyer, I want conversation titles that start as a time ("Today at 3:45
+  PM") and become descriptive from content ("My 2015 Civic trade-in", "Sept 3 · SUV
+  shopping"), never the first message, so that the list is useful on a small screen. (Q34)
 
 ### VA-2.4 Voice (P2)
 
@@ -220,7 +227,8 @@ VA-10, then VA-8 and VA-12.
 
 ### VA-11.1 Component registry (P0)
 
-- **VA-11.1.1** registry and `present` validation in `advisor_core`. **done**
+- **VA-11.1.1** registry and `present` validation in `advisor_core`, including interaction
+  components, props validation and `highlights`. **done**
 - **VA-11.1.2** As a developer, I want Flutter widgets for each registered component,
   each rendering from a `ToolResult`, so that the model can compose any of them. AC: widget
   tests per component with a fixture result.
@@ -232,8 +240,10 @@ VA-10, then VA-8 and VA-12.
 
 - **VA-11.2.1** As a developer, I want `present` choices logged (component, surface, timing)
   so the model picker can score how well each model uses the registry.
-- **VA-11.2.2** constrained layout JSON (`stack`, `row`, `compare`) whose leaves are
-  registry components. (P2)
+- **VA-11.2.2** constrained layout (`stack`, `row`, `compare`) whose leaves are registry
+  components, with size and priority hints. (P1, promoted per Q28)
+- **VA-11.2.3** free-layout experiment: give the model a constrained canvas and find where
+  usability breaks; record results in `docs/MEASUREMENTS.md`. (P2, Q28)
 
 ---
 
@@ -250,7 +260,9 @@ VA-10, then VA-8 and VA-12.
 
 ### VA-5.2 Data sources (P1)
 
-- **VA-5.2.1** bundled sample inventory (labeled) for offline demo.
+- **VA-5.2.1** ~~bundled sample inventory~~ dropped (Q41). Replaced by: listings read from
+  pages are kept per session and optionally saved; `find_vehicles` searches them; pages read
+  online stay usable offline for the airplane-mode demo (Q40).
 - **VA-5.2.2** a curated, tested list of listing and valuation sites with extraction
   recipes; unknown sites fall back to generic extraction. (Q10, Q31)
 - **VA-5.2.3** NHTSA vPIC and FuelEconomy.gov adapters, cached, source shown. (TQ17)
@@ -295,8 +307,8 @@ VA-10, then VA-8 and VA-12.
 - **VA-7.1.1** profile, conversations and inputs stored only on device (drift; secure
   storage for the token). (TQ21)
 - **VA-7.1.2** one-action data wipe.
-- **VA-7.1.3** anonymous, opt-in analytics with the event list disclosed in the gate and
-  terms; no free text, no financial values. (Q21, Q33)
+- **VA-7.1.3** Firebase Analytics, anonymous and opt-in, event list disclosed in the gate
+  and terms; no free text, no financial values. (Q21, Q33)
 - **VA-7.1.4** debug network audit; test fails on unexpected hosts. (TQ22)
 
 ---
@@ -323,8 +335,8 @@ VA-10, then VA-8 and VA-12.
 ## Epic VA-8 — Advertising (store flavor only, P3)
 
 - **VA-8.1.1** `demo` and `store` build flavors; the ad SDK is absent from `demo`. (Q22)
-- **VA-8.1.2** fixed, labeled ad slot in the same position on every screen; never inside
-  chat or a result component; never affects ranking. (Q32)
+- **VA-8.1.2** fixed, labeled AdMob banner across the top of every screen, hidden while the
+  keyboard is up; never inside chat or a result component; never affects ranking. (Q32)
 - **VA-8.1.3** `docs/POLICY.md`: no compensation tied to any transaction; sponsorships
   revisited later. (Q23)
 

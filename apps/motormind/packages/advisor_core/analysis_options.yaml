@@ -3,3 +3,5 @@ linter:
   rules:
     - prefer_single_quotes
     - avoid_dynamic_calls
+formatter:
+  page_width: 100

@@ -64,20 +64,24 @@ void main() {
       expect(creditBandForScore(999), CreditBand.excellent);
     });
 
-    test('placeholder table is labeled as such and round-trips through JSON', () {
-      expect(placeholderAprTable.illustrative, isTrue);
-      expect(placeholderAprTable.source, contains('PLACEHOLDER'));
-      final json = placeholderAprTable.toJson();
+    test('default table is labeled illustrative, sourced, and round-trips through JSON', () {
+      expect(defaultAprTable.illustrative, isTrue);
+      expect(defaultAprTable.source, contains('Experian'));
+      final json = defaultAprTable.toJson();
       final back = AprTable.fromJson(json);
-      expect(back.aprFor(CreditBand.fair, isNew: false), 0.14);
+      expect(back.aprFor(CreditBand.fair, isNew: false), 0.1393);
       final a = back.assumptionFor(CreditBand.good, isNew: true);
       expect(a.key, 'apr.new.good');
-      expect(a.value, '7.00%');
+      expect(a.value, '6.15%');
       expect(a.illustrative, isTrue);
     });
 
-    test('used rates are never below new rates in the placeholder table', () {
-      for (final r in placeholderAprTable.rates.values) {
+    test('used rates are never below new rates, and rates rise as credit falls', () {
+      final bands = CreditBand.values;
+      for (var i = 1; i < bands.length; i++) {
+        expect(defaultAprTable.aprFor(bands[i], isNew: true), greaterThan(defaultAprTable.aprFor(bands[i - 1], isNew: true)));
+      }
+      for (final r in defaultAprTable.rates.values) {
         expect(r.usedVehicle, greaterThanOrEqualTo(r.newVehicle));
       }
     });

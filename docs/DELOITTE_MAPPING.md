@@ -6,6 +6,9 @@ in Deloitte's *The AI Dossier* (Consumer sector, Sales, Agentic AI), pages 17 an
 risk and promoting trust" principles to what Motormind builds, and is honest about what it
 does not.
 
+**Not affiliated.** Motormind AI is an independent project and is not affiliated with,
+sponsored by, or endorsed by Deloitte. The dossier is cited as the source of the use case.
+
 ## The four pillars
 
 | Dossier pillar | What it describes | Motormind | Where |

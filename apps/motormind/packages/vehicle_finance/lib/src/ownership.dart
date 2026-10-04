@@ -155,10 +155,10 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
     maintenance: roundCents(maintenance),
     taxesAndFees: roundCents(taxes),
     assumptions: [
-      const Assumption(
+      Assumption(
         key: 'tco.depreciation_curve',
         description: 'Class-independent depreciation curve; real curves vary widely by model and market.',
-        value: 'cumulative ${OwnershipTables.cumulativeDepreciation}',
+        value: 'cumulative ${OwnershipTables.cumulativeDepreciation.join(', ')}',
         source: OwnershipTables.source,
         asOf: OwnershipTables.asOf,
       ),
@@ -169,10 +169,10 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
         source: OwnershipTables.source,
         asOf: OwnershipTables.asOf,
       ),
-      const Assumption(
+      Assumption(
         key: 'tco.maintenance',
         description: 'Average maintenance and repair cost by vehicle age, scaled by class.',
-        value: 'by age ${OwnershipTables.maintenanceByAge}',
+        value: 'by age ${OwnershipTables.maintenanceByAge.map((v) => v.toStringAsFixed(0)).join(', ')}',
         source: OwnershipTables.source,
         asOf: OwnershipTables.asOf,
       ),

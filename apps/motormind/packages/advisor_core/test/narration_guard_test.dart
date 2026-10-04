@@ -10,7 +10,9 @@ void main() {
   };
 
   test('extracts dollars, commas, decimals, percents and k-suffix', () {
-    final m = guard.extract(r'About $438.86 a month, $22,700 financed at 6% APR, roughly 23k total over 5 years.');
+    final m = guard.extract(
+      r'About $438.86 a month, $22,700 financed at 6% APR, roughly 23k total over 5 years.',
+    );
     expect(m.map((x) => x.value), containsAll([438.86, 22700, 0.06, 23000, 5]));
   });
 
@@ -23,7 +25,10 @@ void main() {
   });
 
   test('tolerates whole-dollar rounding and small spoken rounding', () {
-    final r = guard.check(narration: r'That is about $439 a month, call it $440.', sources: [toolResult]);
+    final r = guard.check(
+      narration: r'That is about $439 a month, call it $440.',
+      sources: [toolResult],
+    );
     expect(r.passed, isTrue, reason: r.unmatched.toString());
   });
 
@@ -41,7 +46,12 @@ void main() {
   test('allows numbers the user supplied', () {
     final r = guard.check(
       narration: r'You said you can do $450 a month and owe $8,000 on the Civic.',
-      sources: [toolResult, {'user_inputs': {'payment_ceiling': 450, 'trade_payoff': '8000'}}],
+      sources: [
+        toolResult,
+        {
+          'user_inputs': {'payment_ceiling': 450, 'trade_payoff': '8000'},
+        },
+      ],
     );
     expect(r.passed, isTrue, reason: r.unmatched.toString());
   });

@@ -8,7 +8,13 @@ import 'tool_spec.dart';
 /// guard trusts. [error] is set instead of [result] when arguments were bad;
 /// the model is shown the error text and asked to correct the call.
 class ToolResult {
-  const ToolResult({required this.id, required this.tool, required this.args, this.result, this.error});
+  const ToolResult({
+    required this.id,
+    required this.tool,
+    required this.args,
+    this.result,
+    this.error,
+  });
 
   final String id;
   final String tool;
@@ -20,10 +26,10 @@ class ToolResult {
 
   /// What goes back to the model as the tool response.
   Map<String, Object?> toModelJson() => {
-        'result_id': id,
-        if (result != null) ...result!,
-        if (error != null) 'error': error,
-      };
+    'result_id': id,
+    ...?result,
+    if (error != null) 'error': error,
+  };
 }
 
 /// Turns finance tool arguments into `vehicle_finance` calls.
@@ -32,8 +38,8 @@ class ToolResult {
 /// deliberately boring: parse, validate, call, serialize.
 class FinanceToolHandlers {
   FinanceToolHandlers({AprTable? aprTable, String Function()? nextId})
-      : aprTable = aprTable ?? placeholderAprTable,
-        _nextId = nextId ?? _counterId;
+    : aprTable = aprTable ?? defaultAprTable,
+      _nextId = nextId ?? _counterId;
 
   final AprTable aprTable;
   final String Function() _nextId;
@@ -79,7 +85,11 @@ class FinanceToolHandlers {
     final isNew = _bool(a['is_new'], false);
     final apr = _optNum(a['apr']) ?? aprTable.aprFor(band, isNew: isNew);
     final aprAssumption = a['apr'] != null
-        ? _userAssumption('apr.user', 'APR as given by the user.', '${(apr * 100).toStringAsFixed(2)}%')
+        ? _userAssumption(
+            'apr.user',
+            'APR as given by the user.',
+            '${(apr * 100).toStringAsFixed(2)}%',
+          )
         : aprTable.assumptionFor(band, isNew: isNew);
     final tradeValue = _optNum(a['trade_value']);
     final tradePayoff = _optNum(a['trade_payoff']);
@@ -87,7 +97,11 @@ class FinanceToolHandlers {
         ? tradeEquity(
             estimatedValue: tradeValue,
             payoff: tradePayoff ?? 0,
-            valueAssumption: _userAssumption('trade.value', 'Trade-in value as given by the user or a page they opened.', tradeValue.toStringAsFixed(0)),
+            valueAssumption: _userAssumption(
+              'trade.value',
+              'Trade-in value as given by the user or a page they opened.',
+              tradeValue.toStringAsFixed(0),
+            ),
           )
         : null;
     final deal = DealInputs(
@@ -111,13 +125,26 @@ class FinanceToolHandlers {
     final term = _int(a['term_months'], 'term_months');
     final principal = maxPriceForPayment(payment: payment, apr: apr, termMonths: term);
     return {
-      'inputs': {'payment_ceiling': payment, 'term_months': term, 'apr': apr, 'credit_band': band.name},
+      'inputs': {
+        'payment_ceiling': payment,
+        'term_months': term,
+        'apr': apr,
+        'credit_band': band.name,
+      },
       'outputs': {'max_amount_financed': principal},
       'assumptions': [
-        (a['apr'] != null ? _userAssumption('apr.user', 'APR as given by the user.', '${(apr * 100).toStringAsFixed(2)}%') : aprTable.assumptionFor(band, isNew: isNew)).toJson(),
+        (a['apr'] != null
+                ? _userAssumption(
+                    'apr.user',
+                    'APR as given by the user.',
+                    '${(apr * 100).toStringAsFixed(2)}%',
+                  )
+                : aprTable.assumptionFor(band, isNew: isNew))
+            .toJson(),
         const Assumption(
           key: 'max_price.scope',
-          description: 'This is the amount that can be financed; tax, fees, down payment and trade equity change the sticker price it supports.',
+          description:
+              'This is the amount that can be financed; tax, fees, down payment and trade equity change the sticker price it supports.',
           value: 'amount financed only',
           source: 'definition',
           asOf: '2026-10-04',
@@ -132,7 +159,11 @@ class FinanceToolHandlers {
     return tradeEquity(
       estimatedValue: value,
       payoff: _num(a['payoff'], 'payoff'),
-      valueAssumption: _userAssumption('trade.value', 'Trade-in value as given by the user or a page they opened.', value.toStringAsFixed(0)),
+      valueAssumption: _userAssumption(
+        'trade.value',
+        'Trade-in value as given by the user or a page they opened.',
+        value.toStringAsFixed(0),
+      ),
     ).toJson();
   }
 
@@ -147,33 +178,39 @@ class FinanceToolHandlers {
         capReduction: _optNum(a['cap_reduction']) ?? 0,
         salesTaxRate: _optNum(a['sales_tax_rate']) ?? 0,
       ),
-      moneyFactorAssumption: _userAssumption('lease.money_factor', 'Money factor from the lease offer.', mf.toStringAsFixed(5)),
+      moneyFactorAssumption: _userAssumption(
+        'lease.money_factor',
+        'Money factor from the lease offer.',
+        mf.toStringAsFixed(5),
+      ),
     ).toJson();
   }
 
   Map<String, Object?> _assessAffordability(Map<String, Object?> a) => assessAffordability(
-        AffordabilityInputs(
-          monthlyGrossIncome: _num(a['monthly_gross_income'], 'monthly_gross_income'),
-          monthlyDebtPayments: _optNum(a['monthly_debt_payments']) ?? 0,
-          proposedPayment: _num(a['proposed_payment'], 'proposed_payment'),
-          termMonths: _int(a['term_months'], 'term_months'),
-          paymentCeiling: _optNum(a['payment_ceiling']),
-        ),
-      ).toJson();
+    AffordabilityInputs(
+      monthlyGrossIncome: _num(a['monthly_gross_income'], 'monthly_gross_income'),
+      monthlyDebtPayments: _optNum(a['monthly_debt_payments']) ?? 0,
+      proposedPayment: _num(a['proposed_payment'], 'proposed_payment'),
+      termMonths: _int(a['term_months'], 'term_months'),
+      paymentCeiling: _optNum(a['payment_ceiling']),
+    ),
+  ).toJson();
 
   Map<String, Object?> _ownershipCost(Map<String, Object?> a) => estimateOwnership(
-        OwnershipInputs(
-          vehicleClass: VehicleClass.parse(_str(a['vehicle_class'], 'vehicle_class')),
-          purchasePrice: _num(a['purchase_price'], 'purchase_price'),
-          milesPerYear: _int(a['miles_per_year'], 'miles_per_year'),
-          fuelType: FuelType.values.byName(_str(a['fuel_type'], 'fuel_type')),
-          efficiency: _num(a['efficiency'], 'efficiency'),
-          years: _optInt(a['years']) ?? 5,
-          vehicleAgeYears: _optInt(a['vehicle_age_years']) ?? 0,
-          insuranceBand: a['insurance_band'] == null ? InsuranceBand.average : InsuranceBand.values.byName(a['insurance_band'] as String),
-          salesTaxRate: _optNum(a['sales_tax_rate']) ?? 0,
-        ),
-      ).toJson();
+    OwnershipInputs(
+      vehicleClass: VehicleClass.parse(_str(a['vehicle_class'], 'vehicle_class')),
+      purchasePrice: _num(a['purchase_price'], 'purchase_price'),
+      milesPerYear: _int(a['miles_per_year'], 'miles_per_year'),
+      fuelType: FuelType.values.byName(_str(a['fuel_type'], 'fuel_type')),
+      efficiency: _num(a['efficiency'], 'efficiency'),
+      years: _optInt(a['years']) ?? 5,
+      vehicleAgeYears: _optInt(a['vehicle_age_years']) ?? 0,
+      insuranceBand: a['insurance_band'] == null
+          ? InsuranceBand.average
+          : InsuranceBand.values.byName(a['insurance_band'] as String),
+      salesTaxRate: _optNum(a['sales_tax_rate']) ?? 0,
+    ),
+  ).toJson();
 
   // --- argument parsing ---------------------------------------------------
 
@@ -222,11 +259,11 @@ class FinanceToolHandlers {
   }
 
   static Assumption _userAssumption(String key, String description, String value) => Assumption(
-        key: key,
-        description: description,
-        value: value,
-        source: 'user',
-        asOf: '2026-10-04',
-        illustrative: false,
-      );
+    key: key,
+    description: description,
+    value: value,
+    source: 'user',
+    asOf: '2026-10-04',
+    illustrative: false,
+  );
 }

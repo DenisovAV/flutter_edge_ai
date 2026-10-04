@@ -2,7 +2,22 @@ import 'package:vehicle_finance/vehicle_finance.dart';
 
 enum ItemKind { need, want, unlabeled }
 
-enum ConversationTone { practical, stretch, fun, budgeting }
+/// How the user is shopping right now. Not a tone setting: the advisor infers
+/// it from what the user says and updates it when intent shifts ("just
+/// looking" → "ok, maybe I do want this"). Tone follows mode.
+enum ShoppingMode {
+  /// Just looking; no commitment, light touch.
+  browsing,
+
+  /// Dream car, for fun; supportive, playful, still honest about numbers.
+  dreaming,
+
+  /// Practical options; sympathetic, concrete, never judgmental.
+  practical,
+
+  /// Buying now; precise, detailed budgeting, serious.
+  buying,
+}
 
 /// Something the user said they are looking for. The user labels it; the
 /// advisor only proposes a label and asks.
@@ -13,15 +28,16 @@ class ProfileItem {
   final ItemKind kind;
   final String source;
 
-  ProfileItem copyWith({ItemKind? kind}) => ProfileItem(label: label, kind: kind ?? this.kind, source: source);
+  ProfileItem copyWith({ItemKind? kind}) =>
+      ProfileItem(label: label, kind: kind ?? this.kind, source: source);
 
   Map<String, Object?> toJson() => {'label': label, 'kind': kind.name, 'source': source};
 
   factory ProfileItem.fromJson(Map<String, Object?> json) => ProfileItem(
-        label: json['label'] as String,
-        kind: ItemKind.values.byName(json['kind'] as String? ?? 'unlabeled'),
-        source: json['source'] as String? ?? 'user',
-      );
+    label: json['label'] as String,
+    kind: ItemKind.values.byName(json['kind'] as String? ?? 'unlabeled'),
+    source: json['source'] as String? ?? 'user',
+  );
 }
 
 /// What the advisor knows about the buyer. Everything is optional; the
@@ -36,7 +52,7 @@ class BuyerProfile {
     this.monthlyDebtPayments,
     this.tradeValue,
     this.tradePayoff,
-    this.tone,
+    this.mode,
     this.preferNew,
   });
 
@@ -48,7 +64,7 @@ class BuyerProfile {
   final double? monthlyDebtPayments;
   final double? tradeValue;
   final double? tradePayoff;
-  final ConversationTone? tone;
+  final ShoppingMode? mode;
   final bool? preferNew;
 
   List<ProfileItem> get needs => items.where((i) => i.kind == ItemKind.need).toList();
@@ -68,20 +84,31 @@ class BuyerProfile {
         final label = raw['label']?.toString().trim();
         if (label == null || label.isEmpty) continue;
         final kindName = raw['kind']?.toString() ?? 'unlabeled';
-        final kind = ItemKind.values.where((k) => k.name == kindName).firstOrNull ?? ItemKind.unlabeled;
+        final kind =
+            ItemKind.values.where((k) => k.name == kindName).firstOrNull ?? ItemKind.unlabeled;
         newItems.removeWhere((i) => i.label.toLowerCase() == label.toLowerCase());
-        newItems.add(ProfileItem(label: label, kind: kind, source: raw['source']?.toString() ?? 'user'));
+        newItems.add(
+          ProfileItem(label: label, kind: kind, source: raw['source']?.toString() ?? 'user'),
+        );
       }
     }
     CreditBand? band = creditBand;
-    if (args['credit_band'] != null) band = CreditBand.parse(args['credit_band'].toString());
+    if (args['credit_band'] != null) {
+      band = CreditBand.parse(args['credit_band'].toString());
+    }
     if (args['credit_score'] != null) {
       final score = _toNum(args['credit_score']);
-      if (score != null) band = creditBandForScore(score.round());
+      if (score != null) {
+        band = creditBandForScore(score.round());
+      }
     }
-    ConversationTone? newTone = tone;
-    if (args['tone'] != null) {
-      newTone = ConversationTone.values.where((t) => t.name == args['tone'].toString()).firstOrNull ?? tone;
+    ShoppingMode? newMode = mode;
+    if (args['shopping_mode'] != null) {
+      newMode =
+          ShoppingMode.values
+              .where((m) => m.name == args['shopping_mode'].toString())
+              .firstOrNull ??
+          mode;
     }
     return BuyerProfile(
       items: newItems,
@@ -92,7 +119,7 @@ class BuyerProfile {
       monthlyDebtPayments: _toNum(args['monthly_debt_payments']) ?? monthlyDebtPayments,
       tradeValue: _toNum(args['trade_value']) ?? tradeValue,
       tradePayoff: _toNum(args['trade_payoff']) ?? tradePayoff,
-      tone: newTone,
+      mode: newMode,
       preferNew: args['prefer_new'] is bool ? args['prefer_new'] as bool : preferNew,
     );
   }
@@ -101,47 +128,62 @@ class BuyerProfile {
   /// fields are simply absent.
   String toPromptSummary() {
     final parts = <String>[];
-    if (tone != null) parts.add('tone: ${tone!.name}');
-    if (paymentCeiling != null) parts.add('payment ceiling: \$${paymentCeiling!.toStringAsFixed(0)}/mo');
-    if (downPayment != null) parts.add('down payment: \$${downPayment!.toStringAsFixed(0)}');
-    if (creditBand != null) parts.add('credit band: ${creditBand!.name}');
-    if (monthlyGrossIncome != null) parts.add('gross income: \$${monthlyGrossIncome!.toStringAsFixed(0)}/mo');
-    if (hasTrade) {
-      parts.add('trade-in value: ${tradeValue?.toStringAsFixed(0) ?? 'unknown'}, payoff: ${tradePayoff?.toStringAsFixed(0) ?? 'unknown'}');
+    if (mode != null) {
+      parts.add('shopping mode: ${mode!.name}');
     }
-    if (needs.isNotEmpty) parts.add('needs: ${needs.map((i) => i.label).join(', ')}');
+    if (paymentCeiling != null) {
+      parts.add('payment ceiling: \$${paymentCeiling!.toStringAsFixed(0)}/mo');
+    }
+    if (downPayment != null) {
+      parts.add('down payment: \$${downPayment!.toStringAsFixed(0)}');
+    }
+    if (creditBand != null) parts.add('credit band: ${creditBand!.name}');
+    if (monthlyGrossIncome != null) {
+      parts.add('gross income: \$${monthlyGrossIncome!.toStringAsFixed(0)}/mo');
+    }
+    if (hasTrade) {
+      parts.add(
+        'trade-in value: ${tradeValue?.toStringAsFixed(0) ?? 'unknown'}, payoff: ${tradePayoff?.toStringAsFixed(0) ?? 'unknown'}',
+      );
+    }
+    if (needs.isNotEmpty) {
+      parts.add('needs: ${needs.map((i) => i.label).join(', ')}');
+    }
     if (wants.isNotEmpty) parts.add('wants: ${wants.map((i) => i.label).join(', ')}');
-    if (unlabeled.isNotEmpty) parts.add('mentioned (unlabeled): ${unlabeled.map((i) => i.label).join(', ')}');
+    if (unlabeled.isNotEmpty) {
+      parts.add('mentioned (unlabeled): ${unlabeled.map((i) => i.label).join(', ')}');
+    }
     return parts.isEmpty ? 'nothing known yet' : parts.join('; ');
   }
 
   Map<String, Object?> toJson() => {
-        'items': [for (final i in items) i.toJson()],
-        'paymentCeiling': paymentCeiling,
-        'downPayment': downPayment,
-        'creditBand': creditBand?.name,
-        'monthlyGrossIncome': monthlyGrossIncome,
-        'monthlyDebtPayments': monthlyDebtPayments,
-        'tradeValue': tradeValue,
-        'tradePayoff': tradePayoff,
-        'tone': tone?.name,
-        'preferNew': preferNew,
-      };
+    'items': [for (final i in items) i.toJson()],
+    'paymentCeiling': paymentCeiling,
+    'downPayment': downPayment,
+    'creditBand': creditBand?.name,
+    'monthlyGrossIncome': monthlyGrossIncome,
+    'monthlyDebtPayments': monthlyDebtPayments,
+    'tradeValue': tradeValue,
+    'tradePayoff': tradePayoff,
+    'mode': mode?.name,
+    'preferNew': preferNew,
+  };
 
   factory BuyerProfile.fromJson(Map<String, Object?> json) => BuyerProfile(
-        items: [
-          for (final i in (json['items'] as List? ?? const [])) ProfileItem.fromJson((i as Map).cast<String, Object?>()),
-        ],
-        paymentCeiling: _toNum(json['paymentCeiling']),
-        downPayment: _toNum(json['downPayment']),
-        creditBand: json['creditBand'] == null ? null : CreditBand.parse(json['creditBand'] as String),
-        monthlyGrossIncome: _toNum(json['monthlyGrossIncome']),
-        monthlyDebtPayments: _toNum(json['monthlyDebtPayments']),
-        tradeValue: _toNum(json['tradeValue']),
-        tradePayoff: _toNum(json['tradePayoff']),
-        tone: json['tone'] == null ? null : ConversationTone.values.byName(json['tone'] as String),
-        preferNew: json['preferNew'] as bool?,
-      );
+    items: [
+      for (final i in (json['items'] as List? ?? const []))
+        ProfileItem.fromJson((i as Map).cast<String, Object?>()),
+    ],
+    paymentCeiling: _toNum(json['paymentCeiling']),
+    downPayment: _toNum(json['downPayment']),
+    creditBand: json['creditBand'] == null ? null : CreditBand.parse(json['creditBand'] as String),
+    monthlyGrossIncome: _toNum(json['monthlyGrossIncome']),
+    monthlyDebtPayments: _toNum(json['monthlyDebtPayments']),
+    tradeValue: _toNum(json['tradeValue']),
+    tradePayoff: _toNum(json['tradePayoff']),
+    mode: json['mode'] == null ? null : ShoppingMode.values.byName(json['mode'] as String),
+    preferNew: json['preferNew'] as bool?,
+  );
 
   static double? _toNum(Object? v) {
     if (v == null) return null;

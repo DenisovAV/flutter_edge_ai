@@ -32,19 +32,24 @@ class _DiskBundle extends AssetBundle {
   }
 }
 
-/// Serves [malformed] skills' SKILL.md as text with no frontmatter, everything
-/// else from [inner].
+/// Serves [body] (text with no frontmatter by default) as the SKILL.md of the
+/// [malformed] skills, everything else from [inner].
 class _MalformedOverlayBundle extends AssetBundle {
-  _MalformedOverlayBundle(this.inner, this.malformed);
+  _MalformedOverlayBundle(
+    this.inner,
+    this.malformed, {
+    this.body = 'not a skill: no frontmatter',
+  });
 
   final AssetBundle inner;
   final Set<String> malformed;
+  final String body;
 
   @override
   Future<String> loadString(String key, {bool cache = true}) {
     for (final name in malformed) {
       if (key == AssetSkillSource.skillMdKey(name)) {
-        return Future.value('not a skill: no frontmatter');
+        return Future.value(body);
       }
     }
     return inner.loadString(key, cache: cache);
@@ -124,6 +129,30 @@ void main() {
               contains('also-missing'),
               isNot(contains('calculate-hash')),
             ),
+          ),
+        ),
+      );
+    });
+
+    // Firebase-style `** -> /index.html` rewrites answer a missing asset with
+    // the app's page and status 200, so loadString succeeds.
+    test('load() treats an HTML page served for SKILL.md as missing', () async {
+      final source = AssetSkillSource(
+        bundle: _MalformedOverlayBundle(
+          _DiskBundle(),
+          {'qr-code'},
+          body: '<!DOCTYPE html>\n<html><head><title>app</title></head></html>',
+        ),
+        names: const ['calculate-hash', 'qr-code'],
+      );
+
+      await expectLater(
+        source.load(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('qr-code'),
           ),
         ),
       );

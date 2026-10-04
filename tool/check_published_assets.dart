@@ -8,17 +8,29 @@
 // and the published archive is the only place the gap shows — so this asks
 // pub what it would publish instead of re-implementing `.pubignore` rules.
 //
-// For every package under packages/ whose pubspec has a `flutter: assets:`
-// list, this runs `flutter pub publish --dry-run`, rebuilds the file list from
-// the tree it prints, and checks every declared asset against it: each file
-// directly inside a directory entry (Flutter does not recurse into
-// subdirectories, so neither does this) and each file entry.
+// It checks two kinds of file, in every package under packages/ that has
+// either:
+//   - each `flutter: assets:` entry of the pubspec: every file directly inside
+//     a directory entry (Flutter does not recurse into subdirectories, so
+//     neither does this) and each file entry;
+//   - every git-tracked file under a tree in [publishedTrees], recursively.
+//     These are read from the published package without being Flutter assets:
+//     core's `skills/` is what `dart run skills@ get` installs, and the same
+//     `**/*.md` rule stripped it once already (#505).
+// For each such package it runs `flutter pub publish --dry-run` and rebuilds
+// the file list from the tree pub prints.
 //
 // Run from the repo root:
 //   dart tool/check_published_assets.dart
-// Exit 0: every declared asset would be published. Exit 1: one would not, or a
-// dry run printed no file tree to check against.
+// Exit 0: every such file would be published. Exit 1: one would not, or a dry
+// run printed no file tree to check against.
 import 'dart:io';
+
+/// Directories, per package, that consumers read from the published archive
+/// although the pubspec does not declare them as Flutter assets.
+const publishedTrees = {
+  'packages/flutter_edge_ai': ['skills'],
+};
 
 Future<void> main() async {
   final packages =
@@ -31,10 +43,14 @@ Future<void> main() async {
     final pubspec = File('${package.path}/pubspec.yaml');
     if (!pubspec.existsSync()) continue;
     final entries = flutterAssetEntries(pubspec.readAsLinesSync());
-    if (entries.isEmpty) continue;
+    final trees = publishedTrees[package.path] ?? const <String>[];
+    if (entries.isEmpty && trees.isEmpty) continue;
     checked++;
 
-    final declared = declaredAssetFiles(package.path, entries);
+    final declared = [
+      ...declaredAssetFiles(package.path, entries),
+      for (final tree in trees) ...await trackedFiles(package.path, tree),
+    ];
     final dryRun = await Process.run(
       'flutter',
       ['pub', 'publish', '--dry-run'],
@@ -53,22 +69,25 @@ Future<void> main() async {
     final missing = declared.where((f) => !published.contains(f)).toList();
     if (missing.isEmpty) {
       stdout.writeln(
-        '${package.path}: all ${declared.length} declared asset files '
-        'would be published',
+        '${package.path}: all ${declared.length} required files would be '
+        'published',
       );
     } else {
       failures.add(
-        '${package.path}: declared in pubspec.yaml `flutter: assets:` but '
-        'left out of the published package (check .pubignore):\n'
+        '${package.path}: required at runtime but left out of the published '
+        'package (check .pubignore):\n'
         '${missing.map((f) => '  $f').join('\n')}',
       );
     }
   }
 
-  if (checked == 0) {
-    // The agent package declares assets today; finding none means this
-    // parser no longer reads the pubspecs, not that there is nothing to check.
-    failures.add('no package under packages/ declares `flutter: assets:`');
+  if (checked < 2) {
+    // The agent declares assets and core ships skills/ today; fewer packages
+    // means this script stopped seeing them, not that there is less to check.
+    failures.add(
+      'only $checked package(s) checked; expected at least the agent '
+      '(`flutter: assets:`) and core (`skills/`)',
+    );
   }
   if (failures.isNotEmpty) {
     stderr.writeln(failures.join('\n\n'));
@@ -122,6 +141,27 @@ List<String> declaredAssetFiles(String packageDir, List<String> entries) {
     } else {
       files.add(entry);
     }
+  }
+  return files;
+}
+
+/// Every git-tracked file under [tree] in [packageDir], relative to the
+/// package. Untracked files are never published, so they are not required.
+Future<List<String>> trackedFiles(String packageDir, String tree) async {
+  final result = await Process.run('git', [
+    'ls-files',
+    '--',
+    tree,
+  ], workingDirectory: packageDir);
+  final files = '${result.stdout}'
+      .split('\n')
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
+  if (result.exitCode != 0 || files.isEmpty) {
+    // A tree listed in [publishedTrees] that git cannot list is a stale
+    // entry; report it as missing rather than check nothing.
+    return ['$tree/ (git ls-files found no tracked files: ${result.stderr})'];
   }
   return files;
 }

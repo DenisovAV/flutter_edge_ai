@@ -81,7 +81,9 @@ class AssetSkillSource {
   /// loaded at all. For a bundled name that means this package was published
   /// without it (0.2.6 shipped none of them); for a custom [names] entry, that
   /// it is not a bundled skill. Either way an empty catalog with no error is
-  /// the wrong answer.
+  /// the wrong answer. On web, a host that rewrites unknown paths to the app's
+  /// `index.html` answers a missing asset with that page; it counts as missing
+  /// too, not as a malformed skill.
   Future<List<Skill>> load() async {
     final skills = <Skill>[];
     final missing = <String>[];
@@ -93,6 +95,10 @@ class AssetSkillSource {
         missing.add(name);
         continue;
       }
+      if (_isHtmlPage(content)) {
+        missing.add(name);
+        continue;
+      }
       try {
         skills.add(parseSkillMd(content));
       } catch (_) {
@@ -101,6 +107,8 @@ class AssetSkillSource {
       }
     }
     if (missing.isNotEmpty) {
+      // A StateError rather than a logged skip: an empty catalog makes the
+      // agent answer skill requests itself, with no sign anything is wrong.
       throw StateError(
         'Bundled skill asset not found for ${missing.join(', ')} '
         '(${missing.map(skillMdKey).join(', ')}). Either the name is not one '
@@ -120,4 +128,11 @@ class AssetSkillSource {
   /// never loaded.
   JsSkillSource jsSkillSourceFor(Skill skill) =>
       JsSkillSource.asset(scriptKey(skill.name, skill.scriptName));
+
+  /// An HTML document where a SKILL.md was expected: the app's own page,
+  /// served by a web host for an asset path it does not have.
+  static bool _isHtmlPage(String content) {
+    final head = content.trimLeft().toLowerCase();
+    return head.startsWith('<!doctype html') || head.startsWith('<html');
+  }
 }

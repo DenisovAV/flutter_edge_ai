@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter/services.dart' show AssetBundle, ByteData;
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yaml/yaml.dart';
 
 /// A fake [AssetBundle] that resolves the package's bundled-asset keys
 /// (`packages/flutter_edge_ai_agent/assets/...`) back to files on disk, so the
@@ -233,6 +234,29 @@ void main() {
         'packages/flutter_edge_ai_agent/assets/skills/'
         'interactive-map/scripts/index.html',
       );
+    });
+
+    // The tests above read the skills from disk, which ignores the pubspec. A
+    // skill directory left out of `flutter: assets:` passes them, ships in the
+    // archive, and is still absent from every app — so load() throws for all.
+    test('pubspec.yaml declares every bundled skill directory', () {
+      final pubspec = loadYaml(File('pubspec.yaml').readAsStringSync()) as Map;
+      final declared = ((pubspec['flutter'] as Map)['assets'] as List)
+          .cast<String>()
+          .toSet();
+      final onDisk = Directory('assets/skills')
+          .listSync()
+          .whereType<Directory>()
+          .map((d) => d.uri.pathSegments.where((s) => s.isNotEmpty).last)
+          .toSet();
+
+      expect(onDisk, unorderedEquals(bundledSkillNames));
+      for (final name in bundledSkillNames) {
+        expect(declared, contains('assets/skills/$name/'));
+        if (Directory('assets/skills/$name/scripts').existsSync()) {
+          expect(declared, contains('assets/skills/$name/scripts/'));
+        }
+      }
     });
 
     test('every JS bundled skill ships a runnable scripts/ dir keeping the '

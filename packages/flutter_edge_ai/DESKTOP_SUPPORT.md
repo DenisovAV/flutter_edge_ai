@@ -99,7 +99,7 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^1.12.0            # core
+  flutter_edge_ai: ^2.0.0            # core
   flutter_edge_ai_litertlm: ^1.8.7   # .litertlm engine — required on desktop
 ```
 

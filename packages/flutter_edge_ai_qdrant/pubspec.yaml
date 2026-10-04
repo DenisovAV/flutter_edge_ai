@@ -1,6 +1,6 @@
 name: flutter_edge_ai_qdrant
 description: "qdrant-edge on-device vector-store provider for flutter_edge_ai_rag, via the official qdrant_edge UniFFI SDK. Native platforms only."
-version: 1.4.0
+version: 2.0.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_qdrant
 topics: [rag, qdrant, vector-search, embeddings, on-device]

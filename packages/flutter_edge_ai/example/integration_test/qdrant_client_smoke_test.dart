@@ -136,7 +136,7 @@ void main() {
   });
 
   // ---------------------------------------------------------------------
-  // QdrantVectorStore — the layer the 1.4.0 migration actually rewrote, and
+  // QdrantVectorStore — the layer the 1.3.0 migration actually rewrote, and
   // the one every fix in this release lives in. Until these were added, no
   // test touched it on a real device on any of the eight shipped platforms:
   // the cases above drive QdrantEdgeClient directly.

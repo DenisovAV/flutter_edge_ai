@@ -1,5 +1,7 @@
-## 1.12.0
-- Move RAG APIs and storage contracts to `flutter_edge_ai_rag`.
+## 2.0.0
+- **Breaking:** RAG APIs and storage contracts move to `flutter_edge_ai_rag`.
+- **Breaking:** remove `ModelFileManager.setActiveModel`; use `ensureModelReadyFromSpec`.
+- **Breaking:** remove the `flutter_gemma` name aliases; `dart fix --apply` still migrates.
 
 ## 1.11.4
 - Renamed from `flutter_gemma`; `dart fix --apply` migrates, old names deprecated until 2.0.0.

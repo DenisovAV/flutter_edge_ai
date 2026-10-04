@@ -4,9 +4,9 @@ description: Move from flutter_gemma to flutter_edge_ai, and from the 0.16.x mon
 image: https://flutteredge.ai/images/og-image.png
 ---
 
-## Flutter Edge AI 1.11 → 1.12: RAG leaves core
+## Flutter Edge AI 1.x → 2.0: RAG leaves core
 
-Flutter Edge AI 1.12 keeps inference, embeddings, speech, installation, and
+Flutter Edge AI 2.0 keeps inference, embeddings, speech, installation, and
 model lifecycle in `flutter_edge_ai`, but moves RAG orchestration and all
 vector-store contracts to `flutter_edge_ai_rag`. RAG is instance-scoped and can
 use the active core embedder, a custom embedder, or precomputed vectors without
@@ -14,9 +14,9 @@ initializing core.
 
 ```
 dependencies:
-  flutter_edge_ai: ^1.12.0
+  flutter_edge_ai: ^2.0.0
   flutter_edge_ai_rag: ^1.0.0
-  flutter_edge_ai_sqlite: ^1.5.0 # or flutter_edge_ai_qdrant: ^1.4.0
+  flutter_edge_ai_sqlite: ^2.0.0 # or flutter_edge_ai_qdrant: ^2.0.0
 ```
 
 Remove `vectorStore:` and `filterSchema:` from `FlutterEdgeAi.initialize()`.
@@ -55,7 +55,7 @@ try {
 }
 ```
 
-| 1.11 core RAG | 1.12 `RagIndex` |
+| 1.x core RAG | 2.0 `RagIndex` |
 |---|---|
 | `FlutterEdgeAi.rag.initialize(location)` | `FlutterEdgeAiRag(...).open(spec: VectorStoreSpec(location: ...))` |
 | `addDocument(...)` | `addText(...)` |
@@ -117,11 +117,10 @@ To move:
    search and replace does it.
 3. Run `dart fix --apply` (Flutter 3.44 or newer). It renames `FlutterGemma`,
    `FlutterGemmaPlugin`, `FlutterGemmaDesktop`, `GemmaLogLevel`,
-   `FlutterGemmaDiagnostics` and the genkit names to their new spellings. Until
-   you run it they still compile as deprecated aliases — the core ones up to
-   `flutter_edge_ai` 2.0.0, `FlutterGemmaDiagnostics` up to
-   `flutter_edge_ai_diagnostics` 0.2.0, the genkit ones up to
-   `genkit_flutter_edge_ai` 0.7.0.
+   `FlutterGemmaDiagnostics` and the genkit names to their new spellings. In 1.11.4
+   they still compiled as deprecated aliases; `flutter_edge_ai` 2.0.0,
+   `flutter_edge_ai_diagnostics` 0.2.0 and `genkit_flutter_edge_ai` 0.7.0 drop
+   the aliases, and `dart fix --apply` renames the old names all the same.
 
 If you installed the agent skills, run `dart run skills@ get --all` again
 and delete the old `flutter-gemma-*` skill directories: they still teach the
@@ -132,15 +131,15 @@ What does not change:
 - Installed models, the model directory and the Web cache stay where they are,
   so nothing downloads again.
 - Existing Qdrant and SQLite vector stores opened as before in 1.11.4. Moving
-  onward to 1.12 requires the embedding-profile migration above.
+  onward to 2.0 requires the embedding-profile migration above.
 - The Android package `dev.flutterberlin.*`, the platform channels and the
   macOS `post_install` snippet in your Podfile are unchanged.
 
 Genkit: model and embedder ids are now `flutter-edge-ai/<name>`, and the
 context-window middleware is registered as `flutter-edge-ai-context-window`.
 Code that uses `flutterEdgeAi.model(...)` and `trimContext()` picks this up; a
-hard-coded `'flutter-gemma/<name>'` string has to change. The old Dart names are
-deprecated aliases here too, until `genkit_flutter_edge_ai` 0.7.0.
+hard-coded `'flutter-gemma/<name>'` string has to change. The old Dart names were
+deprecated aliases in 0.6.2; 0.7.0 drops them, and `dart fix --apply` renames them.
 
 Move every package at once: an app that keeps a `flutter_gemma_X` next to
 `flutter_edge_ai_X` gets the same native libraries and Android classes twice,
@@ -156,7 +155,7 @@ the SQLite store upgrades Flutter first.
 plus **opt-in** packages, so your app only ships the native weight it actually
 uses. This is the **only breaking change**: you add the packages you need and one
 `initialize(...)` call. Model/session/chat/embedding APIs stayed compatible in
-that release; RAG later changed in 1.12 as documented above.
+that release; RAG later changed in 2.0 as documented above.
 
 ## TL;DR
 
@@ -437,7 +436,7 @@ If your app has no re-indexing path of its own, do the re-index behind the same
 progress UI you use for the first run — from the user's side this is a rebuild
 of the index, not a migration they can be asked to wait through silently.
 
-## 2. main.dart — current 1.12 composition
+## 2. main.dart — current 2.0 composition
 
 **Before (0.16.x):** engines were bundled into core; `initialize()` was optional.
 
@@ -449,7 +448,7 @@ void main() {
 }
 ```
 
-**Current (1.12):** register only AI runtimes with core. Construct RAG with its
+**Current (2.0):** register only AI runtimes with core. Construct RAG with its
 own provider registry and own the returned index separately.
 
 ```dart

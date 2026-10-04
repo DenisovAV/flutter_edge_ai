@@ -1,5 +1,5 @@
-## 1.4.0
-- Move RAG contracts and provider registration to `flutter_edge_ai_rag`.
+## 2.0.0
+- **Breaking:** move RAG contracts and provider registration to `flutter_edge_ai_rag`.
 
 ## 1.3.2
 - Renamed from `flutter_gemma_rag_qdrant`.

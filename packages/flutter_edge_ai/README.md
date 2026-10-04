@@ -88,10 +88,10 @@ What they cover: registering an engine (core ships none), routing by the declare
 
 ## What's new: flutter_gemma is now flutter_edge_ai
 
-- **flutter_gemma is now flutter_edge_ai.** Every package has a new name; models, stores and platform setup carry over unchanged, and the old Dart names still compile as deprecated aliases. See [MIGRATION.md](MIGRATION.md#flutter_gemma--flutter_edge_ai-1114).
+- **flutter_gemma is now flutter_edge_ai.** Every package has a new name; models, stores and platform setup carry over unchanged, and `dart fix --apply` renames the old Dart names. See [MIGRATION.md](MIGRATION.md#flutter_gemma--flutter_edge_ai-1114).
 
 Through 1.11.3 this package shipped as `flutter_gemma`. The renamed package
-started at 1.11.4; the current 1.12 release moves RAG out of core into
+started at 1.11.4; the current 2.0 release moves RAG out of core into
 `flutter_edge_ai_rag`.
 
 ## What's new in 1.9.0
@@ -1861,7 +1861,7 @@ For precomputed vectors, pass an `EmbeddingProfile(id:, dimension:)` to
 `open()`, then use `addVector` and `searchVector`. A custom `RagEmbedder` makes
 text RAG completely independent from the core runtime. One persistent location
 belongs to exactly one profile; use a new, profile-versioned path when weights
-or preprocessing change. A nonempty pre-1.12 store has no profile metadata and
+or preprocessing change. A nonempty pre-2.0 store has no profile metadata and
 is never adopted silently: set `allowLegacyProfileAdoption: true` only after
 you have verified its exact original profile, otherwise re-index it.
 

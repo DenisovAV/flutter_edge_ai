@@ -162,7 +162,7 @@ class SiteFooter extends StatelessComponent {
                   a(href: '/docs/embeddings-and-rag', classes: 'footer-link', [Component.text('Embeddings & RAG')]),
                 ]),
                 li([
-                  a(href: '/docs/migration', classes: 'footer-link', [Component.text('Migration (1.11 → 1.12)')]),
+                  a(href: '/docs/migration', classes: 'footer-link', [Component.text('Migration (1.x → 2.0)')]),
                 ]),
               ]),
             ]),

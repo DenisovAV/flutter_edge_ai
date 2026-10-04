@@ -39,7 +39,7 @@ SmolLM and more — see [Models](/docs/models) for the full list.
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
-## What's new in 1.12
+## What's new in 2.0
 
 - **RAG is an independent module.** `flutter_edge_ai_rag` owns `RagIndex`,
   embedding profiles, filters, and provider selection; SQLite and Qdrant are
@@ -52,7 +52,7 @@ SmolLM and more — see [Models](/docs/models) for the full list.
 
 ## Historical release notes (1.x): Flutter Gemma became Flutter Edge AI
 
-- **flutter_gemma is now Flutter Edge AI.** Every package has a new name — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, … Installed models, vector stores and platform setup carry over, and the old Dart names still compile as deprecated aliases. See [Migration](/docs/migration).
+- **flutter_gemma is now Flutter Edge AI.** Every package has a new name — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, … Installed models, vector stores and platform setup carry over, and `dart fix --apply` renames the old Dart names. See [Migration](/docs/migration).
 
 Through 1.11.3 the packages shipped under the `flutter_gemma*` names; the new names continue the same numbering (the table is in [Migration](/docs/migration)).
 
@@ -67,7 +67,7 @@ Through 1.11.3 the packages shipped under the `flutter_gemma*` names; the new na
 
 - **Package Skills** — flutter_edge_ai ships agent skills for coding assistants; `dart run skills@ get --all` installs them. See [Package Skills](/docs/package-skills).
 - **Whisper output language** — `getActiveStt(language:)` sets a default, `transcribe(…, language:)` overrides one call. Breaking for custom `SpeechRecognizer` implementations. See [Speech](/docs/speech#output-language-whisper).
-- **Vector-store `flush()`** was added to persist an index. In 1.12 the current
+- **Vector-store `flush()`** was added to persist an index. In 2.0 the current
   call is `RagIndex.flush()`; see [Embeddings & RAG](/docs/embeddings-and-rag).
 
 ## What's new in 1.7
@@ -83,7 +83,7 @@ Through 1.11.3 the packages shipped under the `flutter_gemma*` names; the new na
 ## What's new in 1.5
 
 - **genai_primitives support** — drive an on-device chat with the Flutter team's standard `ChatMessage` types via `package:flutter_edge_ai/genai.dart` (`sendMessage`/`generateContent` + streams, covering text, vision, audio, thinking, and tool calls). See [genai_primitives](/docs/genai).
-- **Historical RAG facade:** 1.5 put RAG under `FlutterEdgeAi.rag`; 1.12 removed
+- **Historical RAG facade:** 1.5 put RAG under `FlutterEdgeAi.rag`; 2.0 removed
   that facade in favor of independently owned `FlutterEdgeAiRag` indexes. The
   core facade still owns model introspection, storage helpers, and per-modality
   uninstallers.
@@ -103,16 +103,16 @@ Through 1.11.3 the packages shipped under the `flutter_gemma*` names; the new na
 ## What's new in 1.1
 
 - **Declared-column RAG filters** were introduced through core initialization.
-  In 1.12 the schema lives in `VectorStoreSpec`; see
+  In 2.0 the schema lives in `VectorStoreSpec`; see
   [Embeddings & RAG](/docs/embeddings-and-rag).
 
 ## What's new in 1.0
 
 - **Modular package split** — the monolith is now a small **core** (`flutter_edge_ai`) plus **opt-in** packages, so your app ships only the native weight it uses: `flutter_edge_ai_litertlm` (.litertlm), `flutter_edge_ai_mediapipe` (.task/.bin), `flutter_edge_ai_embeddings`, `flutter_edge_ai_qdrant`, `flutter_edge_ai_sqlite`. See [Packages](/docs/packages).
 - **New `FlutterEdgeAi.initialize(...)` registration** originally included AI
-  runtimes and the vector store. In 1.12 it registers AI runtimes only.
+  runtimes and the vector store. In 2.0 it registers AI runtimes only.
 - Model/session/chat/embedding APIs stayed compatible in 1.0; RAG later moved
-  to `flutter_edge_ai_rag` in 1.12. See [Migration](/docs/migration).
+  to `flutter_edge_ai_rag` in 2.0. See [Migration](/docs/migration).
 - **Two on-device vector stores** — `flutter_edge_ai_qdrant` (qdrant-edge, fastest on native) and `flutter_edge_ai_sqlite` (portable across all six platforms, including Web). Since rag_sqlite 1.1.0 the SQLite store runs exact in-SQLite KNN via the `sqlite-vec`/`vec0` extension, replacing its Dart brute-force + HNSW search.
 
 See the [CHANGELOG](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/CHANGELOG.md) for the full release history.

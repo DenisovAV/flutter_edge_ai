@@ -33,7 +33,7 @@ dependencies:
   # 1.11.0 too, on top of 1.9.0's embedding seam and tokenizer registry
   # (`EmbeddingTokenizerRegistry`). An older core resolves and then fails to
   # compile — better here than there.
-  flutter_edge_ai: ^1.12.0
+  flutter_edge_ai: ^2.0.0
   ffi: ^2.1.0
   mutex: ^3.1.0
   hooks: ^2.0.0

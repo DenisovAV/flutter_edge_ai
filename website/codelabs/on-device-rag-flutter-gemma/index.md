@@ -45,7 +45,7 @@ to make, and each step here is built around one of them:
 ### What you'll need
 
 * Flutter **3.47** or newer — higher than the rest of flutter_edge_ai asks for.
-  `flutter_edge_ai_sqlite` 1.5.0 requires sqlite3 3.6.0, whose build
+  `flutter_edge_ai_sqlite` 2.0.0 requires sqlite3 3.6.0, whose build
   toolchain wants `meta ^1.19.0`, and every Flutter 3.44.x pins `meta` to
   1.18.0 exactly. On 3.44 the Step 3 app will not resolve
 * Any one of Flutter's six platforms: an arm64 Android device or emulator, an

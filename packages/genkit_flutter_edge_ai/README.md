@@ -8,8 +8,8 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 
 > **Renamed from `genkit_flutter_gemma`.** Model and embedder ids are now
 > `flutter-edge-ai/<name>` (they were `flutter-gemma/<name>`); `flutterEdgeAi.model(...)`
-> builds them for you. The old Dart names still compile as deprecated aliases, and
-> `dart fix --apply` renames them.
+> builds them for you. Since 0.7.0 the old Dart names are gone; `dart fix --apply`
+> renames them.
 
 ## Features
 
@@ -55,8 +55,8 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 ```yaml
 # pubspec.yaml (your app)
 dependencies:
-  genkit_flutter_edge_ai: ^0.6.3
-  flutter_edge_ai: ^1.12.0
+  genkit_flutter_edge_ai: ^0.7.0
+  flutter_edge_ai: ^2.0.0
   flutter_edge_ai_litertlm: ^1.8.7   # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.2.2  # the tokenizers an embedding backend needs
   flutter_edge_ai_mediapipe: ^1.0.9

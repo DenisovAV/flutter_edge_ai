@@ -40,7 +40,7 @@ PUBSPEC = """name: demo
 environment:
   sdk: '>=3.0.0 <4.0.0'
 dependencies:
-  flutter_edge_ai: ^1.12.0
+  flutter_edge_ai: ^2.0.0
   flutter_edge_ai_litertlm: ^1.8.7
 """
 
@@ -218,13 +218,13 @@ MUST_FAIL = {
     ),
     "4-space dependencies block": lambda app: (
         (app / "pubspec.yaml").write_text(
-            PUBSPEC.replace("  flutter_edge_ai: ^1.12.0", "    flutter_edge_ai: ^1.12.0")
+            PUBSPEC.replace("  flutter_edge_ai: ^2.0.0", "    flutter_edge_ai: ^2.0.0")
         ),
         (app / "web" / "cache_api.js").unlink(),
     ),
     "flow-style dependencies": lambda app: (
         (app / "pubspec.yaml").write_text(
-            "name: demo\ndependencies: {flutter_edge_ai: ^1.12.0, flutter_edge_ai_litertlm: ^1.8.7}\n"
+            "name: demo\ndependencies: {flutter_edge_ai: ^2.0.0, flutter_edge_ai_litertlm: ^1.8.7}\n"
         ),
         (app / "web" / "cache_api.js").unlink(),
     ),
@@ -265,7 +265,7 @@ MUST_PASS = {
     ),
     "dev_dependencies only": lambda app: (
         (app / "pubspec.yaml").write_text(
-            "name: demo\ndev_dependencies:\n  flutter_edge_ai: ^1.12.0\n"
+            "name: demo\ndev_dependencies:\n  flutter_edge_ai: ^2.0.0\n"
         ),
         (app / "web" / "cache_api.js").unlink(),
         (app / "web" / "opfs_helper.js").unlink(),

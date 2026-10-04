@@ -2,7 +2,7 @@
 
 > **Status: measured on macOS arm64 for 1k and 10k corpora.** The tables below
 > contain the completed run. The optional 100k corpus remains a follow-up.
-> These measurements predate the 1.12 extraction of orchestration into
+> These measurements predate the 2.0 extraction of orchestration into
 > `flutter_edge_ai_rag`. The storage engines and measured vector operations are
 > the same, but current application code opens them through a provider and a
 > profile-bound `RagIndex`; old package versions below remain measurement

@@ -1,6 +1,6 @@
 name: flutter_edge_ai_sqlite
 description: "SQLite vector search (sqlite-vec) provider for flutter_edge_ai_rag across native platforms and web."
-version: 1.5.0
+version: 2.0.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_sqlite
 topics: [rag, sqlite, vector-search, embeddings, web]

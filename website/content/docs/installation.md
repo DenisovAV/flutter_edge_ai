@@ -62,7 +62,7 @@ install.
 
 <Info>
 **Migrating from `flutter_gemma` or Flutter Edge AI 1.x?** See the
-[Migration guide](/docs/migration). Version 1.12 moves RAG out of core and adds
+[Migration guide](/docs/migration). Version 2.0 moves RAG out of core and adds
 durable embedding profiles.
 </Info>
 

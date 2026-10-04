@@ -20,12 +20,12 @@ inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
 ```
 dependencies:
-  flutter_edge_ai: ^1.12.0
+  flutter_edge_ai: ^2.0.0
   flutter_edge_ai_litertlm: ^1.8.7
   flutter_edge_ai_embeddings: ^2.2.2
   flutter_edge_ai_rag: ^1.0.0
-  flutter_edge_ai_sqlite: ^1.5.0 # all six platforms, including Web
-  # flutter_edge_ai_qdrant: ^1.4.0 # native alternative
+  flutter_edge_ai_sqlite: ^2.0.0 # all six platforms, including Web
+  # flutter_edge_ai_qdrant: ^2.0.0 # native alternative
 ```
 
 Initialize only the embedding runtime in core:
@@ -200,7 +200,7 @@ profile-versioned location after changing weights, tokenizer, pooling,
 normalization, prefixes, or dimensions. **clear()** deletes documents but keeps
 the profile binding.
 
-A nonempty database created before 1.12 has no stored profile. Prefer a new
+A nonempty database created before 2.0 has no stored profile. Prefer a new
 location and re-index. If you can independently verify the exact original
 embedding pipeline, explicit adoption is available:
 

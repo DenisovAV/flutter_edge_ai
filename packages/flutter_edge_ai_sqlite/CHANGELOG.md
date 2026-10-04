@@ -1,5 +1,5 @@
-## 1.5.0
-- Add pluggable RAG provider selection and durable embedding-profile binding.
+## 2.0.0
+- **Breaking:** add pluggable RAG provider selection and durable embedding-profile binding.
 
 ## 1.4.0
 - Renamed from `flutter_gemma_rag_sqlite`.

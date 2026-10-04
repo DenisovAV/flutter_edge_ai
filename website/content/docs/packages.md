@@ -5,7 +5,7 @@ image: https://flutteredge.ai/images/og-image.png
 ---
 
 The former `flutter_gemma` monolith is now a set of opt-in modules. Core owns
-model installation plus inference, embedding, and speech registries. Since 1.12,
+model installation plus inference, embedding, and speech registries. Since 2.0,
 RAG orchestration has its own instance-scoped package and storage providers
 depend on it. Apps ship only the runtimes and vector stores they use.
 
@@ -72,7 +72,7 @@ Windows App SDK projections); not on Linux. There is no MediaPipe engine on
 desktop. See [Desktop Support](/docs/desktop).
 </Info>
 
-See [Migration](/docs/migration) for the rename and the 1.12 extraction of RAG
+See [Migration](/docs/migration) for the rename and the 2.0 extraction of RAG
 from core.
 
 ## ONNX Runtime engine

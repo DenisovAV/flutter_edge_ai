@@ -17,10 +17,10 @@ dependencies:
   genkit_google_genai: ^0.3.1
 
   # On-device AI via genkit_flutter_edge_ai
-  genkit_flutter_edge_ai: ^0.6.3
+  genkit_flutter_edge_ai: ^0.7.0
   # Core registers no runtime by default. ai_engine.dart explicitly registers
   # LiteRT-LM and the EmbeddingGemma tokenizer provider from these packages.
-  flutter_edge_ai: ^1.12.0
+  flutter_edge_ai: ^2.0.0
   flutter_edge_ai_litertlm: ^1.8.7
   flutter_edge_ai_embeddings: ^2.2.2
 

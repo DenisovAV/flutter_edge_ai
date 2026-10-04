@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_edge_ai'
-  s.version          = '1.12.0'
+  s.version          = '2.0.0'
   s.summary          = 'Flutter plugin for running Gemma and other LLMs locally on iOS.'
   s.description      = <<-DESC
 Core runtime for running Gemma 4, Gemma3n, Gemma 3, FastVLM, Qwen3,

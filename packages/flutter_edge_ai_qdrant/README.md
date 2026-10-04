@@ -118,7 +118,7 @@ refuses; if a schema must work on both, keep it inside sqlite's narrower set.
 
 ## Adopting an existing profile-less store
 
-A nonempty `qdrant_edge_v1` shard created before 1.4.0 has vectors but no durable
+A nonempty `qdrant_edge_v1` shard created before 2.0.0 has vectors but no durable
 embedding profile. `FlutterEdgeAiRag` refuses to guess. After independently
 verifying the exact model that created the vectors, adopt it explicitly once:
 

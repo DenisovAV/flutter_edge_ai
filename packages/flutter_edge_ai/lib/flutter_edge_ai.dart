@@ -56,7 +56,6 @@ export 'core/multimodal_image_handler.dart';
 
 // Export Modern API
 export 'core/api/flutter_edge_ai.dart';
-export 'core/deprecated_names.dart';
 export 'core/api/inference_installation_builder.dart';
 export 'core/api/embedding_installation_builder.dart';
 export 'core/api/stt_installation_builder.dart';
@@ -97,6 +96,6 @@ export 'core/model_management/model_specs.dart'
 // Note: Desktop uses MobileModelManager for file management
 export 'desktop/flutter_edge_ai_desktop.dart'
     if (dart.library.js_interop) 'desktop/flutter_edge_ai_desktop_stub.dart'
-    show FlutterEdgeAiDesktop, FlutterGemmaDesktop, isDesktop;
+    show FlutterEdgeAiDesktop, isDesktop;
 
 // ModelReplacePolicy is already exported from model_file_manager_interface.dart

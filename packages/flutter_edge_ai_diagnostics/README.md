@@ -22,7 +22,7 @@ So this package does not report RSS. It reports `anonymousBytes`, the memory the
 
 ```yaml
 dependencies:
-  flutter_edge_ai_diagnostics: ^0.1.0
+  flutter_edge_ai_diagnostics: ^0.2.0
 ```
 
 If you only use it from `integration_test/` or `test/`, put it under `dev_dependencies` instead. Note that neither section strips anything from a release build: what keeps it out is not importing it from `lib/`.

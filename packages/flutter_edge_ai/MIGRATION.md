@@ -73,6 +73,14 @@ The old and new calls map as follows:
 | `stats()` / `flush()` / `clear()` | same methods on the owned index |
 | core/plugin teardown | `RagIndex.dispose()` before core/embedder teardown |
 
+Also breaking in 2.0:
+
+- `Filter`, `FilterSchema`, `RetrievalResult` and `VectorStoreRepository` now
+  import from `package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart`.
+- `ModelFileManager.setActiveModel` is removed; use `ensureModelReadyFromSpec`.
+- The flutter_gemma-era name aliases (`FlutterGemma`, …) are gone;
+  `dart fix --apply` still renames them.
+
 ### Embedding-profile migration
 
 Every persistent location is now durably bound to an `EmbeddingProfile`. Its
@@ -105,8 +113,9 @@ omit `activeEmbedderProfileId`; for independent text RAG, pass a custom
 A nonempty 1.11 store has no profile metadata. The safest migration is a new,
 profile-versioned location plus re-indexing. If you can independently attest
 the exact old model and preprocessing, open once with
-`allowLegacyProfileAdoption: true` and the verified `EmbeddingProfile`; the
-provider checks the stored vector dimension before persisting the binding.
+`VectorStoreSpec(…, allowLegacyProfileAdoption: true)` and the verified
+`EmbeddingProfile` passed as `embeddingProfile:` to `rag.open`; the provider
+checks the stored vector dimension before persisting the binding.
 
 SQLite filter schemas are part of the physical `vec0` table. Adding or changing
 a field requires a new schema-versioned location and re-indexing. Do not open a
@@ -144,9 +153,12 @@ To move:
 
 1. Replace each `flutter_gemma*` dependency in `pubspec.yaml` with its new name
    and the version from the table.
-2. Replace `package:flutter_gemma` with `package:flutter_edge_ai` in your
-   imports — the same for every other package in the table. A project-wide
-   search and replace does it.
+2. In your import lines replace `flutter_gemma` with `flutter_edge_ai`
+   everywhere it appears — the package and the file name, e.g.
+   `package:flutter_gemma/flutter_gemma.dart` →
+   `package:flutter_edge_ai/flutter_edge_ai.dart`. Two packages also drop
+   `rag_`: `flutter_gemma_rag_sqlite` → `flutter_edge_ai_sqlite` and
+   `flutter_gemma_rag_qdrant` → `flutter_edge_ai_qdrant`.
 3. Run `dart fix --apply` (Flutter 3.44 or newer). It renames `FlutterGemma`,
    `FlutterGemmaPlugin`, `FlutterGemmaDesktop`, `GemmaLogLevel`,
    `FlutterGemmaDiagnostics` and the genkit names to their new spellings. In 1.11.4
@@ -218,11 +230,11 @@ dependencies:
 
 Pick by what you actually used in 0.16.x:
 
-| In 0.16.x you used… | Add in 1.0 |
+| In 0.16.x you used… | Add now |
 |---|---|
 | `.litertlm` models (Gemma 4, Qwen3, FastVLM, any desktop) | `flutter_edge_ai_litertlm` |
 | `.task` / `.bin` models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4, …) | `flutter_edge_ai_mediapipe` |
-| `generateEmbedding()` / `installEmbedder()` | `flutter_edge_ai_litertlm` (see [Embedder decoupling](#embedder-decoupling-litertlm-150) below) |
+| `generateEmbedding()` / `installEmbedder()` | `flutter_edge_ai_litertlm` + `flutter_edge_ai_embeddings` (tokenizers, required since 1.9; see [Embedder decoupling](#embedder-decoupling-litertlm-150) below) |
 | RAG on native | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
 | RAG on web | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 
@@ -383,7 +395,8 @@ transitively through `flutter_gemma_embeddings`'s old dependency on it.
 ## Troubleshooting
 
 - **`dlopen` "library not found" after removing a package:** if you had both
-  `flutter_edge_ai_litertlm` and `flutter_edge_ai_embeddings` and removed one, run
+  `flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` and removed one, run
   `flutter clean` and delete `~/Library/Caches/flutter_gemma/native` (Windows:
   `%LOCALAPPDATA%\flutter_gemma\native`), then `flutter pub get`. They share one
-  native library; see those packages' READMEs.
+  native library (`flutter_edge_ai_embeddings` 2.x has no native code); see
+  those packages' READMEs.

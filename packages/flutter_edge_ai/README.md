@@ -42,7 +42,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 | Run `.task` / `.bin` models (MediaPipe; mobile and web) | [`flutter_edge_ai_mediapipe`](https://pub.dev/packages/flutter_edge_ai_mediapipe) |
 | Run ONNX models — text generation and embeddings | [`flutter_edge_ai_onnx`](https://pub.dev/packages/flutter_edge_ai_onnx) |
 | Use the model built into the OS or browser | [`flutter_edge_ai_builtin_ai`](https://pub.dev/packages/flutter_edge_ai_builtin_ai) |
-| Compute text embeddings (tokenizers for either backend) | [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) |
+| Tokenizers for text embeddings (needed with the LiteRT or ONNX embedding backend) | [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) |
 | On-device RAG | [`flutter_edge_ai_rag`](https://pub.dev/packages/flutter_edge_ai_rag) + [`flutter_edge_ai_qdrant`](https://pub.dev/packages/flutter_edge_ai_qdrant) (native) or [`flutter_edge_ai_sqlite`](https://pub.dev/packages/flutter_edge_ai_sqlite) (all six platforms) |
 | Speech-to-text, text-to-speech, voice loop | [`flutter_edge_ai_speech`](https://pub.dev/packages/flutter_edge_ai_speech) |
 | Agent skills over function calling | [`flutter_edge_ai_agent`](https://pub.dev/packages/flutter_edge_ai_agent) |
@@ -60,8 +60,9 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 
 ¹ Web `.litertlm` is text and function calling only — no vision, audio or LoRA.
 
-Native code ships for `arm64` on Android, iOS and macOS, `x86_64` on Windows,
-and `x86_64` / `arm64` on Linux. Details, GPU backends and per-feature limits:
+LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
+on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
+ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 [installation](https://flutteredge.ai/docs/installation#platform--architecture-support).
 
 ## Installation
@@ -86,15 +87,20 @@ platform :ios, '15.0'
 use_frameworks! :linkage => :static
 ```
 
-For large models add `com.apple.developer.kernel.extended-virtual-addressing`
-and `com.apple.developer.kernel.increased-memory-limit` to
+For large models add `com.apple.developer.kernel.extended-virtual-addressing`,
+`com.apple.developer.kernel.increased-memory-limit` and
+`com.apple.developer.kernel.increased-debugging-memory-limit` to
 `Runner.entitlements`. The iOS Simulator runs on CPU only.
 
 ### Android
 
-Nothing to add. The GPU and NPU `uses-native-library` entries merge in from
-the plugin manifest. Everything backed by LiteRT (`.litertlm`, embeddings,
-speech) is `arm64-v8a` only.
+Release builds need `<uses-permission android:name="android.permission.INTERNET"/>`
+in `android/app/src/main/AndroidManifest.xml` to download models (Flutter's
+template adds it only to the debug and profile manifests). Anything backed by
+LiteRT — `.litertlm`, LiteRT embeddings, speech — needs `minSdk 30` and is
+`arm64-v8a` only. `flutter_edge_ai_builtin_ai` needs `minSdk 26` (and macOS
+12.0). The GPU and NPU `uses-native-library` entries still merge in from the
+plugin manifest automatically.
 
 ### Web
 
@@ -113,8 +119,8 @@ window.LlmInference = LlmInference;
 ```
 
 The LiteRT-LM, ONNX, web embeddings and SQLite snippets are in the
-[web setup guide](https://flutteredge.ai/docs/installation#web). Web inference
-runs on the GPU (WebGPU).
+[web setup guide](https://flutteredge.ai/docs/installation#web). MediaPipe and
+LiteRT-LM run on WebGPU; ONNX also runs on CPU (WASM).
 
 ### macOS
 
@@ -239,6 +245,8 @@ await FlutterEdgeAi.installModel(
 ).withProgress((progress) => print('Downloading: $progress%')).install();
 ```
 
+`litert-community/Gemma3-1B-IT` is gated: accept its license on Hugging Face, then pass your token with `--dart-define=HUGGINGFACE_TOKEN=…`.
+
 ### Chat
 
 ```dart
@@ -270,8 +278,8 @@ await model.close();
 
 | Model | `ModelType` | Function calling | Thinking | Vision / audio |
 |---|---|:---:|:---:|:---:|
-| Gemma 4 E2B / E4B | `gemma4` | ✅ | ✅ | ✅ / ✅ |
-| Gemma 3n E2B / E4B | `gemmaIt` | ✅ ¹ | — | ✅ / ✅ |
+| Gemma 4 E2B / E4B ² | `gemma4` | ✅ | ✅ | ✅ / ✅ |
+| Gemma 3n E2B / E4B ² | `gemmaIt` | ✅ ¹ | — | ✅ / ✅ |
 | Gemma 3 1B, Gemma 3 270M | `gemmaIt` | — | — | — |
 | FunctionGemma 270M | `functionGemma` | ✅ | — | — |
 | Qwen3 0.6B | `qwen3` | ✅ | ✅ | — |
@@ -281,16 +289,17 @@ await model.close();
 | FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision | `general` | — | — | ✅ / — |
 | SmolLM, SmolLM3, LFM2.5, Phi-4 Mini Reasoning | `general` | — | — | — |
 
-¹ The downloadable E4B `.litertlm`. Thinking and audio input are not available
-on Web.
+¹ The downloadable E4B `.litertlm`.
+
+² On Web: no audio input; Gemma 4 thinking and Gemma 3n vision are native-only.
 
 Download links, sizes, formats per platform, embedding and speech models:
 [models](https://flutteredge.ai/docs/models).
 
 ## Going further
 
-- [Getting started](https://flutteredge.ai/docs/getting-started) — sessions, system instructions, stop generation, removing models
-- [Models](https://flutteredge.ai/docs/models) — model sources, Hugging Face installs, LoRA
+- [Getting started](https://flutteredge.ai/docs/getting-started) — sessions, system instructions, removing models
+- [Models](https://flutteredge.ai/docs/models) — model sources, Hugging Face installs
 - [Function calling](https://flutteredge.ai/docs/function-calling) · [Multimodal](https://flutteredge.ai/docs/multimodal) · [Thinking mode](https://flutteredge.ai/docs/thinking-mode)
 - [Embeddings & RAG](https://flutteredge.ai/docs/embeddings-and-rag) · [Speech](https://flutteredge.ai/docs/speech) · [Agent skills](https://flutteredge.ai/docs/agent)
 - [Built-in AI](https://flutteredge.ai/docs/builtin-ai) · [ONNX Runtime](https://flutteredge.ai/docs/onnx) · [Genkit](https://flutteredge.ai/docs/genkit) · [Memory diagnostics](https://flutteredge.ai/docs/diagnostics)

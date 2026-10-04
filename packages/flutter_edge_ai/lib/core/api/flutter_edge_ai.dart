@@ -116,7 +116,7 @@ class FlutterEdgeAi {
   ///   - none: No caching (ephemeral, for development)
   ///   Note: This parameter only affects web platform, ignored on mobile
   /// - [enableWebCache]: DEPRECATED - Use webStorageMode instead.
-  ///   Converts to webStorageMode internally; scheduled for removal in 1.0.
+  ///   Converts to webStorageMode internally; still accepted in 2.0.
   ///
   /// Example:
   /// ```dart
@@ -138,8 +138,7 @@ class FlutterEdgeAi {
     String? huggingFaceToken,
     int maxDownloadRetries = 10,
     WebStorageMode webStorageMode = WebStorageMode.cacheApi,
-    @Deprecated('Use webStorageMode instead. Scheduled for removal in 1.0.')
-    bool? enableWebCache,
+    @Deprecated('Use webStorageMode instead.') bool? enableWebCache,
     // Opt-in registration. Engines/backends are FULLY opt-in: core registers
     // NONE by default. Pass the providers from the packages you use, e.g.
     // `LiteRtLmEngine()` (flutter_edge_ai_litertlm), `MediaPipeEngine()`
@@ -190,8 +189,9 @@ class FlutterEdgeAi {
 
     /// Optional custom model file storage (e.g. outside Documents).
     ///
-    /// [FileSystemService] is defined in core but not exported from the
-    /// public barrel; pass an implementation from your app or tests.
+    /// [FileSystemService] is exported from the public barrel
+    /// (`package:flutter_edge_ai/flutter_edge_ai.dart`); pass an
+    /// implementation from your app or tests.
     FileSystemService? fileSystemService,
   }) async {
     // Migration: enableWebCache takes precedence if provided (for backward compatibility)

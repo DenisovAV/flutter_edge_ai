@@ -1,9 +1,13 @@
 # Legacy API (Deprecated) ⚠️
 
-> **⚠️ DEPRECATED:** This API is maintained for backwards compatibility only.
+> **⚠️ DEPRECATED:** This document describes removed and legacy APIs, kept for
+> reference only. **Many examples no longer compile** against current
+> `flutter_edge_ai`: `downloadModelFromNetwork`,
+> `downloadModelFromNetworkWithProgress`, `downloadLoraWeightsFromNetwork`,
+> `installLoraWeightsFromAsset`, `loadAssetModel` / `loadNetworkModel` and the
+> model manager's `setReplacePolicy` / `replacePolicy` no longer exist.
 > For new projects, use the [Modern API](../packages/flutter_edge_ai/README.md#quick-start) instead.
-> The RAG examples in this document describe the pre-2.0 core/plugin API and do
-> **not** compile against current `flutter_edge_ai`. RAG now lives in
+> The RAG examples describe the pre-2.0 core/plugin API; RAG now lives in
 > `flutter_edge_ai_rag`; follow the
 > [2.0 migration guide](../packages/flutter_edge_ai/MIGRATION.md#flutter-edge-ai-1x--20-rag-leaves-core).
 >
@@ -357,7 +361,7 @@ chat.generateChatResponseAsync().listen((ModelResponse response) {
 
 8. **🛠️ Function Calling**
 
-Enable your models to call external functions and integrate with other services. **Note: Function calling is only supported by specific models - see the [Model Support](#model-function-calling-support) section below.**
+Enable your models to call external functions and integrate with other services. **Note: Function calling is only supported by specific models - see [models with function calling support](https://flutteredge.ai/docs/function-calling#models-with-function-calling-support).**
 
 **Step 1: Define Tools**
 
@@ -554,9 +558,9 @@ final chat = await model.createChat(
 You can fine-tune FunctionGemma for your custom functions using the provided Colab notebooks:
 
 **Pipeline:**
-1. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/colabs/functiongemma_finetuning.ipynb) Fine-tune the model on your training data
-2. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/colabs/functiongemma_to_tflite.ipynb) Convert PyTorch → TFLite
-3. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/colabs/functiongemma_tflite_to_task.ipynb) Bundle TFLite → MediaPipe `.task`
+1. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/colabs/functiongemma_finetuning.ipynb) Fine-tune the model on your training data
+2. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/colabs/functiongemma_to_tflite.ipynb) Convert PyTorch → TFLite
+3. [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/colabs/functiongemma_tflite_to_task.ipynb) Bundle TFLite → MediaPipe `.task`
 
 **Training Data Format** (`training_data.jsonl`):
 ```json

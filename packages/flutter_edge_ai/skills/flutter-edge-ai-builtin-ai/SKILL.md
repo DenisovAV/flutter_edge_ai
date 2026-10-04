@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-builtin-ai
-description: Use when running the device's own model with flutter_edge_ai_builtin_ai — Gemini Nano on Android or in desktop Chrome, Phi-4-mini in Microsoft Edge, Apple Foundation Models on iPhone, iPad and Mac, Phi Silica on Windows — with nothing to download or bundle, or when falling back to a downloaded model where it is missing. Also use when BuiltInAiUnavailableException or a TimeoutException is thrown, availability reports "downloadable", web throws NotAllowedError about a user gesture, the Android build fails the manifest merge on minSdk, or the model is missing in Chrome. For models the app downloads itself, use flutter-edge-ai-inference.
+description: Use when running the device's own model with flutter_edge_ai_builtin_ai — Gemini Nano on Android or in desktop Chrome, Phi-4-mini in Microsoft Edge, Apple Foundation Models on iPhone, iPad and Mac, Phi Silica on Windows — with nothing to download or bundle, or when falling back to a downloaded model where it is missing. Also use when BuiltInAiUnavailableException or a TimeoutException is thrown, availability reports "downloadable", web throws LocalAiUserActivationRequiredException outside a user gesture, the Android build fails the manifest merge on minSdk, or the model is missing in Chrome. For models the app downloads itself, use flutter-edge-ai-inference.
 ---
 
 # The built-in OS model
@@ -9,8 +9,8 @@ description: Use when running the device's own model with flutter_edge_ai_builti
 
 1. The OS owns the weights, but the model is still installed — as an identity: `fileType: ModelFileType.builtIn` with `.fromBundled(...)`. The app downloads nothing.
 2. Call `BuiltInAi.ensureReady()` before `getActiveModel()`, from a user action: the first call downloads the model and can take minutes, and on web the browser refuses to start that download without a user gesture. Call it straight from the tap handler, with no slow `await` in front of it. It throws `TimeoutException` after `timeout` — 10 minutes by default.
-3. On web a missing gesture is **not** distinguishable by type: `ensureReady` rewraps it as `BuiltInAiUnavailableException` with `unavailableOther`, and only `.message` carries the browser's "NotAllowedError: Requires a user gesture". Read the message before concluding the device cannot do it — otherwise the fallback below downloads gigabytes for nothing.
-4. Catch `BuiltInAiUnavailableException` and fall back to a downloadable model.
+3. On web, `ensureReady` called outside a user gesture throws a `BuiltInAiUnavailableException` whose `status` is `BuiltInAiAvailability.downloadable` — in the log, `LocalAiUserActivationRequiredException: Chrome only starts the Gemini Nano download inside a user gesture…`, a subclass. The browser can run the model; it is waiting for a tap. Check `e.status == BuiltInAiAvailability.downloadable` first, ask the user to tap, and call `ensureReady` again from that tap handler. Do not fall back to a download here — the fallback below would fetch gigabytes the browser was about to provide.
+4. Catch `BuiltInAiUnavailableException` with any other `status` and fall back to a downloadable model.
 5. Android apps need `minSdk 26`, or the manifest merge fails, and Kotlin 2.3.21. The native layer, flutter_local_ai, applies the Kotlin Gradle Plugin itself, so `android.builtInKotlin=true` does not work in the app.
 6. Linux has no built-in model: `BuiltInAiModels.forCurrentPlatform` is null there and `BuiltInAi.availability()` reports `BuiltInAiAvailability.unavailableDeviceUnsupported`. Windows runs Phi Silica through Windows AI Foundry on Copilot+ hardware, in a packaged app; a Windows build that could not resolve the Windows App SDK reports the same unavailable state, so the fallback below covers it.
 
@@ -49,15 +49,22 @@ if (spec == null) {
   model = await downloadGemma();
 } else {
   try {
+    // The first await in the tap handler: on web the browser starts the
+    // download only inside a user gesture, so nothing slow may run before it.
+    // onProgress reports real percentages on web only: ML Kit gives no byte
+    // total on Android, and Apple downloads nothing — ensureReady just waits.
+    await BuiltInAi.ensureReady(onProgress: (int percent) => print('$percent%'));
     await FlutterEdgeAi.installModel(
       modelType: ModelType.general,
       fileType: ModelFileType.builtIn,
     ).fromBundled(spec.name).install();
-    // onProgress reports real percentages on web only: ML Kit gives no byte
-    // total on Android, and Apple downloads nothing — ensureReady just waits.
-    await BuiltInAi.ensureReady(onProgress: (int percent) => print('$percent%'));
     model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-  } on BuiltInAiUnavailableException {
+  } on BuiltInAiUnavailableException catch (e) {
+    if (e.status == BuiltInAiAvailability.downloadable) {
+      // Web, called outside a user gesture. The browser can run the model:
+      // show an "Enable AI" button and call ensureReady from its handler.
+      return;
+    }
     model = await downloadGemma();
   } on TimeoutException {
     model = await downloadGemma();
@@ -95,7 +102,7 @@ final usable = availability == BuiltInAiAvailability.available ||
 | Web | Gemini Nano (Chrome Prompt API) | desktop Chrome — not mobile browsers, Firefox or Safari |
 | Web | Phi-4-mini (Edge Prompt API) | Microsoft Edge with the Prompt API flag on; Edge Dev 154–155 exposes the API but cannot run the model |
 
-Images work on Android, one per message, and only when asked for: `getActiveModel(maxTokens: 4096, supportImage: true)` **and** `createChat(supportImage: true)`. With the default `supportImage: false` the image is dropped with no warning. Windows and web are text-only, and Apple is text-only on OS 26: `supportImage: true` there fails when `getActiveModel` creates the model, not mid-conversation — so do not build an image path there.
+Images work on Android, one per message, and only when asked for: pass `supportImage: true` to `getActiveModel` (`getActiveModel(maxTokens: 4096, supportImage: true)`); chats from `createChat` and sessions inherit it. An image sent to a model loaded without it throws `UnsupportedError`. Windows and web are text-only, and Apple is text-only on OS 26: `supportImage: true` there fails when `getActiveModel` creates the model, not mid-conversation — so do not build an image path there.
 
 ## Web
 

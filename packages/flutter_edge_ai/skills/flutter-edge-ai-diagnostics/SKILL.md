@@ -90,6 +90,6 @@ A field is null in exactly two cases:
 
 ## Choosing a model for the device
 
-On iOS, compare the growth you measured for a model with `availableBytes` before loading it: if the model needs more than the headroom, jetsam kills the app during load. Large models also need two entitlements (see flutter-edge-ai-inference): **Increased Memory Limit** raises the jetsam limit, so `availableBytes` grows; **Extended Virtual Addressing** gives the app more address space to map the model and does not add headroom.
+On iOS, compare the growth you measured for a model with `availableBytes` before loading it: if the model needs more than the headroom, jetsam kills the app during load. Large models also need the memory entitlements listed in flutter-edge-ai-inference. Two of them change what you measure: **Increased Memory Limit** raises the jetsam limit, so `availableBytes` grows; **Extended Virtual Addressing** gives the app more address space to map the model and does not add headroom.
 
 On Android there is no such number to compare against. Measure on the smallest device you support, and treat `availableBytes` as a best case.

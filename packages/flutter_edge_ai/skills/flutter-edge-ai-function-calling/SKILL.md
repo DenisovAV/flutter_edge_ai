@@ -14,11 +14,9 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
 3. Switch over all four `ModelResponse` subtypes. It is sealed — a switch that leaves out `ThinkingResponse` does not compile.
 4. Return tool results as data, errors included. Never throw from a tool.
 5. Prefer `generateChatResponseWithTools` to a hand-written loop.
-6. Use a tool-capable model from the current catalog: Gemma 4, Gemma 3n E4B
-   `.litertlm`, FunctionGemma, Phi-4 Mini, Qwen 2.5, Qwen3 or DeepSeek R1.
-   The intentional local Gemma 3n E2B `.task` fixture also enables function
-   calling; the downloadable Gemma 3n MediaPipe entries, Gemma 3 1B/270M and
-   SmolLM do not expose it.
+6. Use a model that can call tools: Gemma 4, Gemma 3n, FunctionGemma,
+   Phi-4 Mini, Qwen 2.5, Qwen3 or DeepSeek R1. Gemma 3 1B, Gemma 3 270M,
+   SmolLM and LFM2.5 cannot — they describe the action in prose instead.
 
 ## Declare a tool
 
@@ -131,4 +129,4 @@ The model can recover from an error it can read. An exception thrown out of a to
 
 ## Web
 
-Function calling works on the `.litertlm` web engine. Pass `modelType`, and close each chat before creating the next — the web engine holds one session at a time.
+Function calling works on the `.litertlm` web engine. Pass `modelType`. On web `createSession` and `createChat` hold one slot: a second `createChat` while the first is open hands back the open session, history and all. Close the chat before creating the next, or use `openChat` for conversations that run side by side.

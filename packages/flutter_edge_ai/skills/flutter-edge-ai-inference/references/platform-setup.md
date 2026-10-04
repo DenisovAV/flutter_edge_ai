@@ -53,22 +53,28 @@ the build fails with `requires minimum platform version 15.0`.
 `flutter_edge_ai_mediapipe` has no `Package.swift`, so an app using it gets a
 Podfile as well; set the platform there too.
 
-In Xcode, under **Signing & Capabilities**, add **Extended Virtual Addressing**
-and **Increased Memory Limit**. That writes these keys to
-`ios/Runner/Runner.entitlements` and links the file to the target — a file
-edited by hand but not linked does nothing. Without them large models are
-killed for memory:
+In Xcode, under **Signing & Capabilities**, add **Extended Virtual Addressing**,
+**Increased Memory Limit** and **Increased Debugging Memory Limit**. That writes
+these keys to `ios/Runner/Runner.entitlements` and links the file to the target
+— a file edited by hand but not linked does nothing. Without them large models
+are killed for memory:
 
 ```xml
 <key>com.apple.developer.kernel.extended-virtual-addressing</key>
 <true/>
 <key>com.apple.developer.kernel.increased-memory-limit</key>
 <true/>
+<key>com.apple.developer.kernel.increased-debugging-memory-limit</key>
+<true/>
 ```
 
-The iOS Simulator cannot run GPU inference; use CPU there, or a real device.
+The iOS Simulator runs only on an Apple Silicon Mac (`arm64`; no Intel `x86_64`
+simulator build) and cannot run GPU inference; use CPU there, or a real device.
 
 ## macOS
+
+Apple Silicon (`arm64`) only: there is no native library for Intel (`x86_64`)
+Macs.
 
 Add to both `macos/Runner/DebugProfile.entitlements` and
 `macos/Runner/Release.entitlements`:
@@ -184,16 +190,12 @@ Without it the build succeeds and the model fails to load at runtime.
 Nothing to add to the project. The native libraries — including the Windows GPU
 shader compiler and NPU runtime — are bundled at build time.
 
-- Windows: end users need nothing installed. The current
-  `flutter_edge_ai_litertlm` package includes the static-CRT fix; in the legacy
-  `flutter_gemma_litertlm` package it arrived in 1.7.1.
-  LiteRtLm.dll is linked against the static CRT and imports none;
-  16 of its 24 DLLs import none. The other eight are the Intel NPU stack behind
-  PreferredBackend.npu — our own LiteRtDispatch.dll plus Intel's openvino* and
-  tbb* — importing only msvcp140/vcruntime140/vcruntime140_1, what a Flutter
-  Windows app already resolves, and never vcruntime140_threads.dll (#456).
-- Linux: building needs `clang cmake ninja-build libgtk-3-dev lld`. GPU needs the
-  vendor Vulkan driver; Mesa's `llvmpipe` software fallback cannot run Gemma 4.
+- Windows: `x64` only — no Windows on Arm build. End users need no VC++
+  redistributable installed. (In the legacy `flutter_gemma_litertlm` package
+  this arrived in 1.7.1.)
+- Linux: `x64` and `arm64`. Building needs
+  `clang cmake ninja-build libgtk-3-dev lld`. GPU needs the vendor Vulkan
+  driver; Mesa's `llvmpipe` software fallback cannot run Gemma 4.
 
 ## Web
 

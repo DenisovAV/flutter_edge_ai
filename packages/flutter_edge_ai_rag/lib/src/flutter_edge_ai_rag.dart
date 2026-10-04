@@ -175,8 +175,12 @@ class FlutterEdgeAiRag {
 
   VectorStoreProvider _resolveProvider(VectorStoreSpec spec) {
     for (final provider in _providers) {
-      if (provider.id == spec.providerId && provider.canHandle(spec)) {
-        return provider;
+      if (provider.id != spec.providerId) continue;
+      try {
+        if (provider.canHandle(spec)) return provider;
+      } catch (_) {
+        // Probe failures have the same meaning as in canOpen: this provider
+        // is unavailable, but a lower-priority implementation may work.
       }
     }
 

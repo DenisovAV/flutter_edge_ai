@@ -107,6 +107,35 @@ void main() {
         isFalse,
       );
     });
+
+    test('open skips a throwing probe and uses the next provider', () async {
+      final selected = <String>[];
+      final rag = FlutterEdgeAiRag(
+        providers: [
+          _FakeProvider(
+            id: 'memory',
+            name: 'Broken high priority',
+            priority: 10,
+            probeError: StateError('probe failed'),
+          ),
+          _FakeProvider(
+            id: 'memory',
+            name: 'Working fallback',
+            onCreate: (_) async {
+              selected.add('fallback');
+              return _FakeStore();
+            },
+          ),
+        ],
+      );
+      final spec = VectorStoreSpec(providerId: 'memory', location: 'index');
+
+      expect(rag.canOpen(spec), isTrue);
+      final index = await rag.open(spec: spec);
+
+      expect(selected, ['fallback']);
+      await index.dispose();
+    });
   });
 
   group('open lifecycle', () {

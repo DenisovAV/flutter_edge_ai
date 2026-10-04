@@ -1,3 +1,7 @@
+## Unreleased
+
+- fix: include bundled SKILL.md definitions in the published package.
+
 ## 0.2.6
 - Renamed from `flutter_gemma_agent`.
 

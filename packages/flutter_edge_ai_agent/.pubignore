@@ -12,10 +12,11 @@ docs/
 .vscode/
 .claude/
 
-# Markdown except the two pub.dev surfaces
+# Markdown except the pub.dev surfaces and runtime skill definitions
 **/*.md
 !README.md
 !CHANGELOG.md
+!assets/skills/**/SKILL.md
 
 # Build artifacts
 build/

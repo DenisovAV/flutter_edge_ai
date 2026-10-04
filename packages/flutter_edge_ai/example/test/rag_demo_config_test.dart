@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/core/model_management/active_embedding_identity.dart';
@@ -283,6 +284,44 @@ void main() {
       isNot(RagBackend.qdrant.storageName(first)),
     );
   });
+
+  test('failed provenance writes are reported', () async {
+    const model = catalog.EmbeddingModel.embeddingGemma256;
+    final storage = _FakeProvenanceStorage()..setResult = false;
+
+    await expectLater(
+      persistVerifiedEmbeddingCatalogSelection(
+        model,
+        spec: _catalogSpec(model),
+        storage: storage,
+      ),
+      throwsStateError,
+    );
+  });
+
+  test('active embedder switches invalidate an in-flight resolution', () async {
+    const model = catalog.EmbeddingModel.embeddingGemma256;
+    final first = _catalogSpec(model);
+    final second = _catalogSpec(catalog.EmbeddingModel.gecko256);
+    final storage = _FakeProvenanceStorage(blockSet: true);
+    EmbeddingModelSpec? active = first;
+
+    final resolving = resolveActiveEmbeddingCatalogProfile(
+      storage: storage,
+      activeSpecReader: () => active,
+    );
+    await storage.setStarted.future;
+    active = second;
+    storage.releaseSet();
+
+    await expectLater(resolving, throwsStateError);
+    expect(
+      storage.getString(
+        EmbeddingCatalogPreferencesKeys.activeProfileProvenance,
+      ),
+      isNull,
+    );
+  });
 }
 
 EmbeddingModelSpec _catalogSpec(catalog.EmbeddingModel model) =>
@@ -299,3 +338,36 @@ ModelSource _source(ModelSourceType type, String location) => switch (type) {
   ModelSourceType.asset => ModelSource.asset(location),
   ModelSourceType.bundled => ModelSource.bundled(location),
 };
+
+class _FakeProvenanceStorage implements EmbeddingCatalogProvenanceStorage {
+  _FakeProvenanceStorage({this.blockSet = false});
+
+  final bool blockSet;
+  bool setResult = true;
+  bool removeResult = true;
+  final values = <String, String>{};
+  final setStarted = Completer<void>();
+  Completer<void>? _setGate;
+
+  @override
+  String? getString(String key) => values[key];
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    if (!setStarted.isCompleted) setStarted.complete();
+    if (blockSet) {
+      _setGate ??= Completer<void>();
+      await _setGate!.future;
+    }
+    if (setResult) values[key] = value;
+    return setResult;
+  }
+
+  void releaseSet() => _setGate?.complete();
+
+  @override
+  Future<bool> remove(String key) async {
+    if (removeResult) values.remove(key);
+    return removeResult;
+  }
+}

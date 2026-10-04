@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/core/model_management/active_embedding_identity.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -14,6 +15,31 @@ abstract final class EmbeddingCatalogPreferencesKeys {
       'flutter_edge_ai_example.active_embedding_profile_provenance';
 }
 
+/// Minimal preferences seam used to verify persistence failures and races.
+@visibleForTesting
+abstract interface class EmbeddingCatalogProvenanceStorage {
+  String? getString(String key);
+  Future<bool> setString(String key, String value);
+  Future<bool> remove(String key);
+}
+
+class _SharedPreferencesProvenanceStorage
+    implements EmbeddingCatalogProvenanceStorage {
+  const _SharedPreferencesProvenanceStorage(this._preferences);
+
+  final SharedPreferences _preferences;
+
+  @override
+  String? getString(String key) => _preferences.getString(key);
+
+  @override
+  Future<bool> setString(String key, String value) =>
+      _preferences.setString(key, value);
+
+  @override
+  Future<bool> remove(String key) => _preferences.remove(key);
+}
+
 /// Persists a verified catalog identity separately from the runtime paths.
 ///
 /// This must only be called while [model]'s exact immutable source pair and
@@ -22,8 +48,13 @@ abstract final class EmbeddingCatalogPreferencesKeys {
 Future<void> persistVerifiedEmbeddingCatalogSelection(
   catalog.EmbeddingModel model, {
   EmbeddingModelSpec? spec,
+  @visibleForTesting EmbeddingCatalogProvenanceStorage? storage,
+  @visibleForTesting EmbeddingModelSpec? Function()? activeSpecReader,
 }) async {
-  final activeSpec = spec ?? FlutterEdgeAi.activeEmbedderSpec;
+  final readActiveSpec =
+      activeSpecReader ?? () => FlutterEdgeAi.activeEmbedderSpec;
+  final tracksActiveSpec = spec == null;
+  final activeSpec = spec ?? readActiveSpec();
   if (activeSpec == null || !_matchesCatalogSpec(activeSpec, model)) {
     throw StateError(
       'Cannot persist ${model.ragProfileId}: the active embedding pair does '
@@ -32,50 +63,88 @@ Future<void> persistVerifiedEmbeddingCatalogSelection(
   }
 
   final record = _EmbeddingCatalogProvenance.fromCatalog(model);
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(
+  final target = storage ?? await _loadStorage();
+  if (tracksActiveSpec) _ensureStillActive(activeSpec, readActiveSpec);
+  final encoded = jsonEncode(record.toJson());
+  final persisted = await target.setString(
     EmbeddingCatalogPreferencesKeys.activeProfileProvenance,
-    jsonEncode(record.toJson()),
+    encoded,
   );
+  if (!persisted) {
+    throw StateError('Failed to persist embedding catalog provenance.');
+  }
+  if (tracksActiveSpec && !identical(readActiveSpec(), activeSpec)) {
+    if (target.getString(
+          EmbeddingCatalogPreferencesKeys.activeProfileProvenance,
+        ) ==
+        encoded) {
+      final removed = await target.remove(
+        EmbeddingCatalogPreferencesKeys.activeProfileProvenance,
+      );
+      if (!removed) {
+        throw StateError(
+          'The active embedder changed while provenance was being persisted, '
+          'and the stale record could not be removed.',
+        );
+      }
+    }
+    throw StateError(
+      'The active embedder changed while catalog provenance was being '
+      'persisted. Retry with the current embedder.',
+    );
+  }
 }
 
 /// Resolves the active profile across restart without trusting FileSource
 /// names or paths on their own.
 Future<String?> resolveActiveEmbeddingCatalogProfile({
   EmbeddingModelSpec? spec,
+  @visibleForTesting EmbeddingCatalogProvenanceStorage? storage,
+  @visibleForTesting EmbeddingModelSpec? Function()? activeSpecReader,
 }) async {
-  final activeSpec = spec ?? FlutterEdgeAi.activeEmbedderSpec;
+  final readActiveSpec =
+      activeSpecReader ?? () => FlutterEdgeAi.activeEmbedderSpec;
+  final tracksActiveSpec = spec == null;
+  final activeSpec = spec ?? readActiveSpec();
   if (activeSpec == null) {
-    await clearEmbeddingCatalogProvenance();
+    await clearEmbeddingCatalogProvenance(storage: storage);
     return null;
   }
 
   for (final model in catalog.EmbeddingModel.values) {
     if (_matchesCatalogSpec(activeSpec, model)) {
-      await persistVerifiedEmbeddingCatalogSelection(model, spec: activeSpec);
+      await persistVerifiedEmbeddingCatalogSelection(
+        model,
+        spec: tracksActiveSpec ? null : activeSpec,
+        storage: storage,
+        activeSpecReader: readActiveSpec,
+      );
       return model.ragProfileId;
     }
   }
 
   if (activeSpec.modelSource is! FileSource ||
       activeSpec.tokenizerSource is! FileSource) {
-    await clearEmbeddingCatalogProvenance();
+    await clearEmbeddingCatalogProvenance(storage: storage);
     return null;
   }
 
-  final prefs = await SharedPreferences.getInstance();
-  final encoded = prefs.getString(
+  final target = storage ?? await _loadStorage();
+  if (tracksActiveSpec) _ensureStillActive(activeSpec, readActiveSpec);
+  final encoded = target.getString(
     EmbeddingCatalogPreferencesKeys.activeProfileProvenance,
   );
   final record = _EmbeddingCatalogProvenance.tryDecode(encoded);
   if (record == null) {
-    if (encoded != null) await clearEmbeddingCatalogProvenance();
+    if (encoded != null) {
+      await clearEmbeddingCatalogProvenance(storage: target);
+    }
     return null;
   }
 
   final model = _catalogModelForRecord(record);
   final activeFiles = activeSpec.files;
-  final encodedCoreIdentity = prefs.getString(
+  final encodedCoreIdentity = target.getString(
     PreferencesKeys.activeEmbeddingIdentityRecord,
   );
   final coreIdentity = ActiveEmbeddingIdentityRecord.tryDecode(
@@ -83,15 +152,15 @@ Future<String?> resolveActiveEmbeddingCatalogProfile({
   );
   if (encodedCoreIdentity != null &&
       (coreIdentity == null || !coreIdentity.active)) {
-    await clearEmbeddingCatalogProvenance();
+    await clearEmbeddingCatalogProvenance(storage: target);
     return null;
   }
   final persistedModelSource = coreIdentity?.active == true
       ? coreIdentity!.modelSource
-      : prefs.getString(PreferencesKeys.activeEmbeddingSource);
+      : target.getString(PreferencesKeys.activeEmbeddingSource);
   final persistedTokenizerSource = coreIdentity?.active == true
       ? coreIdentity!.tokenizerSource
-      : prefs.getString(PreferencesKeys.activeEmbeddingTokenizerSource);
+      : target.getString(PreferencesKeys.activeEmbeddingTokenizerSource);
   final valid =
       model != null &&
       record == _EmbeddingCatalogProvenance.fromCatalog(model) &&
@@ -105,15 +174,38 @@ Future<String?> resolveActiveEmbeddingCatalogProfile({
       persistedModelSource == record.modelSource &&
       persistedTokenizerSource == record.tokenizerSource;
   if (!valid) {
-    await clearEmbeddingCatalogProvenance();
+    await clearEmbeddingCatalogProvenance(storage: target);
     return null;
   }
+  if (tracksActiveSpec) _ensureStillActive(activeSpec, readActiveSpec);
   return record.profileId;
 }
 
-Future<void> clearEmbeddingCatalogProvenance() async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.remove(EmbeddingCatalogPreferencesKeys.activeProfileProvenance);
+Future<void> clearEmbeddingCatalogProvenance({
+  @visibleForTesting EmbeddingCatalogProvenanceStorage? storage,
+}) async {
+  final target = storage ?? await _loadStorage();
+  final removed = await target.remove(
+    EmbeddingCatalogPreferencesKeys.activeProfileProvenance,
+  );
+  if (!removed) {
+    throw StateError('Failed to clear embedding catalog provenance.');
+  }
+}
+
+Future<EmbeddingCatalogProvenanceStorage> _loadStorage() async =>
+    _SharedPreferencesProvenanceStorage(await SharedPreferences.getInstance());
+
+void _ensureStillActive(
+  EmbeddingModelSpec expected,
+  EmbeddingModelSpec? Function() readActiveSpec,
+) {
+  if (!identical(readActiveSpec(), expected)) {
+    throw StateError(
+      'The active embedder changed while catalog provenance was being '
+      'resolved. Retry with the current embedder.',
+    );
+  }
 }
 
 bool _matchesCatalogSpec(

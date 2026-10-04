@@ -7,6 +7,10 @@ environment:
 # Native Dart pub workspace (Dart 3.6+). Each member opts in with
 # `resolution: workspace` in its own pubspec.yaml.
 workspace:
+  # Motormind app (added by `flutter create`, see docs/SETUP.md §6):
+  # - apps/motormind
+  # The pure-Dart packages under apps/motormind/packages are deliberately NOT
+  # members; they resolve alone so `dart test` needs no Flutter (ADR 0005).
   - packages/flutter_edge_ai
   - packages/flutter_edge_ai_sqlite
   - packages/flutter_edge_ai_qdrant

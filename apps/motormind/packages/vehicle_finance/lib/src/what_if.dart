@@ -1,0 +1,57 @@
+import 'assumption.dart';
+import 'deal.dart';
+import 'money.dart';
+
+/// A labeled alternative to a deal, changing one input.
+class WhatIfVariant {
+  const WhatIfVariant({required this.label, required this.changed, required this.estimate});
+
+  final String label;
+
+  /// The input that changed and its new value, for the UI and the guard.
+  final Map<String, Object?> changed;
+  final DealEstimate estimate;
+
+  Map<String, Object?> toJson() => {
+        'label': label,
+        'changed': changed,
+        'estimate': estimate.toJson(),
+      };
+}
+
+/// Three one-variable alternatives: a shorter term, more money down, a lower
+/// price. Each is a real [DealEstimate], so its numbers are verifiable.
+List<WhatIfVariant> whatIfVariants(
+  DealInputs base, {
+  required Assumption aprAssumption,
+  int termStep = 12,
+  double extraDown = 1000,
+  double priceCut = 0.10,
+}) {
+  final variants = <WhatIfVariant>[];
+
+  if (base.termMonths - termStep >= 12) {
+    final term = base.termMonths - termStep;
+    variants.add(WhatIfVariant(
+      label: '$term-month term',
+      changed: {'termMonths': term},
+      estimate: estimateDeal(base.copyWith(termMonths: term), aprAssumption: aprAssumption),
+    ));
+  }
+
+  final down = roundCents(base.downPayment + extraDown);
+  variants.add(WhatIfVariant(
+    label: '${extraDown.toStringAsFixed(0)} more down',
+    changed: {'downPayment': down},
+    estimate: estimateDeal(base.copyWith(downPayment: down), aprAssumption: aprAssumption),
+  ));
+
+  final price = roundCents(base.price * (1 - priceCut));
+  variants.add(WhatIfVariant(
+    label: '${(priceCut * 100).toStringAsFixed(0)}% lower price',
+    changed: {'price': price},
+    estimate: estimateDeal(base.copyWith(price: price), aprAssumption: aprAssumption),
+  ));
+
+  return variants;
+}

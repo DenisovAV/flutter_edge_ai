@@ -1,0 +1,47 @@
+name: Motormind CI
+
+on:
+  push:
+    branches: [develop]
+    paths: ['apps/**', '.github/workflows/motormind-ci.yml']
+  pull_request:
+    branches: [develop]
+    paths: ['apps/**', '.github/workflows/motormind-ci.yml']
+
+jobs:
+  pure-dart:
+    name: ${{ matrix.package }} (dart test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        package: [vehicle_finance, advisor_core]
+    defaults:
+      run:
+        working-directory: apps/motormind/packages/${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      - run: dart pub get
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: dart analyze --fatal-infos
+      - run: dart test
+
+  app:
+    name: motormind app (analyze + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Skipped until `flutter create` has produced the app.
+    if: ${{ hashFiles('apps/motormind/pubspec.yaml') != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: .fvmrc
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze apps/motormind
+      - run: flutter test
+        working-directory: apps/motormind

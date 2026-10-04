@@ -1,0 +1,18 @@
+name: advisor_core
+description: >-
+  Model-agnostic advisor logic for Motormind AI: tool specifications, finance
+  tool handlers, the narration guard, the policy check, disclosures, the buyer
+  profile and the generative-UI spec. Pure Dart; no Flutter, no inference SDK.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  vehicle_finance:
+    path: ../vehicle_finance
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.26.0

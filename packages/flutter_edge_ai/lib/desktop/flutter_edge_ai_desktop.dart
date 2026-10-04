@@ -149,7 +149,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     final activeModel = _modelManager.activeInferenceModel;
     if (activeModel == null) {
       throw StateError(
-        'No active inference model set. Use `FlutterEdgeAi.installModel()` or `modelManager.setActiveModel()` first',
+        'No active inference model set. Use `FlutterEdgeAi.installModel()` or `modelManager.ensureModelReadyFromSpec()` first',
       );
     }
 

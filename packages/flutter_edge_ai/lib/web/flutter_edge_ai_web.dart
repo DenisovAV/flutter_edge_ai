@@ -216,7 +216,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       // No active embedding model - user must set one first
       if (activeModel == null) {
         throw StateError(
-          'No active embedding model set. Use `FlutterEdgeAi.installEmbedder()` or `modelManager.setActiveModel()` to set a model first',
+          'No active embedding model set. Use `FlutterEdgeAi.installEmbedder()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
       }
 
@@ -336,7 +336,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       // No active STT model - user must set one first
       if (activeModel == null) {
         throw StateError(
-          'No active STT model set. Use `FlutterEdgeAi.installStt()` or `modelManager.setActiveModel()` to set a model first',
+          'No active STT model set. Use `FlutterEdgeAi.installStt()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
       }
 

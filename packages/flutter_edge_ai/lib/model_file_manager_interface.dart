@@ -137,9 +137,6 @@ abstract class ModelFileManager {
   @Deprecated('Use deleteModel(spec) with ModelSpec instead')
   Future<void> deleteCurrentModel();
 
-  /// Sets the active model for subsequent inference operations
-  void setActiveModel(ModelSpec spec);
-
   /// Ensures the manager is fully initialized — active model/embedder state
   /// restored from storage (#227). Idempotent and safe to call concurrently;
   /// all callers share a single initialization. Await this before reading
@@ -157,12 +154,4 @@ abstract class ModelFileManager {
 
   /// Gets the currently active TTS model specification.
   ModelSpec? get activeTtsModel;
-}
-
-/// Optional capability for managers that can await durable embedder activation.
-///
-/// Kept separate from [ModelFileManager] so existing third-party classes that
-/// use `implements ModelFileManager` remain source-compatible.
-abstract interface class AwaitableEmbeddingModelActivation {
-  Future<void> setActiveEmbeddingModel(EmbeddingModelSpec spec);
 }

@@ -46,7 +46,7 @@ void main() {
       'registered but none can handle the active model', () async {
     TtsRegistry.instance.registerAll([_NonMatchingBackend()]);
     final plugin = FlutterEdgeAiMobile();
-    plugin.modelManager.setActiveModel(_matchaSpec());
+    await plugin.modelManager.activateInstalledModel(_matchaSpec());
     // The active model isn't installed on disk, so the "files not found"
     // fail-loud check fires before backend selection is reached — but the
     // outcome that matters is the same: createTtsModel must throw, never

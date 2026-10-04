@@ -3,21 +3,15 @@ import 'package:flutter_edge_ai/model_file_manager_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test(
-    'legacy ModelFileManager implementer needs no activation capability',
-    () {
-      final manager = _LegacyModelFileManager();
-      expect(manager, isA<ModelFileManager>());
-      expect(manager, isNot(isA<AwaitableEmbeddingModelActivation>()));
-    },
-  );
+  test('legacy ModelFileManager implementer remains source-compatible', () {
+    expect(_LegacyModelFileManager(), isA<ModelFileManager>());
+  });
 }
 
 /// Compile fixture representing an existing third-party implementation.
 ///
-/// Deliberately implements every [ModelFileManager] member and does not know
-/// about [AwaitableEmbeddingModelActivation]. Adding a new member to
-/// ModelFileManager makes this fixture fail at compile time.
+/// Deliberately implements every [ModelFileManager] member. Adding a new member
+/// to ModelFileManager makes this fixture fail at compile time.
 final class _LegacyModelFileManager implements ModelFileManager {
   @override
   ModelSpec? get activeEmbeddingModel => null;
@@ -116,9 +110,6 @@ final class _LegacyModelFileManager implements ModelFileManager {
 
   @override
   Future<void> performCleanup() => throw UnimplementedError();
-
-  @override
-  void setActiveModel(ModelSpec spec) {}
 
   @override
   Future<void> setLoraWeightsPath(String path) => throw UnimplementedError();

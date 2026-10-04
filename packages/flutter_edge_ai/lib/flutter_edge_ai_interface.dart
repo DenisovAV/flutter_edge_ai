@@ -105,7 +105,8 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// Creates and returns a new [EmbeddingModel] instance.
   ///
   /// Modern API: If paths are not provided, uses the active embedding model set via
-  /// `FlutterEdgeAi.installEmbedder()` or `modelManager.setActiveModel()`.
+  /// `FlutterEdgeAi.installEmbedder()` or
+  /// `modelManager.ensureModelReadyFromSpec()`.
   ///
   /// Legacy API: Provide explicit paths for backward compatibility.
   ///
@@ -121,7 +122,8 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// Creates and returns a new [SpeechRecognizer] instance.
   ///
   /// Modern API: If paths are not provided, uses the active STT model set via
-  /// `FlutterEdgeAi.installStt()` or `modelManager.setActiveModel()`.
+  /// `FlutterEdgeAi.installStt()` or
+  /// `modelManager.ensureModelReadyFromSpec()`.
   ///
   /// [modelPath] — path to the STT model file (optional if active model set).
   /// [tokenizerPath] — path to the tokenizer file (optional if active model set).
@@ -144,7 +146,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// Creates and returns a new [SpeechSynthesizer] for the active TTS model.
   ///
   /// Uses the active TTS model set via `FlutterEdgeAi.installTts()` /
-  /// `modelManager.setActiveModel()`. Native-only — throws on web.
+  /// `modelManager.ensureModelReadyFromSpec()`. Native-only — throws on web.
   ///
   /// [language] is TTS-only (Qwen3; ignored by Matcha) — see
   /// `RuntimeConfig.language`'s doc. Forwarded into the `RuntimeConfig` the

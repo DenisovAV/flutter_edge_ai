@@ -264,11 +264,11 @@ void main() {
           tokenizerFilename: 'second-tokenizer__rev-2.model',
         );
 
-        firstManager.setActiveModel(first);
+        final firstWrite = firstManager.setActiveEmbeddingModel(first);
         await persistence.firstWriteStarted.future;
         final secondWrite = secondManager.setActiveEmbeddingModel(second);
         persistence.releaseFirstWrite.complete();
-        await secondWrite;
+        await Future.wait([firstWrite, secondWrite]);
 
         final persisted = ActiveEmbeddingIdentityRecord.tryDecode(
           persistence.encodedRecord,
@@ -276,40 +276,6 @@ void main() {
         expect(persisted!.modelFilename, 'second__rev-2.tflite');
         expect(firstManager.activeEmbeddingModel, isNull);
         expect(secondManager.activeEmbeddingModel, second);
-      },
-    );
-
-    test('legacy setActiveModel exposes embedding synchronously', () async {
-      final persistence = _DelayedEmbeddingIdentityPersistence();
-      final manager = MobileModelManager(
-        activeEmbeddingIdentityPersistence: persistence,
-      );
-      final spec = _embeddingSpecForTest('immediate');
-
-      manager.setActiveModel(spec);
-
-      expect(manager.activeEmbeddingModel, same(spec));
-      await persistence.firstWriteStarted.future;
-      persistence.releaseFirstWrite.complete();
-      await pumpEventQueue();
-      expect(manager.activeEmbeddingModel, same(spec));
-    });
-
-    test(
-      'legacy optimistic embedding is invalidated on persistence failure',
-      () async {
-        final persistence = _RejectedEmbeddingIdentityPersistence();
-        final manager = MobileModelManager(
-          activeEmbeddingIdentityPersistence: persistence,
-        );
-        final spec = _embeddingSpecForTest('optimistic-failure');
-
-        manager.setActiveModel(spec);
-        expect(manager.activeEmbeddingModel, same(spec));
-        await persistence.reloadCompleted.future;
-        await pumpEventQueue();
-
-        expect(manager.activeEmbeddingModel, isNull);
       },
     );
 
@@ -328,10 +294,14 @@ void main() {
           activeEmbeddingIdentityPersistence: persistence,
         );
 
-        firstManager.setActiveModel(_embeddingSpecForTest('throwing'));
-        expect(firstManager.activeEmbeddingModel, isNotNull);
+        final firstFailure = expectLater(
+          firstManager.setActiveEmbeddingModel(
+            _embeddingSpecForTest('throwing'),
+          ),
+          throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
+        );
         await persistence.reloadCompleted.future;
-        await pumpEventQueue();
+        await firstFailure;
 
         expect(firstManager.activeEmbeddingModel, isNull);
         expect(secondManager.activeEmbeddingModel, isNull);
@@ -383,7 +353,7 @@ void main() {
         final first = _embeddingSpecForTest('durable-a-${failureMode.name}');
         final second = _embeddingSpecForTest('failed-b-${failureMode.name}');
 
-        firstManager.setActiveModel(first);
+        final firstWrite = firstManager.setActiveEmbeddingModel(first);
         await persistence.firstWriteStarted.future;
         final failedSecond = secondManager.setActiveEmbeddingModel(second);
         persistence.releaseFirstWrite.complete();
@@ -391,6 +361,7 @@ void main() {
           failedSecond,
           throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
         );
+        await firstWrite;
 
         expect(firstManager.activeEmbeddingModel, isNull);
         expect(secondManager.activeEmbeddingModel, isNull);
@@ -473,7 +444,7 @@ void main() {
 
         final restoring = restoringManager.initialize();
         await fileSystem.firstFileCheckStarted.future;
-        switchingManager.setActiveModel(newSpec);
+        await switchingManager.setActiveEmbeddingModel(newSpec);
         expect(switchingManager.activeEmbeddingModel, same(newSpec));
         fileSystem.releaseFirstFileCheck.complete();
         await restoring;
@@ -504,11 +475,11 @@ void main() {
           tokenizerFilename: 'first-tokenizer__rev-1.model',
         );
 
-        oldManager.setActiveModel(first);
+        final oldWrite = oldManager.setActiveEmbeddingModel(first);
         await persistence.firstWriteStarted.future;
         final clear = clearingManager.clearActiveEmbeddingIdentity();
         persistence.releaseFirstWrite.complete();
-        await clear;
+        await Future.wait([oldWrite, clear]);
 
         final persisted = ActiveEmbeddingIdentityRecord.tryDecode(
           persistence.encodedRecord,
@@ -724,23 +695,18 @@ void main() {
     );
 
     test(
-      'legacy mobile activation stays null when coordinator is poisoned',
+      'awaitable activation reports embedding persistence failure',
       () async {
-        final persistence = _RejectedEmbeddingIdentityPersistence();
         final manager = MobileModelManager(
-          activeEmbeddingIdentityPersistence: persistence,
+          activeEmbeddingIdentityPersistence:
+              _RejectedEmbeddingIdentityPersistence(),
         );
+
         await expectLater(
-          manager.setActiveEmbeddingModel(_embeddingSpecForTest('poison')),
+          manager.setActiveEmbeddingModel(_embeddingSpecForTest('rejected')),
           throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
         );
-
-        manager.setActiveModel(_embeddingSpecForTest('legacy-after-poison'));
-
         expect(manager.activeEmbeddingModel, isNull);
-        await pumpEventQueue();
-        expect(manager.activeEmbeddingModel, isNull);
-        expect(persistence.writeCount, 1);
       },
     );
 

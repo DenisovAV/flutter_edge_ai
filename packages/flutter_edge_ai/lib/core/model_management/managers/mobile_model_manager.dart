@@ -1,10 +1,14 @@
 part of '../../../mobile/flutter_edge_ai_mobile.dart';
 
+void _requireSuccessfulIdentityWrites(List<bool> results, String modelKind) {
+  if (results.any((succeeded) => !succeeded)) {
+    throw StateError('Failed to persist the active $modelKind model identity.');
+  }
+}
+
 /// Main unified model manager that orchestrates all model operations
 class MobileModelManager extends ModelFileManager
-    implements
-        AwaitableEmbeddingModelActivation,
-        ActiveEmbeddingIdentityObserver {
+    implements InstalledModelActivation, ActiveEmbeddingIdentityObserver {
   MobileModelManager({
     ActiveEmbeddingIdentityPersistence? activeEmbeddingIdentityPersistence,
   }) : _activeEmbeddingIdentityCoordinator =
@@ -162,7 +166,7 @@ class MobileModelManager extends ModelFileManager
   }
 
   /// Rehydrate `_activeInferenceModel` from the identity that
-  /// `setActiveModel` persisted on the previous run (#227).
+  /// the installer persisted on the previous run (#227).
   ///
   /// Without this, `isModelInstalled()` returns true after restart
   /// (because the file exists) but `getActiveModel()` throws —
@@ -800,10 +804,15 @@ class MobileModelManager extends ModelFileManager
   /// Modern API: Ensures a model spec is ready for use
   @override
   Future<void> ensureModelReadyFromSpec(ModelSpec spec) async {
+    if (spec is InferenceModelSpec && spec.fileType == ModelFileType.builtIn) {
+      await _ensureInitialized();
+      await _activateModel(spec);
+      return;
+    }
     await _ensureModelReadySpec(spec);
 
     // Set as active model (automatically routes by type)
-    await _setActiveModelAwaited(spec);
+    await _activateModel(spec);
   }
 
   /// Legacy API: Ensures a model is ready for use
@@ -817,7 +826,7 @@ class MobileModelManager extends ModelFileManager
     );
     await _ensureModelReadySpec(spec);
     // Set as active inference model after ensuring it's ready
-    await _setActiveModelAwaited(spec);
+    await _activateModel(spec);
   }
 
   /// Downloads a model with progress tracking
@@ -837,7 +846,7 @@ class MobileModelManager extends ModelFileManager
       edgeAiLog('UnifiedModelManager: Download completed - ${spec.name}');
 
       // Set as active model after successful download (same as Modern API)
-      await _setActiveModelAwaited(spec);
+      await _activateModel(spec);
     } catch (e) {
       edgeAiLog('UnifiedModelManager: Download failed - ${spec.name}: $e');
       rethrow;
@@ -966,7 +975,7 @@ class MobileModelManager extends ModelFileManager
       edgeAiLog('UnifiedModelManager: Download completed - ${spec.name}');
 
       // Set as active model after successful download (same as Modern API)
-      await _setActiveModelAwaited(spec);
+      await _activateModel(spec);
     } catch (e) {
       edgeAiLog('UnifiedModelManager: Download failed - ${spec.name}: $e');
       rethrow;
@@ -1374,7 +1383,7 @@ class MobileModelManager extends ModelFileManager
     );
 
     await _ensureModelReadySpec(spec);
-    await _setActiveModelAwaited(spec);
+    await _activateModel(spec);
   }
 
   @override
@@ -1453,8 +1462,6 @@ class MobileModelManager extends ModelFileManager
 
   ModelSpec? _activeInferenceModel;
   ModelSpec? _activeEmbeddingModel;
-  int? _activeEmbeddingIdentityGeneration;
-  bool _activeEmbeddingIdentityOptimistic = false;
   ModelSpec? _activeSttModel;
   ModelSpec? _activeTtsModel;
 
@@ -1479,65 +1486,41 @@ class MobileModelManager extends ModelFileManager
   ModelSpec? get currentActiveModel =>
       _activeInferenceModel ?? _activeEmbeddingModel;
 
-  /// Sets the active model for subsequent operations.
-  ///
-  /// Automatically routes to inference or embedding based on spec type.
-  /// For inference specs, also persists `modelType` + `fileType` so the
-  /// active reference survives an app restart (#227).
-  @override
-  void setActiveModel(ModelSpec spec) {
+  Future<void> _activateModel(ModelSpec spec) async {
     if (spec is InferenceModelSpec) {
+      await _persistActiveInferenceIdentity(spec);
       _activeInferenceModel = spec;
       edgeAiLog('✅ Set active inference model: ${spec.name}');
-      // Fire-and-forget — SharedPreferences write is cheap and the
-      // success of the operation is already reflected in memory.
-      unawaited(_persistActiveInferenceIdentity(spec));
     } else if (spec is EmbeddingModelSpec) {
-      final mutation = _tryEnqueueActiveEmbeddingIdentity(spec);
-      if (mutation == null) {
-        _clearActiveEmbeddingSpec();
-        edgeAiLog(
-          '[ModelManager] Cannot activate embedding model "${spec.name}": '
-          'active-identity persistence is unavailable after a previous write '
-          'failure. Restart the app before retrying.',
-        );
-        return;
-      }
-      _activeEmbeddingModel = spec;
-      _activeEmbeddingIdentityGeneration = mutation.generation;
-      _activeEmbeddingIdentityOptimistic = true;
-      edgeAiLog('✅ Set active embedding model: ${spec.name}');
-      unawaited(_completeOptimisticEmbeddingActivation(spec, mutation));
+      await setActiveEmbeddingModel(spec);
     } else if (spec is SttModelSpec) {
+      await _persistActiveSttIdentity(spec);
       _activeSttModel = spec;
       edgeAiLog('✅ Set active STT model: ${spec.name}');
-      unawaited(_persistActiveSttIdentity(spec));
     } else if (spec is TtsModelSpec) {
+      await _persistActiveTtsIdentity(spec);
       _activeTtsModel = spec;
       edgeAiLog('✅ Set active TTS model: ${spec.name}');
-      unawaited(_persistActiveTtsIdentity(spec));
     } else {
       throw ArgumentError('Unknown ModelSpec type: ${spec.runtimeType}');
     }
   }
 
   @override
+  Future<void> activateInstalledModel(ModelSpec spec) => _activateModel(spec);
+
+  @visibleForTesting
   Future<void> setActiveEmbeddingModel(EmbeddingModelSpec spec) async {
     final mutation = _enqueueActiveEmbeddingIdentity(spec);
     final committed = await mutation.committed;
     if (committed) {
-      _publishCommittedEmbeddingSpec(spec, mutation.generation);
+      _activeEmbeddingModel = spec;
       edgeAiLog('✅ Set active embedding model: ${spec.name}');
     }
   }
 
   @override
-  void onActiveEmbeddingIdentityEnqueued(int generation) {
-    if (_activeEmbeddingIdentityOptimistic &&
-        _activeEmbeddingIdentityGeneration != generation) {
-      _clearActiveEmbeddingSpec();
-    }
-  }
+  void onActiveEmbeddingIdentityEnqueued(int generation) {}
 
   @override
   void onActiveEmbeddingIdentityCommitted(
@@ -1552,48 +1535,12 @@ class MobileModelManager extends ModelFileManager
     _clearActiveEmbeddingSpec();
   }
 
-  void _publishCommittedEmbeddingSpec(EmbeddingModelSpec spec, int generation) {
+  void _publishCommittedEmbeddingSpec(EmbeddingModelSpec spec, int _) {
     _activeEmbeddingModel = spec;
-    _activeEmbeddingIdentityGeneration = generation;
-    _activeEmbeddingIdentityOptimistic = false;
   }
 
   void _clearActiveEmbeddingSpec() {
     _activeEmbeddingModel = null;
-    _activeEmbeddingIdentityGeneration = null;
-    _activeEmbeddingIdentityOptimistic = false;
-  }
-
-  Future<void> _completeOptimisticEmbeddingActivation(
-    EmbeddingModelSpec spec,
-    ActiveEmbeddingIdentityMutation mutation,
-  ) async {
-    var committed = false;
-    try {
-      committed = await mutation.committed;
-      if (committed) {
-        _publishCommittedEmbeddingSpec(spec, mutation.generation);
-      }
-    } catch (error) {
-      edgeAiLog(
-        '[ModelManager] Embedding activation persistence failed; the model '
-        'was not activated. Restart the app before retrying: $error',
-      );
-    } finally {
-      if (!committed &&
-          _activeEmbeddingIdentityOptimistic &&
-          _activeEmbeddingIdentityGeneration == mutation.generation) {
-        _clearActiveEmbeddingSpec();
-      }
-    }
-  }
-
-  Future<void> _setActiveModelAwaited(ModelSpec spec) async {
-    if (spec is EmbeddingModelSpec) {
-      await setActiveEmbeddingModel(spec);
-    } else {
-      setActiveModel(spec);
-    }
   }
 
   Future<void> _persistActiveInferenceIdentity(InferenceModelSpec spec) async {
@@ -1604,33 +1551,31 @@ class MobileModelManager extends ModelFileManager
           )
           .filename;
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        PreferencesKeys.activeInferenceModelType,
-        spec.modelType.name,
-      );
-      await prefs.setString(
-        PreferencesKeys.activeInferenceFileType,
-        spec.fileType.name,
-      );
-      await prefs.setString(PreferencesKeys.activeInferenceFilename, filename);
-      await prefs.setString(
-        PreferencesKeys.activeInferenceSource,
-        spec.modelSource.encode(),
-      );
-    } catch (e) {
+      final results = await Future.wait([
+        prefs.setString(
+          PreferencesKeys.activeInferenceModelType,
+          spec.modelType.name,
+        ),
+        prefs.setString(
+          PreferencesKeys.activeInferenceFileType,
+          spec.fileType.name,
+        ),
+        prefs.setString(PreferencesKeys.activeInferenceFilename, filename),
+        prefs.setString(
+          PreferencesKeys.activeInferenceSource,
+          spec.modelSource.encode(),
+        ),
+      ]);
+      _requireSuccessfulIdentityWrites(results, 'inference');
+    } catch (e, stackTrace) {
       edgeAiLog('[ModelManager] persistActiveInferenceIdentity failed: $e');
+      Error.throwWithStackTrace(e, stackTrace);
     }
   }
 
   ActiveEmbeddingIdentityMutation _enqueueActiveEmbeddingIdentity(
     EmbeddingModelSpec spec,
   ) => _activeEmbeddingIdentityCoordinator.enqueueOrThrow(
-    ActiveEmbeddingIdentityRecord.fromSpec(spec),
-  );
-
-  ActiveEmbeddingIdentityMutation? _tryEnqueueActiveEmbeddingIdentity(
-    EmbeddingModelSpec spec,
-  ) => _activeEmbeddingIdentityCoordinator.enqueue(
     ActiveEmbeddingIdentityRecord.fromSpec(spec),
   );
 
@@ -1643,41 +1588,46 @@ class MobileModelManager extends ModelFileManager
         (f) => f.prefsKey == PreferencesKeys.sttTokenizerFile,
       );
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        PreferencesKeys.activeSttFilename,
-        modelFile.filename,
-      );
-      await prefs.setString(
-        PreferencesKeys.activeSttTokenizerFilename,
-        tokenizerFile.filename,
-      );
-      await prefs.setString(
-        PreferencesKeys.activeSttModelType,
-        spec.sttModelType.name,
-      );
-      await prefs.setString(
-        PreferencesKeys.activeSttSource,
-        spec.modelSource.encode(),
-      );
-      await prefs.setString(
-        PreferencesKeys.activeSttTokenizerSource,
-        spec.tokenizerSource.encode(),
-      );
-    } catch (e) {
+      final results = await Future.wait([
+        prefs.setString(PreferencesKeys.activeSttFilename, modelFile.filename),
+        prefs.setString(
+          PreferencesKeys.activeSttTokenizerFilename,
+          tokenizerFile.filename,
+        ),
+        prefs.setString(
+          PreferencesKeys.activeSttModelType,
+          spec.sttModelType.name,
+        ),
+        prefs.setString(
+          PreferencesKeys.activeSttSource,
+          spec.modelSource.encode(),
+        ),
+        prefs.setString(
+          PreferencesKeys.activeSttTokenizerSource,
+          spec.tokenizerSource.encode(),
+        ),
+      ]);
+      _requireSuccessfulIdentityWrites(results, 'STT');
+    } catch (e, stackTrace) {
       edgeAiLog('[ModelManager] persistActiveSttIdentity failed: $e');
+      Error.throwWithStackTrace(e, stackTrace);
     }
   }
 
   Future<void> _persistActiveTtsIdentity(TtsModelSpec spec) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(PreferencesKeys.activeTtsName, spec.name);
-      await prefs.setString(
-        PreferencesKeys.activeTtsModelType,
-        spec.ttsModelType.name,
-      );
-    } catch (e) {
+      final results = await Future.wait([
+        prefs.setString(PreferencesKeys.activeTtsName, spec.name),
+        prefs.setString(
+          PreferencesKeys.activeTtsModelType,
+          spec.ttsModelType.name,
+        ),
+      ]);
+      _requireSuccessfulIdentityWrites(results, 'TTS');
+    } catch (e, stackTrace) {
       edgeAiLog('[ModelManager] persistActiveTtsIdentity failed: $e');
+      Error.throwWithStackTrace(e, stackTrace);
     }
   }
 
@@ -1701,7 +1651,7 @@ class MobileModelManager extends ModelFileManager
     );
 
     await _ensureModelReadySpec(updatedSpec);
-    setActiveModel(updatedSpec);
+    await _activateModel(updatedSpec);
   }
 
   @override
@@ -1722,7 +1672,7 @@ class MobileModelManager extends ModelFileManager
     );
 
     await _ensureModelReadySpec(updatedSpec);
-    setActiveModel(updatedSpec);
+    await _activateModel(updatedSpec);
   }
 
   // === Legacy Model Management Implementation ===

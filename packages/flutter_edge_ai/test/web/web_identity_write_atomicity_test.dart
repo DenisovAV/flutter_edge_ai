@@ -36,17 +36,16 @@ void main() {
 
   tearDown(ServiceRegistry.reset);
 
-  test('a reader right after setActiveModel sees the whole identity', () async {
+  test('awaited activation persists the whole identity', () async {
     // The #468 shape: every web engine builds a FRESH manager per createModel
     // via WebModelSourceResolver.forActiveModel(), which rehydrates from prefs.
-    // setActiveModel is `void` and can only start the writes, so a reader in a
-    // later microtask used to catch them half-done -- measured, one key of four
-    // -- and threw "No active inference model set" over a model that had just
-    // installed successfully.
+    // The old non-awaited activation let a reader in a later microtask catch
+    // the identity half-written -- measured, one key of four -- and throw
+    // "No active inference model set" over a model that had just installed.
     //
     // Asserted on prefs rather than on `activeInferenceModel`, which also needs
     // the model FILE present; the four identity keys are what the writes own.
-    WebModelManager().setActiveModel(_spec('gemma'));
+    await WebModelManager().activateInstalledModel(_spec('gemma'));
 
     await WebModelManager().ensureInitialized();
 
@@ -66,10 +65,10 @@ void main() {
     // A reader catching the write half-done sees the NEW filename against the
     // OLD source -- a complete, well-formed identity that passes isInstalled,
     // so the engine loads the wrong weights with nothing thrown.
-    WebModelManager().setActiveModel(_spec('first'));
+    await WebModelManager().activateInstalledModel(_spec('first'));
     await WebModelManager().ensureInitialized();
 
-    WebModelManager().setActiveModel(_spec('second'));
+    await WebModelManager().activateInstalledModel(_spec('second'));
     await WebModelManager().ensureInitialized();
 
     final prefs = await SharedPreferences.getInstance();
@@ -161,11 +160,11 @@ void main() {
       final first = _embeddingSpec('first');
       final second = _embeddingSpec('second');
 
-      firstManager.setActiveModel(first);
+      final firstWrite = firstManager.setActiveEmbeddingModel(first);
       await persistence.firstWriteStarted.future;
       final secondWrite = secondManager.setActiveEmbeddingModel(second);
       persistence.releaseFirstWrite.complete();
-      await secondWrite;
+      await Future.wait([firstWrite, secondWrite]);
 
       final persisted = ActiveEmbeddingIdentityRecord.tryDecode(
         persistence.encodedRecord,
@@ -173,40 +172,6 @@ void main() {
       expect(persisted!.name, 'second');
       expect(firstManager.activeEmbeddingModel, isNull);
       expect(secondManager.activeEmbeddingModel, second);
-    },
-  );
-
-  test('legacy web setActiveModel exposes embedding synchronously', () async {
-    final persistence = _DelayedEmbeddingIdentityPersistence();
-    final manager = WebModelManager(
-      activeEmbeddingIdentityPersistence: persistence,
-    );
-    final spec = _embeddingSpec('immediate');
-
-    manager.setActiveModel(spec);
-
-    expect(manager.activeEmbeddingModel, same(spec));
-    await persistence.firstWriteStarted.future;
-    persistence.releaseFirstWrite.complete();
-    await pumpEventQueue();
-    expect(manager.activeEmbeddingModel, same(spec));
-  });
-
-  test(
-    'legacy web optimistic embedding is invalidated on write failure',
-    () async {
-      final persistence = _RejectedEmbeddingIdentityPersistence();
-      final manager = WebModelManager(
-        activeEmbeddingIdentityPersistence: persistence,
-      );
-      final spec = _embeddingSpec('optimistic-failure');
-
-      manager.setActiveModel(spec);
-      expect(manager.activeEmbeddingModel, same(spec));
-      await persistence.reloadCompleted.future;
-      await pumpEventQueue();
-
-      expect(manager.activeEmbeddingModel, isNull);
     },
   );
 
@@ -225,10 +190,12 @@ void main() {
         activeEmbeddingIdentityPersistence: persistence,
       );
 
-      firstManager.setActiveModel(_embeddingSpec('throwing'));
-      expect(firstManager.activeEmbeddingModel, isNotNull);
+      final firstFailure = expectLater(
+        firstManager.setActiveEmbeddingModel(_embeddingSpec('throwing')),
+        throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
+      );
       await persistence.reloadCompleted.future;
-      await pumpEventQueue();
+      await firstFailure;
 
       expect(firstManager.activeEmbeddingModel, isNull);
       expect(secondManager.activeEmbeddingModel, isNull);
@@ -276,7 +243,7 @@ void main() {
       final first = _embeddingSpec('durable-a-${failureMode.name}');
       final second = _embeddingSpec('failed-b-${failureMode.name}');
 
-      firstManager.setActiveModel(first);
+      final firstWrite = firstManager.setActiveEmbeddingModel(first);
       await persistence.firstWriteStarted.future;
       final failedSecond = secondManager.setActiveEmbeddingModel(second);
       persistence.releaseFirstWrite.complete();
@@ -284,6 +251,7 @@ void main() {
         failedSecond,
         throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
       );
+      await firstWrite;
 
       expect(firstManager.activeEmbeddingModel, isNull);
       expect(secondManager.activeEmbeddingModel, isNull);
@@ -361,7 +329,7 @@ void main() {
 
     final restoring = restoringManager.initialize();
     await repository.firstInstallCheckStarted.future;
-    switchingManager.setActiveModel(newSpec);
+    await switchingManager.setActiveEmbeddingModel(newSpec);
     expect(switchingManager.activeEmbeddingModel, same(newSpec));
     repository.releaseFirstInstallCheck.complete();
     await restoring;
@@ -445,11 +413,13 @@ void main() {
         activeEmbeddingIdentityPersistence: persistence,
       );
 
-      oldManager.setActiveModel(_embeddingSpec('old'));
+      final oldWrite = oldManager.setActiveEmbeddingModel(
+        _embeddingSpec('old'),
+      );
       await persistence.firstWriteStarted.future;
       final clear = clearingManager.clearActiveEmbeddingIdentity();
       persistence.releaseFirstWrite.complete();
-      await clear;
+      await Future.wait([oldWrite, clear]);
 
       final persisted = ActiveEmbeddingIdentityRecord.tryDecode(
         persistence.encodedRecord,
@@ -557,27 +527,6 @@ void main() {
       );
       expect(persistence.writeCount, 1);
       expect(persistence.reloadCount, 1);
-    },
-  );
-
-  test(
-    'legacy web activation stays null when coordinator is poisoned',
-    () async {
-      final persistence = _RejectedEmbeddingIdentityPersistence();
-      final manager = WebModelManager(
-        activeEmbeddingIdentityPersistence: persistence,
-      );
-      await expectLater(
-        manager.setActiveEmbeddingModel(_embeddingSpec('poison')),
-        throwsA(isA<ActiveEmbeddingIdentityPersistenceException>()),
-      );
-
-      manager.setActiveModel(_embeddingSpec('legacy-after-poison'));
-
-      expect(manager.activeEmbeddingModel, isNull);
-      await pumpEventQueue();
-      expect(manager.activeEmbeddingModel, isNull);
-      expect(persistence.writeCount, 1);
     },
   );
 

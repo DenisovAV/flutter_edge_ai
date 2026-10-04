@@ -17,24 +17,19 @@ void main() {
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test(
-    'setActiveModel(TtsModelSpec) sets activeTtsModel in memory (no throw)',
-    () {
-      final m = MobileModelManager();
-      m.setActiveModel(_spec()); // must NOT throw ArgumentError
-      expect(m.activeTtsModel, isA<TtsModelSpec>());
-      expect(
-        (m.activeTtsModel as TtsModelSpec).ttsModelType,
-        TtsModelType.matcha,
-      );
-    },
-  );
-
-  test('setActiveModel persists the 2 TTS identity keys', () async {
+  test('awaited TTS activation sets activeTtsModel in memory', () async {
     final m = MobileModelManager();
-    m.setActiveModel(_spec());
-    // fire-and-forget persist — let the microtask/IO settle
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await m.activateInstalledModel(_spec());
+    expect(m.activeTtsModel, isA<TtsModelSpec>());
+    expect(
+      (m.activeTtsModel as TtsModelSpec).ttsModelType,
+      TtsModelType.matcha,
+    );
+  });
+
+  test('awaited TTS activation persists the 2 identity keys', () async {
+    final m = MobileModelManager();
+    await m.activateInstalledModel(_spec());
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(PreferencesKeys.activeTtsName), 'matcha');
     expect(

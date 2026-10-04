@@ -1,6 +1,7 @@
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/core/model_management/model_activation.dart';
 import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
@@ -281,12 +282,7 @@ class EmbeddingInstallationBuilder {
 
     // AUTO-SET as active embedding model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
-    if (manager is AwaitableEmbeddingModelActivation) {
-      await (manager as AwaitableEmbeddingModelActivation)
-          .setActiveEmbeddingModel(spec);
-    } else {
-      manager.setActiveModel(spec);
-    }
+    await activateInstalledModel(manager, spec);
 
     edgeAiLog('✅ Embedding model installed and set as active: ${spec.name}');
 

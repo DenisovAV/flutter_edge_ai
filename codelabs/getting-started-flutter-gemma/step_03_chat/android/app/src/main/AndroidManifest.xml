@@ -2,7 +2,7 @@
     <!-- Downloading the model file is a plain HTTPS GET. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="Gemma Quickstart"
+        android:label="Edge AI Quickstart"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

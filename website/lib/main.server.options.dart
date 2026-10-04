@@ -22,6 +22,8 @@ import 'package:fluttergemma_website/landing/sections/platform_matrix.dart'
     as _platform_matrix;
 import 'package:fluttergemma_website/landing/sections/quick_start.dart'
     as _quick_start;
+import 'package:fluttergemma_website/landing/sections/renamed_bar.dart'
+    as _renamed_bar;
 import 'package:fluttergemma_website/landing/sections/site_footer.dart'
     as _site_footer;
 import 'package:fluttergemma_website/landing/sections/trust_bar.dart'
@@ -94,6 +96,7 @@ ServerOptions get defaultServerOptions => ServerOptions(
     ..._nav_bar.NavBar.styles,
     ..._platform_matrix.PlatformMatrix.styles,
     ..._quick_start.QuickStart.styles,
+    ..._renamed_bar.RenamedBar.styles,
     ..._site_footer.SiteFooter.styles,
     ..._trust_bar.TrustBar.styles,
     ..._why_on_device.WhyOnDevice.styles,

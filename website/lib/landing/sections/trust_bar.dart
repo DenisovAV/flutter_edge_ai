@@ -21,7 +21,7 @@ class TrustBar extends StatelessComponent {
           span(classes: 'trust-item', [
             Component.text('Built with '),
             a(
-              href: 'https://deepwiki.com/DenisovAV/flutter_gemma',
+              href: 'https://deepwiki.com/DenisovAV/flutter_edge_ai',
               classes: 'trust-link',
               attributes: {'target': '_blank', 'rel': 'noopener'},
               [Component.text('DeepWiki docs')],
@@ -30,7 +30,7 @@ class TrustBar extends StatelessComponent {
           span(classes: 'trust-sep', [Component.text('|')]),
           span(classes: 'trust-item', [
             a(
-              href: 'https://deepwiki.com/DenisovAV/flutter_gemma',
+              href: 'https://deepwiki.com/DenisovAV/flutter_edge_ai',
               classes: 'trust-link',
               attributes: {'target': '_blank', 'rel': 'noopener'},
               [Component.text('DeepWiki')],

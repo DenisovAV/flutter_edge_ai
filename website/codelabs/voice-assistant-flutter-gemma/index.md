@@ -61,8 +61,8 @@ Every step of this codelab exists as a complete, runnable app, so you can join
 at any point or check your work against the next one.
 
 ```bash
-git clone --depth 1 https://github.com/DenisovAV/flutter_gemma.git
-cd flutter_gemma/codelabs/voice-assistant-flutter-gemma
+git clone --depth 1 https://github.com/DenisovAV/flutter_edge_ai.git
+cd flutter_edge_ai/codelabs/voice-assistant-flutter-gemma
 ls
 ```
 
@@ -122,17 +122,17 @@ the browser does not have, so from here on the app is Android, iOS and macOS.
 ### Add the packages
 
 ```bash
-flutter pub add flutter_gemma_speech record
+flutter pub add flutter_edge_ai_speech record
 ```
 
-`flutter_gemma_speech` runs the speech models; the API it implements —
+`flutter_edge_ai_speech` runs the speech models; the API it implements —
 `installStt`, `getActiveStt` — is in core, the same split as the engine.
 `record` is the microphone.
 
 ### Register the backend
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: [LiteRtLmEngine()],
   sttBackends: [const LiteRtSttBackend()],
   // huggingFaceToken and webStorageMode, as in the starter
@@ -169,7 +169,7 @@ token ids, and `tokenizer.json` turns those ids back into words.
 `DownloadPage` installs the language model, then the recognizer:
 
 ```dart
-await FlutterGemma.installStt()
+await FlutterEdgeAi.installStt()
     .modelFromNetwork(Moonshine.modelUrl)
     .tokenizerFromNetwork(Moonshine.tokenizerUrl)
     .ofType(SttModelType.moonshine)
@@ -185,8 +185,8 @@ files before it lets the chat open:
 
 ```dart
 Future<bool> _check() async =>
-    await FlutterGemma.isModelInstalled(widget.model.fileName) &&
-    await FlutterGemma.isModelInstalled(Moonshine.fileName);
+    await FlutterEdgeAi.isModelInstalled(widget.model.fileName) &&
+    await FlutterEdgeAi.isModelInstalled(Moonshine.fileName);
 ```
 
 ### Install it again — every launch
@@ -195,12 +195,12 @@ This is the line that looks like a mistake. In `ChatPage._load`, after the chat
 opens:
 
 ```dart
-await FlutterGemma.installStt()
+await FlutterEdgeAi.installStt()
     .modelFromNetwork(Moonshine.modelUrl)
     .tokenizerFromNetwork(Moonshine.tokenizerUrl)
     .ofType(SttModelType.moonshine)
     .install();
-final stt = await FlutterGemma.getActiveStt();
+final stt = await FlutterEdgeAi.getActiveStt();
 ```
 
 The gate already made sure the files are here, so this downloads nothing.
@@ -278,7 +278,7 @@ Duration: 10
 flutter pub add just_audio path_provider
 ```
 
-`flutter_gemma_speech` already contains text-to-speech. What you need is
+`flutter_edge_ai_speech` already contains text-to-speech. What you need is
 something to play its output, and a place to put the file the player reads.
 
 ### Register the backend and pick a voice
@@ -301,11 +301,11 @@ abstract final class Inflect {
 ```
 
 ```dart
-await FlutterGemma.installTts()
+await FlutterEdgeAi.installTts()
     .fromNetwork(Inflect.baseUrl)
     .ofType(TtsModelType.inflect)
     .install();
-final tts = await FlutterGemma.getActiveTts();
+final tts = await FlutterEdgeAi.getActiveTts();
 ```
 
 The same install-on-every-launch as Step 2, for the same reason.
@@ -578,7 +578,13 @@ And the chat keeps it. After interrupting "Tell me three facts about the moon",
 the history holds the question and the half-written answer, so the model knows
 what it had already said. Your next question is answered on top of that.
 
-**Good to know:** This needs `flutter_gemma_litertlm` **1.8.1** or newer. Before it, a `.litertlm` chat that was stopped mid-reply answered every later message with nothing. The package now rebuilds the conversation from the chat's history on the first turn after a stop. That history is replayed as text: an image or a recording sent in an earlier turn is not part of it, so ask about it again with the image attached.
+**Good to know:** The interrupted-chat fix shipped in the legacy
+`flutter_gemma_litertlm` **1.8.1** package and is present in the current
+`flutter_edge_ai_litertlm`. Before that fix, a `.litertlm` chat stopped
+mid-reply answered every later message with nothing. The package now rebuilds
+the conversation from the chat's history on the first turn after a stop. That
+history is replayed as text: an image or a recording sent in an earlier turn is
+not part of it, so ask about it again with the image attached.
 
 ### Run it
 

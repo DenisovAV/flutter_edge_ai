@@ -151,7 +151,7 @@ void main() {
       final ai = Genkit(isDevEnv: false);
       final engine = AiEngine.forTest(
         ai: ai,
-        local: fakeBranch('flutter-gemma/local', 'LOCAL'),
+        local: fakeBranch('flutter-edge-ai/local', 'LOCAL'),
         cloud: fakeBranch('googleai/cloud', 'CLOUD'),
       );
 
@@ -169,7 +169,7 @@ void main() {
         final ai = Genkit(isDevEnv: false);
         final engine = AiEngine.forTest(
           ai: ai,
-          local: fakeBranch('flutter-gemma/local', 'LOCAL'),
+          local: fakeBranch('flutter-edge-ai/local', 'LOCAL'),
           cloud: fakeBranch('googleai/cloud', 'CLOUD'),
         );
 
@@ -184,7 +184,7 @@ void main() {
   });
 
   // --------------------------------------------------------------------
-  // Context budget: genkit_flutter_gemma reads `maxTokens` only from the
+  // Context budget: genkit_flutter_edge_ai reads `maxTokens` only from the
   // per-request config and defaults it to 1024, which the RAG prompt blows
   // past ("Input token ids are too long … 1713 >= 1024" on device). AiEngine
   // wraps the on-device branch so each request carries
@@ -195,7 +195,7 @@ void main() {
       final ai = Genkit(isDevEnv: false);
       final engine = AiEngine.forTest(
         ai: ai,
-        local: capturingBranch('flutter-gemma/local', seen),
+        local: capturingBranch('flutter-edge-ai/local', seen),
         cloud: fakeBranch('googleai/cloud', 'CLOUD'),
       );
 
@@ -209,7 +209,7 @@ void main() {
       final ai = Genkit(isDevEnv: false);
       final engine = AiEngine.forTest(
         ai: ai,
-        local: fakeBranch('flutter-gemma/local', 'LOCAL'),
+        local: fakeBranch('flutter-edge-ai/local', 'LOCAL'),
         cloud: capturingBranch('googleai/cloud', seen),
       );
 
@@ -223,7 +223,7 @@ void main() {
       final ai = Genkit(isDevEnv: false);
       final engine = AiEngine.forTest(
         ai: ai,
-        local: capturingBranch('flutter-gemma/local', seen),
+        local: capturingBranch('flutter-edge-ai/local', seen),
         cloud: fakeBranch('googleai/cloud', 'CLOUD'),
       );
 
@@ -247,7 +247,7 @@ void main() {
       final ai = Genkit(isDevEnv: false);
       final engine = AiEngine.forTest(
         ai: ai,
-        local: fakeBranch('flutter-gemma/local', 'short'), // <=20 -> escalate
+        local: fakeBranch('flutter-edge-ai/local', 'short'), // <=20 -> escalate
         cloud: capturingBranch('googleai/cloud', seen),
       );
 
@@ -269,7 +269,7 @@ void main() {
       final ai = Genkit(isDevEnv: false);
       final engine = AiEngine.forTest(
         ai: ai,
-        local: fakeBranch('flutter-gemma/local', 'short'), // <=20 chars
+        local: fakeBranch('flutter-edge-ai/local', 'short'), // <=20 chars
         cloud: fakeBranch(
           'googleai/cloud',
           'a sufficiently long cloud response, well past 20 chars',
@@ -293,7 +293,7 @@ void main() {
       final engine = AiEngine.forTest(
         ai: ai,
         local: fakeBranch(
-          'flutter-gemma/local',
+          'flutter-edge-ai/local',
           'a sufficiently long on-device response, well past 20 chars',
         ),
         cloud: fakeBranch(
@@ -327,7 +327,7 @@ void main() {
         final ai = Genkit(isDevEnv: false);
         final engine = AiEngine.forTest(
           ai: ai,
-          local: fakeBranch('flutter-gemma/local', 'LOCAL'),
+          local: fakeBranch('flutter-edge-ai/local', 'LOCAL'),
         );
 
         expect(engine.cloudReady, isFalse);

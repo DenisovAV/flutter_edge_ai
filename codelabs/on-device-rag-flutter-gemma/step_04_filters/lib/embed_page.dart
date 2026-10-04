@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'model.dart';
 import 'rag_store.dart';
@@ -86,7 +86,7 @@ class _EmbedPageState extends State<EmbedPage> {
           if (mounted) setState(() => _status = s);
         },
       );
-      final stats = await FlutterGemma.rag.stats();
+      final stats = await FlutterEdgeAi.rag.stats();
       if (mounted) setState(() => _stats = stats);
     } catch (e) {
       if (mounted) setState(() => _error = '$e');

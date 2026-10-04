@@ -1,12 +1,12 @@
 ---
 title: genai_primitives
-description: Use the Flutter team's genai_primitives ChatMessage types with flutter_gemma — sendMessage, generateContent, streaming, tools, and thinking.
-image: https://fluttergemma.dev/images/og-image.png
+description: Use the Flutter team's genai_primitives ChatMessage types with flutter_edge_ai — sendMessage, generateContent, streaming, tools, and thinking.
+image: https://flutteredge.ai/images/og-image.png
 ---
 
 [genai_primitives](https://pub.dev/packages/genai_primitives) is the Flutter
 team's set of standard chat types — `ChatMessage`, `TextPart`, `DataPart`,
-`ToolPart`, and friends. flutter_gemma speaks them directly, so you can drive an
+`ToolPart`, and friends. flutter_edge_ai speaks them directly, so you can drive an
 on-device chat with the same message types you'd use anywhere else in the
 Flutter AI ecosystem, and move a conversation between providers without
 rewriting it.
@@ -14,7 +14,7 @@ rewriting it.
 The surface is a small extension on `InferenceChat`. Import the side barrel:
 
 ```dart
-import 'package:flutter_gemma/genai.dart';
+import 'package:flutter_edge_ai/genai.dart';
 ```
 
 That one import re-exports the genai_primitives types too, so you don't need to
@@ -66,7 +66,7 @@ Attach media as parts: inline bytes go in a `DataPart` with a matching MIME
 type. A `LinkPart` is **not** resolved — an on-device model needs the bytes, and
 this inference layer never fetches URLs or reads files, so passing one throws
 `UnsupportedError`. Resolve the link yourself and hand over a `DataPart`. (For
-URL or web content behind a permission gate, use `flutter_gemma_agent`.) Create
+URL or web content behind a permission gate, use `flutter_edge_ai_agent`.) Create
 the chat with the capability the model needs, or the send throws rather than
 silently dropping the media.
 
@@ -172,5 +172,5 @@ final reply = await chat.generateContent([
   `supportsFunctionCalls` fails loudly rather than dropping the content.
 
 This surface lives behind its own `genai.dart` barrel so genai_primitives'
-pre-1.0 churn stays contained — the rest of flutter_gemma's API is unaffected by
+pre-1.0 churn stays contained — the rest of flutter_edge_ai's API is unaffected by
 it.

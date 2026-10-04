@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gemma_quickstart/main.dart';
+import 'package:edge_ai_quickstart/main.dart';
 
 void main() {
   testWidgets('the shell runs and says there is no model yet', (tester) async {

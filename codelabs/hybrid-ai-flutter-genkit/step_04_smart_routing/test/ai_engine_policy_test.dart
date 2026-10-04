@@ -96,7 +96,7 @@ void main() {
       final ai = Genkit(isDevEnv: false);
       final engine = AiEngine.forTest(
         ai: ai,
-        local: fakeBranch('flutter-gemma/local', 'LOCAL'),
+        local: fakeBranch('flutter-edge-ai/local', 'LOCAL'),
         cloud: fakeBranch('googleai/cloud', 'CLOUD'),
       );
 
@@ -114,7 +114,7 @@ void main() {
         final ai = Genkit(isDevEnv: false);
         final engine = AiEngine.forTest(
           ai: ai,
-          local: fakeBranch('flutter-gemma/local', 'LOCAL'),
+          local: fakeBranch('flutter-edge-ai/local', 'LOCAL'),
           cloud: fakeBranch('googleai/cloud', 'CLOUD'),
         );
 
@@ -137,7 +137,7 @@ void main() {
       final ai = Genkit(isDevEnv: false);
       final engine = AiEngine.forTest(
         ai: ai,
-        local: fakeBranch('flutter-gemma/local', 'short'), // <=20 chars
+        local: fakeBranch('flutter-edge-ai/local', 'short'), // <=20 chars
         cloud: fakeBranch(
           'googleai/cloud',
           'a sufficiently long cloud response, well past 20 chars',
@@ -161,7 +161,7 @@ void main() {
       final engine = AiEngine.forTest(
         ai: ai,
         local: fakeBranch(
-          'flutter-gemma/local',
+          'flutter-edge-ai/local',
           'a sufficiently long on-device response, well past 20 chars',
         ),
         cloud: fakeBranch(
@@ -195,7 +195,7 @@ void main() {
         final ai = Genkit(isDevEnv: false);
         final engine = AiEngine.forTest(
           ai: ai,
-          local: fakeBranch('flutter-gemma/local', 'LOCAL'),
+          local: fakeBranch('flutter-edge-ai/local', 'LOCAL'),
         );
 
         expect(engine.cloudReady, isFalse);

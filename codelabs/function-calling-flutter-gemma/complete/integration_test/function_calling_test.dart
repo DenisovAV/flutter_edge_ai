@@ -9,13 +9,13 @@
 // Not part of CI (needs a device and a 2.59 GB download):
 //   flutter test integration_test/function_calling_test.dart -d <device-id>
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:gemma_quickstart/model.dart';
-import 'package:gemma_quickstart/tools.dart';
+import 'package:edge_ai_quickstart/model.dart';
+import 'package:edge_ai_quickstart/tools.dart';
 
 /// Downloads the model if it is not here, and makes it the active one either
 /// way. `install()` is idempotent, so a second run costs nothing.
@@ -23,7 +23,7 @@ Future<void> _install(ModelChoice model) async {
   var last = -1;
   await model
       .locate(
-        FlutterGemma.installModel(
+        FlutterEdgeAi.installModel(
           modelType: model.modelType,
           fileType: ModelFileType.litertlm,
         ),
@@ -43,14 +43,14 @@ void main() {
   testWidgets('the model asks, the app answers, the number is the app\'s', (
     tester,
   ) async {
-    await FlutterGemma.initialize(inferenceEngines: [LiteRtLmEngine()]);
+    await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);
 
     const model = Models.gemma4;
     await _install(model);
-    expect(await FlutterGemma.isModelInstalled(model.fileName), isTrue);
+    expect(await FlutterEdgeAi.isModelInstalled(model.fileName), isTrue);
 
     // Nothing tool-related on this call: tools belong to the session.
-    final inference = await FlutterGemma.getActiveModel(maxTokens: 4096);
+    final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
     final chat = await inference.createChat(
       modelType: model.modelType,
       tools: toolbox,

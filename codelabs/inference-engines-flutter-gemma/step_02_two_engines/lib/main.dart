@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_builtin_ai/flutter_gemma_builtin_ai.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 import 'chat_page.dart';
 import 'download_page.dart';
@@ -17,7 +17,7 @@ Future<void> main() async {
   // Two engines, registered side by side. Each declares which file types it
   // can open; the registry picks one per model from `ModelFileType`. Nothing
   // in the chat code knows or cares which engine ends up answering.
-  await FlutterGemma.initialize(
+  await FlutterEdgeAi.initialize(
     // OPFS-backed storage. On web the model is 2.0 GB, right on the ~2 GB
     // blob ceiling the default `cacheApi` mode would have to buffer it into,
     // so `.litertlm` streams out of OPFS instead.
@@ -83,7 +83,7 @@ class _ModelGateState extends State<ModelGate> {
       return true;
     }
 
-    final installed = await FlutterGemma.isModelInstalled(widget.model.id);
+    final installed = await FlutterEdgeAi.isModelInstalled(widget.model.id);
     // For a downloaded model, installed is still not the same as active.
     // `install()` is idempotent, so re-running it on a model that is already
     // here costs nothing and makes it the one `getActiveModel` will load.

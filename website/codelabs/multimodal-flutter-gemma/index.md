@@ -85,7 +85,7 @@ this codelab hands you one of each.
   3 GB free for it — a browser close to its storage quota refuses the write
   rather than slowing down; Step 3 needs nothing further there — same file,
   already installed
-* Android (an **arm64** device or emulator — `flutter_gemma_litertlm` ships an
+* Android (an **arm64** device or emulator — `flutter_edge_ai_litertlm` ships an
   arm64 library and nothing else, so a 32-bit or x86_64 image has no runtime to
   load), a real iPhone or iPad, macOS, Windows or Linux for the full thing.
   The web and the iOS Simulator both run this app; Step 4 covers what they do
@@ -94,8 +94,8 @@ this codelab hands you one of each.
 ### Get the code
 
 ```bash
-git clone --depth 1 https://github.com/DenisovAV/flutter_gemma.git
-cd flutter_gemma/codelabs/multimodal-flutter-gemma
+git clone --depth 1 https://github.com/DenisovAV/flutter_edge_ai.git
+cd flutter_edge_ai/codelabs/multimodal-flutter-gemma
 ls
 ```
 
@@ -145,7 +145,7 @@ means different weights, and different weights mean a download, not a boolean.
 
 The flags are yours to set. Whether the platform honours them is not.
 
-`flutter_gemma_litertlm`'s browser arm runs the upstream `@litert-lm/core`
+`flutter_edge_ai_litertlm`'s browser arm runs the upstream `@litert-lm/core`
 package, and that JS API exposes **no vision executor and no audio executor**.
 Setting `supportImage: true` there does not throw. It opens a session that will
 never be fed: the image bytes are dropped with a debug warning, and the model
@@ -221,7 +221,7 @@ that can see:
   ///
   /// It cannot hear, and that is not a gap in this step: it is a
   /// vision-language model, and the plugin lists audio input for Gemma 4 and
-  /// Gemma 3n only (`flutter_gemma/README.md`). A session flag cannot switch
+  /// Gemma 3n only (`flutter_edge_ai/README.md`). A session flag cannot switch
   /// on an encoder the checkpoint does not carry. It is why Step 3
   /// changes models, and it is the model half of the question `complete` asks
   /// at the end — a half that says no here while the device, happily holding
@@ -290,7 +290,8 @@ build, but not for the reason it would be on an older format. On `.litertlm`
 the prompt never gets a hand-built wrapper: the engine applies the chat
 template baked into the file itself, on every platform this codelab targets,
 so naming the wrong family here does not double the turn markers. (It used to,
-on iOS — before flutter_gemma 1.8.3 the SDK still wrapped `.litertlm` prompts
+on iOS — before the legacy `flutter_gemma` 1.8.3 release the SDK still wrapped
+`.litertlm` prompts
 by hand there, a leftover from when iOS ran the format through MediaPipe, so
 the markers reached the model twice. Fixed now, everywhere.)
 
@@ -313,7 +314,7 @@ it inherited from Getting Started. It gains a `try` in exchange:
 
 ```dart
   try {
-    await FlutterGemma.initialize(
+    await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
       // OPFS streaming, not the Cache API default: the web build is 2.0 GB,
       // right on the ~2 GB blob ceiling, so it is not worth buffering.
@@ -327,9 +328,10 @@ it inherited from Getting Started. It gains a `try` in exchange:
 
 `webStorageMode` is the web half of this step, and it earns its own sentence.
 It is not something the format demands: the browser engine takes either
-storage mode — `flutter_gemma_litertlm`'s web arm accepts a Cache API blob URL
+storage mode — `flutter_edge_ai_litertlm`'s web arm accepts a Cache API blob URL
 and an OPFS stream alike, and its own doc reserves streaming for models past
-2 GB. What changed in flutter_gemma 0.16.2 was that web `.litertlm` inference
+2 GB. What changed in the legacy `flutter_gemma` 0.16.2 release was that web
+`.litertlm` inference
 arrived at all, not that streaming became compulsory. The reason to set it
 here is size. The default `WebStorageMode.cacheApi` buffers the whole download
 in memory as one blob, and browsers cap a single blob at roughly 2 GB — Chrome
@@ -381,7 +383,7 @@ described:
       // is told to. Set it on the chat alone and everything looks fine until
       // the first image, when native fails the turn with
       // `INVALID_ARGUMENT: Vision executor should not be null`.
-      final inference = await FlutterGemma.getActiveModel(
+      final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 4096,
         supportImage: true,
       );
@@ -585,7 +587,7 @@ and — for exactly the reason Step 2 gave — on the call above it that builds 
 engine, because that is where the audio executor is loaded or not loaded:
 
 ```dart
-      final inference = await FlutterGemma.getActiveModel(
+      final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 4096,
         supportImage: true,
         supportAudio: true,
@@ -764,7 +766,7 @@ The **platform half** is not:
   /// Image input reaches the model on all five native platforms — Android,
   /// iOS, macOS, Windows and Linux.
   ///
-  /// Not on the web: `flutter_gemma_litertlm`'s browser arm runs the upstream
+  /// Not on the web: `flutter_edge_ai_litertlm`'s browser arm runs the upstream
   /// `@litert-lm/core` package, whose JS API exposes no vision executor, so
   /// image bytes are **dropped with a debug warning** rather than refused.
   /// That is the worst failure mode a modality can have — the model answers,
@@ -805,7 +807,7 @@ Both places again — the engine has to be built with the same answer, or the
 executor the session asks for was never loaded:
 
 ```dart
-      final inference = await FlutterGemma.getActiveModel(
+      final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 4096,
         supportImage: _imageCapability.available,
         supportAudio: _audioCapability.available,
@@ -908,15 +910,15 @@ is text-only. What a learner should expect there: the app loads, the model
 downloads, text chat works, and both attachment buttons are disabled with a
 line naming the runtime that refused. That is the app working correctly. (Full
 vision on the web today means MediaPipe `.task` models and the
-`flutter_gemma_mediapipe` package — a different engine, documented in
+`flutter_edge_ai_mediapipe` package — a different engine, documented in
 [MediaPipe](/docs/mediapipe); the Inference Engines codelab pairs LiteRT-LM with
 built-in AI instead, so it is not the place to look for this one.)
 
 That "the model downloads" is not automatic, and it is worth naming what makes
 it true, because none of it is specific to this codelab. Every step's
 `web/index.html` loads `cache_api.js` and `opfs_helper.js` after the
-`litertLmReady` handshake — copied byte-for-byte from `flutter_gemma`'s own
-`web/` directory (`grep -A1 '"name": "flutter_gemma"'
+`litertLmReady` handshake — copied byte-for-byte from `flutter_edge_ai`'s own
+`web/` directory (`grep -A1 '"name": "flutter_edge_ai"'
 .dart_tool/package_config.json` finds it in your own project) — because core's
 web storage reaches OPFS through `window.flutterGemmaOPFS` in `opfs_helper.js`
 and the Cache API through `window.cacheHas` and friends in `cache_api.js`, and
@@ -927,7 +929,7 @@ lookup for an installed model finds nothing and asks the Cache API to restore
 a URL before it gives up. Ship only `opfs_helper.js` and that restore call
 hits an undefined global, the `catch` around it swallows the error, and an app
 that still reads "installed" silently re-downloads the whole model.
-`FlutterGemma.initialize` passes `webStorageMode: WebStorageMode.streaming`
+`FlutterEdgeAi.initialize` passes `webStorageMode: WebStorageMode.streaming`
 from Step 2 on, which is what routes those bytes through OPFS rather than the
 Cache API default; see
 Step 2 for why a 2 GB model is streamed rather than buffered. And `model.dart`
@@ -973,16 +975,16 @@ where it can use them.
 
 * **Function calling** turns the model's answer into an action, and the same
   `createChat` grows a `tools:` argument for it
-* **Speech-to-text** (`flutter_gemma_speech`) is the other way to use a
+* **Speech-to-text** (`flutter_edge_ai_speech`) is the other way to use a
   microphone: transcribe first, then send text — which works on models with no
   audio encoder at all, Step 2's SmolVLM2 among them, and is often the cheaper
   design
-* **MediaPipe** (`flutter_gemma_mediapipe`) opens `.task` models and is the
+* **MediaPipe** (`flutter_edge_ai_mediapipe`) opens `.task` models and is the
   engine to reach for when vision on the **web** is a requirement
 
 ### Reference
 
-* [flutter_gemma on pub.dev](https://pub.dev/packages/flutter_gemma) — the full
+* [flutter_edge_ai on pub.dev](https://pub.dev/packages/flutter_edge_ai) — the full
   platform support matrix, including the web `.litertlm` limitations
 * [Multimodal documentation](/docs/multimodal)
-* [Source and this codelab's code](https://github.com/DenisovAV/flutter_gemma)
+* [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)

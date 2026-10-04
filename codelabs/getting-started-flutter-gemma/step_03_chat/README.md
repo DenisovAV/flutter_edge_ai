@@ -1,4 +1,4 @@
-# gemma_quickstart
+# edge_ai_quickstart
 
 A new Flutter project.
 

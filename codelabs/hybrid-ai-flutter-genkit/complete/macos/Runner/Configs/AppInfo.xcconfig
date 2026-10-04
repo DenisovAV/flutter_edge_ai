@@ -8,7 +8,7 @@
 PRODUCT_NAME = Gemma Hybrid AI
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = dev.flutterberlin.workshopFlutterGemmaHybridAi
+PRODUCT_BUNDLE_IDENTIFIER = dev.flutterberlin.workshopFlutterEdgeAiHybridAi
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 dev.flutterberlin. All rights reserved.

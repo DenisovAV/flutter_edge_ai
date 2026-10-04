@@ -8,13 +8,13 @@
 //   flutter test integration_test/hear_test.dart -d <device-id>
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
-import 'package:flutter_gemma_speech/flutter_gemma_speech.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:gemma_quickstart/model.dart';
+import 'package:edge_ai_quickstart/model.dart';
 
 /// The PCM samples of a WAV file: everything after its `data` chunk header.
 /// The fixture is already 16 kHz mono 16-bit, which is what `transcribe` takes.
@@ -33,7 +33,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('a spoken question gets a text answer', (tester) async {
-    await FlutterGemma.initialize(
+    await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
       sttBackends: [const LiteRtSttBackend()],
     );
@@ -41,25 +41,25 @@ void main() {
     // Unconditionally: `install()` skips files it already has and re-activates
     // them, so the test always runs against these two models.
     const model = Models.gemma4;
-    await FlutterGemma.installModel(
+    await FlutterEdgeAi.installModel(
       modelType: model.modelType,
       fileType: ModelFileType.litertlm,
     ).fromNetwork(model.url).install();
-    await FlutterGemma.installStt()
+    await FlutterEdgeAi.installStt()
         .modelFromNetwork(Moonshine.modelUrl)
         .tokenizerFromNetwork(Moonshine.tokenizerUrl)
         .ofType(SttModelType.moonshine)
         .install();
-    expect(await FlutterGemma.isModelInstalled(model.fileName), isTrue);
-    expect(await FlutterGemma.isModelInstalled(Moonshine.fileName), isTrue);
+    expect(await FlutterEdgeAi.isModelInstalled(model.fileName), isTrue);
+    expect(await FlutterEdgeAi.isModelInstalled(Moonshine.fileName), isTrue);
 
-    final stt = await FlutterGemma.getActiveStt();
+    final stt = await FlutterEdgeAi.getActiveStt();
     final wav = await rootBundle.load('integration_test/fixtures/question.wav');
     final heard = await stt.transcribe(_pcmOf(wav));
     debugPrint('[hear] transcript: "$heard"');
     expect(heard.toLowerCase(), contains('france'));
 
-    final inference = await FlutterGemma.getActiveModel(maxTokens: 1024);
+    final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
     final chat = await inference.createChat(
       modelType: model.modelType,
       maxOutputTokens: 256,

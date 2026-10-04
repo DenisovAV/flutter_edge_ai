@@ -1,10 +1,10 @@
 ---
 name: build-native
-description: Rebuild native LiteRT-LM prebuilts for flutter_gemma (iOS / macOS / Linux / Windows / Android) — covers required build flags, the upstream commit pin, and a mandatory post-build verification checklist that catches the bugs we have already shipped at users.
+description: Rebuild native LiteRT-LM prebuilts for flutter_edge_ai (iOS / macOS / Linux / Windows / Android) — covers required build flags, the upstream commit pin, and a mandatory post-build verification checklist that catches the bugs we have already shipped at users.
 user_invocable: true
 ---
 
-# Build native dylibs for flutter_gemma — the right way
+# Build native dylibs for flutter_edge_ai — the right way
 
 This skill exists because we shipped 0.14.0 and 0.14.1 with native dylibs that broke real users (App Store rejection in 0.14.0, `install_name_tool` headerpad failure in 0.14.1, x86_64-not-arm64 in upstream prebuilts). Every one of those was caught **after** publish. The verification checklist below would have caught all of them locally.
 
@@ -47,8 +47,8 @@ gh api "repos/google-ai-edge/LiteRT-LM/contents/prebuilt/ios_arm64?ref=<tag>" --
 
 A LiteRT-LM bump silently moves `LITERT_REF` in `WORKSPACE` (line ~6), and that is a **different upstream repo** with its own C API. This matters because three separate things bind to it:
 
-- `flutter_gemma_litertlm` → LiteRT-LM C API (`c/engine.h`)
-- `flutter_gemma_speech` → **LiteRT** C API directly, via litertlm's `lib/src/ffi/litert_bindings.dart`
+- `flutter_edge_ai_litertlm` → LiteRT-LM C API (`c/engine.h`)
+- `flutter_edge_ai_speech` → **LiteRT** C API directly, via litertlm's `lib/src/ffi/litert_bindings.dart`
 - **both NPU dispatch libraries** → the `LiteRtDispatchApi` struct and the LiteRT runtime they are loaded into
 
 So a green litertlm smoke run proves nothing about embeddings, and nothing at all about NPU. In the v0.14.0 migration the pin moved, `LiteRtCreateModelFromFile` gained a third parameter (`LiteRtEnvironment` first), and embeddings silently returned `status=500` — a full day lost before the cause was found.
@@ -64,8 +64,8 @@ old embeddings-only grep now misses more than half of them (23 vs 52 symbols):
 
 ```bash
 grep -rohE "LiteRt[A-Za-z_]+" \
-  packages/flutter_gemma_litertlm/lib/src/ffi/litert_bindings.dart \
-  packages/flutter_gemma_speech/lib/src/litert/ | sort -u
+  packages/flutter_edge_ai_litertlm/lib/src/ffi/litert_bindings.dart \
+  packages/flutter_edge_ai_speech/lib/src/litert/ | sort -u
 ```
 
 **Diff the structs too, not only the function signatures.** A struct we mirror by hand (`LiteRtLayout`, `LiteRtRankedTensorType`) can change layout while every symbol and signature stays the same, so the symbol list above passes. LiteRT `d84656955` (2026-07-09) turned `bool has_strides : 1` into `unsigned int has_strides : 1`, which moved `dimensions[]` from offset 8 to 4 **under MSVC only**; our Windows-only mirror kept offset 8 and broke Windows embeddings and speech from native-v0.16.0 on (pitfall #16). Diff `litert/c/litert_layout.h` and `litert/c/litert_model_types.h` at both refs, and when a divergence we work around disappears upstream, delete the workaround in the same bump. `test/ffi/litert_layout_abi_test.dart` pins the current sizes.
@@ -129,7 +129,7 @@ Anything at or near the current macOS release means the flag was dropped. Rebuil
 
 ### Patches we apply
 
-`packages/flutter_gemma_litertlm/native/litert_lm/patch_c_api.sh` — the surviving sections (2–9 were **deleted** at the v0.14.0 migration once upstream implemented them natively; don't go looking for them):
+`packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh` — the surviving sections (2–9 were **deleted** at the v0.14.0 migration once upstream implemented them natively; don't go looking for them):
 
 1. `cc_binary(linkshared=True)` target + Linux dynamic-list + Windows .def
 4b. `set_use_hw_masking_for_npu` (Intel LunarLake/PantherLake — default `true` crashes their NPU)
@@ -153,7 +153,7 @@ Make it fail instead of trusting yourself to read the log:
 
 ```bash
 LOG=/tmp/patch_c_api.log
-bash packages/flutter_gemma_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM 2>&1 | tee "$LOG"
+bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM 2>&1 | tee "$LOG"
 grep -q WARN "$LOG" && { echo "PATCH INCOMPLETE — a target moved, do not build"; exit 1; }
 
 # Assert the artifact, not the log line: §10b's macro must be in the patched file.
@@ -234,7 +234,7 @@ Bazel already downloaded the matching SDK while building the dispatch. Take them
 
 ```bash
 Q=$(find "$(bazel info output_base)/external/qairt" -maxdepth 0 2>/dev/null)
-D=packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/android_arm64
+D=packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/android_arm64
 for f in libQnnSystem.so libQnnHtp.so libQnnHtpV{73,75,79,81}Stub.so; do cp -f "$Q/lib/aarch64-android/$f" "$D/"; done
 for v in 73 75 79 81; do cp -f "$Q/lib/hexagon-v$v/unsigned/libQnnHtpV${v}Skel.so" "$D/"; done
 ```
@@ -299,13 +299,13 @@ Always pass the pinned SHA explicitly — the scripts' `DEFAULT_REF` lags the re
 REF=<tag-commit-sha>          # v0.17.0 = e9fd8c53ff968071774206163027dd84bedfe925 (v0.16.0 = 924e79c9…)
 export ANDROID_NDK_HOME="$HOME/Library/Android/sdk/ndk/29.0.14206865"   # r29 mandatory
 
-packages/flutter_gemma_litertlm/native/litert_lm/build_macos.sh   "$REF"    # macOS arm64
-packages/flutter_gemma_litertlm/native/litert_lm/build_ios.sh     "$REF"    # iOS device + simulator
-packages/flutter_gemma_litertlm/native/litert_lm/build_android.sh "$REF"    # Android arm64, cross-compiled
+packages/flutter_edge_ai_litertlm/native/litert_lm/build_macos.sh   "$REF"    # macOS arm64
+packages/flutter_edge_ai_litertlm/native/litert_lm/build_ios.sh     "$REF"    # iOS device + simulator
+packages/flutter_edge_ai_litertlm/native/litert_lm/build_android.sh "$REF"    # Android arm64, cross-compiled
 
 # Qualcomm NPU dispatch — separate build, separate repo (LiteRT), separate NDK.
 # Derives LITERT_REF from the LiteRT-LM WORKSPACE; see the NPU section above.
-LITERTLM_REF="$REF" packages/flutter_gemma_litertlm/native/litert_lm/build_qualcomm_dispatch.sh
+LITERTLM_REF="$REF" packages/flutter_edge_ai_litertlm/native/litert_lm/build_qualcomm_dispatch.sh
 ```
 
 `ANDROID_NDK_HOME` must be **exported explicitly**: `build_android.sh` auto-detects the newest NDK *only when the variable is unset*, so a stale value in your shell silently selects the wrong toolchain (r26 fails on a C++20 concept in the minijinja chat template).
@@ -348,13 +348,13 @@ Every freshly-built dylib must pass **all** of these checks. Skipping any one of
 ### 1. Mach-O architecture (iOS / macOS / desktop)
 
 ```bash
-file packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib
+file packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib
 ```
 
 Expected: `arm64` for iOS device, `arm64` for iOS Sim, `arm64` for macOS_arm64. **Not x86_64.** Upstream `5e0d86b` shipped `libLiteRt.dylib` and `libLiteRtTopKMetalSampler.dylib` as **x86_64 macOS binaries inside `prebuilt/ios_arm64/`** (#2072) — when you copy them across, double-check.
 
 ```bash
-otool -hv packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | tail -2
+otool -hv packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | tail -2
 # → cputype 16777228 (arm64), filetype 6 (DYLIB)
 ```
 
@@ -386,7 +386,7 @@ otool -l <file> | grep -A2 LC_RPATH | grep " path "
 The mandatory test that catches headerpad bugs:
 
 ```bash
-cp packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/<dir>/libX.dylib /tmp/test.dylib
+cp packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libX.dylib /tmp/test.dylib
 chmod +w /tmp/test.dylib
 install_name_tool -id @rpath/this_is_a_long_test_path_pad_to_native_assets_target/libX.dylib /tmp/test.dylib
 # → must succeed silently. If it fails with "larger updated load commands do not fit", headerpad is too small. STOP and rebuild.
@@ -397,13 +397,13 @@ Run this for **every** dylib in `prebuilt/<dir>/`, not just the one you rebuilt.
 ### 5. Phase 8 patch markers (iOS / macOS only)
 
 ```bash
-strings packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep '@executable_path.*LiteRtMetalAccelerator'
+strings packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep '@executable_path.*LiteRtMetalAccelerator'
 ```
 
 Expected: 1 hit (path to `LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator`). If 0 hits, `patch_c_api.sh` §10b didn't apply — your build was against a tree where `WORKSPACE.patch_cmds` didn't run. Run `bazelisk clean --expunge` and rebuild.
 
 ```bash
-strings packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep -c '^libLiteRtMetalAccelerator.dylib$'
+strings packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep -c '^libLiteRtMetalAccelerator.dylib$'
 ```
 
 Expected: 0. If non-zero, the basename dlopen string is still in the binary — patch failed.
@@ -411,7 +411,7 @@ Expected: 0. If non-zero, the basename dlopen string is still in the binary — 
 ### 6. Required exports
 
 ```bash
-nm -gU packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep _litert_lm_engine_create
+nm -gU packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep _litert_lm_engine_create
 # → must show the symbol as T (text section, exported)
 ```
 
@@ -422,21 +422,21 @@ Run `nm -gU | grep -c '_litert_lm_'` — expect ~50 symbols (matches `bindings.d
 This catches problems no static check sees. Mandatory before commit:
 
 ```bash
-REPO=/Users/sashadenisov/Work/flutter_gemma
+REPO=/Users/sashadenisov/Work/flutter_edge_ai
 cd /tmp
-rm -rf test_flutter_gemma_native
-flutter create test_flutter_gemma_native --platforms=macos,ios
-cd test_flutter_gemma_native
-# The repo ROOT is the workspace package (name: flutter_gemma_workspace,
+rm -rf test_flutter_edge_ai_native
+flutter create test_flutter_edge_ai_native --platforms=macos,ios
+cd test_flutter_edge_ai_native
+# The repo ROOT is the workspace package (name: flutter_edge_ai_workspace,
 # publish_to: none) — pointing --path at it fails with "name field doesn't
 # match expected name". And core owns NO native bundle: its hook has
 # `const _bundles = <_NativeBundle>[];`. Adding core alone exercises zero
 # CodeAssets, so the check that exists to catch the 0.14.1 headerpad bug
 # would have passed while testing nothing. Add the package that owns the
 # dylibs.
-flutter pub add flutter_gemma --path="$REPO/packages/flutter_gemma"
-flutter pub add flutter_gemma_litertlm --path="$REPO/packages/flutter_gemma_litertlm"
-# flutter_gemma_embeddings is pure Dart and shares no bundle — never in this list
+flutter pub add flutter_edge_ai --path="$REPO/packages/flutter_edge_ai"
+flutter pub add flutter_edge_ai_litertlm --path="$REPO/packages/flutter_edge_ai_litertlm"
+# flutter_edge_ai_embeddings is pure Dart and shares no bundle — never in this list
 rm -rf .dart_tool build
 flutter pub get
 # → must complete without "Failed to set install names" or any other error
@@ -454,22 +454,22 @@ find build -name 'libLiteRtLm*' -o -name 'LiteRtLm*' | head
 
 ### 7b. Build with `prebuilt/` moved aside — the only test of what users actually get
 
-`_resolveLibDir` tries local `packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/<dir>/`, then the cache; its caller falls back to `_downloadAndExtract` from `native-v<version>`. The cache path is NOT version-scoped — staleness is decided by the marker file. **End users only ever reach the download** — `prebuilt/` is gitignored and ships in no pub package (confirm with `dart pub publish --dry-run | grep -ciE 'prebuilt|\.so$|\.dylib|\.dll'` → must be `0`).
+`_resolveLibDir` tries local `packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/`, then the cache; its caller falls back to `_downloadAndExtract` from `native-v<version>`. The cache path is NOT version-scoped — staleness is decided by the marker file. **End users only ever reach the download** — `prebuilt/` is gitignored and ships in no pub package (confirm with `dart pub publish --dry-run | grep -ciE 'prebuilt|\.so$|\.dylib|\.dll'` → must be `0`).
 
 On a maintainer machine the first source always hits. So every build you run locally — including check #7 and the release skill's `flutter build apk --release` pre-flight — silently validates **your** bundle and never touches the download, checksum verification, or extraction. Green means nothing about the artifact you are about to publish.
 
 After the release exists and the hook's `checksums` are updated, force the real path:
 
 ```bash
-mv packages/flutter_gemma_litertlm/native/litert_lm/prebuilt /tmp/prebuilt-aside
+mv packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt /tmp/prebuilt-aside
 # Cache location is per-OS (_cacheBaseDir()). On the Windows NPU VM the macOS
 # path wipes nothing and you silently re-test the cache instead of the download.
 #   macOS   ~/Library/Caches/flutter_gemma/native
 #   Linux   ~/.cache/flutter_gemma/native
 #   Windows %LOCALAPPDATA%\flutter_gemma\native
 rm -rf "$HOME/Library/Caches/flutter_gemma/native"     # kill the cache too, or you test source #2
-cd packages/flutter_gemma/example && flutter clean && flutter pub get && flutter build apk --release
-mv /tmp/prebuilt-aside packages/flutter_gemma_litertlm/native/litert_lm/prebuilt
+cd packages/flutter_edge_ai/example && flutter clean && flutter pub get && flutter build apk --release
+mv /tmp/prebuilt-aside packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt
 ```
 
 Pack the tarballs **from the exact directory you device-tested**, so the published bytes match the verified bytes by construction rather than by coincidence.
@@ -502,7 +502,7 @@ you did — and when the two disagree, the first tool call segfaults in
 green. native-v0.17.0 shipped exactly that.
 
 ```bash
-cd packages/flutter_gemma/example
+cd packages/flutter_edge_ai/example
 flutter test integration_test/litertlm_native_tools_test.dart -d <device>
 ```
 
@@ -554,7 +554,7 @@ DSP rather than mapped by the kernel.
 This is not hypothetical and it is not caught by anything else. `native-v0.17.0-a`
 shipped four Qualcomm Skel blobs at `p_align=0x1000` — straight from the QAIRT
 SDK, unchanged by us — and because `androidExtraLibs` puts them in every
-consumer APK, every app shipping `flutter_gemma_litertlm` was rejected. The
+consumer APK, every app shipping `flutter_edge_ai_litertlm` was rejected. The
 build was green, every test passed, the manifest gate passed, and the report
 came from a downstream app's store submission (#529).
 
@@ -660,7 +660,7 @@ adb shell am instrument -w -r dev.flutterberlin.flutter_gemma_example.test/andro
 Building the instrumentation APK: `flutter build apk` is **wrong**, it packs `main.dart`. The app APK must carry the test entrypoint:
 
 ```bash
-cd packages/flutter_gemma/example/android
+cd packages/flutter_edge_ai/example/android
 ./gradlew app:assembleDebug -Ptarget=<absolute path to integration_test/xxx_test.dart>
 ```
 
@@ -742,7 +742,7 @@ We import some dylibs as-is from upstream LiteRT-LM (`libGemmaModelConstraintPro
 ## After successful build
 
 1. **Run the verification checklist 1-10 above. All checks must pass.**
-2. Do NOT try to commit the dylibs — `prebuilt/` is gitignored (`.gitignore` `**/packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/`) and `git ls-files` returns nothing under it. The bundles reach users through the GitHub Release only; the working copy is yours alone. (This step used to say `git add prebuilt/<dir>/*.dylib`, which cannot succeed.)
+2. Do NOT try to commit the dylibs — `prebuilt/` is gitignored (`.gitignore` `**/packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/`) and `git ls-files` returns nothing under it. The bundles reach users through the GitHub Release only; the working copy is yours alone. (This step used to say `git add prebuilt/<dir>/*.dylib`, which cannot succeed.)
 3. Pack tarballs + update `hook/build.dart` `checksums` + re-upload to GitHub Release `native-v<version>` (see `release` skill).
 4. Run `dart pub publish --dry-run` — must show 0 warnings.
 5. Only then publish.

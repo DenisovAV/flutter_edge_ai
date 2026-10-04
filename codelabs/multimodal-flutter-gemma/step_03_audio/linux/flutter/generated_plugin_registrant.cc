@@ -7,16 +7,16 @@
 #include "generated_plugin_registrant.h"
 
 #include <file_selector_linux/file_selector_plugin.h>
-#include <flutter_gemma/flutter_gemma_plugin.h>
+#include <flutter_edge_ai/flutter_edge_ai_plugin.h>
 #include <record_linux/record_linux_plugin.h>
 
 void fl_register_plugins(FlPluginRegistry* registry) {
   g_autoptr(FlPluginRegistrar) file_selector_linux_registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "FileSelectorPlugin");
   file_selector_plugin_register_with_registrar(file_selector_linux_registrar);
-  g_autoptr(FlPluginRegistrar) flutter_gemma_registrar =
-      fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterGemmaPlugin");
-  flutter_gemma_plugin_register_with_registrar(flutter_gemma_registrar);
+  g_autoptr(FlPluginRegistrar) flutter_edge_ai_registrar =
+      fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterEdgeAiPlugin");
+  flutter_edge_ai_plugin_register_with_registrar(flutter_edge_ai_registrar);
   g_autoptr(FlPluginRegistrar) record_linux_registrar =
       fl_plugin_registry_get_registrar_for_plugin(registry, "RecordLinuxPlugin");
   record_linux_plugin_register_with_registrar(record_linux_registrar);

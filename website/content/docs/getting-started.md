@@ -1,11 +1,11 @@
 ---
 title: Getting Started
 description: Run Gemma and other on-device LLMs in your Flutter app — Android, iOS, Web, and Desktop.
-image: https://fluttergemma.dev/images/og-image.png
+image: https://flutteredge.ai/images/og-image.png
 ---
 
 Bring the power of Google's lightweight Gemma language models and other on-device
-LLMs directly to your Flutter applications. With **flutter_gemma** you can
+LLMs directly to your Flutter applications. With **flutter_edge_ai** you can
 seamlessly incorporate advanced AI capabilities into your apps — all without
 relying on external servers.
 
@@ -20,12 +20,12 @@ SmolLM and more — see [Models](/docs/models) for the full list.
 - **Platform Support:** Compatible with iOS, Android, Web, macOS, Windows, and Linux.
 - **Desktop Support:** Native desktop apps with GPU acceleration via LiteRT-LM, called directly from Dart through `dart:ffi` — no JVM/JRE bundling. See [Desktop Support](/docs/desktop).
 - **Built-in / System AI:** Use the OS's own on-device model, no download — Gemini Nano (Android + Chrome), Apple Foundation Models (iOS/macOS) and Windows AI Foundry. See [Built-in AI](/docs/builtin-ai).
-- **Pluggable Engines:** Opt-in engine packages — LiteRT-LM, MediaPipe, ONNX Runtime, built-in OS AI — registered via `FlutterGemma.initialize(...)`. See [Packages](/docs/packages).
+- **Pluggable Engines:** Opt-in engine packages — LiteRT-LM, MediaPipe, ONNX Runtime, built-in OS AI — registered via `FlutterEdgeAi.initialize(...)`. See [Packages](/docs/packages).
 - **Multimodal Support:** Text + image input with Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2, and LLaVA-OneVision vision models. See [Multimodal](/docs/multimodal).
 - **Audio Input:** Record and send audio messages with Gemma 4 and Gemma3n models (Android, iOS device, Desktop).
 - **Function Calling:** Let models call external functions and integrate with other services. See [Function Calling](/docs/function-calling).
 - **Agent Skills:** Give the model a catalog of `SKILL.md` skills it picks and runs itself — text, JS, native intents, or MCP tools. See [Agent Skills](/docs/agent).
-- **Speech & Voice (STT + TTS + voice loop):** Transcribe audio, synthesize speech, and run a full on-device speech-to-speech voice loop (`VoiceSession`) via `flutter_gemma_speech` — STT (moonshine/Whisper/Parakeet) + TTS (Matcha/Qwen3/Inflect) today. See [Speech](/docs/speech).
+- **Speech & Voice (STT + TTS + voice loop):** Transcribe audio, synthesize speech, and run a full on-device speech-to-speech voice loop (`VoiceSession`) via `flutter_edge_ai_speech` — STT (moonshine/Whisper/Parakeet) + TTS (Matcha/Qwen3/Inflect) today. See [Speech](/docs/speech).
 - **Thinking Mode:** View the reasoning process of DeepSeek, Gemma 4, and Qwen3 models. See [Thinking Mode](/docs/thinking-mode).
 - **Stop Generation:** Cancel text generation mid-process on Android, iOS, Web, and Desktop.
 - **Backend Switching:** Choose between CPU and GPU backends for each model individually.
@@ -35,18 +35,24 @@ SmolLM and more — see [Models](/docs/models) for the full list.
 - **Text Embeddings & RAG:** Generate vector embeddings (EmbeddingGemma, Gecko) and run on-device RAG. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+## What's new: Flutter Gemma is now Flutter Edge AI
+
+- **flutter_gemma is now Flutter Edge AI.** Every package has a new name — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, … Installed models, vector stores and platform setup carry over, and the old Dart names still compile as deprecated aliases. See [Migration](/docs/migration).
+
+Through 1.11.3 the packages shipped under the `flutter_gemma*` names; the new names continue the same numbering (the table is in [Migration](/docs/migration)).
+
 ## What's new in 1.9
 
-- **`embeddingTokenizers:`** — embedding backends no longer bring a tokenizer. Add `flutter_gemma_embeddings` and pass `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` beside `embeddingBackends:`, or the first embedding throws a `StateError`. Breaking for every app that computes embeddings. See [Migration](/docs/migration).
-- **No package depends on a sibling** — `flutter_gemma_litertlm` and `flutter_gemma_onnx` no longer pull `flutter_gemma_embeddings`. See [Packages](/docs/packages).
-- **Web embeddings run** — the LiteRT.js bundle was rebuilt on `@litertjs/core` 2.5.3 and all four JS files now ship together in `flutter_gemma_litertlm/web/`. See [Embeddings & RAG](/docs/embeddings-and-rag).
+- **`embeddingTokenizers:`** — embedding backends no longer bring a tokenizer. Add `flutter_edge_ai_embeddings` and pass `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` beside `embeddingBackends:`, or the first embedding throws a `StateError`. Breaking for every app that computes embeddings. See [Migration](/docs/migration).
+- **Engines no longer pull the tokenizer package** — `flutter_edge_ai_litertlm` and `flutter_edge_ai_onnx` no longer depend on `flutter_edge_ai_embeddings`. Speech intentionally still depends on LiteRT-LM to share its native bundle. See [Packages](/docs/packages).
+- **Web embeddings run** — the LiteRT.js bundle was rebuilt on `@litertjs/core` 2.5.3 and all four JS files now ship together in `flutter_edge_ai_litertlm/web/`. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **SQLite RAG on web drains for real** — `flutter_gemma_rag_sqlite` 1.4.0 requires sqlite3 3.6.0 and Flutter 3.47; a Flutter 3.44 app stays on 1.3.2. See [Embeddings & RAG](/docs/embeddings-and-rag).
 
 ## What's new in 1.8
 
-- **Package Skills** — flutter_gemma ships agent skills for coding assistants; `dart run skills@ get --all` installs them. See [Package Skills](/docs/package-skills).
+- **Package Skills** — flutter_edge_ai ships agent skills for coding assistants; `dart run skills@ get --all` installs them. See [Package Skills](/docs/package-skills).
 - **Whisper output language** — `getActiveStt(language:)` sets a default, `transcribe(…, language:)` overrides one call. Breaking for custom `SpeechRecognizer` implementations. See [Speech](/docs/speech#output-language-whisper).
-- **`FlutterGemma.rag.flush()`** — persists what you indexed; required on qdrant-edge. Custom `VectorStoreRepository` implementations must declare it. See [Embeddings & RAG](/docs/embeddings-and-rag).
+- **`FlutterEdgeAi.rag.flush()`** — persists what you indexed; required on qdrant-edge. Custom `VectorStoreRepository` implementations must declare it. See [Embeddings & RAG](/docs/embeddings-and-rag).
 
 ## What's new in 1.7
 
@@ -54,18 +60,18 @@ SmolLM and more — see [Models](/docs/models) for the full list.
 
 ## What's new in 1.6
 
-- **`flutter_gemma_onnx`** — new opt-in ONNX Runtime engine: text generation via ORT-GenAI (`OnnxEngine`) + embeddings via plain ONNX Runtime (`OnnxEmbeddingBackend`), both `dart:ffi`. Device-verified on macOS, Linux, Windows, Android, and iOS (arm64) — plus **Web**, via Transformers.js (generation) and onnxruntime-web (embeddings). See [Packages](/docs/packages#onnx-runtime-engine).
-- **`flutter_gemma_builtin_ai` on Web** — Gemini Nano through Chrome's Prompt API, next to Gemini Nano on Android and Apple Foundation Models on iOS/macOS. See [Built-in AI](/docs/builtin-ai).
+- **`flutter_edge_ai_onnx`** — new opt-in ONNX Runtime engine: text generation via ORT-GenAI (`OnnxEngine`) + embeddings via plain ONNX Runtime (`OnnxEmbeddingBackend`), both `dart:ffi`. Device-verified on macOS, Linux, Windows, Android, and iOS (arm64) — plus **Web**, via Transformers.js (generation) and onnxruntime-web (embeddings). See [Packages](/docs/packages#onnx-runtime-engine).
+- **`flutter_edge_ai_builtin_ai` on Web** — Gemini Nano through Chrome's Prompt API, next to Gemini Nano on Android and Apple Foundation Models on iOS/macOS. See [Built-in AI](/docs/builtin-ai).
 - **BREAKING (`flutter_gemma_embeddings` 2.0.0):** the embedder is now runtime-agnostic — `LiteRtEmbeddingBackend` moved to `flutter_gemma_litertlm` (1.5.0). See [Migration](/docs/migration).
 
 ## What's new in 1.5
 
-- **genai_primitives support** — drive an on-device chat with the Flutter team's standard `ChatMessage` types via `package:flutter_gemma/genai.dart` (`sendMessage`/`generateContent` + streams, covering text, vision, audio, thinking, and tool calls). See [genai_primitives](/docs/genai).
-- **`FlutterGemma` is the one canonical entry point.** RAG moved onto the `FlutterGemma.rag.*` namespace (`initialize`/`addDocument`/`addDocumentWithEmbedding`/`searchSimilar`/`removeDocument`/`stats`/`clear`), and the facade gained model introspection (`activeModelSpec`/`activeEmbedderSpec`/`activeSttSpec`/`activeTtsSpec`, `getModelPath`), storage helpers (`getStorageInfo`/`getOrphanedFiles`/`cleanupStorage`/`performCleanup`), and per-modality uninstallers (`uninstallEmbedder`/`uninstallStt`/`uninstallTts`). `FlutterGemmaPlugin.instance` is now a documented low-level SPI tier — app code shouldn't need it.
+- **genai_primitives support** — drive an on-device chat with the Flutter team's standard `ChatMessage` types via `package:flutter_edge_ai/genai.dart` (`sendMessage`/`generateContent` + streams, covering text, vision, audio, thinking, and tool calls). See [genai_primitives](/docs/genai).
+- **`FlutterEdgeAi` is the one canonical entry point.** RAG moved onto the `FlutterEdgeAi.rag.*` namespace (`initialize`/`addDocument`/`addDocumentWithEmbedding`/`searchSimilar`/`removeDocument`/`stats`/`clear`), and the facade gained model introspection (`activeModelSpec`/`activeEmbedderSpec`/`activeSttSpec`/`activeTtsSpec`, `getModelPath`), storage helpers (`getStorageInfo`/`getOrphanedFiles`/`cleanupStorage`/`performCleanup`), and per-modality uninstallers (`uninstallEmbedder`/`uninstallStt`/`uninstallTts`). `FlutterEdgeAiPlugin.instance` is now a documented low-level SPI tier — app code shouldn't need it.
 
 ## What's new in 1.4
 
-- **`flutter_gemma_speech`** — new opt-in on-device speech package: STT (moonshine) + TTS (Matcha) + a full STT → LLM → TTS voice loop (`VoiceSession`). See [Speech](/docs/speech).
+- **`flutter_edge_ai_speech`** — new opt-in on-device speech package: STT (moonshine) + TTS (Matcha) + a full STT → LLM → TTS voice loop (`VoiceSession`). See [Speech](/docs/speech).
 
 ## What's new in 1.3
 
@@ -73,7 +79,7 @@ SmolLM and more — see [Models](/docs/models) for the full list.
 
 ## What's new in 1.2
 
-- **`flutter_gemma_agent`** — new opt-in agent-skills package (the `skillExecutors:` registration seam), plus the Android Mali GPU fix. See [Agent Skills](/docs/agent).
+- **`flutter_edge_ai_agent`** — new opt-in agent-skills package (the `skillExecutors:` registration seam), plus the Android Mali GPU fix. See [Agent Skills](/docs/agent).
 
 ## What's new in 1.1
 
@@ -81,12 +87,12 @@ SmolLM and more — see [Models](/docs/models) for the full list.
 
 ## What's new in 1.0
 
-- **Modular package split** — the monolith is now a small **core** (`flutter_gemma`) plus **opt-in** packages, so your app ships only the native weight it uses: `flutter_gemma_litertlm` (.litertlm), `flutter_gemma_mediapipe` (.task/.bin), `flutter_gemma_embeddings`, `flutter_gemma_rag_qdrant`, `flutter_gemma_rag_sqlite`. See [Packages](/docs/packages).
-- **New `FlutterGemma.initialize(...)` registration** — pass `inferenceEngines`, `embeddingBackends`, `vectorStore` for the packages you added. See [Installation](/docs/installation).
+- **Modular package split** — the monolith is now a small **core** (`flutter_edge_ai`) plus **opt-in** packages, so your app ships only the native weight it uses: `flutter_edge_ai_litertlm` (.litertlm), `flutter_edge_ai_mediapipe` (.task/.bin), `flutter_edge_ai_embeddings`, `flutter_edge_ai_qdrant`, `flutter_edge_ai_sqlite`. See [Packages](/docs/packages).
+- **New `FlutterEdgeAi.initialize(...)` registration** — pass `inferenceEngines`, `embeddingBackends`, `vectorStore` for the packages you added. See [Installation](/docs/installation).
 - **Every model / session / chat / embedding / RAG API is unchanged** — migrating is just adding packages + the initialize call. See [Migration](/docs/migration).
-- **Two on-device vector stores** — `flutter_gemma_rag_qdrant` (qdrant-edge, fastest on native) and `flutter_gemma_rag_sqlite` (portable across all six platforms, including Web). Since rag_sqlite 1.1.0 the SQLite store runs exact in-SQLite KNN via the `sqlite-vec`/`vec0` extension, replacing its Dart brute-force + HNSW search.
+- **Two on-device vector stores** — `flutter_edge_ai_qdrant` (qdrant-edge, fastest on native) and `flutter_edge_ai_sqlite` (portable across all six platforms, including Web). Since rag_sqlite 1.1.0 the SQLite store runs exact in-SQLite KNN via the `sqlite-vec`/`vec0` extension, replacing its Dart brute-force + HNSW search.
 
-See the [CHANGELOG](https://github.com/DenisovAV/flutter_gemma/blob/main/packages/flutter_gemma/CHANGELOG.md) for the full release history.
+See the [CHANGELOG](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/CHANGELOG.md) for the full release history.
 
 ## Quick Start
 
@@ -97,12 +103,12 @@ Complete the [platform setup](/docs/installation) before running this code.
 ### 1. Install a Model (One Time)
 
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 // Install model. The URL below uses the .litertlm variant so the same code
 // works on Desktop (Windows/macOS/Linux) and mobile/web. For web only, the
 // `.task` / `-web.task` variants of the same model also work.
-await FlutterGemma.installModel(
+await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
   fileType: ModelFileType.litertlm,
 ).fromNetwork(
@@ -123,7 +129,7 @@ build — `.task` and `.bin` are MediaPipe-only.
 
 ```dart
 // Create model with specific configuration
-final model = await FlutterGemma.getActiveModel(
+final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 2048,
   preferredBackend: PreferredBackend.gpu,
 );
@@ -170,8 +176,8 @@ parameter — `maxTokens`, `preferredBackend`, `supportImage`,
 the rebuild:
 
 ```dart
-final quick = await FlutterGemma.getActiveModel(maxTokens: 512);
-final deep  = await FlutterGemma.getActiveModel(maxTokens: 4096);
+final quick = await FlutterEdgeAi.getActiveModel(maxTokens: 512);
+final deep  = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 // deep is a NEW model, and `quick` has been closed — using it now throws a
 // StateError ('Model is closed…'). Drop the old handle.
 ```
@@ -183,7 +189,7 @@ several sessions instead (below). Closing it yourself first is equivalent:
 
 ```dart
 await quick.close();
-final deep = await FlutterGemma.getActiveModel(maxTokens: 4096);
+final deep = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 ```
 
 To serve several dialogues from one loaded model, do not reload it — open
@@ -211,7 +217,7 @@ loaded **once** and shared across every session; each session only adds its own
 lightweight conversation context.
 
 ```dart
-final model = await FlutterGemma.getActiveModel(maxTokens: 1024);
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 
 final chatA = await model.openChat(); // independent context A
 final chatB = await model.openChat(); // independent context B
@@ -255,9 +261,9 @@ owns (e.g. an embedder's model *and* tokenizer) and clears its persisted
 identity so it isn't auto-restored on the next launch:
 
 ```dart
-await FlutterGemma.uninstallEmbedder(); // deletes model + tokenizer, clears identity
-await FlutterGemma.uninstallStt();
-await FlutterGemma.uninstallTts();
+await FlutterEdgeAi.uninstallEmbedder(); // deletes model + tokenizer, clears identity
+await FlutterEdgeAi.uninstallStt();
+await FlutterEdgeAi.uninstallTts();
 ```
 
 To delete an inference model, or any model by filename, use `uninstallModel()`
@@ -268,10 +274,10 @@ and clear the active inference identity if you removed the active one:
 await model.close();
 
 // Delete the files + metadata.
-await FlutterGemma.uninstallModel('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm');
+await FlutterEdgeAi.uninstallModel('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm');
 
 // Clear the persisted "active model" identity so it isn't auto-restored.
-await FlutterGemma.clearActiveInferenceIdentity();
+await FlutterEdgeAi.clearActiveInferenceIdentity();
 ```
 
 <Info>
@@ -288,13 +294,13 @@ without loading the engine — use these to render UI, not `getActiveModel()`
 (which loads the runtime). Each is typed to its modality:
 
 ```dart
-final InferenceModelSpec? model = FlutterGemma.activeModelSpec;
-final EmbeddingModelSpec? embedder = FlutterGemma.activeEmbedderSpec;
-final SttModelSpec? stt = FlutterGemma.activeSttSpec;
-final TtsModelSpec? tts = FlutterGemma.activeTtsSpec;
+final InferenceModelSpec? model = FlutterEdgeAi.activeModelSpec;
+final EmbeddingModelSpec? embedder = FlutterEdgeAi.activeEmbedderSpec;
+final SttModelSpec? stt = FlutterEdgeAi.activeSttSpec;
+final TtsModelSpec? tts = FlutterEdgeAi.activeTtsSpec;
 
 // Absolute on-device path of an installed file (a URL/OPFS handle on web):
-final path = await FlutterGemma.getModelPath('Gemma3-1B-IT_..._ekv4096.litertlm');
+final path = await FlutterEdgeAi.getModelPath('Gemma3-1B-IT_..._ekv4096.litertlm');
 ```
 
 ### Storage & cleanup
@@ -302,10 +308,10 @@ final path = await FlutterGemma.getModelPath('Gemma3-1B-IT_..._ekv4096.litertlm'
 Inspect on-device usage and reclaim space left by interrupted downloads:
 
 ```dart
-final info = await FlutterGemma.getStorageInfo();      // StorageStats: files + bytes
-final orphans = await FlutterGemma.getOrphanedFiles();  // fragments with no metadata
-final removed = await FlutterGemma.cleanupStorage();    // delete orphans, returns count
-await FlutterGemma.performCleanup();                    // cancel stale tasks + sweep
+final info = await FlutterEdgeAi.getStorageInfo();      // StorageStats: files + bytes
+final orphans = await FlutterEdgeAi.getOrphanedFiles();  // fragments with no metadata
+final removed = await FlutterEdgeAi.cleanupStorage();    // delete orphans, returns count
+await FlutterEdgeAi.performCleanup();                    // cancel stale tasks + sweep
 ```
 
 ## Message Types
@@ -374,4 +380,4 @@ chat.generateChatResponseAsync().listen((response) {
 - [Models](/docs/models) — supported models, file formats, and capabilities.
 - [Migration (0.x → 1.0)](/docs/migration) — upgrade from the monolith.
 
-**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-gemma-inference`](/docs/package-skills), the skill that teaches it engines, installing a model, sessions and chats, streaming, and the platform setup for all six targets.
+**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-inference`](/docs/package-skills), the skill that teaches it engines, installing a model, sessions and chats, streaming, and the platform setup for all six targets.

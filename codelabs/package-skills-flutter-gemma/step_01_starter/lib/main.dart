@@ -6,8 +6,8 @@ void main() => runApp(const SkillsApp());
 ///
 /// The chat and the tool call are your coding assistant's work in this
 /// codelab, so this app only has to run: that proves the platform setup is
-/// sound before anything else changes. `flutter_gemma` and
-/// `flutter_gemma_litertlm` are already dependencies, and nothing imports them
+/// sound before anything else changes. `flutter_edge_ai` and
+/// `flutter_edge_ai_litertlm` are already dependencies, and nothing imports them
 /// yet — they are here because `dart run skills@ get` finds skills by scanning
 /// an app's dependencies.
 class SkillsApp extends StatelessWidget {
@@ -16,7 +16,7 @@ class SkillsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Gemma Skills',
+      title: 'Edge AI Skills',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
       home: const Scaffold(
         body: Center(

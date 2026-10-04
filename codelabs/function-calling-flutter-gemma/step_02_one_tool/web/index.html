@@ -35,7 +35,7 @@
   <!-- LiteRT-LM's web arm loads `@litert-lm/core` from a CDN. The ESM assigns
        no window globals and module scripts are deferred, so Dart waits on the
        promise this handshake publishes. Native platforms need no web setup.
-       The handshake below is the flutter_gemma_litertlm README's, verbatim. -->
+       The handshake below is the flutter_edge_ai_litertlm README's, verbatim. -->
 <script type="module">
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.17.1/+esm');
@@ -43,9 +43,9 @@ window.litertLmReady = (async () => {
   return m.Engine;
 })();
 </script>
-  <!-- flutter_gemma's web storage helpers: the OPFS writer and the Cache API
+  <!-- flutter_edge_ai's web storage helpers: the OPFS writer and the Cache API
        shim. webStorageMode: WebStorageMode.streaming needs both to install
-       .litertlm models on web. Copied verbatim from flutter_gemma's own web/. -->
+       .litertlm models on web. Copied verbatim from flutter_edge_ai's own web/. -->
   <script src="cache_api.js"></script>
   <script src="opfs_helper.js"></script>
 </head>

@@ -11,14 +11,14 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:gemma_quickstart/capabilities.dart';
-import 'package:gemma_quickstart/model.dart';
-import 'package:gemma_quickstart/wav.dart';
+import 'package:edge_ai_quickstart/capabilities.dart';
+import 'package:edge_ai_quickstart/model.dart';
+import 'package:edge_ai_quickstart/wav.dart';
 
 /// A 16x16 solid-red PNG, inline so the suite needs no asset bundle.
 final _redSquarePng = base64Decode(
@@ -30,7 +30,7 @@ final _redSquarePng = base64Decode(
 /// way. `install()` is idempotent, so a second run costs nothing.
 Future<void> _install(ModelChoice model) async {
   var last = -1;
-  await FlutterGemma.installModel(
+  await FlutterEdgeAi.installModel(
     modelType: model.modelType,
     fileType: ModelFileType.litertlm,
   ).fromNetwork(model.url).withProgress((p) {
@@ -47,7 +47,7 @@ void main() {
   testWidgets('one model, one session, both flags the platform allows', (
     tester,
   ) async {
-    await FlutterGemma.initialize(inferenceEngines: [LiteRtLmEngine()]);
+    await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);
 
     const model = Models.gemma4;
     final image = imageCapability(model);
@@ -67,13 +67,13 @@ void main() {
     expect(audio.byModel, isTrue);
 
     await _install(model);
-    expect(await FlutterGemma.isModelInstalled(model.fileName), isTrue);
+    expect(await FlutterEdgeAi.isModelInstalled(model.fileName), isTrue);
 
     // The flags go here too — this is where the engine loads (or does not
     // load) the vision and audio executors. Measured: with them only on the
     // chat, the first image fails the turn with
     // `INVALID_ARGUMENT: Vision executor should not be null`.
-    final inference = await FlutterGemma.getActiveModel(
+    final inference = await FlutterEdgeAi.getActiveModel(
       maxTokens: 4096,
       supportImage: image.available,
       supportAudio: audio.available,

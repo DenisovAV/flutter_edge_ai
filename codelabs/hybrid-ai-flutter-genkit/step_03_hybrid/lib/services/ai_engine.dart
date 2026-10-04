@@ -1,11 +1,11 @@
 import 'package:flutter/foundation.dart'
     show debugPrint, kIsWeb, visibleForTesting;
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_embeddings/flutter_gemma_embeddings.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit/plugin.dart' show GenkitPlugin;
-import 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart';
+import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
 import 'package:genkit_google_genai/genkit_google_genai.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
 
@@ -35,7 +35,7 @@ const kCloudModel = 'gemini-3.7-flash';
 const kEmbedder = 'embedding-gemma-300m';
 
 /// Context window for the on-device branch, in tokens. `maxTokens` is the
-/// WHOLE window (input + output) and genkit_flutter_gemma defaults it to 1024.
+/// WHOLE window (input + output) and genkit_flutter_edge_ai defaults it to 1024.
 /// RagService's take(3) of ~600-token city guides alone is ~1.7k tokens —
 /// measured on device: "Input token ids are too long … 1713 >= 1024". The
 /// bundled Gemma-3-1B `.litertlm` is built for 4096 (`ekv4096`), so use it.
@@ -99,7 +99,7 @@ class AiEngine {
 
   AiEngine();
 
-  /// Test seam: skips [FlutterGemma.initialize]/`installModel` (real I/O that
+  /// Test seam: skips [FlutterEdgeAi.initialize]/`installModel` (real I/O that
   /// can't run in a unit test) and takes already-resolved branch models
   /// directly, then runs the same build+register path [initialize] uses — so
   /// a test driving [modelFor] through `ai.generate` here exercises the real
@@ -133,7 +133,7 @@ class AiEngine {
     bool downloadEmbedder = true,
   }) async {
     // RAG runs on every platform, web included. The four LiteRT.js files in
-    // web/ come from flutter_gemma_litertlm 1.8.0, which is where that bundle
+    // web/ come from flutter_edge_ai_litertlm 1.8.0, which is where that bundle
     // lives; the WASM runtime behind them is fetched from a CDN, so there is
     // nothing else to host. The only thing left that can turn embeddings off
     // here is the test seam.
@@ -144,16 +144,16 @@ class AiEngine {
     // the install below actually succeeds).
     final plugins = <GenkitPlugin>[
       if (_geminiApiKey.isNotEmpty) googleAI(apiKey: _geminiApiKey),
-      GenkitFlutterGemmaPlugin(
+      GenkitFlutterEdgeAiPlugin(
         models: [
-          FlutterGemmaModelConfig(
+          FlutterEdgeAiModelConfig(
             name: kLocalModel,
             modelType: _modelType,
             fileType: ModelFileType.litertlm,
           ),
         ],
         embedders: embeddingsSupported
-            ? [FlutterGemmaEmbedderConfig(name: kEmbedder)]
+            ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
             : const [],
       ),
     ];
@@ -161,7 +161,7 @@ class AiEngine {
     // Build Genkit BEFORE any on-device engine registration/install so `_ai`
     // (and `_resolve`, and the `ai` getter) are always available afterward —
     // the plugin list above is purely declarative (no I/O, no dependency on
-    // FlutterGemma.initialize() having run), so cloud resolution below needs
+    // FlutterEdgeAi.initialize() having run), so cloud resolution below needs
     // no on-device engine and must not be taken down by a failure
     // registering/installing it.
     _ai = Genkit(plugins: plugins);
@@ -179,7 +179,7 @@ class AiEngine {
     }
 
     // LOCAL: register the on-device engine, then install + resolve the LLM.
-    // flutter_gemma 1.x registers no engines by default; that registration
+    // flutter_edge_ai 1.x registers no engines by default; that registration
     // now lives inside this try/catch (not before Genkit is built) so an
     // engine-init failure only suppresses localReady, never cloud.
     try {
@@ -189,13 +189,13 @@ class AiEngine {
       // build sits right on the ~2 GB blob ceiling the default cacheApi
       // mode would have to buffer it into, so the @litert-lm/core engine
       // reads it from OPFS as a ReadableStream. Ignored on non-web.
-      await FlutterGemma.initialize(
+      await FlutterEdgeAi.initialize(
         webStorageMode: WebStorageMode.streaming,
         inferenceEngines: [LiteRtLmEngine()],
         embeddingBackends: embeddingsSupported
             ? [LiteRtEmbeddingBackend()]
             : const [],
-        // Since flutter_gemma 1.9.0 a backend no longer carries a tokenizer:
+        // Since flutter_edge_ai 1.9.0 a backend no longer carries a tokenizer:
         // which one a model needs is a property of the model, so the app
         // registers it. Without this the first embedding throws a StateError.
         embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
@@ -203,7 +203,7 @@ class AiEngine {
 
       // fileType MUST be litertlm to match the LiteRT-LM engine registered
       // above.
-      final llm = FlutterGemma.installModel(
+      final llm = FlutterEdgeAi.installModel(
         modelType: _modelType,
         fileType: ModelFileType.litertlm,
       );
@@ -220,7 +220,7 @@ class AiEngine {
             .install();
       }
       _local = _withContextBudget(
-        await _resolve(flutterGemma.model(kLocalModel)),
+        await _resolve(flutterEdgeAi.model(kLocalModel)),
       );
       localReady = true;
     } catch (e) {
@@ -232,7 +232,7 @@ class AiEngine {
     // failure here must not flip localReady or rethrow.
     if (embeddingsSupported && localReady) {
       try {
-        await FlutterGemma.installEmbedder()
+        await FlutterEdgeAi.installEmbedder()
             .modelFromNetwork(
               _embeddingModelUrl,
               token: _hfToken.isEmpty ? null : _hfToken,

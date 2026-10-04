@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_builtin_ai/flutter_gemma_builtin_ai.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 
 import 'model.dart';
 
@@ -21,14 +21,14 @@ Future<void> activate(
     // Throws BuiltInAiUnavailableException on a device/OS that has no
     // built-in model, so the failure is typed and the caller can react.
     await BuiltInAi.ensureReady(onProgress: onProgress);
-    await FlutterGemma.installModel(
+    await FlutterEdgeAi.installModel(
       modelType: model.modelType,
       fileType: model.fileType,
     ).fromBundled(model.id).install();
     return;
   }
 
-  await FlutterGemma.installModel(
+  await FlutterEdgeAi.installModel(
         modelType: model.modelType,
         fileType: model.fileType,
       )

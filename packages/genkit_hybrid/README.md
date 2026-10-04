@@ -11,7 +11,7 @@ import 'package:genkit_hybrid/genkit_hybrid.dart';
 final ai = Genkit();
 
 // onDeviceModel and cloudModel are ordinary Genkit Models you already have —
-// e.g. from genkit_flutter_gemma (on-device) and genkit_google_genai (cloud).
+// e.g. from genkit_flutter_edge_ai (on-device) and genkit_google_genai (cloud).
 final smart = hybridModelOnDeviceCloud(
   onDevice: onDeviceModel,
   cloud: cloudModel,

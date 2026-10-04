@@ -9,6 +9,7 @@ import 'sections/models_gallery.dart';
 import 'sections/nav_bar.dart';
 import 'sections/platform_matrix.dart';
 import 'sections/quick_start.dart';
+import 'sections/renamed_bar.dart';
 import 'sections/site_footer.dart';
 import 'sections/trust_bar.dart';
 import 'sections/why_on_device.dart';
@@ -26,6 +27,7 @@ class LandingPage extends StatelessComponent {
     // Title / meta / charset for `/` are provided by the full `Document`
     // wrapper in `main.server.dart`'s route (charset defaults to utf-8 there).
     return main_(classes: 'landing-root', [
+      const RenamedBar(),
       const NavBar(),
       const Hero(),
       const TrustBar(),

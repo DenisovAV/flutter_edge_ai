@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'model.dart';
@@ -40,8 +40,8 @@ class RagStore {
   /// Open the store. Idempotent in the sense that matters: an index written by
   /// a previous run is still there afterwards.
   static Future<VectorStoreStats> open() async {
-    await FlutterGemma.rag.initialize(await databasePath());
-    return FlutterGemma.rag.stats();
+    await FlutterEdgeAi.rag.initialize(await databasePath());
+    return FlutterEdgeAi.rag.stats();
   }
 
   /// Embed every recipe and write it in.
@@ -53,7 +53,7 @@ class RagStore {
   static Future<void> index({void Function(String)? onStatus}) async {
     onStatus?.call('Embedding ${kRecipes.length} recipes...');
 
-    final embedder = await FlutterGemma.getActiveEmbedder();
+    final embedder = await FlutterEdgeAi.getActiveEmbedder();
     final vectors = await embedder.generateEmbeddings(
       kRecipes.map((r) => r.text).toList(),
       // Documents, not queries — see the note in Step 2. `searchSimilar`
@@ -65,7 +65,7 @@ class RagStore {
     onStatus?.call('Writing ${kRecipes.length} rows...');
     for (var i = 0; i < kRecipes.length; i++) {
       final r = kRecipes[i];
-      await FlutterGemma.rag.addDocumentWithEmbedding(
+      await FlutterEdgeAi.rag.addDocumentWithEmbedding(
         id: r.id,
         content: r.text,
         embedding: vectors[i],
@@ -84,7 +84,7 @@ class RagStore {
     // above returned, so this is a no-op there. On web it drains the
     // IndexedDB VFS and waits for it. Step 6 is about why that difference
     // exists and when it bites.
-    await FlutterGemma.rag.flush();
+    await FlutterEdgeAi.rag.flush();
     onStatus?.call('Indexed ${kRecipes.length} recipes.');
   }
 
@@ -97,7 +97,7 @@ class RagStore {
   }) async {
     // Nothing indexed means nothing to ground with — and searching an empty
     // store would still need the embedding runtime below. Answer early.
-    final stats = await FlutterGemma.rag.stats();
+    final stats = await FlutterEdgeAi.rag.stats();
     if (stats.documentCount == 0) return const [];
 
     // `searchSimilar(query:)` embeds the query for you, and embedding needs a
@@ -109,9 +109,9 @@ class RagStore {
     //
     // getActiveEmbedder() is idempotent: after the first call it hands back
     // the model it already built.
-    await FlutterGemma.getActiveEmbedder();
+    await FlutterEdgeAi.getActiveEmbedder();
 
-    return FlutterGemma.rag.searchSimilar(
+    return FlutterEdgeAi.rag.searchSimilar(
       query: query,
       topK: topK,
       // Cosine similarity, so 1.0 is identical and 0.0 is unrelated. Without
@@ -121,7 +121,7 @@ class RagStore {
     );
   }
 
-  static Future<void> clear() => FlutterGemma.rag.clear();
+  static Future<void> clear() => FlutterEdgeAi.rag.clear();
 
   /// Look up the recipe behind a hit. The store returns the id it was given,
   /// which is exactly why [Recipe.id] has to be stable across re-indexes.
@@ -137,7 +137,7 @@ class RagStore {
 /// below is only about the store.
 Future<void> installEmbedder({void Function(double)? onProgress}) {
   const e = Embedders.embeddingGemma;
-  return FlutterGemma.installEmbedder()
+  return FlutterEdgeAi.installEmbedder()
       .modelFromNetwork(e.modelUrl, token: hfToken.isEmpty ? null : hfToken)
       .tokenizerFromNetwork(
         e.tokenizerUrl,

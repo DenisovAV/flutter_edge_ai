@@ -1,10 +1,10 @@
 ---
 name: release
-description: Release flutter_gemma — bump versions, optionally re-publish native prebuilts (iOS/macOS/Linux/Windows/Android dylibs) to GitHub Release, update SHA256 checksums in hook/build.dart, publish to pub.dev
+description: Release flutter_edge_ai — bump versions, optionally re-publish native prebuilts (iOS/macOS/Linux/Windows/Android dylibs) to GitHub Release, update SHA256 checksums in hook/build.dart, publish to pub.dev
 user_invocable: true
 ---
 
-# Flutter Gemma Release
+# Flutter Edge AI Release
 
 Run as `/release <plugin-version>` (e.g. `/release 0.14.1`).
 
@@ -35,7 +35,7 @@ silently do the other thing.
    (done / N/A + reason) before you publish. Do not publish off memory of the
    skill — walk it as a literal checklist against the actual repo state.
 4. **The skills are fixed in the PR that changes the API, not at release time.**
-   `packages/flutter_gemma/skills/**` ships inside core and is read by other
+   `packages/flutter_edge_ai/skills/**` ships inside core and is read by other
    people's coding agents, so a stale sentence there becomes confident, broken
    code in someone else's app. On any PR touching `packages/*/lib/**`, a native
    build file (`android/`, `ios/`, `darwin/`, `macos/`, `windows/`, `hook/`), a
@@ -54,7 +54,7 @@ silently do the other thing.
    is what reading the flagged skills is for. Step 12d is the release backstop,
    not the first time this happens.
 
-### Definition of Done (paste it; check 1a–8b before Step 10 publish; 10b right after it; 12a/12b belong to the release PR and 12c is verified after merge)
+### Definition of Done (paste it; check 1a–8b before Step 10 publish; 10b right after it; 12a/12b/12e belong to the release PR and 12c is verified after merge)
 
 ```
 [ ] Pre-flight: git clean · analyze 0 err · flutter test green · build web + one native target
@@ -86,15 +86,15 @@ silently do the other thing.
         apps, README, desktop.md and the inference skill's
         references/platform-setup.md; the script prints the count, do not hardcode
         one here) — RUN it, do not eyeball
-[ ] 1g  each changed satellite's flutter_gemma: floor >= the core version it now needs
-[ ] 2   versions bumped: pubspec + podspec (if any) + CLAUDE.md Current-Version line
+[ ] 1g  each changed satellite's flutter_edge_ai: floor >= the core version it now needs
+[ ] 2   versions bumped: pubspec + podspec (if any) + AGENTS.md Current-Version line
 [ ] 7   CHANGELOG: one short line per package, every published package
 [ ] 8   dart pub publish --dry-run → 0 warnings, every package
 [ ] 8b  native bundle moved? → litertlm_native_tools_test.dart green on every
         platform in the release (the smoke suite never passes a tool), else N/A
 [ ] 10b  after publishing: pub.dev actually SERVES the new versions (its API
         lags minutes behind the upload); if a package's web/ changed
-        (flutter_gemma_litertlm or flutter_gemma), sync every codelab copy to
+        (flutter_edge_ai_litertlm or flutter_edge_ai), sync every codelab copy to
         the published one first (a PR); then dispatch Codelabs on main
 [ ] 12a website + README version pins bumped to the just-published versions
 [ ] 12b new/changed public API + behavior documented (README + website)  ← SAME PR
@@ -102,14 +102,20 @@ silently do the other thing.
         updated where the prose drifted, `dart tool/check_skills.dart` green and
         `dart run skills_lint@0.5.1` green — backstop: rule 4 means the PRs in
         this release already did it
+[ ] 12e LiteTune version in authored docs matches the latest PyPI release; if it
+        moved, the documented prepare/tune/convert/verify/bundle commands were
+        checked against that release before updating the version
 [ ] 12c after merge: firebase-hosting-merge run == success (not just triggered)
 ```
 
 ## Architecture context (read this first)
 
-flutter_gemma 0.14.0+ has **no Kotlin/JVM/gRPC server**. Native libs come from one of two sources, decided per-platform by `hook/build.dart` (Native Assets):
+`flutter_edge_ai` inherits the architecture introduced in the legacy
+`flutter_gemma` 0.14.0 line: it has **no Kotlin/JVM/gRPC server**. Native libs
+come from one of two sources, decided per-platform by `hook/build.dart` (Native
+Assets):
 
-1. **Local prebuilts** at `packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/<os>_<arch>/` — populated locally by `packages/flutter_gemma_litertlm/native/litert_lm/build_*.sh` scripts. **NOT tracked in git** (gitignored since 0.14.3 — keeps clones lean) and **excluded from the pub package** via `.pubignore`. Maintainers regenerate them on demand and upload to a GitHub Release.
+1. **Local prebuilts** at `packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<os>_<arch>/` — populated locally by `packages/flutter_edge_ai_litertlm/native/litert_lm/build_*.sh` scripts. **NOT tracked in git** (gitignored since 0.14.3 — keeps clones lean) and **excluded from the pub package** via `.pubignore`. Maintainers regenerate them on demand and upload to a GitHub Release.
 2. **GitHub Release `native-v<NATIVE_VERSION>` archives** (e.g. `native-v0.10.2-a`) — the **canonical source for both end users and CI**. URL pattern: `litertlm-<os>_<arch>.tar.gz` flat archive of the matching `prebuilt/` folder. End users fetch from there at `pub get` time via `hook/build.dart`. Maintainers re-fetch from there too if their local `prebuilt/` is missing (`gh release download native-v<X>` then extract — see Step 5).
 
 Whether to bump `native-v<NATIVE_VERSION>` or re-publish the existing tag is the **central decision** of every release.
@@ -130,7 +136,7 @@ tool/test_all.sh            # all pass — NOT `flutter test` at the root, which
 # Skipping this is how `enableSpeculativeDecoding` web breakage shipped
 # in 0.15.0 — analyze was green, tests passed, web build threw
 # `No named parameter ...` at dart2js time.
-cd packages/flutter_gemma/example
+cd packages/flutter_edge_ai/example
 flutter build web --no-tree-shake-icons
 # Android MUST be built --release, not --debug: a release build runs R8
 # (shrink/minify/obfuscate) and the full native-asset packaging path, which
@@ -178,14 +184,14 @@ shown N/A.
 
 ### 1b. Native dylibs changed (any platform)?
 ```bash
-git diff <last-tag> -- packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/
+git diff <last-tag> -- packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/
 ```
 If **any** dylib changed → must re-publish GitHub Release archives **and** update SHA256 checksums in `hook/build.dart`, otherwise end users will keep getting the stale dylibs.
 
 ### 1c. patch_c_api.sh / build_*.sh / WORKSPACE patch changed?
 This implies (1b) — verify dylibs were actually rebuilt against the new patches. If not, rebuild before continuing (see "Rebuild native dylibs" below).
 
-### 1d. Website (`website/`, fluttergemma.dev) — ALWAYS in scope
+### 1d. Website (`website/`, flutteredge.ai) — ALWAYS in scope
 Every release touches the site. At minimum the package versions hardcoded in its docs must be bumped to the just-published versions (Step 12a) — this is required even for a version-only release. On top of that, any new/changed public API, breaking change, or common pitfall must be documented (Step 12b). Don't defer to "later" — stale docs outlive the release.
 
 ### 1d-bis. `README.md` ships in the archive — a docs-only fix there needs its own version bump
@@ -205,13 +211,13 @@ Two consequences:
    ```bash
    cd packages/<pkg> && dart pub publish --dry-run 2>&1 | grep -E "^├── .*\.md"
    ```
-   In `flutter_gemma` only `README.md` and `CHANGELOG.md` ship; `DESKTOP_SUPPORT.md`, `MIGRATION.md` and `CONTRIBUTING.md` are GitHub-only and need no publish.
+   In `flutter_edge_ai` only `README.md` and `CHANGELOG.md` ship; `DESKTOP_SUPPORT.md`, `MIGRATION.md` and `CONTRIBUTING.md` are GitHub-only and need no publish.
 
 ### 1e. Did the core public API change? → realign the Genkit packages
 ```bash
-git diff <last-tag> -- packages/flutter_gemma/lib/flutter_gemma_interface.dart packages/flutter_gemma/lib/core
+git diff <last-tag> -- packages/flutter_edge_ai/lib/flutter_edge_ai_interface.dart packages/flutter_edge_ai/lib/core
 ```
-If the public `InferenceModel` / `InferenceChat` / `EmbeddingModel` / `Message` / `ModelResponse` / enum surface changed, the Genkit integration packages (`genkit_flutter_gemma`, `genkit_hybrid`) likely no longer compile or are missing the new features. **Run the `upgrade-genkit` skill** before publishing — it realigns converters + the test fakes (which must match upstream signatures) and bumps those packages. They release in lockstep with the monorepo, so don't ship a core change that leaves them broken.
+If the public `InferenceModel` / `InferenceChat` / `EmbeddingModel` / `Message` / `ModelResponse` / enum surface changed, the Genkit integration packages (`genkit_flutter_edge_ai`, `genkit_hybrid`) likely no longer compile or are missing the new features. **Run the `upgrade-genkit` skill** before publishing — it realigns converters + the test fakes (which must match upstream signatures) and bumps those packages. They release in lockstep with the monorepo, so don't ship a core change that leaves them broken.
 
 ### 1f. Did a fix touch shared code duplicated across satellites? → propagate it to ALL packages
 The monorepo split means the SAME logic is often copy-pasted into multiple
@@ -221,8 +227,8 @@ satellite publishes independently, the stale copy reaches users under its own
 version number.
 
 > **Regression #360 (what this rule prevents):** the AGP-9 Kotlin guard
-> `if (agpMajor < 9)` was fixed in `flutter_gemma/android/build.gradle`, but the
-> byte-identical guard in `flutter_gemma_mediapipe/android/build.gradle` was
+> `if (agpMajor < 9)` was fixed in `flutter_edge_ai/android/build.gradle`, but the
+> byte-identical guard in `flutter_edge_ai_mediapipe/android/build.gradle` was
 > missed. mediapipe `1.0.3` shipped to pub.dev still broken, so every `.task`
 > user on AGP 9 kept hitting the crash the core fix was supposed to close.
 > (#440 later deleted the guard entirely — the plugins no longer apply KGP at
@@ -238,20 +244,20 @@ grep -rnE "^\s*(apply plugin: .kotlin-android|ext\.kotlin_version|classpath .*ko
 ```
 Shared-code hotspots to sweep, per fix type:
 - **Android Gradle** — `packages/*/android/build.gradle`. THREE packages have
-  one: `flutter_gemma`, `flutter_gemma_mediapipe`, `flutter_gemma_builtin_ai`.
+  one: `flutter_edge_ai`, `flutter_edge_ai_mediapipe`, `flutter_edge_ai_builtin_ai`.
   Sweep `compileSdk`, `minSdkVersion`, the AGP classpath, and the
   `kotlin { compilerOptions { jvmTarget } }` block — which must stay
   byte-identical across all three (#360, #440).
-- **Native hook** — `packages/flutter_gemma_litertlm/hook/build.dart` (the only
-  hook that owns the LiteRT-LM bundle — `flutter_gemma_onnx` owns the ORT one and
-  `flutter_gemma_rag_sqlite` the sqlite-vec one): the `_litertlmBundle` `version:` and `checksums:`
+- **Native hook** — `packages/flutter_edge_ai_litertlm/hook/build.dart` (the only
+  hook that owns the LiteRT-LM bundle — `flutter_edge_ai_onnx` owns the ORT one and
+  `flutter_edge_ai_sqlite` the sqlite-vec one): the `_litertlmBundle` `version:` and `checksums:`
   fields, `_cacheBaseDir()` cache-busting, `stage()` Apple-only guard.
 - **Apple manifests** — `find packages -name '*.podspec' -not -path '*/example/*'`
-  finds all FOUR (core ios, core macos, mediapipe ios, builtin_ai darwin); the
-  `packages/*/ios/*.podspec` glob silently misses `macos/` and `darwin/`. Sweep
-  `s.version`, min-iOS/osx, dep pins, `vtool` minos on any bundled dylib — and the
-  three `Package.swift` (core ios, core macos, builtin_ai darwin), whose platform
-  floors must match their podspec.
+  finds all THREE (core ios, core macos, mediapipe ios — builtin_ai has none
+  since it moved onto flutter_local_ai); the `packages/*/ios/*.podspec` glob
+  silently misses `macos/`. Sweep `s.version`, min-iOS/osx, dep pins, `vtool`
+  minos on any bundled dylib — and the two `Package.swift` (core ios, core
+  macos), whose platform floors must match their podspec.
 - **macOS `post_install` snippet** — the SAME block lives in every
   `packages/*/example/macos/Podfile` and every codelab step app's, plus the core
   `README.md` (the pub.dev page users copy from), `website/content/docs/desktop.md`
@@ -261,7 +267,7 @@ Shared-code hotspots to sweep, per fix type:
   tool/check_macos_podfile_snippet.sh   # exits 1 and names the odd copy
   ```
   Why this one bites harder than the others: `pod install` freezes the block
-  into every app's `project.pbxproj`, and upgrading `flutter_gemma_litertlm`
+  into every app's `project.pbxproj`, and upgrading `flutter_edge_ai_litertlm`
   does NOT re-run `pod install` (the package declares no macOS plugin, so
   Flutter's tracked plugin set never changes). A fix landed in one copy never
   reaches users who pasted another. When the check was added the copies had
@@ -269,21 +275,21 @@ Shared-code hotspots to sweep, per fix type:
   #300/#368 fixes, and the README copy was missing `input_paths`, so every app
   built from it carried the #368 incremental-build bug. Keep the block a thin
   shim that only locates and runs
-  `flutter_gemma_litertlm/tool/stage_macos_companions.sh`: logic that lives in
+  `flutter_edge_ai_litertlm/tool/stage_macos_companions.sh`: logic that lives in
   the snippet cannot be fixed by publishing a package (#457).
 - **FFI / web stubs** — `lib/**/*_stub.dart`: conditional-import signatures that
   `analyze`/`test` can't catch (web stub drift).
 
 Every affected satellite gets its **own** version bump + CHANGELOG entry +
 publish. **This makes it a MULTI-package release** — before touching any
-version, list every package you will publish (e.g. "publishing `flutter_gemma`
-1.2.2 AND `flutter_gemma_mediapipe` 1.0.4"), and run the whole of Steps 2/8/9/10
-for each one.
+version, list every package you will publish (e.g. "publishing
+`flutter_edge_ai` NEXT_CORE_VERSION AND `flutter_edge_ai_mediapipe`
+NEXT_MEDIAPIPE_VERSION"), and run the whole of Steps 2/8/9/10 for each one.
 
-### 1g. Did a satellite start CALLING a newer core API than its `flutter_gemma:` floor allows? → bump the floor
+### 1g. Did a satellite start CALLING a newer core API than its `flutter_edge_ai:` floor allows? → bump the floor
 
 Each satellite (agent / speech / litertlm / mediapipe / embeddings / rag / onnx / builtin_ai)
-declares a `flutter_gemma: ^X.Y.Z` constraint. In the pub **workspace** the local
+declares a `flutter_edge_ai: ^X.Y.Z` constraint. In the pub **workspace** the local
 core is always used, so `flutter analyze` / `flutter test` **and
 `dart pub publish --dry-run` all pass with a too-low floor** — everything builds
 green locally and dry-run only checks the constraint is *satisfiable*, never that
@@ -295,15 +301,15 @@ catches it.
 **A floor naming an UNPUBLISHED core forces a publish ORDER — and dry-run is blind
 to it.** `dart pub publish --dry-run` only checks that a constraint is satisfiable in
 the workspace, never that the named version exists on pub.dev, so it reports 0
-warnings for `flutter_gemma: ^1.6.4` while 1.6.3 is the latest published. Publish the
-satellite first and consumers on `^0.1.0` silently backtrack to the previous version —
-no error, just none of the fix. So: **publish core FIRST, then every satellite whose
-floor names it**, and check before publishing any satellite:
+warnings even when the floor names the next, still-unpublished core. Publish
+the satellite first and consumers silently backtrack to its previous version —
+no error, just none of the fix. So: **publish core FIRST, then every satellite
+whose floor names it**, and check before publishing any satellite:
 
 ```bash
 # does the floor this satellite names actually exist on pub.dev yet?
-grep -m1 "flutter_gemma:" packages/<satellite>/pubspec.yaml
-curl -s https://pub.dev/api/packages/flutter_gemma | \
+grep -m1 "flutter_edge_ai:" packages/<satellite>/pubspec.yaml
+curl -s https://pub.dev/api/packages/flutter_edge_ai | \
   python3 -c 'import sys,json; print(json.load(sys.stdin)["latest"]["version"])'
 ```
 
@@ -312,18 +318,18 @@ curl -s https://pub.dev/api/packages/flutter_gemma | \
 > (still 16.0) that 15.0 is unreachable. Raising the constraint to `^1.6.4` is correct
 > and makes core 1.6.4 a hard publish prerequisite.
 
-> **Regression this prevents (agent 0.2.2):** `AgentLoop` was rewritten to call
+> **Legacy regression this prevents (`flutter_gemma_agent` 0.2.2):** `AgentLoop` was rewritten to call
 > `generateChatResponseWithTools(onMaxToolTurns:)` — `onMaxToolTurns` landed in
 > core `1.5.5` — but the satellite still declared `flutter_gemma: ^1.2.0`. A
 > fresh install resolves core to latest (fine), but a consumer on
 > `flutter_gemma: 1.4.0` + `flutter_gemma_agent: 0.2.2` resolves happily then
 > throws `No named parameter 'onMaxToolTurns'` at build time.
 
-**For every satellite whose own Dart code changed, bump its `flutter_gemma:`
+**For every satellite whose own Dart code changed, bump its `flutter_edge_ai:`
 floor to the core version that introduced the newest core symbol it now uses:**
 ```bash
 git diff <last-tag> -- packages/<satellite>/lib   # what core symbols did it start using?
-grep -n 'flutter_gemma: \^' packages/<satellite>/pubspec.yaml
+grep -n 'flutter_edge_ai: \^' packages/<satellite>/pubspec.yaml
 ```
 
 ## Step 2: Bump versions
@@ -332,7 +338,7 @@ Always:
 | File | Field | Note |
 |------|-------|------|
 | `pubspec.yaml` | `version:` | the plugin version (e.g. `0.14.1`) |
-| podspecs — **all four**, they drift independently | `s.version` | match the owning package's version. `packages/flutter_gemma/ios/flutter_gemma.podspec`, `packages/flutter_gemma/macos/flutter_gemma.podspec`, `packages/flutter_gemma_mediapipe/ios/flutter_gemma_mediapipe.podspec`, `packages/flutter_gemma_builtin_ai/darwin/flutter_gemma_builtin_ai.podspec`. Verify with the loop below rather than by eye — core's iOS and macOS podspecs were four and five releases behind when this was last checked. |
+| podspecs — **all three**, they drift independently | `s.version` | match the owning package's version. `packages/flutter_edge_ai/ios/flutter_edge_ai.podspec`, `packages/flutter_edge_ai/macos/flutter_edge_ai.podspec`, `packages/flutter_edge_ai_mediapipe/ios/flutter_edge_ai_mediapipe.podspec`. Verify with the loop below rather than by eye — core's iOS and macOS podspecs were four and five releases behind when this was last checked. |
 
 ```bash
 for ps in packages/*/{ios,macos,darwin}/*.podspec; do
@@ -344,12 +350,12 @@ for ps in packages/*/{ios,macos,darwin}/*.podspec; do
   printf '  %-64s %-8s %s\n' "$ps" "$got" "$s"
 done
 ```
-| `CLAUDE.md` | `Current Version:` line | match plugin version |
+| `AGENTS.md` | `Current Version:` line | match plugin version |
 
 Only if (1b) bumps `NATIVE_VERSION`:
 | File | Field |
 |------|-------|
-| `packages/flutter_gemma_litertlm/hook/build.dart` | the `version:` field of `_litertlmBundle` (a `_NativeBundle`) — bump (e.g. `'0.16.0'` → `'0.16.1'`). There is **no** `_nativeVersion` identifier; grep for `version:` inside `const _litertlmBundle`. The cache dir helper is `_cacheBaseDir()`. |
+| `packages/flutter_edge_ai_litertlm/hook/build.dart` | the `version:` field of `_litertlmBundle` (a `_NativeBundle`) — bump (e.g. `'0.16.0'` → `'0.16.1'`). There is **no** `_nativeVersion` identifier; grep for `version:` inside `const _litertlmBundle`. The cache dir helper is `_cacheBaseDir()`. |
 
 For App Store / breaking platform fixes prefer **bumping NATIVE_VERSION** rather than overwriting `native-v0.10.2` assets — keeps consumers on `0.14.0` reproducible. Overwrite only for emergency hotfixes where downstream version pinning is acceptable.
 
@@ -363,7 +369,7 @@ Per-platform rebuild scripts. `bazelisk clean --expunge` between rebuilds **only
 # defaulted to a v0.14.0-era commit during the v0.15.0 migration. Get the SHA
 # with: gh api repos/google-ai-edge/LiteRT-LM/git/ref/tags/<tag> --jq '.object.sha'
 SHA=<pinned tag SHA>
-N=packages/flutter_gemma_litertlm/native/litert_lm
+N=packages/flutter_edge_ai_litertlm/native/litert_lm
 
 # macOS arm64
 "$N/build_macos.sh" "$SHA"
@@ -393,7 +399,7 @@ strings prebuilt/ios_arm64/libLiteRtLm.dylib | grep '@executable_path'
 Each archive is a flat tar of the matching `prebuilt/` directory. Naming: `litertlm-<os>_<arch>.tar.gz`.
 
 ```bash
-PREBUILT=packages/flutter_gemma_litertlm/native/litert_lm/prebuilt
+PREBUILT=packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt
 DIST=$(mktemp -d)
 # All SEVEN platforms the hook has checksums for. linux_arm64 was missing from
 # this list for six native releases: the loop silently skipped it (`if -d`
@@ -415,7 +421,7 @@ Only archive platforms whose dylibs actually changed since the previous release.
 
 ```bash
 # Count what you packed against what the hook demands.
-want=$(grep -cE "'litertlm-[a-z0-9_]+\.tar\.gz'" packages/flutter_gemma_litertlm/hook/build.dart)
+want=$(grep -cE "'litertlm-[a-z0-9_]+\.tar\.gz'" packages/flutter_edge_ai_litertlm/hook/build.dart)
 got=$(ls "$DIST"/litertlm-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')
 [ "$got" -eq "$want" ] || { echo "packed $got, hook expects $want"; exit 1; }
 ```
@@ -442,7 +448,7 @@ the gate can still save you. It diffs each new tarball's file list against the
 same archive in the previous tag and fails on any file that disappeared.
 
 ```bash
-packages/flutter_gemma_litertlm/native/litert_lm/verify_tarball_manifest.sh \
+packages/flutter_edge_ai_litertlm/native/litert_lm/verify_tarball_manifest.sh \
   "$DIST" native-v<PREVIOUS>     # e.g. native-v0.14.0
 ```
 
@@ -503,7 +509,7 @@ Verify each URL returns HTTP 200 + sha256 matches:
 ```bash
 for f in "$DIST"/litertlm-*.tar.gz; do
   name=$(basename "$f")
-  url="https://github.com/DenisovAV/flutter_gemma/releases/download/$RELEASE/$name"
+  url="https://github.com/DenisovAV/flutter_edge_ai/releases/download/$RELEASE/$name"
   curl -sI "$url" | head -1
   curl -sL "$url" | shasum -a 256 | awk '{print "  "$1"  '"$name"'"}'
 done
@@ -513,7 +519,7 @@ done
 
 `checksums_litertlm.txt` is informational (the build hook does NOT read it —
 it verifies against the `_checksums` map baked into
-`packages/flutter_gemma_litertlm/hook/build.dart`). But a STALE txt is
+`packages/flutter_edge_ai_litertlm/hook/build.dart`). But a STALE txt is
 dangerous: in #316 a user (`@remingtonc`) hand-verified against the txt during a
 checksum-mismatch debug, the txt said `e24804d9…` while the actual asset was
 `f809c5a2…`, and it sent them down the wrong path. **For every tag you touch,
@@ -522,13 +528,13 @@ the same SHA must appear in all THREE places** — the uploaded `.tar.gz`,
 Verify after upload:
 
 ```bash
-HOOK=packages/flutter_gemma_litertlm/hook/build.dart
+HOOK=packages/flutter_edge_ai_litertlm/hook/build.dart
 for f in "$DIST"/litertlm-*.tar.gz; do
   name=$(basename "$f")
   # 1. actual asset bytes served by GitHub
-  asset=$(curl -sL "https://github.com/DenisovAV/flutter_gemma/releases/download/$RELEASE/$name" | shasum -a 256 | awk '{print $1}')
+  asset=$(curl -sL "https://github.com/DenisovAV/flutter_edge_ai/releases/download/$RELEASE/$name" | shasum -a 256 | awk '{print $1}')
   # 2. what checksums_litertlm.txt on the Release claims
-  txt=$(curl -sL "https://github.com/DenisovAV/flutter_gemma/releases/download/$RELEASE/checksums_litertlm.txt" | awk -v n="$name" '$2==n{print $1}')
+  txt=$(curl -sL "https://github.com/DenisovAV/flutter_edge_ai/releases/download/$RELEASE/checksums_litertlm.txt" | awk -v n="$name" '$2==n{print $1}')
   # 3. what the hook expects
   hook=$(grep -A1 "'$name'" "$HOOK" | grep -oE "[0-9a-f]{64}" | head -1)
   echo "$name:"
@@ -582,10 +588,10 @@ flutter analyze packages/   # not the repo root — see Pre-flight
 tool/test_all.sh            # not `flutter test` at the root — it tests nothing
 # Cross-platform compile sanity (also in Pre-flight — rerun here after
 # version bumps in case a setter/getter signature shifted):
-(cd packages/flutter_gemma/example && flutter build web --no-tree-shake-icons)
-(cd packages/flutter_gemma/example && flutter build apk --release)   # --release, not --debug: exercises R8 + native packaging
-(cd packages/flutter_gemma/example && flutter build macos --debug)
-(cd packages/flutter_gemma/example && flutter build ios --no-codesign --debug)
+(cd packages/flutter_edge_ai/example && flutter build web --no-tree-shake-icons)
+(cd packages/flutter_edge_ai/example && flutter build apk --release)   # --release, not --debug: exercises R8 + native packaging
+(cd packages/flutter_edge_ai/example && flutter build macos --debug)
+(cd packages/flutter_edge_ai/example && flutter build ios --no-codesign --debug)
 dart pub publish --dry-run     # 0 warnings (package size is informational — the
                                # FFI bindings + pigeon + example already push it
                                # to ~700 KB on 0.16.x; the old <=100 KB ceiling
@@ -597,7 +603,7 @@ dart pub publish --dry-run     # 0 warnings (package size is informational — t
 ### 8b. One tool call on a device — required whenever the native bundle moved
 
 ```bash
-cd packages/flutter_gemma/example
+cd packages/flutter_edge_ai/example
 flutter test integration_test/litertlm_native_tools_test.dart -d macos   # and every other platform in the release
 ```
 
@@ -664,7 +670,7 @@ dart pub publish --force      # only after user approval; --force is non-interac
 ## Step 10b: Run the Codelabs workflow — after the publish, not before
 
 The codelab step apps depend on **published** packages — a hosted constraint
-such as `flutter_gemma: ^1.8.3`, never a `path:` sibling — so their check
+such as `flutter_edge_ai: ^1.11.4`, never a `path:` sibling — so their check
 validates the world users install from rather than this repo's tree. (Floors
 differ per codelab: at 1.8.4 twenty step apps pinned `^1.8.3` and four `^1.8.4`,
 so "the codelabs" are never all on the version you just published.) Two things
@@ -686,8 +692,8 @@ follow, and both bit this release:
 
 **If a package's `web/` changed in this release, sync the codelab copies first.**
 Codelab step apps carry their own copies of two bundles — the four LiteRT files
-from `flutter_gemma_litertlm/web/` (in every app with `web/litert_embeddings.js`)
-and `cache_api.js`/`opfs_helper.js` from `flutter_gemma/web/` (in every app with
+from `flutter_edge_ai_litertlm/web/` (in every app with `web/litert_embeddings.js`)
+and `cache_api.js`/`opfs_helper.js` from `flutter_edge_ai/web/` (in every app with
 `web/cache_api.js`) — and the Codelabs check compares them with the version each
 app resolves from pub.dev. Until the publish they must match the OLD bundle;
 after it, the new one (for any release their `^` constraint admits). Copy from
@@ -695,12 +701,12 @@ the published package, not from the repo, and copy every file the package
 ships, so a file the bundle added is not left out:
 
 ```
-dart pub cache add flutter_gemma_litertlm --version <X>
-P=~/.pub-cache/hosted/pub.dev/flutter_gemma_litertlm-<X>/web
+dart pub cache add flutter_edge_ai_litertlm --version <X>
+P=~/.pub-cache/hosted/pub.dev/flutter_edge_ai_litertlm-<X>/web
 for app in codelabs/*/*/web/litert_embeddings.js; do cp "$P"/*.js "$(dirname "$app")/"; done
 ```
 
-(the same with `flutter_gemma` and `web/cache_api.js` if core's `web/` moved),
+(the same with `flutter_edge_ai` and `web/cache_api.js` if core's `web/` moved),
 then land it as a PR before dispatching. `tool/check_codelab_web_copies.sh`
 lists on the release PR — in CI's step summary — which copies will need it.
 1.8.4 skipped this, and the post-release dispatch went red; fixed in #562.
@@ -753,7 +759,7 @@ gh run list --workflow release.yml --limit 3
 gh release view v0.14.1
 ```
 
-## Step 12: Reflect the release on the website (fluttergemma.dev)
+## Step 12: Reflect the release on the website (flutteredge.ai)
 
 **MANDATORY ON EVERY RELEASE.** The docs site lives in this repo at `website/` (Jaspr static site → Firebase Hosting). Stale docs are a support-burden multiplier — every doc that still shows the old version or omits a new API generates issues.
 
@@ -762,9 +768,9 @@ gh release view v0.14.1
 The site hardcodes `^X.Y.Z` in pubspec snippets across the docs — these MUST match the versions you just published, or new users copy-paste outdated deps. This is required **every single release**, regardless of whether code changed. Find every stale reference:
 ```bash
 cd website
-grep -rnE "flutter_gemma[a-z_]*: *\^?[0-9]+\.[0-9]+\.[0-9]+" content/
+grep -rnE "flutter_edge_ai[a-z_]*: *\^?[0-9]+\.[0-9]+\.[0-9]+" content/
 ```
-Update each `^X.Y.Z` for EVERY package the site pins — `flutter_gemma`, `flutter_gemma_litertlm`, `flutter_gemma_mediapipe`, `flutter_gemma_embeddings`, `flutter_gemma_rag_qdrant`, `flutter_gemma_rag_sqlite`, `flutter_gemma_speech`, `flutter_gemma_agent`, `flutter_gemma_onnx`, `flutter_gemma_builtin_ai`, `flutter_gemma_diagnostics` — AND the Genkit integration packages (`genkit_flutter_gemma`, `genkit_hybrid`) to the just-published versions. Common spots: `installation.md`, `getting-started.md`, `migration.md`, `packages.md`, `genkit.md`. Cross-check against pub.dev so the site never lags the published packages.
+Update each `^X.Y.Z` for EVERY package the site pins — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, `flutter_edge_ai_mediapipe`, `flutter_edge_ai_embeddings`, `flutter_edge_ai_qdrant`, `flutter_edge_ai_sqlite`, `flutter_edge_ai_speech`, `flutter_edge_ai_agent`, `flutter_edge_ai_onnx`, `flutter_edge_ai_builtin_ai`, `flutter_edge_ai_diagnostics` — AND the Genkit integration packages (`genkit_flutter_edge_ai`, `genkit_hybrid`) to the just-published versions. Common spots: `installation.md`, `getting-started.md`, `migration.md`, `packages.md`, `genkit.md`. Cross-check against pub.dev so the site never lags the published packages.
 
 ### 12b. Update docs for any behavior/API change
 - **New / changed public API** → the topic doc that covers it (e.g. a new `createSession` param → `getting-started.md`; multimodal → `multimodal.md`; models → `models.md`).
@@ -773,7 +779,7 @@ Update each `^X.Y.Z` for EVERY package the site pins — `flutter_gemma`, `flutt
 
 ### 12d. Update the shipped agent skills — they are read by a MACHINE
 
-`packages/flutter_gemma/skills/` holds seven `SKILL.md` files that ship inside
+`packages/flutter_edge_ai/skills/` holds eight `SKILL.md` files that ship inside
 the core archive and are installed into users' coding agents by
 `dart run skills@ get --all`. They are not a nice-to-have copy of the docs: an agent
 follows them literally when writing code against this package.
@@ -787,14 +793,14 @@ Map the change to the skill that covers it:
 
 | Area | Skill |
 |------|-------|
-| registry, install, `ModelFileType`, `maxTokens`, sessions, chat, the `.litertlm` engine, backends, platform setup | `flutter-gemma-inference` (+ `references/platform-setup.md`) |
-| function calling | `flutter-gemma-function-calling` |
-| `.task`/`.bin`, MediaPipe web | `flutter-gemma-mediapipe` |
-| ONNX / ORT-GenAI | `flutter-gemma-onnx` |
-| the OS built-in model | `flutter-gemma-builtin-ai` |
-| STT, TTS, `VoiceSession` | `flutter-gemma-speech` |
-| embeddings, vector stores | `flutter-gemma-rag` |
-| `MemorySnapshot`, memory diagnostics | `flutter-gemma-diagnostics` |
+| registry, install, `ModelFileType`, `maxTokens`, sessions, chat, the `.litertlm` engine, backends, platform setup | `flutter-edge-ai-inference` (+ `references/platform-setup.md`) |
+| function calling | `flutter-edge-ai-function-calling` |
+| `.task`/`.bin`, MediaPipe web | `flutter-edge-ai-mediapipe` |
+| ONNX / ORT-GenAI | `flutter-edge-ai-onnx` |
+| the OS built-in model | `flutter-edge-ai-builtin-ai` |
+| STT, TTS, `VoiceSession` | `flutter-edge-ai-speech` |
+| embeddings, vector stores | `flutter-edge-ai-rag` |
+| `MemorySnapshot`, memory diagnostics | `flutter-edge-ai-diagnostics` |
 
 **Do not go looking by hand.** Ask the diff which skills it puts in doubt:
 
@@ -803,7 +809,7 @@ bash tool/skills_review.sh <last-tag>      # e.g. v1.8.0
 ```
 
 For each skill it prints the symbols that skill NAMES and this release TOUCHED.
-Run against the STT release it names `flutter-gemma-speech` with
+Run against the STT release it names `flutter-edge-ai-speech` with
 `getActiveStt`, `language`, `SttModelType.whisper`; against the
 `createChat`-tools fix it names the function-calling skill and leaves speech
 alone.
@@ -854,12 +860,33 @@ from "the language this recognizer was built with" to "the default for its
 transcriptions" with no rename anywhere. `skills_review.sh` is what puts that
 change in front of your eyes; only reading closes it.
 
-Skills live only in `flutter_gemma`, so a fix to any of them is one publish of
+Skills live only in `flutter_edge_ai`, so a fix to any of them is one publish of
 core. That is why they are all there rather than in the packages they describe.
+
+### 12e. Verify the documented LiteTune version
+
+The fine-tuning codelab pins a LiteTune version in prose, while `pip install
+litetune` resolves from PyPI. Check PyPI on every release so the instructions do
+not silently remain on an obsolete CLI:
+
+```bash
+LITETUNE_LATEST=$(curl -fsSL https://pypi.org/pypi/litetune/json | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])')
+printf 'PyPI LiteTune: %s\n' "$LITETUNE_LATEST"
+grep -rnEi 'litetune +v?[0-9]+\.[0-9]+\.[0-9]+' \
+  codelabs website packages --include='*.md' --exclude-dir=build
+```
+
+Every current-version claim must equal `$LITETUNE_LATEST`; historical release
+notes may retain the version they describe. If the PyPI version moved, do not
+only replace the number: verify the documented `prepare`, `tune`, `convert`,
+`verify`, and `bundle` commands and their options against that exact release.
+Use [litetune.dev](https://litetune.dev) as the primary user-facing link; the
+GitHub repository may be a secondary source link.
 
 ### 12c. Deploy — it's automatic on merge to main
 
-**You do NOT run a manual deploy.** `.github/workflows/firebase-hosting-merge.yml` auto-deploys to Firebase Hosting (`aichat-c0c27`, target `fluttergemma`, https://fluttergemma.dev → live channel) on every push to `main` that touches `website/**` or `packages/flutter_gemma/example/**`. So:
+**You do NOT run a manual deploy.** `.github/workflows/firebase-hosting-merge.yml` auto-deploys to Firebase Hosting (`aichat-c0c27`, target `flutteredgeai` → site `flutteredge-ai`, https://flutteredge.ai → live channel) on every push to `main` that touches `website/**` or `packages/flutter_edge_ai/example/**`. So:
 
 0. **PRE-MERGE (do this on the branch, before merging):** build the Jaspr SSG
    locally to catch a build-time crash BEFORE it takes down the live deploy. The
@@ -883,12 +910,12 @@ core. That is why they are all there rather than in the packages they describe.
 2. When the PR merges to `main`, the workflow builds the Jaspr SSG + the Flutter web example (`/try`) and deploys automatically.
 3. **VERIFY THE MERGE DEPLOY ACTUALLY SUCCEEDED — do NOT assume merge == deployed.**
    The run failing on the "Build Jaspr site (SSG)" step is silent: pub.dev shows
-   the new package, but fluttergemma.dev still serves the OLD build. Check the
+   the new package, but flutteredge.ai still serves the OLD build. Check the
    run **conclusion**, not just that it triggered:
    ```bash
    gh run list --workflow firebase-hosting-merge.yml --limit 3   # newest must say "success", not "failure"
    # if failure: gh run view <id> --log-failed | grep -iE 'error|Null check|Highlighter'
-   # then open https://fluttergemma.dev/docs/... and confirm the NEW change is live
+   # then open https://flutteredge.ai/docs/... and confirm the NEW change is live
    ```
    If the deploy failed, the fix is another PR (main is a protected branch — you
    CANNOT push a hotfix directly; branch + PR + merge, same as any change).
@@ -897,14 +924,14 @@ A manual `./deploy.sh` exists in `website/` for local one-off deploys (it does t
 
 ## Common gotchas
 
-- **Website SSG build fails silently on a non-Dart code fence** — a ```` ```yaml ````/```` ```xml ````/```` ```kotlin ```` fence in any `website/content/docs/*.md` crashes the Jaspr highlighter (Dart-only grammar) → the merge deploy fails → fluttergemma.dev stays on the OLD build while pub.dev shows the new package. Always `jaspr build` the site locally on the branch before merge, use plain fences for non-Dart, and after merge confirm the `firebase-hosting-merge.yml` run says **success** (Step 12c). main is protected — a website hotfix is a new PR, not a direct push.
+- **Website SSG build fails silently on a non-Dart code fence** — a ```` ```yaml ````/```` ```xml ````/```` ```kotlin ```` fence in any `website/content/docs/*.md` crashes the Jaspr highlighter (Dart-only grammar) → the merge deploy fails → flutteredge.ai stays on the OLD build while pub.dev shows the new package. Always `jaspr build` the site locally on the branch before merge, use plain fences for non-Dart, and after merge confirm the `firebase-hosting-merge.yml` run says **success** (Step 12c). main is protected — a website hotfix is a new PR, not a direct push.
 - **A version bump verified on a subset of platforms (#545).** native-v0.17.0
   ran Android GPU once, on one Adreno phone; 0.17.0-a and 0.17.1 ran no Android
   GPU at all ("only the provider / only Skel alignment changed"). The upstream
   accelerators had been broken on every Mali GPU since v0.17.0, and upstream
   #3575 said so six days before our first release. A hotfix tag ships every
   byte in the bundle, not just the bytes it changed, so it gets the full matrix.
-- **`packages/flutter_gemma_litertlm/native/litert_lm/prebuilt/` excluded from pub package** (`.pubignore`) — end users get dylibs from GitHub Release, NOT from the pub package. Updating local prebuilts without re-uploading them is invisible to users.
+- **`packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/` excluded from pub package** (`.pubignore`) — end users get dylibs from GitHub Release, NOT from the pub package. Updating local prebuilts without re-uploading them is invisible to users.
 - **The iOS `5e0d86b` pin is obsolete** — modern tags ship their own `prebuilt/ios_arm64/`, and `build_ios.sh` already defaults to the current tag SHA. Always pass the pinned SHA explicitly anyway: every script's `DEFAULT_REF` lags whatever release you are migrating to. The real invariant is that source and accelerator prebuilts come from one tree — see the `build-native` skill, which owns this.
 - **`bazelisk clean --expunge` is NOT free** — it forces a full rebuild (~25 min for one platform). Only do it when WORKSPACE patch_cmds changed; otherwise incremental rebuild.
 - **Linux/Windows builds run on remote VMs** — see `project_gcloud_vm_workflow` memory.

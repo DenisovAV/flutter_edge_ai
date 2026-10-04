@@ -2,9 +2,9 @@
 #
 # Analyze, test and format-check every codelab step app under codelabs/.
 #
-# Each step is a standalone app that depends on the PUBLISHED packages, exactly
-# like a learner's checkout — so this is also an early warning that a release
-# broke the teaching material. Run nightly for that reason, not just on push.
+# Each step is a standalone app. Pushes and nightly runs resolve the PUBLISHED
+# packages, exactly like a learner's checkout. A rename PR can opt into local
+# workspace overrides so the packages can be tested before their first publish.
 #
 # Apps are discovered, not listed, so adding a codelab needs no edit here.
 set -euo pipefail
@@ -31,6 +31,61 @@ fi
 
 echo "Found ${#APPS[@]} codelab step app(s)."
 failed=0
+
+# New package names do not exist on pub.dev until the rename PR merges and its
+# release is published. PR CI therefore writes temporary overrides for the
+# packages in this checkout. Push/nightly CI deliberately leaves this disabled
+# so it continues to catch regressions in the versions learners actually get.
+LOCAL_OVERRIDE_FILES=()
+cleanup_local_overrides() {
+  if [ "${#LOCAL_OVERRIDE_FILES[@]}" -gt 0 ]; then
+    rm -f -- "${LOCAL_OVERRIDE_FILES[@]}"
+  fi
+}
+trap cleanup_local_overrides EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [ "${CODELAB_USE_LOCAL_PACKAGES:-0}" = "1" ]; then
+  for pubspec in "${APPS[@]}"; do
+    app="$(dirname "$pubspec")"
+    override="$app/pubspec_overrides.yaml"
+    if [ -e "$override" ] || [ -L "$override" ]; then
+      echo "::error::$override already exists — refusing to overwrite it"
+      exit 1
+    fi
+    LOCAL_OVERRIDE_FILES+=("$override")
+    cat > "$override" <<'YAML'
+dependency_overrides:
+  flutter_edge_ai:
+    path: ../../../packages/flutter_edge_ai
+  flutter_edge_ai_agent:
+    path: ../../../packages/flutter_edge_ai_agent
+  flutter_edge_ai_builtin_ai:
+    path: ../../../packages/flutter_edge_ai_builtin_ai
+  flutter_edge_ai_diagnostics:
+    path: ../../../packages/flutter_edge_ai_diagnostics
+  flutter_edge_ai_embeddings:
+    path: ../../../packages/flutter_edge_ai_embeddings
+  flutter_edge_ai_litertlm:
+    path: ../../../packages/flutter_edge_ai_litertlm
+  flutter_edge_ai_mediapipe:
+    path: ../../../packages/flutter_edge_ai_mediapipe
+  flutter_edge_ai_onnx:
+    path: ../../../packages/flutter_edge_ai_onnx
+  flutter_edge_ai_qdrant:
+    path: ../../../packages/flutter_edge_ai_qdrant
+  flutter_edge_ai_speech:
+    path: ../../../packages/flutter_edge_ai_speech
+  flutter_edge_ai_sqlite:
+    path: ../../../packages/flutter_edge_ai_sqlite
+  genkit_flutter_edge_ai:
+    path: ../../../packages/genkit_flutter_edge_ai
+  genkit_hybrid:
+    path: ../../../packages/genkit_hybrid
+YAML
+  done
+fi
 
 for pubspec in "${APPS[@]}"; do
   app="$(dirname "$pubspec")"
@@ -131,7 +186,7 @@ done
 # Web model storage, engine bootstrap and the embeddings loader — delegated to
 # tool/check_codelab_web_storage.py, which needs a parser rather than a grep
 # (a commented-out <script> loads nothing, and a TODO mentioning
-# `FlutterGemma.initialize(` is not a call). It runs after the loop above so
+# `FlutterEdgeAi.initialize(` is not a call). It runs after the loop above so
 # every app's .dart_tool/package_config.json exists: the JS is compared against
 # the package each app RESOLVES, not this repo's unreleased copy.
 echo ""

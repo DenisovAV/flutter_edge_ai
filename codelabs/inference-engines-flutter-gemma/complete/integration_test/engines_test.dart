@@ -9,14 +9,14 @@
 // Not part of CI (needs a device, may download ~2.6 GB):
 //   flutter test integration_test/engines_test.dart -d <device-id>
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_builtin_ai/flutter_gemma_builtin_ai.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:gemma_quickstart/download_page.dart';
-import 'package:gemma_quickstart/model.dart';
+import 'package:edge_ai_quickstart/download_page.dart';
+import 'package:edge_ai_quickstart/model.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -24,7 +24,7 @@ void main() {
   testWidgets('probe the OS model, fall back to LiteRT-LM, stream a reply', (
     tester,
   ) async {
-    await FlutterGemma.initialize(
+    await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine(), const BuiltInAiEngine()],
     );
 
@@ -55,11 +55,11 @@ void main() {
       // "the OS says available, and this is the active model". Assert both,
       // then actually chat through it — a built-in model that activates but
       // cannot answer is exactly the bug this arm exists to catch.
-      expect(await FlutterGemma.isModelInstalled(Models.builtIn.id), isFalse);
-      expect(FlutterGemma.hasActiveModel(), isTrue);
+      expect(await FlutterEdgeAi.isModelInstalled(Models.builtIn.id), isFalse);
+      expect(FlutterEdgeAi.hasActiveModel(), isTrue);
       expect(await BuiltInAi.availability(), BuiltInAiAvailability.available);
 
-      final builtIn = await FlutterGemma.getActiveModel(maxTokens: 1024);
+      final builtIn = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
       final builtInChat = await builtIn.createChat(
         modelType: Models.builtIn.modelType,
         maxOutputTokens: 64,
@@ -91,9 +91,9 @@ void main() {
         }
       },
     );
-    expect(await FlutterGemma.isModelInstalled(fallback.id), isTrue);
+    expect(await FlutterEdgeAi.isModelInstalled(fallback.id), isTrue);
 
-    final inference = await FlutterGemma.getActiveModel(maxTokens: 1024);
+    final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
     final chat = await inference.createChat(
       modelType: fallback.modelType,
       maxOutputTokens: 64,

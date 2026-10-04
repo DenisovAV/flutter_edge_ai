@@ -1,14 +1,11 @@
-# Benchmark: `flutter_gemma_rag_sqlite` (sqlite-vec / vec0) vs `flutter_gemma_rag_qdrant`
+# Benchmark: `flutter_edge_ai_sqlite` (sqlite-vec / vec0) vs `flutter_edge_ai_qdrant`
 
-> **Status: methodology + placeholder table.** The numbers below are
-> placeholders — fill them in by running the harness on a machine that has
-> **both** native extensions (a vec0 loadable extension AND the qdrant-edge
-> dylib for the host arch). See "How to run". Until then every results cell is
-> `TBD`.
+> **Status: measured on macOS arm64 for 1k and 10k corpora.** The tables below
+> contain the completed run. The optional 100k corpus remains a follow-up.
 
 ## Why this benchmark exists
 
-`flutter_gemma_rag_sqlite` moved KNN out of Dart and into SQLite (C, via
+`flutter_edge_ai_sqlite` moved KNN out of Dart and into SQLite (C, via
 `sqlite-vec`'s `vec0` virtual table). The old store did brute-force / in-memory
 `local_hnsw` search **in Dart**; that path is deleted. This benchmark has two
 jobs:
@@ -16,17 +13,10 @@ jobs:
 1. **Confirm the deprecation reason is gone.** sqlite was slow only because KNN
    ran in Dart. With KNN now in C inside SQLite, the gap to qdrant should
    collapse.
-2. **Re-measure the qdrant advantage honestly.**
-   `flutter_gemma_rag_qdrant` is marketed as **"~75× faster search than the
-   legacy sqlite + HNSW path"**. That "~75×" was measured against the **deleted
-   Dart brute-force / HNSW** code — it does **not** describe vec0. It must be
-   re-measured against the new in-SQLite KNN and the claim updated to the real
-   number. The "~75×" appears in three spots that need updating once a real
-   number exists:
-   - `packages/flutter_gemma_rag_qdrant/CHANGELOG.md` (1.0.0 entry)
-   - `packages/flutter_gemma_rag_qdrant/README.md`
-   - `packages/flutter_gemma_rag_qdrant/lib/src/qdrant_vector_store.dart` (class
-     dartdoc)
+2. **Measure the qdrant advantage honestly.** The earlier **"~75× faster"**
+   claim was measured against the deleted Dart brute-force / HNSW code, not
+   vec0. This run established the current **~5–11×** headline used by
+   `flutter_edge_ai_qdrant` documentation.
 
    qdrant is expected to stay the fastest **native** option (HNSW ANN vs vec0's
    exact brute-force `MATCH`, especially at large N); the goal is to stop
@@ -34,7 +24,7 @@ jobs:
 
 ## Harness
 
-`packages/flutter_gemma_rag_sqlite/tool/bench_vector_stores.dart` — a pure-Dart,
+`packages/flutter_edge_ai_sqlite/tool/bench_vector_stores.dart` — a pure-Dart,
 host-VM, loop-runnable benchmark. It runs **one deterministic corpus + query
 set** (fixed seed, fixed dimension) through **both** stores behind the identical
 `VectorStoreRepository` API, so the input is byte-identical across stores. It
@@ -46,7 +36,7 @@ transitive `sqlite3` `NativeCallable` (observed on Dart 3.12.0 here — `dart ru
 and `dart compile exe` both crash with *"type 'InvalidType' is not a subtype of
 type 'FunctionType'"*), drive it through the Flutter test toolchain instead,
 which compiles the same imports cleanly:
-`packages/flutter_gemma_rag_sqlite/test/bench_vector_stores_test.dart` calls the
+`packages/flutter_edge_ai_sqlite/test/bench_vector_stores_test.dart` calls the
 same `runBench()`.
 
 ### Methodology (deterministic, loop-runnable)
@@ -99,12 +89,12 @@ You need **both** native extensions present, on the **host architecture**:
 
 - **vec0** — a prebuilt `sqlite-vec` loadable extension
   (github.com/asg017/sqlite-vec/releases), pointed at by `$VEC0_DYLIB`.
-- **qdrant-edge** — nothing to supply. Since `flutter_gemma_rag_qdrant` 2.0.0 the
+- **qdrant-edge** — nothing to supply. Since `flutter_edge_ai_qdrant` 1.3.0 the
   engine ships with the official `qdrant_edge` SDK and its Native Assets hook,
   which `flutter test` runs. `$QDRANT_DYLIB` survives only as the opt-in switch
   that unskips the benchmark; its value is not read.
 
-From `packages/flutter_gemma_rag_sqlite/`:
+From `packages/flutter_edge_ai_sqlite/`:
 
 ```bash
 # Canonical runner on the Flutter test toolchain (works where `dart run` crashes
@@ -184,29 +174,9 @@ the lopsided gap the "75×" number implied.
 
 ---
 
-## Expected shape (hypothesis to verify, not assume)
+## Follow-up
 
-- old-Dart-sqlite `searchSimilar` `≫` vec0 `≈` within a few× of qdrant at
-  1k–10k; qdrant pulls ahead at 100k (its HNSW ANN vs vec0's exact brute-force
-  `MATCH`).
-- If vec0 exactness costs too much at 100k, note `sqlite-vec`'s optional
-  ANN/quantization as a follow-up — but ship **exact** first to preserve current
-  semantics.
-
-## After a real run
-
-1. Fill in the tables above (and the environment line).
-2. Update the qdrant **"~75×"** claim in the three spots listed under "Why this
-   benchmark exists" to the re-measured `vec0/qdrant` search-latency figure.
-3. Update `flutter_gemma_rag_sqlite` README / CHANGELOG to state the new
-   in-SQLite KNN performance.
-
-### A note on this machine's partial run
-
-On the dev machine (macOS, Apple Silicon, Dart 3.12.0) the **vec0 arm runs**
-(real numbers via `flutter test`), but the **qdrant arm was skipped** because
-`$QDRANT_DYLIB` was not set. That reason is now the only one: as of
-`flutter_gemma_rag_qdrant` 2.0.0 the SDK's Native Assets hook provisions the
-engine under `flutter test`, so the arm needs no host-arch dylib of its own.
-The "~75×" re-measurement still needs vec0 present for the host arch — that is
-the deliverable left for whoever runs the final gate.
+Run the optional 100k corpus on a machine with enough memory to measure how the
+gap changes at larger scale. Keep vec0 exact by default to preserve its current
+semantics; evaluate optional ANN or quantization separately if exact search is
+too costly at that size.

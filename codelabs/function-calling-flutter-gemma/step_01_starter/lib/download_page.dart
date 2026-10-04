@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'model.dart';
 
@@ -37,7 +37,7 @@ class _DownloadPageState extends State<DownloadPage> {
     });
 
     try {
-      await FlutterGemma.installModel(
+      await FlutterEdgeAi.installModel(
         // What the model IS — used to pick the right chat template.
         modelType: widget.model.modelType,
         // Which runtime reads it. `.litertlm` routes to LiteRtLmEngine;

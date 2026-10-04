@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_builtin_ai/flutter_gemma_builtin_ai.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 
 /// One model this app can run — either a file it downloads, or the model the
 /// OS already ships.
@@ -22,7 +22,7 @@ class ModelChoice {
   final String label;
 
   /// How this app names the model. For a downloaded model it is the file name,
-  /// which is also what `FlutterGemma.isModelInstalled` is keyed by. For a
+  /// which is also what `FlutterEdgeAi.isModelInstalled` is keyed by. For a
   /// built-in one it is the OS model's name — and nothing is keyed by it,
   /// because there is no file and no install record.
   final String id;

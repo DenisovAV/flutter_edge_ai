@@ -1,10 +1,10 @@
 ---
 title: Multimodal
 description: Send image and audio input to vision/audio models like Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2, and LLaVA-OneVision.
-image: https://fluttergemma.dev/images/og-image.png
+image: https://flutteredge.ai/images/og-image.png
 ---
 
-flutter_gemma supports **text + image** input (vision) and **audio** input with
+flutter_edge_ai supports **text + image** input (vision) and **audio** input with
 the right models. Multimodal models require more memory and are recommended for
 devices with 8GB+ RAM.
 
@@ -26,7 +26,7 @@ config.
 Set `supportImage: true` when creating the model:
 
 ```dart
-final model = await FlutterGemma.getActiveModel(
+final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 4096,
   preferredBackend: PreferredBackend.gpu,   // drives the text decoder
   supportImage: true,
@@ -92,7 +92,7 @@ include the audio adapter.
 Enable audio with `supportAudio: true`:
 
 ```dart
-final model = await FlutterGemma.getActiveModel(
+final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 4096,
   preferredBackend: PreferredBackend.gpu,        // text decoder
   supportImage: true,
@@ -102,7 +102,7 @@ final model = await FlutterGemma.getActiveModel(
 ```
 
 Sending audio is `Message.withAudio` — and `audioBytes` is a whole WAV file,
-16 kHz mono, header included (the opposite of `flutter_gemma_speech`, whose
+16 kHz mono, header included (the opposite of `flutter_edge_ai_speech`, whose
 `transcribe` takes raw PCM):
 
 ```dart

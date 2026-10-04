@@ -90,7 +90,7 @@ jobs:
 
       - name: Patch C API
         shell: bash
-        run: bash packages/flutter_gemma_litertlm/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
+        run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
 
       - name: Build LiteRtLm.dll
         # static_link_msvcrt: see build-litertlm-native.yml (#456).
@@ -151,7 +151,7 @@ jobs:
 
       - name: Build StreamProxy.dll
         run: |
-          cl /LD /Fe:StreamProxy.dll packages\flutter_gemma_litertlm\native\litert_lm\stream_proxy.c
+          cl /LD /Fe:StreamProxy.dll packages\flutter_edge_ai_litertlm\native\litert_lm\stream_proxy.c
 
       - name: Download DirectXShaderCompiler runtime
         run: |

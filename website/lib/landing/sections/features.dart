@@ -80,7 +80,7 @@ const _features = [
   _FeatureData(
     icon: '🧑‍💻',
     title: 'Package Skills',
-    desc: 'Claude Code, Codex, Cursor & Copilot learn the flutter_gemma API from skills shipped in the package',
+    desc: 'Claude Code, Codex, Cursor & Copilot learn the flutter_edge_ai API from skills shipped in the package',
     accent: Brand.blue,
   ),
 ];

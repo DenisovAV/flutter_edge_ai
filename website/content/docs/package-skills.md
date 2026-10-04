@@ -1,29 +1,29 @@
 ---
 title: Package Skills
-description: flutter_gemma ships agent skills for coding assistants — Claude Code, Codex, Cursor, Copilot and others learn the API from skills bundled in the package, installed with one dart run skills@ get --all.
-image: https://fluttergemma.dev/images/og-image.png
+description: flutter_edge_ai ships agent skills for coding assistants — Claude Code, Codex, Cursor, Copilot and others learn the API from skills bundled in the package, installed with one dart run skills@ get --all.
+image: https://flutteredge.ai/images/og-image.png
 ---
 
-A coding assistant that has never seen flutter_gemma writes plausible code that
+A coding assistant that has never seen flutter_edge_ai writes plausible code that
 fails. It installs a `.litertlm` model without declaring its file type and lands
 on the wrong engine, reads `maxTokens` as the reply length, or leaves out
 `isUser: true` and gets an empty reply.
 
-flutter_gemma ships **agent skills** — instruction files in the open
+flutter_edge_ai ships **agent skills** — instruction files in the open
 [Agent Skills](https://agentskills.io) format — inside the package itself.
 Dart's [`skills` CLI](https://dart.dev/blog/skills-cli-1-0-bundle-and-distribute-ai-agent-skills-for-your-packages)
 copies them into your project, where your assistant picks them up.
 
 <Info>
 Not to be confused with <a href="/docs/agent">Agent Skills</a> — the
-<code>flutter_gemma_agent</code> package, which gives the <em>on-device model</em>
+<code>flutter_edge_ai_agent</code> package, which gives the <em>on-device model</em>
 skills to run. The skills on this page teach <em>your coding assistant</em> to
-use flutter_gemma.
+use flutter_edge_ai.
 </Info>
 
 ## Install
 
-From your app's root, once `flutter_gemma` 1.8.2 or later is a dependency:
+From your app's root, once `flutter_edge_ai` 1.11.4 or later is a dependency:
 
 ```
 dart run skills@ get --all
@@ -54,7 +54,7 @@ so it always needs `--agent copilot`. `--all` installs everything without
 asking; `--skill <name>` installs only the skills you name, and can be repeated. The CLI records what it
 installed in `.config/dart_skills/skills_config.json`.
 
-Run the same command after upgrading flutter_gemma: it updates the installed
+Run the same command after upgrading flutter_edge_ai: it updates the installed
 skills to the ones the new version ships.
 
 To try it end to end — install the skills, have your assistant build a chat
@@ -74,14 +74,14 @@ on its own; there is no command to remember.
 
 | Skill | Covers |
 |-------|--------|
-| `flutter-gemma-inference` | engines, installing a model from Hugging Face, sessions and chats, streaming, system prompts, images and audio, backends — and the platform setup for Android, iOS, macOS, Windows, Linux and web |
-| `flutter-gemma-function-calling` | declaring tools, `FunctionCallResponse`, the built-in tool loop, returning errors as results |
-| `flutter-gemma-rag` | embedding models, `flutter_gemma_rag_sqlite` and `flutter_gemma_rag_qdrant`, metadata filters and their schema |
-| `flutter-gemma-speech` | Whisper, moonshine and Parakeet STT; Matcha, Qwen3 and Inflect TTS; 16 kHz PCM; `VoiceSession` |
-| `flutter-gemma-mediapipe` | `.task` and `.bin` models on Android, iOS and web |
-| `flutter-gemma-onnx` | ORT-GenAI generation and ONNX embeddings, native and through Transformers.js |
-| `flutter-gemma-builtin-ai` | Gemini Nano on Android and in desktop Chrome, Phi-4-mini in Edge, Apple Foundation Models on iPhone, iPad and Mac; availability, falling back to a downloaded model |
-| `flutter-gemma-diagnostics` | measuring what a model costs in memory with `flutter_gemma_diagnostics`: what the OS kills on per platform, null versus `MemoryReadException` |
+| `flutter-edge-ai-inference` | engines, installing a model from Hugging Face, sessions and chats, streaming, system prompts, images and audio, backends — and the platform setup for Android, iOS, macOS, Windows, Linux and web |
+| `flutter-edge-ai-function-calling` | declaring tools, `FunctionCallResponse`, the built-in tool loop, returning errors as results |
+| `flutter-edge-ai-rag` | embedding models, `flutter_edge_ai_sqlite` and `flutter_edge_ai_qdrant`, metadata filters and their schema |
+| `flutter-edge-ai-speech` | Whisper, moonshine and Parakeet STT; Matcha, Qwen3 and Inflect TTS; 16 kHz PCM; `VoiceSession` |
+| `flutter-edge-ai-mediapipe` | `.task` and `.bin` models on Android, iOS and web |
+| `flutter-edge-ai-onnx` | ORT-GenAI generation and ONNX embeddings, native and through Transformers.js |
+| `flutter-edge-ai-builtin-ai` | Gemini Nano on Android and in desktop Chrome, Phi-4-mini in Edge, Apple Foundation Models on iPhone, iPad and Mac; availability, falling back to a downloaded model |
+| `flutter-edge-ai-diagnostics` | measuring what a model costs in memory with `flutter_edge_ai_diagnostics`: what the OS kills on per platform, null versus `MemoryReadException` |
 
 ## What they prevent
 
@@ -92,11 +92,11 @@ The skills spell out the defaults that fail quietly, each with its fix:
 - The declared `fileType`, not the file name, picks the engine, and it defaults to `.task`.
 - A metadata filter on a field missing from `filterSchema` is ignored, and search returns unfiltered results.
 - Speech-to-text takes raw 16 kHz mono PCM. A WAV file or 48 kHz audio is not rejected — it is transcribed wrong.
-- The engine packages do not re-export core: import `package:flutter_gemma/flutter_gemma.dart` as well.
+- The engine packages do not re-export core: import `package:flutter_edge_ai/flutter_edge_ai.dart` as well.
 
 ## Kept in step with the code
 
 Every code block in the skills is compiled against the real packages before each
 release, and a release that changes an API a skill describes gets that skill
 re-read and updated. The skills ship inside the package, so upgrading
-flutter_gemma and re-running the CLI keeps your assistant current.
+flutter_edge_ai and re-running the CLI keeps your assistant current.

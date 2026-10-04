@@ -1,11 +1,11 @@
 author: Sasha Denisov
-summary: Package Skills in Flutter — Teach Your Coding Assistant flutter_gemma
+summary: Package Skills in Flutter — Teach Your Coding Assistant flutter_edge_ai
 id: package-skills-flutter-gemma
 categories: flutter, ai, gemma, agent-skills
 environments: android, ios, macos, windows, linux, web
 status: Published
 
-# Package Skills in Flutter: Teach Your Coding Assistant flutter_gemma
+# Package Skills in Flutter: Teach Your Coding Assistant flutter_edge_ai
 
 ## Overview
 Duration: 3
@@ -13,14 +13,14 @@ Duration: 3
 ### What you'll build
 
 The offline chat that Getting Started builds by hand — except you do not write
-it. Your coding assistant does, after reading the instructions `flutter_gemma`
+it. Your coding assistant does, after reading the instructions `flutter_edge_ai`
 ships for it. Then you ask for a second feature, the model changing the app's
 colour by calling a Dart function, and watch the assistant reach for a different
 set of instructions to write it.
 
 By the end you will have:
 
-* the seven skills `flutter_gemma` bundles, installed for the assistant you use
+* the eight skills `flutter_edge_ai` bundles, installed for the assistant you use
 * an offline chat on Gemma 4 E2B, written by that assistant
 * the chat extended with a tool the model calls
 * a way to check the assistant's code that does not depend on trusting it
@@ -41,7 +41,7 @@ By the end you will have:
   Cursor, GitHub Copilot, Cline or OpenCode. Step 2 covers each of them, and
   Antigravity and Claude Code in detail
 * Any one of Flutter's six platforms to run the result on. On **Android** it has
-  to be an arm64 device or emulator: `flutter_gemma_litertlm` ships an arm64
+  to be an arm64 device or emulator: `flutter_edge_ai_litertlm` ships an arm64
   library and nothing else, so a 32-bit or x86_64 image has no runtime to load
   (an Apple-silicon Mac's emulator is arm64)
 * About 3.5 GB of free space: Gemma 4 E2B is 2.6 GB on a device and 2.0 GB on
@@ -64,8 +64,8 @@ The step apps are **one** correct answer to check against, not **the** answer.
 ### Get the code
 
 ```bash
-git clone --depth 1 https://github.com/DenisovAV/flutter_gemma.git
-cd flutter_gemma/codelabs/package-skills-flutter-gemma
+git clone --depth 1 https://github.com/DenisovAV/flutter_edge_ai.git
+cd flutter_edge_ai/codelabs/package-skills-flutter-gemma
 ```
 
 It holds three apps:
@@ -82,12 +82,12 @@ Duration: 4
 Do this before anything else:
 
 ```bash
-cp -R step_01_starter ~/gemma_skills
-cd ~/gemma_skills
+cp -R step_01_starter ~/edge_ai_skills
+cd ~/edge_ai_skills
 ```
 
 The reason is the repository you just cloned. It has skills of its own, for the
-people who maintain `flutter_gemma` — `release`, `build-native`, `review-pr` and
+people who maintain `flutter_edge_ai` — `release`, `build-native`, `review-pr` and
 two more, in `.claude/skills/` at its root — and some assistants look further up
 than the folder you open. Claude Code loads project skills from the directory a
 session starts in **and from every parent up to the repository root**, so a
@@ -104,7 +104,7 @@ flutter run
 It shows one line of text and nothing else. That is the whole app:
 
 * **No inference code.** Writing it is your assistant's job.
-* **`flutter_gemma` and `flutter_gemma_litertlm` are already dependencies**, and
+* **`flutter_edge_ai` and `flutter_edge_ai_litertlm` are already dependencies**, and
   nothing imports them yet. They are there for Step 2: the skills CLI finds
   skills by scanning an app's dependencies, so an app that does not depend on the
   package has nothing to install. `flutter run` has also resolved them, which the
@@ -144,14 +144,14 @@ assistants above read it the same way, in three stages:
 2. **Activation.** When a task matches a description, it reads the whole file.
 3. **Execution.** It follows the instructions while it does the task.
 
-Stage 2 runs entirely on the description, so `flutter_gemma`'s skills describe
+Stage 2 runs entirely on the description, so `flutter_edge_ai`'s skills describe
 tasks and symptoms rather than APIs — *"offline chat, running Gemma…"*, *"a reply
-comes back empty"*. Seven ship in the package, one per area: inference, function
-calling, RAG, speech, MediaPipe, ONNX and built-in AI.
+comes back empty"*. Eight ship in the package, one per area: inference, function
+calling, RAG, speech, MediaPipe, ONNX, built-in AI and memory diagnostics.
 
 ### Install them
 
-From `~/gemma_skills`:
+From `~/edge_ai_skills`:
 
 ```bash
 dart run skills@ get --all
@@ -175,19 +175,20 @@ dart run skills@ get --all --agent antigravity
 ```
 
 ```text
-  [generic] Installed flutter-gemma-builtin-ai
-  [generic] Installed flutter-gemma-speech
-  [generic] Installed flutter-gemma-function-calling
-  [generic] Installed flutter-gemma-rag
-  [generic] Installed flutter-gemma-onnx
-  [generic] Installed flutter-gemma-inference
-  [generic] Installed flutter-gemma-mediapipe
-Installed 7 skill(s) for generic at .agents/skills.
+  [generic] Installed flutter-edge-ai-builtin-ai
+  [generic] Installed flutter-edge-ai-diagnostics
+  [generic] Installed flutter-edge-ai-speech
+  [generic] Installed flutter-edge-ai-function-calling
+  [generic] Installed flutter-edge-ai-rag
+  [generic] Installed flutter-edge-ai-onnx
+  [generic] Installed flutter-edge-ai-inference
+  [generic] Installed flutter-edge-ai-mediapipe
+Installed 8 skill(s) for generic at .agents/skills.
 ```
 
 `antigravity` is an alias. The CLI files it as `generic` — the name it prints —
 and writes to `.agents/skills/`, which is where Antigravity looks for a
-workspace's skills. Open `~/gemma_skills` itself as the workspace: the skills live
+workspace's skills. Open `~/edge_ai_skills` itself as the workspace: the skills live
 under the workspace root, so a workspace opened on a parent folder does not see
 them.
 
@@ -195,7 +196,7 @@ To check, open the Agent panel (Cmd/Ctrl + L) — or start the Antigravity CLI w
 `agy` — and ask:
 
 ```text
-Summarize the flutter_gemma skills available in this project.
+Summarize the flutter_edge_ai skills available in this project.
 ```
 
 ### Claude Code
@@ -205,14 +206,15 @@ dart run skills@ get --all --agent claude
 ```
 
 ```text
-  [claude] Installed flutter-gemma-builtin-ai
-  [claude] Installed flutter-gemma-speech
-  [claude] Installed flutter-gemma-function-calling
-  [claude] Installed flutter-gemma-rag
-  [claude] Installed flutter-gemma-onnx
-  [claude] Installed flutter-gemma-inference
-  [claude] Installed flutter-gemma-mediapipe
-Installed 7 skill(s) for claude at .claude/skills.
+  [claude] Installed flutter-edge-ai-builtin-ai
+  [claude] Installed flutter-edge-ai-diagnostics
+  [claude] Installed flutter-edge-ai-speech
+  [claude] Installed flutter-edge-ai-function-calling
+  [claude] Installed flutter-edge-ai-rag
+  [claude] Installed flutter-edge-ai-onnx
+  [claude] Installed flutter-edge-ai-inference
+  [claude] Installed flutter-edge-ai-mediapipe
+Installed 8 skill(s) for claude at .claude/skills.
 ```
 
 The CLI adds one line to each skill's header for Claude Code,
@@ -221,7 +223,7 @@ them by name, and the model loads them on its own when a task matches. To check
 they are there, ask the same question:
 
 ```text
-Summarize the flutter_gemma skills available in this project.
+Summarize the flutter_edge_ai skills available in this project.
 ```
 
 If a Claude Code session was already open in this folder, **restart it**. Claude
@@ -247,18 +249,19 @@ Copilot is the one assistant the CLI never detects, even after its folder exists
 
 ```text
 .agents/skills/                  (or .claude/skills/, .cursor/skills/ …)
-  flutter-gemma-builtin-ai/SKILL.md
-  flutter-gemma-function-calling/SKILL.md
-  flutter-gemma-inference/SKILL.md
-  flutter-gemma-inference/references/platform-setup.md
-  flutter-gemma-mediapipe/SKILL.md
-  flutter-gemma-onnx/SKILL.md
-  flutter-gemma-rag/SKILL.md
-  flutter-gemma-speech/SKILL.md
+  flutter-edge-ai-builtin-ai/SKILL.md
+  flutter-edge-ai-diagnostics/SKILL.md
+  flutter-edge-ai-function-calling/SKILL.md
+  flutter-edge-ai-inference/SKILL.md
+  flutter-edge-ai-inference/references/platform-setup.md
+  flutter-edge-ai-mediapipe/SKILL.md
+  flutter-edge-ai-onnx/SKILL.md
+  flutter-edge-ai-rag/SKILL.md
+  flutter-edge-ai-speech/SKILL.md
 .config/dart_skills/skills_config.json
 ```
 
-Open `flutter-gemma-inference/SKILL.md`. The first screen of it — the numbered
+Open `flutter-edge-ai-inference/SKILL.md`. The first screen of it — the numbered
 rules — is the best preparation for Step 3, because those rules are what you will
 be checking.
 
@@ -283,18 +286,18 @@ Duration: 12
 Give your assistant this, as written:
 
 ```text
-Add an offline chat to this app with flutter_gemma. Use Gemma 4 E2B from
+Add an offline chat to this app with flutter_edge_ai. Use Gemma 4 E2B from
 litert-community on Hugging Face: download it once with a progress bar, open
 straight on the chat on later launches, and stream the reply.
 ```
 
 It names no API on purpose: you are finding out whether the assistant knows them.
 
-Notice what it reads first. The request is exactly what `flutter-gemma-inference`
+Notice what it reads first. The request is exactly what `flutter-edge-ai-inference`
 describes, so that is the skill it should load. Most assistants show a skill being
 read — as a tool call, or a line in the plan. If yours does not say, ask it which
 skills it used; and if it wrote code without one, tell it to use the
-flutter-gemma skills in this project. An assistant can skip a skill it should have
+flutter-edge-ai skills in this project. An assistant can skip a skill it should have
 loaded, and then you are back to whatever it remembers from training.
 
 Let it finish, then run the app. The download is 2.6 GB (2.0 GB on the web).
@@ -309,18 +312,18 @@ because it looks right.
 **1. Both packages are imported.**
 
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 ```
 
 The engine package does not re-export the core. Import only the second and
-`FlutterGemma` is an undefined name — the one mistake on this list the compiler
+`FlutterEdgeAi` is an undefined name — the one mistake on this list the compiler
 does catch.
 
 **2. The engine is registered, and web storage is set for a 2 GB model.**
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   webStorageMode: WebStorageMode.streaming,
   inferenceEngines: [LiteRtLmEngine()],
 );
@@ -339,7 +342,7 @@ platforms ignore the option.
 **3. The file type is declared.**
 
 ```dart
-await FlutterGemma.installModel(
+await FlutterEdgeAi.installModel(
   modelType: widget.model.modelType,
   fileType: ModelFileType.litertlm,
 ).fromNetwork(widget.model.url).withProgress((percent) {
@@ -355,7 +358,7 @@ handle this model"*: the only engine you registered does not handle `.task`.
 **4. `maxTokens` is not the reply length.**
 
 ```dart
-final inference = await FlutterGemma.getActiveModel(maxTokens: 1024);
+final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 final chat = await inference.createChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 256,
@@ -403,10 +406,10 @@ green". The model should call a Dart function to do it.
 ```
 
 This time the assistant should load a **different** skill,
-`flutter-gemma-function-calling`. Again the request names no API; what matches is
+`flutter-edge-ai-function-calling`. Again the request names no API; what matches is
 that skill's description — *"letting an on-device model call the app's own Dart
 functions"*. The description even says where its edge is: *"For plain chat, use
-flutter-gemma-inference."* Two skills, one app, and the assistant picks by task.
+flutter-edge-ai-inference."* Two skills, one app, and the assistant picks by task.
 
 Run it and ask for a colour. Then ask for one that does not exist — *"make it
 mauvish"* — because item 4 below is about what happens then.
@@ -505,7 +508,7 @@ ends the stream **without an error** — `onMaxToolTurns` is the only signal.
 Duration: 3
 
 The skills ship inside the package and are versioned with it, so upgrading
-`flutter_gemma` can change them. After an upgrade, run:
+`flutter_edge_ai` can change them. After an upgrade, run:
 
 ```bash
 dart run skills@ get
@@ -517,14 +520,15 @@ the same list and stops. Here it is for a Claude Code install with one skill
 edited by hand:
 
 ```text
-Available skills from package:flutter_gemma:
-  flutter-gemma-rag (Local edits)
-  flutter-gemma-builtin-ai (Update available)
-  flutter-gemma-function-calling (Update available)
-  flutter-gemma-inference (Update available)
-  flutter-gemma-mediapipe (Update available)
-  flutter-gemma-onnx (Update available)
-  flutter-gemma-speech (Update available)
+Available skills from package:flutter_edge_ai:
+  flutter-edge-ai-rag (Local edits)
+  flutter-edge-ai-builtin-ai (Update available)
+  flutter-edge-ai-diagnostics (Update available)
+  flutter-edge-ai-function-calling (Update available)
+  flutter-edge-ai-inference (Update available)
+  flutter-edge-ai-mediapipe (Update available)
+  flutter-edge-ai-onnx (Update available)
+  flutter-edge-ai-speech (Update available)
 Rerun with `--skill <name>`, or `--all` to install, update, or remove the given skills.
 ```
 
@@ -547,7 +551,7 @@ dart run skills@ prune   # remove skills whose package is no longer a dependency
 ```
 
 An outdated skill is worse than none, because an assistant follows it with
-confidence. `flutter_gemma`'s CI compiles every Dart block in its skills against
+confidence. `flutter_edge_ai`'s CI compiles every Dart block in its skills against
 the packages on every pull request, so the skills that match your installed
 version are the ones to have.
 
@@ -555,15 +559,16 @@ version are the ones to have.
 Duration: 2
 
 You have an app your assistant wrote, and a way to check its work without
-reading every line of it. The same seven skills cover the rest of the package,
+reading every line of it. The same eight skills cover the rest of the package,
 and the same habit — ask, see which skill it loads, check against the rules —
 works for each:
 
-* **ground answers in your own documents** — `flutter-gemma-rag`
-* **transcribe and speak** — `flutter-gemma-speech`
-* **use the model the OS already has** — `flutter-gemma-builtin-ai`
-* **run `.task` or ONNX models** — `flutter-gemma-mediapipe`,
-  `flutter-gemma-onnx`
+* **ground answers in your own documents** — `flutter-edge-ai-rag`
+* **transcribe and speak** — `flutter-edge-ai-speech`
+* **use the model the OS already has** — `flutter-edge-ai-builtin-ai`
+* **measure process memory on Android and iOS** — `flutter-edge-ai-diagnostics`
+* **run `.task` or ONNX models** — `flutter-edge-ai-mediapipe`,
+  `flutter-edge-ai-onnx`
 
 ### Reference
 
@@ -571,4 +576,4 @@ works for each:
 * [Package skills on dart.dev](https://dart.dev/ai/package-skills) — every CLI
   command
 * [The Agent Skills format](https://agentskills.io)
-* [This codelab's code](https://github.com/DenisovAV/flutter_gemma/tree/main/codelabs/package-skills-flutter-gemma)
+* [This codelab's code](https://github.com/DenisovAV/flutter_edge_ai/tree/main/codelabs/package-skills-flutter-gemma)

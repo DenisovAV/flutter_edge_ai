@@ -1,6 +1,6 @@
 {
-    "name": "Gemma Quickstart",
-    "short_name": "Gemma Quickstart",
+    "name": "Edge AI Quickstart",
+    "short_name": "Edge AI Quickstart",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

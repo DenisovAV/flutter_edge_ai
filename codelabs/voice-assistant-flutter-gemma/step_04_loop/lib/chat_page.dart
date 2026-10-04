@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_speech/flutter_gemma_speech.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
@@ -79,7 +79,7 @@ class _ChatPageState extends State<ChatPage> {
     try {
       // maxTokens is the CONTEXT WINDOW — prompt + history + reply share it.
       // It is NOT a reply-length cap; for that, pass maxOutputTokens below.
-      final inference = await FlutterGemma.getActiveModel(maxTokens: 1024);
+      final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
       // Hold the runtime before opening a chat on it: `createChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
@@ -109,12 +109,12 @@ class _ChatPageState extends State<ChatPage> {
       // downloads nothing. What it does is make moonshine the ACTIVE speech
       // model again: that choice lives in memory and does not survive a
       // restart, and `getActiveStt()` throws without it.
-      await FlutterGemma.installStt()
+      await FlutterEdgeAi.installStt()
           .modelFromNetwork(Moonshine.modelUrl)
           .tokenizerFromNetwork(Moonshine.tokenizerUrl)
           .ofType(SttModelType.moonshine)
           .install();
-      final stt = await FlutterGemma.getActiveStt();
+      final stt = await FlutterEdgeAi.getActiveStt();
       if (!mounted) {
         await stt.close();
         return;
@@ -122,11 +122,11 @@ class _ChatPageState extends State<ChatPage> {
       setState(() => _stt = stt);
 
       // Same reason as above: already downloaded, re-activated here.
-      await FlutterGemma.installTts()
+      await FlutterEdgeAi.installTts()
           .fromNetwork(Inflect.baseUrl)
           .ofType(TtsModelType.inflect)
           .install();
-      final tts = await FlutterGemma.getActiveTts();
+      final tts = await FlutterEdgeAi.getActiveTts();
       if (!mounted) {
         await tts.close();
         return;
@@ -381,7 +381,7 @@ class _ChatPageState extends State<ChatPage> {
           _chat = null;
         });
       }
-      await FlutterGemma.uninstallModel(widget.model.fileName);
+      await FlutterEdgeAi.uninstallModel(widget.model.fileName);
       if (mounted) widget.onModelRemoved();
     } catch (error) {
       // Deleting can fail too — a missing install record, a file the OS still

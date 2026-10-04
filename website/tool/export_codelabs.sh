@@ -63,7 +63,7 @@ ASSET_PREFIX="/codelab-assets"
 MANIFEST="web/codelab-assets/SHA256SUMS"
 DEAD_PREFIX="https://storage.googleapis.com/claat-public/"
 SITEMAP="build/jaspr/sitemap.xml"
-DOMAIN="${DOMAIN:-https://fluttergemma.dev}"
+DOMAIN="${DOMAIN:-https://flutteredge.ai}"
 CLAAT="${CLAAT:-$(command -v claat || echo "$HOME/.local/bin/claat")}"
 
 # Remote origins a codelab page may reach. EMPTY, deliberately: a codelab now

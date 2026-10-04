@@ -1,4 +1,4 @@
-# Auto-deploy the fluttergemma.dev website to Firebase Hosting on push to main.
+# Auto-deploy the flutteredge.ai website to Firebase Hosting on push to main.
 # Builds two artifacts onto one hosting site:
 #   /  + /docs/*  -> Jaspr static site (website/)
 #   /try/...      -> the Flutter web example app (live demo)
@@ -9,7 +9,7 @@ on:
       - main
     paths:
       - 'website/**'
-      - 'packages/flutter_gemma/example/**'
+      - 'packages/flutter_edge_ai/example/**'
       - '.github/workflows/firebase-hosting-merge.yml'
   # Allow manual runs from the Actions tab.
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
       - name: Set up Flutter (bundles Dart)
         uses: subosito/flutter-action@v2
         with:
-          # The workspace floor: flutter_gemma_rag_sqlite needs 3.47 for
+          # The workspace floor: flutter_edge_ai_sqlite needs 3.47 for
           # sqlite3 3.6.0, and this job builds the example that depends on it.
           flutter-version: '3.47.0'
           channel: stable
@@ -40,7 +40,7 @@ jobs:
         run: |
           export PATH="$HOME/.pub-cache/bin:$PATH"
           dart pub get
-          jaspr build --sitemap-domain "https://fluttergemma.dev"
+          jaspr build --sitemap-domain "https://flutteredge.ai"
 
       - name: Export codelabs (claat static export → /codelabs)
         # Codelab sources: website/codelabs/<id>/index.md → self-contained HTML
@@ -66,11 +66,11 @@ jobs:
           # claat-public bucket returns 403), blanks claat's default Google
           # Analytics id, adds the codelabs to sitemap.xml, and keeps the
           # empty-output guard that stops a green build from 404-ing /codelabs.
-          CLAAT="$RUNNER_TEMP/claat" DOMAIN="https://fluttergemma.dev" \
+          CLAAT="$RUNNER_TEMP/claat" DOMAIN="https://flutteredge.ai" \
             tool/export_codelabs.sh
 
       - name: Build Flutter web example (live demo at /try)
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: |
           flutter pub get
           flutter build web --release --base-href /try/
@@ -79,7 +79,7 @@ jobs:
         run: |
           rm -rf website/build/jaspr/try
           mkdir -p website/build/jaspr/try
-          cp -R packages/flutter_gemma/example/build/web/. website/build/jaspr/try/
+          cp -R packages/flutter_edge_ai/example/build/web/. website/build/jaspr/try/
 
       - name: Deploy to Firebase Hosting (live)
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -89,7 +89,7 @@ jobs:
           channelId: live
           projectId: aichat-c0c27
           entryPoint: website
-          target: fluttergemma
+          target: flutteredgeai
 
       - name: Smoke-test the deployed codelabs
         # Every other check in this pipeline reads files on the runner. None of
@@ -104,7 +104,7 @@ jobs:
         working-directory: website
         run: |
           set -euo pipefail
-          base="https://fluttergemma.dev"
+          base="https://flutteredge.ai"
           fail=0
 
           # cleanUrls + trailingSlash:false — a slashed URL 301s, so ask for the

@@ -1,18 +1,18 @@
 ---
 title: Genkit
-description: Use flutter_gemma through Genkit — on-device model/embedder provider and hybrid on-device/cloud routing.
-image: https://fluttergemma.dev/images/og-image.png
+description: Use flutter_edge_ai through Genkit — on-device model/embedder provider and hybrid on-device/cloud routing.
+image: https://flutteredge.ai/images/og-image.png
 ---
 
 [Genkit](https://pub.dev/packages/genkit) is Google's open-source framework
 for building AI-powered features in Dart and Flutter. Two packages bridge
-flutter_gemma into Genkit — one wraps the on-device runtime as a standard
+flutter_edge_ai into Genkit — one wraps the on-device runtime as a standard
 Genkit provider, the other adds hybrid routing so you can combine on-device
 and cloud models behind a single `ai.generate` call.
 
-## genkit_flutter_gemma
+## genkit_flutter_edge_ai
 
-Wraps flutter_gemma as a Genkit model and embedder provider. Once registered,
+Wraps flutter_edge_ai as a Genkit model and embedder provider. Once registered,
 every Genkit feature (streaming, tool use, embeddings, prompt templates) works
 with the on-device model exactly as it would with any cloud provider.
 
@@ -21,55 +21,55 @@ with the on-device model exactly as it would with any cloud provider.
 ```
 dependencies:
   genkit: ^0.16.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_gemma: ^0.6.2
-  flutter_gemma: ^1.11.3
+  genkit_flutter_edge_ai: ^0.6.2
+  flutter_edge_ai: ^1.11.4
   # Add the inference engine(s) you need:
-  flutter_gemma_litertlm: ^1.8.5   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_gemma_mediapipe: ^1.0.8  # .task / .bin models (mobile + web)
-  # Optional — for embeddings (needs a backend, e.g. flutter_gemma_litertlm above):
-  flutter_gemma_embeddings: ^2.2.1
+  flutter_edge_ai_litertlm: ^1.8.6   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.0.8  # .task / .bin models (mobile + web)
+  # Optional — for embeddings (needs a backend, e.g. flutter_edge_ai_litertlm above):
+  flutter_edge_ai_embeddings: ^2.2.1
 ```
 
 ### Setup
 
-Register the engine packages in `FlutterGemma.initialize()`, install your
+Register the engine packages in `FlutterEdgeAi.initialize()`, install your
 model, then create a `Genkit` instance with the plugin:
 
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_embeddings/flutter_gemma_embeddings.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
-import 'package:flutter_gemma_mediapipe/flutter_gemma_mediapipe.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:flutter_edge_ai_mediapipe/flutter_edge_ai_mediapipe.dart';
 import 'package:genkit/genkit.dart';
-import 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart';
+import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
 
 // 1. Register providers (call once in main).
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: const [LiteRtLmEngine(), MediaPipeEngine()],
-  embeddingBackends: const [LiteRtEmbeddingBackend()], // flutter_gemma_litertlm
-  embeddingTokenizers: const [GemmaEmbeddingTokenizers()], // flutter_gemma_embeddings
+  embeddingBackends: const [LiteRtEmbeddingBackend()], // flutter_edge_ai_litertlm
+  embeddingTokenizers: const [GemmaEmbeddingTokenizers()], // flutter_edge_ai_embeddings
 );
 
 // 2. Install the model (host app responsibility).
-await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
+await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
     .fromAsset('assets/gemma-3-1b-it-int4.task')
     .install();
 
 // For a .litertlm model declare the type in BOTH places — installModel(
-// fileType: ModelFileType.litertlm) and FlutterGemmaModelConfig(fileType: ...).
+// fileType: ModelFileType.litertlm) and FlutterEdgeAiModelConfig(fileType: ...).
 // Both default to ModelFileType.task, which routes the model to MediaPipe.
 
 // 3. Create a Genkit instance with the plugin.
 final ai = Genkit(plugins: [
-  GenkitFlutterGemmaPlugin(
+  GenkitFlutterEdgeAiPlugin(
     models: [
-      FlutterGemmaModelConfig(
+      FlutterEdgeAiModelConfig(
         name: 'gemma-3-nano',
         modelType: ModelType.gemmaIt,
       ),
     ],
     embedders: [
-      FlutterGemmaEmbedderConfig(name: 'embedding-gemma-300m'),
+      FlutterEdgeAiEmbedderConfig(name: 'embedding-gemma-300m'),
     ],
   ),
 ]);
@@ -79,7 +79,7 @@ final ai = Genkit(plugins: [
 
 ```dart
 final response = await ai.generate(
-  model: flutterGemma.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Hello!',
 );
 print(response.text);
@@ -89,7 +89,7 @@ print(response.text);
 
 ```dart
 final stream = ai.generateStream(
-  model: flutterGemma.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Write a short story.',
 );
 
@@ -102,7 +102,7 @@ await for (final chunk in stream) {
 
 ```dart
 final embeddings = await ai.embed(
-  embedder: flutterGemma.embedder('embedding-gemma-300m'),
+  embedder: flutterEdgeAi.embedder('embedding-gemma-300m'),
   documents: [
     DocumentData(content: [TextPart(text: 'Flutter is a UI toolkit.')]),
   ],
@@ -110,24 +110,24 @@ final embeddings = await ai.embed(
 ```
 
 <Warning>
-The Genkit embedder always embeds with flutter_gemma's default
-`TaskType.retrievalQuery` prefix — `FlutterGemmaEmbedConfig` has no `taskType`
+The Genkit embedder always embeds with flutter_edge_ai's default
+`TaskType.retrievalQuery` prefix — `FlutterEdgeAiEmbedConfig` has no `taskType`
 option. For RAG **indexing**, where documents must be embedded with
 `TaskType.retrievalDocument`, call
-`FlutterGemma.getActiveEmbedder().generateEmbeddings(..., taskType: ...)`
+`FlutterEdgeAi.getActiveEmbedder().generateEmbeddings(..., taskType: ...)`
 directly. Mixing the two prefixes is the cross-prefix drift that #264 fixed at
 the core level. See [Embeddings & RAG](/docs/embeddings-and-rag).
 </Warning>
 
 ### Configuration options
 
-Pass `FlutterGemmaModelOptions` to tune inference:
+Pass `FlutterEdgeAiModelOptions` to tune inference:
 
 ```dart
 final response = await ai.generate(
-  model: flutterGemma.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Hello!',
-  config: FlutterGemmaModelOptions(
+  config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,
     temperature: 0.5,
     topK: 40,
@@ -149,7 +149,7 @@ a tool call, `'none'` forbids one. An unrecognized value throws
 
 <Info>
 The plugin does **not** manage model installation. Call
-`FlutterGemma.installModel()` (and `FlutterGemma.installEmbedder()` for
+`FlutterEdgeAi.installModel()` (and `FlutterEdgeAi.installEmbedder()` for
 embeddings) before using the plugin. See [Getting Started](/docs/getting-started).
 </Info>
 
@@ -162,7 +162,7 @@ populates `response.output`. Pass an `outputSchema` and read the parsed object:
 
 ```dart
 final response = await ai.generate(
-  model: flutterGemma.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
 );
@@ -180,7 +180,7 @@ always keeping every system message and the most recent message:
 
 ```dart
 final response = await ai.generate(
-  model: flutterGemma.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Continue our conversation…',
   messages: longHistory,
   use: [trimContext(maxInputTokens: 800)],
@@ -197,7 +197,7 @@ models — on-device, cloud, or anything else — behind one routing policy. The
 result is an ordinary `Model`, so your app still calls a single `ai.generate`.
 
 `genkit_hybrid` depends only on `genkit` — it has no dependency on
-flutter_gemma and works with **any** pair of Genkit models.
+flutter_edge_ai and works with **any** pair of Genkit models.
 
 ### Add to pubspec.yaml
 
@@ -359,7 +359,7 @@ final response = await ai.generate(model: smart, prompt: 'Explain quantum tunnel
 > run non-streamed and the accepted response is emitted as a single final chunk.
 
 <Info>
-`genkit_hybrid` works with **any** Genkit models, not just flutter_gemma. You
+`genkit_hybrid` works with **any** Genkit models, not just flutter_edge_ai. You
 can combine `gemini-1.5-flash` (cloud) with a local Ollama model, or any other
 pair that Genkit supports.
 </Info>

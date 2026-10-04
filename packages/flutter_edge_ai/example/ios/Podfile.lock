@@ -1,0 +1,48 @@
+PODS:
+  - Flutter (1.0.0)
+  - flutter_edge_ai_mediapipe (1.0.8):
+    - Flutter
+    - MediaPipeTasksGenAI (= 0.10.33)
+    - MediaPipeTasksGenAIC (= 0.10.33)
+  - flutter_inappwebview_ios (0.0.1):
+    - Flutter
+    - flutter_inappwebview_ios/Core (= 0.0.1)
+    - OrderedSet (~> 6.0.3)
+  - flutter_inappwebview_ios/Core (0.0.1):
+    - Flutter
+    - OrderedSet (~> 6.0.3)
+  - MediaPipeTasksGenAI (0.10.33):
+    - MediaPipeTasksGenAIC (= 0.10.33)
+  - MediaPipeTasksGenAIC (0.10.33)
+  - OrderedSet (6.0.3)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - flutter_edge_ai_mediapipe (from `.symlinks/plugins/flutter_edge_ai_mediapipe/ios`)
+  - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
+
+SPEC REPOS:
+  trunk:
+    - MediaPipeTasksGenAI
+    - MediaPipeTasksGenAIC
+    - OrderedSet
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  flutter_edge_ai_mediapipe:
+    :path: ".symlinks/plugins/flutter_edge_ai_mediapipe/ios"
+  flutter_inappwebview_ios:
+    :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
+
+SPEC CHECKSUMS:
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  flutter_edge_ai_mediapipe: 3f9c765ba9a8685357f1c1ee82529d1a196d2351
+  flutter_inappwebview_ios: b89ba3482b96fb25e00c967aae065701b66e9b99
+  MediaPipeTasksGenAI: 8eed8e6d03fe26d30c4205cb5295ec7b394432ad
+  MediaPipeTasksGenAIC: cb098ecea44e248efe8fe7e2f62b4cb0df781802
+  OrderedSet: e539b66b644ff081c73a262d24ad552a69be3a94
+
+PODFILE CHECKSUM: b9a8b2ef627faec4d104ff6fe16fc69c3bd87359
+
+COCOAPODS: 1.16.2

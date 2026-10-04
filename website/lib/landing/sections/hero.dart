@@ -14,7 +14,7 @@ class Hero extends StatelessComponent {
       [
         // Decorative oversized logo watermark behind the hero content.
         img(
-          src: '/images/logo-gemma.png',
+          src: '/images/logo-edge-ai@2x.png',
           alt: '',
           classes: 'hero-watermark',
           attributes: const {'aria-hidden': 'true'},
@@ -31,7 +31,7 @@ class Hero extends StatelessComponent {
                 [Component.text('Get Started')],
               ),
               a(
-                href: 'https://github.com/DenisovAV/flutter_gemma',
+                href: 'https://github.com/DenisovAV/flutter_edge_ai',
                 classes: 'btn btn-outline',
                 attributes: {'target': '_blank', 'rel': 'noopener'},
                 [Component.text('GitHub')],
@@ -39,7 +39,7 @@ class Hero extends StatelessComponent {
             ]),
             div(classes: 'hero-install', [
               span(classes: 'install-prompt', [Component.text('\$')]),
-              span(classes: 'install-cmd', [Component.text(' flutter pub add flutter_gemma')]),
+              span(classes: 'install-cmd', [Component.text(' flutter pub add flutter_edge_ai')]),
             ]),
           ]),
           // Right column
@@ -47,7 +47,7 @@ class Hero extends StatelessComponent {
             div(classes: 'hero-phone-frame', [
               img(
                 src: '/images/gemma.gif',
-                alt: 'flutter_gemma demo running on a device',
+                alt: 'flutter_edge_ai demo running on a device',
                 classes: 'hero-gif',
               ),
               div(classes: 'hero-demo-overlay', [

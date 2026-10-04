@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 import 'chat_page.dart';
 import 'download_page.dart';
@@ -28,7 +28,7 @@ Future<void> main() async {
   // never reaches `runApp` and the symptom is a blank window and a stack trace
   // in a console nobody is looking at.
   try {
-    await FlutterGemma.initialize(
+    await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
       // OPFS streaming, not the Cache API default: the web build is 2.0 GB,
       // right on the ~2 GB blob ceiling, so it is not worth buffering.
@@ -42,7 +42,7 @@ Future<void> main() async {
   runApp(const MultimodalApp());
 }
 
-/// Shown in place of the app when `FlutterGemma.initialize` throws, so a
+/// Shown in place of the app when `FlutterEdgeAi.initialize` throws, so a
 /// failure before the first frame is a sentence instead of a blank window.
 class _StartupFailed extends StatelessWidget {
   const _StartupFailed({required this.error});
@@ -58,7 +58,7 @@ class _StartupFailed extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Text(
-              'flutter_gemma could not start.\n$error',
+              'flutter_edge_ai could not start.\n$error',
               textAlign: TextAlign.center,
             ),
           ),
@@ -106,10 +106,10 @@ class _ModelGateState extends State<ModelGate> {
   /// `install()` is idempotent: on a file already here it downloads nothing
   /// and just records this model as the current one.
   Future<bool> _check() async {
-    if (!await FlutterGemma.isModelInstalled(widget.model.fileName)) {
+    if (!await FlutterEdgeAi.isModelInstalled(widget.model.fileName)) {
       return false;
     }
-    await FlutterGemma.installModel(
+    await FlutterEdgeAi.installModel(
       modelType: widget.model.modelType,
       fileType: ModelFileType.litertlm,
     ).fromNetwork(widget.model.url).install();

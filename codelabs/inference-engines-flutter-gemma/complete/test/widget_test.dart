@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gemma_quickstart/download_page.dart';
-import 'package:gemma_quickstart/model.dart';
+import 'package:edge_ai_quickstart/download_page.dart';
+import 'package:edge_ai_quickstart/model.dart';
 
 void main() {
   test('every downloaded model id matches the last segment of its URL', () {

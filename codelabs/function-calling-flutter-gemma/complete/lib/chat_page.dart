@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'model.dart';
 import 'tools.dart';
@@ -94,7 +94,7 @@ class _ChatPageState extends State<ChatPage> {
       // of the multimodal codelab there is nothing to set in two places —
       // `getActiveModel` builds the engine, and nothing about the weights
       // changes when you declare a function.
-      final inference = await FlutterGemma.getActiveModel(maxTokens: 4096);
+      final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
       // Hold the runtime before opening a chat on it: `createChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
@@ -367,7 +367,7 @@ class _ChatPageState extends State<ChatPage> {
           _chat = null;
         });
       }
-      await FlutterGemma.uninstallModel(widget.model.fileName);
+      await FlutterEdgeAi.uninstallModel(widget.model.fileName);
       if (mounted) widget.onModelRemoved();
     } catch (error) {
       // Deleting can fail too — a missing install record, a file the OS still

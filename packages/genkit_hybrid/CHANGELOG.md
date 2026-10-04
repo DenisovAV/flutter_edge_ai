@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Update package documentation for the Flutter Edge AI rename.
+
 ## 0.2.1
 
 - Widen the `genkit` constraint to `>=0.15.1 <0.17.0` so it works on both genkit 0.15 and 0.16 (no code change — uses only Model/generate/ModelRequest).

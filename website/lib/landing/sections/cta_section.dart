@@ -29,16 +29,10 @@ class CtaSection extends StatelessComponent {
               [Component.text('Read the docs')],
             ),
             a(
-              href: 'https://github.com/DenisovAV/flutter_gemma',
+              href: 'https://github.com/DenisovAV/flutter_edge_ai',
               classes: 'btn btn-outline',
               attributes: {'target': '_blank', 'rel': 'noopener'},
               [Component.text('Star on GitHub')],
-            ),
-            a(
-              href: 'https://ko-fi.com/flutter_gemma',
-              classes: 'btn btn-kofi',
-              attributes: {'target': '_blank', 'rel': 'noopener'},
-              [Component.text('Ko-fi')],
             ),
           ]),
         ]),
@@ -84,14 +78,6 @@ class CtaSection extends StatelessComponent {
       gap: Gap.all(1.rem),
       flexWrap: FlexWrap.wrap,
       justifyContent: JustifyContent.center,
-    ),
-    css('.btn-kofi').styles(
-      backgroundColor: Color('transparent'),
-      color: Brand.orange,
-      border: Border.all(color: Brand.orange, width: 1.px),
-    ),
-    css('.btn-kofi:hover').styles(
-      backgroundColor: Color('rgba(245,158,11,0.1)'),
     ),
     StyleRule.media(
       query: MediaQuery.screen(maxWidth: 480.px),

@@ -1,4 +1,4 @@
-name: gemma_quickstart
+name: edge_ai_quickstart
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -20,7 +20,7 @@ version: 1.0.0+1
 
 environment:
   sdk: ^3.12.0
-  # 3.47, not the 3.44 the other packages allow: flutter_gemma_rag_sqlite 1.4.0
+  # 3.47, not the 3.44 the other packages allow: flutter_edge_ai_sqlite 1.4.0
   # requires sqlite3 3.6.0, whose toolchain needs meta ^1.19.0 — and every
   # Flutter 3.44.x pins meta to 1.18.0 exactly. Declared here so the failure is
   # a solver message naming this app, not a confusing transitive one.
@@ -41,18 +41,18 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # The engine-agnostic core: registry, install/runtime API, chat.
-  flutter_gemma: ^1.9.0
+  flutter_edge_ai: ^1.11.4
   # The .litertlm inference engine. Engines are opt-in — core
   # registers none, so this package must be added explicitly.
-  flutter_gemma_litertlm: ^1.8.0
-  # The tokenizers an embedding backend needs. Since flutter_gemma 1.9.0 a
+  flutter_edge_ai_litertlm: ^1.8.6
+  # The tokenizers an embedding backend needs. Since flutter_edge_ai 1.9.0 a
   # backend no longer carries one — which tokenizer a model wants is a
   # property of the model, so the app registers it (see main.dart).
-  flutter_gemma_embeddings: ^2.2.0
+  flutter_edge_ai_embeddings: ^2.2.1
   # The vector store. sqlite-vec runs on all six platforms, including the
-  # web; `flutter_gemma_rag_qdrant` is the native-only alternative Step 3
+  # web; `flutter_edge_ai_qdrant` is the native-only alternative Step 3
   # compares it against.
-  flutter_gemma_rag_sqlite: ^1.4.0
+  flutter_edge_ai_sqlite: ^1.4.0
   # Only to find a writable directory for the database file. Not needed on
   # web, where the store keeps its pages in IndexedDB rather than a file.
   path_provider: ^2.1.4

@@ -1,12 +1,12 @@
 ---
 title: ONNX Runtime
 description: Run ONNX models on-device — text generation via ORT-GenAI and embeddings via plain ONNX Runtime — across five native platforms (dart:ffi) and the web (Transformers.js / onnxruntime-web).
-image: https://fluttergemma.dev/images/og-image.png
+image: https://flutteredge.ai/images/og-image.png
 ---
 
-flutter_gemma's engines are **pluggable**: you register them in
-`FlutterGemma.initialize(...)`, and the registry picks one per model by its
-declared `ModelFileType`. `flutter_gemma_onnx` adds two of them from the
+flutter_edge_ai's engines are **pluggable**: you register them in
+`FlutterEdgeAi.initialize(...)`, and the registry picks one per model by its
+declared `ModelFileType`. `flutter_edge_ai_onnx` adds two of them from the
 [ONNX Runtime](https://onnxruntime.ai) family:
 
 - **`OnnxEngine`** — text generation via **ORT-GenAI**.
@@ -47,20 +47,20 @@ Add the package and register whichever arm(s) you use at startup:
 
 ```
 dependencies:
-  flutter_gemma: latest_version
-  flutter_gemma_onnx: latest_version         # ONNX Runtime engines
-  flutter_gemma_embeddings: latest_version   # tokenizers, for embeddings
+  flutter_edge_ai: latest_version
+  flutter_edge_ai_onnx: latest_version         # ONNX Runtime engines
+  flutter_edge_ai_embeddings: latest_version   # tokenizers, for embeddings
 ```
 
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_embeddings/flutter_gemma_embeddings.dart';
-import 'package:flutter_gemma_onnx/flutter_gemma_onnx.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
+import 'package:flutter_edge_ai_onnx/flutter_edge_ai_onnx.dart';
 
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: [OnnxEngine()],            // text generation
   embeddingBackends: [OnnxEmbeddingBackend()], // embeddings
-  embeddingTokenizers: [GemmaEmbeddingTokenizers()], // flutter_gemma_embeddings
+  embeddingTokenizers: [GemmaEmbeddingTokenizers()], // flutter_edge_ai_embeddings
 );
 ```
 
@@ -81,7 +81,7 @@ several EP variants resolves to a **CPU/mobile** folder — the bundled runtime 
 CPU-only — unless you pin one with `OnnxHuggingFaceResolver(variant: …)`:
 
 ```dart
-await FlutterGemma.installModel(
+await FlutterEdgeAi.installModel(
   // ONNX repos declare no family — the caller's modelType is used as-is.
   modelType: ModelType.general,
   fileType: ModelFileType.onnx,
@@ -91,7 +91,7 @@ await FlutterGemma.installModel(
 Or ship the bundle yourself and point `fromFile` at its `genai_config.json`:
 
 ```dart
-await FlutterGemma.installModel(
+await FlutterEdgeAi.installModel(
   modelType: ModelType.general,
   fileType: ModelFileType.onnx,
 ).fromFile('/path/to/my-model/genai_config.json').install();
@@ -103,7 +103,7 @@ inference. Install just marks the repo id active — core never downloads model
 bytes:
 
 ```dart
-await FlutterGemma.installModel(
+await FlutterEdgeAi.installModel(
   modelType: ModelType.general,
   fileType: ModelFileType.onnx,
 ).fromNetwork('https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct').install();
@@ -112,7 +112,7 @@ await FlutterGemma.installModel(
 From here the code is identical to any other engine:
 
 ```dart
-final model = await FlutterGemma.getActiveModel(maxTokens: 4096);
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 final session = await model.createSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
@@ -162,7 +162,7 @@ both registered an `.onnx`/`.ort` model routes here. See
 
 ## Web setup
 
-Web needs a small `web/index.html` shim before `FlutterGemma.initialize()` runs
+Web needs a small `web/index.html` shim before `FlutterEdgeAi.initialize()` runs
 (the same readiness-handshake pattern the other web arms use). Add the shim for
 whichever arm(s) you register, in `<head>`, ahead of `flutter_bootstrap.js`:
 
@@ -196,6 +196,6 @@ either module, so the shim must run before the Flutter app boots.
   backend plugs into.
 - [Models](/docs/models) — the full supported-model matrix.
 - [Packages](/docs/packages) — every opt-in engine and backend, including
-  `flutter_gemma_onnx`.
+  `flutter_edge_ai_onnx`.
 
-**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-gemma-onnx`](/docs/package-skills), the skill that teaches it ORT-GenAI generation and ONNX embeddings, native and through Transformers.js.
+**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-onnx`](/docs/package-skills), the skill that teaches it ORT-GenAI generation and ONNX embeddings, native and through Transformers.js.

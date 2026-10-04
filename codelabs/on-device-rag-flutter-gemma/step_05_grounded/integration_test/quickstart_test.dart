@@ -5,18 +5,18 @@
 // Not part of CI — it downloads ~2.6 GB and needs a real device:
 //   flutter test integration_test/quickstart_test.dart -d <device-id>
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:gemma_quickstart/model.dart';
+import 'package:edge_ai_quickstart/model.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('install, then stream a reply', (tester) async {
-    await FlutterGemma.initialize(inferenceEngines: [LiteRtLmEngine()]);
+    await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);
 
     const model = Models.gemma4;
 
@@ -26,7 +26,7 @@ void main() {
     // previous run activated in place, and the test would pass against the
     // wrong model.
     var last = -1;
-    await FlutterGemma.installModel(
+    await FlutterEdgeAi.installModel(
       modelType: model.modelType,
       fileType: ModelFileType.litertlm,
     ).fromNetwork(model.url).withProgress((p) {
@@ -36,10 +36,10 @@ void main() {
       }
     }).install();
 
-    expect(await FlutterGemma.isModelInstalled(model.fileName), isTrue);
-    expect(FlutterGemma.hasActiveModel(), isTrue);
+    expect(await FlutterEdgeAi.isModelInstalled(model.fileName), isTrue);
+    expect(FlutterEdgeAi.hasActiveModel(), isTrue);
 
-    final inference = await FlutterGemma.getActiveModel(maxTokens: 1024);
+    final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
     final chat = await inference.createChat(
       modelType: model.modelType,
       maxOutputTokens: 64,

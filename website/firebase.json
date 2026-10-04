@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "target": "fluttergemma",
+    "target": "flutteredgeai",
     "public": "build/jaspr",
     "ignore": [
       "firebase.json",

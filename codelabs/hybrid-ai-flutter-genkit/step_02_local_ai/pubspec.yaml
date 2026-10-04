@@ -16,12 +16,12 @@ dependencies:
   genkit: ^0.16.0
   genkit_google_genai: ^0.3.1
 
-  # Step 3: On-device AI via genkit_flutter_gemma
-  genkit_flutter_gemma: ^0.6.1
-  flutter_gemma: ^1.9.0
-  # flutter_gemma 1.x registers no engine by default — opt into LiteRT-LM
+  # Step 3: On-device AI via genkit_flutter_edge_ai
+  genkit_flutter_edge_ai: ^0.6.2
+  flutter_edge_ai: ^1.11.4
+  # flutter_edge_ai 1.x registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
-  flutter_gemma_litertlm: ^1.8.0
+  flutter_edge_ai_litertlm: ^1.8.6
 
 dev_dependencies:
   flutter_test:

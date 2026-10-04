@@ -21,8 +21,8 @@ cd "$(dirname "$0")/.."
 
 # "<package web dir>|<file whose presence marks a codelab app as a consumer>"
 BUNDLES=(
-  "packages/flutter_gemma_litertlm/web|litert_embeddings.js"
-  "packages/flutter_gemma/web|cache_api.js"
+  "packages/flutter_edge_ai_litertlm/web|litert_embeddings.js"
+  "packages/flutter_edge_ai/web|cache_api.js"
 )
 
 shopt -s nullglob

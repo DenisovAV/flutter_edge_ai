@@ -33,21 +33,21 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Install plugin dependencies
-        working-directory: packages/flutter_gemma
+        working-directory: packages/flutter_edge_ai
         run: flutter pub get
 
       - name: Install example dependencies
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter pub get
 
       - name: Build example APK (release)
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter build apk --release
 
       - name: Rename APK with version
         run: |
-          mv packages/flutter_gemma/example/build/app/outputs/flutter-apk/app-release.apk \
-             packages/flutter_gemma/example/build/app/outputs/flutter-apk/flutter-gemma-example-v${{ steps.version.outputs.VERSION }}.apk
+          mv packages/flutter_edge_ai/example/build/app/outputs/flutter-apk/app-release.apk \
+             packages/flutter_edge_ai/example/build/app/outputs/flutter-apk/flutter-edge-ai-example-v${{ steps.version.outputs.VERSION }}.apk
 
       - name: Create GitHub Release
         id: create_release
@@ -59,13 +59,13 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
-            packages/flutter_gemma/example/build/app/outputs/flutter-apk/flutter-gemma-example-v${{ steps.version.outputs.VERSION }}.apk
+            packages/flutter_edge_ai/example/build/app/outputs/flutter-apk/flutter-edge-ai-example-v${{ steps.version.outputs.VERSION }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-gemma-example-v${{ steps.version.outputs.VERSION }}
-          path: packages/flutter_gemma/example/build/app/outputs/flutter-apk/flutter-gemma-example-v${{ steps.version.outputs.VERSION }}.apk
+          name: flutter-edge-ai-example-v${{ steps.version.outputs.VERSION }}
+          path: packages/flutter_edge_ai/example/build/app/outputs/flutter-apk/flutter-edge-ai-example-v${{ steps.version.outputs.VERSION }}.apk
           retention-days: 90

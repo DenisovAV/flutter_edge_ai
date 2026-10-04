@@ -1,4 +1,4 @@
-name: gemma_quickstart
+name: edge_ai_quickstart
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -36,10 +36,10 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # The engine-agnostic core: registry, install/runtime API, chat.
-  flutter_gemma: ^1.8.3
+  flutter_edge_ai: ^1.11.4
   # The .litertlm inference engine. Engines are opt-in — core
   # registers none, so this package must be added explicitly.
-  flutter_gemma_litertlm: ^1.7.0
+  flutter_edge_ai_litertlm: ^1.8.6
 
   # Picks a photo on all six platforms: a gallery on Android and iOS, a file
   # dialog (via file_selector) on macOS, Windows, Linux and the web.

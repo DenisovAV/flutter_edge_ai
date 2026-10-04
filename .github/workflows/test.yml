@@ -59,11 +59,11 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: ./packages/flutter_gemma/coverage/lcov.info
+          files: ./packages/flutter_edge_ai/coverage/lcov.info
           fail_ci_if_error: false
         continue-on-error: true
 
-  # The skills shipped inside flutter_gemma are read by other people's coding
+  # The skills shipped inside flutter_edge_ai are read by other people's coding
   # agents, so a wrong name there becomes confident, broken code in someone
   # else's app. Two gates, both fail-closed, and neither ran in CI before:
   #   check_skills.dart compiles every ```dart fence and every inline type in
@@ -90,7 +90,7 @@ jobs:
 
       - name: Resolve the example app
         run: flutter pub get
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
 
       - name: Compile every code block in the skills
         run: dart tool/check_skills.dart
@@ -120,22 +120,22 @@ jobs:
           cache: 'gradle'
 
       - name: Install plugin dependencies
-        working-directory: packages/flutter_gemma
+        working-directory: packages/flutter_edge_ai
         run: flutter pub get
 
       - name: Install example dependencies
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter pub get
 
       - name: Build example APK
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter build apk --release
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: example-app-debug
-          path: packages/flutter_gemma/example/build/app/outputs/flutter-apk/app-release.apk
+          path: packages/flutter_edge_ai/example/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 7
 
   build-example-ios:
@@ -153,15 +153,15 @@ jobs:
           cache: true
 
       - name: Install plugin dependencies
-        working-directory: packages/flutter_gemma
+        working-directory: packages/flutter_edge_ai
         run: flutter pub get
 
       - name: Install example dependencies
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter pub get
 
       - name: Build example iOS (no signing)
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter build ios --release --no-codesign
         continue-on-error: true
 
@@ -180,11 +180,11 @@ jobs:
           cache: true
 
       - name: Install plugin dependencies
-        working-directory: packages/flutter_gemma
+        working-directory: packages/flutter_edge_ai
         run: flutter pub get
 
       - name: Install example dependencies
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter pub get
 
       # The companion-staging script is covered by hermetic tests that are
@@ -194,8 +194,8 @@ jobs:
       # build order never relocates the dependency before the phase runs, so
       # the old hardcoded logic passed there too. This step is the only place
       # in CI where the fix is actually executed.
-      - name: Test flutter_gemma_litertlm (macOS-only suites included)
-        working-directory: packages/flutter_gemma_litertlm
+      - name: Test flutter_edge_ai_litertlm (macOS-only suites included)
+        working-directory: packages/flutter_edge_ai_litertlm
         run: flutter test
 
       # Build twice: the macOS companion-dylib staging is patched by a
@@ -208,7 +208,7 @@ jobs:
       # FLUTTER_XCODE_* passthrough. The staging phase re-signs the patched
       # binary ad-hoc (`codesign --sign -`) itself, so this doesn't affect it.
       - name: Build example macOS (clean)
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter build macos --debug
         env:
           FLUTTER_XCODE_CODE_SIGNING_ALLOWED: 'NO'
@@ -216,7 +216,7 @@ jobs:
           FLUTTER_XCODE_CODE_SIGN_IDENTITY: ''
 
       - name: Build example macOS (incremental)
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: flutter build macos --debug
         env:
           FLUTTER_XCODE_CODE_SIGNING_ALLOWED: 'NO'
@@ -224,9 +224,9 @@ jobs:
           FLUTTER_XCODE_CODE_SIGN_IDENTITY: ''
 
       - name: Assert LiteRtLm links the framework-form companion, not the raw dylib
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: |
-          LITERTLM="build/macos/Build/Products/Debug/flutter_gemma_example.app/Contents/Frameworks/LiteRtLm.framework/Versions/A/LiteRtLm"
+          LITERTLM="build/macos/Build/Products/Debug/flutter_edge_ai_example.app/Contents/Frameworks/LiteRtLm.framework/Versions/A/LiteRtLm"
           if [ ! -f "$LITERTLM" ]; then
             echo "::error::LiteRtLm binary not found at $LITERTLM"
             exit 1

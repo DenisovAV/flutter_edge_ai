@@ -11,7 +11,7 @@ Runs on every push/PR to `main` or `develop`:
 - ✅ Android example APK build
 - ✅ iOS example build (unsigned)
 
-**Status:** [![CI Tests](https://github.com/DenisovAV/flutter_gemma/actions/workflows/test.yml/badge.svg)](https://github.com/DenisovAV/flutter_gemma/actions/workflows/test.yml)
+**Status:** [![CI Tests](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/test.yml/badge.svg)](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/test.yml)
 
 ---
 
@@ -22,7 +22,7 @@ Runs when you push a tag `v*.*.*`:
 - ✅ Attaches APK to release
 - ✅ Auto-generates release notes
 
-**Status:** [![Release Build](https://github.com/DenisovAV/flutter_gemma/actions/workflows/release.yml/badge.svg)](https://github.com/DenisovAV/flutter_gemma/actions/workflows/release.yml)
+**Status:** [![Release Build](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/release.yml/badge.svg)](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/release.yml)
 
 ---
 
@@ -96,5 +96,5 @@ flutter test test/core/model_source_test.dart
 ## 🆘 Need Help?
 
 - Check [CICD.md](CICD.md) for troubleshooting
-- View workflow runs in [Actions tab](https://github.com/DenisovAV/flutter_gemma/actions)
-- Report issues in [GitHub Issues](https://github.com/DenisovAV/flutter_gemma/issues)
+- View workflow runs in [Actions tab](https://github.com/DenisovAV/flutter_edge_ai/actions)
+- Report issues in [GitHub Issues](https://github.com/DenisovAV/flutter_edge_ai/issues)

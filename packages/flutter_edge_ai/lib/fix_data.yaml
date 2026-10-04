@@ -1,0 +1,36 @@
+# Data-driven fixes for `dart fix` (https://dart.dev/go/data-driven-fixes):
+# `dart fix --apply` renames the names this package carried as flutter_gemma.
+version: 1
+transforms:
+  - title: "Rename to 'FlutterEdgeAi'"
+    date: 2026-09-28
+    element:
+      uris: [ 'flutter_edge_ai.dart', 'package:flutter_gemma/flutter_gemma.dart' ]
+      typedef: 'FlutterGemma'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAi'
+  - title: "Rename to 'FlutterEdgeAiPlugin'"
+    date: 2026-09-28
+    element:
+      uris: [ 'flutter_edge_ai.dart', 'package:flutter_gemma/flutter_gemma.dart' ]
+      typedef: 'FlutterGemmaPlugin'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiPlugin'
+  - title: "Rename to 'FlutterEdgeAiDesktop'"
+    date: 2026-09-28
+    element:
+      uris: [ 'flutter_edge_ai.dart', 'package:flutter_gemma/flutter_gemma.dart' ]
+      typedef: 'FlutterGemmaDesktop'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiDesktop'
+  - title: "Rename to 'EdgeAiLogLevel'"
+    date: 2026-09-28
+    element:
+      uris: [ 'flutter_edge_ai.dart', 'package:flutter_gemma/flutter_gemma.dart' ]
+      typedef: 'GemmaLogLevel'
+    changes:
+      - kind: 'rename'
+        newName: 'EdgeAiLogLevel'

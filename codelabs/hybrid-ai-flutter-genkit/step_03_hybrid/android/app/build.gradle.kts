@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.flutterberlin.workshop_flutter_gemma_hybrid_ai"
+    namespace = "dev.flutterberlin.workshop_flutter_edge_ai_hybrid_ai"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "dev.flutterberlin.workshop_flutter_gemma_hybrid_ai"
+        applicationId = "dev.flutterberlin.workshop_flutter_edge_ai_hybrid_ai"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // libLiteRtLm.so needs API 30+ Bionic (pthread_cond_clockwait,

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gemma_skills/main.dart';
+import 'package:edge_ai_skills/main.dart';
 
 void main() {
   testWidgets('the starter runs and leaves the work to the assistant', (

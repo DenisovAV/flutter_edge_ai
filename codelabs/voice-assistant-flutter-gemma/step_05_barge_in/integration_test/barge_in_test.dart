@@ -13,13 +13,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
-import 'package:flutter_gemma_speech/flutter_gemma_speech.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:gemma_quickstart/model.dart';
+import 'package:edge_ai_quickstart/model.dart';
 
 /// The PCM samples of a WAV file: everything after its `data` chunk header.
 /// The fixture is already 16 kHz mono 16-bit, which is what `transcribe` takes.
@@ -54,30 +54,30 @@ void main() {
   testWidgets('interrupt one answer, then get the next one whole', (
     tester,
   ) async {
-    await FlutterGemma.initialize(
+    await FlutterEdgeAi.initialize(
       inferenceEngines: [LiteRtLmEngine()],
       sttBackends: [const LiteRtSttBackend()],
       ttsBackends: [const LiteRtTtsBackend()],
     );
 
     const model = Models.gemma4;
-    await FlutterGemma.installModel(
+    await FlutterEdgeAi.installModel(
       modelType: model.modelType,
       fileType: ModelFileType.litertlm,
     ).fromNetwork(model.url).install();
-    await FlutterGemma.installStt()
+    await FlutterEdgeAi.installStt()
         .modelFromNetwork(Moonshine.modelUrl)
         .tokenizerFromNetwork(Moonshine.tokenizerUrl)
         .ofType(SttModelType.moonshine)
         .install();
-    await FlutterGemma.installTts()
+    await FlutterEdgeAi.installTts()
         .fromNetwork(Inflect.baseUrl)
         .ofType(TtsModelType.inflect)
         .install();
 
-    final stt = await FlutterGemma.getActiveStt();
-    final tts = await FlutterGemma.getActiveTts();
-    final inference = await FlutterGemma.getActiveModel(maxTokens: 1024);
+    final stt = await FlutterEdgeAi.getActiveStt();
+    final tts = await FlutterEdgeAi.getActiveTts();
+    final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
     final chat = await inference.createChat(
       modelType: model.modelType,
       systemInstruction:

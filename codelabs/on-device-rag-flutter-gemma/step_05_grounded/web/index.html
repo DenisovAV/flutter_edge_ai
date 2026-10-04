@@ -35,7 +35,7 @@
   <!-- LiteRT-LM's web arm loads `@litert-lm/core` from a CDN. The ESM assigns
        no window globals and module scripts are deferred, so Dart waits on the
        promise this handshake publishes. Native platforms need no web setup.
-       The handshake below is the flutter_gemma_litertlm README's, verbatim. -->
+       The handshake below is the flutter_edge_ai_litertlm README's, verbatim. -->
 <script type="module">
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.17.1/+esm');
@@ -44,20 +44,20 @@ window.litertLmReady = (async () => {
 })();
 </script>
 
-  <!-- Cache API + OPFS helper: FlutterGemma.initialize's
+  <!-- Cache API + OPFS helper: FlutterEdgeAi.initialize's
        webStorageMode: WebStorageMode.streaming needs both to install
-       .litertlm models on web. Copied verbatim from flutter_gemma's own web/. -->
+       .litertlm models on web. Copied verbatim from flutter_edge_ai's own web/. -->
   <script src="cache_api.js"></script>
   <script src="opfs_helper.js"></script>
 
   <!-- LiteRT.js embeddings bundle. The four files beside this one are copied
-       from flutter_gemma_litertlm/web/ — that package owns them since 1.8.0.
+       from flutter_edge_ai_litertlm/web/ — that package owns them since 1.8.0.
        The WASM runtime they need is fetched from a CDN, so nothing else to
        host. Without this the first embedding on web fails in the console. -->
   <script type="module" src="litert_embeddings.js"></script>
 
   <!-- web/rag/sqlite3.wasm is a SQLite build with sqlite-vec linked in,
-       copied from flutter_gemma_rag_sqlite/web/rag/. It needs no <script>
+       copied from flutter_edge_ai_sqlite/web/rag/. It needs no <script>
        tag: WebSqliteVectorStore fetches it by that exact relative path. -->
 </head>
 <body>

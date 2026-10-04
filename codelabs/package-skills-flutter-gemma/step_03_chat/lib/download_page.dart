@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'model.dart';
 
@@ -30,7 +30,7 @@ class _DownloadPageState extends State<DownloadPage> {
     try {
       // The declared fileType — not the file name — picks the engine, and it
       // defaults to `.task`, which LiteRT-LM does not claim.
-      await FlutterGemma.installModel(
+      await FlutterEdgeAi.installModel(
         modelType: widget.model.modelType,
         fileType: ModelFileType.litertlm,
       ).fromNetwork(widget.model.url).withProgress((percent) {

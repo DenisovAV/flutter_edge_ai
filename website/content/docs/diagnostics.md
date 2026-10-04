@@ -1,13 +1,13 @@
 ---
 title: Memory Diagnostics
-description: Measure what an on-device model costs in memory the OS cannot reclaim — the anonymous footprint and the memory still available, read from the OS on Android and iOS with flutter_gemma_diagnostics.
-image: https://fluttergemma.dev/images/og-image.png
+description: Measure what an on-device model costs in memory the OS cannot reclaim — the anonymous footprint and the memory still available, read from the OS on Android and iOS with flutter_edge_ai_diagnostics.
+image: https://flutteredge.ai/images/og-image.png
 ---
 
-`flutter_gemma_diagnostics` answers one question: how much memory does this
+`flutter_edge_ai_diagnostics` answers one question: how much memory does this
 model cost, in the terms the OS kills on? It reads two numbers straight from the
 OS on **Android and iOS** and returns them as a `MemorySnapshot`. It has no
-native code and no dependency on `flutter_gemma` — it measures the process,
+native code and no dependency on `flutter_edge_ai` — it measures the process,
 whichever engine runs in it.
 
 ## Why not the memory number your profiler shows?
@@ -51,7 +51,7 @@ and subtract.
 
 ```
 dependencies:
-  flutter_gemma_diagnostics: ^0.1.0
+  flutter_edge_ai_diagnostics: ^0.1.0
 ```
 
 If only `test/` or `integration_test/` uses it, put it under `dev_dependencies`
@@ -59,10 +59,10 @@ instead. Neither section strips anything from a release build: what keeps the
 package out is not importing it from `lib/`.
 
 ```dart
-import 'package:flutter_gemma_diagnostics/flutter_gemma_diagnostics.dart';
+import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 
-if (FlutterGemmaDiagnostics.isSupported) {
-  final snapshot = await FlutterGemmaDiagnostics.memorySnapshot();
+if (FlutterEdgeAiDiagnostics.isSupported) {
+  final snapshot = await FlutterEdgeAiDiagnostics.memorySnapshot();
   print(snapshot.anonymousBytes);
   print(snapshot.availableBytes);
 }
@@ -93,16 +93,16 @@ OS cannot reclaim.
 
 ```dart
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_diagnostics/flutter_gemma_diagnostics.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 
 Future<InferenceModel> loadAndMeasure() async {
-  if (!FlutterGemmaDiagnostics.isSupported) {
-    return FlutterGemma.getActiveModel(maxTokens: 1024);
+  if (!FlutterEdgeAiDiagnostics.isSupported) {
+    return FlutterEdgeAi.getActiveModel(maxTokens: 1024);
   }
-  final before = await FlutterGemmaDiagnostics.memorySnapshot();
-  final model = await FlutterGemma.getActiveModel(maxTokens: 1024);
-  final loaded = await FlutterGemmaDiagnostics.memorySnapshot();
+  final before = await FlutterEdgeAiDiagnostics.memorySnapshot();
+  final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+  final loaded = await FlutterEdgeAiDiagnostics.memorySnapshot();
 
   if ((before.anonymousBytes, loaded.anonymousBytes)
       case (final int from, final int to)) {
@@ -138,7 +138,7 @@ you support and treat `availableBytes` as a best case.
   kernel error, a permission or I/O error, or a file that lacks a field it
   always carries. Do not turn it into zeros.
 - **`UnsupportedError`** is thrown by `memorySnapshot()` off Android and iOS,
-  rather than returning empty values. Check `FlutterGemmaDiagnostics.isSupported`
+  rather than returning empty values. Check `FlutterEdgeAiDiagnostics.isSupported`
   first.
 
 ## Platforms
@@ -155,5 +155,5 @@ Planned: `anonymousPeakBytes` on iOS, `anonymousBytes` on macOS,
 
 ## Teach your AI assistant
 
-The `flutter-gemma-diagnostics` agent skill ships inside `flutter_gemma`. Install
+The `flutter-edge-ai-diagnostics` agent skill ships inside `flutter_edge_ai`. Install
 it with the others — see [Package Skills](/docs/package-skills).

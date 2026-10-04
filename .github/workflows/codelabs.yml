@@ -45,6 +45,10 @@ jobs:
           channel: ${{ matrix.channel }}
       - run: flutter --version
       - run: tool/check_codelabs.sh
+        env:
+          # A rename PR has to test packages before their first pub.dev release.
+          # Pushes and nightly runs still resolve published packages.
+          CODELAB_USE_LOCAL_PACKAGES: ${{ github.event_name == 'pull_request' && '1' || '0' }}
 
       # The one check that depends on a third party being up: the codelabs pin
       # exact Hugging Face files, and a rename breaks a learner's first step

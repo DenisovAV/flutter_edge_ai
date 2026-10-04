@@ -77,7 +77,7 @@ abstract final class PlatformSupport {
   /// Image input reaches the model on all five native platforms — Android,
   /// iOS, macOS, Windows and Linux.
   ///
-  /// Not on the web: `flutter_gemma_litertlm`'s browser arm runs the upstream
+  /// Not on the web: `flutter_edge_ai_litertlm`'s browser arm runs the upstream
   /// `@litert-lm/core` package, whose JS API exposes no vision executor, so
   /// image bytes are **dropped with a debug warning** rather than refused.
   /// That is the worst failure mode a modality can have — the model answers,

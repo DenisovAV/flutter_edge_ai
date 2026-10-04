@@ -8,7 +8,7 @@
 
 #include <connectivity_plus/connectivity_plus_windows_plugin.h>
 #include <file_selector_windows/file_selector_windows.h>
-#include <flutter_gemma/flutter_gemma_plugin.h>
+#include <flutter_edge_ai/flutter_edge_ai_plugin.h>
 #include <record_windows/record_windows_plugin_c_api.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
@@ -16,8 +16,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("ConnectivityPlusWindowsPlugin"));
   FileSelectorWindowsRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FileSelectorWindows"));
-  FlutterGemmaPluginRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("FlutterGemmaPlugin"));
+  FlutterEdgeAiPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterEdgeAiPlugin"));
   RecordWindowsPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("RecordWindowsPluginCApi"));
 }

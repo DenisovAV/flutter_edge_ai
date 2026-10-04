@@ -33,7 +33,7 @@ point.
 
 ### What you'll learn
 
-* what an **engine** is in `flutter_gemma`, and why the core ships none
+* what an **engine** is in `flutter_edge_ai`, and why the core ships none
 * how a model's `ModelFileType` is the entire "engine switch"
 * that *installed* and *active* are different things — and that *installed* is
   not even a concept for a model the OS owns
@@ -46,32 +46,36 @@ point.
 * The finished app from
   [Getting Started with On-Device LLMs in Flutter](/codelabs/getting-started-flutter-gemma)
   — or just its `complete/` directory, which is this codelab's starter
-* Anything the app runs on — all six Flutter platforms. Four of them can have a
-  built-in model: **Android** (Pixel 9+, Galaxy S25+), **iOS** (iPhone 15 Pro+
+* Anything the app runs on — all six Flutter platforms. The package can use a
+  built-in model on five: **Android** (Pixel 9+, Galaxy S25+), **iOS** (iPhone 15 Pro+
   with Apple Intelligence on), **macOS** (an Apple-silicon Mac with Apple
   Intelligence on) and the **web** (desktop Chrome with the Prompt API enabled —
   `chrome://flags/#prompt-api-for-gemini-nano` for local development, an
   [origin trial](https://developer.chrome.com/origintrials) token for a real
-  site). One of those lets you watch both engines answer
-* On **Android**, an arm64 device or emulator: `flutter_gemma_litertlm` ships an
+  site), plus **Windows** through Windows AI Foundry. This codelab's model
+  picker deliberately implements only the first four, so Windows exercises its
+  downloaded-model fallback even though `flutter_edge_ai_builtin_ai` itself
+  supports Windows. One of the implemented four lets you watch both engines
+  answer
+* On **Android**, an arm64 device or emulator: `flutter_edge_ai_litertlm` ships an
   arm64 library and nothing else, so a 32-bit or x86_64 image has no runtime to
   load. An Apple-silicon Mac's emulator is arm64
 * Chrome has a hardware floor for its copy of Nano that the flag does not lift.
-  `flutter_gemma_builtin_ai` states it as **~22 GB of free disk and a GPU with
+  `flutter_edge_ai_builtin_ai` states it as **~22 GB of free disk and a GPU with
   more than 4 GB of VRAM**, or a CPU-only path on a machine with 16 GB of RAM.
   Under it the probe answers `unavailableOther` with the flag
   switched on — which reads like a setup mistake and is not one
-* **Windows and Linux have no built-in arm at all**, and that is not a gap in
-  your setup: the app is designed to notice and take the downloaded model
-  instead. Running there exercises the fallback path end to end, which is what
-  most of your users will hit anyway — as will any of the four above on a device
-  the OS has no model for
+* This codelab omits the package's Windows AI Foundry selection, so its app
+  deliberately takes the downloaded model on **Windows**. **Linux** is the
+  only one of the six platforms with no built-in arm at all. Running either
+  fallback exercises that path end to end, as does any supported platform on
+  a device whose OS has no model
 
 ### Get the code
 
 ```bash
-git clone --depth 1 https://github.com/DenisovAV/flutter_gemma.git
-cd flutter_gemma/codelabs/inference-engines-flutter-gemma
+git clone --depth 1 https://github.com/DenisovAV/flutter_edge_ai.git
+cd flutter_edge_ai/codelabs/inference-engines-flutter-gemma
 ls
 ```
 
@@ -118,14 +122,14 @@ Open `step_01_starter` and run it. It is the Getting Started app: download a
 `.litertlm` file, chat with it. Look at one line of `main.dart`:
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: [LiteRtLmEngine()],
   huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
   webStorageMode: WebStorageMode.streaming,
 );
 ```
 
-`flutter_gemma` itself contains **no inference runtime**. It has the install
+`flutter_edge_ai` itself contains **no inference runtime**. It has the install
 pipeline, the chat loop, and a registry. Runtimes — engines — come from
 separate packages, and each one tells the registry which model files it can
 open. `LiteRtLmEngine` opens `.litertlm`. That single list is the only place
@@ -144,7 +148,7 @@ Duration: 18
 ### Add the package
 
 ```bash
-flutter pub add flutter_gemma_builtin_ai
+flutter pub add flutter_edge_ai_builtin_ai
 ```
 
 This engine talks to the model the platform already has: Gemini Nano through ML
@@ -163,7 +167,7 @@ there is nothing to change here. Leave it where it is:
 ```kotlin
 defaultConfig {
     // …
-    // flutter_gemma_builtin_ai (ML Kit GenAI / AICore) declares minSdk 26 and
+    // flutter_edge_ai_builtin_ai (ML Kit GenAI / AICore) declares minSdk 26 and
     // the manifest merger rejects an app below it; libLiteRtLm.so needs API 30+
     // Bionic (pthread_cond_clockwait, sem_clockwait) on top of that, so 30 is the
     // floor for an app that registers both engines.
@@ -174,7 +178,7 @@ If you are adding built-in AI to an app that has *no* LiteRT-LM engine in it,
 26 is enough.
 
 iOS needs nothing beyond what Getting Started already set up — the iOS 15.0
-deployment target and the three memory entitlements. `flutter_gemma_builtin_ai`
+deployment target and the three memory entitlements. `flutter_edge_ai_builtin_ai`
 declares an iOS 15.0 floor of its own, so a project still pinned at Flutter's
 older 13.0 template default has to be raised for this package too; on anything
 older than OS 26 every call is gated and simply reports the model as
@@ -186,14 +190,14 @@ add, because Chrome's Prompt API is a bare global the browser exposes. What it
 needs is the browser to have the feature switched on: the
 `chrome://flags/#prompt-api-for-gemini-nano` flag for local development, an
 [origin trial](https://developer.chrome.com/origintrials) token for a site you
-ship. **Windows and Linux** need nothing because there is nothing to configure:
-the package has no arm there, and the app is about to be taught to notice that
-by itself.
+ship. The package's **Windows** arm delegates to `flutter_local_ai` and Windows
+AI Foundry; this codelab does not add that model to its picker, so Windows takes
+the downloaded fallback. **Linux** has no OS built-in model at all.
 
 ### Register it
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   webStorageMode: WebStorageMode.streaming,
   inferenceEngines: [LiteRtLmEngine(), const BuiltInAiEngine()],
   huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
@@ -235,7 +239,7 @@ class ModelChoice {
   // …
 
   /// How this app names the model. For a downloaded model it is the file name,
-  /// which is also what `FlutterGemma.isModelInstalled` is keyed by. For a
+  /// which is also what `FlutterEdgeAi.isModelInstalled` is keyed by. For a
   /// built-in one it is the OS model's name — and nothing is keyed by it,
   /// because there is no file and no install record.
   final String id;
@@ -300,17 +304,19 @@ Apple Foundation Models spec, which only a native app can reach. Asking
 `ModelFileType.builtIn`, which is all the registry routes on, and the package's
 web arm answers to it.
 
-Windows and Linux have no built-in arm, so there this throws instead of quietly
-handing back a model that cannot exist. Failing loudly is the right contract for
-the getter; the cost is that every caller has to be somewhere a throw can be
-caught. The chat page's menu builds its list through `_alternatives`, which asks
-for `Models.builtIn` inside a `try` and drops the entry on `UnsupportedError`.
+This codelab's getter omits Windows AI Foundry and Linux has no OS built-in
+model, so on both platforms it throws instead of offering a model the sample
+did not configure. That is a limitation of this model list, not of
+`flutter_edge_ai_builtin_ai`: the package delegates Windows to
+`flutter_local_ai`. The chat page's menu builds its list through
+`_alternatives`, which asks for `Models.builtIn` inside a `try` and drops the
+entry on `UnsupportedError`.
 That getter runs from `itemBuilder`, so the guard has to be *in* it: a throw
 during a build is a red screen, not something a `catch` around the tap could
 reach. The startup probe in Step 3 asks the same getter, but asks it *first*:
-where it throws there is no built-in model to probe for, so the probe never
+where it throws this codelab has no built-in model selected, so the probe never
 runs and the app goes straight to Gemma. That is why a Windows or Linux run
-just quietly downloads it and chats.
+quietly downloads it and chats.
 
 ### Installed is not active — and a built-in model is never installed
 
@@ -322,7 +328,7 @@ and `install()` is **idempotent**: called on a model that is already there, it
 skips the download and just makes it active.
 
 **For a built-in model.** "Installed" is not a concept at all. Nothing is
-written to disk and no install record exists, so `FlutterGemma.isModelInstalled`
+written to disk and no install record exists, so `FlutterEdgeAi.isModelInstalled`
 answers *no* for it forever — before activation and after. Readiness is a
 question for the OS, not for your storage.
 
@@ -338,14 +344,14 @@ Future<void> activate(
     // Throws BuiltInAiUnavailableException on a device/OS that has no
     // built-in model, so the failure is typed and the caller can react.
     await BuiltInAi.ensureReady(onProgress: onProgress);
-    await FlutterGemma.installModel(
+    await FlutterEdgeAi.installModel(
       modelType: model.modelType,
       fileType: model.fileType,
     ).fromBundled(model.id).install();
     return;
   }
 
-  await FlutterGemma.installModel(
+  await FlutterEdgeAi.installModel(
         modelType: model.modelType,
         fileType: model.fileType,
       )
@@ -385,7 +391,7 @@ Future<bool> _prepare() async {
     return true;
   }
 
-  final installed = await FlutterGemma.isModelInstalled(widget.model.id);
+  final installed = await FlutterEdgeAi.isModelInstalled(widget.model.id);
   // For a downloaded model, installed is still not the same as active.
   // `install()` is idempotent, so re-running it on a model that is already
   // here costs nothing and makes it the one `getActiveModel` will load.
@@ -482,9 +488,9 @@ once the user turns Apple Intelligence on. So the app asks, every launch:
 Future<void> _pickAtStartup() async {
   // First: does this platform have a built-in arm at all? `Models.builtIn`
   // throws where it does not, so asking it is the cheap way to find out —
-  // and where it throws there is nothing to probe either. The package
-  // registers no plugin on Windows or Linux, so `availability()` there has
-  // no OS model to ask and only reports unavailable. Skip it.
+  // and where it throws this codelab has nothing to probe. The sample omits
+  // the package's Windows AI Foundry spec; Linux has no OS built-in model.
+  // Skip the probe and use the downloaded model.
   final ModelChoice builtIn;
   try {
     builtIn = Models.builtIn;
@@ -522,14 +528,11 @@ Two questions, in that order, and the order is the whole design.
 
 The **first is about the platform**, and it is asked first because it is free:
 `Models.builtIn` throws where this app has no built-in arm, so evaluating it
-*is* the test. Where it throws there is also nothing to ask the OS —
-`flutter_gemma_builtin_ai` registers no plugin on Windows or Linux, so
-`availability()` there has no OS model to ask: it answers
-`unavailableDeviceUnsupported` without looking (before 0.2.2 it threw a
-`PlatformException` instead). There is no information in that, so the app does
-not ask for it, returns straight away,
-and takes the downloaded model. This is the same `on UnsupportedError` the menu
-uses in Step 2, moved to the front.
+*is* the test. The getter omits Windows from this codelab even though the
+package supports Windows AI Foundry through `flutter_local_ai`; Linux is the
+only platform here with no OS model. In either case the sample has no built-in
+spec to probe, so it returns straight away and takes the downloaded model. This
+is the same `on UnsupportedError` the menu uses in Step 2, moved to the front.
 
 The **second is about the plugin**, on a platform that does have an arm: one
 that registered and then broke. There a throw is real news, and turning it into
@@ -622,11 +625,12 @@ That is the finished app. Run `complete` on whatever you have:
   built-in model answers
 * an emulator or an older phone → the banner names the status, Gemma downloads
   once, LiteRT-LM answers
-* Windows or Linux, where there is no built-in arm to probe → the app finds
-  that out before it probes anything, the banner reads *No built-in model on
-  this platform — using a downloaded model*, and Gemma downloads the same way.
-  Not a failure: it is the fallback working, and it is the one branch you can
-  see without owning the hardware
+* Windows, which this codelab leaves out of its built-in model picker, or Linux,
+  where no OS built-in model exists → the app takes the fallback before probing,
+  the banner reads *No built-in model on this platform — using a downloaded
+  model*, and Gemma downloads the same way. On Windows this is a sample choice,
+  not a package limitation; `flutter_edge_ai_builtin_ai` supports Windows AI
+  Foundry through `flutter_local_ai`
 * Chrome without the Prompt API flag or origin trial → the same fallback, but
   the model that downloads is `Models.gemma4Web` (2.0 GB, ungated) rather than
   Gemma 3 1B — the browser engine cannot open the native file at all
@@ -639,9 +643,9 @@ Duration: 2
 You now have an app that adapts to the device it lands on. The registry idea
 extends further than these two engines:
 
-* **MediaPipe** (`flutter_gemma_mediapipe`) opens `.task` files on Android,
+* **MediaPipe** (`flutter_edge_ai_mediapipe`) opens `.task` files on Android,
   iOS and the web
-* **ONNX Runtime** (`flutter_gemma_onnx`) opens ONNX model directories on
+* **ONNX Runtime** (`flutter_edge_ai_onnx`) opens ONNX model directories on
   macOS, Linux, Windows, Android and iOS, and runs on the web through
   Transformers.js
 * **LiteRT-LM** — the engine you already registered — has a **web** arm too,
@@ -654,7 +658,7 @@ Each registers the same way and answers through the same chat code.
 
 ### Reference
 
-* [flutter_gemma_builtin_ai on pub.dev](https://pub.dev/packages/flutter_gemma_builtin_ai)
+* [flutter_edge_ai_builtin_ai on pub.dev](https://pub.dev/packages/flutter_edge_ai_builtin_ai)
   — supported devices, OS floors, and what each availability status means
 * [Built-in AI documentation](/docs/builtin-ai)
-* [Source and this codelab's code](https://github.com/DenisovAV/flutter_gemma)
+* [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)

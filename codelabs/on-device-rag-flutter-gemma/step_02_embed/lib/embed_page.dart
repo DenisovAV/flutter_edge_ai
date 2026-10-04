@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'model.dart';
 import 'recipes.dart';
@@ -46,7 +46,7 @@ class _EmbedPageState extends State<EmbedPage> {
     try {
       // install() is idempotent: the bytes are fetched once and the second
       // run of this button skips straight past it.
-      await FlutterGemma.installEmbedder()
+      await FlutterEdgeAi.installEmbedder()
           .modelFromNetwork(
             _embedder.modelUrl,
             token: widget.hfToken.isEmpty ? null : widget.hfToken,
@@ -66,7 +66,7 @@ class _EmbedPageState extends State<EmbedPage> {
         _status = 'Embedding ${kRecipes.length} recipes...';
       });
 
-      final embedder = await FlutterGemma.getActiveEmbedder();
+      final embedder = await FlutterEdgeAi.getActiveEmbedder();
 
       // One call for the whole corpus rather than a loop: the worker isolate
       // is set up once and the model stays resident between texts.

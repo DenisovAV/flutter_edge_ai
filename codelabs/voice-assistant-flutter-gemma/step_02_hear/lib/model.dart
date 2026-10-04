@@ -1,8 +1,8 @@
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 /// One model this app knows how to install.
 ///
-/// [fileName] doubles as the model's id: `FlutterGemma.isModelInstalled` takes
+/// [fileName] doubles as the model's id: `FlutterEdgeAi.isModelInstalled` takes
 /// the file name the model was installed under, not a display name.
 class ModelChoice {
   const ModelChoice({

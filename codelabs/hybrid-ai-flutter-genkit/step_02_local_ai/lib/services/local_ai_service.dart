@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:genkit/genkit.dart';
-import 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart';
+import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
 
 import 'ai_service.dart';
 
@@ -43,18 +43,18 @@ class LocalAIService implements AIService {
   Future<void> initialize({void Function(int)? onProgress}) async {
     if (_isInitialized) return;
 
-    // flutter_gemma 1.x registers no engine by default — opt into LiteRT-LM.
+    // flutter_edge_ai 1.x registers no engine by default — opt into LiteRT-LM.
     // `webStorageMode: streaming` (OPFS-backed) is what the size demands: the
     // 2.0 GB web build sits right on the ~2 GB blob ceiling the default
     // cacheApi mode would have to buffer it into, so the @litert-lm/core
     // engine reads it from OPFS as a ReadableStream. Ignored on non-web.
-    await FlutterGemma.initialize(
+    await FlutterEdgeAi.initialize(
       webStorageMode: WebStorageMode.streaming,
       inferenceEngines: [LiteRtLmEngine()],
     );
 
     // Download the .litertlm model (skipped if already installed).
-    await FlutterGemma.installModel(
+    await FlutterEdgeAi.installModel(
           modelType: _modelType,
           fileType: ModelFileType.litertlm,
         )
@@ -76,15 +76,15 @@ class LocalAIService implements AIService {
     // One Genkit instance for both inference and embeddings.
     _ai = Genkit(
       plugins: [
-        GenkitFlutterGemmaPlugin(
+        GenkitFlutterEdgeAiPlugin(
           models: [
-            FlutterGemmaModelConfig(
+            FlutterEdgeAiModelConfig(
               name: _modelName,
               modelType: _modelType,
               fileType: ModelFileType.litertlm,
             ),
           ],
-          embedders: [FlutterGemmaEmbedderConfig(name: _embedderName)],
+          embedders: [FlutterEdgeAiEmbedderConfig(name: _embedderName)],
         ),
       ],
     );
@@ -95,7 +95,7 @@ class LocalAIService implements AIService {
   @override
   Stream<String> generateResponseStream(String prompt) async* {
     final stream = ai.generateStream(
-      model: flutterGemma.model(_modelName),
+      model: flutterEdgeAi.model(_modelName),
       prompt: prompt,
     );
 

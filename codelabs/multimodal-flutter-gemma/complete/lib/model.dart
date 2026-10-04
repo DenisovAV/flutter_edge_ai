@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 /// One model this app knows how to install.
 ///
-/// [fileName] doubles as the model's id: `FlutterGemma.isModelInstalled` takes
+/// [fileName] doubles as the model's id: `FlutterEdgeAi.isModelInstalled` takes
 /// the file name the model was installed under, not a display name.
 class ModelChoice {
   const ModelChoice({
@@ -28,7 +28,7 @@ class ModelChoice {
   final String webSize;
   final ModelType modelType;
 
-  /// `flutter_gemma_litertlm`'s web arm is a separate build of the same
+  /// `flutter_edge_ai_litertlm`'s web arm is a separate build of the same
   /// checkpoint — the native file is not the one to hand it.
   String get url => kIsWeb ? webUrl : nativeUrl;
 

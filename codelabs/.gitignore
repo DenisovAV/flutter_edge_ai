@@ -1,6 +1,6 @@
 # Step apps deliberately do NOT pin their dependencies.
 #
-# The codelab tells the learner to run `flutter pub add flutter_gemma …`, which
+# The codelab tells the learner to run `flutter pub add flutter_edge_ai …`, which
 # resolves to the newest compatible release — so that is what these apps must
 # resolve to as well. A committed lock file would also blind the nightly CI run,
 # whose entire purpose is to notice when a new package release breaks a step.
@@ -21,7 +21,7 @@ pubspec.lock
 Podfile.lock
 
 # Package skills a learner installs with `dart run skills@ get`. They belong to
-# flutter_gemma's release, not to these apps: a committed copy would drift from
+# flutter_edge_ai's release, not to these apps: a committed copy would drift from
 # the package the next time it ships, and the codelab teaches installing them.
 .agents/
 .claude/

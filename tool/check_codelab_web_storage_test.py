@@ -15,11 +15,14 @@ real pub cache only to have some bytes to compare against.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import quote, urlparse
+from urllib.request import url2pathname
 
 HERE = Path(__file__).resolve().parent
 CHECKER = HERE / "check_codelab_web_storage.py"
@@ -37,14 +40,14 @@ PUBSPEC = """name: demo
 environment:
   sdk: '>=3.0.0 <4.0.0'
 dependencies:
-  flutter_gemma: ^1.8.3
-  flutter_gemma_litertlm: ^1.7.0
+  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai_litertlm: ^1.8.6
 """
 
-MAIN = """import 'package:flutter_gemma/flutter_gemma.dart';
+MAIN = """import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 void main() async {
-  await FlutterGemma.initialize(
+  await FlutterEdgeAi.initialize(
     webStorageMode: WebStorageMode.streaming,
     inferenceEngines: [LiteRtLmEngine()],
   );
@@ -60,18 +63,23 @@ def package_dir(name: str) -> Path | None:
         except (OSError, ValueError, KeyError):
             continue
         for entry in entries:
-            if entry["name"] == name and entry["rootUri"].startswith("file://"):
-                return Path(entry["rootUri"][len("file://") :])
+            if entry["name"] != name:
+                continue
+            uri = entry["rootUri"]
+            if uri.startswith("file://"):
+                return Path(url2pathname(urlparse(uri).path))
+            relative_path = url2pathname(urlparse(uri).path)
+            return (config.parent / relative_path).resolve()
     return None
 
 
-def build(root: Path, gemma: Path, litertlm: Path) -> Path:
+def build(root: Path, core: Path, litertlm: Path) -> Path:
     app = root / "codelabs" / "demo" / "app"
     (app / "lib").mkdir(parents=True)
     (app / "web").mkdir()
     (app / ".dart_tool").mkdir()
     for js in ("cache_api.js", "opfs_helper.js"):
-        shutil.copy(gemma / "web" / js, app / "web" / js)
+        shutil.copy(core / "web" / js, app / "web" / js)
     (app / "web" / "index.html").write_text(INDEX)
     (app / "pubspec.yaml").write_text(PUBSPEC)
     (app / "lib" / "main.dart").write_text(MAIN)
@@ -80,8 +88,8 @@ def build(root: Path, gemma: Path, litertlm: Path) -> Path:
             {
                 "configVersion": 2,
                 "packages": [
-                    {"name": "flutter_gemma", "rootUri": gemma.as_uri(), "packageUri": "lib/"},
-                    {"name": "flutter_gemma_litertlm", "rootUri": litertlm.as_uri(), "packageUri": "lib/"},
+                    {"name": "flutter_edge_ai", "rootUri": core.as_uri(), "packageUri": "lib/"},
+                    {"name": "flutter_edge_ai_litertlm", "rootUri": litertlm.as_uri(), "packageUri": "lib/"},
                 ],
             }
         )
@@ -95,12 +103,28 @@ def run(root: Path) -> int:
     ).returncode
 
 
+def use_relative_encoded_root_uris(app: Path) -> None:
+    """Mirror pub's relative rootUri form, including URI-escaped path bytes."""
+    config = app / ".dart_tool" / "package_config.json"
+    data = json.loads(config.read_text())
+    package_roots = app.parents[2] / "package roots"
+    for entry in data["packages"]:
+        source = Path(url2pathname(urlparse(entry["rootUri"]).path))
+        target = package_roots / entry["name"]
+        target.mkdir(parents=True)
+        if (source / "web").is_dir():
+            shutil.copytree(source / "web", target / "web")
+        relative = Path(os.path.relpath(target, config.parent)).as_posix()
+        entry["rootUri"] = quote(relative, safe="/.")
+    config.write_text(json.dumps(data))
+
+
 # Each case mutates the fixture in place; the guard must exit non-zero.
 def with_speech(app: Path, environments: str | None) -> Path:
-    """Make the fixture depend on flutter_gemma_speech, and give its codelab a
+    """Make the fixture depend on flutter_edge_ai_speech, and give its codelab a
     claat header with this environments line (None: no header at all)."""
     pubspec = app / "pubspec.yaml"
-    pubspec.write_text(pubspec.read_text() + "  flutter_gemma_speech: ^0.5.2\n")
+    pubspec.write_text(pubspec.read_text() + "  flutter_edge_ai_speech: ^0.5.2\n")
     if environments is not None:
         header = app.parents[2] / "website" / "codelabs" / app.parent.name / "index.md"
         header.parent.mkdir(parents=True, exist_ok=True)
@@ -184,23 +208,23 @@ MUST_FAIL = {
     ),
     "a second call site without it": lambda app: (app / "lib" / "main.dart").write_text(
         MAIN + "\nFuture<void> reset() async {\n"
-        "  await FlutterGemma.initialize(inferenceEngines: [LiteRtLmEngine()]);\n}\n"
+        "  await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);\n}\n"
     ),
     "call without await": lambda app: (app / "lib" / "main.dart").write_text(
-        "void main() {\n  FlutterGemma.initialize(inferenceEngines: []);\n}\n"
+        "void main() {\n  FlutterEdgeAi.initialize(inferenceEngines: []);\n}\n"
     ),
     "call wrapped across lines": lambda app: (app / "lib" / "main.dart").write_text(
-        "void main() async {\n  await FlutterGemma\n      .initialize(inferenceEngines: []);\n}\n"
+        "void main() async {\n  await FlutterEdgeAi\n      .initialize(inferenceEngines: []);\n}\n"
     ),
     "4-space dependencies block": lambda app: (
         (app / "pubspec.yaml").write_text(
-            PUBSPEC.replace("  flutter_gemma: ^1.8.3", "    flutter_gemma: ^1.8.3")
+            PUBSPEC.replace("  flutter_edge_ai: ^1.11.4", "    flutter_edge_ai: ^1.11.4")
         ),
         (app / "web" / "cache_api.js").unlink(),
     ),
     "flow-style dependencies": lambda app: (
         (app / "pubspec.yaml").write_text(
-            "name: demo\ndependencies: {flutter_gemma: ^1.8.3, flutter_gemma_litertlm: ^1.7.0}\n"
+            "name: demo\ndependencies: {flutter_edge_ai: ^1.11.4, flutter_edge_ai_litertlm: ^1.8.6}\n"
         ),
         (app / "web" / "cache_api.js").unlink(),
     ),
@@ -211,6 +235,7 @@ MUST_FAIL = {
 
 # The guard must NOT fire on these: they are correct, just spelled differently.
 MUST_PASS = {
+    "relative URI-escaped package roots": use_relative_encoded_root_uris,
     "native-only app, header leaves web out": lambda app: with_speech(
         app, "android, ios, macos"
     ),
@@ -236,11 +261,11 @@ MUST_PASS = {
         )
     ),
     "initialize named in a doc comment": lambda app: (app / "lib" / "main.dart").write_text(
-        "/// Call FlutterGemma.initialize( before runApp.\n" + MAIN
+        "/// Call FlutterEdgeAi.initialize( before runApp.\n" + MAIN
     ),
     "dev_dependencies only": lambda app: (
         (app / "pubspec.yaml").write_text(
-            "name: demo\ndev_dependencies:\n  flutter_gemma: ^1.8.3\n"
+            "name: demo\ndev_dependencies:\n  flutter_edge_ai: ^1.11.4\n"
         ),
         (app / "web" / "cache_api.js").unlink(),
         (app / "web" / "opfs_helper.js").unlink(),
@@ -250,23 +275,23 @@ MUST_PASS = {
 
 
 def main() -> int:
-    gemma = package_dir("flutter_gemma")
-    litertlm = package_dir("flutter_gemma_litertlm")
-    if gemma is None or litertlm is None:
-        print("::error::no resolved flutter_gemma in codelabs/ — run flutter pub get first")
+    core = package_dir("flutter_edge_ai")
+    litertlm = package_dir("flutter_edge_ai_litertlm")
+    if core is None or litertlm is None:
+        print("::error::no resolved flutter_edge_ai in codelabs/ — run flutter pub get first")
         return 1
 
     failures = []
     for label, mutate in MUST_FAIL.items():
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            mutate(build(root, gemma, litertlm))
+            mutate(build(root, core, litertlm))
             if run(root) == 0:
                 failures.append(f"MISSED: {label}")
     for label, mutate in MUST_PASS.items():
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            mutate(build(root, gemma, litertlm))
+            mutate(build(root, core, litertlm))
             if run(root) != 0:
                 failures.append(f"FALSE ALARM: {label}")
 

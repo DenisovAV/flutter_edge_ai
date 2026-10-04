@@ -1,10 +1,10 @@
 ---
 title: Embeddings & RAG
 description: Generate text embeddings and run on-device retrieval-augmented generation (RAG) with a payload-aware Filter API.
-image: https://fluttergemma.dev/images/og-image.png
+image: https://flutteredge.ai/images/og-image.png
 ---
 
-flutter_gemma can generate vector embeddings from text (EmbeddingGemma / Gecko on
+flutter_edge_ai can generate vector embeddings from text (EmbeddingGemma / Gecko on
 LiteRT, or BERT / MiniLM / WordPiece models via the ONNX backend)
 and run on-device RAG with a vector store. Two stores are available, both with
 the same Dart API: **qdrant-edge** — the fastest store on native (HNSW
@@ -14,19 +14,19 @@ and the only store that runs on Web. Your code is portable across both.
 
 ## Setup
 
-Embeddings need the `flutter_gemma_embeddings` package plus a backend that
-implements it — `flutter_gemma_litertlm`'s `LiteRtEmbeddingBackend` (or
-`flutter_gemma_onnx`'s `OnnxEmbeddingBackend` for ONNX/ORT models, which also
+Embeddings need the `flutter_edge_ai_embeddings` package plus a backend that
+implements it — `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` (or
+`flutter_edge_ai_onnx`'s `OnnxEmbeddingBackend` for ONNX/ORT models, which also
 runs on Web via onnxruntime-web). RAG also
-needs a vector store package — `flutter_gemma_rag_qdrant` (native, fastest) or
-`flutter_gemma_rag_sqlite` (sqlite-vec; all platforms, including Web). Register
-them in `await FlutterGemma.initialize(...)`:
+needs a vector store package — `flutter_edge_ai_qdrant` (native, fastest) or
+`flutter_edge_ai_sqlite` (sqlite-vec; all platforms, including Web). Register
+them in `await FlutterEdgeAi.initialize(...)`:
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: const [LiteRtLmEngine()],
-  embeddingBackends: const [LiteRtEmbeddingBackend()], // flutter_gemma_litertlm
-  embeddingTokenizers: const [GemmaEmbeddingTokenizers()], // flutter_gemma_embeddings
+  embeddingBackends: const [LiteRtEmbeddingBackend()], // flutter_edge_ai_litertlm
+  embeddingTokenizers: const [GemmaEmbeddingTokenizers()], // flutter_edge_ai_embeddings
   vectorStore: QdrantVectorStore(),                    // or WebSqliteVectorStore() on web
 );
 ```
@@ -47,7 +47,7 @@ sequence length in tokens, not the embedding dimension. See
 ### Install an embedding model
 
 ```dart
-await FlutterGemma.installEmbedder()
+await FlutterEdgeAi.installEmbedder()
     .modelFromNetwork(
       'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq256_mixed-precision.tflite',
       token: 'hf_...',
@@ -62,7 +62,7 @@ await FlutterGemma.installEmbedder()
 ### Generate embeddings
 
 ```dart
-final embedder = await FlutterGemma.getActiveEmbedder();
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
 final embeddings = await embedder.generateEmbeddings(
   docs.map((d) => d.content).toList(),
   taskType: TaskType.retrievalDocument,
@@ -85,7 +85,7 @@ one line per isolate saying so, but only in debug builds. Read
 `EmbeddingModel.activeBackend` when it matters:
 
 ```dart
-final embedder = await FlutterGemma.getActiveEmbedder(
+final embedder = await FlutterEdgeAi.getActiveEmbedder(
   preferredBackend: PreferredBackend.gpu, // accepted, not applied
 );
 print(embedder.activeBackend); // PreferredBackend.cpu on native
@@ -99,13 +99,13 @@ no equivalent.
 
 ## On-device RAG / vector store
 
-All RAG operations live on the `FlutterGemma.rag` namespace — the canonical
+All RAG operations live on the `FlutterEdgeAi.rag` namespace — the canonical
 entry point. (The store is opt-in: register a `vectorStore:` in
-`await FlutterGemma.initialize(...)`, or every `rag` call except `flush()` throws
+`await FlutterEdgeAi.initialize(...)`, or every `rag` call except `flush()` throws
 a clear "add a RAG package" error — `flush()` returns without doing anything.)
 
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 // 1. Install an embedding model (any of Gecko / EmbeddingGemma) — see above.
 
@@ -113,11 +113,11 @@ import 'package:flutter_gemma/flutter_gemma.dart';
 //    an absolute path: a bare name resolves against the process working
 //    directory, which is not writable on Android or iOS. On web a name is enough.
 final dir = await getApplicationDocumentsDirectory(); // package:path_provider
-await FlutterGemma.rag.initialize('${dir.path}/rag_store');
+await FlutterEdgeAi.rag.initialize('${dir.path}/rag_store');
 
-// 3. Add documents — let flutter_gemma compute embeddings for you
+// 3. Add documents — let flutter_edge_ai compute embeddings for you
 for (final doc in docs) {
-  await FlutterGemma.rag.addDocument(
+  await FlutterEdgeAi.rag.addDocument(
     id: doc.id,
     content: doc.content,
     metadata: '{"category":"science","lang":"en"}',
@@ -126,13 +126,13 @@ for (final doc in docs) {
 
 // 3b. Or batch-embed yourself and feed pre-computed vectors via
 //     addDocumentWithEmbedding(...) for higher throughput.
-final embedder = await FlutterGemma.getActiveEmbedder();
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
 final embeddings = await embedder.generateEmbeddings(
   docs.map((d) => d.content).toList(),
   taskType: TaskType.retrievalDocument,
 );
 for (var i = 0; i < docs.length; i++) {
-  await FlutterGemma.rag.addDocumentWithEmbedding(
+  await FlutterEdgeAi.rag.addDocumentWithEmbedding(
     id: docs[i].id,
     content: docs[i].content,
     embedding: embeddings[i],
@@ -141,10 +141,10 @@ for (var i = 0; i < docs.length; i++) {
 }
 
 // 3c. Persist what you indexed while the store stays open (see below)
-await FlutterGemma.rag.flush();
+await FlutterEdgeAi.rag.flush();
 
 // 4. Semantic search, with optional payload-aware Filter
-final results = await FlutterGemma.rag.searchSimilar(
+final results = await FlutterEdgeAi.rag.searchSimilar(
   query: 'quantum entanglement',
   topK: 10,
   threshold: 0.0,
@@ -156,14 +156,14 @@ final results = await FlutterGemma.rag.searchSimilar(
 
 // 5. Maintain the store: remove one document (no-op if the id is absent),
 //    read stats, or clear everything.
-await FlutterGemma.rag.removeDocument(id: 'doc-42');
-final stats = await FlutterGemma.rag.stats();
-await FlutterGemma.rag.clear();
+await FlutterEdgeAi.rag.removeDocument(id: 'doc-42');
+final stats = await FlutterEdgeAi.rag.stats();
+await FlutterEdgeAi.rag.clear();
 ```
 
 ### Persisting the index: `flush()`
 
-Call `FlutterGemma.rag.flush()` after indexing. What it does depends on the store:
+Call `FlutterEdgeAi.rag.flush()` after indexing. What it does depends on the store:
 
 - **qdrant-edge** — required. New documents stay in memory until the store is
   flushed or closed, so an index built without either is lost when the process
@@ -174,8 +174,8 @@ Call `FlutterGemma.rag.flush()` after indexing. What it does depends on the stor
   3.4.0 through 3.5.2 returned early over a write batch already in flight
   ([upstream #408](https://github.com/simolus3/sqlite3.dart/issues/408)), which
   is why `flutter_gemma_rag_sqlite` 1.4.0 requires sqlite3 3.6.0 and, with it,
-  **Flutter 3.47** — a higher floor than every other package here. An app on
-  Flutter 3.44 resolves to rag_sqlite 1.3.2 instead and keeps the partial drain;
+  **Flutter 3.47** — a higher floor than every other package here. On Flutter
+  3.44 only the old `flutter_gemma_rag_sqlite` 1.3.2 resolves, with the partial drain;
   `close()` is the full drain on every version.
 
 A store that cannot persist at all (the web in-memory fallback) throws
@@ -207,7 +207,7 @@ The sqlite-vec store filters over declared columns. Describe them with a
 `FilterSchema` of `FilterField`s, and pass it either to `initialize(...)`:
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   vectorStore: SqliteVectorStore(),
   filterSchema: const FilterSchema(fields: [
     FilterField(name: 'category', type: FilterFieldType.string),
@@ -283,7 +283,7 @@ per-platform `vec0` extension comes from this repository's
 package's build hook the first time you build for a given platform, then cached
 under `~/.cache/flutter_gemma/native/` (`~/Library/Caches/…` on macOS,
 `%LOCALAPPDATA%\…` on Windows). So the **first** build of each platform needs
-`github.com` reachable; later builds do not. `flutter_gemma_litertlm` has always
+`github.com` reachable; later builds do not. `flutter_edge_ai_litertlm` has always
 worked this way — as of 1.3.0 both packages behave the same.
 
 Before 1.3.0 the loadables were committed into the package, which shipped all
@@ -304,6 +304,6 @@ for exact results or cross-platform / web reach.
 
 Benchmarks comparing the two stores across platforms (EmbeddingGemma 300M,
 768-dim) are in the
-[repo benchmarks](https://github.com/DenisovAV/flutter_gemma/blob/main/packages/flutter_gemma/example/integration_test/benchmarks/comparison.md).
+[repo benchmarks](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai/example/integration_test/benchmarks/comparison.md).
 
-**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-gemma-rag`](/docs/package-skills), the skill that teaches it embedding models, both vector stores, and the metadata filters above — including the `filterSchema` trap that returns unfiltered results.
+**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-rag`](/docs/package-skills), the skill that teaches it embedding models, both vector stores, and the metadata filters above — including the `filterSchema` trap that returns unfiltered results.

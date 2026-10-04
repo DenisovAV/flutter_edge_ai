@@ -221,7 +221,7 @@ def main():
 # doc check is exercised on the live repo, not here.
 _TESTS = [
     ("dart pub publish --force", True, False),
-    ("cd packages/flutter_gemma_agent && dart pub publish", True, False),
+    ("cd packages/flutter_edge_ai_agent && dart pub publish", True, False),
     ("cd packages/x\ndart pub publish", True, False),  # multiline was a guard-publish bypass
     ("timeout 900 dart pub publish", True, False),  # wrapper was a bypass
     ("dart pub publish --dry-run", True, True),
@@ -244,16 +244,16 @@ def _self_test():
                 f"exempt={got_exempt}(want {want_exempt})"
             )
     # package resolution: cd-in-command, cwd-fallback (bare publish), last-cd-wins
-    assert _package_from("cd packages/flutter_gemma_agent && dart pub publish", "") == (
-        "flutter_gemma_agent"
+    assert _package_from("cd packages/flutter_edge_ai_agent && dart pub publish", "") == (
+        "flutter_edge_ai_agent"
     ), "cd parse"
-    assert _package_from("dart pub publish", "/repo/packages/flutter_gemma") == (
-        "flutter_gemma"
+    assert _package_from("dart pub publish", "/repo/packages/flutter_edge_ai") == (
+        "flutter_edge_ai"
     ), "bare publish resolves via cwd (Step 10 shape)"
     assert _package_from("dart pub publish", "") is None, "no cd, no cwd -> None"
     assert _package_from(
-        "cd packages/flutter_gemma && cd packages/flutter_gemma_agent && dart pub publish", ""
-    ) == "flutter_gemma_agent", "last cd wins"
+        "cd packages/flutter_edge_ai && cd packages/flutter_edge_ai_agent && dart pub publish", ""
+    ) == "flutter_edge_ai_agent", "last cd wins"
     # skip must be in command position, not inside an echo/grep
     assert SKIP_RE.search('RELEASE_SKIP_DOCS="reason" dart pub publish'), "skip parse"
     assert not SKIP_RE.search('echo RELEASE_SKIP_DOCS=note && dart pub publish'), (

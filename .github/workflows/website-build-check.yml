@@ -1,4 +1,4 @@
-# Build the fluttergemma.dev website on every PR that touches it — no deploy.
+# Build the flutteredge.ai website on every PR that touches it — no deploy.
 # Catches SSG / web-build breakage (e.g. a non-Dart code fence that crashes the
 # Jaspr highlighter, or a dart2js API drift in the /try example) BEFORE merge,
 # instead of only discovering it when the merge deploy fails and the live site
@@ -8,7 +8,7 @@ on:
   pull_request:
     paths:
       - 'website/**'
-      - 'packages/flutter_gemma/example/**'
+      - 'packages/flutter_edge_ai/example/**'
       - '.github/workflows/website-build-check.yml'
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
       - name: Set up Flutter (bundles Dart)
         uses: subosito/flutter-action@v2
         with:
-          # The workspace floor: flutter_gemma_rag_sqlite needs 3.47 for
+          # The workspace floor: flutter_edge_ai_sqlite needs 3.47 for
           # sqlite3 3.6.0, and this job builds the example that depends on it.
           flutter-version: '3.47.0'
           channel: stable
@@ -37,7 +37,7 @@ jobs:
         run: |
           export PATH="$HOME/.pub-cache/bin:$PATH"
           dart pub get
-          jaspr build --sitemap-domain "https://fluttergemma.dev"
+          jaspr build --sitemap-domain "https://flutteredge.ai"
 
       - name: Export codelabs (claat static export → /codelabs)
         # The SAME script the merge workflow runs — that is the point of this
@@ -55,11 +55,11 @@ jobs:
             "$CLAAT_BASE_URL/$CLAAT_VERSION/claat-linux-amd64"
           echo "$CLAAT_SHA256_linux_amd64  $RUNNER_TEMP/claat" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/claat"
-          CLAAT="$RUNNER_TEMP/claat" DOMAIN="https://fluttergemma.dev" \
+          CLAAT="$RUNNER_TEMP/claat" DOMAIN="https://flutteredge.ai" \
             tool/export_codelabs.sh
 
       - name: Build Flutter web example (live demo at /try)
-        working-directory: packages/flutter_gemma/example
+        working-directory: packages/flutter_edge_ai/example
         run: |
           flutter pub get
           flutter build web --release --base-href /try/

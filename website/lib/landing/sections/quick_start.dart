@@ -3,24 +3,24 @@ import 'package:jaspr/jaspr.dart';
 
 import '../../theme/brand.dart';
 
-const _code = '''await FlutterGemma.initialize(
+const _code = '''await FlutterEdgeAi.initialize(
   inferenceEngines: [LiteRtLmEngine(), MediaPipeEngine()],
   embeddingBackends: [LiteRtEmbeddingBackend()],
   embeddingTokenizers: [GemmaEmbeddingTokenizers()],
   vectorStore: QdrantVectorStore(),
 );
 
-await FlutterGemma.installModel(
+await FlutterEdgeAi.installModel(
   modelType: ModelType.gemma4,
   fileType: ModelFileType.litertlm, // the declared type picks the engine
 ).fromNetwork('https://.../gemma-4-E2B-it.litertlm').install();
 
-final model = await FlutterGemma.getActiveModel(maxTokens: 2048);
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
 final chat = await model.createChat();
 await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
 final response = await chat.generateChatResponse();''';
 
-/// Static code block showing canonical flutter_gemma usage.
+/// Static code block showing canonical flutter_edge_ai usage.
 class QuickStart extends StatelessComponent {
   const QuickStart({super.key});
 

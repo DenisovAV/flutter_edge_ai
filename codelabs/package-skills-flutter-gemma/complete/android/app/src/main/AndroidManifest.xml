@@ -2,7 +2,7 @@
     <!-- Downloading the model file is a plain HTTPS GET. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="Gemma Skills"
+        android:label="Edge AI Skills"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

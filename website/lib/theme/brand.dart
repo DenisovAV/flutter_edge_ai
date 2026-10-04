@@ -1,6 +1,6 @@
 import 'package:jaspr/dom.dart';
 
-/// Brand design tokens for the flutter_gemma website.
+/// Brand design tokens for the flutter_edge_ai website.
 ///
 /// Palette derived from the example app's dark UI: a deep navy canvas with
 /// blue / orange / green accents mapped onto feature categories

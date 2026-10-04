@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'model.dart';
 
@@ -35,7 +35,7 @@ class _ChatPageState extends State<ChatPage> {
     try {
       // maxTokens is the whole context window — prompt, history and reply —
       // not the reply length. The reply is capped by maxOutputTokens below.
-      final inference = await FlutterGemma.getActiveModel(maxTokens: 1024);
+      final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
       if (!mounted) {
         await inference.close();
         return;
@@ -105,7 +105,7 @@ class _ChatPageState extends State<ChatPage> {
           _chat = null;
         });
       }
-      await FlutterGemma.uninstallModel(widget.model.fileName);
+      await FlutterEdgeAi.uninstallModel(widget.model.fileName);
       if (mounted) widget.onModelRemoved();
     } catch (error) {
       if (mounted) setState(() => _loadError = error);

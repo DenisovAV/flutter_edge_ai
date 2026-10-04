@@ -4,7 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
-  flutter_gemma
+  flutter_edge_ai
   record_windows
 )
 

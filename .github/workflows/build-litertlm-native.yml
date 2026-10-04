@@ -74,7 +74,7 @@ jobs:
           echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
       - name: Patch C API
-        run: bash packages/flutter_gemma_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
+        run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
 
       - name: Build libLiteRtLm.so
         run: |
@@ -94,7 +94,7 @@ jobs:
       - name: Build libStreamProxy.so
         run: |
           gcc -shared -fPIC -o /tmp/libStreamProxy.so \
-            packages/flutter_gemma_litertlm/native/litert_lm/stream_proxy.c
+            packages/flutter_edge_ai_litertlm/native/litert_lm/stream_proxy.c
 
       - name: Collect artifacts
         run: |
@@ -201,7 +201,7 @@ jobs:
           echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
       - name: Patch C API
-        run: bash packages/flutter_gemma_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
+        run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
 
       - name: Build libLiteRtLm.so
         run: |
@@ -221,7 +221,7 @@ jobs:
       - name: Build libStreamProxy.so
         run: |
           gcc -shared -fPIC -o /tmp/libStreamProxy.so \
-            packages/flutter_gemma_litertlm/native/litert_lm/stream_proxy.c
+            packages/flutter_edge_ai_litertlm/native/litert_lm/stream_proxy.c
 
       - name: Collect artifacts
         run: |
@@ -351,7 +351,7 @@ jobs:
 
       - name: Patch C API
         shell: bash
-        run: bash packages/flutter_gemma_litertlm/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
+        run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
 
       - name: Build LiteRtLm.dll
         # litert_runtime_link_mode=dynamic keeps the LiteRt C API OUT of
@@ -440,7 +440,7 @@ jobs:
 
       - name: Build StreamProxy.dll
         run: |
-          cl /LD /Fe:StreamProxy.dll packages\flutter_gemma_litertlm\native\litert_lm\stream_proxy.c
+          cl /LD /Fe:StreamProxy.dll packages\flutter_edge_ai_litertlm\native\litert_lm\stream_proxy.c
 
       - name: Download DirectXShaderCompiler runtime
         # WebGPU/DX12 backend on Windows requires dxil.dll + dxcompiler.dll

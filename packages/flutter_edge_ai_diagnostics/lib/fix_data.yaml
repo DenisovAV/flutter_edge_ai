@@ -1,0 +1,13 @@
+# Data-driven fixes for `dart fix` (https://dart.dev/go/data-driven-fixes):
+# `dart fix --apply` renames the name this package carried as
+# flutter_gemma_diagnostics.
+version: 1
+transforms:
+  - title: "Rename to 'FlutterEdgeAiDiagnostics'"
+    date: 2026-09-29
+    element:
+      uris: [ 'flutter_edge_ai_diagnostics.dart', 'package:flutter_gemma_diagnostics/flutter_gemma_diagnostics.dart' ]
+      typedef: 'FlutterGemmaDiagnostics'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiDiagnostics'

@@ -1,0 +1,85 @@
+name: flutter_edge_ai_agent
+description: "On-device agentic skills (SKILL.md + tool-calling loop) for flutter_edge_ai. Opt-in package adding text/JS/native-intent/MCP skill executors."
+version: 0.2.6
+homepage: https://flutteredge.ai
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_agent
+topics: [agent, skills, llm, tool-calling, on-device]
+
+# The agent layer is pure superglue over flutter_edge_ai's existing
+# function-calling. The JS executor runs foreign skill JS in a sandboxed headless
+# webview: flutter_inappwebview on native (Android/iOS/macOS/Windows) and native
+# `package:web` iframe + postMessage on web (the inappwebview web arm has no JS
+# bridge, so web bypasses the plugin entirely). The MCP executor talks to remote
+# servers over Streamable HTTP via the http package; the native-intent executor
+# reaches the device via url_launcher (mail/SMS composer + calendar/desktop
+# fallback), add_2_calendar, and flutter_local_notifications.
+platforms:
+  android:
+  ios:
+  web:
+  macos:
+  windows:
+  linux:
+
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # 1.5.5 added onMaxToolTurns to generateChatResponseWithTools — the reusable
+  # tool loop AgentLoop delegates to since 0.2.2; earlier core has no such param
+  # and would fail to compile. (1.2.0 first gave the skillExecutors seam.)
+  flutter_edge_ai: ^1.11.4
+  # SKILL.md frontmatter is YAML; parsed with the standard yaml package.
+  yaml: ^3.1.2
+  # McpSkillExecutor calls MCP tools over Streamable HTTP (JSON-RPC over POST).
+  http: ^1.2.0
+  # JsSkillExecutor runs a skill's scripts/index.html in a sandboxed headless
+  # webview. flutter_inappwebview is imported ONLY by the native arm
+  # (js_runtime_io.dart); the web arm uses package:web (below), never the plugin.
+  flutter_inappwebview: ^6.1.5
+  # Web arm: native HTMLIFrameElement (headless JS exec) + HtmlElementView
+  # (WebviewResult render) via package:web — no webview plugin on web.
+  web: ^1.1.0
+  # NativeIntentExecutor opens the OS mail/SMS composer and the calendar/desktop
+  # fallback via url_launcher; schedules local notifications and adds calendar
+  # events through the native-intent whitelist.
+  url_launcher: ^6.3.1
+  add_2_calendar: ^3.1.1
+  flutter_local_notifications: ^22.0.0
+  # zonedSchedule needs a tz.TZDateTime; timezone is a flutter_local_notifications
+  # transitive dep but we import it directly, so declare it.
+  timezone: ^0.11.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # The L2 webview integration test needs a host runner, so it lives in the
+  # example app (packages/flutter_edge_ai/example/integration_test/
+  # js_skill_real_webview_test.dart), run on a device per AGENTS.md Rule 6 —
+  # not here (a plugin package has no runner to execute integration_test).
+
+flutter:
+  # Bundled starter skills (ported verbatim from google-ai-edge/gallery,
+  # Apache-2.0). The host app addresses these under the
+  # `packages/flutter_edge_ai_agent/` prefix; AssetSkillSource builds the keys.
+  # A directory entry only includes files DIRECTLY in it (not nested), so each
+  # skill dir and each JS skill's scripts/ dir is listed explicitly.
+  assets:
+    - assets/skills/calculate-hash/
+    - assets/skills/calculate-hash/scripts/
+    - assets/skills/qr-code/
+    - assets/skills/qr-code/scripts/
+    - assets/skills/query-wikipedia/
+    - assets/skills/query-wikipedia/scripts/
+    - assets/skills/interactive-map/
+    - assets/skills/interactive-map/scripts/
+    - assets/skills/send-email/
+    - assets/skills/create-calendar-event/
+    - assets/skills/get-current-time/
+    - assets/skills/kitchen-adventure/

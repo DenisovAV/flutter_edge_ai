@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:genkit/genkit.dart';
-import 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart';
+import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
 
 const List<String> _cityFiles = [
   'paris',
@@ -41,7 +41,7 @@ class _VectorDocument {
 /// RAG service for tourist-guide semantic search.
 ///
 /// Accepts a pre-initialized [Genkit] instance and embedder name from the
-/// caller so it stays decoupled from flutter_gemma lifecycle management.
+/// caller so it stays decoupled from flutter_edge_ai lifecycle management.
 /// The caller (AiEngine) owns model/embedder installation.
 class RagService {
   final Genkit _ai;
@@ -73,7 +73,7 @@ class RagService {
       final content = _buildContent(data);
 
       final embeddings = await _ai.embed(
-        embedder: flutterGemma.embedder(_embedderName),
+        embedder: flutterEdgeAi.embedder(_embedderName),
         document: DocumentData(content: [TextPart(text: content)]),
       );
 
@@ -105,7 +105,7 @@ class RagService {
     if (!_isInitialized) throw StateError('RagService not initialized');
 
     final queryEmbeddings = await _ai.embed(
-      embedder: flutterGemma.embedder(_embedderName),
+      embedder: flutterEdgeAi.embedder(_embedderName),
       document: DocumentData(content: [TextPart(text: query)]),
     );
     final queryVector = queryEmbeddings.first.embedding;

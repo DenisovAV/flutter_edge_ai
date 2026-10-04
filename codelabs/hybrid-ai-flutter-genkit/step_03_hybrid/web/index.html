@@ -35,7 +35,7 @@
   <!-- LiteRT-LM's web arm loads `@litert-lm/core` from a CDN. The ESM assigns
        no window globals and module scripts are deferred, so Dart waits on the
        promise this handshake publishes. Native platforms need no web setup.
-       The handshake below is the flutter_gemma_litertlm README's, verbatim. -->
+       The handshake below is the flutter_edge_ai_litertlm README's, verbatim. -->
 <script type="module">
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.17.1/+esm');
@@ -57,7 +57,7 @@ window.litertLmReady = (async () => {
        for now — see the codelab's "Web setup for embeddings" section. -->
 
   <!-- LiteRT.js embeddings bundle (RAG). The four files beside this one are
-       copied from flutter_gemma_litertlm/web/ — that package owns them since
+       copied from flutter_edge_ai_litertlm/web/ — that package owns them since
        1.8.0. The WASM runtime they need comes from a CDN. -->
   <script type="module" src="litert_embeddings.js"></script>
 </head>

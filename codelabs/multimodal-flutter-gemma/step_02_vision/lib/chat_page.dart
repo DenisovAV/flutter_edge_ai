@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'model.dart';
@@ -65,7 +65,7 @@ class _ChatPageState extends State<ChatPage> {
       // is told to. Set it on the chat alone and everything looks fine until
       // the first image, when native fails the turn with
       // `INVALID_ARGUMENT: Vision executor should not be null`.
-      final inference = await FlutterGemma.getActiveModel(
+      final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 4096,
         supportImage: true,
       );
@@ -212,7 +212,7 @@ class _ChatPageState extends State<ChatPage> {
           _chat = null;
         });
       }
-      await FlutterGemma.uninstallModel(widget.model.fileName);
+      await FlutterEdgeAi.uninstallModel(widget.model.fileName);
       if (mounted) widget.onModelRemoved();
     } catch (error) {
       // Deleting can fail too — a missing install record, a file the OS still

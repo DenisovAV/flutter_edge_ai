@@ -1,0 +1,77 @@
+# Data-driven fixes for `dart fix` (https://dart.dev/go/data-driven-fixes):
+# `dart fix --apply` renames the names this package carried as
+# genkit_flutter_gemma.
+version: 1
+transforms:
+  - title: "Rename to 'GenkitFlutterEdgeAiPlugin'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      typedef: 'GenkitFlutterGemmaPlugin'
+    changes:
+      - kind: 'rename'
+        newName: 'GenkitFlutterEdgeAiPlugin'
+  - title: "Rename to 'FlutterEdgeAiModelConfig'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      typedef: 'FlutterGemmaModelConfig'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiModelConfig'
+  - title: "Rename to 'FlutterEdgeAiEmbedderConfig'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      typedef: 'FlutterGemmaEmbedderConfig'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiEmbedderConfig'
+  - title: "Rename to 'FlutterEdgeAiModelOptions'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      typedef: 'FlutterGemmaModelOptions'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiModelOptions'
+  - title: "Rename to 'FlutterEdgeAiEmbedConfig'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      typedef: 'FlutterGemmaEmbedConfig'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiEmbedConfig'
+  - title: "Rename to 'FlutterEdgeAiRuntime'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      typedef: 'FlutterGemmaRuntime'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiRuntime'
+  - title: "Rename to 'DefaultFlutterEdgeAiRuntime'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      typedef: 'DefaultFlutterGemmaRuntime'
+    changes:
+      - kind: 'rename'
+        newName: 'DefaultFlutterEdgeAiRuntime'
+  - title: "Rename to 'FlutterEdgeAiPluginHandle'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      typedef: 'FlutterGemmaPluginHandle'
+    changes:
+      - kind: 'rename'
+        newName: 'FlutterEdgeAiPluginHandle'
+  - title: "Rename to 'flutterEdgeAi'"
+    date: 2026-09-28
+    element:
+      uris: [ 'genkit_flutter_edge_ai.dart', 'package:genkit_flutter_gemma/genkit_flutter_gemma.dart' ]
+      variable: 'flutterGemma'
+    changes:
+      - kind: 'rename'
+        newName: 'flutterEdgeAi'

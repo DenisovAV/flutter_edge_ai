@@ -1,5 +1,5 @@
 name: fluttergemma_website
-description: Marketing and documentation website for the flutter_gemma plugin.
+description: Marketing and documentation website for the flutter_edge_ai plugin.
 version: 0.0.1
 publish_to: none
 # Deliberately NOT a member of the root `workspace:` list — keeps jaspr +

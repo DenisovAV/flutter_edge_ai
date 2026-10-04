@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'chat_page.dart';
 import 'download_page.dart';
@@ -33,12 +33,12 @@ class _ModelGateState extends State<ModelGate> {
   /// idempotent, so on a file already here it fetches nothing and only records
   /// this model as the current one.
   Future<bool> _check() async {
-    if (!await FlutterGemma.isModelInstalled(widget.model.fileName)) {
+    if (!await FlutterEdgeAi.isModelInstalled(widget.model.fileName)) {
       return false;
     }
     await widget.model
         .locate(
-          FlutterGemma.installModel(
+          FlutterEdgeAi.installModel(
             modelType: widget.model.modelType,
             fileType: ModelFileType.litertlm,
           ),

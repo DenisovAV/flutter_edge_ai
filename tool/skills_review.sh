@@ -21,7 +21,7 @@
 
 set -uo pipefail
 
-SKILLS_DIR=packages/flutter_gemma/skills
+SKILLS_DIR=packages/flutter_edge_ai/skills
 FROM=${1:-}
 TO=${2:-HEAD}
 

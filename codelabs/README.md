@@ -1,7 +1,7 @@
 # Codelabs
 
 The runnable code for the codelabs published at
-[fluttergemma.dev/codelabs](https://fluttergemma.dev/codelabs).
+[flutteredge.ai/codelabs](https://flutteredge.ai/codelabs).
 
 ## Layout
 
@@ -27,7 +27,7 @@ working app to resume from.
 **Almost every step directory is an app.** The exception today is
 `function-calling-flutter-gemma/step_04_finetune/`, whose step produces a model
 rather than code: it holds the training data and the commands for a
-[litetune](https://github.com/DenisovAV/litetune) run and has no
+[litetune](https://litetune.dev) run and has no
 `pubspec.yaml`, so `tool/check_codelabs.sh` — which discovers apps by their
 `pubspec.yaml` — does not see it. A step that ships something other than a
 Flutter app belongs in the codelab's own directory all the same; a learner

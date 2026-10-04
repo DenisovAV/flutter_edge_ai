@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gemma_skills/color_tool.dart';
+import 'package:edge_ai_skills/color_tool.dart';
 
 void main() {
   test('a known colour is applied and reported back', () {

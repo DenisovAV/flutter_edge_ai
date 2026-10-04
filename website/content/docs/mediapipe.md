@@ -1,17 +1,17 @@
 ---
 title: MediaPipe
 description: Run .task / .bin models on Android, iOS and Web through Google's MediaPipe (tasks-genai) engine — chat templates handled internally for .task, GPU-only on Web.
-image: https://fluttergemma.dev/images/og-image.png
+image: https://flutteredge.ai/images/og-image.png
 ---
 
-flutter_gemma's engines are **pluggable**: you register them in
-`FlutterGemma.initialize(...)`, and the registry picks one per model by its
-declared `ModelFileType`. `flutter_gemma_mediapipe` is the engine for Google's
+flutter_edge_ai's engines are **pluggable**: you register them in
+`FlutterEdgeAi.initialize(...)`, and the registry picks one per model by its
+declared `ModelFileType`. `flutter_edge_ai_mediapipe` is the engine for Google's
 **MediaPipe** runtime (`tasks-genai`) — it runs `.task` bundles (and `.bin`).
 A `.task` archive packages the model's `.tflite` weights, tokenizer, and
 metadata together, and **MediaPipe applies each model's chat template
 internally**, so you feed plain messages and it handles the formatting. A `.bin`
-model carries no template: flutter_gemma adds the turn markers itself from the
+model carries no template: flutter_edge_ai adds the turn markers itself from the
 `ModelType` you install it with — as it does for FunctionGemma `.task`, whose
 bundle has none either.
 
@@ -35,25 +35,25 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_gemma: latest_version
-  flutter_gemma_mediapipe: latest_version   # MediaPipe .task engine
+  flutter_edge_ai: latest_version
+  flutter_edge_ai_mediapipe: latest_version   # MediaPipe .task engine
 ```
 
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_mediapipe/flutter_gemma_mediapipe.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_mediapipe/flutter_edge_ai_mediapipe.dart';
 
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: [MediaPipeEngine()],
 );
 ```
 
 `MediaPipeEngine` handles `ModelFileType.task` / `.bin` models. Pass it
-alongside other engines (e.g. `LiteRtLmEngine` from `flutter_gemma_litertlm`) if
+alongside other engines (e.g. `LiteRtLmEngine` from `flutter_edge_ai_litertlm`) if
 your app uses both formats — the registry routes each model to the right one.
 
 > **iOS:** this package requires **iOS 16.0+** (MediaPipe GenAI's floor — it is
-> the only flutter_gemma package that needs it). Set `platform :ios, '16.0'` in
+> the only flutter_edge_ai package that needs it). Set `platform :ios, '16.0'` in
 > the `Podfile` **and** the Runner's iOS Deployment Target in Xcode, and use
 > `use_frameworks! :linkage => :static` (MediaPipe ships static xcframeworks).
 > Android needs no extra setup — the MediaPipe Gradle deps are bundled.
@@ -64,11 +64,11 @@ your app uses both formats — the registry routes each model to the right one.
 needs **no explicit file-type declaration**:
 
 ```dart
-await FlutterGemma.installModel(
+await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
 ).fromNetwork('https://.../gemma3-1b-it.task').install();
 
-final model = await FlutterGemma.getActiveModel(maxTokens: 4096);
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 final session = await model.createSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
@@ -108,7 +108,7 @@ needed as well — see [Installation → Web](/docs/installation#web).
 Pass the backend when you open the model:
 
 ```dart
-final model = await FlutterGemma.getActiveModel(
+final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 4096,
   preferredBackend: PreferredBackend.gpu,
 );
@@ -120,4 +120,4 @@ final model = await FlutterGemma.getActiveModel(
 - [LiteRT-LM](/docs/litertlm) — the `.litertlm` engine (mobile **and** desktop)
 - [Packages](/docs/packages) — the full opt-in package list and their APIs
 
-**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-gemma-mediapipe`](/docs/package-skills), the skill that teaches it `.task` and `.bin` models on Android, iOS and web.
+**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-mediapipe`](/docs/package-skills), the skill that teaches it `.task` and `.bin` models on Android, iOS and web.

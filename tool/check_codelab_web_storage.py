@@ -2,7 +2,7 @@
 """Assert every codelab app is set up to install a model in a browser.
 
 Core binds with `@JS` to globals that only exist once the page has loaded
-flutter_gemma's `cache_api.js` (Cache API storage) and `opfs_helper.js` (OPFS
+flutter_edge_ai's `cache_api.js` (Cache API storage) and `opfs_helper.js` (OPFS
 streaming), which an app has to copy out of the package's own `web/`. Without
 them a web install downloads the whole model and then dies on
 `window.cachePut`. `flutter build web` cannot see that — it never opens a
@@ -10,7 +10,7 @@ browser — so every codelab app shipped broken on web until this check existed.
 
 Asserted per app, and why each oracle is the one it is:
 
-- Does the app depend on flutter_gemma? Parsed out of `pubspec.yaml`'s
+- Does the app depend on flutter_edge_ai? Parsed out of `pubspec.yaml`'s
   `dependencies:` block — not a `grep`, which also matched `dev_dependencies:`
   and `dependency_overrides:`, and missed the equally valid 4-space and flow
   (`{a: ^1, b: ^2}`) spellings, silently skipping every check for that app.
@@ -30,7 +30,7 @@ Asserted per app, and why each oracle is the one it is:
   not "if you register the backend, ship it": registering
   `LiteRtEmbeddingBackend` behind a `!kIsWeb` gate is legitimate — on web the
   LiteRT.js runtime needs a WASM bundle no published package ships.
-- Does every `FlutterGemma.initialize(` call ask for OPFS streaming? Checked
+- Does every `FlutterEdgeAi.initialize(` call ask for OPFS streaming? Checked
   per CALL SITE, over that call's own argument list, with Dart comments and
   string literals removed — one compliant call used to license every other
   call in the same file.
@@ -56,7 +56,7 @@ STORAGE_JS = ("cache_api.js", "opfs_helper.js")
 # have to sit together. They all ship from one package as of litertlm 1.8.0 —
 # the split that made a CDN one-liner 404 on two of them is gone.
 EMBEDDINGS_JS = {
-    "flutter_gemma_litertlm": (
+    "flutter_edge_ai_litertlm": (
         "litert_embeddings.js",
         "sentencepiece.js",
         "litert.js",
@@ -73,7 +73,7 @@ SCRIPT_ELEMENT = re.compile(
     r"<script\b[^>]*>(.*?)</script\s*>", re.DOTALL | re.IGNORECASE
 )
 HANDSHAKE_ASSIGNMENT = re.compile(r"(?:window\s*\.\s*)?litertLmReady\s*=")
-INITIALIZE_CALL = re.compile(r"FlutterGemma\s*\.\s*initialize\s*\(")
+INITIALIZE_CALL = re.compile(r"FlutterEdgeAi\s*\.\s*initialize\s*\(")
 STREAMING_ARG = re.compile(r"webStorageMode:\s*WebStorageMode\s*\.\s*streaming")
 
 errors: list[str] = []
@@ -151,7 +151,8 @@ def resolved_package_dir(app: Path, package: str) -> Path | None:
             uri = entry.get("rootUri", "")
             if uri.startswith("file://"):
                 return Path(url2pathname(urlparse(uri).path))
-            return (config.parent / uri).resolve()
+            relative_path = url2pathname(urlparse(uri).path)
+            return (config.parent / relative_path).resolve()
     return None
 
 
@@ -250,7 +251,7 @@ def publishes_handshake(html: str) -> bool:
 
 # Packages whose web export is a stub: an app that depends on one cannot run in
 # a browser, so its codelab must not tell readers it does.
-NATIVE_ONLY = {"flutter_gemma_speech"}
+NATIVE_ONLY = {"flutter_edge_ai_speech"}
 
 
 def check_platform_claim(app: Path, deps: set[str]) -> None:
@@ -290,7 +291,7 @@ def check_app(app: Path) -> None:
     if deps is None:
         return
     check_platform_claim(app, deps)
-    uses_gemma = "flutter_gemma" in deps
+    uses_edge_ai = "flutter_edge_ai" in deps
 
     index = app / "web" / "index.html"
     html = read(index, app) if index.is_file() else None
@@ -301,10 +302,10 @@ def check_app(app: Path) -> None:
         )
         return
 
-    reference = resolved_package_dir(app, "flutter_gemma")
-    if uses_gemma and reference is None:
+    reference = resolved_package_dir(app, "flutter_edge_ai")
+    if uses_edge_ai and reference is None:
         fail(
-            f"{rel(app)} depends on flutter_gemma but it does not resolve "
+            f"{rel(app)} depends on flutter_edge_ai but it does not resolve "
             "(run flutter pub get) — the web storage check cannot run"
         )
         return
@@ -313,7 +314,7 @@ def check_app(app: Path) -> None:
         copy = app / "web" / js
         source = None if reference is None else reference / "web" / js
         if not copy.exists():
-            if uses_gemma:
+            if uses_edge_ai:
                 fail(f"{rel(copy)} is missing — copy it from {source}")
             continue
         if source is not None:
@@ -330,10 +331,10 @@ def check_app(app: Path) -> None:
     # The engine bootstrap is the third leg of the same tripod: without the
     # `@litert-lm/core` handshake the browser fails at engine creation, and the
     # storage scripts alone would report a clean bill of health.
-    if "flutter_gemma_litertlm" in deps and not publishes_handshake(html):
+    if "flutter_edge_ai_litertlm" in deps and not publishes_handshake(html):
         fail(f"{rel(index)} has no live script assigning window.litertLmReady")
 
-    if not uses_gemma:
+    if not uses_edge_ai:
         return
 
     lib = app / "lib"
@@ -383,7 +384,7 @@ def check_app(app: Path) -> None:
             if not STREAMING_ARG.search(call_arguments(code, match.end() - 1)):
                 line = code.count("\n", 0, match.start()) + 1
                 fail(
-                    f"{rel(path)}:{line} calls FlutterGemma.initialize without "
+                    f"{rel(path)}:{line} calls FlutterEdgeAi.initialize without "
                     "webStorageMode: WebStorageMode.streaming"
                 )
 

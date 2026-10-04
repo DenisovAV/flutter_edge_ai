@@ -4,11 +4,11 @@
 // Not part of CI — it downloads ~2.6 GB and needs a real device or desktop:
 //   flutter test integration_test/skills_test.dart -d <device-id>
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gemma_skills/color_tool.dart';
-import 'package:gemma_skills/model.dart';
+import 'package:edge_ai_skills/color_tool.dart';
+import 'package:edge_ai_skills/model.dart';
 import 'package:integration_test/integration_test.dart';
 
 void main() {
@@ -17,14 +17,14 @@ void main() {
   testWidgets('install, then let the model call the colour tool', (
     tester,
   ) async {
-    await FlutterGemma.initialize(inferenceEngines: [LiteRtLmEngine()]);
+    await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);
 
     const model = Models.gemma4;
 
     // Unconditionally: install() skips bytes it already has and re-activates
     // the model, so a previous run cannot leave a different model active.
     var last = -1;
-    await FlutterGemma.installModel(
+    await FlutterEdgeAi.installModel(
       modelType: model.modelType,
       fileType: ModelFileType.litertlm,
     ).fromNetwork(model.url).withProgress((p) {
@@ -34,9 +34,9 @@ void main() {
       }
     }).install();
 
-    expect(await FlutterGemma.isModelInstalled(model.fileName), isTrue);
+    expect(await FlutterEdgeAi.isModelInstalled(model.fileName), isTrue);
 
-    final inference = await FlutterGemma.getActiveModel(maxTokens: 1024);
+    final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
     final chat = await inference.createChat(
       tools: const [ColorTool.declaration],
       supportsFunctionCalls: true,

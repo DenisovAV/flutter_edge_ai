@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://fluttergemma.dev/sitemap.xml
+Sitemap: https://flutteredge.ai/sitemap.xml

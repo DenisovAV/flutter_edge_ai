@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 /// One model this app knows how to install.
 ///
-/// [fileName] doubles as the model's id: `FlutterGemma.isModelInstalled` takes
+/// [fileName] doubles as the model's id: `FlutterEdgeAi.isModelInstalled` takes
 /// the file name the model was installed under, not a display name.
 class ModelChoice {
   const ModelChoice({
@@ -60,7 +60,7 @@ abstract final class Models {
   ///
   /// It cannot hear, and that is not a gap in this step: it is a
   /// vision-language model, and the plugin lists audio input for Gemma 4 and
-  /// Gemma 3n only (`flutter_gemma/README.md`). A session flag cannot switch
+  /// Gemma 3n only (`flutter_edge_ai/README.md`). A session flag cannot switch
   /// on an encoder the checkpoint does not carry. It is why Step 3
   /// changes models, and it is the model half of the question `complete` asks
   /// at the end — a half that says no here while the device, happily holding

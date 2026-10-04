@@ -5,8 +5,8 @@
   "targets": {
     "aichat-c0c27": {
       "hosting": {
-        "fluttergemma": [
-          "fluttergemma"
+        "flutteredgeai": [
+          "flutteredge-ai"
         ]
       }
     }

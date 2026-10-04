@@ -8,7 +8,7 @@ import 'package:workshop_genkit_flutter_hybrid_ai/services/ai_engine.dart';
 // FTL pushes the model here via `--other-files`; if present we install from it
 // (no flaky on-device download). Absent (local run) → normal HF download.
 const _stagedModel =
-    '/data/local/tmp/flutter_gemma_test/gemma3-1b-it-int4.litertlm';
+    '/data/local/tmp/flutter_edge_ai_test/gemma3-1b-it-int4.litertlm';
 
 // On-device smoke test for FTL / a real device.
 // Run with both secrets:

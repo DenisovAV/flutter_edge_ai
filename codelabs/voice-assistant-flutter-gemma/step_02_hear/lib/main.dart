@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
-import 'package:flutter_gemma_speech/flutter_gemma_speech.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 
 import 'chat_page.dart';
 import 'download_page.dart';
@@ -22,7 +22,7 @@ Future<void> main() async {
   // Engines are fully opt-in: the core package registers none by itself.
   // Without LiteRtLmEngine here, the first model call throws a StateError
   // that tells you to add an engine package.
-  await FlutterGemma.initialize(
+  await FlutterEdgeAi.initialize(
     inferenceEngines: [LiteRtLmEngine()],
     // Speech is opt-in the same way engines are. Without this line
     // `getActiveStt()` throws and names the package to add.
@@ -43,7 +43,7 @@ class QuickstartApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Gemma Quickstart',
+      title: 'Edge AI Quickstart',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
       home: const ModelGate(model: _model),
     );
@@ -72,8 +72,8 @@ class _ModelGateState extends State<ModelGate> {
   /// Both files have to be here before the chat can open: the model that
   /// answers and the one that listens.
   Future<bool> _check() async =>
-      await FlutterGemma.isModelInstalled(widget.model.fileName) &&
-      await FlutterGemma.isModelInstalled(Moonshine.fileName);
+      await FlutterEdgeAi.isModelInstalled(widget.model.fileName) &&
+      await FlutterEdgeAi.isModelInstalled(Moonshine.fileName);
 
   @override
   Widget build(BuildContext context) {

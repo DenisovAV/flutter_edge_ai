@@ -1,7 +1,7 @@
 # Step 4 — fine-tune the model on these tools
 
 Not a Flutter app. This directory holds the two inputs a
-[litetune](https://github.com/DenisovAV/litetune) run needs, for the four
+[litetune](https://litetune.dev) run needs, for the four
 tools the rest of this codelab declares:
 
 ```text
@@ -9,10 +9,10 @@ tools.json    the four declarations, the same ones lib/tools.dart holds
 raw.jsonl     90 prompt -> tool-call rows to train and score on
 ```
 
-Written for **litetune 0.1.7**, which is the first release that trains and
-scores a model the way the runtime calls it. Earlier versions trained the call
-as plain text, and a model tuned by one of them answers an application with
-something the runtime does not read back as a call at all.
+The commands below are verified against **litetune 0.3.0**, the current PyPI
+release. It pins LiteRT-LM 0.17.1 for verification and the matching 0.17.1
+builder for conversion. The project source is also available on
+[GitHub](https://github.com/DenisovAV/litetune).
 
 `tool/check_codelabs.sh` discovers step apps by their `pubspec.yaml`. There is
 none here on purpose, so this directory is not analyzed, tested or built — it
@@ -31,20 +31,29 @@ fails on the tokenizer download and you never reach command 2. Nothing else in
 this codelab needs a token: the `.litertlm` the app downloads comes from the
 ungated `sasha-denisov/function-gemma-270M-it`.
 
-`pip install litetune` — **Linux or macOS**, Python 3.10–3.12. Python 3.13
-runs `prepare`, `tune` and `bundle` but not `convert` or `verify`, because the
-export toolchain pins `numpy==2.0.2` and that stops publishing wheels after
-3.12. Windows is untried. On Linux also `sudo apt-get install -y libvulkan1`,
-or every invocation — `--help` included — dies in under a second.
+`pip install litetune` — **Linux, macOS or Windows**, Python 3.10–3.12.
+`convert` specifically needs Linux x86_64 or an Apple Silicon Mac; Windows runs
+`prepare`, `tune`, `verify` and `bundle`, but not `convert`. Python 3.13 runs
+`prepare`, `tune` and `bundle` but not `convert` or `verify`, because the export
+toolchain pins `numpy==2.0.2` and that stops publishing wheels after 3.12. On
+Linux also `sudo apt-get install -y libvulkan1`, or every invocation — `--help`
+included — dies in under a second.
 
-It runs on CPU, which is workable at 270M. The stage environments are cached
-and they are large: `convert` pulls ~1.6 GB, `tune` 588 MB. `litetune env`
-shows what is on disk and `litetune env --clean` removes it.
+By default, `tune` and the float-reference side of `verify` choose CUDA, then
+Apple's Metal (`mps`), then CPU. The commands below set
+`LITETUNE_DEVICE=cpu` for a reproducible 270M run; CPU is workable at that
+size. `convert` always runs on CPU, while the converted side of `verify` has
+its own `--backend` flag. The stage environments are cached and they are
+large: `convert` pulls ~1.6 GB, `tune` 588 MB and `verify` about 740 MB across
+its two environments. `litetune env` shows what is on disk and `litetune env
+--clean` removes it.
 
-This is alpha software, and it states what it has measured: four models end to
-end — `google/functiongemma-270m-it` with the tool-call scorer, and three others
-(`gemma-3-270m-it`, `gemma-3-1b-it`, `Qwen3-0.6B`) with `exact-text` on a 77-way
-intent task. The first is exactly the model and the task this codelab is on.
+This is alpha software, and it states what it has measured: six models end to
+end — `google/functiongemma-270m-it` with the tool-call scorer, plus
+`google/gemma-3-270m-it`, `google/gemma-3-1b-it`, `Qwen/Qwen3-0.6B`,
+`Qwen/Qwen2.5-0.5B-Instruct` and `google/gemma-4-E2B-it` with `exact-text` on a
+77-way intent task. The first is exactly the model and the task this codelab is
+on.
 
 **You can skip this step.** The app in `complete/` works on the stock
 FunctionGemma and on Gemma 4 without any of it.
@@ -54,6 +63,10 @@ FunctionGemma and on Gemma 4 without any of it.
 Run them from this directory. Each is separate because each fails differently.
 
 ```bash
+# Keep this tutorial's measurements reproducible. Unset it to let litetune
+# auto-select CUDA, then MPS, then CPU.
+export LITETUNE_DEVICE=cpu
+
 # 1. Split, and reject rows that cannot be scored. Seconds.
 litetune prepare --data raw.jsonl --output-dir data --context-length 1024 \
                  --tokenizer google/functiongemma-270m-it \
@@ -71,6 +84,7 @@ litetune tune --model google/functiongemma-270m-it --data data/train.jsonl \
 
 # 3. Convert, sweeping recipes rather than trusting a default.
 litetune convert --model tuned/model --output-dir artifacts \
+                 --train-metrics tuned/metrics.json \
                  --recipe dynamic_wi8_afp32 --recipe weight_only_wi8_afp32
 
 # 4. Measure what the conversion cost, against the float twin.
@@ -78,7 +92,8 @@ litetune convert --model tuned/model --output-dir artifacts \
 #    The prompt mode comes from the record `tune` left beside the checkpoint.
 litetune verify --model artifacts/weight_only_wi8_afp32/<name>.litertlm \
                 --reference tuned/model --data data/heldout.jsonl \
-                --declarations tools.json --json > manifest.json
+                --declarations tools.json --scorer tool-call \
+                --backend cpu --json > manifest.json
 
 # 5. Package the artifact with what was measured about it.
 litetune bundle --output-dir bundle \
@@ -122,7 +137,10 @@ documents directory — `~/Library/Containers/dev.fluttergemma.functioncalling/D
 
 ## What this run actually measured
 
-Run end to end on a MacBook Pro M4 Pro: `prepare` a second, `tune` 82s,
+This timing and score snapshot was recorded with litetune 0.1.7 and its
+LiteRT-LM 0.16.1 runtime; 0.3.0 uses a newer runtime, so rerun before comparing
+new artifacts to these historical numbers. On a MacBook Pro M4 Pro: `prepare`
+a second, `tune` 82s,
 `convert` 84s for `weight_only_wi8_afp32`, `verify` 52s. The held-out split is
 18 rows, scored through the runtime's tool path — a call counts only when the
 operation name and every argument match.

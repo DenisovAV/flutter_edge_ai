@@ -6,7 +6,7 @@
 # `flutter test` at the repo root tests nothing: the workspace root has no
 # test/ directory. Pointing it at a package (`flutter test packages/<pkg>`)
 # runs from the WRONG working directory — several suites read fixtures through
-# paths relative to the package root (flutter_gemma_agent's
+# paths relative to the package root (flutter_edge_ai_agent's
 # test/fixtures/skills/*.SKILL.md), and 20 of them fail on a missing file.
 #
 # Until 2026-08-18 CI ran only packages/flutter_gemma, leaving 97 of the repo's
@@ -21,7 +21,7 @@
 #
 # Usage:
 #   tool/test_all.sh              # all packages
-#   tool/test_all.sh --coverage   # plus lcov for flutter_gemma (what CI does)
+#   tool/test_all.sh --coverage   # plus lcov for flutter_edge_ai (what CI does)
 #
 # Exit: 0 all green · 1 any package failed, or nothing was discovered.
 
@@ -49,7 +49,7 @@ WANT_COVERAGE=0
 # being set — which it never was — so a suite that had never once executed
 # looked exactly like a suite that passed.
 if [[ -z "${VEC0_DYLIB:-}" ]]; then
-  _vec0_base="packages/flutter_gemma_rag_sqlite/native/sqlite_vec/prebuilt"
+  _vec0_base="packages/flutter_edge_ai_sqlite/native/sqlite_vec/prebuilt"
   case "$(uname -s)" in
     Darwin) _vec0_rel="$_vec0_base/macos_arm64/libvec0.dylib" ;;
     # Both linux_x86_64 and linux_arm64 ship, so ask uname -m rather than
@@ -84,7 +84,7 @@ fi
 # hook had already solved.
 
 # NOTE, so nobody re-adds it: an earlier revision of this script excluded
-# flutter_gemma_speech's `qwen3-artifacts` tag whenever the HuggingFace model
+# flutter_edge_ai_speech's `qwen3-artifacts` tag whenever the HuggingFace model
 # snapshot was absent, on the assumption that those suites would otherwise fail
 # in CI. That assumption was never tested and is false — the suites check for
 # the snapshot themselves and call markTestSkipped. Measured with
@@ -122,7 +122,7 @@ for dir in packages/*/; do
   # "unbound variable" error. CI runs bash 5 and would never have shown it —
   # this script is meant to be run locally too.
   echo "::group::flutter test — $pkg"
-  if [[ $WANT_COVERAGE -eq 1 && "$pkg" == "flutter_gemma" ]]; then
+  if [[ $WANT_COVERAGE -eq 1 && "$pkg" == "flutter_edge_ai" ]]; then
     (cd "$dir" && flutter test --coverage)
   else
     (cd "$dir" && flutter test)

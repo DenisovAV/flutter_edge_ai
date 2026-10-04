@@ -147,7 +147,7 @@ flutter test --coverage
 - Check Android dependencies in `example/android/build.gradle`
 
 **iOS build fails:**
-- Check minimum iOS version (15.0, or 16.0 with `flutter_gemma_mediapipe`)
+- Check minimum iOS version (15.0, or 16.0 with `flutter_edge_ai_mediapipe`)
 - Verify CocoaPods dependencies
 - May need macOS runner adjustments
 
@@ -240,8 +240,8 @@ Add secrets in: `Settings > Secrets and variables > Actions`
 Add to README.md:
 
 ```markdown
-[![CI Tests](https://github.com/DenisovAV/flutter_gemma/actions/workflows/test.yml/badge.svg)](https://github.com/DenisovAV/flutter_gemma/actions/workflows/test.yml)
-[![Release Build](https://github.com/DenisovAV/flutter_gemma/actions/workflows/release.yml/badge.svg)](https://github.com/DenisovAV/flutter_gemma/actions/workflows/release.yml)
+[![CI Tests](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/test.yml/badge.svg)](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/test.yml)
+[![Release Build](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/release.yml/badge.svg)](https://github.com/DenisovAV/flutter_edge_ai/actions/workflows/release.yml)
 ```
 
 ---

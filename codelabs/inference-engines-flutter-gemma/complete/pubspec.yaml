@@ -1,4 +1,4 @@
-name: gemma_quickstart
+name: edge_ai_quickstart
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -36,14 +36,14 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # The engine-agnostic core: registry, install/runtime API, chat.
-  flutter_gemma: ^1.8.3
+  flutter_edge_ai: ^1.11.4
   # The .litertlm inference engine. Engines are opt-in — core
   # registers none, so this package must be added explicitly.
-  flutter_gemma_litertlm: ^1.7.0
+  flutter_edge_ai_litertlm: ^1.8.6
   # The OS built-in engine: Gemini Nano (Android, Chrome), Apple
   # Foundation Models (iOS, macOS). No file to download — the OS or the
   # browser owns the weights. Windows and Linux have no built-in arm.
-  flutter_gemma_builtin_ai: ^0.2.2
+  flutter_edge_ai_builtin_ai: ^0.3.0
 
 dev_dependencies:
   flutter_test:

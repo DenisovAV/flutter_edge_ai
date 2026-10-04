@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gemma_quickstart/wav.dart';
+import 'package:edge_ai_quickstart/wav.dart';
 
 void main() {
   test('the header describes the samples that follow it', () {

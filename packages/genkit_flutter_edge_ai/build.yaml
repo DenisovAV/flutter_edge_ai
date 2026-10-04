@@ -1,0 +1,6 @@
+targets:
+  $default:
+    builders:
+      schemantic:
+        generate_for:
+          - lib/src/flutter_edge_ai_options.dart

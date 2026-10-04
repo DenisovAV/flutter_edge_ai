@@ -21,98 +21,98 @@ class SiteFooter extends StatelessComponent {
               ul(classes: 'footer-links', [
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma',
+                    href: 'https://pub.dev/packages/flutter_edge_ai',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma (core)')],
+                    [Component.text('flutter_edge_ai (core)')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_litertlm',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_litertlm',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_litertlm')],
+                    [Component.text('flutter_edge_ai_litertlm')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_mediapipe',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_mediapipe',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_mediapipe')],
+                    [Component.text('flutter_edge_ai_mediapipe')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_builtin_ai',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_builtin_ai',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_builtin_ai')],
+                    [Component.text('flutter_edge_ai_builtin_ai')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_onnx',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_onnx',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_onnx')],
+                    [Component.text('flutter_edge_ai_onnx')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_embeddings',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_embeddings',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_embeddings')],
+                    [Component.text('flutter_edge_ai_embeddings')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_rag_qdrant',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_qdrant',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_rag_qdrant')],
+                    [Component.text('flutter_edge_ai_qdrant')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_rag_sqlite',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_sqlite',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_rag_sqlite')],
+                    [Component.text('flutter_edge_ai_sqlite')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_agent',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_agent',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_agent')],
+                    [Component.text('flutter_edge_ai_agent')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_speech',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_speech',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_speech')],
+                    [Component.text('flutter_edge_ai_speech')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma_diagnostics',
+                    href: 'https://pub.dev/packages/flutter_edge_ai_diagnostics',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('flutter_gemma_diagnostics')],
+                    [Component.text('flutter_edge_ai_diagnostics')],
                   ),
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/genkit_flutter_gemma',
+                    href: 'https://pub.dev/packages/genkit_flutter_edge_ai',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('genkit_flutter_gemma')],
+                    [Component.text('genkit_flutter_edge_ai')],
                   ),
                 ]),
                 li([
@@ -164,7 +164,7 @@ class SiteFooter extends StatelessComponent {
               ul(classes: 'footer-links', [
                 li([
                   a(
-                    href: 'https://github.com/DenisovAV/flutter_gemma',
+                    href: 'https://github.com/DenisovAV/flutter_edge_ai',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
                     [Component.text('GitHub')],
@@ -172,7 +172,7 @@ class SiteFooter extends StatelessComponent {
                 ]),
                 li([
                   a(
-                    href: 'https://pub.dev/packages/flutter_gemma',
+                    href: 'https://pub.dev/packages/flutter_edge_ai',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
                     [Component.text('pub.dev')],
@@ -188,18 +188,10 @@ class SiteFooter extends StatelessComponent {
                 ]),
                 li([
                   a(
-                    href: 'https://deepwiki.com/DenisovAV/flutter_gemma',
+                    href: 'https://deepwiki.com/DenisovAV/flutter_edge_ai',
                     classes: 'footer-link',
                     attributes: {'target': '_blank', 'rel': 'noopener'},
                     [Component.text('DeepWiki')],
-                  ),
-                ]),
-                li([
-                  a(
-                    href: 'https://ko-fi.com/flutter_gemma',
-                    classes: 'footer-link',
-                    attributes: {'target': '_blank', 'rel': 'noopener'},
-                    [Component.text('Ko-fi')],
                   ),
                 ]),
               ]),

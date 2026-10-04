@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'model.dart';
 
@@ -39,7 +39,7 @@ class _DownloadPageState extends State<DownloadPage> {
     });
 
     try {
-      await FlutterGemma.installModel(
+      await FlutterEdgeAi.installModel(
             // What the model IS — the engine bakes in the chat template;
             // modelType instead drives thinking-tag stripping & tool parsing.
             modelType: widget.model.modelType,
@@ -48,7 +48,7 @@ class _DownloadPageState extends State<DownloadPage> {
             fileType: ModelFileType.litertlm,
           )
           // No `token:` here — the Hugging Face token passed to
-          // FlutterGemma.initialize() is attached automatically, and only to
+          // FlutterEdgeAi.initialize() is attached automatically, and only to
           // URLs whose host contains `huggingface.co`, so it does not ride
           // along to the other hosts an app downloads from.
           .fromNetwork(widget.model.url)
@@ -66,7 +66,7 @@ class _DownloadPageState extends State<DownloadPage> {
           _percent = 0;
         });
       }
-      await FlutterGemma.installStt()
+      await FlutterEdgeAi.installStt()
           .modelFromNetwork(Moonshine.modelUrl)
           .tokenizerFromNetwork(Moonshine.tokenizerUrl)
           .ofType(SttModelType.moonshine)
@@ -83,7 +83,7 @@ class _DownloadPageState extends State<DownloadPage> {
           _percent = 0;
         });
       }
-      await FlutterGemma.installTts()
+      await FlutterEdgeAi.installTts()
           .fromNetwork(Inflect.baseUrl)
           .ofType(TtsModelType.inflect)
           .withProgress((percent) {

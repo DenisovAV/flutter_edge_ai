@@ -4,7 +4,7 @@ import 'package:genkit_hybrid/genkit_hybrid.dart';
 /// Runnable illustration of [hybridModelOnDeviceCloud].
 ///
 /// In a real app, `onDevice` and `cloud` come from provider plugins
-/// (e.g. genkit_flutter_gemma for on-device, genkit_google_genai for cloud).
+/// (e.g. genkit_flutter_edge_ai for on-device, genkit_google_genai for cloud).
 /// Here they're trivial in-memory [Model]s so the example runs as-is.
 Future<void> main() async {
   final ai = Genkit();

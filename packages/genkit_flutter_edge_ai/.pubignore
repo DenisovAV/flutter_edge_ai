@@ -1,0 +1,5 @@
+# Repo-internal agent guidance, not part of the published package.
+AGENTS.md
+example/assets/models/
+test_reports/
+build/

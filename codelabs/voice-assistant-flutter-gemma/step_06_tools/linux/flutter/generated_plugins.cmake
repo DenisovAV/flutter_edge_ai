@@ -3,7 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  flutter_gemma
+  flutter_edge_ai
   record_linux
 )
 

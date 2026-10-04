@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gemma_quickstart/capabilities.dart';
-import 'package:gemma_quickstart/download_page.dart';
-import 'package:gemma_quickstart/model.dart';
-import 'package:gemma_quickstart/wav.dart';
+import 'package:edge_ai_quickstart/capabilities.dart';
+import 'package:edge_ai_quickstart/download_page.dart';
+import 'package:edge_ai_quickstart/model.dart';
+import 'package:edge_ai_quickstart/wav.dart';
 
 void main() {
   // `isModelInstalled` is keyed by file name. `install()` skips bytes it

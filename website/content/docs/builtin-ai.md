@@ -1,12 +1,12 @@
 ---
 title: Built-in AI
 description: Run the device's own OS/browser AI as an engine — Gemini Nano (Android + Chrome), Phi-4-mini (Edge), Apple Foundation Models (iOS/macOS) and Phi Silica (Windows) — with no model to download, plus the availability-probe → open-model fallback pattern.
-image: https://fluttergemma.dev/images/og-image.png
+image: https://flutteredge.ai/images/og-image.png
 ---
 
-flutter_gemma's engines are **pluggable**: you register them in
-`FlutterGemma.initialize(...)`, and the registry picks one per model by its
-declared `ModelFileType`. One of those engines is `flutter_gemma_builtin_ai` —
+flutter_edge_ai's engines are **pluggable**: you register them in
+`FlutterEdgeAi.initialize(...)`, and the registry picks one per model by its
+declared `ModelFileType`. One of those engines is `flutter_edge_ai_builtin_ai` —
 it runs the model the **operating system (or browser) already ships**, so there
 is **nothing to download**: installation only records which built-in model you
 want, and the platform owns the weights.
@@ -40,15 +40,15 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_gemma: latest_version
-  flutter_gemma_builtin_ai: latest_version   # OS/browser built-in AI
+  flutter_edge_ai: latest_version
+  flutter_edge_ai_builtin_ai: latest_version   # OS/browser built-in AI
 ```
 
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_builtin_ai/flutter_gemma_builtin_ai.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: const [BuiltInAiEngine()],
 );
 ```
@@ -74,7 +74,7 @@ identity — pass `fileType: ModelFileType.builtIn` and use one of the ready-mad
 specs from `BuiltInAiModels`:
 
 ```dart
-await FlutterGemma.installModel(
+await FlutterEdgeAi.installModel(
   modelType: ModelType.general,
   fileType: ModelFileType.builtIn,
 ).fromBundled(BuiltInAiModels.geminiNano.name).install();
@@ -116,16 +116,16 @@ supports it (zero download, private, fast); otherwise fall back to a downloaded
 open model** — through the same API, without rewriting the app.
 
 The fallback below registers a second engine, so add its package too — e.g.
-`flutter_gemma_litertlm` (for `LiteRtLmEngine`), or `flutter_gemma_mediapipe` /
-`flutter_gemma_onnx`:
+`flutter_edge_ai_litertlm` (for `LiteRtLmEngine`), or `flutter_edge_ai_mediapipe` /
+`flutter_edge_ai_onnx`:
 
 ```dart
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: const [
-    BuiltInAiEngine(),   // flutter_gemma_builtin_ai
-    LiteRtLmEngine(),    // flutter_gemma_litertlm — the fallback
+    BuiltInAiEngine(),   // flutter_edge_ai_builtin_ai
+    LiteRtLmEngine(),    // flutter_edge_ai_litertlm — the fallback
   ],
 );
 
@@ -136,20 +136,20 @@ final builtInReady = spec != null &&
 
 if (builtInReady) {
   // Built-in: nothing to download.
-  await FlutterGemma.installModel(
+  await FlutterEdgeAi.installModel(
     modelType: ModelType.general,
     fileType: ModelFileType.builtIn,
   ).fromBundled(spec.name).install();
 } else {
   // Fallback: install an open model (Gemma / Qwen / Phi …).
-  await FlutterGemma.installModel(
+  await FlutterEdgeAi.installModel(
     modelType: ModelType.gemmaIt,
     fileType: ModelFileType.litertlm,
   ).fromNetwork('https://…/gemma3-1b-it.litertlm').install();
 }
 
 // From here the code is identical regardless of which engine backs the model:
-final model = await FlutterGemma.getActiveModel(maxTokens: 4096);
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 final session = await model.createSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
@@ -210,6 +210,6 @@ There is **no CDN `<script>` tag** — the Chrome Prompt API is a browser global
 `BuiltInAi.availability()` reports `unavailableDeviceUnsupported` on any
 browser/version without the Prompt API — always probe before creating a model.
 
-See the [`flutter_gemma_builtin_ai` package](/docs/packages) for the full API.
+See the [`flutter_edge_ai_builtin_ai` package](/docs/packages) for the full API.
 
-**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-gemma-builtin-ai`](/docs/package-skills), the skill that teaches it availability, the user gesture the web arm needs, and falling back to a downloaded model.
+**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-builtin-ai`](/docs/package-skills), the skill that teaches it availability, the user gesture the web arm needs, and falling back to a downloaded model.

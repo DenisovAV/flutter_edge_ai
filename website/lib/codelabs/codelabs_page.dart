@@ -56,19 +56,19 @@ class CodelabsPage extends StatelessComponent {
     _Codelab(
       title: 'Getting Started with On-Device LLMs in Flutter',
       blurb:
-          'Install flutter_gemma, pick and download a model, and stream your '
+          'Install flutter_edge_ai, pick and download a model, and stream your '
           'first reply — then have the app open on the chat, not the download '
           'screen.',
       duration: '35 min',
       level: 'Beginner',
-      tags: ['flutter_gemma', 'Gemma 3', 'streaming'],
+      tags: ['flutter_edge_ai', 'Gemma 3', 'streaming'],
       accent: Brand.blue,
       href: '/codelabs/getting-started-flutter-gemma',
     ),
     _Codelab(
-      title: 'Package Skills in Flutter: Teach Your Coding Assistant flutter_gemma',
+      title: 'Package Skills in Flutter: Teach Your Coding Assistant flutter_edge_ai',
       blurb:
-          'flutter_gemma ships agent skills inside the package. Install them '
+          'flutter_edge_ai ships agent skills inside the package. Install them '
           'for your assistant with one command, ask it for an offline chat '
           'and a tool call, and check its code against the traps the skills '
           'exist to prevent.',

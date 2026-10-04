@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "dev.fluttergemma" "\0"
-            VALUE "FileDescription", "Gemma Skills" "\0"
+            VALUE "FileDescription", "Edge AI Skills" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "skills" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 dev.fluttergemma. All rights reserved." "\0"
             VALUE "OriginalFilename", "skills.exe" "\0"
-            VALUE "ProductName", "Gemma Skills" "\0"
+            VALUE "ProductName", "Edge AI Skills" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

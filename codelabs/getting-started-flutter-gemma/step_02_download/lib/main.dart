@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 import 'download_page.dart';
 import 'model.dart';
@@ -21,7 +21,7 @@ Future<void> main() async {
   // Engines are fully opt-in: the core package registers none by itself.
   // Without LiteRtLmEngine here, the first model call throws a StateError
   // that tells you to add an engine package.
-  await FlutterGemma.initialize(
+  await FlutterEdgeAi.initialize(
     inferenceEngines: [LiteRtLmEngine()],
     huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
     // OPFS streaming. On web the model is 2.0 GB, right on the ~2 GB blob
@@ -39,7 +39,7 @@ class QuickstartApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Gemma Quickstart',
+      title: 'Edge AI Quickstart',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
       home: const ModelGate(model: _model),
     );
@@ -64,7 +64,8 @@ class ModelGate extends StatefulWidget {
 class _ModelGateState extends State<ModelGate> {
   late Future<bool> _installed = _check();
 
-  Future<bool> _check() => FlutterGemma.isModelInstalled(widget.model.fileName);
+  Future<bool> _check() =>
+      FlutterEdgeAi.isModelInstalled(widget.model.fileName);
 
   @override
   Widget build(BuildContext context) {

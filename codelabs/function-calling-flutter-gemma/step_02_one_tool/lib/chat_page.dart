@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'model.dart';
 import 'tools.dart';
@@ -80,7 +80,7 @@ class _ChatPageState extends State<ChatPage> {
       // Re-converted with a current litetune — which Step 4 does — the same
       // weights score identically on GPU and run about 1.5x faster. So this is
       // a workaround for one downloadable file, not a property of FunctionGemma.
-      final inference = await FlutterGemma.getActiveModel(
+      final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 1024,
         preferredBackend: PreferredBackend.cpu,
       );
@@ -325,7 +325,7 @@ class _ChatPageState extends State<ChatPage> {
           _chat = null;
         });
       }
-      await FlutterGemma.uninstallModel(widget.model.fileName);
+      await FlutterEdgeAi.uninstallModel(widget.model.fileName);
       if (mounted) widget.onModelRemoved();
     } catch (error) {
       // Deleting can fail too — a missing install record, a file the OS still

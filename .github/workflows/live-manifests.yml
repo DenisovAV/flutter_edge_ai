@@ -1,5 +1,5 @@
 # Checks the committed litertlm_manifest.json snapshot
-# (packages/flutter_gemma_litertlm/test/manifest/fixtures) against the live
+# (packages/flutter_edge_ai_litertlm/test/manifest/fixtures) against the live
 # Hugging Face catalog: drift, a new repo shipping a manifest, every variant's
 # sha256/size_bytes against the repo's LFS metadata, every resolvable URL, and
 # the engine-carried resolver end to end.
@@ -38,7 +38,7 @@ jobs:
         run: flutter pub get
 
       - name: Check the fixture snapshot against Hugging Face
-        working-directory: packages/flutter_gemma_litertlm
+        working-directory: packages/flutter_edge_ai_litertlm
         env:
           FLUTTER_GEMMA_LIVE_HF: '1'
           # Optional. Raises the anonymous rate limit; empty when the secret

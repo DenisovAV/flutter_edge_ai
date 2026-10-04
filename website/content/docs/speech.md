@@ -1,11 +1,11 @@
 ---
 title: Speech
-description: On-device speech for flutter_gemma — transcribe audio and synthesize speech fully offline. moonshine / Whisper / Parakeet STT + Matcha / Qwen3 / Inflect TTS, plus a voice loop, via the LiteRT C API and dart:ffi.
-image: https://fluttergemma.dev/images/og-image.png
+description: On-device speech for flutter_edge_ai — transcribe audio and synthesize speech fully offline. moonshine / Whisper / Parakeet STT + Matcha / Qwen3 / Inflect TTS, plus a voice loop, via the LiteRT C API and dart:ffi.
+image: https://flutteredge.ai/images/og-image.png
 ---
 
-`flutter_gemma_speech` is an opt-in satellite package that adds **on-device
-speech** — speech-to-text and text-to-speech — to flutter_gemma. It runs
+`flutter_edge_ai_speech` is an opt-in satellite package that adds **on-device
+speech** — speech-to-text and text-to-speech — to flutter_edge_ai. It runs
 **selectable** models locally through the LiteRT C API + `dart:ffi` — no cloud,
 no streaming a mic to a server.
 You choose the model with `SttModelType` / `TtsModelType` and a profile-driven,
@@ -16,22 +16,22 @@ today; kokoro / supertonic TTS voices are follow-ons.
 
 <Info>
 Speech is a separate package so apps that don't need it don't ship the model or
-the extra native surface. It depends on <code>flutter_gemma_litertlm</code>,
+the extra native surface. It depends on <code>flutter_edge_ai_litertlm</code>,
 which owns the shared <code>libLiteRtLm</code> native bundle — no separate
 native download.
 </Info>
 
 ## Install
 
-Add the core and the speech package. `flutter_gemma_speech` pulls in
-`flutter_gemma_litertlm` (which owns the shared `libLiteRtLm` native bundle)
+Add the core and the speech package. `flutter_edge_ai_speech` pulls in
+`flutter_edge_ai_litertlm` (which owns the shared `libLiteRtLm` native bundle)
 transitively — you don't add it yourself unless you also run `.litertlm`
 inference.
 
 ```
 dependencies:
-  flutter_gemma: ^1.11.3
-  flutter_gemma_speech: ^0.5.2
+  flutter_edge_ai: ^1.11.4
+  flutter_edge_ai_speech: ^0.5.2
 ```
 
 ## Register the backend
@@ -41,10 +41,10 @@ pure factory — the *model* is chosen per-install via `SttModelType`, not by th
 backend.
 
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_speech/flutter_gemma_speech.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   sttBackends: const [LiteRtSttBackend()],
 );
 ```
@@ -56,7 +56,7 @@ recognizer is created lazily by `getActiveStt()`.
 
 ```dart
 // One-time install (downloads to the app's local storage).
-await FlutterGemma.installStt()
+await FlutterEdgeAi.installStt()
     .modelFromNetwork(
       'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite',
     )
@@ -66,7 +66,7 @@ await FlutterGemma.installStt()
     .ofType(SttModelType.moonshine)
     .install();
 
-final recognizer = await FlutterGemma.getActiveStt();
+final recognizer = await FlutterEdgeAi.getActiveStt();
 
 // pcm: 16 kHz mono 16-bit little-endian PCM bytes (Uint8List) — e.g. the data
 // chunk of a WAV, or frames from a recorder. moonshine-tiny handles up to ~5 s.
@@ -85,7 +85,7 @@ The install above is moonshine, which has no language token — `language:` thro
 `ArgumentError` on it. Install Whisper first:
 
 ```dart
-await FlutterGemma.installStt()
+await FlutterEdgeAi.installStt()
     .modelFromNetwork('https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_f32.tflite')
     .tokenizerFromNetwork('https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json')
     .ofType(SttModelType.whisper)
@@ -93,7 +93,7 @@ await FlutterGemma.installStt()
 ```
 
 ```dart
-final recognizer = await FlutterGemma.getActiveStt(language: 'de');
+final recognizer = await FlutterEdgeAi.getActiveStt(language: 'de');
 final german = await recognizer.transcribe(germanPcm);
 
 // Same recognizer, one call in French — nothing is reloaded.
@@ -137,17 +137,17 @@ install a voice and synthesize. **Matcha** (`litert-community/Matcha-TTS`) runs 
 on-device and returns 16-bit PCM at 22050 Hz.
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   ttsBackends: const [LiteRtTtsBackend()],
 );
 
 // One-time install of the Matcha bundle (downloads to the app's local storage).
-await FlutterGemma.installTts()
+await FlutterEdgeAi.installTts()
     .fromNetwork('https://huggingface.co/litert-community/Matcha-TTS/resolve/main/')
     .ofType(TtsModelType.matcha)
     .install();
 
-final synth = await FlutterGemma.getActiveTts();
+final synth = await FlutterEdgeAi.getActiveTts();
 final pcm = await synth.synthesize('Hello world.'); // Uint8List, 16-bit PCM
 // Wrap with a 44-byte WAV header (synth.sampleRate == 22050, mono) to play it.
 await synth.close();
@@ -169,14 +169,14 @@ install/synthesize API as Matcha, but heavier: CPU-only, 24 kHz output, RTF≈3
 (~3 s of compute per 1 s of audio), and needs a 6 GB-RAM-class device.
 
 ```dart
-await FlutterGemma.installTts()
+await FlutterEdgeAi.installTts()
     .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/')
     .ofType(TtsModelType.qwen3)
     .install();
 
 // language is a full lowercase name from qwen3SupportedLanguages ('english',
 // 'german', … 10 of them) or 'auto' — not an ISO code, and ignored by Matcha.
-final synth = await FlutterGemma.getActiveTts(language: 'french');
+final synth = await FlutterEdgeAi.getActiveTts(language: 'french');
 final pcm = await synth.synthesize('Bonjour le monde.'); // Uint8List, 16-bit PCM
 await synth.close();   // close before asking for another language
 ```
@@ -190,12 +190,12 @@ Matcha's phonemizer bundle, so those G2P files are fetched cross-repo
 automatically — about 36 MB in all, of which its own two networks are 8 MB.
 
 ```dart
-await FlutterGemma.installTts()
+await FlutterEdgeAi.installTts()
     .fromNetwork('https://huggingface.co/sasha-denisov/inflect-nano-v2-litert/resolve/main/')
     .ofType(TtsModelType.inflect)
     .install();
 
-final synth = await FlutterGemma.getActiveTts();
+final synth = await FlutterEdgeAi.getActiveTts();
 final pcm = await synth.synthesize('Hello there!'); // Uint8List, 16-bit PCM @ 24 kHz
 await synth.close();
 ```
@@ -209,14 +209,14 @@ chat is the plain speech-to-speech loop; pass `onToolCall` to run function calls
 inside a spoken turn (see [Tool calling](#tool-calling-in-the-voice-loop) below).
 
 The loop needs an LLM as well as the two speech models: add
-`flutter_gemma_litertlm`, register `inferenceEngines: [LiteRtLmEngine()]` in
+`flutter_edge_ai_litertlm`, register `inferenceEngines: [LiteRtLmEngine()]` in
 `initialize`, and install a `.litertlm` model (see [LiteRT-LM](/docs/litertlm)) —
 otherwise `getActiveModel` throws `StateError('No active inference model set')`.
 
 ```dart
-final recognizer = await FlutterGemma.getActiveStt();
-final synthesizer = await FlutterGemma.getActiveTts();
-final chat = await (await FlutterGemma.getActiveModel(maxTokens: 1024))
+final recognizer = await FlutterEdgeAi.getActiveStt();
+final synthesizer = await FlutterEdgeAi.getActiveTts();
+final chat = await (await FlutterEdgeAi.getActiveModel(maxTokens: 1024))
     .createChat(tokenBuffer: 256, maxOutputTokens: 128); // no tools, short replies
 
 final session = VoiceSession.fromChat(
@@ -265,7 +265,7 @@ your tool implementation, exactly as in a text chat; only the final spoken answe
 is synthesized.
 
 ```dart
-final chat = await (await FlutterGemma.getActiveModel(maxTokens: 1024))
+final chat = await (await FlutterEdgeAi.getActiveModel(maxTokens: 1024))
     .createChat(tools: myTools, supportsFunctionCalls: true,
                 toolChoice: ToolChoice.auto, maxOutputTokens: 128);
 
@@ -294,8 +294,9 @@ On Android, STT (like everything backed by `libLiteRtLm`) is **arm64-only** and
 requires **minSdk 30** — see
 [Installation → Android architecture](/docs/installation#android-architecture-support).
 
-On Windows, speech needs `flutter_gemma_litertlm` 1.7.0 or newer (0.5.1 requires
-it) — earlier versions fail with `CreateTensorBufferFromHostMemory` status 3. See
+On Windows, speech needs the litertlm fix from `flutter_gemma_litertlm` 1.7.0, which
+every `flutter_edge_ai_litertlm` release has — earlier versions fail with
+`CreateTensorBufferFromHostMemory` status 3. See
 [Troubleshooting](/docs/troubleshooting#windows-embeddings-and-speech-fail-with-status-3).
 
 ## Model support
@@ -312,4 +313,4 @@ it) — earlier versions fail with `CreateTensorBufferFromHostMemory` status 3. 
 Both pipelines are profile-driven (`SttModelProfile` / `TtsModelProfile`), so
 adding a new model family is a new profile rather than a new backend.
 
-**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-gemma-speech`](/docs/package-skills), the skill that teaches it STT and TTS model choice, the 16 kHz mono PCM input contract, and the per-transcription output language.
+**Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-speech`](/docs/package-skills), the skill that teaches it STT and TTS model choice, the 16 kHz mono PCM input contract, and the per-transcription output language.

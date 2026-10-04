@@ -1,0 +1,44 @@
+name: genkit_flutter_edge_ai_example
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_edge_ai: ^1.11.4
+  # flutter_gemma 1.0.0 split engines/backends into opt-in packages; register
+  # them via FlutterEdgeAi.initialize() in main.dart. The bridge package itself
+  # stays engine-agnostic — these deps live in the consuming app only.
+  flutter_edge_ai_litertlm: ^1.8.6
+  # Declared again as of litertlm 1.8.0: the engine no longer depends on this
+  # package, so the tokenizer provider an app registers comes from here and
+  # arrives through nobody else.
+  flutter_edge_ai_embeddings: ^2.2.1
+  flutter_edge_ai_mediapipe: ^1.0.8
+  genkit: ^0.16.0
+  genkit_flutter_edge_ai:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+dependency_overrides:
+  flutter_edge_ai:
+    path: ../../flutter_edge_ai
+  flutter_edge_ai_litertlm:
+    path: ../../flutter_edge_ai_litertlm
+  flutter_edge_ai_mediapipe:
+    path: ../../flutter_edge_ai_mediapipe
+  flutter_edge_ai_embeddings:
+    path: ../../flutter_edge_ai_embeddings
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/

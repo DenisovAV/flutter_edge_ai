@@ -44,8 +44,8 @@ to make, and each step here is built around one of them:
 
 ### What you'll need
 
-* Flutter **3.47** or newer — higher than the rest of flutter_gemma asks for.
-  `flutter_gemma_rag_sqlite` 1.4.0 requires sqlite3 3.6.0, whose build
+* Flutter **3.47** or newer — higher than the rest of flutter_edge_ai asks for.
+  `flutter_edge_ai_sqlite` 1.4.0 requires sqlite3 3.6.0, whose build
   toolchain wants `meta ^1.19.0`, and every Flutter 3.44.x pins `meta` to
   1.18.0 exactly. On 3.44 the Step 3 app will not resolve
 * Any one of Flutter's six platforms: an arm64 Android device or emulator, an
@@ -66,8 +66,8 @@ Every step of this codelab exists as a complete, runnable app, so you can join
 at any point or check your work against the next one.
 
 ```bash
-git clone --depth 1 https://github.com/DenisovAV/flutter_gemma.git
-cd flutter_gemma/codelabs/on-device-rag-flutter-gemma
+git clone --depth 1 https://github.com/DenisovAV/flutter_edge_ai.git
+cd flutter_edge_ai/codelabs/on-device-rag-flutter-gemma
 ls
 ```
 
@@ -133,12 +133,12 @@ a **number** and a **bool**.
 ### Add the packages
 
 ```bash
-flutter pub add flutter_gemma_embeddings
+flutter pub add flutter_edge_ai_embeddings
 ```
 
-One package, and it is not an engine. `flutter_gemma_litertlm` — already in the
+One package, and it is not an engine. `flutter_edge_ai_litertlm` — already in the
 app — supplies `LiteRtEmbeddingBackend`, the thing that runs the forward pass.
-`flutter_gemma_embeddings` supplies the **tokenizers**. They are separate on
+`flutter_edge_ai_embeddings` supplies the **tokenizers**. They are separate on
 purpose, and Step 2's whole registration hinges on why.
 
 ### Register the backend and the tokenizer
@@ -146,7 +146,7 @@ purpose, and Step 2's whole registration hinges on why.
 In `lib/main.dart`:
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   inferenceEngines: [LiteRtLmEngine()],
   embeddingBackends: [LiteRtEmbeddingBackend()],
   embeddingTokenizers: [GemmaEmbeddingTokenizers()],
@@ -159,8 +159,9 @@ Two lines, two packages, and the reason matters.
 Which tokenizer an embedding model needs is a property of the **model**, not of
 the engine that runs it: EmbeddingGemma wants SentencePiece whether LiteRT or
 ONNX Runtime executes it, and a BERT-family model wants WordPiece under either.
-So since `flutter_gemma` 1.9.0 the backend no longer carries one, and the app
-says which families it has.
+That registry change shipped in the legacy `flutter_gemma` 1.9.0 package and is
+part of the current `flutter_edge_ai`; the backend no longer carries a
+tokenizer, and the app says which families it has.
 
 **Watch out:** Leave `embeddingTokenizers` out and the first embedding throws a `StateError` naming the package to add. That is the design working: the alternative — falling back to one family and tokenizing with the wrong convention — returns vectors that are quietly the wrong point in the embedding space, and no test downstream can tell them from good ones.
 
@@ -185,13 +186,13 @@ fails.
 ### Install it and embed
 
 ```dart
-await FlutterGemma.installEmbedder()
+await FlutterEdgeAi.installEmbedder()
     .modelFromNetwork(e.modelUrl, token: hfToken)
     .tokenizerFromNetwork(e.tokenizerUrl, token: hfToken)
     .withModelProgress((p) => setState(() => _installProgress = p / 100))
     .install();
 
-final embedder = await FlutterGemma.getActiveEmbedder();
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
 final vectors = await embedder.generateEmbeddings(
   kRecipes.map((r) => r.text).toList(),
   taskType: TaskType.retrievalDocument,
@@ -260,7 +261,7 @@ Skip this unless you are running in Chrome — but do not skip it *and* then run
 in Chrome, because the Embed button is the first thing that fails.
 
 Embedding in a browser runs through LiteRT.js, which ships as four files in
-`flutter_gemma_litertlm/web/`. Copy them into your own `web/`, the same way
+`flutter_edge_ai_litertlm/web/`. Copy them into your own `web/`, the same way
 `cache_api.js` was copied in Getting Started:
 
 ```text
@@ -319,11 +320,11 @@ Dart object and become rows in a database that knows they are vectors.
 
 ### Choose your store
 
-`flutter_gemma` ships two, behind one interface. This codelab uses
+`flutter_edge_ai` ships two, behind one interface. This codelab uses
 **sqlite-vec**, and the table says why — but the code from here on is written
 against `VectorStoreRepository`, so swapping is one line either way.
 
-| | `flutter_gemma_rag_sqlite` | `flutter_gemma_rag_qdrant` |
+| | `flutter_edge_ai_sqlite` | `flutter_edge_ai_qdrant` |
 |---|---|---|
 | Platforms | all six, **including web** | five — **no web** |
 | Search | exact KNN, always | exact below 10 000 points, approximate (HNSW) above |
@@ -340,13 +341,13 @@ codelab's fields are named `cuisine`, `minutes` and `vegetarian` and not
 `prep-time`.
 
 ```bash
-flutter pub add flutter_gemma_rag_sqlite path_provider
+flutter pub add flutter_edge_ai_sqlite path_provider
 ```
 
 ### Register it
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   // ...
   vectorStore: kIsWeb ? WebSqliteVectorStore() : SqliteVectorStore(),
 );
@@ -361,7 +362,7 @@ platform-independent.
 ### Web setup
 
 One more file, and it needs no `<script>` tag. Copy the store's SQLite build
-from `flutter_gemma_rag_sqlite/web/rag/`:
+from `flutter_edge_ai_sqlite/web/rag/`:
 
 ```text
 web/rag/sqlite3.wasm
@@ -384,7 +385,7 @@ static Future<String> databasePath() async {
   return '${dir.path}/$name';
 }
 
-await FlutterGemma.rag.initialize(await databasePath());
+await FlutterEdgeAi.rag.initialize(await databasePath());
 ```
 
 sqlite-vec wants a `.db` **file** path. On web there is no file system to put
@@ -394,7 +395,7 @@ so the bare name is the whole path.
 Writing a row takes the vector you already have:
 
 ```dart
-await FlutterGemma.rag.addDocumentWithEmbedding(
+await FlutterEdgeAi.rag.addDocumentWithEmbedding(
   id: r.id,
   content: r.text,
   embedding: vectors[i],
@@ -410,7 +411,7 @@ await FlutterGemma.rag.addDocumentWithEmbedding(
 And searching takes text, not a vector:
 
 ```dart
-FlutterGemma.rag.searchSimilar(
+FlutterEdgeAi.rag.searchSimilar(
   query: query,
   topK: 3,
   threshold: 0.3,
@@ -461,7 +462,7 @@ query rather than around it.
 ### Declare what is filterable
 
 ```dart
-await FlutterGemma.initialize(
+await FlutterEdgeAi.initialize(
   // ...
   filterSchema: const FilterSchema(
     fields: [
@@ -515,7 +516,7 @@ skips filtering entirely.
 ### Pass it to the search
 
 ```dart
-FlutterGemma.rag.searchSimilar(
+FlutterEdgeAi.rag.searchSimilar(
   query: query,
   topK: 3,
   threshold: 0.3,
@@ -610,7 +611,7 @@ visit the recipes page. Move it to startup, so the very first question can be
 grounded:
 
 ```dart
-await FlutterGemma.initialize(/* ... */);
+await FlutterEdgeAi.initialize(/* ... */);
 await RagStore.open();
 
 runApp(const QuickstartApp());
@@ -666,5 +667,5 @@ knows those vectors are vectors, and a prompt that keeps the answer honest.
 
 * [Embeddings & RAG documentation](/docs/embeddings-and-rag) — the full filter
   grammar, the store comparison, and the per-store `flush()` table
-* [flutter_gemma_rag_sqlite on pub.dev](https://pub.dev/packages/flutter_gemma_rag_sqlite)
-* [Source and this codelab's code](https://github.com/DenisovAV/flutter_gemma)
+* [flutter_edge_ai_sqlite on pub.dev](https://pub.dev/packages/flutter_edge_ai_sqlite)
+* [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)

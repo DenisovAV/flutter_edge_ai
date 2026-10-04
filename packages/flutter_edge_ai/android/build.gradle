@@ -1,0 +1,140 @@
+group 'dev.flutterberlin.flutter_gemma'
+version '1.0-SNAPSHOT'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    // No AGP classpath pin. Inside a Flutter build one is inert — Gradle loads
+    // parent-first, so the app's AGP resolves `com.android.library` whatever is named
+    // here — but it is NOT free: measured, the pin makes Gradle eagerly resolve 123
+    // artifacts / ~102 MB per plugin subproject in every consuming app, then shadows
+    // them. All it buys is a clearer first error for `./gradlew` run directly in this
+    // directory, and that path cannot finish post-#440 anyway (nothing applies KGP
+    // outside a Flutter build, so it stops at the `kotlin {}` block below). Only
+    // flutter_edge_ai even has a wrapper committed; Flutter's current plugin template
+    // ships neither wrapper nor settings.gradle.
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    if (project.android.hasProperty("namespace")) {
+        namespace 'dev.flutterberlin.flutter_gemma'
+    }
+
+    compileSdk 36
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+        test.java.srcDirs += 'src/test/kotlin'
+    }
+
+    defaultConfig {
+        minSdkVersion 24
+        targetSdk = 36
+        consumerProguardFiles 'consumer-proguard-rules.pro'
+    }
+
+    testOptions {
+        unitTests.all {
+            useJUnitPlatform()
+
+            testLogging {
+                events "passed", "skipped", "failed", "standardOut", "standardError"
+                outputs.upToDateWhen {false}
+                showStandardStreams = true
+            }
+        }
+    }
+}
+
+// Kotlin plugin ownership (#440): this package no longer applies KGP itself.
+// Flutter's Gradle plugin applies `kotlin-android` to any subproject that applies
+// AGP without it (`FlutterPluginUtils.detectApplyingKotlinGradlePlugin`), using
+// whatever KGP the app's plugin classpath resolves to — which is not necessarily the
+// app's own declaration: on AGP 9 the winner comes from AGP's POM (2.2.10), on AGP 8
+// from Flutter's own (2.0.0). That code landed in flutter/flutter#184745, first
+// released in 3.44 — which is what makes `flutter: '>=3.44.0'` in pubspec.yaml
+// load-bearing rather than cosmetic.
+//
+// That apply is also why the bare `kotlin {}` below resolves, and on the KGP path
+// the block is a safety net rather than a liability: if KGP is not applied,
+// configuration fails loudly with "Could not find method kotlin()" instead of
+// quietly compiling no Kotlin. That is what makes this shape immune to #360.
+//
+// jvmTarget goes through the top-level `kotlin {}` DSL and not `kotlinOptions`
+// inside `android {}`: that block is KGP's, is deprecated there, and does not
+// exist at all under AGP's built-in Kotlin.
+//
+// An app that declares no KGP of its own still builds on AGP 9 (measured: the plugin
+// classes were in the dex) — AGP itself brings one. Do not read that as a guarantee:
+// on AGP 8 the same app fails, on a sibling dependency, over a Kotlin version
+// mismatch. An add-to-app host that supplies no KGP fails here too — but it already
+// failed on `large_file_handler`, a hard dependency shipping this same shape; the fix
+// is one KGP line in the host. Note also that `android.builtInKotlin=true` makes AGP 9
+// reject `apply plugin: 'com.android.library'` above, because Flutter pre-applies KGP.
+//
+// Do NOT try to insure against that with a `kotlin-gradle-plugin` classpath in the
+// buildscript above. It cannot work: `detectApplyingKotlinGradlePlugin` runs while
+// `:app` is evaluated, BEFORE this subproject's `buildscript {}` exists. Such a pin
+// was only ever load-bearing for a host supplying no KGP — and such a host already
+// failed on our sibling dependencies.
+//
+// This block SURVIVES AGP's built-in Kotlin, so do not delete it when AGP 10 drops
+// `android.builtInKotlin=false`: built-in Kotlin registers its own project extension
+// also named `kotlin` (KotlinAndroidProjectExtension), so `compilerOptions` keeps
+// resolving and keeps OVERRIDING the target AGP would otherwise derive from
+// `compileOptions`. Measured on AGP 9.0.1 with `builtInKotlin=true` and no KGP
+// anywhere: setting JVM_17 here against VERSION_11 above makes compileDebugKotlin
+// report JVM_17 — the block is read, not ignored.
+//
+// Keep this block byte-identical in flutter_edge_ai and flutter_edge_ai_mediapipe
+// (builtin_ai has no Android code since it moved onto flutter_local_ai). #360
+// is what a half-fix looks like: the .kt stops
+// compiling, the plugin class is never emitted, the build stays GREEN, and the app
+// fails at runtime in GeneratedPluginRegistrant.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+    }
+}
+
+dependencies {
+    // MediaPipe (.task) inference moved to the flutter_edge_ai_mediapipe package
+    // (com.google.mediapipe:tasks-genai + tasks-vision-image-generator live in
+    // its android/build.gradle). Core only hosts the bundled file-ops +
+    // litertlm NPU dispatch channel.
+
+    // 0.15.2: localagents-rag dropped — embedding is now Dart-FFI + LiteRT
+    // (see lib/core/litert/litert_embedding_model.dart). Guava +
+    // kotlinx-coroutines-guava were only used by the RAG library, so they
+    // also go.
+
+    // .litertlm models go through Dart FFI (LiteRtLmFfiClient) — Native Assets
+    // bundles libLiteRtLm.so + companion dylibs. No Gradle dependency needed.
+
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    testImplementation 'org.jetbrains.kotlin:kotlin-test'
+    testImplementation 'org.mockito:mockito-core:5.0.0'
+    testImplementation 'junit:junit:4.13.2'
+    // junit-vintage-engine lets JUnit 5 platform run JUnit 4 tests (used by
+    // testOptions.unitTests.useJUnitPlatform()). Without this, our
+    // org.junit.Test classes are silently skipped (#250 work).
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.10.2'
+}

@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 /// One model, and everything the app needs to install and open it.
 class ModelChoice {

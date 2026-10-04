@@ -4,7 +4,8 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   connectivity_plus
-  flutter_gemma
+  flutter_edge_ai
+  flutter_local_ai
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST

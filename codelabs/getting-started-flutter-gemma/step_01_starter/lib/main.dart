@@ -8,7 +8,7 @@ class QuickstartApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Gemma Quickstart',
+      title: 'Edge AI Quickstart',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
       home: const ChatPage(),
     );
@@ -27,7 +27,7 @@ class ChatPage extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Gemma Quickstart')),
+      appBar: AppBar(title: const Text('Edge AI Quickstart')),
       body: Column(
         children: [
           Expanded(

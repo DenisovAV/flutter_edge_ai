@@ -1,0 +1,65 @@
+name: flutter_edge_ai_onnx
+description: "ONNX Runtime engine for flutter_edge_ai: GenAI inference on 5 native platforms + web generation (Transformers.js) & embeddings (onnxruntime-web)."
+version: 0.5.1
+homepage: https://flutteredge.ai
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_onnx
+topics: [gemma, llm, onnx, onnxruntime, on-device]
+
+# 5 native platforms (ORT-GenAI inference + plain-ORT embeddings, dart:ffi)
+# PLUS web: text generation via Transformers.js (`@huggingface/transformers`)
+# AND embeddings via onnxruntime-web — see `src/web/`. Declared explicitly so
+# the supported set is the package's own contract, not inferred from the
+# transitive import graph.
+platforms:
+  android:
+  ios:
+  macos:
+  windows:
+  linux:
+  web:
+
+resolution: workspace
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # ^1.11.0: this version passes `activeBackend:` to `ForwardPassDescriptor` —
+  # a named parameter that does not exist before 1.11.0, so an older core is a
+  # compile error — and overrides `EmbeddingModel.activeBackend`, which lands in
+  # 1.11.0 too, on top of 1.9.0's embedding seam and tokenizer registry
+  # (`EmbeddingTokenizerRegistry`). An older core resolves and then fails to
+  # compile — better here than there.
+  flutter_edge_ai: ^1.11.4
+  ffi: ^2.1.0
+  mutex: ^3.1.0
+  hooks: ^2.0.0
+  code_assets: ^1.2.0
+  crypto: ^3.0.6
+
+dev_dependencies:
+  # Test-only, and deliberately NOT a real dependency: this package must not
+  # depend on a sibling (see "Packages -> core, never to each other"). The ORT
+  # host smoke test builds a real tokenizer, which an app gets by registering
+  # `embeddingTokenizers:` instead.
+  flutter_edge_ai_embeddings: ^2.2.1
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # Used by test/onnx_directory_e2e_test.dart (path join + mocked
+  # PathProvider/SharedPreferences for the resolver→install→engine contract).
+  path: ^1.9.0
+  path_provider_platform_interface: ^2.1.0
+  shared_preferences: ^2.5.2
+
+# `hook/build.dart` (Phase 3 Task 4) owns the two co-located ORT-GenAI/ORT
+# CodeAssets — macOS arm64 only for now (native-assets pipeline, no
+# `flutter: plugin:` block needed, same as flutter_edge_ai_litertlm). Non-macOS
+# archives are a stubbed "pending D2" gap in the hook until the mobile
+# throughput go/no-go lands. `GenAiFfiClient` still supports
+# `FLUTTER_GEMMA_ORT_GENAI_LIBS` (a directory holding both dylibs) as a host-test
+# override that bypasses the CodeAsset bundle entirely — same posture as the
+# EMBEDDING arm's `OrtFfiClient` / `FLUTTER_GEMMA_ORT_LIBRARY`.

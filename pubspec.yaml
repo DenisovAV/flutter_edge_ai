@@ -1,4 +1,4 @@
-name: flutter_gemma_workspace
+name: flutter_edge_ai_workspace
 publish_to: none
 
 environment:
@@ -7,18 +7,18 @@ environment:
 # Native Dart pub workspace (Dart 3.6+). Each member opts in with
 # `resolution: workspace` in its own pubspec.yaml.
 workspace:
-  - packages/flutter_gemma
-  - packages/flutter_gemma_rag_sqlite
-  - packages/flutter_gemma_rag_qdrant
-  - packages/flutter_gemma_litertlm
-  - packages/flutter_gemma_embeddings
-  - packages/flutter_gemma_speech
-  - packages/flutter_gemma_diagnostics
-  - packages/flutter_gemma_mediapipe
-  - packages/flutter_gemma_builtin_ai
-  - packages/flutter_gemma_onnx
-  - packages/flutter_gemma_agent
-  - packages/genkit_flutter_gemma
+  - packages/flutter_edge_ai
+  - packages/flutter_edge_ai_sqlite
+  - packages/flutter_edge_ai_qdrant
+  - packages/flutter_edge_ai_litertlm
+  - packages/flutter_edge_ai_embeddings
+  - packages/flutter_edge_ai_speech
+  - packages/flutter_edge_ai_diagnostics
+  - packages/flutter_edge_ai_mediapipe
+  - packages/flutter_edge_ai_builtin_ai
+  - packages/flutter_edge_ai_onnx
+  - packages/flutter_edge_ai_agent
+  - packages/genkit_flutter_edge_ai
   - packages/genkit_hybrid
 
 dev_dependencies:

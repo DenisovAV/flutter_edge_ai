@@ -30,8 +30,8 @@ unmodified, and their JavaScript skills run as-is (the
 [Setup](#setup).
 ² Linux has no embeddable webview, so JS skills return an `ErrorResult`
 (`isAvailable` is false). text / native-intent / MCP skills work on Linux.
-³ The agent is not supported on Web yet — the browser LLM runtimes don't
-reliably emit tool calls, so the agent loop is disabled there (see the note below).
+³ Not supported on Web — never verified end-to-end, and the example app
+disables it (see the note below).
 
 JS skills run in a headless, sandboxed webview. To grant a secure context (so
 skills using `crypto.subtle` and other secure-context Web APIs work), the
@@ -40,16 +40,16 @@ package serves each skill's assets over a loopback HTTP server
 works identically across all native engines (WebView2 / WKWebView / Android
 WebView), verified on hardware. On web the skill runs in a sandboxed `<iframe>`.
 
-> **Web is unverified.** The table shows where each skill *type* runs once
-> invoked, and the pieces the loop needs are in place: the web `.litertlm` path
+> **Not supported on Web** — never verified end-to-end, and the example app
+> disables it. Some pieces the loop needs are in place: the web `.litertlm` path
 > does emit well-formed tool calls and does survive the call -> result -> continue
 > round-trip (`example/integration_test/web_function_calling_test.dart`). What is
 > missing is a run of the agent itself on web — nothing here has been driven
 > end-to-end in a browser, and `sizeInTokens` is approximate there, which the
-> loop's context balancing depends on. On web, native-intent skills open
-> `mailto:` / `sms:` links and a Google Calendar event page rather than OS
-> surfaces. The agent is verified on **Android, iOS, macOS, and Windows** — use
-> those until a web run exists.
+> loop's context balancing depends on. The executors keep web arms (native-intent
+> skills open `mailto:` / `sms:` links and a Google Calendar event page rather
+> than OS surfaces). The agent is verified on **Android, iOS, macOS, and
+> Windows** — use those.
 
 ## What's in the box
 
@@ -110,10 +110,14 @@ a deployment that does not serve `assets/packages/flutter_edge_ai_agent/` causes
 
 ## Quick start
 
+The app also depends on `flutter_edge_ai_litertlm`, which provides
+`LiteRtLmEngine`.
+
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 // 1. Register the inference engine at app start. (Skill executors can also be
 //    registered here via `skillExecutors:` — see "Registering executors" below;

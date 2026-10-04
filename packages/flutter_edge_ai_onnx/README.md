@@ -76,6 +76,12 @@ a different reason (so a catch-all embedding backend like
 `LiteRtEmbeddingBackend` never silently claims an `.onnx`/`.ort` file); its
 platform gate lives in `createModel` instead, as a loud `StateError`.
 
+Android needs **`minSdk 24`** — both the ORT and ORT-GenAI AARs declare
+`minSdkVersion=24`; raise your app's `android/app/build.gradle(.kts)`
+`minSdk` to 24 or higher if it's lower today. The device-verified Android
+model (Phi-3.5-mini 3.8B int4) peaks at ~3.74 GB RSS — plan for 8 GB+ RAM
+devices; smaller models scale down.
+
 ### Which output the embedding path reads
 
 A session's outputs are preferred in the order `sentence_embedding` >
@@ -94,12 +100,6 @@ hidden states. That head is not a sentence embedding and is not L2-normalized;
 if you export a BERT encoder yourself, export it for feature extraction, or
 strip the pooler. Which output to read is really a property of the model
 profile, not of the output's name, and should move there.
-
-Android needs **`minSdk 24`** — both the ORT and ORT-GenAI AARs declare
-`minSdkVersion=24`; raise your app's `android/app/build.gradle(.kts)`
-`minSdk` to 24 or higher if it's lower today. The device-verified Android
-model (Phi-3.5-mini 3.8B int4) peaks at ~3.74 GB RSS — plan for 8 GB+ RAM
-devices; smaller models scale down.
 
 ## Inference — `OnnxEngine`
 
@@ -273,6 +273,8 @@ Flutter app boots (i.e. in `<head>`, ahead of `flutter_bootstrap.js`).
 
 - [`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai) — the core
   package this engine plugs into.
-- [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm) /
-  [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) —
-  the LiteRT-LM equivalents, with broader platform support today.
+- [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm) —
+  the LiteRT-LM equivalent, with broader platform support today; its
+  `LiteRtEmbeddingBackend` is the LiteRT counterpart of `OnnxEmbeddingBackend`.
+- [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) —
+  the tokenizers this package's embedding arm also needs (see [Register](#register)).

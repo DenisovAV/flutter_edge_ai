@@ -1,4 +1,4 @@
-// Lifecycle and on-disk-format regressions for the 1.4.0 provider migration.
+// Lifecycle and on-disk-format regressions for the 1.3.0 UniFFI migration.
 //
 // Every test here pins a failure that the 82-test suite next door could not
 // see, because all of those live inside one process against a `setUp`-fresh
@@ -170,7 +170,7 @@ void main() {
 
   group('a store written by 1.x', () {
     test('initialize() itself refuses, not just the first write', () async {
-      // Before: 1.4.0 only looked under its owned subdir, so a 1.x shard was
+      // Before: 1.3.0 only looked under its owned subdir, so a 1.x shard was
       // invisible — no error, no log, an empty index, and the old corpus still
       // occupying disk.
       //

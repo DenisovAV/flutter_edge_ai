@@ -32,9 +32,11 @@ class FlutterEdgeAiRag {
 
   /// Opens an independently-owned RAG index.
   ///
-  /// [embedder] is borrowed and never closed. When omitted, the active Flutter
-  /// Edge AI embedder is resolved lazily by the first text operation, provided
-  /// [activeEmbedderProfileId] declares its stable embedding-space identity.
+  /// [embedder] is borrowed and never closed. When omitted, the Flutter Edge AI
+  /// embedder that is active when `open()` runs is pinned to this index — so
+  /// install it first — and its model is loaded by the first text operation,
+  /// provided [activeEmbedderProfileId] declares its stable embedding-space
+  /// identity. After switching embedders, open a new index at a new location.
   /// Vector operations never trigger embedder resolution. Pass
   /// [embeddingProfile] for a new vector-only index; otherwise raw vector
   /// operations remain disabled until a text operation has safely bound and

@@ -1,5 +1,5 @@
 ## 0.3.1
-- Support `flutter_edge_ai` 2.x.
+- Require `flutter_edge_ai` 2.x.
 
 ## 0.3.0
 - Renamed from `flutter_gemma_builtin_ai`.

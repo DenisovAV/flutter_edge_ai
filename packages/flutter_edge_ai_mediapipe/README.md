@@ -25,7 +25,7 @@ await FlutterEdgeAi.initialize(
 );
 ```
 
-`MediaPipeEngine` handles `ModelFileType.task` / `.bin` models; pass it alongside other engines (e.g. `LiteRtLmEngine` from `flutter_edge_ai_litertlm`) if your app uses both formats.
+`MediaPipeEngine` handles `ModelFileType.task` / `ModelFileType.binary` (`.bin`) models; pass it alongside other engines (e.g. `LiteRtLmEngine` from `flutter_edge_ai_litertlm`) if your app uses both formats.
 
 ## Web setup
 

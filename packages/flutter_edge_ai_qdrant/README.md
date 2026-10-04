@@ -1,7 +1,7 @@
 # flutter_edge_ai_qdrant
 
 > **Renamed from [`flutter_gemma_rag_qdrant`](https://pub.dev/packages/flutter_gemma_rag_qdrant).**
-> Version 1.4.0 also moves the RAG API into `flutter_edge_ai_rag`: replace the
+> Version 2.0.0 also moves the RAG API into `flutter_edge_ai_rag`: replace the
 > old dependency/imports, add `flutter_edge_ai_rag`, and register
 > `QdrantVectorStoreProvider()` in `FlutterEdgeAiRag`. Existing profile-less
 > stores require explicit legacy adoption with a verified, stable profile ID.
@@ -37,15 +37,17 @@ embedding profiles, vector stores, and metadata filters.
 ```dart
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:path_provider/path_provider.dart';
 
 final rag = FlutterEdgeAiRag(
   providers: [QdrantVectorStoreProvider()],
 );
 
+final dir = await getApplicationDocumentsDirectory();
 final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: 'qdrant',
-    location: 'rag_store', // a directory
+    location: '${dir.path}/rag_store', // a directory
   ),
   embeddingProfile: EmbeddingProfile(
     id: 'my-embedder-v1',
@@ -65,13 +67,19 @@ await index.flush();
 await index.dispose();
 ```
 
+`providerId` is the string `'qdrant'` (`QdrantVectorStoreProvider().id`); unlike
+`SqliteVectorStoreProvider`, there is no static `providerId` constant.
+
 This vector-only form is independent from the main inference runtime. To use
 `addText` and `searchText`, initialize `FlutterEdgeAi`, install an active
 embedding model, and open the index with a stable identity for that model:
 
 ```dart
 final textIndex = await rag.open(
-  spec: VectorStoreSpec(providerId: 'qdrant', location: 'text_rag_store'),
+  spec: VectorStoreSpec(
+    providerId: 'qdrant',
+    location: '${dir.path}/text_rag_store',
+  ),
   activeEmbedderProfileId:
       'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
       'retrieval-prefix-meanpool-l2-v1',
@@ -84,8 +92,9 @@ The index borrows the active or custom embedder, so dispose the index before
 disposing that embedder or calling `FlutterEdgeAi.dispose()`.
 
 `QdrantVectorStore` also honors the payload-aware `Filter` DSL on
-`searchSimilar`/`RagIndex.searchText`. It remains exported as a low-level
-`VectorStoreRepository` for applications that need direct vector operations.
+`searchSimilar` and `RagIndex.searchText`/`searchVector`. It remains exported
+as a low-level `VectorStoreRepository` for applications that need direct vector
+operations.
 Low-level callers must first call `bindEmbeddingProfile()` with the stable ID
 and dimension for their embedding space; add, search, remove, and clear refuse
 an unbound location. `getStats()` remains available before binding so migration
@@ -97,9 +106,10 @@ as a nested payload path, so `doc.type` would mean "`type` inside `doc`" here
 and a flat column on sqlite. Note this store accepts names `SqliteVectorStore`
 refuses; if a schema must work on both, keep it inside sqlite's narrower set.
 
-> `VectorStoreSpec.location` is treated as a **shard
-> directory** (qdrant creates files under it), not a single `.db` file. Use a
-> distinct path from any sqlite store so they don't collide on disk.
+> `VectorStoreSpec.location` is an absolute path to a **shard
+> directory** (qdrant creates files under it), not a single `.db` file; build it
+> from `getApplicationDocumentsDirectory()`. Use a distinct path from any sqlite
+> store so they don't collide on disk.
 
 ## Behavior notes
 
@@ -126,7 +136,7 @@ verifying the exact model that created the vectors, adopt it explicitly once:
 final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: 'qdrant',
-    location: 'rag_store',
+    location: '${dir.path}/rag_store',
     allowLegacyProfileAdoption: true,
   ),
   embeddingProfile: EmbeddingProfile(
@@ -144,23 +154,28 @@ embedding space, create a different location.
 
 **The current package cannot read a store written by 1.2 or earlier.** The shard format changed with the
 move to crate 0.8.0, and this release keeps its data in an owned
-`qdrant_edge_v1/` subdirectory rather than directly at the path you pass to
-`initialize()`.
+`qdrant_edge_v1/` subdirectory rather than directly at the path you pass as
+`location`.
 
-`initialize()` throws a `QdrantLegacyStoreException` naming the situation — not
-the first write, so a read-only session hits it too. It names the three entries
-a 1.x shard owns (`edge_config.json`, `wal/`, `segments/`); remove those from
-the directory yourself, then re-index.
+`rag.open()` throws a `QdrantLegacyStoreException` naming the situation — it
+comes from the store's `initialize()`, not the first write, so a read-only
+session hits it too. It names the three entries a 1.x shard owns
+(`edge_config.json`, `wal/`, `segments/`); remove those from the directory
+yourself, then re-index.
 
 ```dart
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
-final store = QdrantVectorStore();
+final RagIndex index;
 try {
-  await store.initialize(path);
+  index = await rag.open(
+    spec: VectorStoreSpec(providerId: 'qdrant', location: path),
+    embeddingProfile: profile,
+  );
 } on QdrantLegacyStoreException catch (e) {
   // e.message names exactly what to remove. Do it with the file APIs you
-  // already use for `path`, then initialize() again and re-index.
+  // already use for `path`, then call rag.open() again and re-index.
   rethrow;
 }
 ```
@@ -173,9 +188,10 @@ belonged to the caller rather than to the store; the deletion is gone, and with
 it that whole class of mistake.
 
 Catch `QdrantLegacyStoreException`, never the base `VectorStoreException`:
-`initialize()` also throws the base type when a 1.4.0 shard is present but will
-not open right now — a WAL held by another store, a permission problem — and
-that is not a store you want to act destructively on.
+`rag.open()` also throws the base type when a current-layout
+(`qdrant_edge_v1/`, 1.3.0 and later) shard is present but will not open right
+now — a WAL held by another store, a permission problem — and that is not a
+store you want to act destructively on.
 
 ## Platforms
 

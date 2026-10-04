@@ -10,17 +10,18 @@ import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:path/path.dart' as p;
 
-/// Thrown when a store written by `flutter_edge_ai_qdrant` 1.x is found at
-/// the bare `databasePath`, and ONLY then.
+/// Thrown when a store written by `flutter_gemma_rag_qdrant` 1.2 or earlier
+/// (crate 0.7.x) is found at the bare `databasePath`, and ONLY then.
 ///
 /// It is a separate type because the two things `initialize` can refuse over
 /// want opposite responses. This one is permanent and needs the old files
-/// removed; a plain [VectorStoreException] means a 1.4.0 shard is present and
-/// will not open right now — a WAL held by another store, a permission
-/// problem — which usually clears on its own. For a moment this package threw
-/// the base type for both, and the recipe in its own README consequently
-/// destroyed an intact 1.4.0 corpus whenever the store happened to be open
-/// elsewhere. Measured, with two documents.
+/// removed; a plain [VectorStoreException] means a current-layout shard
+/// (`qdrant_edge_v1/`, 1.3.0 and later) is present and will not open right
+/// now — a WAL held by another store, a permission problem — which usually
+/// clears on its own. For a moment this package threw the base type for both,
+/// and the recipe in its own README consequently destroyed an intact
+/// current-layout corpus whenever the store happened to be open elsewhere.
+/// Measured, with two documents.
 ///
 /// The message names what to remove, and it only names files when the marker
 /// is a shard config this package wrote. Nothing in this package deletes them
@@ -456,9 +457,9 @@ class QdrantVectorStore implements VectorStoreRepository {
         return;
       case _AtPath.legacyStore:
         throw QdrantLegacyStoreException(
-          'Found a store written by flutter_gemma_rag_qdrant 1.x at '
-          '$databasePath. Its on-disk format is not readable by 1.4.0, and this '
-          'release never deletes files it cannot read: remove '
+          'Found a store written by flutter_gemma_rag_qdrant 1.x (1.2 or '
+          'earlier) at $databasePath. Its on-disk format is not readable by '
+          'this version, which never deletes files it cannot read: remove '
           '"${_legacyEntries.join('", "')}" from that directory yourself, then '
           're-index. Anything else you keep there is left alone.',
         );
@@ -500,8 +501,8 @@ class QdrantVectorStore implements VectorStoreRepository {
       name.startsWith(_recordTempPrefix);
 
   /// True when [databasePath] holds a shard written by 1.x. Such a store is
-  /// invisible to this release — 1.4.0 only opens the owned subdir — so
-  /// without this check the app comes up with an empty index, no error, and
+  /// invisible to this version — 1.3.0 and later only open the owned subdir —
+  /// so without this check the app comes up with an empty index, no error, and
   /// the old corpus still occupying disk.
   /// What sits at the bare [databasePath], for the purpose of what to TELL the
   /// caller.
@@ -1173,7 +1174,8 @@ class QdrantVectorStore implements VectorStoreRepository {
     // and re-openable. So clear() no longer closes the client, no longer
     // touches the filesystem, and cannot delete anything that is not a point
     // it wrote — which retires the whole class of bug that reached a caller's
-    // own `wal/` and `segments/` twice, and an intact 1.4.0 corpus once.
+    // own `wal/` and `segments/` twice, and an intact current-layout corpus
+    // once.
     // Same refusal, same helper, same choice of type. This branch used to
     // carry its OWN hardcoded copy of the message — which meant the
     // "delete these three files" instruction went to every caller the guard

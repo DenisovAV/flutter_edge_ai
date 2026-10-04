@@ -1,5 +1,5 @@
 ## 0.5.3
-- Support `flutter_edge_ai` 2.x.
+- Require `flutter_edge_ai` 2.x.
 
 ## 0.5.2
 - Renamed from `flutter_gemma_speech`.

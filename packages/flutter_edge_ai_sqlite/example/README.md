@@ -7,15 +7,23 @@ and web (`package:sqlite3/wasm` + a custom `sqlite3.wasm`).
 Register it once and open independently owned RAG indexes.
 
 ```dart
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 Future<void> buildIndex() async {
   final rag = FlutterEdgeAiRag(
     providers: [const SqliteVectorStoreProvider()],
   );
+  // An absolute file path on native, a plain name on Web (path_provider has
+  // no Web implementation, so it is only called on native).
+  final location = kIsWeb
+      ? 'knowledge.db'
+      : p.join((await getApplicationDocumentsDirectory()).path, 'knowledge.db');
   final index = await rag.open(
-    spec: VectorStoreSpec(providerId: 'sqlite', location: 'rag_store.db'),
+    spec: VectorStoreSpec(providerId: 'sqlite', location: location),
     embeddingProfile: EmbeddingProfile(
       id: 'my-embedder-v1',
       dimension: 768,

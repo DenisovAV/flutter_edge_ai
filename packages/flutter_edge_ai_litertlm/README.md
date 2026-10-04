@@ -4,9 +4,10 @@
 > swap the dependency and the `package:flutter_gemma_litertlm/` imports; nothing on the device
 > changes. See the [migration guide](https://flutteredge.ai/docs/migration).
 
-LiteRT-LM (`.litertlm`) on-device inference engine for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai),
-via `dart:ffi`. Opt-in package — add it only if you run `.litertlm` models.
-Android, iOS, macOS, Linux, Windows.
+LiteRT-LM on-device engine for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai):
+runs `.litertlm` models and LiteRT `.tflite` embeddings. Opt-in package — add it
+only if you run either. Android, iOS, macOS, Linux and Windows via `dart:ffi`;
+Web (early preview) via `@litert-lm/core` and LiteRT.js.
 
 This package **owns** the shared LiteRT-LM native library (`libLiteRtLm`) and
 exposes the LiteRt interpreter FFI (`LiteRtBindings`); both are shared by

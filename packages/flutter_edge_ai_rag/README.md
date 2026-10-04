@@ -1,4 +1,4 @@
-# Flutter Edge AI RAG
+# flutter_edge_ai_rag
 
 Pluggable, instance-scoped retrieval-augmented generation for
 [`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai). The package owns
@@ -6,13 +6,39 @@ RAG orchestration and contracts; storage implementations are supplied by
 separate packages such as `flutter_edge_ai_qdrant` and
 `flutter_edge_ai_sqlite`.
 
+Coming from `flutter_edge_ai` 1.x, where RAG lived in core? See the
+[1.x → 2.0 migration guide](https://flutteredge.ai/docs/migration).
+
+Add this package and at least one storage provider:
+
+```yaml
+dependencies:
+  flutter_edge_ai_rag: ^1.0.0
+  flutter_edge_ai_sqlite: ^2.0.0   # all six platforms
+  # or flutter_edge_ai_qdrant: ^2.0.0 (native only)
+```
+
 ```dart
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 final rag = FlutterEdgeAiRag(
-  providers: [SqliteVectorStoreProvider()],
+  providers: [const SqliteVectorStoreProvider()],
 );
 
+// An absolute path on native, a plain name on Web. path_provider has no Web
+// implementation, so it is only called on native.
+Future<String> ragLocation(String name) async => kIsWeb
+    ? name
+    : p.join((await getApplicationDocumentsDirectory()).path, name);
+
+final location = await ragLocation('knowledge.db');
+
 if (!rag.canOpen(
-  VectorStoreSpec(providerId: 'sqlite', location: 'knowledge.db'),
+  VectorStoreSpec(providerId: 'sqlite', location: location),
 )) {
   throw UnsupportedError('SQLite RAG is unavailable on this platform');
 }
@@ -20,7 +46,7 @@ if (!rag.canOpen(
 final index = await rag.open(
   spec: VectorStoreSpec(
     providerId: 'sqlite',
-    location: 'knowledge.db',
+    location: location,
     filterSchema: FilterSchema(fields: [
       FilterField(name: 'topic', type: FilterFieldType.string),
     ]),
@@ -45,7 +71,13 @@ await index.flush();
 await index.dispose();
 ```
 
-The default embedder is borrowed lazily from
+`location` is an absolute path on native — a database file for SQLite, a
+directory for Qdrant; build it from `getApplicationDocumentsDirectory()` — and a
+plain name on Web.
+
+`open()` pins the embedder that is active at that moment: install the embedder
+before opening the index, and after switching embedders open a new index at a
+new location. The default embedder is borrowed from
 `FlutterEdgeAi.getActiveEmbedder()`. This package never closes that core-owned
 model. Its `activeEmbedderProfileId` is explicit because a mutable file path or
 download URL is not a content identity. Use a stable, versioned ID that covers
@@ -61,7 +93,10 @@ explicit profile when a new location is opened:
 
 ```dart
 final vectors = await rag.open(
-  spec: VectorStoreSpec(providerId: 'sqlite', location: 'vectors.db'),
+  spec: VectorStoreSpec(
+    providerId: 'sqlite',
+    location: await ragLocation('vectors.db'),
+  ),
   embeddingProfile: EmbeddingProfile(
     id: 'embeddinggemma-300m-v1',
     dimension: 768,
@@ -93,7 +128,10 @@ class AppEmbedder implements RagEmbedder {
 }
 
 final customIndex = await rag.open(
-  spec: VectorStoreSpec(providerId: 'sqlite', location: 'custom-v1.db'),
+  spec: VectorStoreSpec(
+    providerId: 'sqlite',
+    location: await ragLocation('custom-v1.db'),
+  ),
   embedder: AppEmbedder(myEmbeddingModel),
 );
 ```
@@ -113,7 +151,7 @@ model identity explicitly; the package also verifies its dimension:
 final migrated = await rag.open(
   spec: VectorStoreSpec(
     providerId: 'sqlite',
-    location: 'legacy.db',
+    location: await ragLocation('legacy.db'),
     allowLegacyProfileAdoption: true,
   ),
   embeddingProfile: knownLegacyProfile,

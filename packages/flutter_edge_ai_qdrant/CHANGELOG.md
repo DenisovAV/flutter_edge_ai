@@ -1,5 +1,5 @@
 ## 2.0.0
-- **Breaking:** move RAG contracts and provider registration to `flutter_edge_ai_rag`.
+- **Breaking:** now a `flutter_edge_ai_rag` storage provider; a location binds one embedding profile.
 
 ## 1.3.2
 - Renamed from `flutter_gemma_rag_qdrant`.

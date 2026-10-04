@@ -1,5 +1,5 @@
 ## 2.0.0
-- **Breaking:** add pluggable RAG provider selection and durable embedding-profile binding.
+- **Breaking:** now a `flutter_edge_ai_rag` storage provider; a location binds one embedding profile.
 
 ## 1.4.0
 - Renamed from `flutter_gemma_rag_sqlite`.

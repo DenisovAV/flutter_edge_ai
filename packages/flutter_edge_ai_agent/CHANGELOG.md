@@ -1,6 +1,6 @@
 ## 0.2.7
-- fix: bundled SKILL.md files now ship; `AssetSkillSource.load()` throws when one is missing.
-- Support `flutter_edge_ai` 2.x.
+- Bundled SKILL.md files now ship; `AssetSkillSource.load()` throws when one is missing.
+- Require `flutter_edge_ai` 2.x.
 
 ## 0.2.6
 - Renamed from `flutter_gemma_agent`.

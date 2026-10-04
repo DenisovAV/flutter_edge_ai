@@ -4,18 +4,23 @@
 [`flutter_edge_ai_rag`](https://pub.dev/packages/flutter_edge_ai_rag).
 
 ```dart
+import 'package:flutter/widgets.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:path_provider/path_provider.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   final rag = FlutterEdgeAiRag(
     providers: [QdrantVectorStoreProvider()],
   );
 
+  // An absolute path to a shard directory, not a .db file.
+  final dir = await getApplicationDocumentsDirectory();
   final index = await rag.open(
     spec: VectorStoreSpec(
       providerId: 'qdrant',
-      location: 'rag_store', // a shard directory, not a .db file
+      location: '${dir.path}/rag_store',
       filterSchema: FilterSchema(
         fields: [FilterField(name: 'lang', type: FilterFieldType.string)],
       ),

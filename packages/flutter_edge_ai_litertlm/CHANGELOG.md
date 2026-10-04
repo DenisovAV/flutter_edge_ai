@@ -1,5 +1,5 @@
 ## 1.8.7
-- Support `flutter_edge_ai` 2.x.
+- Require `flutter_edge_ai` 2.x.
 
 ## 1.8.6
 - Renamed from `flutter_gemma_litertlm`.

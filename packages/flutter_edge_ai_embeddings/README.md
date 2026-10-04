@@ -57,10 +57,11 @@ Forget the second list and the first embedding throws a `StateError` naming the
 package to add — it never silently falls back to a tokenizer with the wrong
 convention.
 
-`LiteRtEmbeddingBackend` provides the embedding model used by the auto-embedding
-RAG methods (`addDocument` / `searchSimilar`) and by `createEmbeddingModel`. Pair
-it with a vector store from `flutter_edge_ai_sqlite` or
-`flutter_edge_ai_qdrant`.
+`LiteRtEmbeddingBackend` provides the embedding model that
+`FlutterEdgeAi.getActiveEmbedder()` returns, which text RAG
+(`RagIndex.addText` / `searchText`) in
+[`flutter_edge_ai_rag`](https://pub.dev/packages/flutter_edge_ai_rag) uses with
+a storage provider from `flutter_edge_ai_sqlite` or `flutter_edge_ai_qdrant`.
 
 ## Web setup
 
@@ -173,7 +174,8 @@ for it, and build an `EmbeddingBackendProvider` that calls
 `CommonEmbeddingModel.create(descriptor: ForwardPassDescriptor(...), tokenizerPath: ...)`.
 Declare `EmbeddingOutputContract.pooledFinal` if your engine's forward pass
 already returns the final embedding, or `.tokenLevel` if it returns raw
-per-token hidden states for this package's `meanPoolAndNormalize` to pool.
+per-token hidden states for core's `meanPoolAndNormalize` (exported by
+`flutter_edge_ai`, re-exported here) to pool.
 Pass `activeBackend:` too — the backend your forward pass really runs on. It is
 optional, so nothing will make you, but it is what `EmbeddingModel.activeBackend`
 reports to the app, and omitting it answers `null`. Never default it to CPU for

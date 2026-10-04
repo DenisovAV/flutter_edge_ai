@@ -1,5 +1,5 @@
 ## 1.0.9
-- Support `flutter_edge_ai` 2.x.
+- Require `flutter_edge_ai` 2.x.
 
 ## 1.0.8
 - Renamed from `flutter_gemma_mediapipe`.

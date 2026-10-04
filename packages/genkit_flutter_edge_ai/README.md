@@ -6,16 +6,17 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
   <img src="https://raw.githubusercontent.com/DenisovAV/flutter_edge_ai/main/packages/genkit_flutter_edge_ai/assets/cover.jpeg" alt="genkit_flutter_edge_ai_cover">
 </p>
 
-> **Renamed from `genkit_flutter_gemma`.** Model and embedder ids are now
-> `flutter-edge-ai/<name>` (they were `flutter-gemma/<name>`); `flutterEdgeAi.model(...)`
-> builds them for you. Since 0.7.0 the old Dart names are gone; `dart fix --apply`
-> renames them.
+> **Renamed from [`genkit_flutter_gemma`](https://pub.dev/packages/genkit_flutter_gemma).**
+> Model and embedder ids are now `flutter-edge-ai/<name>` (they were
+> `flutter-gemma/<name>`); `flutterEdgeAi.model(...)` builds them for you. 0.7.0
+> drops the old Dart names; `dart fix --apply` renames them. See the
+> [migration guide](https://flutteredge.ai/docs/migration).
 
 ## Features
 
 - Wraps `flutter_edge_ai` as a Genkit model provider
 - Supports text generation (blocking and streaming)
-- Embeddings via `FlutterEdgeAiEmbedder`
+- Embeddings — register a `FlutterEdgeAiEmbedderConfig`, reference it with `flutterEdgeAi.embedder(...)`
 - Multimodal input (images, audio) — supports `data:` URIs, `file://` paths, and `http(s)://` URLs
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
 - Parallel tool calls — multiple function calls in a single model response
@@ -71,8 +72,8 @@ await FlutterEdgeAi.initialize(
 );
 ```
 
-> If you skip registration, the first `installModel` / `getActiveModel` throws a
-> `StateError` telling you to add the engine package.
+> If you skip registration, the first `getActiveModel` throws a `StateError`
+> telling you to add the engine package.
 
 ## Quick Start
 
@@ -161,8 +162,9 @@ final stream = ai.generateStream(
   prompt: 'Write a story.',
 );
 
+final reply = StringBuffer();
 await for (final chunk in stream) {
-  stdout.write(chunk.text);
+  reply.write(chunk.text); // update your UI with reply.toString()
 }
 ```
 

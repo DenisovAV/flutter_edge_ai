@@ -2,7 +2,8 @@
 
 > **Renamed from [`flutter_gemma_diagnostics`](https://pub.dev/packages/flutter_gemma_diagnostics).** Same package, new name:
 > swap the dependency and the `package:flutter_gemma_diagnostics/` imports; nothing on the device
-> changes. See the [migration guide](https://flutteredge.ai/docs/migration).
+> changes. `FlutterGemmaDiagnostics` is now `FlutterEdgeAiDiagnostics` (0.2.0 drops the old
+> name); `dart fix --apply` renames it. See the [migration guide](https://flutteredge.ai/docs/migration).
 
 Opt-in memory diagnostics for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) apps, read from the OS on Android and iOS.
 

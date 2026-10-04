@@ -77,6 +77,10 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  # Swift Package Manager off: on macOS the LiteRT-LM companion libraries are
+  # staged by the Podfile post_install block, and an SPM-only app has no Podfile.
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

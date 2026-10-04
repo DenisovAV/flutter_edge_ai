@@ -25,6 +25,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 flutter:
+  # Swift Package Manager off: on macOS the LiteRT-LM companion libraries are
+  # staged by the Podfile post_install block, and an SPM-only app has no Podfile.
+  config:
+    enable-swift-package-manager: false
   uses-material-design: true
   assets:
     - assets/tourist_data/

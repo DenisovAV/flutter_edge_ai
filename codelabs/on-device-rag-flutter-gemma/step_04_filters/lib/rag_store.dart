@@ -36,12 +36,27 @@ class RagStore {
     return '${dir.path}/$databaseName';
   }
 
+  /// Whether the embedder this index searches with is installed yet.
+  ///
+  /// `FlutterEdgeAiRag.open()` pins the embedder that is active at the moment
+  /// it runs, for the life of the index. Opened before `installEmbedder()`, it
+  /// pins none, and every `addText` and `searchText` after that throws. So
+  /// install the embedder first and open the index second — this store
+  /// refuses to open until this is true.
+  bool get embedderInstalled => FlutterEdgeAi.hasActiveEmbedder();
+
   /// Opens this app's one index, or joins the in-flight open.
   Future<VectorStoreStats> open() async => (await _index()).stats();
 
   Future<RagIndex> _index() {
     if (_disposeRequested) {
       throw StateError('RagStore is disposing or already disposed.');
+    }
+    if (!embedderInstalled) {
+      throw StateError(
+        'Install the embedder before opening the index: open() pins the '
+        'embedder that is active when it runs.',
+      );
     }
     return _opening ??= _openOnce();
   }
@@ -113,6 +128,10 @@ class RagStore {
     double threshold = 0.3,
     Filter? filter,
   }) async {
+    // `index()` installs the embedder before it writes a row, so with none
+    // installed there is nothing to find — and opening now would pin "no
+    // embedder" for the life of the index.
+    if (!embedderInstalled) return const [];
     final ragIndex = await _index();
     final stats = await ragIndex.stats();
     if (stats.documentCount == 0) return const [];

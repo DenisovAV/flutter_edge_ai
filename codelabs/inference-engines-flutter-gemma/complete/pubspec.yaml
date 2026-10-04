@@ -42,8 +42,9 @@ dependencies:
   flutter_edge_ai_litertlm: ^1.8.7
   # The OS built-in engine: Gemini Nano (Android, Chrome), Apple
   # Foundation Models (iOS, macOS). No file to download — the OS or the
-  # browser owns the weights. Windows and Linux have no built-in arm.
-  flutter_edge_ai_builtin_ai: ^0.3.0
+  # browser owns the weights. The package also covers Windows AI Foundry,
+  # which this codelab leaves out; Linux has no built-in model.
+  flutter_edge_ai_builtin_ai: ^0.3.1
 
 dev_dependencies:
   flutter_test:

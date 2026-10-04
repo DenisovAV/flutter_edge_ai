@@ -26,6 +26,8 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Recordings are sent to a language model running on this Mac. Nothing leaves the machine.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

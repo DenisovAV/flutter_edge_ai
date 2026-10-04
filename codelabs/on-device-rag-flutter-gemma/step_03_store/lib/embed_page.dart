@@ -45,6 +45,18 @@ class _EmbedPageState extends State<EmbedPage> {
   }
 
   Future<void> _open() async {
+    // Install first, open second: `open()` pins whichever embedder is active
+    // when it runs (see `RagStore.embedderInstalled`). On a first run there is
+    // none yet, so the store stays closed until the Index button installs it.
+    if (!widget.ragStore.embedderInstalled) {
+      setState(() {
+        _busy = false;
+        _status =
+            'Nothing indexed yet. Index the corpus to install the embedder '
+            'and fill the store.';
+      });
+      return;
+    }
     try {
       final stats = await widget.ragStore.open();
       if (!mounted) return;

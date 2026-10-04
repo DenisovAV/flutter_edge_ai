@@ -43,7 +43,7 @@ class LocalAIService implements AIService {
   Future<void> initialize({void Function(int)? onProgress}) async {
     if (_isInitialized) return;
 
-    // flutter_edge_ai 1.x registers no engine by default — opt into LiteRT-LM.
+    // flutter_edge_ai registers no engine by default — opt into LiteRT-LM.
     // `webStorageMode: streaming` (OPFS-backed) is what the size demands: the
     // 2.0 GB web build sits right on the ~2 GB blob ceiling the default
     // cacheApi mode would have to buffer it into, so the @litert-lm/core

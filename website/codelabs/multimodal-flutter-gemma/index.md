@@ -82,9 +82,9 @@ this codelab hands you one of each.
   — plus the memory to open the larger one, roughly 6 GB of RAM. A 4 GB phone
   is killed by the OS rather than told no. On the **web**, Step 2 already
   needs Gemma 4 E2B's **2.0 GB** web build (SmolVLM2 has none), so leave about
-  3 GB free for it — a browser close to its storage quota refuses the write
-  rather than slowing down; Step 3 needs nothing further there — same file,
-  already installed
+  3 GB free for it per step you run in the browser — a browser close to its
+  storage quota refuses the write rather than slowing down. Step 3 uses the
+  same file, but each step app downloads it again on the web; Step 3 says why
 * Android (an **arm64** device or emulator — `flutter_edge_ai_litertlm` ships an
   arm64 library and nothing else, so a 32-bit or x86_64 image has no runtime to
   load), a real iPhone or iPad, macOS, Windows or Linux for the full thing.
@@ -280,7 +280,7 @@ model answers as though you had sent text alone. The only warning is a single
 line at `createChat`, printed once per session and only in a debug build,
 saying vision and audio are being forced off; after that every turn drops the
 pixels or the samples with nothing logged at all. In a release build even that
-one line is gone — `gemmaLog` compiles out of release entirely. That silent
+one line is gone — `edgeAiLog` compiles out of release entirely. That silent
 drop is exactly what Step 4 closes, by asking the platform what it supports
 instead of assuming. For now the point is narrower: SmolVLM2 never installs in
 a browser, and it fails loudly rather than quietly when you try.
@@ -468,11 +468,11 @@ encoder in it at all, and a session flag cannot wire up a part that is not
 there. So this step does the thing the rest of the codelab spends its time
 telling you that you rarely need to do: it changes models.
 
-**This step downloads 2.59 GB** on Android, iOS and desktop. On the web it
-downloads **nothing new** — Step 2 already installed this checkpoint's web
-build there, because SmolVLM2 has no web build of its own (see Step 2).
-Gemma 4 E2B is seven times the size of SmolVLM2 on native, and there is no
-honest way to shrink that number: audio needs weights that were trained
+**This step downloads 2.59 GB** on Android, iOS and desktop. On the web the
+model is the 2.0 GB build Step 2 already used, because SmolVLM2 has no web
+build of its own (see Step 2) — but this step app downloads it again; see
+below. Gemma 4 E2B is seven times the size of SmolVLM2 on native, and there is
+no honest way to shrink that number: audio needs weights that were trained
 with it.
 
 What you get for the seven times is the reason to stop here rather than keep
@@ -526,12 +526,20 @@ application identity, so SmolVLM2 is still sitting exactly where it was. Press
 the delete button in `step_02_vision` before you move on if you want that
 0.36 GB back.
 
-On the **web**, nothing changes. Step 2's own `ModelChoice` already resolves
-to `gemma-4-E2B-it-web.litertlm` in the browser (see Step 2), so this gate's
-`isModelInstalled` check finds it already there, and the app opens straight
-into chat — no second download, no download screen, no id to change. Step 3's
-only contribution on the web is the `supportAudio` flag below, applied to a
-model that was already installed a step ago.
+On the **web**, the model does not change. Step 2's own `ModelChoice` already
+resolves to `gemma-4-E2B-it-web.litertlm` in the browser (see Step 2), so there
+is no id to change, and Step 3's only contribution is the `supportAudio` flag
+below. The download screen comes back all the same. Browser storage belongs to
+one origin in one browser profile, and `flutter run -d chrome` runs each step
+folder in a Chrome profile of its own (kept in that folder's
+`.dart_tool/chrome-device`) and, unless you pass `--web-port`, on a random
+port — a new origin, with no install record and no bytes. So
+`isModelInstalled` answers no and the 2.0 GB comes down again. To share one
+install record across the steps, serve every one of them from the same origin
+— `flutter run -d web-server --web-port=8080`, then open
+`http://localhost:8080` in the same Chrome window each time. The download
+screen is then skipped, though a fresh page load still fetches the model over
+the network, for the reason Getting Started gives in its Step 2.
 
 ### Add the package
 
@@ -541,7 +549,7 @@ flutter pub add record
 
 `record` is for capture, not for the model — the microphone, not the weights.
 
-### Two platform changes
+### The platform changes
 
 Android needs nothing declared: `record` ships `RECORD_AUDIO` in its own
 manifest, the manifest merger adds it to yours, and `record` asks the user for
@@ -555,7 +563,15 @@ as if a reviewer will read it, because one will:
 	<string>Recordings are sent to a language model running on this device. Nothing leaves the phone.</string>
 ```
 
-macOS, in **both** entitlements files again:
+macOS asks through the same key, so add it to `macos/Runner/Info.plist` as
+well:
+
+```xml
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Recordings are sent to a language model running on this Mac. Nothing leaves the machine.</string>
+```
+
+…and, in **both** entitlements files again:
 
 ```xml
 	<key>com.apple.security.device.audio-input</key>

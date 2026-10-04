@@ -50,15 +50,9 @@ window.litertLmReady = (async () => {
   <!-- OPFS Helper for large model streaming (>2GB) -->
   <script src="opfs_helper.js"></script>
 
-  <!-- No web setup for embeddings: LiteRtEmbeddingBackend (ai_engine.dart)
-       is registered !kIsWeb only. Its forward pass runs via LiteRT.js,
-       which on web needs a WASM bundle (litert_wasm_internal.js + a
-       9.4 MB .wasm) that no published package ships. RAG is native-only
-       for now — see the codelab's "Web setup for embeddings" section. -->
-
   <!-- LiteRT.js embeddings bundle (RAG). The four files beside this one are
-       copied from flutter_edge_ai_litertlm/web/ — that package owns them since
-       1.8.0. The WASM runtime they need comes from a CDN. -->
+       copied from flutter_edge_ai_litertlm/web/, the package that owns them.
+       The WASM runtime they need comes from a CDN. -->
   <script type="module" src="litert_embeddings.js"></script>
 </head>
 <body>

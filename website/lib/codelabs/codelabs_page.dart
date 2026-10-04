@@ -72,7 +72,7 @@ class CodelabsPage extends StatelessComponent {
           'for your assistant with one command, ask it for an offline chat '
           'and a tool call, and check its code against the traps the skills '
           'exist to prevent.',
-      duration: '45 min',
+      duration: '44 min',
       level: 'Beginner',
       tags: ['agent skills', 'Antigravity', 'Claude Code'],
       accent: Brand.orange,

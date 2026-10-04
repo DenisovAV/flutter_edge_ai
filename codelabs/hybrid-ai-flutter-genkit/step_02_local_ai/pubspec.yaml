@@ -19,9 +19,12 @@ dependencies:
   # Step 3: On-device AI via genkit_flutter_edge_ai
   genkit_flutter_edge_ai: ^0.7.0
   flutter_edge_ai: ^2.0.0
-  # flutter_edge_ai 1.x registers no engine by default — opt into LiteRT-LM
+  # flutter_edge_ai registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
   flutter_edge_ai_litertlm: ^1.8.7
+  # Step 5 embeds your documents. The engine above runs the forward pass;
+  # this package supplies the tokenizers it needs.
+  flutter_edge_ai_embeddings: ^2.2.2
 
 dev_dependencies:
   flutter_test:

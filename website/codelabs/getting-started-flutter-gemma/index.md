@@ -805,15 +805,21 @@ core API is the entry point to everything else the plugin does:
   way on native platforms — on the web, only a file exported for the browser
   engine does
 * **run a different engine** — the OS built-in model (Gemini Nano, Apple
-  Foundation Models) needs no download at all
+  Foundation Models) needs no download at all:
+  [Inference Engines](/codelabs/inference-engines-flutter-gemma)
 * **send images and audio** — `Message.withImages` / `Message.withAudio`, on
-  models that accept them
-* **let the model call your Dart functions** — tools and the call/response loop
-* **ground answers in your own documents** — embeddings and on-device vector search
-* **run it as a voice loop** — speech-to-text in, text-to-speech out
+  models that accept them: [Multimodal Inference](/codelabs/multimodal-flutter-gemma)
+* **let the model call your Dart functions** — tools and the call/response loop:
+  [Function Calling](/codelabs/function-calling-flutter-gemma)
+* **ground answers in your own documents** — embeddings and on-device vector
+  search: [On-Device RAG](/codelabs/on-device-rag-flutter-gemma)
+* **run it as a voice loop** — speech-to-text in, text-to-speech out:
+  [Voice Assistant](/codelabs/voice-assistant-flutter-gemma)
+* **route between the cloud and the device** — Gemini and the on-device model
+  behind one Genkit call: [Hybrid AI with Genkit](/codelabs/hybrid-ai-flutter-genkit)
 
-Most of these have a codelab in the [catalogue](/codelabs) — some published,
-some still being written.
+Every one of those codelabs is published; the [catalogue](/codelabs) lists
+them all.
 
 ### Reference
 

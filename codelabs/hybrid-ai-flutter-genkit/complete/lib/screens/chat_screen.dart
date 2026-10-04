@@ -69,7 +69,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     if (_engine.localReady) {
-      // Web takes the same path as native now: flutter_edge_ai_litertlm 1.8.0
+      // Web takes the same path as native: flutter_edge_ai_litertlm
       // ships the LiteRT.js bundle this app copies into web/, and the tokenizer
       // comes from the `embeddingTokenizers:` AiEngine registers. A real
       // failure still surfaces through the banner below rather than leaving

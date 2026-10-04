@@ -44,7 +44,7 @@ genkit: ^0.16.0
 genkit_google_genai: ^0.3.1
 genkit_flutter_edge_ai: ^0.7.0
 flutter_edge_ai: ^2.0.0
-flutter_edge_ai_litertlm: ^1.8.7   # LiteRT-LM engine (flutter_edge_ai 1.x ships none by default)
+flutter_edge_ai_litertlm: ^1.8.7   # LiteRT-LM engine (flutter_edge_ai ships none by default)
 genkit_hybrid: ^0.2.2
 ```
 

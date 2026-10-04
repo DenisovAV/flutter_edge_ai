@@ -140,10 +140,11 @@ class _ChatPageState extends State<ChatPage> {
 
   /// The models this app can offer that it is not already running.
   ///
-  /// `Models.builtIn` throws where the OS has no built-in arm, and this getter
-  /// runs inside `itemBuilder` — a throw during a build is a red screen, not
-  /// something a `catch` around the tap could reach. So ask here and drop the
-  /// entry instead. Windows and Linux have no built-in arm at all.
+  /// `Models.builtIn` throws where this app has no built-in arm, and this
+  /// getter runs inside `itemBuilder` — a throw during a build is a red screen,
+  /// not something a `catch` around the tap could reach. So ask here and drop
+  /// the entry instead. The sample gives Windows no built-in entry, and Linux
+  /// has no OS model at all.
   List<ModelChoice> get _alternatives {
     final all = <ModelChoice>[...Models.downloadable];
     try {

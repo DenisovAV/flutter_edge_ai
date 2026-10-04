@@ -1077,7 +1077,7 @@ class FlutterEdgeAi {
 
   /// Reset ServiceRegistry (primarily for testing).
   static void reset() {
-    ServiceRegistry.reset();
+    _resetCoreState();
   }
 
   /// Resets Flutter Edge AI's core services.
@@ -1087,6 +1087,17 @@ class FlutterEdgeAi {
   /// models and loaded runtimes also survive: they live in the platform plugin
   /// instance and persistent model repository, not the DI singleton.
   static Future<void> dispose() async {
+    _resetCoreState();
+  }
+
+  static void _resetCoreState() {
     ServiceRegistry.reset();
+    EngineRegistry.instance.reset();
+    EmbeddingRegistry.instance.reset();
+    EmbeddingTokenizerRegistry.instance.reset();
+    SttRegistry.instance.reset();
+    TtsRegistry.instance.reset();
+    SkillExecutorRegistry.instance.reset();
+    HuggingFaceResolverRegistry.instance.reset();
   }
 }

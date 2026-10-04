@@ -35,10 +35,19 @@ import 'platform_helper.dart' as platform;
 /// against. Computed independently (e.g. `printf hello | shasum`).
 const _sha1OfHello = 'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d';
 
-/// The bundled starter skills, loaded once from this package's assets and
-/// resolved to their HTML via [AssetSkillSource.jsSkillSourceFor].
-late AssetSkillSource _assetSource;
-late SkillRegistry _registry;
+/// The bundled starter skills, resolved to their HTML via
+/// [AssetSkillSource.jsSkillSourceFor].
+final _assetSource = AssetSkillSource();
+
+Future<SkillRegistry>? _registryLoad;
+
+/// Loads the bundled skills on first use, inside a test body. Not in
+/// `setUpAll`: load() throws on a missing skill, and under `flutter drive`
+/// (web) a throwing `setUpAll` is reported as "All tests passed" (AGENTS.md
+/// Rule 6b). Here the failure fails each test that needs the skills.
+Future<SkillRegistry> _ensureRegistry() => _registryLoad ??= _assetSource
+    .load()
+    .then((skills) => SkillRegistry()..addAll(skills, selected: true));
 
 /// A `data:` URL HTML skill that echoes its `data` and `secret` JS arguments
 /// straight back as a JSON result — used by S3 (secret passthrough) and, with a
@@ -115,20 +124,15 @@ bool skipNoHarnessWebview(String scenario) {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() async {
-    _assetSource = AssetSkillSource();
-    final skills = await _assetSource.load();
-    _registry = SkillRegistry()..addAll(skills, selected: true);
-  });
-
   // S1 — compute skill: real headless webview loads the bundled calculate-hash
   // HTML (inlining its sibling index.js), runs crypto.subtle, and posts the
   // hash back over the single AiEdgeGallery handler.
   testWidgets('S1 calculate-hash real headless → SHA-1 reference', (t) async {
     if (skipNoHarnessWebview('S1')) return;
+    final registry = await _ensureRegistry();
     final exec = JsSkillExecutor(sourceFor: _assetSource.jsSkillSourceFor);
     final result = await exec.execute(
-      _registry.get('calculate-hash')!,
+      registry.get('calculate-hash')!,
       '{"text":"hello"}',
     );
     expect(result, isA<TextResult>(), reason: '$result');
@@ -139,9 +143,10 @@ void main() {
   // parseJsResult turns into a WebviewResult the UI embeds inline.
   testWidgets('S2 interactive-map DOM → WebviewResult', (t) async {
     if (skipNoHarnessWebview('S2')) return;
+    final registry = await _ensureRegistry();
     final exec = JsSkillExecutor(sourceFor: _assetSource.jsSkillSourceFor);
     final result = await exec.execute(
-      _registry.get('interactive-map')!,
+      registry.get('interactive-map')!,
       '{"location":"Paris"}',
     );
     expect(result, isA<WebviewResult>(), reason: '$result');
@@ -205,10 +210,11 @@ void main() {
       // Not Linux — the gate is open; S1–S5 already cover the open path.
       return;
     }
+    final registry = await _ensureRegistry();
     final exec = JsSkillExecutor(sourceFor: _assetSource.jsSkillSourceFor);
     expect(exec.isAvailable, isFalse);
     final result = await exec.execute(
-      _registry.get('calculate-hash')!,
+      registry.get('calculate-hash')!,
       '{"text":"hello"}',
     );
     expect(result, isA<ErrorResult>(), reason: '$result');

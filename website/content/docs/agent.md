@@ -37,7 +37,7 @@ used below).
 
 ```
 dependencies:
-  flutter_edge_ai: ^1.12.0
+  flutter_edge_ai: ^2.0.0
   flutter_edge_ai_agent: ^0.2.7
   flutter_edge_ai_litertlm: ^1.8.7   # an inference engine (LiteRtLmEngine)
 ```
@@ -122,6 +122,10 @@ final session = await AgentSession.fromModel(
 //   AgentChatView(session: session)
 // e.g. "Calculate the hash of hello" or "Show Paris on interactive map".
 ```
+
+`load()` returns one skill per bundled name or throws a `BundledSkillLoadError` (a
+`StateError`) whose `failures` names each skill that did not load and why. On web,
+a deployment that does not serve `assets/packages/flutter_edge_ai_agent/` causes it.
 
 The package also ships an adaptive UI: `AgentChatView`, `SkillManagerView`,
 `McpManagerView`, `SecretEditorDialog`, and `SkillTesterView`.

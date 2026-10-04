@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter/services.dart' show AssetBundle, ByteData;
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yaml/yaml.dart';
 
 /// A fake [AssetBundle] that resolves the package's bundled-asset keys
 /// (`packages/flutter_edge_ai_agent/assets/...`) back to files on disk, so the
@@ -30,6 +31,45 @@ class _DiskBundle extends AssetBundle {
     final s = await loadString(key);
     return ByteData.view(Uint8List.fromList(s.codeUnits).buffer);
   }
+}
+
+/// Answers the SKILL.md of a skill in [bodies] with that text, of a skill in
+/// [errors] by throwing that error, and everything else from [inner]. Records
+/// every evicted key.
+class _OverlayBundle extends AssetBundle {
+  _OverlayBundle(this.inner, {this.bodies = const {}, this.errors = const {}});
+
+  final AssetBundle inner;
+  final Map<String, String> bodies;
+  final Map<String, Object> errors;
+  final evicted = <String>[];
+
+  @override
+  Future<String> loadString(String key, {bool cache = true}) async {
+    for (final MapEntry(key: name, value: body) in bodies.entries) {
+      if (key == AssetSkillSource.skillMdKey(name)) return body;
+    }
+    for (final MapEntry(key: name, value: error) in errors.entries) {
+      if (key == AssetSkillSource.skillMdKey(name)) throw error;
+    }
+    return inner.loadString(key, cache: cache);
+  }
+
+  @override
+  Future<ByteData> load(String key) => inner.load(key);
+
+  @override
+  void evict(String key) => evicted.add(key);
+}
+
+/// The [BundledSkillLoadError] that [future] throws.
+Future<BundledSkillLoadError> _loadError(Future<Object?> future) async {
+  try {
+    await future;
+  } on BundledSkillLoadError catch (e) {
+    return e;
+  }
+  fail('load() returned instead of throwing BundledSkillLoadError');
 }
 
 void main() {
@@ -83,16 +123,98 @@ void main() {
       },
     );
 
-    test(
-      'load() skips a missing skill rather than failing the catalog',
-      () async {
-        final source = AssetSkillSource(
+    // Every published version up to 0.2.6 had no SKILL.md and load() returned
+    // an empty catalog with no error, so nobody noticed. Every requested name
+    // either yields a Skill or is named in the error.
+    test('load() names every skill whose SKILL.md asset is missing', () async {
+      final error = await _loadError(
+        AssetSkillSource(
           bundle: _DiskBundle(),
-          names: const ['calculate-hash', 'does-not-exist'],
-        );
-        final skills = await source.load();
+          names: const ['calculate-hash', 'does-not-exist', 'also-missing'],
+        ).load(),
+      );
 
-        expect(skills.map((s) => s.name), ['calculate-hash']);
+      expect(error, isA<StateError>());
+      expect(error.failures.keys, ['does-not-exist', 'also-missing']);
+      expect(error.message, isNot(contains('calculate-hash')));
+    });
+
+    test('load() keeps the cause and evicts the failed key', () async {
+      final bundle = _OverlayBundle(
+        _DiskBundle(),
+        errors: {'qr-code': StateError('binding not initialized')},
+      );
+      final error = await _loadError(
+        AssetSkillSource(
+          bundle: bundle,
+          names: const ['calculate-hash', 'qr-code'],
+        ).load(),
+      );
+
+      expect(error.failures.keys, ['qr-code']);
+      expect(error.message, contains('binding not initialized'));
+      // A cached failed future would repeat this error for the rest of the
+      // session, even once the cause is gone.
+      expect(bundle.evicted, [AssetSkillSource.skillMdKey('qr-code')]);
+    });
+
+    // Flutter's own release/wasm web server and Firebase-style
+    // `** -> /index.html` rewrites answer a missing asset with the app's page
+    // and status 200, so loadString succeeds.
+    test('load() reports an HTML page served for SKILL.md', () async {
+      final error = await _loadError(
+        AssetSkillSource(
+          bundle: _OverlayBundle(
+            _DiskBundle(),
+            bodies: {
+              'qr-code':
+                  '<!DOCTYPE html>\n<html><head><title>app</title></head></html>',
+            },
+          ),
+          names: const ['calculate-hash', 'qr-code'],
+        ).load(),
+      );
+
+      expect(error.failures.keys, ['qr-code']);
+      expect(error.failures['qr-code'], contains('HTML page'));
+    });
+
+    // What the HTML check does not recognise still fails: a page with a
+    // leading comment, a plain-text 404 body, a TypeError from the parser.
+    test('load() names a SKILL.md that loads but does not parse', () async {
+      final error = await _loadError(
+        AssetSkillSource(
+          bundle: _OverlayBundle(
+            _DiskBundle(),
+            bodies: {
+              'qr-code': '<!-- licence -->\n<!DOCTYPE html><html></html>',
+              'send-email': 'Not Found',
+            },
+          ),
+          names: const ['calculate-hash', 'qr-code', 'send-email'],
+        ).load(),
+      );
+
+      expect(error.failures.keys, ['qr-code', 'send-email']);
+    });
+
+    test(
+      'load() names a skill whose frontmatter name is not its directory',
+      () async {
+        final error = await _loadError(
+          AssetSkillSource(
+            bundle: _OverlayBundle(
+              _DiskBundle(),
+              bodies: {
+                'qr-code': '---\nname: qr_code\ndescription: QR\n---\nrun_js',
+              },
+            ),
+            names: const ['calculate-hash', 'qr-code'],
+          ).load(),
+        );
+
+        expect(error.failures.keys, ['qr-code']);
+        expect(error.failures['qr-code'], contains('qr_code'));
       },
     );
 
@@ -112,6 +234,29 @@ void main() {
         'packages/flutter_edge_ai_agent/assets/skills/'
         'interactive-map/scripts/index.html',
       );
+    });
+
+    // The tests above read the skills from disk, which ignores the pubspec. A
+    // skill directory left out of `flutter: assets:` passes them, ships in the
+    // archive, and is still absent from every app — so load() throws for all.
+    test('pubspec.yaml declares every bundled skill directory', () {
+      final pubspec = loadYaml(File('pubspec.yaml').readAsStringSync()) as Map;
+      final declared = ((pubspec['flutter'] as Map)['assets'] as List)
+          .cast<String>()
+          .toSet();
+      final onDisk = Directory('assets/skills')
+          .listSync()
+          .whereType<Directory>()
+          .map((d) => d.uri.pathSegments.where((s) => s.isNotEmpty).last)
+          .toSet();
+
+      expect(onDisk, unorderedEquals(bundledSkillNames));
+      for (final name in bundledSkillNames) {
+        expect(declared, contains('assets/skills/$name/'));
+        if (Directory('assets/skills/$name/scripts').existsSync()) {
+          expect(declared, contains('assets/skills/$name/scripts/'));
+        }
+      }
     });
 
     test('every JS bundled skill ships a runnable scripts/ dir keeping the '

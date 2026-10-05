@@ -154,9 +154,12 @@ motormind-<suffix>`), then generate the platform config into the app:
 cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind" && flutterfire configure --project=<your-project-id> --platforms=android,ios --android-package-name=com.sirisdevelopment.motormind --ios-bundle-id=com.sirisdevelopment.motormind
 ```
 
-That writes `lib/firebase_options.dart`, `android/app/google-services.json` and
-`ios/Runner/GoogleService-Info.plist`. They identify the project and are not secrets, but
-they are per-project, so they are git-ignored until the store flavor exists.
+Done on 2026-10-05 for Android against project `motormind-a5a2b` (account
+sirisdevelopment@gmail.com): `lib/firebase_options.dart`, `android/app/google-services.json`
+and `ios/Runner/GoogleService-Info.plist` exist and are committed (project identifiers, not
+secrets; the Android build needs the JSON present because FlutterFire added the
+`google-services` Gradle plugin). The iOS half of `flutterfire configure` fails until Xcode
+is installed (it needs the `xcodeproj` Ruby gem); rerun with `--platforms=ios` afterwards.
 
 Analytics is compiled in only when the build passes the flag; the demo flavor ships a no-op:
 

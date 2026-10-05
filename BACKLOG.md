@@ -225,7 +225,10 @@ VA-10, then VA-8 and VA-12.
 
 ---
 
-## Epic VA-11 — Generative UI (the core idea, ADR 0006)
+## Epic VA-11 — Dynamic design (the core idea, ADR 0006)
+
+The concept, principles and numbered requirements (`DD-R#`) live in the working document
+`DYNAMIC_DESIGN.md` outside the repo until it stabilizes. Stories here reference them.
 
 ### VA-11.1 Component registry (P0)
 
@@ -238,7 +241,21 @@ VA-10, then VA-8 and VA-12.
   card, a breakdown, a compare, a question), so that nothing is pre-designed. AC: the same
   conversation demonstrably yields different compositions.
 
-### VA-11.2 Layout and logging (P1)
+### VA-11.2 Layout allocation, control and situation (P1)
+
+- **VA-11.2.0** As a buyer, I want the split between content and conversation to follow what
+  is being shown and asked, the keyboard, and the screen's shape, so that nothing I am
+  deciding about is hidden. AC: allocator with keyboard rule and decision rule (DD-R6–R8);
+  viewport descriptor passed to the model (DD-R10); wide screens side-by-side (DD-R9).
+- **VA-11.2.4** As a buyer, I want the reorganize control and a pin, and every structured
+  prompt minimizable, so that I am never trapped. (DD-R11–R13)
+- **VA-11.2.5** As a buyer returning to the app, I want a short orientation and a "continue
+  here" option, so that I remember where I was. (DD-R14, Q43)
+- **VA-11.2.6** As a buyer, I want stale listings marked and current alternatives offered,
+  so that I am not shown cars that are gone. (DD-R15, Q45)
+- **VA-11.2.7** As a buyer, I want the empty content area to show something the advisor
+  chose for me (recent conversations, what it can help with, profile or garage completion),
+  not a fixed screen. (DD-R16, Q44)
 
 - **VA-11.2.1** As a developer, I want `present` choices logged (component, surface, timing)
   so the model picker can score how well each model uses the registry.
@@ -266,7 +283,9 @@ VA-10, then VA-8 and VA-12.
   pages are kept per session and optionally saved; `find_vehicles` searches them; pages read
   online stay usable offline for the airplane-mode demo (Q40).
 - **VA-5.2.2** a curated, tested list of listing and valuation sites with extraction
-  recipes; unknown sites fall back to generic extraction. (Q10, Q31)
+  recipes (an HTML pre-rendering step, not scraping); unknown sites fall back to generic
+  extraction. The browser is a capability the advisor uses, not a feature the app sells
+  (Q44). (Q10, Q31)
 - **VA-5.2.3** NHTSA vPIC and FuelEconomy.gov adapters, cached, source shown. (TQ17)
 - **VA-5.2.4** `ValuationSource` interface with user-entered and browser-assisted
   implementations. (Q11)
@@ -342,6 +361,13 @@ VA-10, then VA-8 and VA-12.
   keyboard is up; never inside chat or a result component; never affects ranking. (Q32)
 - **VA-8.1.3** `docs/POLICY.md`: no compensation tied to any transaction; sponsorships
   revisited later. (Q23)
+
+## Epic VA-13 — Garage (candidate, Q53 / DD-Q5)
+
+- **VA-13.1.1** As a buyer, I want the advisor to keep my current vehicles (year, make,
+  model, mileage, payoff, estimated value, which one is the trade) across conversations, so
+  that "my Civic" means something and the trade-in flow starts from facts. Pending your
+  answer.
 
 ## Epic VA-12 — Motorsport vehicles (later)
 

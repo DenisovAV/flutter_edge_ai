@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "256289219399",
+    "project_id": "motormind-a5a2b",
+    "storage_bucket": "motormind-a5a2b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:256289219399:android:19d8a97913d5faf9eb6262",
+        "android_client_info": {
+          "package_name": "com.sirisdevelopment.motormind"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBhT8lxRbMxWvdkoviJVKGLid7IO5nxq0I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

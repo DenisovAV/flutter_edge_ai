@@ -2,7 +2,7 @@ name: flutter_gemma_mediapipe
 description: "Moved to flutter_edge_ai_mediapipe. This is the final release under the name flutter_gemma_mediapipe; new versions ship as flutter_edge_ai_mediapipe, part of Flutter Edge AI."
 version: 1.0.9
 homepage: https://fluttergemma.dev
-repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_mediapipe
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/legacy-final/legacy/flutter_gemma_mediapipe
 topics: [gemma, llm, mediapipe, on-device, ai]
 
 

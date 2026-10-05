@@ -2,7 +2,7 @@ name: flutter_gemma_litertlm
 description: "Moved to flutter_edge_ai_litertlm. This is the final release under the name flutter_gemma_litertlm; new versions ship as flutter_edge_ai_litertlm, part of Flutter Edge AI."
 version: 1.8.6
 homepage: https://fluttergemma.dev
-repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_litertlm
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/legacy-final/legacy/flutter_gemma_litertlm
 topics: [gemma, llm, litert, on-device, ffi]
 
 # All six platforms: 5 native via dart:ffi (LiteRT-LM C API) + web via

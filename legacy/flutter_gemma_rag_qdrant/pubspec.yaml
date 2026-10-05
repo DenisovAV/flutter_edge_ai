@@ -2,7 +2,7 @@ name: flutter_gemma_rag_qdrant
 description: "Moved to flutter_edge_ai_qdrant. This is the final release under the name flutter_gemma_rag_qdrant; new versions ship as flutter_edge_ai_qdrant, part of Flutter Edge AI."
 version: 1.3.3
 homepage: https://fluttergemma.dev
-repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_rag_qdrant
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/legacy-final/legacy/flutter_gemma_rag_qdrant
 topics: [rag, qdrant, vector-search, embeddings, on-device]
 
 # Native-only (qdrant-edge Rust FFI). Declared explicitly so the supported

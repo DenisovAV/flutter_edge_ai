@@ -2,7 +2,7 @@ name: flutter_gemma
 description: "Moved to flutter_edge_ai. This is the final release under the name flutter_gemma; new versions ship as flutter_edge_ai, part of Flutter Edge AI."
 version: 1.11.4
 homepage: https://fluttergemma.dev
-repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/legacy-final/legacy/flutter_gemma
 topics: [gemma, llm, ai, on-device, multimodal]
 
 platforms:

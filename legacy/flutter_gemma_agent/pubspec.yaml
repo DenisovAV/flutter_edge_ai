@@ -2,7 +2,7 @@ name: flutter_gemma_agent
 description: "Moved to flutter_edge_ai_agent. This is the final release under the name flutter_gemma_agent; new versions ship as flutter_edge_ai_agent, part of Flutter Edge AI."
 version: 0.2.7
 homepage: https://fluttergemma.dev
-repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_agent
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/legacy-final/legacy/flutter_gemma_agent
 topics: [agent, skills, llm, tool-calling, on-device]
 
 # The agent layer is pure superglue over flutter_gemma's existing

@@ -2,7 +2,7 @@ name: flutter_gemma_embeddings
 description: "Moved to flutter_edge_ai_embeddings. This is the final release under the name flutter_gemma_embeddings; new versions ship as flutter_edge_ai_embeddings, part of Flutter Edge AI."
 version: 2.2.2
 homepage: https://fluttergemma.dev
-repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_embeddings
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/legacy-final/legacy/flutter_gemma_embeddings
 topics: [embeddings, gemma, litert, rag, on-device]
 
 # All six platforms: pure Dart, no native handle and no web asset of its own.

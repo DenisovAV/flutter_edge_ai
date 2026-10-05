@@ -2,7 +2,7 @@ name: flutter_gemma_onnx
 description: "Moved to flutter_edge_ai_onnx. This is the final release under the name flutter_gemma_onnx; new versions ship as flutter_edge_ai_onnx, part of Flutter Edge AI."
 version: 0.5.2
 homepage: https://fluttergemma.dev
-repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_onnx
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/legacy-final/legacy/flutter_gemma_onnx
 topics: [gemma, llm, onnx, onnxruntime, on-device]
 
 # 5 native platforms (ORT-GenAI inference + plain-ORT embeddings, dart:ffi)

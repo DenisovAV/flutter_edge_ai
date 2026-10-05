@@ -1,7 +1,9 @@
 ---
 title: Agent Skills
 description: On-device agentic skills for flutter_edge_ai — give the model a SKILL.md catalog and let it pick and run skills through the tool-calling loop, fully offline.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 `flutter_edge_ai_agent` is an opt-in satellite package that turns the inference
@@ -15,17 +17,21 @@ and is **Gallery-compatible**: their `SKILL.md` catalog parses unmodified, and
 their JavaScript skills run as-is.
 
 <Info>
+
 Agent skills build on function calling, so they need a function-calling-capable
 model (Gemma 4 E2B/E4B recommended). See <a href="/docs/function-calling">Function
 Calling</a> for the model support matrix.
+
 </Info>
 
 <Info>
+
 Not to be confused with <a href="/docs/package-skills">Package Skills</a> — the
 skills flutter_edge_ai bundles for <em>your coding assistant</em>, installed with
 <code>dart run skills@ get --all</code>. The skills on this page are run by the
 <em>on-device model</em> at runtime; those are read by the assistant that writes
 your code. There is no bundled skill for <code>flutter_edge_ai_agent</code> itself.
+
 </Info>
 
 ## Install
@@ -233,9 +239,11 @@ Most skills need no platform setup. For the platform-specific bits:
   AGP deprecates this opt-out and plans to remove it in AGP 10.
 
 <Warning>
+
 Adding a skill grants the model the ability to run that skill's code or open OS
 surfaces. Only load skills you trust — `require-secret` skill keys are stored in
 memory and passed to the skill, never to the model prompt.
+
 </Warning>
 
 ## Third-party attribution

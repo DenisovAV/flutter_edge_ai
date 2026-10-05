@@ -1,7 +1,9 @@
 ---
 title: Installation
 description: Add the packages, register engines, and complete per-platform setup for iOS, Android, Web, and Desktop.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Since **1.0** (then `flutter_gemma`), the plugin is split into a small **core** package plus
@@ -61,9 +63,11 @@ construct `FlutterEdgeAiRag` with a storage provider. Run `flutter pub get` to
 install.
 
 <Info>
+
 **Migrating from `flutter_gemma` or Flutter Edge AI 1.x?** See the
 [Migration guide](/docs/migration). Version 2.0 moves RAG out of core and adds
 durable embedding profiles.
+
 </Info>
 
 ## 2. Initialize Flutter Edge AI
@@ -152,15 +156,19 @@ model to the engine that handles its file type. For RAG, register
   - `WebStorageMode.none`: no caching (ephemeral mode for testing).
 
 <Info>
+
 Use `WebStorageMode.streaming` when shipping `.litertlm` web models — the
 `@litert-lm/core` engine consumes an OPFS ReadableStream and avoids Chrome's
 ~2 GB blob-fetch limit on Gemma 4 E2B/E4B web builds.
+
 </Info>
 
 ## 3. Platform-specific setup
 
 <Warning>
+
 Complete platform-specific setup before using the plugin.
+
 </Warning>
 
 ### iOS
@@ -241,11 +249,13 @@ use_frameworks! :linkage => :static
 ```
 
 <Info>
+
 No host-side `Podfile` `post_install` is required on iOS — flutter_edge_ai patches
 the upstream LiteRT-LM `dlopen` path to use
 `@executable_path/Frameworks/<X>.framework/<X>` so dyld resolves Metal
 accelerators directly through the Native-Assets-bundled framework. This also
 keeps `Runner.app/Frameworks/` App-Store-clean (fixes ITMS-90432).
+
 </Info>
 
 ### Android
@@ -298,17 +308,21 @@ missing MediaPipe class, also add:
 ```
 
 <Info>
+
 `flutter_edge_ai_litertlm` is delivered as a Native-Assets dylib (no MediaPipe Java
 classes), so it needs no ProGuard rules.
+
 </Info>
 
 <Info>
+
 **`flutter_edge_ai_builtin_ai`** brings in `flutter_local_ai`, which declares
 `minSdk 26` (the ML Kit GenAI / AICore floor) — raise your app's `minSdk` to 26
 or the manifest merger fails. The ML Kit Prompt API `beta4` artifact carries
 Kotlin 2.3 metadata, so the app also needs **Kotlin 2.3.21**. Unlike
 flutter_edge_ai's own plugins it applies KGP itself, so `android.builtInKotlin=true`
 is not usable in an app that depends on it.
+
 </Info>
 
 #### Android architecture support
@@ -347,10 +361,12 @@ android {
 ```
 
 <Warning>
+
 Anything backed by `libLiteRtLm.so` on Android — `.litertlm` inference,
 embeddings, and speech (STT + TTS) — requires **minSdk 30**: the library depends on
 API 30+ Bionic syscalls (`pthread_cond_clockwait`, `sem_clockwait`) that cannot
 be shimmed on older devices. MediaPipe `.task` models work on lower API levels.
+
 </Warning>
 
 ### Web
@@ -450,9 +466,11 @@ Cross-Origin-Embedder-Policy: require-corp
 ```
 
 <Info>
+
 **Model compatibility:** mobile `.task` models often don't work on web — use the
 `-web.task` (MediaPipe) or `.litertlm` (LiteRT-LM) web variant. Check the model
 repo for web-compatible builds.
+
 </Info>
 
 ### Desktop (macOS, Windows, Linux)

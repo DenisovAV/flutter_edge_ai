@@ -1,7 +1,9 @@
 ---
 title: genai_primitives
 description: Use the Flutter team's genai_primitives ChatMessage types with flutter_edge_ai — sendMessage, generateContent, streaming, tools, and thinking.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 [genai_primitives](https://pub.dev/packages/genai_primitives) is the Flutter

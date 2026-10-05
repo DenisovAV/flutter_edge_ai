@@ -1,7 +1,9 @@
 ---
 title: Troubleshooting
 description: Common issues — downloads, memory, iOS simulator GPU, Android minSdk, web caching, and desktop storage.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Common issues and fixes. For desktop-specific problems (Linux native logs,
@@ -44,7 +46,9 @@ try {
 For a **gated** model (401/403): pass a valid `huggingFaceToken` to `FlutterEdgeAi.initialize(...)` (or `token:` on `fromNetwork(...)`), open the model page on HuggingFace, accept its license, and request access. Each `DownloadError` also exposes `toUserMessage()`, `toTitle()`, `isRetryable`, and `requiresUserAction` for building UI.
 
 <Info>
+
 Auth errors (401/403/404) fail fast after one attempt — they are not retried. Only `NetworkError`, `ServerError`, and `RateLimitedError` are retryable (see `isRetryable`).
+
 </Info>
 
 ## Memory
@@ -107,7 +111,7 @@ path. MediaPipe `.task` on web is unaffected and remains fully supported.
 
 **Works on web `.litertlm`:** text generation (sync + streaming), multi-turn chat
 with history, system instruction, **function calling / tool calls** (Gemma 4),
-concurrent sessions (serialized), large models via OPFS streaming, GPU only.
+concurrent sessions (serialized), large models via OPFS streaming.
 
 **Not supported on web `.litertlm` yet (mobile/desktop only):**
 
@@ -121,22 +125,26 @@ concurrent sessions (serialized), large models via OPFS streaming, GPU only.
 - ❌ **LoRA weights** — `loraPath` throws `UnsupportedError`.
 
 <Info>
+
 For vision on Web today, use a compatible MediaPipe `.task` build. Neither Web
 engine supports audio; Qwen3 tag-based reasoning can be parsed on Web when
 emitted, but Gemma 4's thinking channel is unavailable. These Web `.litertlm`
 limits track the upstream
 `@litert-lm/core` early-preview API and will lift as Google extends the JS
 executor surface.
+
 </Info>
 
 ## Windows desktop GPU crashes
 
 <Warning>
+
 **Fixed in litertlm 1.4.0.** Windows **discrete GPUs** crash on
 `PreferredBackend.gpu` in litertlm 1.2.0–1.3.1. Upgrade to 1.4.0; on the
 affected versions use `PreferredBackend.cpu` or `.npu`. macOS/Linux GPU and
 Windows CPU/NPU were never affected. See [Desktop → Known
 limitations](/docs/desktop#known-limitations).
+
 </Warning>
 
 ## Wrong numbers on GPU
@@ -191,11 +199,13 @@ if (model.activeBackend != PreferredBackend.gpu) {
 ## Windows embeddings and speech fail with status 3
 
 <Warning>
+
 **Fixed in litertlm 1.7.0.** On Windows, embeddings and on-device speech
 (STT/TTS) fail with `LiteRT call failed: CreateTensorBufferFromHostMemory(...)
 (status=3)` in litertlm 1.4.0–1.6.4. Fixed in `flutter_gemma_litertlm` 1.7.0 and
 `flutter_gemma_speech` 0.5.1, so every `flutter_edge_ai_*` release has it. Text generation and the other platforms
 were never affected.
+
 </Warning>
 
 ## NPU

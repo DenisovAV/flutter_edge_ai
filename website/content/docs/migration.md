@@ -1,7 +1,9 @@
 ---
 title: Migration
 description: Upgrade to Flutter Edge AI 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 ## Flutter Edge AI 1.x → 2.0: RAG leaves core
@@ -210,10 +212,12 @@ Pick by what you actually used in 0.16.x:
 | RAG on web (or a portable store on any platform) | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 
 <Info>
+
 Not sure which format your models are? Desktop is always `.litertlm`
 (`flutter_edge_ai_litertlm`). On mobile/web check the file extension you install.
 You can add **both** engine packages and let the registry route each model by its
 file type.
+
 </Info>
 
 > **New opt-in packages since 1.2** (not migration targets from the 0.16.x
@@ -229,12 +233,14 @@ file type.
 ## Breaking: embeddings 2.0.0 — `LiteRtEmbeddingBackend` moved
 
 <Warning>
+
 `flutter_gemma_embeddings` **2.0.0** is a breaking change, independent of the
 0.16.x → 1.0 migration above. As of `flutter_gemma_litertlm` **1.5.0**,
 `flutter_edge_ai_embeddings` no longer ships a concrete embedding backend —
 `LiteRtEmbeddingBackend` moved to `flutter_edge_ai_litertlm`. Since 2.2.0 the
 package holds only the embedding tokenizer implementations; the pipeline,
 pooling and isolate worker live in core.
+
 </Warning>
 
 If your app registers `LiteRtEmbeddingBackend()`, fix the import and bump both
@@ -267,6 +273,7 @@ drop-in alternative — see [Packages](/docs/packages#onnx-runtime-engine).
 ## Breaking: builtin_ai 0.3.0 — the native layer moved to `flutter_local_ai`
 
 <Warning>
+
 `flutter_edge_ai_builtin_ai` **0.3.0** (and `flutter_gemma_builtin_ai` 0.3.0 before
 it) is no longer a Flutter plugin. It ships no
 Kotlin/Swift/C++ and no pigeon; every OS backend now comes from
@@ -275,6 +282,7 @@ on. **No Dart code changes** — `BuiltInAi`, `BuiltInAiEngine`,
 `BuiltInAiModels`, `BuiltInAiAvailability`, `BuiltInAiUnavailableException` and
 `BuiltInAiHuggingFaceResolver` keep their names and signatures — but three
 build-level things move.
+
 </Warning>
 
 1. **`pub get` regenerates the plugin registrants and `Podfile.lock`**: this
@@ -296,11 +304,13 @@ AI](/docs/builtin-ai).
 ## Breaking: rag_sqlite 1.1.0 — the index does not carry over
 
 <Warning>
+
 `flutter_gemma_rag_sqlite` **1.1.0** replaced the Dart brute-force/HNSW store
 with in-SQLite `vec0` KNN, and with it the table the index lives in:
 `documents` became `vec_documents`. **An index written by 1.0.x is not read by
 1.1.0+.** This shipped as a minor version with no note — if you upgraded and
 your RAG answers went vague, this is why.
+
 </Warning>
 
 Nothing errors. `initialize()` succeeds, `getStats()` reports **0 documents**,
@@ -405,10 +415,12 @@ that has already happened, not an ongoing API.
 ## Breaking: rag_qdrant 1.3.0 — the on-disk store is not readable
 
 <Warning>
+
 `flutter_gemma_rag_qdrant` **1.3.0** moves onto the official `qdrant_edge`
 UniFFI SDK, and **an index written by 1.2 or earlier cannot be read**. This is a
 data change, not an API change: your `addDocument` / `searchSimilar` calls are
 unchanged, but the documents already on the device are not.
+
 </Warning>
 
 An upgraded app finds no documents where its corpus used to be. 1.3.0 refuses
@@ -436,12 +448,14 @@ try {
 ```
 
 <Warning>
+
 Catch `QdrantLegacyStoreException`, not the base `VectorStoreException`.
 `initialize()` also throws the base type when a current-layout (1.3.0 and later)
 shard is present but will not open right now — a WAL held by another store, a
 permission problem — and
 treating that as "the old format is here" is how a recovery step can act on a
 store that is perfectly fine.
+
 </Warning>
 
 `clear()` no longer deletes anything: it empties the shard in place, and it

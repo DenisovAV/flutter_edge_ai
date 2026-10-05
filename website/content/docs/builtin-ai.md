@@ -1,7 +1,9 @@
 ---
 title: Built-in AI
 description: Run the device's own OS/browser AI as an engine — Gemini Nano (Android + Chrome), Phi-4-mini (Edge), Apple Foundation Models (iOS/macOS) and Phi Silica (Windows) — with no model to download, plus the availability-probe → open-model fallback pattern.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 flutter_edge_ai's engines are **pluggable**: you register them in
@@ -90,7 +92,7 @@ building your own model list.
 
 `BuiltInAi.availability()` reports whether the OS model is ready.
 `BuiltInAi.ensureReady()` makes sure the feature is on — and drives the on-device
-download the first time it is used (Android and web), reporting progress:
+download the first time it is used (Android, Windows and web), reporting progress:
 
 ```dart
 final status = await BuiltInAi.availability();
@@ -208,7 +210,8 @@ There is **no CDN `<script>` tag** — the Chrome Prompt API is a browser global
   model ([MSEdgeExplainers#1392](https://github.com/MicrosoftEdge/MSEdgeExplainers/issues/1392)).
 
 `BuiltInAi.availability()` reports `unavailableDeviceUnsupported` on any
-browser/version without the Prompt API — always probe before creating a model.
+browser/version without the Prompt API, and `unavailableOther` when the API is
+there but the browser cannot run the model — always probe before creating a model.
 
 See the [`flutter_edge_ai_builtin_ai` package](/docs/packages) for the full API.
 

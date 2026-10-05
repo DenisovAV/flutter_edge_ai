@@ -171,6 +171,7 @@ void main() {
                   title: 'Reference',
                   links: [
                     SidebarLink(text: 'Packages', href: '/docs/packages'),
+                    SidebarLink(text: 'Capabilities', href: '/docs/capabilities'),
                     SidebarLink(text: 'Desktop Support', href: '/docs/desktop'),
                     SidebarLink(text: 'Migration', href: '/docs/migration'),
                     SidebarLink(text: 'Troubleshooting', href: '/docs/troubleshooting'),

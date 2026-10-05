@@ -4,6 +4,11 @@
     "public": "public",
     "redirects": [
       {
+        "source": "/",
+        "destination": "https://flutteredge.ai/",
+        "type": 301
+      },
+      {
         "source": "/:path*",
         "destination": "https://flutteredge.ai/:path",
         "type": 301

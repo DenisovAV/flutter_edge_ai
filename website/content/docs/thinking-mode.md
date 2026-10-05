@@ -1,7 +1,9 @@
 ---
 title: Thinking Mode
 description: View the reasoning process of DeepSeek, Gemma 4, and Qwen3 models with thinking blocks.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Thinking mode exposes the model's internal reasoning process as a separate

@@ -1,7 +1,9 @@
 ---
 title: Capabilities
 description: Which runtime gives you text generation, embeddings and speech on each platform, what each engine supports, and how to check support at runtime.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Flutter Edge AI is modular: core runs nothing on its own, and each runtime you

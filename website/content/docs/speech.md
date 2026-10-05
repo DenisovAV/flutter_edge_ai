@@ -1,7 +1,9 @@
 ---
 title: Speech
 description: On-device speech for flutter_edge_ai — transcribe audio and synthesize speech fully offline. moonshine / Whisper / Parakeet STT + Matcha / Qwen3 / Inflect TTS, plus a voice loop, via the LiteRT C API and dart:ffi.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 `flutter_edge_ai_speech` is an opt-in satellite package that adds **on-device

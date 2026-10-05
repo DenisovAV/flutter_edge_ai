@@ -1,7 +1,9 @@
 ---
 title: ONNX Runtime
 description: Run ONNX models on-device — text generation via ORT-GenAI and embeddings via plain ONNX Runtime — across five native platforms (dart:ffi) and the web (Transformers.js / onnxruntime-web).
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 flutter_edge_ai's engines are **pluggable**: you register them in

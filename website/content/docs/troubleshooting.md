@@ -1,7 +1,9 @@
 ---
 title: Troubleshooting
 description: Common issues — downloads, memory, iOS simulator GPU, Android minSdk, web caching, and desktop storage.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Common issues and fixes. For desktop-specific problems (Linux native logs,

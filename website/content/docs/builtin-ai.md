@@ -1,7 +1,9 @@
 ---
 title: Built-in AI
 description: Run the device's own OS/browser AI as an engine — Gemini Nano (Android + Chrome), Phi-4-mini (Edge), Apple Foundation Models (iOS/macOS) and Phi Silica (Windows) — with no model to download, plus the availability-probe → open-model fallback pattern.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 flutter_edge_ai's engines are **pluggable**: you register them in

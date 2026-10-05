@@ -1,7 +1,9 @@
 ---
 title: LiteRT-LM
 description: The primary .litertlm engine — on-device inference over dart:ffi (LiteRT-LM C API) on all five native platforms plus a text-only web preview, with CPU / GPU / NPU acceleration and a LiteRT embedding backend.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 `flutter_edge_ai_litertlm` is the **primary `.litertlm` engine**. (Core registers

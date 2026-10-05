@@ -215,6 +215,10 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
         baseModel: baseModel,
         displayName: manifest.displayName,
         architecture: architecture,
+        // Only a capabilities block can say "no thinking"; a manifest without
+        // one says nothing, and keeps the hybrid Qwen3 default.
+        declaresNoThinking:
+            capabilitiesDeclared && !resolution.capabilities.thinkingDeclared,
       ),
       sha256: resolution.variant.sha256,
       sizeBytes: resolution.variant.sizeBytes,
@@ -306,9 +310,11 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
   /// mapping is certain — the app then supplies one (`r.modelType ??
   /// ModelType.general`).
   ///
-  /// Deliberately conservative: on iOS `.litertlm` chats are formatted
-  /// manually by [ModelType] (Android/desktop read the template from the
-  /// bundle), so a wrong guess breaks conversations there. The manifest's
+  /// Deliberately conservative: the bundle supplies the chat template, but
+  /// core still drives a conversation by [ModelType] — which tool-call format
+  /// it parses, single-turn FunctionGemma, which models' thinking it parses,
+  /// qwen3's ` /no_think` — so a wrong guess changes conversations on every
+  /// platform. The manifest's
   /// `architecture` is free prose that names *compute* lineage — e.g.
   /// granite-docling says "Llama-architecture granite decoder", which must NOT
   /// become [ModelType.llama] — so family words match only the curated
@@ -317,14 +323,20 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
   /// finetunes whose ids drop the family name, e.g. an ASR normalizer built
   /// on Qwen3).
   ///
-  /// Qwen3.5 maps to [ModelType.qwen], not `qwen3`: same ChatML handling,
-  /// but `qwen3` also appends ` /no_think` to user turns when thinking is
-  /// off, which Qwen3.5 does not understand and would read as literal text.
+  /// Qwen3 maps to [ModelType.qwen3] unless the manifest declares that the
+  /// model does not think ([declaresNoThinking]), and then to
+  /// [ModelType.qwen]; Qwen3.5 always maps to `qwen`. Same ChatML handling,
+  /// but `qwen3` also appends ` /no_think` to user turns when thinking is off,
+  /// which a model with no thinking at all — Qwen3.5, a speech-to-text model
+  /// on a Qwen3 LM, an instruct-only finetune — reads as literal text. The
+  /// manifest cannot tell a hybrid Qwen3 from a thinking-only one, so a
+  /// thinking-only model that declares thinking still gets the suffix.
   @visibleForTesting
   static ModelType? mapModelType({
     required String baseModel,
     required String displayName,
     required String architecture,
+    required bool declaresNoThinking,
   }) {
     final id = '$baseModel $displayName'.toLowerCase();
     final arch = architecture.toLowerCase();
@@ -342,7 +354,7 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
     if (id.contains('gemma')) return ModelType.gemmaIt;
     if (id.contains('qwen3.5')) return ModelType.qwen;
     if (id.contains('qwen3') || arch.contains('qwen3forcausallm')) {
-      return ModelType.qwen3;
+      return declaresNoThinking ? ModelType.qwen : ModelType.qwen3;
     }
     if (id.contains('qwen') || arch.contains('qwen2forcausallm')) {
       return ModelType.qwen;

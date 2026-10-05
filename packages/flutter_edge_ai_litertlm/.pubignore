@@ -2,5 +2,12 @@
 # and the WASM runtime it loads are two halves of one @litertjs/core release,
 # so a rebuild has to resolve the same tree — shipping package.json without
 # package-lock.json would hand someone a recipe that produces a DIFFERENT
-# bundle from the one beside it. Only node_modules/ is excluded.
+# bundle from the one beside it. Only its node_modules/ is excluded.
 tool/web_build/node_modules/
+
+# The package's tests and their fixtures: nothing published reads them, and the
+# Hugging Face manifest snapshot under test/manifest/ grows with every catalog
+# refresh. All of test/, not just the fixtures — the suites read them at load.
+# Anchored: an unanchored `test/` would also drop tool/web_build/test/, the
+# tests of the web build shipped above.
+/test/

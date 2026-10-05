@@ -295,17 +295,18 @@ void main() {
       'litert-community/Qwen3-4B-Thinking-2507': ModelType.qwen3,
       // Qwen3ForCausalLM class token — the id alone hides the family.
       'mlboydaisuke/S1-mini-LiteRT': ModelType.qwen3,
-      'litert-community/FastContext-1.0-4B-SFT': ModelType.qwen3,
       'litert-community/Jan-nano': ModelType.qwen3,
-      // Speech-to-text repos whose LM is Qwen3: base_model or display_name
-      // names it, so the id rule maps them. Pinned as the rule returns it
-      // today: none of the three declares thinking, and for qwen3 with
-      // thinking off core's chat appends ` /no_think` to user turns
-      // (FastContext above is the same pair). No shipped repo had that pair
-      // on 09-02; its effect on these models is not measured.
-      'litert-community/Fun-ASR-Nano-2512': ModelType.qwen3,
-      'litert-community/Qwen3-ASR-1.7B': ModelType.qwen3,
-      'mlboydaisuke/Confucius4-R2T2-LiteRT': ModelType.qwen3,
+      // Qwen3 that declares no thinking is qwen: for qwen3 with thinking off
+      // core's chat appends ` /no_think` to user turns. Three are
+      // speech-to-text models whose LM is Qwen3 (base_model or display_name
+      // names it); FastContext is an instruct-only finetune. Measured on
+      // litert-lm 0.17.1 (CPU, greedy, three 3 s English clips): with the
+      // suffix Qwen3-ASR-1.7B returns an empty transcript for every clip,
+      // without it it transcribes all three; Fun-ASR-Nano is unaffected.
+      'litert-community/FastContext-1.0-4B-SFT': ModelType.qwen,
+      'litert-community/Fun-ASR-Nano-2512': ModelType.qwen,
+      'litert-community/Qwen3-ASR-1.7B': ModelType.qwen,
+      'mlboydaisuke/Confucius4-R2T2-LiteRT': ModelType.qwen,
       // Qwen3.5 is ChatML without qwen3's /no_think injection.
       'litert-community/Qwen3.5-0.8B': ModelType.qwen,
       'litert-community/Qwen3.5-2B': ModelType.qwen,
@@ -386,6 +387,17 @@ void main() {
     for (final entry in expected.entries) {
       final r = await resolve(entry.key);
       expect(r.modelType, entry.value, reason: entry.key);
+      // The rule, read from the manifest rather than from the resolver's own
+      // output: a repo whose capabilities declare no thinking is never qwen3,
+      // so it never gets a ` /no_think` it would read as text. (A
+      // thinking-only Qwen3 that declares thinking still gets it — the
+      // manifest cannot tell it from a hybrid.)
+      final model = byRepo[entry.key]!['model'] as Map<String, dynamic>;
+      final capabilities = model['capabilities'] as Map<String, dynamic>?;
+      final thinking = capabilities?['thinking'] as Map<String, dynamic>?;
+      if (capabilities != null && thinking?['declared'] != true) {
+        expect(r.modelType, isNot(ModelType.qwen3), reason: entry.key);
+      }
     }
   });
 

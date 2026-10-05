@@ -733,12 +733,17 @@ void main() {
   });
 
   group('modelType mapping (conservative: null over a wrong guess)', () {
-    ModelType? map(String base, {String display = '', String arch = ''}) =>
-        LitertlmManifestResolver.mapModelType(
-          baseModel: base,
-          displayName: display,
-          architecture: arch,
-        );
+    ModelType? map(
+      String base, {
+      String display = '',
+      String arch = '',
+      bool noThinking = false,
+    }) => LitertlmManifestResolver.mapModelType(
+      baseModel: base,
+      displayName: display,
+      architecture: arch,
+      declaresNoThinking: noThinking,
+    );
 
     test('deepseek wins over the qwen in a distill id', () {
       expect(
@@ -769,6 +774,68 @@ void main() {
       );
     });
 
+    // qwen3 differs from qwen only in the ` /no_think` core appends to user
+    // turns while thinking is off; a model with no thinking at all reads it
+    // as literal text.
+    test('qwen3 that declares no thinking is qwen, by id or class token', () {
+      expect(
+        map('Qwen/Qwen3-ASR-1.7B', display: 'Qwen3-ASR-1.7B', noThinking: true),
+        ModelType.qwen,
+      );
+      expect(
+        map(
+          'superwhisper/s1-mini',
+          arch:
+              'Dense 0.6B ASR-transcript normalizer, Qwen3ForCausalLM '
+              'finetune',
+          noThinking: true,
+        ),
+        ModelType.qwen,
+      );
+    });
+
+    // The call site decides what counts as "declares no thinking": a
+    // capabilities block saying so, never a manifest that says nothing.
+    test('resolve(): Qwen3 stays qwen3 when the manifest is silent, and is '
+        'qwen only when its capabilities say no thinking', () async {
+      Map<String, dynamic> qwen3({Map<String, dynamic>? capabilities}) =>
+          manifest(
+            model: {
+              'display_name': 'Qwen3 0.6B',
+              'base_model': 'Qwen/Qwen3-0.6B',
+              'capabilities': ?capabilities,
+            },
+          );
+      final f = _Fetches();
+      final silent = await f.resolver(qwen3()).resolve('org/name');
+      expect(silent.modelType, ModelType.qwen3);
+      expect(silent.runtime.isThinking, isNull);
+
+      final none = await f
+          .resolver(
+            qwen3(
+              capabilities: {
+                'thinking': {'declared': false},
+              },
+            ),
+          )
+          .resolve('org/name');
+      expect(none.modelType, ModelType.qwen);
+      expect(none.runtime.isThinking, isFalse);
+
+      final declared = await f
+          .resolver(
+            qwen3(
+              capabilities: {
+                'thinking': {'declared': true},
+              },
+            ),
+          )
+          .resolve('org/name');
+      expect(declared.modelType, ModelType.qwen3);
+      expect(declared.runtime.isThinking, isTrue);
+    });
+
     test('qwen2-family by id or class token', () {
       expect(map('Qwen/Qwen2-VL-2B-Instruct'), ModelType.qwen);
       expect(map('llava-hf/llava-onevision-qwen2-0.5b-ov-hf'), ModelType.qwen);
@@ -784,7 +851,7 @@ void main() {
     test('architecture prose naming a compute lineage must NOT map — only '
         'ids and exact class tokens do', () {
       // "Llama-architecture granite decoder" describes compute, not the chat
-      // contract; ModelType.llama here would break iOS conversations.
+      // contract; ModelType.llama here would switch the tool-call parser.
       expect(
         map(
           'ibm-granite/granite-docling-258M',

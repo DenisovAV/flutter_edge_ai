@@ -1,3 +1,6 @@
+## 1.8.8
+- Qwen3 repos whose manifest declares no thinking resolve to `ModelType.qwen`, without ` /no_think`.
+
 ## 1.8.7
 - Require `flutter_edge_ai` 2.x.
 

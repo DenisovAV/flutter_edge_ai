@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Qwen3.5-0.8B",
-  "generated": "2026-08-31",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Qwen3.5-0.8B (LiteRT-LM)",
@@ -73,10 +73,15 @@
           "platform": "ios",
           "backend": "gpu",
           "reason": "iPhone 17 Pro Metal: vision grounded 2/2 at 65.8 tok/s, and the composite text probe scores 6/8 on Metal against 3/8 on CPU - prefer GPU"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "measured on one Galaxy S26 with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): cpu decodes 32.63 tok/s against gpu's 34.77 (0.9x), prefill 213.9-353.4 vs 551.1-577.5 tok/s, peak 1780 vs 3772 MB, engine init 17.3 vs 74.4 s. Same-device control taken: decode is a wash (within 10%), so the choice rests on the other numbers. The GPU path (fp32 activations) needs a 74 s engine init and 2.1x the peak memory. This puts the vision-capable file on flagship-class phones; the class-less CPU recommendation on the text-only int8 file stays for every other Android phone"
         }
       ],
       "requirements": {
-        "min_runtime": "litert-lm 0.15.0",
         "platform_notes": [
           "Text + one 512x512 image per turn (fast_vlm contract, 256 soft tokens). Text-only prompts work; this file is a superset of the text build",
           "Six-signature prefill ladder (1024,256,64,16,4,1). It fit iPhone Metal on the first export - no jetsam and no maxNumTokens override, unlike the 2B sibling",
@@ -157,21 +162,70 @@
           "runs": 1,
           "date": "2026-08-31",
           "source": "text (8-question probe) — qwen35vl_work/device_gate08_20260828/results_cold0831/*quality*2026-08-31*.json (cold, nominal thermal; byte-identical output to the warm 08-28 run)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 207,
+          "decode_tokens": 125,
+          "prefill_tps": "551.1-577.5",
+          "decode_tps": 34.77,
+          "ttft_s": "0.39-0.4",
+          "load_s": 74.4,
+          "peak_memory_mb": 3772,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (99187 ops across 7 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 207,
+          "decode_tokens": 3889,
+          "prefill_tps": "213.9-353.4",
+          "decode_tps": 32.63,
+          "ttft_s": "0.62-1.0",
+          "load_s": 17.3,
+          "peak_memory_mb": 1780,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 207,
+          "decode_tokens": 3889,
+          "prefill_tps": "110.5-148.1",
+          "decode_tps": "14.92-15.77",
+          "ttft_s": "1.46-1.94",
+          "load_s": 17.0,
+          "peak_memory_mb": 1765,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path was not run for this file on this handset (the text sibling cannot compile on this GPU (card: fp32 activations exceed ~3.8 GB) - not attempted), so this row has no GPU counterpart"
         }
       ],
       "known_issues": [
         "Composite 8-question probe: Mac 8/8 on both backends, iPhone Metal 6/8, iPhone CPU 3/8. None of the device misses reproduce on Mac with the same file and prompt, so they are device-side rather than the conversion; the mechanism is not identified. Prefer GPU on iPhone.",
         "int8 vision encoder holds 0.9916-0.9951 correlation on real photographs (better than the 2B tower's 0.974-0.984), but this file ships the encoder in fp16 - the int8-encoder variant exists locally and is not published."
-      ]
+      ],
+      "min_runtime_version": "0.15.0"
     },
     {
       "file": "Qwen3.5-0.8B_int8.litertlm",
-      "sha256": "684d4d34adf7176eb47f6026ff65c33d42584737254e5524a8d1ad62edc21b98",
+      "sha256": "64ed396fcdae75e5158945c77a08142b1322ce1bbf1be4d2198783119a1169e8",
       "size_bytes": 963184864,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 362
+          "size_bytes": 729
         },
         {
           "type": "ExecutorMetadataProto",
@@ -207,7 +261,7 @@
         {
           "platform": "android",
           "backend": "cpu",
-          "reason": "GPU not verified on Qualcomm Adreno; Pixel 8a GPU compile exceeds device memory (fp32 activations)"
+          "reason": "GPU runs on Adreno (Galaxy S26) but needs a 110 s engine init and 5.4 GB peak; Pixel 8a GPU compile exceeds device memory (fp32 activations)"
         }
       ],
       "requirements": {
@@ -283,14 +337,30 @@
           "runs": 3,
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 207,
+          "decode_tokens": 234,
+          "prefill_tps": 395.8,
+          "decode_tps": 30.86,
+          "ttft_s": 0.56,
+          "load_s": 110.8,
+          "peak_memory_mb": 5376,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (188522 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
         }
       ],
       "known_issues": [
-        "GPU execution not verified on Qualcomm Adreno devices",
+        "GPU on Qualcomm Adreno verified once on a Galaxy S26 (S4 gate 2026-08-24: full delegation, correct answer) but with a 110 s engine init and a 5.4 GB peak, so CPU stays the Android recommendation",
         "An fp16-activation GPU formulation is unfinished (real-weight fp16 range overflow in one layer-0 head — a property of the checkpoint, not the conversion), hence fp32 activations and the GPU memory cost",
         "On a harder composite probe (8 questions in one 138-token prompt) the int8 quantization measurably costs answers at this 0.8B scale; the per-question sanity gate is word-for-word identical to HF fp32",
         "On low-end Android GPUs decode is memory-bandwidth-bound and does not beat the CPU"
-      ]
+      ],
+      "min_runtime_version": "0.15.0"
     }
   ]
 }

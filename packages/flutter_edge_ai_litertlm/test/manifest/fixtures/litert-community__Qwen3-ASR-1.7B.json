@@ -1,0 +1,139 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Qwen3-ASR-1.7B",
+  "generated": "2026-10-03",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Qwen3-ASR-1.7B (speech-to-text, one clip of up to 30 s per message)",
+    "base_model": "Qwen/Qwen3-ASR-1.7B-hf",
+    "architecture": "Qwen3-ASR: in-graph Whisper-style log-mel (128 bins, the original feature extractor's STFT / Slaney filterbank / normalization) -> 24-layer audio encoder (104-token attention windows) -> projector -> 28-layer Qwen3 LM; LiteRT-LM generic audio path (raw 16 kHz PCM in 160-sample frames, no mel extraction in the runtime)",
+    "parameters_b": 2.04,
+    "license": "apache-2.0",
+    "session_defaults": {
+      "top_k": 1,
+      "temperature": 0.0,
+      "notes": "Greedy decoding (top_k 1, top_p 1, temperature 0) for every measurement. One conversation per clip of up to 30 s; the answer is 'language <name><asr_text><transcript>', split it at <asr_text>."
+    },
+    "context_length": 1024,
+    "capabilities": {
+      "vision": false,
+      "audio": true,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Qwen3-ASR-1.7B.litertlm",
+      "sha256": "6155d5d5f8d57e7a3e50f669fd487ae0d8aed0845bb4091f39a894eea7067b95",
+      "size_bytes": 2693064192,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 932
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3790
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142571
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1740478768,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 312990368,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 637380096,
+          "model_type": "tf_lite_audio_encoder_hw"
+        }
+      ],
+      "quantization": "LM: int8 dynamic weights with an int8 embedding table; audio encoder: fp16 weights, fp32 compute, in-graph log-mel, 30 s window (3000 frames x 160 samples at 16 kHz -> 390 audio tokens)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.16.1",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "155 clips end to end (litert-lm-api 0.17.1, one conversation per clip): RTF 0.057 with the LM on the GPU (WebGPU over Metal, prefill_128 and decode fully delegated) vs 0.148 on the CPU, both on a shared machine; FLEURS en WER 4.52 % / zh CER 6.19 % / ja CER 5.32 % vs 4.43 / 6.19 / 5.73 on the CPU; the audio encoder stays on CPU (audio_backend cpu)"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "Galaxy S26 CPU, 4 threads, v0.16.1 CLI with --benchmark, 398-token prompt: with the weight caches loaded prefill 538-547 tokens/s, decode 25.0-25.6 tokens/s, time to first token 0.77-0.78 s, peak private footprint 4.23 GB (first run, writing the caches: 329 / 22.8 tokens/s, 1.25 s); transcripts equal to the macOS CPU run 4/4; the Android GPU was not run for this file"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 6317,
+        "platform_notes": [
+          "One message = one clip of up to 30 s: the runtime zero-fills the 30 s window after the clip and the encoder emits 390 audio tokens per window (encoding and prefill cost the same for any clip length). Clips longer than 30 s were not tested",
+          "The answer is 'language <name><asr_text><transcript>'. To force the language, send the text item 'language Chinese<asr_text>' (or another language name) in the same message as the audio: the template puts the user's text items after 'assistant\\n', where qwen-asr puts a forced language, and the answer is then the transcript only (11 of 11 Mandarin / Japanese clips)",
+          "Template = the litert-torch Qwen3-ASR prompt (<|im_start|>user<|audio_start|>…<|audio_end|><|im_end|><|im_start|>assistant\\n, no system turn); system messages are ignored. The checkpoint's chat_template.jinja (empty system turn) scored FLEURS zh CER 6.65 % / ja CER 6.06 % with the same weights and tagged 8 of 50 Mandarin clips English; with this template all 50 are tagged Chinese",
+          "audio_backend must be cpu (audio_backend=CPU() / --audio_backend=cpu); the LM runs on cpu or gpu",
+          "Accuracy, FLEURS test 50 clips per language, greedy: macOS CPU en WER 4.43 % / zh CER 6.19 % / ja CER 5.73 %, macOS LM-on-GPU 4.52 % / 6.19 % / 5.32 % (original model in PyTorch fp32 with the same prompt 4.35 % / 6.04 % / 5.24 %); no empty transcript",
+          "The first load writes about 3.0 GB of CPU weight caches (encoder 1.27 GB, LM 1.73 GB) into cache_dir, or next to the model file when none is set; a first load peaked at 6.6 GB RSS on macOS (4.5 GB with the caches present); the first GPU load also writes a 1.72 GB GPU weight cache",
+          "macOS speed rows were measured while other jobs ran on the same machine (load average 4.5-8.5)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm-api 0.17.1 (Python)",
+          "max_num_tokens": 1024,
+          "peak_memory_mb": 4333.0,
+          "cache": "yes",
+          "runs": 1,
+          "date": "2026-10-03",
+          "source": "155-clip transcription (FLEURS test en_us / cmn_hans_cn / ja_jp x 50 + 5 example clips, 1,836.1 s of audio), one conversation per clip, greedy, LM and audio encoder on CPU (4 threads), CPU weight caches present (written by the render check before): 272.2 s processing, RTF 0.148, per clip 1.04-3.17 s (median 1.70 s); other jobs on the machine (load average 4.55 at start, 8.50 at end); peak_memory_mb = ru_maxrss 4,543,479,808 B / 2^20"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm-api 0.17.1 (Python)",
+          "max_num_tokens": 1024,
+          "peak_memory_mb": 4572.7,
+          "cache": "yes",
+          "runs": 1,
+          "date": "2026-10-03",
+          "source": "same 155 clips, LM on the GPU (WebGPU over Metal; 'Replacing 1298 out of 1298 node(s) with delegate (LITERT_WEBGPU)' for prefill_128 and 1244 of 1244 for decode, read on the build with the same sections), audio encoder on CPU (4 threads): 105.2 s processing, RTF 0.057, per clip 0.53-1.06 s (median 0.66 s); first GPU load of this file (writes the 1,720,475,080 B GPU weight cache during the run); peak_memory_mb = ru_maxrss 4,794,810,368 B / 2^20"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "max_num_tokens": 1024,
+          "prompt_tokens": 398,
+          "prefill_tps": 542.3,
+          "decode_tps": 25.27,
+          "ttft_s": 0.77,
+          "peak_memory_mb": 4232.43,
+          "cache": "yes",
+          "runs": 3,
+          "date": "2026-10-03",
+          "source": "one process per run, --num_cpu_threads=4 --audio_backend=cpu --benchmark --report_peak_memory_footprint; runs 2-4 of 4 with the XNNPACK weight caches loaded ('XNNPack weight cache loaded from'): en_us_1660, cmn_hans_cn_1660, ja_jp_1661; prefill 537.59-546.91 tok/s (mean 542.3), decode 24.98-25.58 tok/s (mean 25.27), TTFT 0.77-0.78 s, peak private 4,230.63-4,232.43 MB; run 1 (en_us_1660, writing the caches): 329.16 / 22.79 tok/s, TTFT 1.25 s, 3,472.42 MB; scaling_max_freq = cpuinfo_max_freq before every run; no reboot (uptime continuous); transcripts = macOS CPU 4/4"
+        }
+      ],
+      "known_issues": [
+        "The audio encoder does not run on the GPU delegate: with audio_backend=GPU() create_conversation fails ('BATCH_MATMUL: Not supported batched mat mul case: non-constant tensor' -> 'Hint fully delegated to single delegate is set, but the graph is not fully delegated' on macOS WebGPU); keep audio_backend=cpu"
+      ]
+    }
+  ]
+}

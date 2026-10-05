@@ -1,0 +1,131 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Ovis2.5-2B",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Ovis2.5-2B",
+    "base_model": "AIDC-AI/Ovis2.5-2B",
+    "architecture": "Ovis2.5 is a SOTA-for-size vision-language model with a structural-embedding vision path: a Siglip2 NaViT encoder feeds a visual tokenizer that turns each image patch-group into a probability distribution over a 65 536-word visual vocabulary, then embeds it; the language decoder is Qwen3-1.7B.",
+    "license": "apache-2.0",
+    "parameters_b": 2.0,
+    "context_length": 2048,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Ovis2.5-2B.litertlm",
+      "sha256": "b8c5cb82e2a8b945e8f2b72576745acf22e61393074b345a2575245d21ab8e4b",
+      "size_bytes": 2148712880,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1175
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142149
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 312990368,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 973900832,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 422072304,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 437535152,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "Decoder Qwen3-1.7B int4 weights (symmetric, blockwise-32 + OCTAV optimal-clipping), input embedding INT8 (externalized section); Siglip2-NaViT encoder + visual-tokenizer int8 weights; integer compute",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-25): full delegation (3840 ops across 3 subgraphs) and a correct answer to the probe; 28.3 tok/s decode, engine init 5.0 s, peak 820 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Reasoning VLM: may emit a <think>...</think> block before the final answer (matches the base model); allow enough max-tokens (>=1024) for the answer to follow.",
+          "iPhone 17 Pro figures (~20 tok/s CPU, ~45 tok/s GPU, single-image VQA) are stated expectations carried from the InternVL3.5-2B build, not measurements of this build; the card recommends independent on-device measurement before quoting exact numbers.",
+          "Vision-only bundle (no audio tower): bring up the engine with the vision modality only; requesting the audio tower (.all) fails at session creation.",
+          "Ovis's two learned image-boundary indicator embeddings are omitted (the fast_vlm path splices only the atom embeddings); verified to stay coherent in eager.",
+          "int8 vision weights keep end-to-end correlation ~0.99 against the reference.",
+          "Galaxy S26 GPU gate prompt carries no image: it covers engine creation and the text path only; the vision path on the GPU is not measured there.",
+          "Galaxy S26 GPU gate: XNNPACK additionally takes 1 of the 4 nodes in `main`; the runtime accepts that split.",
+          "2026-08-28 start_token fix (metadata-only, weights unchanged): the literal start token \"None\" was removed. Accuracy figures on the card were measured on the previous file and not re-measured.",
+          "2026-08-30 tokenizer section replaced with the upstream tokenizer.json (weights unchanged): answers to prompts with accented letters/symbols/emoji can change; accuracy figures and any on-device rows were measured on the previous file; the on-device gate has not been re-run.",
+          "2026-08-31 chat template fix (metadata-only, weights unchanged): history turns with role 'assistant' are now accepted; single-turn renders, token ids, prefill counts and greedy answers are unchanged, so the card's numbers still describe this file."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 141,
+          "decode_tps": 34.9,
+          "ttft_s": 2.0,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (litert-lm benchmark, Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1854,
+          "decode_tps": 142.6,
+          "ttft_s": 0.15,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (litert-lm benchmark, Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 203,
+          "decode_tokens": 853,
+          "prefill_tps": 493.2,
+          "decode_tps": 28.26,
+          "ttft_s": 0.45,
+          "load_s": 5.0,
+          "peak_memory_mb": 820,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3840 ops across 3 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ]
+    }
+  ]
+}

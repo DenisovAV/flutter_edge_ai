@@ -1,0 +1,220 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Agents-A1-4B",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Agents-A1-4B",
+    "base_model": "InternScience/Agents-A1-4B",
+    "architecture": "Hybrid GatedDeltaNet: 24 linear-attention + 8 gated full-attention layers; text decoder only (vision tower dropped)",
+    "parameters_b": 4,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "file": "Agents-A1-4B_int8.litertlm",
+      "sha256": "0001573f0b7221b3ed944e04dfdae9cbc64d26276f0f2473eaeae703b6708cdc",
+      "size_bytes": 4407426400,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 5569
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4293
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913268
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 4403461472,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic on linears + embedding (convs and the delta rule stay float), fp32 activations declared",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "Generation verified on Apple M4 Max (8/8 on CPU and GPU); GPU is the faster measured backend"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Bundle format minimum 0.15.0; generation gates were run on 0.17.1 and 0.18.0.dev20260919, not on 0.15.0",
+          "macOS CPU and GPU generation verified; fp32 activations declared",
+          "Galaxy S26 (SM8850, Android 16, LiteRT-LM Android CLI build of 2026-09-18): not recommended on this phone - CPU answers are correct in 8/8 but 2 of 8 run on into repetitive self-talk, the thinking-on probe gives no final answer (0/2), and starting the GPU engine made the phone unreachable; use the mixed-int4 file on Android",
+          "iOS: not yet measured; no device backend recommendation is claimed",
+          "Text decoder only; prefill signatures 1024/256/64/16/4/1; cache length 4096",
+          "Dual-form canonical chat template plus verbatim vendor default system prompt; thinking on by default, thought channel declared"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.1",
+          "date": "2026-09-21",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 671.94968592,
+          "decode_tps": 61.20237656,
+          "ttft_s": 0.3973421948,
+          "cache": "no",
+          "runs": 3,
+          "source": "Mac card benchmark; arithmetic mean after default CLI warmup; quiet; generation verified by 8-question gate"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1",
+          "date": "2026-09-22",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 255.33,
+          "decode_tps": 20.63,
+          "ttft_s": 1.0512,
+          "cache": "no",
+          "runs": 3,
+          "source": "Mac card benchmark; re-measured 2026-09-22 on a quiet machine (1-minute load under 3.0); generation verified by 8-question gate"
+        }
+      ],
+      "known_issues": [
+        "Galaxy S26 (2026-09-22): starting the GPU engine with this file made the phone unreachable (the same phone model hard-rebooted on the Qwen3.5-4B int8 file on 2026-08-24) - do not use the GPU backend with this file on that phone",
+        "Galaxy S26 CPU: generation degrades with this file (run-on answers in 2 of 8 gate questions, no final answer in the thinking-on probe) while the same file passes every Mac gate; cause not established",
+        "Native XML tool-call parsing is app-side; supplying a CLI preset renders tools but does not create runtime tool_calls events",
+        "GSM8K (first 100 test questions, 0-shot step-by-step prompt, greedy, thinking off, GPU): int8 93/100, mixed-int4 93/100; one int8 answer written as 20.00 is scored wrong by the extractor's trailing-zero handling - with numeric normalization of the same answers both files score 94/100",
+        "The embedded vendor default system prompt preserves its Current date: 2026-07-14 line; supply a system message to replace it"
+      ],
+      "min_runtime_version": "0.15.0"
+    },
+    {
+      "file": "Agents-A1-4B_mixed_int4.litertlm",
+      "sha256": "f12a9764c0a54090bebb362d28bcdba8069d24e27b3cad2e2ccc8e3d0a19ec80",
+      "size_bytes": 2754365536,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 5569
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4293
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913268
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2750400608,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "Mixed INT4: int4 blockwise-32 min-max on linears, int8 channelwise embedding + lm_head (convs and the delta rule stay float), fp32 activations declared",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "Generation verified on Apple M4 Max (8/8 on CPU and GPU); GPU is the faster measured backend"
+        },
+        {
+          "platform": "android",
+          "backend": "cpu",
+          "reason": "Galaxy S26 (SM8850): 8/8 on CPU (47.1 prefill / 11.9 decode tok/s, peak 4.94 GB) and 8/8 on the OpenCL GPU with every subgraph delegated (peak 4.16 GB); GPU speed is not measured yet, so CPU is the measured default"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Bundle format minimum 0.15.0; generation gates were run on 0.17.1 and 0.18.0.dev20260919, not on 0.15.0",
+          "macOS CPU and GPU generation verified; fp32 activations declared",
+          "Galaxy S26 (SM8850, Android 16, LiteRT-LM Android CLI build of 2026-09-18): 8/8 on CPU and 8/8 on the OpenCL GPU (all subgraphs delegated), thinking-on probe 2/2 on CPU; peak memory 4.94 GB CPU / 4.16 GB GPU",
+          "iOS: not yet measured; no device backend recommendation is claimed",
+          "Text decoder only; prefill signatures 1024/256/64/16/4/1; cache length 4096",
+          "Dual-form canonical chat template plus verbatim vendor default system prompt; thinking on by default, thought channel declared"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.1",
+          "date": "2026-09-22",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 675.5,
+          "decode_tps": 67.17,
+          "ttft_s": 0.3939,
+          "cache": "no",
+          "runs": 3,
+          "source": "Mac card benchmark; re-measured 2026-09-22 on a quiet machine (1-minute load under 3.0); generation verified by 8-question gate"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1",
+          "date": "2026-09-22",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 99.06,
+          "decode_tps": 20.16,
+          "ttft_s": 2.6339,
+          "cache": "no",
+          "runs": 3,
+          "source": "Mac card benchmark; re-measured 2026-09-22 on a quiet machine (1-minute load under 3.0); generation verified by 8-question gate"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, SM8850)",
+          "backend": "cpu",
+          "runtime": "LiteRT-LM Android CLI litert_lm_advanced_main (build of 2026-09-18)",
+          "date": "2026-09-22",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 47.06,
+          "decode_tps": 11.85,
+          "ttft_s": 5.52,
+          "runs": 1,
+          "source": "one benchmark leg after the 8-question gate passed; thermal status 0, CPU frequency policies uncapped; peak VmHWM 4.94 GB"
+        }
+      ],
+      "known_issues": [
+        "Native XML tool-call parsing is app-side; supplying a CLI preset renders tools but does not create runtime tool_calls events",
+        "GSM8K (first 100 test questions, 0-shot step-by-step prompt, greedy, thinking off, GPU): int8 93/100, mixed-int4 93/100; one int8 answer written as 20.00 is scored wrong by the extractor's trailing-zero handling - with numeric normalization of the same answers both files score 94/100",
+        "The embedded vendor default system prompt preserves its Current date: 2026-07-14 line; supply a system message to replace it"
+      ],
+      "min_runtime_version": "0.15.0"
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Falcon-H1-3B-Instruct",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Falcon-H1-3B-Instruct — LiteRT-LM",
+    "base_model": "tiiuae/Falcon-H1-3B-Instruct",
+    "architecture": "Falcon-H1 is TII's fully-hybrid design: every one of the 32 layers runs a grouped-query attention branch and a Mamba2 selective-scan branch in parallel on the same input and sums them.",
+    "license": "other (falcon-llm-license)",
+    "parameters_b": 3.0,
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Falcon-H1-3B-Instruct_int8.litertlm",
+      "sha256": "3cb8e6c4be5169859ffd2bee38469c3ccf997efce1d73fb81fc9e3e652113575",
+      "size_bytes": 3385302368,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1595
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 8613
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1008278
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3384237408,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic on linears + embedding (convs and the scan stay float); fp32 activations declared for GPU",
+      "backends": [
+        "gpu",
+        "cpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.15",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (55723 ops across 12 subgraphs) and a correct answer to the probe; 11.6 tok/s decode, engine init 18.1 s, peak 2128 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "GPU execution is verified on macOS (Metal), iPhone 17 Pro (Metal), Pixel 8a (Arm Mali, OpenCL) and Qualcomm Adreno (Galaxy S26).",
+          "On low-end Android the GPU buys prefill and time-to-first-token, not decode (decode is memory-bandwidth-bound; CPU reads int8 weights, the fp32-activation GPU path reads expanded ones).",
+          "GPU runs with fp32 activations (declared in the bundle) — expect a corresponding memory multiple over CPU.",
+          "Multi-length prefill signatures (1–1024) are exported so the runtime picks tight chunks; the bundle carries the tokenizer and the stock ChatML-style Falcon-H1 chat template.",
+          "Usage example runs the GPU backend with `--backend gpu --cache no`.",
+          "Not a measured row: card reports iPhone 17 Pro gpu prefill_tps 111.5, decode_tps 14.0, ttft_s 1.49 (Performance — On device table (iPhone 17 Pro, cold start, single runs); runtime/run count not stated)",
+          "Not a measured row: card reports iPhone 17 Pro cpu prefill_tps 48.7, decode_tps 7.8, ttft_s 3.14 (Performance — On device table (iPhone 17 Pro, cold start, single runs); runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 979,
+          "decode_tps": 65.3,
+          "ttft_s": 0.28,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: Performance — `litert-lm benchmark` table (Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 121,
+          "decode_tps": 20.9,
+          "ttft_s": 2.17,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: Performance — `litert-lm benchmark` table (Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 23.3,
+          "decode_tps": 1.9,
+          "ttft_s": 11.5,
+          "peak_memory_mb": 4300,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 212,
+          "decode_tokens": 185,
+          "prefill_tps": 114.9,
+          "decode_tps": 11.56,
+          "ttft_s": 1.93,
+          "load_s": 18.1,
+          "peak_memory_mb": 2128,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (55723 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ]
+    }
+  ]
+}

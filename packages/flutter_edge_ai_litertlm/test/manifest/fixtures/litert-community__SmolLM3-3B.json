@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/SmolLM3-3B",
-  "generated": "2026-08-31",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "SmolLM3-3B",
@@ -19,7 +19,14 @@
           "start": "<think>\n",
           "end": "\n</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      ]
     }
   },
   "variants": [
@@ -44,22 +51,55 @@
       ],
       "quantization": "int4 (recipe not stated on card)",
       "backends": [
-        "cpu"
+        "cpu",
+        "gpu"
       ],
       "default_backend": "cpu",
-      "measured": [],
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 211,
+          "decode_tokens": 295,
+          "prefill_tps": 314.0,
+          "decode_tps": 14.38,
+          "ttft_s": 0.74,
+          "load_s": 4.4,
+          "peak_memory_mb": 704,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (2930 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 442,
+          "decode_tokens": 912,
+          "prefill_tps": "124.5-147.9",
+          "decode_tps": "9.22-9.81",
+          "ttft_s": "3.09-3.66",
+          "load_s": 9.1,
+          "peak_memory_mb": 4118,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset"
+        }
+      ],
       "known_issues": [
         "File is present in the repo tree (3.11 GB) but not documented anywhere on the model card"
       ]
     },
     {
       "file": "SmolLM3-3B_q4_block32_ekv4096.litertlm",
-      "sha256": "2d989ddf434a25682e580eb45dcf65c2cbd6a57f76278b8f651a8cf195c2273e",
+      "sha256": "119fc1f266c445e9ffbc8c16695eb325b629da3fd464e73a75e5db14ef3926c3",
       "size_bytes": 2002257840,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 2580
+          "size_bytes": 2963
         },
         {
           "type": "HF_Tokenizer_Zlib",
@@ -82,6 +122,20 @@
         "gpu"
       ],
       "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (2784 ops across 2 subgraphs) and a correct answer to the probe; 17.9 tok/s decode, engine init 9.6 s, peak 1111 MB; the repo's other S26-verified file (SmolLM3-3B.litertlm) decodes 14.4 tok/s on the same handset. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        },
+        {
+          "platform": "android",
+          "device_class": "midrange-2023+",
+          "backend": "gpu",
+          "reason": "verified on a Pixel 8a (Tensor G3, 8 GB): full OpenCL delegation (1476/1476/1308/1308 nodes) and a correct answer in the 2026-08-17 re-gate; no speed row and no same-device CPU control, so this is the verified GPU path for the class, not a measured win"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Gallery import needs package com.google.ai.edge.gallery 1.0.15+ (older 1.0.x builds reject .litertlm); Gallery v1.0.16+ can import litert-lm models directly from Hugging Face inside the app",
@@ -131,6 +185,29 @@
           "runs": 1,
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 358,
+          "prefill_tps": 268.3,
+          "decode_tps": 17.9,
+          "ttft_s": 0.81,
+          "load_s": 9.6,
+          "peak_memory_mb": 1111,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (2784 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 8 GB)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main v0.16.0 (tag-pinned) with the v0.16.0 prebuilt android_arm64 libraries, OpenCL",
+          "runs": 1,
+          "date": "2026-08-17",
+          "source": "Android GPU re-gate: full delegation (1476/1476 prefill / 1308/1308 decode nodes, zero rejections); correct answer (Burj Khalifa, 828 m). Gate only - no speed row."
         }
       ]
     }

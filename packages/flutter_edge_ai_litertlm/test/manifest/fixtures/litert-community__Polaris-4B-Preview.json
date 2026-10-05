@@ -1,0 +1,148 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Polaris-4B-Preview",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Polaris-4B-Preview",
+    "base_model": "POLARIS-Project/Polaris-4B-Preview",
+    "architecture": "Polaris-4B is an **RL post-trained reasoning model** built on Qwen3-4B (standard dense `qwen3`, Apache-2.0).",
+    "parameters_b": 4,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "file": "model.litertlm",
+      "sha256": "e1edad5042c8354bec1d6187c22cad9e460a38428da517fc7ef22b3aa828eb3b",
+      "size_bytes": 2474357680,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 174
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142149
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2079561328,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 392606640,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "blockwise int4 (block 128) + OCTAV optimal-clipping, embedding INT8, KV cache 4096, ChatML template",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (3274 ops across 2 subgraphs) and a correct answer to the probe; 9.2 tok/s decode, engine init 7.9 s, peak 1022 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Reasoning model: set max-tokens >= 2048; truncated mid-thought it produces no answer.",
+          "Android GPU needs a ~12 GB+ device for this ~2.3 GB / 4B model; free RAM first on smaller phones.",
+          "block128 chosen over block32 because a 4B reasoning model's block32 weights can corrupt on the iPhone Metal GPU; block128 loads and runs stably across iPhone / Android / desktop.",
+          "Embedder externalized so every section stays under the iOS ~2 GiB single-section mmap limit; loads on iPhone.",
+          "Android GPU: XNNPACK takes 1 of 4 nodes in decode_embedder and prefill_embedder_128; the runtime accepts that split.",
+          "Mac CPU benchmark column is noisy (about ±7%); GPU rows repeat within about 1%.",
+          "Loads and runs on iPhone, Android and desktop; no iPhone or desktop on-device timing taken."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 111,
+          "decode_tps": 17.9,
+          "ttft_s": 2.5,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1002,
+          "decode_tps": 69.1,
+          "ttft_s": 0.28,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 10.5,
+          "decode_tps": 1.5,
+          "ttft_s": 25.7,
+          "peak_memory_mb": 3900,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 3894,
+          "prefill_tps": 130.5,
+          "decode_tps": 9.2,
+          "ttft_s": 1.66,
+          "load_s": 7.9,
+          "peak_memory_mb": 1022,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3274 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "Files downloaded before 2026-08-30 carried a SentencePiece-converted tokenizer that mis-encoded accented letters/symbols and mapped emoji and most Latin Extended-A to the end-of-text token. Re-download.",
+        "Accuracy figures and any on-device rows were measured on the previous (pre-2026-08-30) file; the on-device gate has not been re-run on the current file.",
+        "Prompts containing accented letters, symbols or emoji now tokenize differently from the previous file, so individual answers to such prompts can change."
+      ]
+    }
+  ]
+}

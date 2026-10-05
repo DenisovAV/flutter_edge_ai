@@ -1,0 +1,246 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/FastContext-1.0-4B-SFT",
+  "generated": "2026-09-06",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "FastContext-1.0-4B-SFT — LiteRT-LM (blockwise int4)",
+    "base_model": "microsoft/FastContext-1.0-4B-SFT",
+    "architecture": "The 4B backbone is Qwen3-4B-Instruct (Qwen3ForCausalLM), so it rides the existing Qwen3 converter and runtime directly.",
+    "parameters_b": 4,
+    "license": "mit",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "model.litertlm",
+      "sha256": "2e56093d920bba2b53967d180f1bbf8fbe107710439950055b07a0146f15d887",
+      "size_bytes": 2662888368,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 151
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142162
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2268102192,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 392606640,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 block 32 weights (symmetric) + OCTAV optimal-clipping; embeddings INT8 (externalized section); KV cache 4096",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Google AI Edge Gallery v1.0.16+ can import litert-lm models directly from Hugging Face inside the app (tap +); manual adb steps only for older builds or sideloading.",
+          "Gallery 1.0.15+ supports .litertlm.",
+          "A 4B int4 build needs ~2.5 GB free RAM on the phone; reboot first if memory is tight.",
+          "iPhone 17 Pro: main weights section ~2.11 GiB (block 32) / ~1.94 GiB (block 128); both load, externalizing the embedder is sufficient for iOS.",
+          "Galaxy S26: XNNPACK additionally takes 1 of the 4 nodes in decode_embedder and prefill_embedder_128; the runtime accepts that split.",
+          "Reproducibility: GPU rows repeat to within ~1%; CPU rows are noisier (treat the CPU column as accurate to roughly ±7%).",
+          "Recommended file: use model.litertlm (block 32) unless decode latency dominates — full parity with bf16, loads on iPhone, Android and desktop alike.",
+          "The desktop (M4 Max) rows are this file; the iPhone figure comes from the 2026-06-27 on-device platform matrix, which does not state a run count or prompt."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 96,
+          "decode_tps": 16.9,
+          "ttft_s": 3.08,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (Apple M4 Max, litert-lm benchmark 0.15.0) — desktop rows are the shipped model.litertlm (block 32) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 995,
+          "decode_tps": 73.8,
+          "ttft_s": 0.28,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (Apple M4 Max, litert-lm benchmark 0.15.0) — desktop rows are the shipped model.litertlm (block 32) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "gpu",
+          "runtime": "LiteRT-LM Swift runtime (swift-litert-lm)",
+          "decode_tps": 10,
+          "date": "2026-06-27",
+          "source": "model card: Performance table iPhone row + Run on iPhone (2026-06-27 on-device platform matrix)"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 10.2,
+          "decode_tps": 1.4,
+          "ttft_s": 28.5,
+          "peak_memory_mb": 4300,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 569,
+          "prefill_tps": 168.8,
+          "decode_tps": 10.1,
+          "ttft_s": 1.3,
+          "load_s": 16.1,
+          "peak_memory_mb": 1459,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3270 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 202,
+          "decode_tokens": 388,
+          "prefill_tps": "23.9-37.0",
+          "decode_tps": "6.62-7.14",
+          "ttft_s": "5.61-8.61",
+          "load_s": 4.4,
+          "peak_memory_mb": 4156,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset"
+        }
+      ],
+      "known_issues": [
+        "Identity: asked \"what is your name?\" the model answers \"I am Qwen…\" — inherited from the base model (the bf16 original behaves identically), not a conversion artifact."
+      ]
+    },
+    {
+      "file": "model_block128.litertlm",
+      "sha256": "3842a564a1f8db2ed53992ec6e2d5e2579aff72131dfac664c19cf2ec90542ce",
+      "size_bytes": 2474357680,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 151
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142162
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2079558192,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 392606640,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 block 128 weights (symmetric) + OCTAV optimal-clipping; embeddings INT8 (externalized section); KV cache 4096",
+      "backends": [
+        "gpu",
+        "cpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (3270 ops across 2 subgraphs) and a correct answer to the probe; 10.7 tok/s decode, engine init 5.6 s, peak 1045 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU; the repo's model.litertlm decodes 10.1 tok/s on the same device and backend, so this file carries the class"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Google AI Edge Gallery v1.0.16+ can import litert-lm models directly from Hugging Face inside the app (tap +); manual adb steps only for older builds or sideloading.",
+          "Gallery 1.0.15+ supports .litertlm.",
+          "A 4B int4 build needs ~2.5 GB free RAM on the phone; reboot first if memory is tight.",
+          "iPhone 17 Pro: main weights section ~2.11 GiB (block 32) / ~1.94 GiB (block 128); both load, externalizing the embedder is sufficient for iOS.",
+          "Galaxy S26: XNNPACK additionally takes 1 of the 4 nodes in decode_embedder and prefill_embedder_128; the runtime accepts that split.",
+          "Reproducibility: GPU rows repeat to within ~1%; CPU rows are noisier (treat the CPU column as accurate to roughly ±7%).",
+          "The block-128 build was not re-measured on desktop; its \"Which file?\" figures are the older ship-gate numbers. Its iPhone figure comes from the 2026-06-27 on-device platform matrix (no run count or prompt stated).",
+          "Not a measured row: card reports Mac (M-series) gpu decode_tps 66-68 (Which file? table, Mac (M-series, GPU) column — older ship-gate numbers, not re-measured; runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "gpu",
+          "runtime": "LiteRT-LM Swift runtime (swift-litert-lm)",
+          "decode_tps": 14,
+          "date": "2026-06-27",
+          "source": "model card: Performance table iPhone row + Run on iPhone (2026-06-27 on-device platform matrix)"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 10.3,
+          "decode_tps": 1.5,
+          "ttft_s": 26.0,
+          "peak_memory_mb": 3900,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 727,
+          "prefill_tps": 156.9,
+          "decode_tps": 10.68,
+          "ttft_s": 1.38,
+          "load_s": 5.6,
+          "peak_memory_mb": 1045,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3270 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "Identity: asked \"what is your name?\" the model answers \"I am Qwen…\" — inherited from the base model (the bf16 original behaves identically), not a conversion artifact.",
+        "The block-128 build trades −6 pt GSM8K accuracy (81.0% vs 88.0% for block 32) for ~40% faster decode."
+      ]
+    }
+  ]
+}

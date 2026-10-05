@@ -1,0 +1,258 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Spark-X2.5-1.7B",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Spark-X2.5-1.7B",
+    "base_model": "XHToken/Spark-X2.5-1.7B",
+    "architecture": "Dense decoder (spark2_5 remote code, 28L, hidden 2048, 8 query / 2 KV heads of 256, sliding-window(512) x3 : full x1, per-head sigmoid attention-output gate, exact-GELU gated MLP, 131,072-entry tied vocab); reasoning model that works problems inside <think>...</think>, thought channel declared in bundle metadata and the think opener pre-filled by the bundle's Jinja generation prompt",
+    "parameters_b": 1.71,
+    "license": "apache-2.0",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Reasoning model: give it a generous output budget (>=2048; 3584 for math) - truncated mid-thought it produces no final answer. The declared thought channel routes reasoning out of the streamed answer and makes a thinking budget effective; enable_thinking=false renders the vendor's no-think prompt. Vendor sampling recommendation temperature 1.0 / top_p 0.95; all card numbers are greedy."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "file": "Spark-X2.5-1.7B_int4.litertlm",
+      "sha256": "e58b633c4325841d335cc574307bf260e5a1bf293da1388ff27a2a1cc0dd4cdb",
+      "size_bytes": 1263128496,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 3581
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2157741
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 989334912,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 271585200,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "export-time int4 blockwise-32 + OCTAV on linears, int8 embedding in its own section (EXTERNALIZE_EMBEDDER: the vocab is tied and a split int4/int8 request duplicates the table per signature) - GSM8K (same harness) 66 vs bf16 76 (paired: both 61, bf16-only 15 of which 9 are 3584-token cap hits, int4-only 5); 8Q 8/8 cpu + 8/8 gpu",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 (2026-09-07, 2 runs per cell): GPU 307-459 tok/s prefill / 17.4-17.8 decode against CPU 83-186 / 13.6-13.9; peak 1325 MB (GPU) vs 1961 MB (CPU); full OpenCL delegation (1733/1733 nodes). Same-device CPU control taken - a measured win; the fastest-decoding Spark file on this device"
+        }
+      ],
+      "min_runtime_version": "0.17.0",
+      "requirements": {
+        "platform_notes": [
+          "Same template / start_token / tokenizer notes as the int8 file",
+          "iPhone 17 Pro composite 8Q 8/8 Metal GPU + 8/8 CPU (init 5.96 s / 2.74 s)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 2492.1,
+          "decode_tps": 103.6,
+          "ttft_s": 0.112,
+          "load_s": 4.13,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-07",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (every Spark eval finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK, answered 43 to 17+26 through the thought channel); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 271.0,
+          "decode_tps": 38.2,
+          "ttft_s": 0.971,
+          "load_s": 5.39,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-07",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (every Spark eval finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK, answered 43 to 17+26 through the thought channel); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q, Adreno)",
+          "os": "Android",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "307-459",
+          "decode_tps": "17.4-17.8",
+          "ttft_s": "0.52-0.75",
+          "load_s": 17.3,
+          "peak_memory_mb": 1325,
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold, no other load on the device; GPU rows only with full LITERT_CL delegation on every subgraph and zero blocking XNNPack, plus a generation check on the same file (answered 42 to 17+25 through the thought channel); the decode turn is the model's full thinking response (~3,900 tokens), so decode tok/s is a long-run figure"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q)",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "83-186",
+          "decode_tps": "13.6-13.9",
+          "ttft_s": "1.22-2.65",
+          "load_s": 6.4,
+          "peak_memory_mb": 1961,
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold, no other load on the device; generation verified on the same file (answered 42 through the thought channel); CPU prefill spreads with thermal state; the decode turn is the model's full thinking response"
+        }
+      ],
+      "known_issues": []
+    },
+    {
+      "file": "Spark-X2.5-1.7B_int8.litertlm",
+      "sha256": "1cc1e97316647a0e16c80683c3b1ed125a0357ba3ceb1e16c8677d0ea00db0cd",
+      "size_bytes": 1834605728,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 3581
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2157741
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1832410272,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "export-time dynamic int8 on linears + embedding (dynamic_wi8_afp32) - GSM8K (n=100, greedy, 0-shot CoT, 3584 output tokens, own harness) 76 vs bf16 76 (paired: both 71, bf16-only 5, int8-only 5); 8Q 8/8 cpu + 8/8 gpu (bf16 8/8)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary (2026-09-07, 205-token prompt, 2 runs per cell): GPU 303-637 tok/s prefill / 13.9-15.8 decode against CPU 165-301 / 12.0-12.3; peak 1098 MB (GPU) vs 2606 MB (CPU). Same-device CPU control taken - a measured win. Full OpenCL delegation (1736/1736 nodes on every subgraph); the int4 sibling decodes 12% faster on this GPU (17.4-17.8) at a 31% smaller download"
+        }
+      ],
+      "min_runtime_version": "0.17.0",
+      "requirements": {
+        "platform_notes": [
+          "Tested on litert-lm 0.17.0 (macOS CLI + python API) and the iPhone 17 Pro (G41DeviceTest harness, Metal GPU and CPU)",
+          "Jinja prompt template carried verbatim (vendor format: default system block, every message wrapped <｜start▁of▁sentence｜>...<｜end▁of▁sentence｜>, generation prompt <|Bot|><think>); tool-call formatting not carried; stop id 1; KV budget 4096, 11 prefill signatures (1-1024)",
+          "No start_token: add_bos_token is false and the template carries its own BOS per message",
+          "Single 1.706 GiB TFLite section - loads on iOS (under the ~2 GiB single-section mmap ceiling); iPhone 17 Pro composite 8Q 7/8 on both backends (the one miss is the composite-format rhyme artifact; the same question is answered correctly standalone)",
+          "Embeds the upstream HF tokenizer.json (byte-level BPE); engine-vs-tokenizers ids identical on 234/234 probe rows"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 2308.2,
+          "decode_tps": 95.8,
+          "ttft_s": 0.121,
+          "load_s": 3.62,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-07",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (every Spark eval finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK, answered 43 to 17+26 through the thought channel); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 820.4,
+          "decode_tps": 41.0,
+          "ttft_s": 0.337,
+          "load_s": 18.13,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-07",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (every Spark eval finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK, answered 43 to 17+26 through the thought channel); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q, Adreno)",
+          "os": "Android",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "303-637",
+          "decode_tps": "13.9-15.8",
+          "ttft_s": "0.40-0.78",
+          "load_s": 5.7,
+          "peak_memory_mb": 1098,
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold, no other load on the device; GPU rows only with full LITERT_CL delegation on every subgraph and zero blocking XNNPack, plus a generation check on the same file (answered 42 to 17+25 through the thought channel); the decode turn is the model's full thinking response (~3,900 tokens), so decode tok/s is a long-run figure"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q)",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "165-301",
+          "decode_tps": "12.0-12.3",
+          "ttft_s": "0.79-1.37",
+          "load_s": 0.3,
+          "peak_memory_mb": 2606,
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold, no other load on the device; generation verified on the same file (answered 42 through the thought channel); CPU prefill spreads with thermal state; the decode turn is the model's full thinking response"
+        }
+      ],
+      "known_issues": []
+    }
+  ]
+}

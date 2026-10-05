@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/LFM2.5-2.6B",
-  "generated": "2026-08-24",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "LFM2.5-2.6B",
@@ -23,18 +23,25 @@
           "start": "<think>",
           "end": "</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "LFM2.5-2.6B_int4.litertlm",
-      "sha256": "f4797d5a16812231deb6d505b4f417dd835b9b3dc47bb74d9ec71facfd0c91a4",
+      "sha256": "d3e943dae301d88086c792b46786f26a60339998dac8fee34ed3f6cc4acccaac",
       "size_bytes": 1668151680,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1310
+          "size_bytes": 1677
         },
         {
           "type": "ExecutorMetadataProto",
@@ -139,6 +146,21 @@
           "runs": 3,
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 206,
+          "decode_tokens": 3304,
+          "prefill_tps": 494.8,
+          "decode_tps": 20.87,
+          "ttft_s": 0.46,
+          "load_s": 12.6,
+          "peak_memory_mb": 1231,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (11132 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
         }
       ],
       "known_issues": [
@@ -149,12 +171,12 @@
     },
     {
       "file": "LFM2.5-2.6B_int8.litertlm",
-      "sha256": "36299f191c5ad447b148b78f9d965748598aca52786096c3e0de802b47eeca59",
+      "sha256": "f1a4eba63bdeabb5cff9b4b483ad21fe6fdf3f5a9ff043540976da42f903b1a7",
       "size_bytes": 2868199040,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1310
+          "size_bytes": 1677
         },
         {
           "type": "ExecutorMetadataProto",
@@ -217,6 +239,37 @@
           "cache": "no",
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 206,
+          "decode_tokens": 2892,
+          "prefill_tps": 474.3,
+          "decode_tps": 16.3,
+          "ttft_s": 0.5,
+          "load_s": 4.8,
+          "peak_memory_mb": 1189,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (11132 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 206,
+          "decode_tokens": 3616,
+          "prefill_tps": "222.2-269.2",
+          "decode_tps": "13.71-15.53",
+          "ttft_s": "0.84-0.99",
+          "load_s": 5.8,
+          "peak_memory_mb": 3704,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-06",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset"
         }
       ],
       "known_issues": [

@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/SmolVLM2-500M",
-  "generated": "2026-08-30",
+  "generated": "2026-09-05",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "SmolVLM2-500M",
@@ -59,6 +59,14 @@
         "gpu"
       ],
       "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary: GPU 76.34 tok/s decode / 1382.6 prefill, peak 404 MB, init 1.3 s (S4 GPU gate 2026-08-25, 1 run) against CPU 62.14-76.72 decode / 384.7-417.0 prefill, peak 584 MB, init 0.6 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device CPU control taken: decode is a wash (within 10%); gpu is kept for its prefill advantage (time to first token), a deliberate choice rather than a decode win"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Best for single-image VQA — ask about one image per chat (start a new conversation for a different image)",
@@ -83,6 +91,37 @@
           "runs": 3,
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 204,
+          "decode_tokens": 282,
+          "prefill_tps": 1382.6,
+          "decode_tps": 76.34,
+          "ttft_s": 0.16,
+          "load_s": 1.3,
+          "peak_memory_mb": 404,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (4138 ops across 3 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 203,
+          "decode_tokens": 212,
+          "prefill_tps": "384.7-417.0",
+          "decode_tps": "62.14-76.72",
+          "ttft_s": "0.5-0.54",
+          "load_s": 0.6,
+          "peak_memory_mb": 584,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
         }
       ],
       "known_issues": [

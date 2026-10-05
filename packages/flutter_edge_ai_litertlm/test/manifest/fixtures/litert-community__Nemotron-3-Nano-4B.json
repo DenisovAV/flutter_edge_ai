@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Nemotron-3-Nano-4B",
-  "generated": "2026-08-31",
+  "generated": "2026-09-22",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Nemotron-3-Nano-4B",
@@ -19,18 +19,25 @@
           "start": "<think>\n",
           "end": "\n</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "Nemotron-3-Nano-4B_int8.litertlm",
-      "sha256": "ba73d2ad1d878bc2b796eb3a1d993eb1b3bd5105743cd85bd6fa9d86e58a013d",
+      "sha256": "feefdcd55693022ddbdbed7d0aafdd266cac950c6a348d25a8e96b12827ddbda",
       "size_bytes": 4126697184,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 10575
+          "size_bytes": 11006
         },
         {
           "type": "ExecutorMetadataProto",
@@ -52,6 +59,14 @@
         "gpu"
       ],
       "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "measured on one Galaxy S26 with one binary (S7 Android backfill 2026-09-05, 2 cold runs, 205-token prompt, cooled before each run): cpu 52.9-64.0 tok/s prefill / 11.85-12.87 decode, peak 4884 MB, engine init 9.0 s. The GPU path crashes on this handset (SIGSEGV, exit 139, while the CL delegate initializes its kernels for prefill_1024 after accepting all 2827 ops - see known_issues), so cpu is the only Android path here: a verified choice, not a measured win. The CPU answered the probe correctly"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Requires litert-lm >= 0.15",
@@ -91,11 +106,28 @@
           "runs": 3,
           "date": "2026-08-27",
           "source": "litertlm-convert reports/shiplogs_20260827/bench_nano4b_protocol.log; litert-lm benchmark -p 256 -d 256 --runs 3 --cache no. Backend gated on real generations first (8-question gate 8/8 via litert-lm run --backend gpu --cache no). Second run: prefill 792.07 / decode 82.37 / ttft 0.3354 (~1.4% spread)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 211,
+          "decode_tokens": 706,
+          "prefill_tps": "52.9-64.0",
+          "decode_tps": "11.85-12.87",
+          "ttft_s": "3.38-4.06",
+          "load_s": 9.0,
+          "peak_memory_mb": 4884,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
         }
       ],
       "known_issues": [
         "GPU is unusable with the compiled-graph cache enabled (WebGPU Invalid BindGroup); pass --cache no. The exit gate's verifier (litert-mac-verify) takes no cache flag, so the routed convert.py CPU gate certifies nothing about GPU for this family",
-        "CPU 8-question gate scores 7/8: the miss is the rhyme-completion item (answers 'violets are purple'); the GPU run answers 'blue'. Every arithmetic, factual and translation item is correct on both backends"
+        "CPU 8-question gate scores 7/8: the miss is the rhyme-completion item (answers 'violets are purple'); the GPU run answers 'blue'. Every arithmetic, factual and translation item is correct on both backends",
+        "Galaxy S26 (Adreno, LiteRT CL delegate, litert_lm_advanced_main v0.16.0, S7 Android backfill 2026-09-05): the GPU gate crashes with SIGSEGV (exit 139) while the delegate initializes its OpenCL kernels for prefill_1024, after all 2827 ops were accepted; the same binary and prompt generate correctly on the CPU of the same handset"
       ]
     }
   ]

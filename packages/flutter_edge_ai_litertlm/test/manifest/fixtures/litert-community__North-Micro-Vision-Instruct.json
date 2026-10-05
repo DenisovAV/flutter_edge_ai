@@ -1,0 +1,232 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/North-Micro-Vision-Instruct",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "North-Micro-Vision-Instruct",
+    "base_model": "CohereLabs/North-Micro-Vision-Instruct",
+    "architecture": "Cohere's 2.48B VLM: a 400M SigLIP2-SO400M-scale vision tower (Qwen3-VL-style encoder with DeepStack mergers) feeding a 2B Cohere decoder, trained for 11 languages.",
+    "parameters_b": 2.48,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "North-Micro-Vision-Instruct_int4.litertlm",
+      "sha256": "098c7f7a3d20985136d7cc7311a2477943e5d00a51a6d8d1042cd903d48a9e45",
+      "size_bytes": 2190562720,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1506
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 4168459
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 540018912,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1100623200,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 422488720,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 123196832,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "int4 blockwise-32 decoder; int8 externalized embedder; mixed-precision activations (fp32_fp16) declared in-bundle; vision tower int8 weights; adapter int8",
+      "backends": [
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-25): full delegation (5344 ops across 4 subgraphs) and a correct answer to the probe; 13.3 tok/s decode, engine init 6.9 s, peak 1787 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU; the repo's North-Micro-Vision-Instruct_wi8.litertlm decodes 11.06 tok/s on the same device and backend, so this file carries the class"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 4096; image resized to 512x512 -> 256 image tokens; DeepStack folded into the single image embedding.",
+          "Decoder declares prefer_activation_type = fp32_fp16: some mobile GPUs accumulate fp16 and overflow at image-token positions (blanking the vision conditioning); the in-bundle declaration selects mixed precision automatically.",
+          "No GATHER_ND (mobile GPU delegate cannot compile it); every activation keeps a leading batch dim (rank >=3), required for correct results on the Metal GPU delegate; LayerNorm inputs pre-scaled so the tower survives fp16 GPU precision.",
+          "Galaxy S26 GPU gate covers engine creation and the text path only (no image in the gate prompt); the vision path on the GPU is not measured there. XNNPACK takes 1 of 4 nodes in main.",
+          "Swift runtime (iPhone/macOS): load with the vision tower enabled (Modality.textImage); vision-only bundle (no audio tower) — bring the engine up with the vision modality only.",
+          "Size-constrained variant (2.19 GB); wi8 is the primary file."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 199,
+          "decode_tokens": 360,
+          "prefill_tps": 189.2,
+          "decode_tps": 13.29,
+          "ttft_s": 1.13,
+          "load_s": 6.9,
+          "peak_memory_mb": 1787,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (5344 ops across 4 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "fast_vlm contract folds the DeepStack embeddings and replaces M-RoPE with 1-D positions: describe/VQA/spatial/single-cell lookup preserved, but 2-D table cross-cell questions and digit-dense OCR degrade — don't rely on it to rank table cells.",
+        "One image per chat: send each image in a fresh conversation, as with the other fast_vlm bundles.",
+        "8-question text gate 7/8: the one miss ('17 + 25' read as '1.7 + 2.5') reproduces token-for-token on the HF fp32 model — Cohere's per-digit pre-tokenizer, not a conversion artifact.",
+        "Before 2026-08-31 the chat template matched history turns only on role 'model', so Conversation-API history with role 'assistant' was silently dropped; fixed, metadata-only (LiteRT-LM#3417).",
+        "int4 variant: coherent and content-correct on all 9 suite cases but terser and further from the fp32 wording; prefer wi8 where storage allows."
+      ]
+    },
+    {
+      "file": "North-Micro-Vision-Instruct_wi8.litertlm",
+      "sha256": "129ad16cb49c4bc24d5a22f1387dc65b8156f8561ff72dbcc6de4f2aa5c1c0ad",
+      "size_bytes": 3071333792,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1506
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 4168459
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 540018912,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1981387872,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 422488720,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 123196832,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "int8 dynamic weights (wi8) decoder; int8 externalized embedder; mixed-precision activations (fp32_fp16) declared in-bundle; vision tower int8 weights; adapter int8",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "midrange-2023+",
+          "backend": "gpu",
+          "reason": "the Android path measured on a Pixel 8a (Tensor G3): 6.4 tok/s decode on gpu; no same-device control on the other backend, so this is the verified choice for the class, not a measured win"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 4096; image resized to 512x512 -> 256 image tokens; DeepStack folded into the single image embedding.",
+          "Decoder declares prefer_activation_type = fp32_fp16: some mobile GPUs accumulate fp16 and overflow at image-token positions (blanking the vision conditioning); the in-bundle declaration selects mixed precision automatically.",
+          "No GATHER_ND (mobile GPU delegate cannot compile it); every activation keeps a leading batch dim (rank >=3), required for correct results on the Metal GPU delegate; LayerNorm inputs pre-scaled so the tower survives fp16 GPU precision.",
+          "Galaxy S26 GPU gate covers engine creation and the text path only (no image in the gate prompt); the vision path on the GPU is not measured there. XNNPACK takes 1 of 4 nodes in main.",
+          "Swift runtime (iPhone/macOS): load with the vision tower enabled (Modality.textImage); vision-only bundle (no audio tower) — bring the engine up with the vision modality only.",
+          "Primary file (3.07 GB); on Pixel 8a the decoder fully delegates to the OpenCL GPU (1380/1380 prefill, 1204/1204 decode nodes).",
+          "iPhone 17 Pro peak resident 2.9–3.0 GB with the vision executor loaded (2.1 GB text-only), Metal decoder + Metal vision, cold.",
+          "Same phone through Apple's Core AI runtime (own measurement, 2026-08-14): 18.2 tok/s decode, 21.5 tok/s prefill — Core AI ahead on decode (~1.3x), LiteRT-LM ahead on prefill and vision TTFT; cold single runs, not a tuned benchmark.",
+          "Not a measured row: card reports iPhone 17 Pro gpu prefill_tps 322-362, decode_tps 13.6, ttft_s 2.3-5.0 (card: Performance (measured), iPhone 17 Pro paragraph; runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 671.8,
+          "decode_tps": 27.3,
+          "load_s": 6.7,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: card: Performance (measured), Apple M4 Max table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1236.6,
+          "decode_tps": 80.6,
+          "load_s": 1.8,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: card: Performance (measured), Apple M4 Max table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "gpu",
+          "runtime": "litert-lm v0.16.1 CLI",
+          "prompt_tokens": 255,
+          "prefill_tps": 181.1,
+          "decode_tps": 6.4,
+          "cache": "no",
+          "source": "model card: card: Performance (measured), Pixel 8a table, text-only row (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 199,
+          "decode_tokens": 379,
+          "prefill_tps": 279.9,
+          "decode_tps": 11.06,
+          "ttft_s": 0.8,
+          "load_s": 7.6,
+          "peak_memory_mb": 1403,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (5344 ops across 4 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "fast_vlm contract folds the DeepStack embeddings and replaces M-RoPE with 1-D positions: describe/VQA/spatial/single-cell lookup preserved, but 2-D table cross-cell questions and digit-dense OCR degrade — don't rely on it to rank table cells.",
+        "One image per chat: send each image in a fresh conversation, as with the other fast_vlm bundles.",
+        "8-question text gate 7/8: the one miss ('17 + 25' read as '1.7 + 2.5') reproduces token-for-token on the HF fp32 model — Cohere's per-digit pre-tokenizer, not a conversion artifact.",
+        "Before 2026-08-31 the chat template matched history turns only on role 'model', so Conversation-API history with role 'assistant' was silently dropped; fixed, metadata-only (LiteRT-LM#3417).",
+        "On 8 GB-class phones the CPU backend pages against the 2.5 GB decoder (0.6 tok/s) — run the decoder on the GPU.",
+        "The int8 vision encoder shifts token choices: 9-case COCO suite is content-correct 9/9 but token-exact only 1/9 vs the fp32 oracle (desktop fp16-vision build keeps 5/9).",
+        "iPhone 17 Pro on-device 8-question text gate 6/8 (the digit quirk plus one rhyme miss); vision-grounding probes 2/2."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/SmolVLM2-2.2B",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "SmolVLM2-2.2B",
+    "base_model": "HuggingFaceTB/SmolVLM2-2.2B-Instruct",
+    "architecture": "SmolVLM2-2.2B is the largest / most capable of Hugging Face's SmolVLM2 family: a SigLIP vision encoder + pixel-shuffle connector feeding a SmolLM2-1.7B (Llama-architecture) language decoder.",
+    "license": "apache-2.0",
+    "parameters_b": 2.2,
+    "context_length": 2048,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "SmolVLM2-2.2B.litertlm",
+      "sha256": "fab0ba947699ab405ff8fb9ea2de6c9af3cdfb598ea93f57631a268f3d631da2",
+      "size_bytes": 1511123888,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 647
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 644845
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 101519008,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 966705168,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 420914848,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 21261232,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "Decoder SmolLM2-1.7B int4 weights (blockwise-32 + OCTAV), tied embedding INT8 (externalized); SigLIP vision encoder + pixel-shuffle x3 + Linear connector int8; integer compute",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-25): full delegation (2979 ops across 3 subgraphs) and a correct answer to the probe; 21.4 tok/s decode, engine init 5.3 s, peak 863 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Vision-only bundle: load with the vision tower enabled (modalities Modality.textImage / [.vision]).",
+          "Single-image, no high-res splitting: a fixed 81 soft tokens per image; SmolLM2 (Llama) decoder exported with externalized (tied) embedder.",
+          "Galaxy S26 GPU gate prompt carries no image: it covers engine creation and the text path only; the vision path on the GPU is not measured there.",
+          "Galaxy S26 GPU gate: XNNPACK additionally takes 1 of the 4 nodes in `main`; the runtime accepts that split.",
+          "2026-08-28 start_token fix (metadata-only, weights unchanged): the engine-prepended start token duplicated the template's own <|im_start|>; it was removed. Accuracy figures on the card were measured on the previous file and not re-measured.",
+          "2026-08-30 tokenizer section replaced with the upstream tokenizer.json (weights unchanged): answers to prompts with accented letters/symbols/emoji can change; accuracy figures and any on-device rows were measured on the previous file; the on-device gate has not been re-run."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 119,
+          "decode_tps": 33.6,
+          "ttft_s": 2.34,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (litert-lm benchmark, Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1608,
+          "decode_tps": 134.7,
+          "ttft_s": 0.18,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (litert-lm benchmark, Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 204,
+          "decode_tokens": 1844,
+          "prefill_tps": 414.4,
+          "decode_tps": 21.41,
+          "ttft_s": 0.54,
+          "load_s": 5.3,
+          "peak_memory_mb": 863,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (2979 ops across 3 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "Best for single-image VQA: ask about one image per chat (start a new conversation for a different image)."
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Qwen3.5-4B",
-  "generated": "2026-08-27",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Qwen3.5-4B",
@@ -21,12 +21,12 @@
   "variants": [
     {
       "file": "Qwen3.5-4B_int8.litertlm",
-      "sha256": "f0abbbc69b4126ddcb208a75e8904ecadff87aa24202e3de6ffd518c198af1ec",
+      "sha256": "74abbd14d83952be2638220f4e6df0a5661ec75e52386c6c88b40a1b0fbc8271",
       "size_bytes": 4407428464,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 362
+          "size_bytes": 729
         },
         {
           "type": "ExecutorMetadataProto",
@@ -130,18 +130,19 @@
       ],
       "known_issues": [
         "GPU execution not verified on Qualcomm Adreno devices — use CPU there unless confirmed",
-        "On the harder composite 8-question probe the CPU int8 path answers 6 of 8 (every answer it gives is correct — it skips two); GPU matches HF fp32 word-for-word"
+        "On the harder composite 8-question probe the CPU int8 path answers 6 of 8 (every answer it gives is correct — it skips two); GPU matches HF fp32 word-for-word",
+        "S4 GPU gate on a Galaxy S26 (2026-08-24): the device hard-rebooted during the gate attempt (device crash suspected oom); GPU on that handset is not verified for this file"
       ],
       "min_runtime_version": "0.15.0"
     },
     {
       "file": "Qwen3.5-4B_mixed_int4.litertlm",
-      "sha256": "176b5a2b6c20bde7739fba98e653a04f5d5b4a753a4b9dd0ff529aba7c35be99",
+      "sha256": "50cbb13f782f4609ff11874ff15e79de5c1ee2e8856a21db72e7ef86f4acef35",
       "size_bytes": 2754365536,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 362
+          "size_bytes": 729
         },
         {
           "type": "ExecutorMetadataProto",

@@ -1,0 +1,288 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/MiniCPM5-2B",
+  "generated": "2026-09-13",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "MiniCPM5-2B",
+    "base_model": "openbmb/MiniCPM5-2B",
+    "architecture": "Dense LlamaForCausalLM (42L, hidden 2048, GQA 16:2, untied 130560-vocab embeddings, rope_theta 5e6, no rope scaling), 2.52B params; hybrid-reasoning chat template (enable_thinking) with a declared thought channel (the int4 file carries the checkpoint template verbatim, the int8 file the LiteRT-LM canonical one)",
+    "parameters_b": 2.52,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "file": "MiniCPM5-2B_int4.litertlm",
+      "sha256": "9858563beafbc6d5e0d25fcee3827541515296a9302ed3d088b16a58d4fbe7b8",
+      "size_bytes": 1553670064,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 9346
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2048362
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1281048576,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 270524336,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "blockwise-32 int4 + OCTAV on linears, int8 embedding (externalized embedder section); 1,664 all-zero-block scales (13 dead layer-0 MLP rows) set to an epsilon in place after export; GPU activations at the runtime default (fp16)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary (2026-09-08, 205-token prompt, 2 runs per backend, cooled below 42 C before each run): gpu prefill 400.7-411.1 tok/s vs cpu 39.0-72.0, TTFT 0.56 s vs 2.9-5.3 s, decode 16.1-18.6 vs 15.6-15.8 tok/s (a modest 1.0-1.2x), peak VmHWM 1.13-1.14 GB vs 1.96-2.12 GB; full LITERT_CL delegation (every node of every subgraph: 1873/1873 on the multi-token prefills, 1664/1664 on prefill_1, 1692/1692 on decode) and the gate answer verified through the thought channel. The gpu wins on time-to-first-token and memory; decode is close to a wash"
+        },
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "Apple M4 Max, litert-lm 0.17.0 benchmark -p 256 -d 256 --runs 3 --cache no, generation gated per backend first: gpu 1836 tok/s prefill / 93.0 tok/s decode vs cpu 148 / 31.4 (2026-09-13; the 2026-09-08 readings were 1699 / 92.8 vs 149 / 31.1)"
+        },
+        {
+          "platform": "ios",
+          "backend": "gpu",
+          "reason": "iPhone 17 Pro, 8-question on-device gate at a 2048-token budget: Metal gpu 7/8 (init 5.7 s) and cpu 7/8 (init 2.2 s), both G41_DONE; the one miss on each leg is the rhyme line of the composite prompt, which the bf16 model also misses with thinking off. No speed rows were taken on the phone"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 2122,
+        "platform_notes": [
+          "Requires litert-lm >= 0.16 (thought channel + ThinkingConfig); measured on 0.17.0",
+          "Hybrid-reasoning model: with no ThinkingConfig it thinks before every answer; budget max output tokens >= 2048 (4096 for math). enable_thinking=false (ThinkingConfig or conversation extra_context) switches to direct answers",
+          "Thinking-mode caveat measured on this file: on GSM8K-class questions its reasoning chains run ~4x longer than int8's and do not close inside 3584 tokens on the CPU reference (0/10 closed; int8 9/10, bf16 9/10). Use int8 when the reasoning must complete, or turn thinking off",
+          "iPhone 17 Pro: passes the on-device gate on gpu and cpu (init 5.7 s / 2.2 s); the int8 file's 2.54 GB main section needs the com.apple.developer.kernel.increased-memory-limit entitlement on iOS (not checked with that file)",
+          "The 13 all-zero MLP rows in decoder layer 0 make raw blockwise-int4 exports fail to load on XNNPACK (scale 0); this file carries the epsilon fix"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 147.65,
+          "decode_tps": 31.38,
+          "ttft_s": 1.77,
+          "load_s": 4.44,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-13",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --max-num-tokens 1024, quiet machine, CPU cells first, backend gated on a real generation first (same session as the int8 rows; the 2026-09-08 reading was 148.9 / 31.12)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1835.85,
+          "decode_tps": 92.96,
+          "ttft_s": 0.15,
+          "load_s": 3.77,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-13",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --max-num-tokens 1024, >=300 s rest before the GPU cell, backend gated on a real generation first (same session as the int8 rows; the 2026-09-08 reading was 1699 / 92.79)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 205,
+          "decode_tokens": 1021,
+          "prefill_tps": "400.7-411.1",
+          "decode_tps": "16.14-18.56",
+          "ttft_s": 0.56,
+          "load_s": 11.2,
+          "peak_memory_mb": 1142,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-08",
+          "source": "205-token prompt with --benchmark, 2 runs (engine init 11.2 / 13.1 s), device cooled below 42 C before each run; GPU gate full LITERT_CL delegation (every node of every subgraph: 1873/1873 on the multi-token prefills, 1664/1664 on prefill_1, 1692/1692 on decode; 0 blocking XNNPack), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 205,
+          "decode_tokens": 1021,
+          "prefill_tps": "39.0-72.0",
+          "decode_tps": "15.56-15.79",
+          "ttft_s": "2.9-5.3",
+          "load_s": 5.7,
+          "peak_memory_mb": 2122,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-08",
+          "source": "same-device CPU control: identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 runs (engine init 5.7 / 3.1 s), cooled before each run"
+        }
+      ],
+      "known_issues": [
+        "Thinking mode: reasoning chains are ~4x longer than int8/bf16 on GSM8K-class questions and frequently hit a 3584-token budget without emitting the answer (CPU reference 0/10 closed; the Metal GPU's default fp16 activations happen to close 22/30). Quantization damage of int4 on this 42-layer model, not a runtime bug; block-128 int4 was tried and is worse (GSM8K 79 vs 87)"
+      ]
+    },
+    {
+      "file": "MiniCPM5-2B_int8.litertlm",
+      "sha256": "61dafe884025d29019302ef27ffb8c677c13eab5c2eb5efd34873ff7cb35c36e",
+      "size_bytes": 2546937984,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 3948
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 5807
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2048362
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2544824448,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "dynamic int8 (channelwise) on every linear, the embedding and the lm_head, all in the prefill/decode graph - the LiteRT-LM models/minicpm5 README command with --quantization_recipe=dynamic_wi8_afp32 on the released litert-torch 0.9.4 / ai-edge-quantizer 0.9.0; GPU activations at the runtime default (fp16)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary (2026-09-13, v0.16.0 release kit litert_lm_advanced_main, 205-token prompt with --benchmark, 2 runs per backend, SKIN 37.9 C and no CPU frequency cap before every run): gpu prefill 541.5-549.2 tok/s vs cpu 92.6-131.7, TTFT 0.42-0.43 s vs 1.64-2.29 s, decode 22.4-22.6 vs 15.1-18.2 tok/s (1.2-1.5x), peak VmHWM 814-820 MB vs 2,938-3,065 MB; full LITERT_CL delegation (1836/1836 prefill_128, 1655/1655 decode) and the gate answer verified on both backends (also 8/8 on the GPU through the litertlm-android 0.17.0 AAR)"
+        },
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "Apple M4 Max, litert-lm 0.17.0 benchmark -p 256 -d 256 --runs 3 --cache no --max-num-tokens 1024, generation gated per backend first: gpu 2084 tok/s prefill / 124.2 tok/s decode vs cpu 175 / 37.1"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 3065,
+        "platform_notes": [
+          "Requires litert-lm >= 0.16 (thought channel + ThinkingConfig); measured on 0.17.0 (Mac) and on the v0.16.0 release kit (Galaxy S26)",
+          "Template = the LiteRT-LM models/minicpm5 canonical chat_template.jinja: with nothing set the model answers directly (enable_thinking defaults to false); enable_thinking=true via ThinkingConfig or the conversation's extra_context turns the reasoning on - budget max output tokens >= 2048 (4096 for math) for a thinking run",
+          "One prefill signature (128 tokens); a longer prompt is prefilled in 128-token chunks. KV budget 4096 (max_num_tokens); the command's cache_length 32771 is the runtime's magic number and the cache is sized to 4096 at load",
+          "iOS: the 2.54 GB main weight section is above what a default-entitlement app maps in one piece; the com.apple.developer.kernel.increased-memory-limit entitlement lifts that limit (not checked with this file)",
+          "GSM8K (thinking off, n=100, greedy, max 2048 tokens): 93 on the Mac GPU vs bf16 92 - at parity (inside one standard error at n=100); six of its seven misses are the bf16 model's own. 8-question gate: 6/8 at the no-think default (= the bf16 model's own thinking-off score) and 8/8 with thinking on, on both backends; thinking-on 10-question GSM8K subset: 10/10 chains close, 10/10 correct (Mac GPU, fp16-default activations)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 175.28,
+          "decode_tps": 37.06,
+          "ttft_s": 1.49,
+          "load_s": 4.71,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-13",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --max-num-tokens 1024, quiet machine, CPU cells first, backend gated on a real generation first"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 2084.28,
+          "decode_tps": 124.24,
+          "ttft_s": 0.13,
+          "load_s": 1.76,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-13",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --max-num-tokens 1024, >=300 s rest before the GPU cell, backend gated on a real generation first"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit, LiteRT CL delegate",
+          "prompt_tokens": 207,
+          "decode_tokens": 182,
+          "prefill_tps": "541.5-549.2",
+          "decode_tps": "22.36-22.57",
+          "ttft_s": "0.42-0.43",
+          "load_s": 6.43,
+          "peak_memory_mb": 820,
+          "cache": "kit default (no cache flag; the gate leg ran first, as on the 2026-09-08 rows)",
+          "runs": 2,
+          "date": "2026-09-13",
+          "source": "205-token prompt with --benchmark, 2 runs (engine init 6.43 / 5.59 s), SKIN 37.9 C and scaling_max_freq == cpuinfo_max_freq checked before each run, 180 s rest between legs; GPU gate full LITERT_CL delegation (1836/1836 prefill_128, 1655/1655 decode), generation verified on the gate prompt (The capital of France is Paris.); the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit (XNNPACK CPU)",
+          "prompt_tokens": 207,
+          "decode_tokens": 169,
+          "prefill_tps": "92.6-131.7",
+          "decode_tps": "15.14-18.15",
+          "ttft_s": "1.64-2.29",
+          "load_s": 3.56,
+          "peak_memory_mb": 3065,
+          "cache": "kit default (no cache flag; the gate leg ran first, as on the 2026-09-08 rows)",
+          "runs": 2,
+          "date": "2026-09-13",
+          "source": "same-device CPU control: identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 runs (engine init 3.56 / 4.25 s), SKIN 37.9 C and no CPU frequency cap before each run, 180 s rest between legs; CPU gate answers The capital of France is Paris. (XNNPACK 1577/1836 prefill_128 + 1392/1655 decode, the rest on the interpreter)"
+        }
+      ],
+      "known_issues": [
+        "GSM8K (thinking off, 2048-token budget) question 8: on the GPU the derivation runs to the budget mid-calculation and the extracted number is wrong; the CPU run on the same file answers it in 2,204 characters"
+      ]
+    }
+  ]
+}

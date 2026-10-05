@@ -1,0 +1,139 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Mage-VL",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Mage-VL",
+    "base_model": "microsoft/Mage-VL",
+    "architecture": "Microsoft's 4.7B vision-language model: a 24-layer ViT with 3-D rotary position embeddings feeds a Qwen3-4B language decoder.",
+    "parameters_b": 4.7,
+    "license": "apache-2.0",
+    "context_length": 2048,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Mage-VL.litertlm",
+      "sha256": "4231ea9f88ef2bd3aca92fd4554531f17717225418c4527ac858a8a9184dad72",
+      "size_bytes": 2811977104,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1902
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142190
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 390781600,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2084548128,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 307068464,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 27385232,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "Decoder Qwen3-4B int4 weights (symmetric, blockwise-128 + OCTAV); int8 externalized embedder; vision ViT int8 weights; adapter int8",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-25): full delegation (6618 ops across 4 subgraphs) and a correct answer to the probe; 17.1 tok/s decode, engine init 6.5 s, peak 820 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 2048 (vs the trained 262k) — chosen so the fp32 KV cache stays ~0.6 GB and the whole session stays under ~1.5 GiB on the phone.",
+          "Image input resized to 448x448 (OpenAI-CLIP normalization baked into the encoder); 196 image tokens.",
+          "Text-only follow-up turns in the same conversation have ~2 s time-to-first-token on the phone.",
+          "No positional compromise: the decoder natively uses plain sequential 1-D positions (no M-RoPE), exactly what fast_vlm supplies; the Qwen2-VL 2-D-table-ranking caveat does not apply.",
+          "Mobile-GPU-safe graph: no GATHER_ND; the 2x2 merge is 4 strided slices + concat, all ops <=4D; vision tower has zero FLEX/CUSTOM ops.",
+          "Galaxy S26 GPU gate covers engine creation and the text path only (no image in the gate prompt); the vision path on the GPU is not measured there. XNNPACK takes 1 of 4 nodes in main.",
+          "Verified platforms are iPhone, macOS and (engine bring-up + text path on GPU, via the CLI, not the Gallery app) a Galaxy S26; Gallery import follows the same bundle contract as the other fast_vlm models.",
+          "The 2026-08-29 default-system-prompt restore adds 11 prefill tokens to a conversation that sends no system message, so time-to-first-token grows by that much; per-token speed is unchanged.",
+          "Card claims the same file runs on macOS, Linux and Windows (Linux/Windows not measured on the card).",
+          "Not a measured row: card reports iPhone 17 Pro cpu decode_tps 10, ttft_s 7.5-9 (card: Performance table iPhone row + 'Performance (measured)' table; runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 65,
+          "decode_tps": 23.0,
+          "ttft_s": 4.11,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: card: Performance table (litert-lm benchmark) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 740,
+          "decode_tps": 80.0,
+          "ttft_s": 0.37,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: card: Performance table (litert-lm benchmark) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 203,
+          "decode_tokens": 124,
+          "prefill_tps": 220.7,
+          "decode_tps": 17.11,
+          "ttft_s": 0.98,
+          "load_s": 6.5,
+          "peak_memory_mb": 820,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (6618 ops across 4 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "Image-only bundle: the base model's video pipeline is not included; send each image in its own message — multiple images in one conversation are untested.",
+        "Swift runtime: bring the engine up with the vision modality only — requesting .all fails at session creation on bundles without an audio section.",
+        "Desktop 8-question text sanity gate 7/8 with no degeneration; vision tower corr 0.994 at int8 vs the reference.",
+        "2026-08-28/29/30/31 metadata- and tokenizer-only changes (weights unchanged): accuracy figures and on-device rows were measured on the previous file; the on-device gate has not been re-run. Re-download if downloaded before 2026-08-30.",
+        "Before 2026-08-30 the bundled SentencePiece tokenizer mis-encoded standalone accented letters/symbols and mapped emoji and most Latin Extended-A to the end-of-text token; now replaced by the upstream tokenizer.json.",
+        "Before 2026-08-31 the chat template matched history turns only on role 'model', so Conversation-API history with role 'assistant' was silently dropped; fixed (LiteRT-LM#3417)."
+      ]
+    }
+  ]
+}

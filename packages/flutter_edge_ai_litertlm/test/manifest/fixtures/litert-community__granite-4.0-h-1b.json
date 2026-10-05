@@ -1,0 +1,191 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/granite-4.0-h-1b",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "granite-4.0-h-1b",
+    "base_model": "ibm-granite/granite-4.0-h-1b",
+    "architecture": "Granite 4.0-h is IBM's hybrid architecture: Mamba2 (selective-scan) blocks interleaved with a few grouped-query attention blocks (this 1B/1.5B-class model has 36 mamba + 4 attention layers).",
+    "license": "apache-2.0",
+    "parameters_b": 1.0,
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "granite-4.0-h-1b_int8.litertlm",
+      "sha256": "060bae024d59546dfd2ed9fba856b5a8adcf8b83b16f919c2637a7fcd88840c5",
+      "size_bytes": 1683129664,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 6457
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 5373
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404724
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1681671488,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic on linears + embedding (convs and the selective scan stay float)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.15",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "midrange-2023+",
+          "backend": "gpu",
+          "reason": "the Android path measured on a Pixel 8a (Tensor G3): 9.4-9.6 tok/s decode on gpu; the same phone's cpu row decodes 5.0-10.0 tok/s"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary: GPU 24.95 tok/s decode / 231.1 prefill, peak 2944 MB, init 15.9 s (S4 GPU gate 2026-08-24, 1 run) against CPU 23.66-29.39 decode / 129.4-178.7 prefill, peak 2605 MB, init 3.0 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device CPU control taken: decode is a wash (within 10%); gpu is kept for its prefill advantage (time to first token), a deliberate choice rather than a decode win"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "GPU execution verified on macOS (Metal), iPhone 17 Pro (Metal), Pixel 8a (Arm Mali, OpenCL) and Qualcomm Adreno (Galaxy S26).",
+          "GPU inference runs with fp32 activations (bundle declares prefer_activation_type = fp32); that is where the GPU rows' extra memory goes — 2.53 GB vs 0.99 GB on iPhone.",
+          "On low-end Android the GPU does not win decode but still wins prefill and TTFT; on Apple hardware the GPU wins across the board.",
+          "Pixel 8a: GPU wins prefill (~1.7x) and TTFT and holds a steadier decode; full delegation, zero rejected ops, correct output.",
+          "The scan stays unquantized (float); int8 covers linears + embedding.",
+          "Multi-length prefill signatures (1–1024) exported; bundle carries Granite's full chat template (tool-calling and RAG-documents sections included).",
+          "Mamba blocks carry constant-size per-layer state so memory stays nearly flat with context length; only the 4 attention layers keep KV (4096-token budget).",
+          "litert-lm >= 0.15 binds per-layer states through an ExecutorMetadata section appended at package time.",
+          "Not a measured row: card reports iPhone 17 Pro gpu prefill_tps 210, decode_tps 29.8, ttft_s 0.79 (Performance — on-device table (pre-2026-08-28 file per Update note); runtime/run count not stated)",
+          "Not a measured row: card reports iPhone 17 Pro cpu prefill_tps 123, decode_tps 15.9, ttft_s 1.31 (Performance — on-device table (pre-2026-08-28 file per Update note); runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1684,
+          "decode_tps": 134.7,
+          "ttft_s": 0.16,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 247,
+          "decode_tps": 39.2,
+          "ttft_s": 1.06,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main built from the v0.16.0 tag",
+          "prompt_tokens": 279,
+          "decode_tokens": 256,
+          "prefill_tps": "49.0-49.4",
+          "decode_tps": "9.4-9.6",
+          "ttft_s": 5.8,
+          "runs": 3,
+          "source": "model card: Performance — Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "cpu",
+          "runtime": "litert_lm_main built from the v0.16.0 tag",
+          "prompt_tokens": 279,
+          "decode_tokens": 256,
+          "prefill_tps": "27.1-30.3",
+          "decode_tps": "5.0-10.0",
+          "ttft_s": "9.3-10.4",
+          "runs": 3,
+          "source": "model card: Performance — Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 42.3,
+          "decode_tps": 4.4,
+          "ttft_s": 6.3,
+          "peak_memory_mb": 2500,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 225,
+          "decode_tokens": 285,
+          "prefill_tps": 231.1,
+          "decode_tps": 24.95,
+          "ttft_s": 1.01,
+          "load_s": 15.9,
+          "peak_memory_mb": 2944,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (48929 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 224,
+          "decode_tokens": 240,
+          "prefill_tps": "129.4-178.7",
+          "decode_tps": "23.66-29.39",
+          "ttft_s": "1.29-1.77",
+          "load_s": 3.0,
+          "peak_memory_mb": 2605,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
+      ],
+      "known_issues": [
+        "After the 2026-08-28 start_token fix the Mac sanity gate moved from 8/8 to 7/8; GSM8K and iPhone rows were not re-run. Re-download if fetched before 2026-08-28.",
+        "The 7/8 miss is '17 + 25' answered 43 (pre-fix file answered 42); over 50 GSM8K questions the two files split 10 six-to-four for the older one, within noise.",
+        "GSM8K LiteRT int8 row (76%) was measured before the 2026-08-28 metadata fix and has not been re-run.",
+        "iPhone 17 Pro GPU 8/8 and the iPhone speed rows were measured on the pre-fix file and have not been re-run.",
+        "Pixel 8a CPU rows spread (27.1–30.3 prefill, 5.0–10.0 decode tok/s) because the CPU throttles.",
+        "Files downloaded before 2026-08-13 are the pre-rewrite conversion: ~3.5x slower CPU decode (11.4 tok/s) and not fully GPU-delegable. Re-download."
+      ]
+    }
+  ]
+}

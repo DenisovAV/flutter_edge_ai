@@ -1,0 +1,434 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/decider-2b-vision-LiteRT",
+  "generated": "2026-09-29",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "decider-2b-vision (LiteRT-LM)",
+    "base_model": "Mapika/decider-2b-vision",
+    "architecture": "Qwen3.5 vision-language hybrid: 18 GatedDeltaNet linear-attention + 6 full-attention decoder layers; the upstream 3-channel M-RoPE positions are derived in the decoder graph from the runtime's 1-D position; 24-block vision encoder + 2x2 merger at a fixed 256x256 input (64 image tokens); 4096-token exported cache; no MTP",
+    "parameters_b": 2.213241664,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "decider-2b-vision_fp16-int8vocab.litertlm",
+      "size_bytes": 4498201472,
+      "sha256": "72f6836051f54ad32f7804e06bc0dae2e022a22f97d864d480f39710f17357bc",
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 356
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3201
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913348
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 511541472,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3323937888,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 608346896,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 50371456,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "decoder FULLY_CONNECTED weights fp16 float-casting, output head (decode_logits_output) dynamic int8, token embedding int8 CHANNELWISE; vision encoder and adapter fp16 float-casting; fp32 activation preference on the decoder",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.17.1",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "Apple M4 Max, same request: median TTFT 0.26 s on GPU vs 1.54 s on CPU, peak RSS 7.0 GB vs 45.5 GB without a cache folder; engine creation 26.8 s vs 16.3 s. Reference readout on the Mac GPU: 53/53 argmax, max |dp| 0.0062 vs upstream fp32."
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Tested on LiteRT-LM 0.17.1 (PyPI) on an Apple M4 Max, CPU and GPU (WebGPU delegate). Galaxy S26 (LiteRT-LM v0.16.0): GPU engine creation did not fit (stopped at 6,396,212 kB VmHWM during the OpenCL set-up of prefill_1024 by a 6,347,656 kB guard); CPU not tried (its XNNPACK cache alone is 6.0 GB).",
+          "One 256x256 image first in the prompt, one question per runtime request; the runtime returns the greedy letter, not option probabilities. Probabilities, text-only requests and several questions: reference/decider_litert.py (ai-edge-litert 2.2.0, numpy, Pillow, tokenizers).",
+          "XNNPACK unpacks the fp16 weights to fp32: the CPU cache folder holds 6,016,360,768 B for the decoder plus 1,312,687,576 B for the vision encoder and adapter; with the GPU backend the decoder's program cache in that folder grew by 270,663,680 B at every engine creation (LiteRT-LM 0.17.1, Mac) and a warm folder did not shorten GPU engine creation."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "os": "macOS 27.0 26A428",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1 (PyPI, Python API)",
+          "prompt_tokens": 150,
+          "decode_tokens": 1,
+          "prefill_tps": 49.2,
+          "ttft_s": 4.416,
+          "load_s": 13.4,
+          "peak_memory_mb": 11959.1,
+          "peak_memory_units": "MiB from /usr/bin/time -l maximum resident set size / 1048576",
+          "max_num_tokens": 4096,
+          "cache": "disk (cache folder written by a first cold run; warm runs)",
+          "runs": 3,
+          "date": "2026-09-29",
+          "num_threads": 8,
+          "timing": "quiet: no other process above 120 % CPU before or during the runs used (5 s sampling)",
+          "source": "One decision per fresh process: published fixture row game_pong_atari_up (one 256x256 image + one question, 150 prompt tokens), greedy, 1 output token; ttft_s = send-to-first-token wall, load_s = Engine constructor wall; medians of the uncontended runs [1, 2, 3] (all runs: ttft [1.149, 1.163, 4.416, 4.433], engine [13.3, 12.5, 16.0, 13.4], prefill tok/s [166.0, 162.9, 49.2, 49.0], RSS GB [13.72, 12.53, 12.54, 12.54], contended [False, False, False, False]); first token = upstream letter [True, True, True, True]; 'Validation error' lines [0, 0, 0, 0]"
+        },
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "os": "macOS 27.0 26A428",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1 (PyPI, Python API)",
+          "prompt_tokens": 150,
+          "decode_tokens": 1,
+          "prefill_tps": 139.8,
+          "ttft_s": 1.54,
+          "load_s": 16.3,
+          "peak_memory_mb": 43430.3,
+          "peak_memory_units": "MiB from /usr/bin/time -l maximum resident set size / 1048576",
+          "max_num_tokens": 4096,
+          "cache": "no (cache_dir :nocache)",
+          "runs": 3,
+          "date": "2026-09-29",
+          "num_threads": 8,
+          "timing": "quiet: no other process above 120 % CPU before or during the runs used (5 s sampling)",
+          "source": "One decision per fresh process: published fixture row game_pong_atari_up (one 256x256 image + one question, 150 prompt tokens), greedy, 1 output token; ttft_s = send-to-first-token wall, load_s = Engine constructor wall; medians of the uncontended runs [0, 1, 2] (all runs: ttft [1.54, 1.497, 1.653], engine [16.3, 20.2, 15.0], prefill tok/s [139.8, 145.9, 130.2], RSS GB [45.54, 45.55, 45.54], contended [False, False, False]); first token = upstream letter [True, True, True]; 'Validation error' lines [0, 0, 0]"
+        },
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "os": "macOS 27.0 26A428",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.1 (PyPI, Python API)",
+          "prompt_tokens": 150,
+          "decode_tokens": 1,
+          "prefill_tps": 688.1,
+          "ttft_s": 0.47,
+          "load_s": 30.2,
+          "peak_memory_mb": 6351.5,
+          "peak_memory_units": "MiB from /usr/bin/time -l maximum resident set size / 1048576",
+          "max_num_tokens": 4096,
+          "cache": "disk (cache folder written by a first cold run; warm runs)",
+          "runs": 2,
+          "date": "2026-09-29",
+          "timing": "quiet: no other process above 120 % CPU before or during the runs used (5 s sampling)",
+          "source": "One decision per fresh process: published fixture row game_pong_atari_up (one 256x256 image + one question, 150 prompt tokens), greedy, 1 output token; ttft_s = send-to-first-token wall, load_s = Engine constructor wall; medians of the uncontended runs [1, 2] (all runs: ttft [0.272, 0.28, 0.66, 0.509], engine [26.7, 29.8, 30.7, 29.5], prefill tok/s [831.3, 835.6, 540.6, 726.5], RSS GB [8.24, 6.66, 6.66, 6.68], contended [False, False, False, True]); first token = upstream letter [True, True, True, True]; 'Validation error' lines [0, 0, 0, 0]"
+        },
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "os": "macOS 27.0 26A428",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.1 (PyPI, Python API)",
+          "prompt_tokens": 150,
+          "decode_tokens": 1,
+          "prefill_tps": 843.3,
+          "ttft_s": 0.264,
+          "load_s": 26.8,
+          "peak_memory_mb": 6656.6,
+          "peak_memory_units": "MiB from /usr/bin/time -l maximum resident set size / 1048576",
+          "max_num_tokens": 4096,
+          "cache": "no (cache_dir :nocache)",
+          "runs": 3,
+          "date": "2026-09-29",
+          "timing": "quiet: no other process above 120 % CPU before or during the runs used (5 s sampling)",
+          "source": "One decision per fresh process: published fixture row game_pong_atari_up (one 256x256 image + one question, 150 prompt tokens), greedy, 1 output token; ttft_s = send-to-first-token wall, load_s = Engine constructor wall; medians of the uncontended runs [0, 1, 2] (all runs: ttft [0.347, 0.26, 0.264], engine [28.8, 26.8, 26.5], prefill tok/s [640.6, 843.3, 844.5], RSS GB [6.98, 7.0, 6.97], contended [False, False, False]); first token = upstream letter [True, True, True]; 'Validation error' lines [0, 0, 0]"
+        }
+      ],
+      "known_issues": [
+        "CPU reference readout: 52/53 argmax on the published image questions (the flip is on a question whose upstream top two options are 0.0073 apart), max |dp| 0.0085.",
+        "LiteRT-LM's text-scoring call does not give option probabilities that agree with its own greedy decode on 0.17.1 (https://github.com/google-ai-edge/LiteRT-LM/issues/3561); read the letter logits with the reference readout.",
+        "Text-only prompts start at position 0 in the runtime; the decoder expects them at 65. Send text-only requests through the reference readout.",
+        "Inputs other than 224x224, 256x240 or 256x256 get 64 image tokens instead of upstream's 70-475; on the published synthetic rows that moved upstream's own probabilities by up to 0.373 (30/32 argmax).",
+        "The runtime's own resize of non-256x256 images was not exercised; resize to 256x256 with PIL bicubic before sending."
+      ]
+    },
+    {
+      "file": "decider-2b-vision_fp16.litertlm",
+      "size_bytes": 5509356416,
+      "sha256": "75b226796c43405b900399551487903dbe4f87d1a2c40aea422b2a9c33c8f62a",
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 356
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3201
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913348
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1017121104,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3829517696,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 608346896,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 50371456,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "fp16 float-casting of every FULLY_CONNECTED and EMBEDDING_LOOKUP weight in the decoder and embedder, float compute; vision encoder and adapter fp16 float-casting (FULLY_CONNECTED + CONV_2D); fp32 activation preference on the decoder",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.17.1",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "Apple M4 Max, same request: median TTFT 0.29 s on GPU vs 1.68 s on CPU, peak RSS 15.6 GB vs 53.7 GB without a cache folder; engine creation 28.5 s vs 16.8 s. Runtime first token = upstream letter on 12/12 single-question rows on both."
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Tested on LiteRT-LM 0.17.1 (PyPI) on an Apple M4 Max, CPU and GPU (WebGPU delegate). Not for phones: XNNPACK expands its weights to 7.5 GB; not tried on a phone.",
+          "One 256x256 image first in the prompt, one question per runtime request; the runtime returns the greedy letter, not option probabilities. Probabilities, text-only requests and several questions: reference/decider_litert.py (ai-edge-litert 2.2.0, numpy, Pillow, tokenizers).",
+          "XNNPACK unpacks the fp16 weights to fp32: the CPU cache folder holds 7,540,052,280 B for the decoder plus 1,312,687,576 B for the vision encoder and adapter; with the GPU backend the decoder's program cache in that folder grew by 270,663,680 B at every engine creation (LiteRT-LM 0.17.1, Mac) and a warm folder did not shorten GPU engine creation."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "os": "macOS 27.0 26A428",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1 (PyPI, Python API)",
+          "prompt_tokens": 150,
+          "decode_tokens": 1,
+          "prefill_tps": 114.7,
+          "ttft_s": 1.717,
+          "load_s": 13.7,
+          "peak_memory_mb": 20189.3,
+          "peak_memory_units": "MiB from /usr/bin/time -l maximum resident set size / 1048576",
+          "max_num_tokens": 4096,
+          "cache": "disk (cache folder written by a first cold run; warm runs)",
+          "runs": 3,
+          "date": "2026-09-29",
+          "num_threads": 8,
+          "timing": "quiet: no other process above 120 % CPU before or during the runs used (5 s sampling)",
+          "source": "One decision per fresh process: published fixture row game_pong_atari_up (one 256x256 image + one question, 150 prompt tokens), greedy, 1 output token; ttft_s = send-to-first-token wall, load_s = Engine constructor wall; medians of the uncontended runs [1, 2, 3] (all runs: ttft [1.233, 1.257, 7.59, 1.717], engine [13.3, 12.5, 14.0, 13.7], prefill tok/s [166.4, 161.5, 48.6, 114.7], RSS GB [23.35, 21.18, 21.17, 21.17], contended [False, False, False, False]); first token = upstream letter [True, True, True, True]; 'Validation error' lines [0, 0, 0, 0]"
+        },
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "os": "macOS 27.0 26A428",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1 (PyPI, Python API)",
+          "prompt_tokens": 150,
+          "decode_tokens": 1,
+          "prefill_tps": 131.8,
+          "ttft_s": 1.676,
+          "load_s": 16.8,
+          "peak_memory_mb": 51183.7,
+          "peak_memory_units": "MiB from /usr/bin/time -l maximum resident set size / 1048576",
+          "max_num_tokens": 4096,
+          "cache": "no (cache_dir :nocache)",
+          "runs": 3,
+          "date": "2026-09-29",
+          "num_threads": 8,
+          "timing": "quiet: no other process above 120 % CPU before or during the runs used (5 s sampling)",
+          "source": "One decision per fresh process: published fixture row game_pong_atari_up (one 256x256 image + one question, 150 prompt tokens), greedy, 1 output token; ttft_s = send-to-first-token wall, load_s = Engine constructor wall; medians of the uncontended runs [0, 1, 2] (all runs: ttft [1.515, 2.054, 1.676], engine [17.2, 16.8, 15.4], prefill tok/s [145.9, 84.2, 131.8], RSS GB [53.68, 53.67, 53.67], contended [False, False, False]); first token = upstream letter [True, True, True]; 'Validation error' lines [0, 0, 0]"
+        },
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "os": "macOS 27.0 26A428",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.1 (PyPI, Python API)",
+          "prompt_tokens": 150,
+          "decode_tokens": 1,
+          "prefill_tps": 810.7,
+          "ttft_s": 0.323,
+          "load_s": 29.2,
+          "peak_memory_mb": 15020.4,
+          "peak_memory_units": "MiB from /usr/bin/time -l maximum resident set size / 1048576",
+          "max_num_tokens": 4096,
+          "cache": "disk (cache folder written by a first cold run; warm runs)",
+          "runs": 3,
+          "date": "2026-09-29",
+          "timing": "quiet: no other process above 120 % CPU before or during the runs used (5 s sampling)",
+          "source": "One decision per fresh process: published fixture row game_pong_atari_up (one 256x256 image + one question, 150 prompt tokens), greedy, 1 output token; ttft_s = send-to-first-token wall, load_s = Engine constructor wall; medians of the uncontended runs [1, 2, 3] (all runs: ttft [0.278, 0.284, 0.323, 0.407], engine [28.3, 28.1, 30.4, 29.2], prefill tok/s [846.3, 843.0, 729.1, 810.7], RSS GB [15.83, 15.83, 15.75, 15.75], contended [False, False, False, False]); first token = upstream letter [True, True, True, True]; 'Validation error' lines [0, 0, 0, 0]"
+        },
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "os": "macOS 27.0 26A428",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.1 (PyPI, Python API)",
+          "prompt_tokens": 150,
+          "decode_tokens": 1,
+          "prefill_tps": 825.9,
+          "ttft_s": 0.291,
+          "load_s": 28.5,
+          "peak_memory_mb": 14915.5,
+          "peak_memory_units": "MiB from /usr/bin/time -l maximum resident set size / 1048576",
+          "max_num_tokens": 4096,
+          "cache": "no (cache_dir :nocache)",
+          "runs": 3,
+          "date": "2026-09-29",
+          "timing": "quiet: no other process above 120 % CPU before or during the runs used (5 s sampling)",
+          "source": "One decision per fresh process: published fixture row game_pong_atari_up (one 256x256 image + one question, 150 prompt tokens), greedy, 1 output token; ttft_s = send-to-first-token wall, load_s = Engine constructor wall; medians of the uncontended runs [0, 1, 2] (all runs: ttft [0.347, 0.28, 0.291], engine [30.2, 28.5, 28.1], prefill tok/s [656.2, 834.4, 825.9], RSS GB [15.63, 15.65, 15.64], contended [False, False, False]); first token = upstream letter [True, True, True]; 'Validation error' lines [0, 0, 0]"
+        }
+      ],
+      "known_issues": [
+        "LiteRT-LM's text-scoring call does not give option probabilities that agree with its own greedy decode on 0.17.1 (https://github.com/google-ai-edge/LiteRT-LM/issues/3561); read the letter logits with the reference readout.",
+        "Text-only prompts start at position 0 in the runtime; the decoder expects them at 65 (0-start moved probabilities by up to 0.0497 with one flip on 9 fixture questions). Send text-only requests through the reference readout.",
+        "Inputs other than 224x224, 256x240 or 256x256 get 64 image tokens instead of upstream's 70-475; on the published synthetic rows that moved upstream's own probabilities by up to 0.373 (30/32 argmax).",
+        "The runtime's own resize of non-256x256 images was not exercised; resize to 256x256 with PIL bicubic before sending."
+      ]
+    },
+    {
+      "file": "decider-2b-vision_int8.litertlm",
+      "size_bytes": 3171081088,
+      "sha256": "5fb2e19aa2066d2e3955431366bc572edb7abbc6037db53d4eaf4a4a4d0e7bd9",
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 356
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3201
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913348
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 511541472,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1996826448,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 608346896,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 50371456,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "dynamic int8 FULLY_CONNECTED weights + int8 CHANNELWISE EMBEDDING_LOOKUP (wi8fc) in the decoder and embedder; vision encoder and adapter fp16 float-casting; fp32 activation preference on the decoder",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.16.0",
+      "recommended": [
+        {
+          "platform": "android",
+          "backend": "gpu",
+          "reason": "Galaxy S26, one cold run: TTFT 0.56 s vs 1.22 s on the CPU, prefill 340.76 vs 136.68 tok/s; the GPU computes the int8 weights in float (Mac Metal readout: 52/53 argmax, max |dp| 0.032), while CPU probabilities move by up to 0.429. Engine creation 64.4 s vs 17.7 s, and MemAvailable fell to 751,960 kB during the run."
+        },
+        {
+          "platform": "android",
+          "backend": "cpu",
+          "reason": "Galaxy S26, one cold run: engine creation 17.7 s vs 64.4 s on the GPU and no GPU memory; the answer letter matched upstream on 6/6 rows, but CPU probabilities move by up to 0.429 (Mac readout), so use it for the argmax only."
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Tested on LiteRT-LM 0.17.1 (PyPI) on an Apple M4 Max, CPU and GPU (first token = upstream letter 12/12), and on a Galaxy S26 with litert_lm_advanced_main v0.16.0, CPU and GPU (first token = upstream letter 6/6 each).",
+          "One 256x256 image first in the prompt, one question per runtime request; the runtime returns the greedy letter, not option probabilities. Probabilities, text-only requests and several questions: reference/decider_litert.py (ai-edge-litert 2.2.0, numpy, Pillow, tokenizers).",
+          "Galaxy S26 GPU: all 7 decoder signatures fully delegated to OpenCL; process VmHWM 4,220,064 kB, but MemAvailable fell to 751,960 kB (GPU memory is not in VmHWM): close to the limit of a phone with MemTotal 11,389,756 kB."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (S4 kit)",
+          "prompt_tokens": 150,
+          "decode_tokens": 3,
+          "prefill_tps": 136.68,
+          "decode_tps": 8.11,
+          "ttft_s": 1.22,
+          "load_s": 17.7328,
+          "peak_memory_mb": 4329.76,
+          "peak_memory_units": "MiB from VmHWM kB / 1024",
+          "max_num_tokens": 4096,
+          "cache": "runtime default (folder next to the bundle), no caches before the run (cold)",
+          "cold": true,
+          "runs": 1,
+          "date": "2026-09-29",
+          "num_threads": 4,
+          "sampler_backend": "cpu",
+          "exit_code": 0,
+          "source": "One cold run of the published row game_pong_atari_level (one 256x256 image + one question), greedy, max 3 output tokens; first token C = upstream; thermal status 0 and no frequency cap before the run; load_s = Init Total (Init Conversation 1.99 s after it); decode_tps is informational (3 tokens)."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (S4 kit)",
+          "prompt_tokens": 150,
+          "decode_tokens": 3,
+          "prefill_tps": 340.76,
+          "decode_tps": 8.57,
+          "ttft_s": 0.56,
+          "load_s": 64.36657,
+          "peak_memory_mb": 4121.16,
+          "peak_memory_units": "MiB from VmHWM kB / 1024 (GPU memory not included; MemAvailable fell to 751,960 kB)",
+          "max_num_tokens": 4096,
+          "cache": "runtime default (folder next to the bundle), no caches before the run (cold)",
+          "cold": true,
+          "runs": 1,
+          "date": "2026-09-29",
+          "sampler_backend": "cpu",
+          "exit_code": 0,
+          "fully_delegated": true,
+          "source": "One cold run of the published row game_pong_atari_level, greedy, max 3 output tokens; first token C = upstream (stdout also carried the runtime's 'Loaded OpenCL library' line); decoder 7/7 signatures fully delegated to LITERT_CL; thermal status 0 and no frequency cap before the run; load_s = Init Total (Init Conversation 6.95 s after it); decode_tps is informational (3 tokens)."
+        }
+      ],
+      "known_issues": [
+        "CPU probabilities move: on the published image questions 51/53 argmax, max |dp| 0.429, p95 0.164 against upstream fp32 (Mac CPU readout), and they depend on the prefill chunk plan (max 0.233 with one padded chunk). Mac Metal readout: 52/53, max 0.032. Phone probabilities were not measured (the runtime returns text only).",
+        "LiteRT-LM's text-scoring call does not give option probabilities that agree with its own greedy decode on 0.17.1 (https://github.com/google-ai-edge/LiteRT-LM/issues/3561).",
+        "Text-only prompts start at position 0 in the runtime; the decoder expects them at 65. Send text-only requests through the reference readout.",
+        "Inputs other than 224x224, 256x240 or 256x256 get 64 image tokens instead of upstream's 70-475; on the published synthetic rows that moved upstream's own probabilities by up to 0.373 (30/32 argmax).",
+        "Each Galaxy S26 row is a single cold run; no Android probability-equivalence claim."
+      ]
+    }
+  ]
+}

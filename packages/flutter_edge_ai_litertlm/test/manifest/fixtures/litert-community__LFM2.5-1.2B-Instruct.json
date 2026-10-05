@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/LFM2.5-1.2B-Instruct",
-  "generated": "2026-08-24",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "LFM2.5-1.2B-Instruct",
@@ -19,18 +19,25 @@
           "start": "<think>",
           "end": "</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "LFM2.5-1.2B-Instruct_int4.litertlm",
-      "sha256": "a28b5c59ac204e2e51c1f98d2d6db6982f0e12da59a268fe498edcb33237e906",
+      "sha256": "96041e6c72b1d2e9b73a122870606bbf18a3819bf14c43c3f2b74685ed62c24d",
       "size_bytes": 736015744,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1856
+          "size_bytes": 2223
         },
         {
           "type": "ExecutorMetadataProto",
@@ -71,12 +78,12 @@
     },
     {
       "file": "LFM2.5-1.2B-Instruct_int4_gpu.litertlm",
-      "sha256": "36f7f0221bcc42c75291da1d7e3422901024a5b06b9bfa3c02d7feface04f70a",
+      "sha256": "97e6a9700208f59fce2ceb993cd6c18ea77ada8c2a940f68332004f38a404671",
       "size_bytes": 736220768,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1856
+          "size_bytes": 2223
         },
         {
           "type": "ExecutorMetadataProto",
@@ -115,6 +122,12 @@
           "platform": "ios",
           "backend": "cpu",
           "reason": "the Metal GPU engine fails on this model family at runtime (tracked upstream); CPU is verified"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): gpu decodes 54.5 tok/s against cpu's 40.46 (1.3x), prefill 1018.3 vs 79.6-86.5 tok/s, peak 618 vs 1332 MB, engine init 6.6 vs 4.4 s. Same-device CPU control taken - a measured win for gpu on decode. int4_gpu is the GPU-lineage export; on this handset's CPU it decodes 40 tok/s, level with the CPU-lineage int8 file (39-41 tok/s, same day, same harness), so the GPU is where the flagship class gains. Both backends answered the probe correctly"
         }
       ],
       "requirements": {
@@ -185,6 +198,38 @@
           "runs": 3,
           "date": "2026-08-12",
           "source": "ship-lane Pixel 8a bench log (CPU rows spread with thermal throttling); model card Performance table"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 205,
+          "decode_tokens": 159,
+          "prefill_tps": 1018.3,
+          "decode_tps": 54.5,
+          "ttft_s": 0.22,
+          "load_s": 6.6,
+          "peak_memory_mb": 618,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (6440 ops across 12 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 205,
+          "decode_tokens": 137,
+          "prefill_tps": "79.6-86.5",
+          "decode_tps": 40.46,
+          "ttft_s": "2.39-2.6",
+          "load_s": 4.4,
+          "peak_memory_mb": 1332,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
         }
       ],
       "known_issues": [
@@ -193,12 +238,12 @@
     },
     {
       "file": "LFM2.5-1.2B-Instruct_int8.litertlm",
-      "sha256": "e002a91545cec6328be2a86e9b8b4fccb2dd9dde7e6c8b29d730f915a0a697fe",
+      "sha256": "41c192feac3a028cfd35f4a0c5db2a70961dc388ecb4ad2cac9a094be0a078ea",
       "size_bytes": 1247091440,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1856
+          "size_bytes": 2223
         },
         {
           "type": "ExecutorMetadataProto",
@@ -217,6 +262,40 @@
       "quantization": "int8 linears only (wi8), fp32 activations (CPU-lineage export)",
       "backends": [
         "cpu"
+      ],
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 205,
+          "decode_tokens": 105,
+          "prefill_tps": "424.4-491.1",
+          "decode_tps": "38.98-40.96",
+          "ttft_s": "0.44-0.51",
+          "load_s": 1.9,
+          "peak_memory_mb": 1782,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 205,
+          "decode_tokens": 105,
+          "prefill_tps": "125.2-143.4",
+          "decode_tps": 20.3,
+          "ttft_s": "1.48-1.69",
+          "load_s": 7.9,
+          "peak_memory_mb": 1691,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
       ],
       "default_backend": "cpu",
       "min_runtime_version": "0.15.0",

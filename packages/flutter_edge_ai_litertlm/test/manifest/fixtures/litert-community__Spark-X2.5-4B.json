@@ -1,0 +1,243 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Spark-X2.5-4B",
+  "generated": "2026-09-21",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Spark-X2.5-4B",
+    "base_model": "XHToken/Spark-X2.5-4B",
+    "architecture": "Dense decoder (spark2_5 remote code, 36L, hidden 2560, 16 query / 4 KV heads of 256, sliding-window(512) x3 : full x1, per-head sigmoid attention-output gate, exact-GELU gated MLP, 131,072-entry tied vocab); reasoning model that works problems inside <think>...</think>, thought channel declared in bundle metadata and the think opener pre-filled by the bundle's Jinja generation prompt",
+    "parameters_b": 4.11,
+    "license": "apache-2.0",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Reasoning model: give it a generous output budget (>=2048; 3584 for math) - truncated mid-thought it produces no final answer. The declared thought channel routes reasoning out of the streamed answer and makes a thinking budget effective; enable_thinking=false renders the vendor's no-think prompt. Vendor sampling recommendation temperature 1.0 / top_p 0.95; all card numbers are greedy."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "file": "Spark-X2.5-4B_int4.litertlm",
+      "sha256": "ff4fd431693086e44d3c02c338791c90c7197068b06190e1cc2f6a655d83c4f4",
+      "size_bytes": 2482196400,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 3581
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2157741
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2141304992,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 338694064,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "export-time int4 blockwise-128 + OCTAV on linears, int8 embedding in its own section (EXTERNALIZE_EMBEDDER: tied vocab); prefer_activation_type fp32 declared in-bundle - GSM8K (same harness) 94 vs bf16 94 (paired: both 91, bf16-only 3, int4-only 3); 8Q 8/8 cpu + 8/8 gpu",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "measured on one Galaxy S26 (2026-09-07, 2 runs per cell): CPU 35-86 tok/s prefill / 5.5-5.6 decode at 3536 MB peak against GPU 43-56 / 4.9 at 1960 MB (full OpenCL delegation, 2233/2233 nodes; fp32 activations declared). Same-device control taken: the fp32 GPU path does not beat the CPU on Adreno, so CPU for speed; GPU is the lower-memory path (~1.6 GB less peak)"
+        }
+      ],
+      "min_runtime_version": "0.17.0",
+      "requirements": {
+        "platform_notes": [
+          "Same template / start_token / tokenizer notes as the int8 file; block-128 with the embedder in its own section (main section 1.994 GiB); iPhone 17 Pro (this shipped file) composite 8Q 7/8 Metal GPU (init 5.3 s, available-memory floor ~2.0 GB) + 7/8 CPU (init 9.0 s), the miss being the composite-format rhyme artifact"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 826.0,
+          "decode_tps": 53.6,
+          "ttft_s": 0.329,
+          "load_s": 3.74,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-07",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (every Spark eval finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK, answered 43 to 17+26 through the thought channel); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 117.8,
+          "decode_tps": 18.4,
+          "ttft_s": 2.237,
+          "load_s": 5.26,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-07",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (every Spark eval finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK, answered 43 to 17+26 through the thought channel); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q, Adreno)",
+          "os": "Android",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "43-56",
+          "decode_tps": "4.9-4.9",
+          "ttft_s": "3.98-5.21",
+          "load_s": 15.3,
+          "peak_memory_mb": 1960,
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold, no other load on the device; GPU rows only with full LITERT_CL delegation on every subgraph and zero blocking XNNPack, plus a generation check on the same file (answered 42 to 17+25 through the thought channel); the decode turn is the model's full thinking response (~3,900 tokens), so decode tok/s is a long-run figure"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q)",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "35-86",
+          "decode_tps": "5.5-5.6",
+          "ttft_s": "2.65-6.31",
+          "load_s": 2.8,
+          "peak_memory_mb": 3536,
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold, no other load on the device; generation verified on the same file (answered 42 through the thought channel); CPU prefill spreads with thermal state; the decode turn is the model's full thinking response"
+        }
+      ],
+      "known_issues": []
+    },
+    {
+      "file": "Spark-X2.5-4B_int8.litertlm",
+      "sha256": "9ee6d03137f7d62858c87f4bd41eb99c3801087e7f183b4e2a2a1318edf74e36",
+      "size_bytes": 4238081840,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 3581
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2157741
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 4235886384,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "export-time dynamic int8 on linears + embedding (dynamic_wi8_afp32); prefer_activation_type fp32 declared in-bundle (with the runtime's default fp16 GPU activations this file scored GSM8K 84 - the same weights on fp32 activations score 94) - GSM8K (n=100, greedy, 0-shot CoT, 3584 output tokens, own harness) 94 vs bf16 94 (paired: both 92, bf16-only 2, int8-only 2); 8Q 8/8 cpu + 8/8 gpu (bf16 8/8)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "on the Galaxy S26 (2026-09-07) the CPU path measured 65-102 tok/s prefill / 4.5-4.7 decode at 5553 MB peak; the GPU path loads with full OpenCL delegation (2236/2236 nodes) and answers the gate prompt, but its benchmark turn (a ~3,900-token thinking response at roughly 5 tok/s under fp32 activations) exceeded the 20-minute leg cap, so no GPU speed row exists - the int4 sibling is the Android file for this model"
+        }
+      ],
+      "min_runtime_version": "0.17.0",
+      "requirements": {
+        "platform_notes": [
+          "Tested on litert-lm 0.17.0 (macOS CLI + python API)",
+          "GPU runs with fp32 activations (declared in-bundle): under the runtime default fp16 the 36-layer decoder loses reasoning accuracy (GSM8K 84 vs 94 on the same weights); expect a larger GPU memory footprint than an fp16-activation file of the same size",
+          "Jinja prompt template carried verbatim (vendor format: default system block, every message wrapped <｜start▁of▁sentence｜>...<｜end▁of▁sentence｜>, generation prompt <|Bot|><think>); tool-call formatting not carried; stop id 1; KV budget 4096, 6 prefill signatures (1024, 256, 64, 16, 4, 1)",
+          "No start_token: add_bos_token is false and the template carries its own BOS per message",
+          "Single 4.24 GB TFLite section; loads and generates on the iPhone 17 Pro as well (this shipped fp32-activation file, G41DeviceTest harness with the Increased Memory Limit entitlement, iOS 27: composite 8Q 8/8 Metal GPU in 74 s wall, init 2.9 s warm / 18.8 s cold, available-memory floor ~2.6 GB; 8/8 CPU, init 13.2 s, floor ~4.6 GB)",
+          "Embeds the upstream HF tokenizer.json (byte-level BPE); engine-vs-tokenizers ids identical on 234/234 probe rows"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 783.9,
+          "decode_tps": 49.4,
+          "ttft_s": 0.347,
+          "load_s": 4.14,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-07",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (every Spark eval finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK, answered 43 to 17+26 through the thought channel); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 345.4,
+          "decode_tps": 19.5,
+          "ttft_s": 0.793,
+          "load_s": 27.03,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-07",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (every Spark eval finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK, answered 43 to 17+26 through the thought channel); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q)",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "65-102",
+          "decode_tps": "4.5-4.7",
+          "ttft_s": "2.30-3.49",
+          "load_s": 0.6,
+          "peak_memory_mb": 5553,
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold, no other load on the device; generation verified on the same file (answered 42 through the thought channel); CPU prefill spreads with thermal state; the decode turn is the model's full thinking response"
+        }
+      ],
+      "known_issues": []
+    }
+  ]
+}

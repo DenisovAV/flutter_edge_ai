@@ -1,0 +1,152 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Falcon-H1-1.5B-Instruct",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Falcon-H1-1.5B-Instruct — LiteRT-LM",
+    "base_model": "tiiuae/Falcon-H1-1.5B-Instruct",
+    "architecture": "Falcon-H1 is TII's fully-hybrid design: every one of the 24 layers runs a grouped-query attention branch and a Mamba2 selective-scan branch in parallel on the same input and sums them.",
+    "license": "other (falcon-llm-license)",
+    "parameters_b": 1.5,
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Falcon-H1-1.5B-Instruct_int8.litertlm",
+      "sha256": "ed700eeadf37f3ffe592077c648ab1c420944365d6be9c2b52846eb645f5ea82",
+      "size_bytes": 1725449600,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1595
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 6421
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1008278
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1724384640,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic on linears + embedding (convs and the scan stay float); fp32 activations declared for GPU",
+      "backends": [
+        "gpu",
+        "cpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.15",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary: GPU 20.81 tok/s decode / 208.8 prefill, peak 2398 MB, init 12.6 s (S4 GPU gate 2026-08-24, 1 run) against CPU 19.47-20.71 decode / 160.2-202.7 prefill, peak 2696 MB, init 2.9 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device CPU control taken: decode is a wash (within 10%); gpu is kept for its prefill advantage (time to first token), a deliberate choice rather than a decode win"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "GPU execution is verified on macOS (Metal), iPhone 17 Pro (Metal), Pixel 8a (Arm Mali, OpenCL) and Qualcomm Adreno (Galaxy S26).",
+          "On low-end Android the GPU buys prefill and time-to-first-token, not decode (decode is memory-bandwidth-bound; CPU reads int8 weights, the fp32-activation GPU path reads expanded ones).",
+          "GPU runs with fp32 activations (declared in the bundle) — expect a corresponding memory multiple over CPU.",
+          "Multi-length prefill signatures (1–1024) are exported so the runtime picks tight chunks; the bundle carries the tokenizer and the stock ChatML-style Falcon-H1 chat template.",
+          "Usage example runs the GPU backend with `--backend gpu --cache no`.",
+          "Not a measured row: card reports iPhone 17 Pro gpu prefill_tps 186.8, decode_tps 25.8, ttft_s 0.88 (Performance — On device table (iPhone 17 Pro, cold start, single runs); runtime/run count not stated)",
+          "Not a measured row: card reports iPhone 17 Pro cpu prefill_tps 50.3, decode_tps 15.5, ttft_s 3.16 (Performance — On device table (iPhone 17 Pro, cold start, single runs); runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1447,
+          "decode_tps": 102.9,
+          "ttft_s": 0.19,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: Performance — `litert-lm benchmark` table (Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 238,
+          "decode_tps": 33.7,
+          "ttft_s": 1.11,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: Performance — `litert-lm benchmark` table (Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 39.4,
+          "decode_tps": 3.4,
+          "ttft_s": 6.8,
+          "peak_memory_mb": 2500,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 212,
+          "decode_tokens": 108,
+          "prefill_tps": 208.8,
+          "decode_tps": 20.81,
+          "ttft_s": 1.06,
+          "load_s": 12.6,
+          "peak_memory_mb": 2398,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (41683 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 212,
+          "decode_tokens": 149,
+          "prefill_tps": "160.2-202.7",
+          "decode_tps": "19.47-20.71",
+          "ttft_s": "1.09-1.37",
+          "load_s": 2.9,
+          "peak_memory_mb": 2696,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
+      ],
+      "known_issues": [
+        "8-question sanity gate: CPU 7/8, GPU 6/8. The shared miss (\"17+25\" answered \"32\") is reproduced verbatim by the HF bf16 reference; the GPU-only miss (8×7) is a borderline int8 greedy flip; nothing degenerates.",
+        "Arithmetic at this scale is fragile in the base model itself; int8 adds borderline greedy flips on exactly those items."
+      ]
+    }
+  ]
+}

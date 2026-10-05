@@ -1,0 +1,300 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/granite-4.1-3b",
+  "generated": "2026-09-06",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "granite-4.1-3b",
+    "base_model": "ibm-granite/granite-4.1-3b",
+    "architecture": "Granite 4.1-3B is IBM's 3.4B-parameter dense instruct model (40 layers, hidden 2560, GQA 40:8, tied embeddings, 100k vocab), long-context and tool-calling capable, released April 2026.",
+    "parameters_b": 3.4,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "granite-4.1-3b_int4.litertlm",
+      "sha256": "ba60c191fd33b1ac9d1ab245d4a24fe81e1a520a0dd9720a435a9cc4773d80a9",
+      "size_bytes": 2191445936,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 493
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404724
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1930679632,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 259313584,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 blockwise-32 + OCTAV on linears, int8 embedding",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.16",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "midrange-2023+",
+          "backend": "gpu",
+          "reason": "the Android path measured on a Pixel 8a (Tensor G3): 7.07 tok/s decode on gpu; the same phone's cpu row decodes 6.98 tok/s; the repo's granite-4.1-3b_int8.litertlm decodes 3.86 tok/s on the same device and backend, so this file carries the class"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (12119 ops across 7 subgraphs) and a correct answer to the probe; 16.1 tok/s decode, engine init 14.1 s, peak 1394 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU; the repo's granite-4.1-3b_int8.litertlm decodes 11.18 tok/s on the same device and backend, so this file carries the class"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "int4 is the file to use on a phone: on Apple hardware it is both smaller and faster than int8.",
+          "Six prefill signatures (1024, 256, 64, 16, 4, 1) with a 4096-token KV budget; an eleven-signature build was killed by iOS during Metal init unless context was capped at 1024; this file creates its engine at the full 4096 on iPhone 17 Pro.",
+          "int4 carries the trimmed six-signature ladder and is the file to use on iOS.",
+          "Pixel 8a: GPU wins prefill (3.7x) and TTFT (3.3x), not decode (7.07 vs 6.98 tok/s); on Apple hardware the GPU wins across the board.",
+          "int4 beats int8 on the GPU on both platforms (1.2x decode on Metal, 1.8x on Mali); int8 wins CPU prefill (2.5x on Mac).",
+          "A 3.4B model on a mid-range phone is not a fast experience in absolute terms.",
+          "Android GPU: XNNPACK takes 1 of 4 nodes in decode_embedder and prefill_embedder_1024; the runtime accepts that split.",
+          "Embedder externalised so the tied 100352x2560 vocab table sits in its own section, clear of the ~2 GiB single-section mmap ceiling on iOS."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1241,
+          "decode_tps": 86.3,
+          "ttft_s": 0.23,
+          "load_s": 5.96,
+          "cache": "no",
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 104,
+          "decode_tps": 22.0,
+          "ttft_s": 3.01,
+          "load_s": 12.5,
+          "cache": "no",
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main built from the v0.16.0 tag",
+          "prefill_tps": 20.0,
+          "decode_tps": 7.07,
+          "ttft_s": 0.99,
+          "load_s": 32.5,
+          "runs": 1,
+          "source": "model card: Performance — Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_main built from the v0.16.0 tag",
+          "prefill_tps": 5.4,
+          "decode_tps": 6.98,
+          "ttft_s": 3.29,
+          "runs": 1,
+          "source": "model card: Performance — Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 11.6,
+          "decode_tps": 2.2,
+          "ttft_s": 25.0,
+          "peak_memory_mb": 3400,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 244,
+          "prefill_tps": 236.1,
+          "decode_tps": 16.07,
+          "ttft_s": 0.92,
+          "load_s": 14.1,
+          "peak_memory_mb": 1394,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (12119 ops across 7 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "iPhone 17 Pro CPU scores 7/8 on the sanity gate — the miss is the rhyme line in a single combined prompt, answered correctly when asked on its own.",
+        "int4 costs 4 GSM8K points vs int8/bf16 (84.0% vs 87.0% / 88.0%, n=100)."
+      ]
+    },
+    {
+      "file": "granite-4.1-3b_int8.litertlm",
+      "sha256": "97bd368d56b29740d52532abcc8c8d1fb0bf8e0828c226c39ed52d1ef4551193",
+      "size_bytes": 3831664560,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 493
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404724
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3570898192,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 259313584,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int8 dynamic on linears + embedding",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.16",
+      "requirements": {
+        "platform_notes": [
+          "On Android the int8 file runs fully delegated on a Galaxy S26 GPU at a 1476 MB peak (int4: 1394 MB); on Apple hardware int4 is smaller and faster.",
+          "int8 still carries the full eleven-signature prefill ladder (twelve GPU subgraphs on S26 vs int4's seven); card says int4 is the file to use on iOS.",
+          "Pixel 8a: GPU wins prefill (3.7x) and TTFT (3.3x), not decode (7.07 vs 6.98 tok/s); on Apple hardware the GPU wins across the board.",
+          "int4 beats int8 on the GPU on both platforms (1.2x decode on Metal, 1.8x on Mali); int8 wins CPU prefill (2.5x on Mac).",
+          "A 3.4B model on a mid-range phone is not a fast experience in absolute terms.",
+          "Android GPU: XNNPACK takes 1 of 4 nodes in decode_embedder and prefill_embedder_1024; the runtime accepts that split.",
+          "Embedder externalised so the tied 100352x2560 vocab table sits in its own section, clear of the ~2 GiB single-section mmap ceiling on iOS."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1221,
+          "decode_tps": 71.8,
+          "ttft_s": 0.24,
+          "load_s": 5.19,
+          "cache": "no",
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 257,
+          "decode_tps": 20.5,
+          "ttft_s": 3.06,
+          "load_s": 43.2,
+          "cache": "no",
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main built from the v0.16.0 tag",
+          "prefill_tps": 15.5,
+          "decode_tps": 3.86,
+          "ttft_s": 1.36,
+          "load_s": 65.2,
+          "runs": 1,
+          "source": "model card: Performance — Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 12.6,
+          "decode_tps": 1.7,
+          "ttft_s": 20.9,
+          "peak_memory_mb": 4900,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 275,
+          "prefill_tps": 233.4,
+          "decode_tps": 11.18,
+          "ttft_s": 0.96,
+          "load_s": 11.5,
+          "peak_memory_mb": 1476,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (21039 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 202,
+          "decode_tokens": 306,
+          "prefill_tps": "67.6-75.5",
+          "decode_tps": 8.54,
+          "ttft_s": "2.79-3.11",
+          "load_s": 6.4,
+          "peak_memory_mb": 4831,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-06",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset"
+        }
+      ],
+      "known_issues": [
+        "int8 carries the full eleven-signature ladder; an eleven-signature build of these weights was killed by iOS during Metal initialisation unless the app capped the context at 1024 — the card says int4 is the file to use on iOS. No iOS verification is given for int8."
+      ]
+    }
+  ]
+}

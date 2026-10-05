@@ -942,7 +942,23 @@ void main() {
       expect(m.declaredChannels.length, 2);
       expect(m.declaredChannels[1].name, 'tool_call');
       expect(m.declaredChannels[0].isReasoning, isTrue);
-      expect(lfm.declaredChannels, isEmpty);
+      // "absent" is checked on an inline manifest: the fixtures are real
+      // shipped manifests and may declare channels (LFM2.5-1.2B-Instruct
+      // does in the 2026-10-05 snapshot).
+      final bare = LitertlmManifest.fromJson({
+        'manifest_schema': '0.1.0',
+        'repo': 'test/no-channels',
+        'generated': '2026-08-27',
+        'model': {'display_name': 'Bare'},
+        'variants': [
+          {
+            'file': 'b.litertlm',
+            'quantization': 'q',
+            'backends': ['cpu'],
+          },
+        ],
+      });
+      expect(bare.declaredChannels, isEmpty);
     });
   });
 }

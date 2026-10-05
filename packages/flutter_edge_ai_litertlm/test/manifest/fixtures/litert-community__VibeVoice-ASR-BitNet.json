@@ -1,0 +1,147 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/VibeVoice-ASR-BitNet",
+  "generated": "2026-09-04",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "VibeVoice-ASR-BitNet (speech-to-text LLM, 24 kHz audio in)",
+    "base_model": "microsoft/VibeVoice-ASR-BitNet",
+    "architecture": "VibeVoice-ASR: σ-VAE acoustic encoder + semantic encoder (SEANet/ConvNeXt-1d, 24 kHz -> 7.5 Hz latents) -> projector -> Qwen2.5-1.5B-shaped BitNet (ternary) LM; LiteRT-LM generic audio path (raw-waveform frames, no mel)",
+    "parameters_b": 2.2,
+    "license": "mit",
+    "context_length": 2048,
+    "capabilities": {
+      "vision": false,
+      "audio": true,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "VibeVoice-ASR-BitNet.litertlm",
+      "sha256": "5ca907b0343d3e6bd9ec3dbf8aecbcc99b733633ef007a78a7e0f3502010af1b",
+      "size_bytes": 1983019248,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1648
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2141931
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 237024176,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 792689088,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 951122160,
+          "model_type": "tf_lite_audio_encoder_hw"
+        }
+      ],
+      "quantization": "LM: per-tensor ternary weights (VibeASR.cpp absmean, applied at conversion) stored as int4 blockwise-128 min-max (exact for a ternary tensor), int8 embedding; audio encoder: int8 dynamic on linears, fp32 convs, 30 s (225-frame) window",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.16.1",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "LM on Metal: 2045 tok/s prefill / 139 tok/s decode vs 357 / 59 on CPU; the audio encoder stays on CPU (audio_backend cpu) — on Metal/WebGPU the 30 s window exceeds the 65535 workgroup dispatch limit"
+        },
+        {
+          "platform": "android",
+          "backend": "gpu",
+          "reason": "Galaxy S26: LM on OpenCL 652 tok/s prefill / 36 tok/s decode vs 163 / 35 on CPU, transcripts match the Mac GPU run; the audio encoder must stay on CPU (audio_backend cpu) — on the GPU delegate it returns an empty transcript"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 3227,
+        "platform_notes": [
+          "Audio only through the runtime's generic audio path: send the clip as an audio content item (wav/mp3/flac; any sample rate — the engine resamples to 24 kHz) plus the text 'This is a X.XX seconds audio, please transcribe it.' (X.XX = clip length); with no text the bundle's template sends 'Please transcribe it.' (+0.9 pp WER on the fixture set)",
+          "audio_backend must be cpu (--audio_backend=cpu / audio_backend=CPU()); the LM may run on gpu",
+          "The encoder window is 30 s; longer clips are chunked by the engine with a context reset at each 30 s boundary",
+          "Accuracy: 20 LibriSpeech dev-clean clips (448 words): WER 2.68 % on macOS CPU and 2.46 % LM-on-GPU (fp32 PyTorch reference 2.68 %), 3.12 % Galaxy S26 CPU, 2.46 % Galaxy S26 LM-on-GPU; vendor card Libri-clean 2.41 % (full test set, VibeASR.cpp)",
+          "Peak private footprint on Galaxy S26: 3227 MB CPU/CPU, 2268 MB LM-on-GPU (--report_peak_memory_footprint, 5.9 s clip)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 357.33,
+          "decode_tps": 59.29,
+          "ttft_s": 0.81,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-04",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --backend cpu (text prompt; LM only)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 2044.72,
+          "decode_tps": 138.57,
+          "ttft_s": 0.13,
+          "load_s": 1.4,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-04",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --backend gpu (text prompt; LM only; rested >= 300 s)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 264,
+          "prefill_tps": 163.01,
+          "decode_tps": 35.43,
+          "ttft_s": 1.65,
+          "peak_memory_mb": 3227,
+          "runs": 1,
+          "date": "2026-09-04",
+          "source": "--benchmark with a 264-token text prompt, one reading (LM only)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 264,
+          "prefill_tps": 652.54,
+          "decode_tps": 36.12,
+          "ttft_s": 0.43,
+          "peak_memory_mb": 2268,
+          "runs": 1,
+          "date": "2026-09-04",
+          "source": "--benchmark with a 264-token text prompt, one reading (LM only; audio encoder on CPU)"
+        }
+      ],
+      "known_issues": [
+        "Audio encoder does not run on the GPU delegates: on Metal/WebGPU the 30 s window dispatches 90001+ workgroups per stem kernel (limit 65535); on Adreno (OpenCL, all 1857 nodes delegated) the fp16 path returns an empty transcript; keep audio_backend=cpu",
+        "Audio placeholder tokens <|object_ref_start|>/<|object_ref_end|>/<|box_start|> are added to the bundled tokenizer.json (ids 151646/151647/151648, the ids the model was trained with); the upstream tokenizer.json has no string for them"
+      ]
+    }
+  ]
+}

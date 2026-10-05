@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/VibeThinker-3B",
-  "generated": "2026-08-29",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "VibeThinker-3B (LiteRT-LM)",
@@ -23,18 +23,25 @@
           "start": "<think>",
           "end": "</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "model.litertlm",
-      "sha256": "df27fe62ddcec6ef8220bbd7d6998a65cff550719dbc4eeb7d26a5056f4f8c18",
+      "sha256": "ea1838a7f9307815be7a28f86ef182d007d2d47423787e75584a4d48d541aa98",
       "size_bytes": 2057106352,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1318
+          "size_bytes": 1701
         },
         {
           "type": "HF_Tokenizer_Zlib",
@@ -57,6 +64,14 @@
         "gpu"
       ],
       "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (3055 ops across 2 subgraphs) and a correct answer to the probe; 14.6 tok/s decode, engine init 11.2 s, peak 1067 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Context (KV cache) 4096",
@@ -95,6 +110,29 @@
           "runs": 3,
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 3894,
+          "prefill_tps": 286.1,
+          "decode_tps": 14.55,
+          "ttft_s": 0.77,
+          "load_s": 11.2,
+          "peak_memory_mb": 1067,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3055 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 8 GB)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main v0.16.0 (tag-pinned) with the v0.16.0 prebuilt android_arm64 libraries, OpenCL",
+          "runs": 1,
+          "date": "2026-08-17",
+          "source": "Android GPU re-gate: full delegation (1603/1603 prefill / 1452/1452 decode nodes, zero rejections); generates; the factual probe was answered wrongly in the same shape on CPU and GPU (off-domain for this math model), so the backend is verified and the quality is the model's. Gate only - no speed row."
         }
       ],
       "known_issues": [

@@ -1,0 +1,149 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Phi-4-mini-reasoning",
+  "generated": "2026-09-21",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Phi-4-mini-reasoning",
+    "base_model": "microsoft/Phi-4-mini-reasoning",
+    "architecture": "Phi-4-mini-reasoning is a dense 3.8B **math/reasoning model** from Microsoft (implemented as `Phi3ForCausalLM`, 32 layers) — it solves problems with a `<think>…</think>` chain-of-thought, then the answer.",
+    "parameters_b": 3.8,
+    "license": "mit",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "file": "model.litertlm",
+      "sha256": "0e6b9daeeb45dc4b9d5ce65d09985a6ad8e861418f00fa658f74ea200976225f",
+      "size_bytes": 2783974384,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1634
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3261392
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2161254704,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 619402224,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "blockwise-32 int4 + OCTAV, embeddings INT8, KV cache 4096, externalize_embedder=True",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (3227 ops across 2 subgraphs) and a correct answer to the probe; 11.8 tok/s decode, engine init 22.4 s, peak 1334 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Reasoning model: run with max_tokens >= 2048 or it is cut off before the answer (quality numbers measured at 2048).",
+          "Android Gallery: choose the GPU backend and raise max-tokens to >= 2048.",
+          "Android Gallery 1.0.15+ supports .litertlm; 1.0.16+ imports directly from Hugging Face.",
+          "Android GPU: XNNPACK takes 1 of 4 nodes in decode_embedder and prefill_embedder_128; the runtime accepts that split.",
+          "Mac CPU benchmark column is noisy (about ±7%); GPU rows repeat within about 1%.",
+          "Restored default system prompt adds 15 prefill tokens to conversations with no system message; TTFT grows by that much, per-token speed unchanged.",
+          "Bundle declares the reasoning channel (thought, <think>…</think>); LiteRT-LM returns reasoning in channels[\"thought\"] and thinking_token_budget takes effect.",
+          "Same bundle runs on macOS / Linux / Windows with the LiteRT-LM CLI."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 113,
+          "decode_tps": 19.8,
+          "ttft_s": 2.62,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1168,
+          "decode_tps": 82.8,
+          "ttft_s": 0.24,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 14.1,
+          "decode_tps": 1.6,
+          "ttft_s": 21.1,
+          "peak_memory_mb": 4200,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 198,
+          "decode_tokens": 985,
+          "prefill_tps": 205.6,
+          "decode_tps": 11.82,
+          "ttft_s": 1.05,
+          "load_s": 22.4,
+          "peak_memory_mb": 1334,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3227 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "iOS: ~2.6 GB bundle sits near the iOS memory ceiling; 'embedding lookup model is not initialized' is a low-memory symptom — reboot the phone and reload.",
+        "Accuracy figures were measured on the previous file (before the 2026-08-28 start_token and 2026-08-29 default-system-prompt metadata fixes) and have not been re-measured.",
+        "int4 block 32 scores 81.0% GSM8K vs 89.0% bf16 (−8 pt); block-128 int4 dropped to 74% and degenerated on some prompts, so only block 32 is published."
+      ]
+    }
+  ]
+}

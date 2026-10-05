@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/granite-4.2-3b",
-  "generated": "2026-09-01",
+  "generated": "2026-09-15",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "granite-4.2-3b",
@@ -23,18 +23,25 @@
           "start": "<think>",
           "end": "</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "granite-4.2-3b_int4.litertlm",
-      "sha256": "2abaaca65ecd4cf13cd0acd594cec53d48cae1ef975e30bfa898a7d2f6e7dbc0",
+      "sha256": "9859901f6050df5c4616e31462643b76d0aa2bd395a8863cb6162495c1ef517d",
       "size_bytes": 2190708656,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 388
+          "size_bytes": 5087
         },
         {
           "type": "HF_Tokenizer_Zlib",
@@ -147,12 +154,12 @@
     },
     {
       "file": "granite-4.2-3b_int8.litertlm",
-      "sha256": "3e5a0dd0c4eff06a50997e9966db9fee7d20e1c34cd04c7b5755c755339402a6",
+      "sha256": "c7dac8d5e44ef51157008dc6657e05517b6b31d15212f408a663fff3f9dc997a",
       "size_bytes": 3761622960,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 388
+          "size_bytes": 5087
         },
         {
           "type": "HF_Tokenizer_Zlib",

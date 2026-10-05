@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "mlboydaisuke/Mordant-3B-Think-LiteRT",
-  "generated": "2026-08-25",
+  "generated": "2026-09-22",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Mordant-3B-Think",
@@ -19,18 +19,25 @@
           "start": "<think>",
           "end": "</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "Mordant-3B-Think_int8.litertlm",
-      "sha256": "85205709015e412915ca86ca1e790177f204d438fbee288317b2c7cc2deb484e",
+      "sha256": "315776fa9c1e4ae579f4632f0b4a83d185e80964b72dcace727f1ee724dc32f6",
       "size_bytes": 3762196400,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1816
+          "size_bytes": 2183
         },
         {
           "type": "HF_Tokenizer_Zlib",
@@ -53,6 +60,14 @@
         "gpu"
       ],
       "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): gpu decodes 9.59-10.12 tok/s against cpu's 7.72 (1.3x), prefill 233.8 vs 62.9-97.3 tok/s, peak 1047 vs 4573 MB, engine init 14.1 vs 5.8 s. Same-device CPU control taken - a measured win for gpu on decode. A thinking model decodes for hundreds of tokens before it answers (487-503 here), so decode speed dominates; the GPU also peaks at 0.8-1.0 GB against 4.6 GB on the CPU, at the cost of a 7.5-14 s engine init. The answer was verified through the thought channel on both backends"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Requires litert-lm >= 0.16",
@@ -91,6 +106,38 @@
           "runs": 3,
           "date": "2026-08-25",
           "source": "litertlm-convert reports/shiplogs_20260825/bench_mordant_tashkeel.log; backend gated on a real generation first"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 206,
+          "decode_tokens": 487,
+          "prefill_tps": 233.8,
+          "decode_tps": "9.59-10.12",
+          "ttft_s": 0.98,
+          "load_s": 14.1,
+          "peak_memory_mb": 1047,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (12119 ops across 7 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 206,
+          "decode_tokens": 503,
+          "prefill_tps": "62.9-97.3",
+          "decode_tps": 7.72,
+          "ttft_s": "2.25-3.4",
+          "load_s": 5.8,
+          "peak_memory_mb": 4573,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
         }
       ],
       "known_issues": []

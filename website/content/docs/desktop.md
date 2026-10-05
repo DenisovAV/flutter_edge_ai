@@ -53,11 +53,13 @@ and iOS use the same `LiteRtLmFfiClient` against the same C API. Only the dynami
 library loading sequence differs per platform.
 
 <Warning>
+
 **Model format (LiteRT-LM engine):** the LiteRT-LM engine on desktop accepts only
 `.litertlm` files. MediaPipe `.bin` / `.task` models used on web won't load on
 desktop. See [litert-community on Hugging Face](https://huggingface.co/litert-community)
 for compatible models. (The [ONNX engine](/docs/onnx) uses its own `.onnx` model
 directories instead.)
+
 </Warning>
 
 ## Supported platforms
@@ -72,13 +74,16 @@ directories instead.)
 | Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc requirement |
 
 <Warning>
+
 **Fixed in litertlm 1.4.0.** On litertlm 1.2.0–1.3.1, Windows **discrete GPUs**
 crash on `PreferredBackend.gpu`. Upgrade to 1.4.0; on the affected versions use
 `PreferredBackend.cpu` or `.npu`. macOS/Linux GPU and Windows CPU/NPU were
 never affected.
+
 </Warning>
 
 <Info>
+
 **Windows NPU.** `PreferredBackend.npu` on Windows requires **Intel
 LunarLake/PantherLake** silicon — the Windows native archive ships
 `LiteRtDispatch.dll` + the OpenVino runtime + TBB to drive it. On any other
@@ -89,6 +94,7 @@ Run **Gemma 4** there. On the Intel NPU a Gemma 3 bundle loses every prefill
 chunk after the first — the reply is fluent, answers from the opening of your
 prompt and never mentions the rest, with no error raised
 ([LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508)).
+
 </Info>
 
 ## Requirements
@@ -329,10 +335,12 @@ sudo apt install nvidia-driver-535-server
 ```
 
 <Warning>
+
 Mesa's `llvmpipe` software fallback caps `maxStorageBufferRange` at 128 MB, which
 is below Gemma 4's per-buffer requirement — Gemma 4 will not run on `llvmpipe`.
 Install a vendor driver before running on GPU. For headless / server-side use,
 `Xvfb` is enough as a fake display surrogate.
+
 </Warning>
 
 ## Model lifecycle
@@ -406,11 +414,13 @@ on `getActiveModel(...)`.
 ### `randomSeed` / `temperature` / `topK` / `topP` — only the first session's values apply
 
 <Warning>
+
 **Only the first generation on an engine sets the sampler.** Every later session
 on that same engine keeps those values, whatever it asks for. Upstream defect
 ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/issues/2080),
 open), reproducing on v0.14.0, v0.15.0 and v0.16.0 on CPU as well as GPU, and on
 v0.17.0 (checked on CPU).
+
 </Warning>
 
 `topK` defaults to `1`, which is greedy — so the common shape is: an app loads a
@@ -473,10 +483,12 @@ back to CPU. Verify `dxcompiler.dll` and `dxil.dll` are next to your `app.exe`
 redistributable is not the cause — look at the GPU driver instead.
 
 <Warning>
+
 On a Windows **discrete GPU** with litertlm 1.2.0–1.3.1, GPU also crashes for a
 separate reason — a Bazel define we passed had been removed upstream, so the
 runtime linked statically. Fixed in 1.4.0. See
 [Known limitations](#known-limitations).
+
 </Warning>
 
 ### Model file not found

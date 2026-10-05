@@ -15,10 +15,12 @@ Dart's [`skills` CLI](https://dart.dev/blog/skills-cli-1-0-bundle-and-distribute
 copies them into your project, where your assistant picks them up.
 
 <Info>
+
 Not to be confused with <a href="/docs/agent">Agent Skills</a> — the
 <code>flutter_edge_ai_agent</code> package, which gives the <em>on-device model</em>
 skills to run. The skills on this page teach <em>your coding assistant</em> to
 use flutter_edge_ai.
+
 </Info>
 
 ## Install

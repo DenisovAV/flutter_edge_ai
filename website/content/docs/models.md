@@ -56,6 +56,7 @@ probe (`BuiltInAi.availability()` / `BuiltInAi.ensureReady()`), and fallback
 guidance.
 
 <Info>
+
 `ModelFileType` is what selects the engine — it is **not** inferred from the file
 name. `installModel` defaults it to `ModelFileType.task`, so declare it
 explicitly: `ModelFileType.litertlm` for `.litertlm` files (omitting it routes the
@@ -63,6 +64,7 @@ model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 `.task`, `ModelFileType.binary` for `.bin` and `.tflite`, `ModelFileType.onnx`
 for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 `ModelFileType.builtIn` for OS-provided models.
+
 </Info>
 
 ### Format by platform
@@ -131,6 +133,7 @@ arrive inside the answer as ordinary text and are not stripped. See
 [Thinking Mode](/docs/thinking-mode).
 
 <Warning>
+
 † **TranslateGemma is CPU-only for now.** Google hasn't released a
 mobile/desktop `.litertlm` bundle
 ([HF discussion #5](https://huggingface.co/google/translategemma-4b-it/discussions/5)).
@@ -162,6 +165,7 @@ M-series Macs). If you are converting it yourself, **AI Edge Quantizer** is the
 supported route today — the `litert-lm` quantization CLI announced in that thread
 never shipped — with published recipes and Model Explorer for the layer regexes
 ([maintainer's pointers](https://github.com/google-ai-edge/LiteRT-LM/issues/1748#issuecomment-4475268373)).
+
 </Warning>
 
 ## ModelType reference
@@ -180,10 +184,12 @@ When installing models, specify the correct `ModelType`:
 | **General** | `ModelType.general` | FastVLM 0.5B, SmolLM 135M, LFM2.5 230M, SmolLM3 3B, Phi-4 Mini Reasoning, Qwen2-VL 2B, SmolVLM2 500M, LLaVA-OneVision 0.5B |
 
 <Info>
+
 Gemma 4 (`ModelType.gemma4`) and FunctionGemma on a `.litertlm` route their native
 tool-call tokens through the LiteRT-LM SDK's chat-template path. For Gemma 3 and
 earlier, keep `ModelType.gemmaIt`; a `.task` FunctionGemma keeps the text format
 flutter_edge_ai renders itself.
+
 </Info>
 
 **Usage example:**
@@ -332,9 +338,11 @@ The resolver lives in the engine package — `LitertlmManifestResolver` in `flut
 | **FileSource** | Native (no Web) | ⚠️ End only | ❌ No | ❌ N/A | User-selected files (file picker) |
 
 <Info>
+
 Resume after interruption is server-dependent and **not supported by the
 HuggingFace CDN** — flutter_edge_ai uses smart retry logic with exponential
 backoff and automatic restart instead. See [Troubleshooting](/docs/troubleshooting).
+
 </Info>
 
 ### Android foreground service (large downloads)

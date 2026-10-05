@@ -17,3 +17,5 @@ analyzer:
     deprecated_member_use: info
     deprecated_member_use_from_same_package: info
     asset_directory_does_not_exist: info
+  exclude:
+    - build/**

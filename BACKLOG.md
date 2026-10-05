@@ -154,24 +154,26 @@ VA-10, then VA-8 and VA-12.
 ### VA-1.1 Engine bootstrap (P0)
 
 - **VA-1.1.1** `AdvisorModelService` wrapping initialize, install, `getActiveModel`,
-  session lifecycle; the rest of the app never touches the SDK.
+  session lifecycle; the rest of the app never touches the SDK. **done** behind an
+  `EdgeAiGateway` seam with a fake for tests; chat session wiring pending.
 - **VA-1.1.2** full conversation flow works in airplane mode once a model is installed.
 
 ### VA-1.2 Catalog and switching (P1)
 
 - **VA-1.2.1** As a buyer, I want to choose from a short list of models with size, capability
-  and device fit, and switch without restarting. (TQ7)
-- **VA-1.2.2** OS built-in models offered when the availability probe succeeds. (TQ9,
-  documented option)
+  and device fit, and switch without restarting. **catalog, Models screen and switching
+  done**; device-fit check pending. (TQ7)
+- **VA-1.2.2** OS built-in models offered when the availability probe succeeds. Documented
+  only; the Fold 4 has no AICore (TQ42). (P2)
 - **VA-1.2.3** two-model mode (extractor + narrator) behind the same session interface.
   (P2, TQ8)
 
 ### VA-1.3 OTA model delivery (P1)
 
 - **VA-1.3.1** As a buyer, I want download with progress, free-space check, retry and
-  checksum verification.
-- **VA-1.3.2** As a buyer, I want in-app Hugging Face token entry for gated models, with
-  Qwen3 as the no-token path. (TQ10)
+  checksum verification. **progress, cancel, retry done**; free-space and checksum pending.
+- **VA-1.3.2** As a buyer, I want in-app Hugging Face token entry for gated models or a
+  private mirror. **done** (secure storage). Neither catalog model needs one.
 - **VA-1.3.3** As a maintainer, I want a remote model manifest (id, size, SHA-256, URL,
   minimum RAM, capabilities) hosted at `motormind.sirisdevelopment.com`, so models can be
   added or mirrored without an app release. (TQ31)
@@ -308,7 +310,8 @@ VA-10, then VA-8 and VA-12.
   storage for the token). (TQ21)
 - **VA-7.1.2** one-action data wipe.
 - **VA-7.1.3** Firebase Analytics, anonymous and opt-in, event list disclosed in the gate
-  and terms; no free text, no financial values. (Q21, Q33)
+  and terms; no free text, no financial values. **plumbing done** (no-op unless
+  `MOTORMIND_ANALYTICS` is defined; parameter allow list); project config pending (Q21, Q33)
 - **VA-7.1.4** debug network audit; test fails on unexpected hosts. (TQ22)
 
 ---

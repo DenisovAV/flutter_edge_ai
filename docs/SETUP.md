@@ -108,8 +108,58 @@ Run on a device or arm64 emulator:
 cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind" && flutter run
 ```
 
-## 7. Hugging Face token (for Gemma models)
+## 7. Models: no token needed
 
-Gemma downloads need a Hugging Face account that has accepted the Gemma license, and a
-read token. The app will ask for it on first download and store it in secure storage. Never
-commit it. Qwen3 needs no token.
+Both catalog models are `.litertlm` bundles from the public `litert-community` Hugging Face
+organization, which is **not gated**:
+
+| Model | Repo | File | Size |
+|---|---|---|---|
+| Gemma 4 E2B (default) | `litert-community/gemma-4-E2B-it-litert-lm` | `gemma-4-E2B-it.litertlm` | 2.59 GB |
+| Qwen3 0.6B (light) | `litert-community/Qwen3-0.6B` | `Qwen3-0.6B.litertlm` | 0.61 GB |
+
+The app downloads them itself (Models screen) with progress, retry and an Android
+foreground service. A Hugging Face token is only needed for gated repos or a private mirror;
+the key icon on the Models screen stores one in secure storage.
+
+**Do not use `google/gemma-4-E2B`.** That repo is the raw training checkpoint
+(`model.safetensors`, 10 GB) and cannot be loaded by LiteRT-LM. A copy of it was downloaded
+to `~/.cache/huggingface/hub/models--google--gemma-4-E2B/` on 2026-10-04 and can be deleted.
+
+To fetch a bundle on the Mac (for `adb push` to an emulator, or to seed a self-hosted
+mirror), the `hf` CLI is installed via pipx:
+
+```bash
+hf download litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm --local-dir ~/models/motormind
+```
+
+## 8. Firebase (store flavor only)
+
+Installed 2026-10-04: Firebase CLI 15.32.1 via Homebrew (`/opt/homebrew/bin/firebase`) and
+FlutterFire CLI 1.4.1 (`~/.pub-cache/bin`, now on PATH via `~/.zshrc`). The "Firebase CLI
+not installed" message came from FlutterFire because the CLI genuinely was not installed;
+an earlier `npm install -g` would have needed `sudo` on this Mac because `/usr/local/lib` is
+root-owned.
+
+One-time, interactive (needs your Google account in a browser):
+
+```bash
+firebase login
+```
+
+Create a project named `motormind` in the Firebase console (or `firebase projects:create
+motormind-<suffix>`), then generate the platform config into the app:
+
+```bash
+cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind" && flutterfire configure --project=<your-project-id> --platforms=android,ios --android-package-name=com.sirisdevelopment.motormind --ios-bundle-id=com.sirisdevelopment.motormind
+```
+
+That writes `lib/firebase_options.dart`, `android/app/google-services.json` and
+`ios/Runner/GoogleService-Info.plist`. They identify the project and are not secrets, but
+they are per-project, so they are git-ignored until the store flavor exists.
+
+Analytics is compiled in only when the build passes the flag; the demo flavor ships a no-op:
+
+```bash
+flutter run --dart-define=MOTORMIND_ANALYTICS=true
+```

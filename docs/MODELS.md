@@ -24,14 +24,14 @@ diagnostics screen exists (VA-1.4).
 
 | Model | File | Size | Tool calls | Thinking | Vision | Notes |
 |---|---|---|---|---|---|---|
-| **Gemma 4 E2B** | `.litertlm` | 2.4 GB | native | yes | yes | Default. Best extraction and narration of the small set; needs ~4 GB free RAM. Gated on Hugging Face. |
+| **Gemma 4 E2B** | `.litertlm` | 2.6 GB | native | yes | yes | Default. Best extraction and narration of the small set; needs ~4 GB free RAM. Public `litert-community` repo, no token. |
 | Gemma 4 E4B | `.litertlm` | 4.3 GB | native | yes | yes | Better, but 6 GB+ free RAM. Fold 4 (12 GB) and iPhone 15 Pro (8 GB) can run it; most phones cannot. Offer as "high quality" only when the device qualifies. |
 | **Qwen3 0.6B** | `.litertlm` | 586 MB | parsed | yes | no | "Light" option and the no-token path. Expect weaker extraction on messy sentences; the golden dataset will say by how much. |
 | FunctionGemma 270M | `.litertlm` | 284 MB | native | no | no | Extraction specialist. Ends its turn at the call and does not narrate well, so it only works in a two-model configuration (extract with this, narrate with another). Experiment, not default. |
 | Qwen 2.5 1.5B | `.task` | 1.6 GB | parsed | no | no | Older MediaPipe path; no desktop. Not planned. |
 | Phi-4 Mini | `.litertlm` | 3.9 GB | parsed | no | no | Strong reasoning; too big for the mobile story. Desktop testing only, if at all. |
 | OS built-in: Apple Foundation Models | none | 0 | varies | no | no | iOS 26+. No download, no gating. Tool-call reliability unverified in this SDK. Worth testing on the iPhone 15 Pro. |
-| OS built-in: Gemini Nano | none | 0 | varies | no | no | Needs AICore, which ships on recent Pixel and Galaxy S flagships. The Galaxy Z Fold 4 is almost certainly not on the list; verify in Settings before counting on it. |
+| OS built-in: Gemini Nano | none | 0 | varies | no | no | Needs AICore, which ships on recent Pixel and Galaxy flagships. Confirmed absent on the Galaxy Z Fold 4 (2026-10-04), so documented only. |
 
 Models not in the table (SmolLM, LFM2.5, Gemma 3 1B/270M, vision models) lack tool calling
 and are not candidates.
@@ -64,8 +64,9 @@ update. So models are downloaded after install:
 1. The app ships a **model manifest**: id, display name, size, SHA-256, source URL, minimum
    free RAM, capability flags.
 2. Download with progress, free-space check, retry, and checksum verification.
-3. Source URLs can point at Hugging Face (needs a token for Gemma) or a self-hosted mirror
-   (your web server; needs HTTPS and range requests for resume). The manifest can be fetched
+3. Source URLs point at the public `litert-community` repos on Hugging Face (no token for
+   either catalog model; the raw `google/gemma-4-E2B` checkpoint is not usable) or at a
+   self-hosted mirror (your web server; needs HTTPS and range requests for resume). The manifest can be fetched
    remotely so new models appear without an app release.
 
 This is the "OTA binary delivery" story from the resume, made concrete.

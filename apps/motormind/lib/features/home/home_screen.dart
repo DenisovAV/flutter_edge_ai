@@ -16,6 +16,12 @@ class HomeScreen extends StatelessWidget {
         title: const Text('Motormind AI'),
         actions: [
           IconButton(
+            key: const Key('home-models'),
+            tooltip: 'Models',
+            icon: const Icon(Icons.memory_outlined),
+            onPressed: () => context.push(Routes.models),
+          ),
+          IconButton(
             key: const Key('home-disclosures'),
             tooltip: 'Disclosures',
             icon: const Icon(Icons.policy_outlined),

@@ -1,7 +1,8 @@
 # Motormind AI
 
-> **Status:** foundation, October 2026. The pure-Dart finance and advisor layers exist with
-> passing tests; the Flutter app scaffold exists and is being wired. Work happens on `develop`.
+> **Status:** first working loop, October 2026. On an Android emulator, Gemma 4 E2B takes a
+> typed sentence, calls the finance tools, and the app shows the computed payment and
+> trade-equity cards. Work happens on `develop`.
 > Backlog: [BACKLOG.md](BACKLOG.md). Docs: [docs/](docs/README.md).
 
 An on-device AI companion for finding and financing a personal vehicle, built in Flutter.
@@ -25,8 +26,10 @@ at runtime from the conversation** rather than pre-designed screens
   trade payoff and payment ceiling never leave the device.
 - **Computes, never guesses.** Payment, amortization, lease versus buy, trade equity
   including negative equity, affordability warnings and rough cost of ownership come from
-  pure Dart functions. The model extracts inputs and explains outputs; a guard rejects any
-  number the model did not get from a tool ([ADR 0002](docs/adr/0002-model-never-does-arithmetic.md)).
+  pure Dart functions. The model extracts inputs and explains outputs. Two guards enforce
+  it: a narration guard rejects any number the model wrote that no tool returned, and an
+  input guard refuses a calculation whose inputs the person never gave, so the model asks
+  instead of inventing an income ([ADR 0002](docs/adr/0002-model-never-does-arithmetic.md)).
 - **Composes the screen.** The model asks for a component from a registry (payment card,
   fullscreen breakdown, compare, question chips) and a surface (docked or fullscreen); the
   user can override and pin.

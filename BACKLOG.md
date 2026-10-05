@@ -121,8 +121,11 @@ VA-10, then VA-8 and VA-12.
 
 - **VA-4.2.1** narration guard with tolerance rules and tests. **done**
 - **VA-4.2.2** As a developer, I want the guard wired into the turn: one regeneration with a
-  stricter instruction, then a templated sentence plus the card. AC: integration test with
-  a scripted fake model.
+  stricter instruction, then a templated sentence plus the card. **done** (scripted-driver
+  tests)
+- **VA-4.2.5** As a buyer, I want the advisor refused from calculating with numbers I never
+  gave, so that a card never rests on an invented income or price. **done**
+  (`InputProvenanceGuard`; observed and fixed on the emulator 2026-10-05)
 - **VA-4.2.3** As a developer, I want components to render only from tool results. AC: no
   component takes model text for a numeric field.
 - **VA-4.2.4** As a developer, I want to experiment with the "never emit digits" constraint
@@ -133,7 +136,7 @@ VA-10, then VA-8 and VA-12.
 - **VA-4.3.1** policy check for urgency, guarantees, pressure, advice, compensation.
   **done**
 - **VA-4.3.2** As a buyer, I want a visible banner when a reply tripped the policy check,
-  while still seeing the reply, so that the tool is honest about itself. (TQ15)
+  while still seeing the reply, so that the tool is honest about itself. **done**
 - **VA-4.3.3** As a buyer, I want the advisor to recognize how I am shopping (browsing,
   dreaming, practical, buying), confirm it with a tappable choice when unsure, and shift when
   my intent shifts, so that its tone matches me. AC: `ShoppingMode` in profile **done**;
@@ -157,6 +160,7 @@ VA-10, then VA-8 and VA-12.
   session lifecycle; the rest of the app never touches the SDK. **done** behind an
   `EdgeAiGateway` seam with a fake for tests; chat session wiring pending.
 - **VA-1.1.2** full conversation flow works in airplane mode once a model is installed.
+  **works on the emulator with networking on**; airplane-mode check pending on the Fold 4.
 
 ### VA-1.2 Catalog and switching (P1)
 
@@ -204,8 +208,8 @@ VA-10, then VA-8 and VA-12.
 
 ### VA-2.2 Chat (P0)
 
-- **VA-2.2.1** streamed replies with stop.
-- **VA-2.2.2** tool activity shown as status chips.
+- **VA-2.2.1** streamed replies with stop. **streaming done**; stop pending.
+- **VA-2.2.2** tool activity shown as status chips. **done**
 - **VA-2.2.3** `choice`, `multi_choice` and `input_form` interaction components with the
   implicit "something else" escape, so the advisor asks with options and forms rather than
   prose. **registry and validation done**; widgets pending.
@@ -235,8 +239,11 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
 - **VA-11.1.1** registry and `present` validation in `advisor_core`, including interaction
   components, props validation and `highlights`. **done**
 - **VA-11.1.2** As a developer, I want Flutter widgets for each registered component,
-  each rendering from a `ToolResult`, so that the model can compose any of them. AC: widget
-  tests per component with a fixture result.
+  each rendering from a `ToolResult`, so that the model can compose any of them. **payment
+  summary, breakdown, trade equity, choice, form done**; gauge, lease, ownership, vehicle
+  cards generic for now.
+- **VA-11.1.4** As a developer, I want a computed result the model forgot to present shown
+  anyway with its default component. **done**
 - **VA-11.1.3** As a buyer, I want the screen to change shape with the conversation (one
   card, a breakdown, a compare, a question), so that nothing is pre-designed. AC: the same
   conversation demonstrably yields different compositions.
@@ -247,6 +254,7 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
   is being shown and asked, the keyboard, and the screen's shape, so that nothing I am
   deciding about is hidden. AC: allocator with keyboard rule and decision rule (DD-R6–R8);
   viewport descriptor passed to the model (DD-R10); wide screens side-by-side (DD-R9).
+  **keyboard rule done** (unverified: the emulator has no real keyboard); rest pending.
 - **VA-11.2.4** As a buyer, I want the reorganize control and a pin, and every structured
   prompt minimizable, so that I am never trapped. (DD-R11–R13)
 - **VA-11.2.5** As a buyer returning to the app, I want a short orientation and a "continue

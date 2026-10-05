@@ -64,7 +64,9 @@ user text ──► AdvisorSession
                  │                       │
                  │                       ▼
                  │              ToolDispatcher (app)
-                 │                ├─ finance tools ──► FinanceToolHandlers (advisor_core)
+                 │                ├─ finance tools ──► InputProvenanceGuard: args must trace to
+                 │                │     the user, the profile or a prior result, else refused
+                 │                │                 ──► FinanceToolHandlers (advisor_core)
                  │                │                     └─► vehicle_finance ──► ToolResult(id, json)
                  │                ├─ update_profile ──► BuyerProfile.applyUpdate
                  │                ├─ find_vehicles ───► InventorySource
@@ -75,6 +77,7 @@ user text ──► AdvisorSession
                  ▼
             on-device model ──► TextResponse tokens (narration)
                  ▼
+            auto-present: any computed result the model did not present gets its default card
             NarrationGuard.check(narration, [tool results, user inputs])
                  │  unmatched numbers → regenerate once with a stricter instruction
                  │                     → else templated sentence + the card
@@ -213,7 +216,24 @@ component, and never affect ranking.
   free text, no financial values, opt-in, disclosed in the gate and the terms.
 - A debug network audit logs every outbound host; a test fails on an unexpected host.
 
-## 14. Risks and unknowns
+## 14. Context budget (learned 2026-10-05)
+
+The first real turn on the emulator overflowed a 4,096-token window: ~870 tokens of system
+prompt plus ~2,450 of tool schemas left 445 for the tool result. Everything the model is
+told is paid on every turn, so the vocabulary is a performance and layout decision:
+
+| Item | Before | After |
+|---|---|---|
+| System prompt | ~870 tokens | ~570 |
+| Ten tool schemas | ~2,450 | ~1,430 |
+| A payment result sent to the model | ~280 | ~115 |
+| Gemma 4 E2B context | 4,096 | 8,192 |
+
+Rules that follow: tool descriptions say *when* to call, nothing else; component
+descriptions are one clause; results go to the model as rounded outputs and inputs with
+assumptions as `key=value`; the full result with assumption prose goes only to the UI.
+
+## 15. Risks and unknowns
 
 - Extraction quality on small models; mitigated by the golden dataset and clarifying
   questions.

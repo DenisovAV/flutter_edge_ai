@@ -17,12 +17,14 @@ answer.
 Enable it with `isThinking: true` and the matching `ModelType`.
 
 <Warning>
+
 The reasoning channel is parsed per `ModelType`, and `ModelType.general` has no
 parser at all. Models that reason but run as `general` — **SmolLM3 3B**,
 **Phi-4 Mini Reasoning** — emit no `ThinkingResponse`, and their thinking tags
 are not stripped either: the raw blocks arrive inside the answer as ordinary
 `TextResponse` tokens. Strip them yourself, or don't advertise a thinking UI for
 those models.
+
 </Warning>
 
 ## Handling thinking responses
@@ -53,19 +55,22 @@ final thinkingMessage = Message.thinking(text: "Let me analyze this problem...")
 
 | Platform | Thinking Mode |
 |---|---|
-| Android | ✅ Full |
-| iOS | ✅ Full |
+| Android | ✅ Full with `.litertlm`; tag-based models only with `.task` |
+| iOS | ✅ Full with `.litertlm`; tag-based models only with `.task` |
 | Desktop (macOS/Windows/Linux) | ✅ Full |
 | Web | ⚠️ Qwen3 tag-based reasoning only |
 
 <Warning>
-On Web, core can split Qwen3's emitted `<think>...</think>` tags into
-`ThinkingResponse` because that parser is platform-independent. Gemma 4 is a
-different path: the `.litertlm` engine passes `extra_context` and filter config,
-but the measured `web_thinking_limitation_test.dart` still receives only
-`TextResponse`, so its thinking channel is unsupported. MediaPipe Web has no
-thinking API, ONNX Web ignores `enableThinking`, and the catalog's DeepSeek R1
-`.task` model has no Web entry.
+
+On Web, core can split Qwen3's emitted <code>&lt;think&gt;...&lt;/think&gt;</code> tags into
+<code>ThinkingResponse</code> because that parser is platform-independent. Gemma 4 is a
+different path: the <code>.litertlm</code> engine passes <code>extra_context</code> and filter config,
+but the measured <code>web_thinking_limitation_test.dart</code> still receives only
+<code>TextResponse</code>, so its thinking channel is unsupported. MediaPipe Web has no
+thinking API, ONNX ignores <code>enableThinking</code> (on Web and native alike, though
+core still parses <code>&lt;think&gt;</code> tags a model emits), and the catalog's DeepSeek R1
+<code>.task</code> model has no Web entry.
+
 </Warning>
 
 ## Advanced: ModelThinkingFilter

@@ -91,7 +91,7 @@ Pick the accelerator with `preferredBackend:` on `getActiveModel`:
 | Backend | Where |
 |---------|-------|
 | `cpu` | All native platforms |
-| `gpu` | Metal (Apple), DirectX 12 / WebGPU (Windows), Vulkan / WebGPU (Linux); required on web |
+| `gpu` | Metal (Apple), DirectX 12 / WebGPU (Windows), Vulkan / WebGPU (Linux); on web the runtime picks WebGPU or WASM itself and `preferredBackend` is not applied |
 | `npu` | Android (Qualcomm Snapdragon, `.litertlm`) and Windows (Intel LunarLake / PantherLake) |
 
 GPU is the right default, but it is not uniformly faster: on Android the win is
@@ -119,6 +119,7 @@ runtime + TBB — inside the Windows native archive. Android bundles the Qualcom
 QNN dispatch stack. No extra downloads for either NPU path.
 
 <Warning>
+
 **NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
 those work on both vendors. The **Gemma 3** family does not, and it fails
 silently — the model answers from the first prefill chunk alone, fluently,
@@ -149,6 +150,7 @@ macOS the native runtime was measured accepting `npu` anyway, which made
 `activeBackend` report an NPU that does not exist on the machine. On Windows
 the check is per OS, so a PC without an Intel NPU still attempts it, and
 `activeBackend` can then report `npu` while the model runs elsewhere.
+
 </Warning>
 
 ## `maxTokens` is the CONTEXT window, not the reply length

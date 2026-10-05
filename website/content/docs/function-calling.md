@@ -34,9 +34,11 @@ and then continue the conversation with the result.
 - **LLaVA-OneVision 0.5B** — vision model, no function calling.
 
 <Info>
+
 If you pass `tools` with `supportsFunctionCalls: false`, the chat logs a warning
 and does not inject them — the model still works normally for text generation.
 Pass `supportsFunctionCalls: true` for models that support it.
+
 </Info>
 
 ### Built-in AI (OS models)
@@ -91,6 +93,7 @@ final chat = await model.createChat(
   call — and with parsing off it reaches the stream as raw text.
 
 <Info>
+
 `ToolChoice.required` reaches the model only where the SDK writes the
 declarations itself. Gemma 4, and FunctionGemma on a `.litertlm`, hand them to
 the runtime instead, and the runtime's tool payload carries no `tool_choice` —
@@ -98,6 +101,7 @@ so for those two `required` behaves as `auto`, silently. A `.task`
 FunctionGemma gets the old "not supported" warning, and the JSON-format
 families (Qwen, DeepSeek, Phi-4 Mini) do get a "you must call a function"
 instruction written into their prompt.
+
 </Info>
 
 ## Who renders the declarations
@@ -156,6 +160,7 @@ chat.generateChatResponseAsync().listen((response) {
 ```
 
 <Info>
+
 A model can also request **several** calls at once — the stream then emits a
 `ParallelFunctionCallResponse` carrying a `calls` list of `FunctionCallResponse`s.
 `generateChatResponseWithTools` (below) handles this internally; a manual
@@ -168,6 +173,7 @@ listener must handle it too:
   }
 }
 ```
+
 </Info>
 
 Send the function result back to the model so it can continue:
@@ -220,7 +226,9 @@ runs function calls inside a spoken turn through it (see
 
 Function calling is supported on **Android, iOS, Web, and Desktop**. For Gemma 4,
 the native function-call tokens are routed through the LiteRT-LM SDK chat-template
-path (use `ModelType.gemma4`).
+path (use `ModelType.gemma4`), so Gemma 4 function calling needs a `.litertlm`
+model: with MediaPipe `.task` (including the web `-web.task` builds) and with ONNX
+the tools do not reach a Gemma 4 model. See [Capabilities](/docs/capabilities).
 
 With the [Built-in AI](/docs/builtin-ai) engine (`flutter_edge_ai_builtin_ai`)
 function calling is prompt-based rather than a native tool API — Gemini Nano
@@ -232,10 +240,12 @@ reachable through `flutter_local_ai`'s own `LocalAiSession` API, outside
 flutter_edge_ai's chat loop.
 
 <Warning>
+
 Function calling works on the web `.litertlm` path, with one upstream caveat:
 constrained decoding is left off there ([LiteRT-LM#2434](https://github.com/google-ai-edge/LiteRT-LM/issues/2434)
 aborts the next turn after a tool call when it is on), so the call's JSON shape
 is not grammar-enforced. See [Troubleshooting](/docs/troubleshooting).
+
 </Warning>
 
 See [Models](/docs/models#modeltype-reference) for the correct `ModelType` per

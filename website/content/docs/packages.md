@@ -26,6 +26,9 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | **`flutter_edge_ai_speech`** | On-device [speech](/docs/speech) — speech-to-text + text-to-speech + a `VoiceSession` voice loop (moonshine/Whisper/Parakeet STT + Matcha/Qwen3/Inflect TTS) via the LiteRT C API + `dart:ffi`. | Native (no Web) |
 | **`flutter_edge_ai_diagnostics`** | [Memory diagnostics](/docs/diagnostics) — the anonymous footprint (the memory the OS cannot reclaim) and the memory still available, read from the OS. No native code, no dependency on core. | Android + iOS |
 
+Which runtime gives you text generation, embeddings and speech on each platform
+is on the [Capabilities](/docs/capabilities) page.
+
 ## How it works
 
 - **Core registers no AI runtime by itself.** Wire inference, embedding,
@@ -63,6 +66,7 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | Measure what a model costs in memory the OS cannot reclaim (Android + iOS) | `flutter_edge_ai_diagnostics` |
 
 <Info>
+
 Desktop is served **primarily** by [`flutter_edge_ai_litertlm`](/docs/litertlm)
 (`.litertlm`) — the default engine. [`flutter_edge_ai_onnx`](/docs/onnx) also runs
 on all three desktop OSes (macOS/Windows/Linux), and the OS built-in model is
@@ -72,6 +76,7 @@ build: `flutter_local_ai` resolves the Windows App SDK projection itself; runnin
 needs Windows 11 25H2+ on Copilot+-class hardware and a packaged app); not on
 Linux. There is no MediaPipe engine on
 desktop. See [Desktop Support](/docs/desktop).
+
 </Info>
 
 See [Migration](/docs/migration) for the rename and the 2.0 extraction of RAG
@@ -111,6 +116,7 @@ Linux x64, Windows x64, Android (arm64), and iOS (arm64). On **Web**,
 public API as native, no `if (kIsWeb)` needed in app code.
 
 <Info>
+
 On native, an ORT-GenAI model installs as a **directory**, not a single file:
 `genai_config.json` + `model.onnx` (+ `model.onnx_data` for external weights)
 + tokenizer files. `fromHuggingFace(repo)` downloads the whole bundle (the ONNX
@@ -120,6 +126,7 @@ doesn't apply — the model is identified by its
 Hugging Face repo URL (`https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct`),
 from which the repo id is derived, not by a directory, and install is fileless: `ModelFileType.onnx` just marks it active,
 and Transformers.js downloads and caches the repo itself.
+
 </Info>
 
 See the [`flutter_edge_ai_onnx` README](https://pub.dev/packages/flutter_edge_ai_onnx) for the full platform matrix and FFI details.

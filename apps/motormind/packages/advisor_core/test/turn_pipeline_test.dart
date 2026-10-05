@@ -242,4 +242,47 @@ void main() {
     final noMode = builder.build(profile: const BuyerProfile());
     expect(noMode, contains('Shopping mode: unknown'));
   });
+
+  test('a finance call with an invented input is refused and the model is told to ask', () async {
+    final driver = FakeDriver([
+      FakeTurn(
+        calls: [
+          (
+            'assess_affordability',
+            {'monthly_gross_income': 6000, 'proposed_payment': 434, 'term_months': 60},
+          ),
+        ],
+        text: (r) => r.single['error']?.toString() ?? 'ran',
+      ),
+    ]);
+    final events = await TurnPipeline(
+      driver: driver,
+    ).run('can I afford 434 a month over 60 months?').toList();
+    final rejected = events.whereType<InputRejected>().single;
+    expect(rejected.tool, 'assess_affordability');
+    expect(rejected.arguments, ['monthly_gross_income']);
+    expect(events.whereType<ToolFinished>(), isEmpty);
+    expect(
+      events.whereType<TurnDone>().single.narration,
+      contains('did not provide monthly_gross_income'),
+    );
+  });
+
+  test('a computed result the model never presented is auto-presented by the app', () async {
+    final driver = FakeDriver([
+      FakeTurn(
+        calls: [
+          ('trade_equity', {'estimated_value': 6200, 'payoff': 8000}),
+        ],
+        text: (_) => 'You are about 1,800 underwater.',
+      ),
+    ]);
+    final events = await TurnPipeline(
+      driver: driver,
+    ).run('I owe 8000 on a car worth 6200').toList();
+    final p = events.whereType<Presented>().single;
+    expect(p.automatic, isTrue);
+    expect(p.request.component.id, 'trade_equity_card');
+    expect(p.result!.tool, 'trade_equity');
+  });
 }

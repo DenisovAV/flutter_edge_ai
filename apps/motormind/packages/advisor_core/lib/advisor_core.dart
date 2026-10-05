@@ -1,6 +1,7 @@
 /// Model-agnostic advisor logic for Motormind AI.
 library;
 
+export 'src/guard/input_guard.dart';
 export 'src/guard/narration_guard.dart';
 export 'src/pipeline/chat_driver.dart';
 export 'src/pipeline/turn_pipeline.dart';

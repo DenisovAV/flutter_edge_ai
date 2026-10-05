@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../guard/input_guard.dart';
 import '../guard/narration_guard.dart';
 import '../policy/policy_check.dart';
 import '../profile/buyer_profile.dart';
@@ -23,6 +24,14 @@ class ThinkingDelta extends TurnEvent {
   final String text;
 }
 
+/// A finance tool was called with a number the person never supplied; the
+/// call was refused and the model told which argument to ask for.
+class InputRejected extends TurnEvent {
+  const InputRejected(this.tool, this.arguments);
+  final String tool;
+  final List<String> arguments;
+}
+
 class ToolStarted extends TurnEvent {
   const ToolStarted(this.name, this.args);
   final String name;
@@ -40,11 +49,14 @@ class ProfileUpdated extends TurnEvent {
 }
 
 class Presented extends TurnEvent {
-  const Presented(this.request, {this.result});
+  const Presented(this.request, {this.result, this.automatic = false});
   final PresentRequest request;
 
   /// The result the component renders from; null for interaction components.
   final ToolResult? result;
+
+  /// True when the app presented a result the model computed but never showed.
+  final bool automatic;
 }
 
 class PresentRejected extends TurnEvent {
@@ -85,6 +97,7 @@ class TurnPipeline {
     BuyerProfile? profile,
     this.external,
     this.guard = const NarrationGuard(),
+    this.inputGuard = const InputProvenanceGuard(),
     this.policy = const PolicyCheck(),
     this.regenerateOnGuardFailure = true,
   }) : finance = finance ?? FinanceToolHandlers(),
@@ -94,6 +107,7 @@ class TurnPipeline {
   final FinanceToolHandlers finance;
   final ExternalToolHandler? external;
   final NarrationGuard guard;
+  final InputProvenanceGuard inputGuard;
   final PolicyCheck policy;
   final bool regenerateOnGuardFailure;
 
@@ -114,11 +128,24 @@ class TurnPipeline {
 
   Future<void> _runInto(StreamController<TurnEvent> out, String userText) async {
     final turnResults = <ToolResult>[];
+    final presentedIds = <String>{};
     userInputs.add({'user_text': userText});
 
     Future<Map<String, Object?>> onToolCall(String name, Map<String, Object?> args) async {
       out.add(ToolStarted(name, args));
       if (finance.handles(name)) {
+        final provenance = inputGuard.check(
+          args: args,
+          sources: [...userInputs, profile.toJson(), ...results.values.map((r) => r.result)],
+        );
+        if (!provenance.passed) {
+          out.add(InputRejected(name, provenance.unsupported));
+          return {
+            'error':
+                'The user did not provide ${provenance.unsupported.join(', ')}. Do not guess it: ask '
+                'for it (an input_form is best), then call the tool again.',
+          };
+        }
         final r = finance.call(name, args);
         results[r.id] = r;
         turnResults.add(r);
@@ -139,6 +166,7 @@ class TurnPipeline {
             out.add(PresentRejected(v.errors));
             return {'error': v.errors.join('; ')};
           }
+          if (resultId != null) presentedIds.add(resultId);
           out.add(Presented(v.request!, result: target));
           return {'ok': true, 'shown': v.request!.component.id};
         default:
@@ -164,6 +192,18 @@ class TurnPipeline {
     }
 
     var narration = await _generate(out, userText, onToolCall);
+    for (final r in turnResults) {
+      if (r.isError || presentedIds.contains(r.id)) continue;
+      final component = ComponentRegistry.defaultFor(r.tool);
+      if (component == null) continue;
+      out.add(
+        Presented(
+          PresentRequest(component: component, surface: component.defaultSurface, resultId: r.id),
+          result: r,
+          automatic: true,
+        ),
+      );
+    }
 
     var report = guard.check(
       narration: narration,

@@ -192,8 +192,16 @@ class _Bubble extends StatelessWidget {
           color: isUser ? theme.colorScheme.primaryContainer : theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: Text(message.text.trim()),
+        child: Text(_plain(message.text)),
       ),
     );
   }
 }
+
+/// Small models emit Markdown and escape dollars; bubbles are plain text for
+/// now (TQ56), so strip the common markers rather than show them raw.
+String _plain(String text) => text
+    .replaceAll(r'\$', r'$')
+    .replaceAll('**', '')
+    .replaceAllMapped(RegExp(r'^\s*[-*]\s+', multiLine: true), (_) => '• ')
+    .trim();

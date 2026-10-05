@@ -283,6 +283,11 @@ class ChatService extends Notifier<ChatState> {
             replyIndex += 1;
             state = state.copyWith(timeline: t);
             ref.read(surfaceProvider.notifier).request(request.surface);
+          case InputRejected(:final arguments):
+            state = state.copyWith(
+              guardNote:
+                  'Refused a calculation: ${arguments.join(', ')} was not something you told me.',
+            );
           case PresentRejected():
             state = state.copyWith(clearActiveTool: true);
           case GuardTripped(:final report, :final replaced):

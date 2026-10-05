@@ -95,7 +95,10 @@ void main() {
     // The app opens with the shopping-mode choice before any model turn.
     expect(find.byKey(const Key('choice-mode-practical')), findsOneWidget);
 
-    await tester.enterText(find.byKey(const Key('chat-input')), 'I can do 450 a month');
+    await tester.enterText(
+      find.byKey(const Key('chat-input')),
+      'I can do 450 a month on a 22000 car with 1000 down',
+    );
     await tester.tap(find.byKey(const Key('chat-send')));
     await tester.pumpAndSettle();
 

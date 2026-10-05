@@ -177,6 +177,18 @@ abstract final class ComponentRegistry {
 
   static UiComponent? byId(String id) => all.where((c) => c.id == id).firstOrNull;
 
+  /// The component the app shows for a tool result when the model computed
+  /// something and did not call `present` (DD principle 1: the model decides
+  /// what to show, but a computed number never stays hidden in prose).
+  static UiComponent? defaultFor(String tool) => switch (tool) {
+    'estimate_payment' => paymentSummary,
+    'trade_equity' => tradeEquityCard,
+    'assess_affordability' || 'max_affordable_price' => affordabilityGauge,
+    'estimate_lease' => leaseVsBuy,
+    'ownership_cost' => ownershipCost,
+    _ => null,
+  };
+
   /// The list handed to the model in the system prompt.
   static String describeForPrompt() => all.map((c) => '- ${c.id}: ${c.description}').join('\n');
 }

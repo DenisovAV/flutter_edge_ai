@@ -27,7 +27,13 @@ limitations under the License.
        * @param {string} lang - The two-letter language code.
        */
       async function fetchWikiFuzzyAndInfobox(topic, lang) {
-        const baseUrl = `https://${lang}.wikipedia.org/w/api.php`;
+        // Validate lang to a strict allow-list pattern to prevent subdomain/host
+        // manipulation (e.g. "en.attacker.com" or "en@attacker.com") being
+        // interpolated into the request URL (CWE-918).
+        if (!/^[a-z]{2,3}(-[a-z0-9]{1,8})?$/i.test(lang)) {
+          return { error: `Invalid language code '${lang}'.` };
+        }
+        const baseUrl = `https://${lang.toLowerCase()}.wikipedia.org/w/api.php`;
         // Step 1: Fuzzy search to get the exact title and the clean introduction
         const searchParams = new URLSearchParams({
           action: "query",

@@ -114,6 +114,7 @@ final embeddings = await ai.embed(
 ```
 
 <Warning>
+
 The Genkit embedder always embeds with flutter_edge_ai's default
 `TaskType.retrievalQuery` prefix — `FlutterEdgeAiEmbedConfig` has no `taskType`
 option. For RAG **indexing**, where documents must be embedded with
@@ -121,6 +122,7 @@ option. For RAG **indexing**, where documents must be embedded with
 `FlutterEdgeAi.getActiveEmbedder().generateEmbeddings(..., taskType: ...)`
 directly. Mixing the two prefixes is the cross-prefix drift that #264 fixed at
 the core level. See [Embeddings & RAG](/docs/embeddings-and-rag).
+
 </Warning>
 
 ### Configuration options
@@ -152,9 +154,11 @@ a tool call, `'none'` forbids one. An unrecognized value throws
 `INVALID_ARGUMENT` rather than quietly falling back to `'auto'`.
 
 <Info>
+
 The plugin does **not** manage model installation. Call
 `FlutterEdgeAi.installModel()` (and `FlutterEdgeAi.installEmbedder()` for
 embeddings) before using the plugin. See [Getting Started](/docs/getting-started).
+
 </Info>
 
 ### Structured (JSON) output
@@ -363,7 +367,9 @@ final response = await ai.generate(model: smart, prompt: 'Explain quantum tunnel
 > run non-streamed and the accepted response is emitted as a single final chunk.
 
 <Info>
+
 `genkit_hybrid` works with **any** Genkit models, not just flutter_edge_ai. You
 can combine `gemini-2.5-flash` (cloud) with a local Ollama model, or any other
 pair that Genkit supports.
+
 </Info>

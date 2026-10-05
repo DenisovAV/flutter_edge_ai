@@ -15,10 +15,12 @@ model. **moonshine**, **Whisper**, and **Parakeet** STT and **Matcha**,
 today; kokoro / supertonic TTS voices are follow-ons.
 
 <Info>
+
 Speech is a separate package so apps that don't need it don't ship the model or
 the extra native surface. It depends on <code>flutter_edge_ai_litertlm</code>,
 which owns the shared <code>libLiteRtLm</code> native bundle — no separate
 native download.
+
 </Info>
 
 ## Install

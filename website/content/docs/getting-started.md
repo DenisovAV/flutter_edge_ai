@@ -124,7 +124,9 @@ See the [CHANGELOG](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packa
 ## Quick Start
 
 <Warning>
+
 Complete the [platform setup](/docs/installation) before running this code.
+
 </Warning>
 
 ### 1. Install a Model (One Time)
@@ -156,12 +158,14 @@ await FlutterEdgeAi.installModel(
 ```
 
 <Info>
+
 **MediaPipe alternative:** on mobile you can install the `.task` build of the
 same model instead — drop `fileType` (it defaults to `ModelFileType.task`) and
 register `MediaPipeEngine()` from `flutter_edge_ai_mediapipe`. On Web, use the
 `-web.task` build (`gemma3-1b-it-int4-web.task`) with `MediaPipeEngine()`.
 Desktop targets need the `.litertlm` build — `.task` and `.bin` are
 MediaPipe-only.
+
 </Info>
 
 ### 2. Create and Use a Model (Multiple Times)
@@ -186,9 +190,11 @@ await model.close();
 ```
 
 <Warning>
+
 `Message.isUser` defaults to `false`. Always pass `isUser: true` for user
 messages, or the model returns an empty response. Always `close()` sessions and
 models when you're done with them.
+
 </Warning>
 
 ### System Instructions
@@ -239,9 +245,11 @@ cached model and builds a new one, identical arguments or not. Get the model
 once and keep the handle.
 
 <Info>
+
 On native `.litertlm` (except the NPU) a `maxTokens` below 1024 is clamped up to
 1024, so the 512 above would not have been honored in any case. See
 [Troubleshooting](/docs/troubleshooting).
+
 </Info>
 
 ### Concurrent Sessions (`openSession`)
@@ -276,11 +284,13 @@ await chatA.session.close();  // closing one leaves the others usable
 ```
 
 <Warning>
+
 **Concurrent contexts, serialized inference.** The sessions are logically
 independent, but **only one session generates at a time** — calling
 `generateResponse()` on a second session while another is still running blocks
 until the first finishes. Generation is *not* parallel. This is intentional:
 parallel on-device inference would contend for the accelerator and risk OOM.
+
 </Warning>
 
 **Memory:** each open session holds its own context (~100–500 MB depending on
@@ -320,10 +330,12 @@ await FlutterEdgeAi.clearActiveInferenceIdentity();
 ```
 
 <Info>
+
 `clearActiveInferenceIdentity()` wipes both the in-memory active spec and the
 persisted preference. Pair it with `uninstallModel()` only when the deleted model
 was the active one. The `uninstallEmbedder/Stt/Tts` helpers already clear the
 identity for you.
+
 </Info>
 
 ### Inspecting what's active

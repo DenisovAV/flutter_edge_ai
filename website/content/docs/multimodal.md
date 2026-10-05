@@ -71,10 +71,12 @@ if (message.hasImage) {
 ```
 
 <Info>
+
 The plugin automatically handles common image formats (JPEG, PNG, etc.) when
 using `Message.withImages()` or `Message.withImage()`. The GPU backend speeds up
 text decoding; image encoding still runs on CPU (audio encoding can be moved to
 GPU — see below).
+
 </Info>
 
 ## Audio (voice input)
@@ -116,11 +118,13 @@ final response = await chat.generateChatResponse();
 ```
 
 <Warning>
+
 Audio input only works with `.litertlm` models that include the audio adapter.
 MediaPipe `.task` models on web do not support audio. On macOS, Gemma 3n audio
 runs roughly 2× faster on GPU than on CPU — but the audio encoder defaults to
 CPU, so pass `preferredAudioBackend: PreferredBackend.gpu` (as above) to get that
 speedup; `preferredBackend` alone only moves the text decoder.
+
 </Warning>
 
 ## Web limitations

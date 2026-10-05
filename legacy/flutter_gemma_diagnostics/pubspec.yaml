@@ -1,5 +1,5 @@
 name: flutter_gemma_diagnostics
-description: "Renamed to flutter_edge_ai_diagnostics. This is the final flutter_gemma_diagnostics release; new versions ship as flutter_edge_ai_diagnostics, part of Flutter Edge AI."
+description: "Moved to flutter_edge_ai_diagnostics. This is the final release under the name flutter_gemma_diagnostics; new versions ship as flutter_edge_ai_diagnostics, part of Flutter Edge AI."
 version: 0.1.1
 homepage: https://fluttergemma.dev
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_diagnostics

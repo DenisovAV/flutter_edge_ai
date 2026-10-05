@@ -1,5 +1,5 @@
 name: genkit_flutter_gemma
-description: "Renamed to genkit_flutter_edge_ai. This is the final genkit_flutter_gemma release; new versions ship as genkit_flutter_edge_ai, part of Flutter Edge AI."
+description: "Moved to genkit_flutter_edge_ai. This is the final release under the name genkit_flutter_gemma; new versions ship as genkit_flutter_edge_ai, part of Flutter Edge AI."
 version: 0.6.3
 homepage: https://github.com/DenisovAV/flutter_gemma/tree/main/packages/genkit_flutter_gemma
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/genkit_flutter_gemma

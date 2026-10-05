@@ -1,5 +1,5 @@
 name: flutter_gemma_litertlm
-description: "Renamed to flutter_edge_ai_litertlm. This is the final flutter_gemma_litertlm release; new versions ship as flutter_edge_ai_litertlm, part of Flutter Edge AI."
+description: "Moved to flutter_edge_ai_litertlm. This is the final release under the name flutter_gemma_litertlm; new versions ship as flutter_edge_ai_litertlm, part of Flutter Edge AI."
 version: 1.8.6
 homepage: https://fluttergemma.dev
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_litertlm

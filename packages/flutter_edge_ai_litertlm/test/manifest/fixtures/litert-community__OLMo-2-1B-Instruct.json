@@ -1,0 +1,149 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/OLMo-2-1B-Instruct",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "OLMo-2-1B-Instruct",
+    "base_model": "allenai/OLMo-2-0425-1B-Instruct",
+    "architecture": "`Olmo2ForCausalLM` rides the stock converter with no custom code: QK-norm and OLMo-2's reordered post-norm lower to generic ops.",
+    "parameters_b": 1,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "OLMo-2-1B-Instruct_q4_block32_ekv4096.litertlm",
+      "sha256": "8d2457b54397731c5f451babb6bebfb9877545b4b070ac76914aab348fd954b0",
+      "size_bytes": 931241056,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 368
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1403566
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 929799264,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int4 weights — blockwise (block 32) + OCTAV optimal-clipping, symmetric; embedding int8",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary: GPU 23.08 tok/s decode / 548.2 prefill, peak 931 MB, init 5.0 s (S4 GPU gate 2026-08-24, 1 run) against CPU 11.52-12.1 decode / 96.0-168.7 prefill, peak 2147 MB, init 1.4 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device CPU control taken - a measured win for gpu on decode (2.0x) and prefill"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "iPhone prefill figure was measured on a short chat prompt and is dominated by fixed per-turn overhead; not comparable to the 256-token desktop prefill column.",
+          "At 0.93 GB it fits comfortably on an 8 GB phone (Android).",
+          "Whole bundle is a single sub-2 GiB section, so it memory-maps on iOS without an externalized embedder.",
+          "Fits and runs on a Pixel 8a (8 GB) via Gallery; no timing was taken there (backend not stated).",
+          "The same bundle runs on macOS, Linux and Windows (desktop CLI).",
+          "Mac CPU benchmark figures are noisy: six invocations spread CPU decode over 29.0–33.3 tok/s, so treat the CPU row as ±7%.",
+          "Not a measured row: card reports iPhone 17 Pro (iOS 27.0) gpu prefill_tps 27.6, decode_tps 24.4, ttft_s 0.95 (Performance — iPhone 17 Pro on-device table; runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 347,
+          "decode_tps": 33.3,
+          "ttft_s": 0.87,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 3223,
+          "decode_tps": 150.1,
+          "ttft_s": 0.1,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 40.0,
+          "decode_tps": 2.1,
+          "ttft_s": 7.7,
+          "peak_memory_mb": 2300,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 210,
+          "decode_tokens": 320,
+          "prefill_tps": 548.2,
+          "decode_tps": 23.08,
+          "ttft_s": 0.43,
+          "load_s": 5.0,
+          "peak_memory_mb": 931,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (1375 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 205,
+          "decode_tokens": 182,
+          "prefill_tps": "96.0-168.7",
+          "decode_tps": "11.52-12.1",
+          "ttft_s": "1.3-2.22",
+          "load_s": 1.4,
+          "peak_memory_mb": 2147,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
+      ],
+      "known_issues": [
+        "Files downloaded before 2026-08-30 carry the GPT-2 default pre-tokenizer instead of the model's own regex (digit groups and punctuation-before-newline split differently; role markers differed by 3 tokens per turn). Re-download.",
+        "Accuracy figures and on-device (iPhone) rows were measured on the previous (pre-2026-08-30) file; the on-device gate has not been re-run on the current file.",
+        "Prompts containing accented letters, symbols or emoji now tokenize differently from the previous file, so individual answers to such prompts can change.",
+        "int4 costs about 9 GSM8K points against bf16 at this size (63.0% vs 72.0%, n=100)."
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Falcon-H1-Tiny-R-0.6B",
-  "generated": "2026-09-01",
+  "generated": "2026-09-22",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Falcon-H1-Tiny-R-0.6B",
@@ -23,18 +23,25 @@
           "start": "<think>",
           "end": "</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "Falcon-H1-Tiny-R-0.6B_int8.litertlm",
-      "sha256": "66b9e6a5fa630d453d59516cc362e44fff3943eb7c63d07b116cf9a525a1bb94",
+      "sha256": "db0881db0b75a3749cd1c6eb8f2ee2ca2ca6ccd84badf27bebc7fc3bd25fbd48",
       "size_bytes": 873254788,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1807
+          "size_bytes": 2238
         },
         {
           "type": "ExecutorMetadataProto",
@@ -71,6 +78,18 @@
           "platform": "ios",
           "backend": "cpu",
           "reason": "verified by generation on iPhone 17 Pro (8Q 6/8 both backends, identical answers): CPU decodes FASTER than Metal at this size (29.4 vs 22.8 tok/s) at a quarter of the peak memory (0.82 vs 3.0 GB); the Metal engine works but pays setup overhead a 0.6B never amortizes"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "measured on one Galaxy S26 with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): cpu decodes 22.63-23.9 tok/s against gpu's 15.26-16.13 (1.5x), prefill 124.0-218.2 vs 309.8-318.7 tok/s, peak 1716 vs 3233 MB, engine init 4.4 vs 48.3 s. Same-device GPU control taken - a measured win for cpu on decode. A reasoning model decodes for thousands of tokens before it answers, so decode speed dominates. Answer verified through the thought channel on both backends"
+        },
+        {
+          "platform": "android",
+          "device_class": "midrange",
+          "backend": "cpu",
+          "reason": "measured on one Pixel 8a with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): cpu decodes 13.74-14.02 tok/s against gpu's 9.97 (1.4x), prefill 39.8-71.2 vs 109.0 tok/s, peak 1710 vs 4914 MB, engine init 7.0 vs 59.1 s. Same-device GPU control taken - a measured win for cpu on decode. A reasoning model decodes for thousands of tokens before it answers (1382-2313 here), so decode speed dominates; the GPU also needs a 59-68 s engine init and peaks at 4.7-4.9 GB on this 8 GB phone against 1.7 GB on the CPU. Answer verified through the thought channel on both backends. Same direction as the flagship recommendation on the Galaxy S26 (cpu 1.5x)"
         }
       ],
       "requirements": {
@@ -94,8 +113,7 @@
           "cache": "no",
           "runs": 3,
           "date": "2026-09-01",
-          "source": "cardbench harness, machine rested 300 s before the GPU cell; backend verified by generation (8Q gate) before quoting",
-          "evidence": "falcon_h1_work/bench_tinyr_mac.log"
+          "source": "cardbench harness, machine rested 300 s before the GPU cell; backend verified by generation (8Q gate) before quoting"
         },
         {
           "device": "Apple M4 Max",
@@ -109,8 +127,7 @@
           "cache": "no",
           "runs": 3,
           "date": "2026-09-01",
-          "source": "cardbench harness; backend verified by generation (8Q gate) before quoting",
-          "evidence": "falcon_h1_work/bench_tinyr_mac.log"
+          "source": "cardbench harness; backend verified by generation (8Q gate) before quoting"
         },
         {
           "device": "iPhone 17 Pro",
@@ -122,8 +139,7 @@
           "ttft_s": 12.9,
           "runs": 1,
           "date": "2026-09-01",
-          "source": "cold single run, 148-token composite quality prompt; TTFT includes first-launch Metal init (load 32.5 s); peak-during-decode 3.01 GB; 8Q answers 6/8 identical to CPU",
-          "evidence": "falcon_h1_work/device_gate_tinyr_20260901/results2/litert-lm_litert-local_falconh1-tinyr-int8_quality_2026-09-01T04-47-33Z.json"
+          "source": "cold single run, 148-token composite quality prompt; TTFT includes first-launch Metal init (load 32.5 s); peak-during-decode 3.01 GB; 8Q answers 6/8 identical to CPU"
         },
         {
           "device": "iPhone 17 Pro",
@@ -135,8 +151,71 @@
           "ttft_s": 8.8,
           "runs": 1,
           "date": "2026-09-01",
-          "source": "cold single run, 148-token composite quality prompt; TTFT includes first-launch init (load 4.0 s); peak-during-decode 0.82 GB; 8Q answers 6/8",
-          "evidence": "falcon_h1_work/device_gate_tinyr_20260901/results/litert-lm_litert-local_falconh1-tinyr-int8_quality_2026-09-01T04-25-43Z.json"
+          "source": "cold single run, 148-token composite quality prompt; TTFT includes first-launch init (load 4.0 s); peak-during-decode 0.82 GB; 8Q answers 6/8"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 215,
+          "decode_tokens": 1382,
+          "prefill_tps": "309.8-318.7",
+          "decode_tps": "15.26-16.13",
+          "ttft_s": "0.74-0.76",
+          "load_s": 48.3,
+          "peak_memory_mb": 3233,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (72295 ops across 12 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 215,
+          "decode_tokens": 2313,
+          "prefill_tps": "124.0-218.2",
+          "decode_tps": "22.63-23.9",
+          "ttft_s": "1.03-1.78",
+          "load_s": 4.4,
+          "peak_memory_mb": 1716,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 215,
+          "decode_tokens": 1382,
+          "prefill_tps": 109.0,
+          "decode_tps": 9.97,
+          "ttft_s": 2.08,
+          "load_s": 59.1,
+          "peak_memory_mb": 4914,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (72295 ops across 12 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 215,
+          "decode_tokens": 2313,
+          "prefill_tps": "39.8-71.2",
+          "decode_tps": "13.74-14.02",
+          "ttft_s": "3.09-5.47",
+          "load_s": 7.0,
+          "peak_memory_mb": 1710,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
         }
       ],
       "quality": [
@@ -144,8 +223,7 @@
           "task": "GSM8K (100 questions, greedy, 2048-token budget, scored after </think>)",
           "score": "76/100",
           "reference": "bf16 PyTorch on the identical prompt stream and protocol: 71/100",
-          "date": "2026-09-01",
-          "evidence": "falcon_h1_work/gsm8k_tinyr_int8.json vs falcon_h1_work/gsm8k_bf16_tinyr.json"
+          "date": "2026-09-01"
         }
       ]
     }

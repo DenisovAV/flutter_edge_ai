@@ -1,0 +1,154 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Ministral-3-3B-Reasoning-2512",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Ministral-3-3B-Reasoning-2512 — LiteRT-LM (blockwise int4)",
+    "base_model": "mistralai/Ministral-3-3B-Reasoning-2512",
+    "architecture": "Ministral-3 is a standard dense decoder (Ministral3ForCausalLM), so it rides the existing converter and runtime with no custom graph code; only the text decoder is exported (the vision tower is dropped first, with a strict missing=0 / unexpected=0 weight check).",
+    "parameters_b": 3,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "[THINK]",
+          "end": "[/THINK]"
+        }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "[THINK]",
+          "end": "[/THINK]"
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "file": "model.litertlm",
+      "sha256": "a1f54b249b5a685617ab068b0aea882141f40923f7050460f1546485da5a1db0",
+      "size_bytes": 2340982768,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 2135
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2806689
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1932325376,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 405802992,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 weights, blockwise (block 32), symmetric, OCTAV clipping; tied embedding/lm_head at INT8; KV cache 4096; embedding externalized",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (2274 ops across 2 subgraphs) and a correct answer to the probe; 13.8 tok/s decode, engine init 12.8 s, peak 1159 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Android device RAM: GPU needs roughly 2× the model size (weights plus the ML Drift GPU weight cache), so GPU is only offered on ~12 GB+ devices; on an 8 GB phone only CPU is selectable.",
+          "Reasoning model that emits long chains of thought — give it a high max-tokens (GSM8K evaluated at max-tokens 2048; scoring at 512 falsely penalises it).",
+          "externalize_embedder=True is required for iPhone: the main weights section is kept under the ~2 GiB single-section mmap limit on iOS, so the model loads on iPhone (Metal GPU) as well as Android/desktop.",
+          "iPhone 17 Pro: the model loads and generates, but no on-device timing was taken.",
+          "Google AI Edge Gallery v1.0.16+ can import litert-lm models directly from Hugging Face inside the app (tap +); manual adb steps only for older builds or sideloading.",
+          "Gallery 1.0.15+ supports .litertlm.",
+          "Galaxy S26: XNNPACK additionally takes 1 of the 4 nodes in decode_embedder and prefill_embedder_128; the runtime accepts that split.",
+          "Reproducibility: GPU rows repeat to within ~1%; CPU rows are noisier (treat the CPU column as accurate to roughly ±7%).",
+          "2026-08-29 metadata-only update: the chat template now emits the upstream default system turn when no system message is given, adding 123 prefill tokens (TTFT grows by that much; per-token speed unchanged). Re-download if downloaded before 2026-08-29.",
+          "2026-08-30 tokenizer-only update: model.litertlm now embeds the upstream tokenizer.json; weights, graph and chat template byte-identical. Accuracy and on-device rows were measured on the previous file; the on-device gate has not been re-run. Re-download if downloaded before 2026-08-30.",
+          "2026-08-31 metadata-only update: the reasoning channel is declared (LlmMetadata.channels `thought`, markers [THINK]…[/THINK]); LiteRT-LM returns reasoning in channels[\"thought\"] and thinking_token_budget takes effect. Re-download if downloaded before 2026-08-31."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 123,
+          "decode_tps": 22.4,
+          "ttft_s": 2.41,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (Apple M4 Max, litert-lm benchmark 0.15.0) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1241,
+          "decode_tps": 95.8,
+          "ttft_s": 0.23,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (Apple M4 Max, litert-lm benchmark 0.15.0) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 14.0,
+          "decode_tps": 1.9,
+          "ttft_s": 21.0,
+          "peak_memory_mb": 3700,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 198,
+          "decode_tokens": 341,
+          "prefill_tps": 217.5,
+          "decode_tps": 13.77,
+          "ttft_s": 0.98,
+          "load_s": 12.8,
+          "peak_memory_mb": 1159,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (2274 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "On an 8 GB Android phone only CPU is selectable; without freeing RAM first (close apps / reboot) the app is OOM-killed on load.",
+        "Without externalize_embedder the >2 GiB weights section exceeds the iOS single-section mmap limit and engine creation fails with \"Failed to map section: Cannot allocate memory.\" (the shipped file externalizes the embedding).",
+        "Files downloaded before 2026-08-30 carry a SentencePiece tokenizer that mis-encodes standalone accented letters/symbols and maps emoji and most Latin Extended-A characters to the end-of-text token; re-download.",
+        "Files downloaded before 2026-08-31 stream the raw [THINK] reasoning inline into the visible text and silently ignore thinking_token_budget; re-download for the channel-aware file.",
+        "After the 2026-08-29/08-30 updates individual answers can differ from the previous file (greedy decoding can turn on a single token; prompts with accented letters, symbols or emoji reach the model differently)."
+      ]
+    }
+  ]
+}

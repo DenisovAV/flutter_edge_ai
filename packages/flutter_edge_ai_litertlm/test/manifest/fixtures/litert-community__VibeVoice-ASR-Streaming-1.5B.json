@@ -1,0 +1,301 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/VibeVoice-ASR-Streaming-1.5B",
+  "generated": "2026-09-17",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "VibeVoice-ASR-Streaming-1.5B (streaming speech-to-text LLM, one 3.47 s audio window per turn)",
+    "base_model": "microsoft/VibeVoice-ASR-Streaming-1.5B",
+    "architecture": "VibeVoice-ASR-Streaming: σ-VAE acoustic encoder + semantic encoder (SEANet/ConvNeXt-1d, 24 kHz -> 7.5 Hz latents) -> projector -> dense Qwen2.5-1.5B-shaped LM trained on 22-frame chunks + 4-frame look-ahead; LiteRT-LM generic audio path as a multi-turn conversation (raw-waveform frames, no mel)",
+    "parameters_b": 2.8,
+    "license": "mit",
+    "context_length": 2048,
+    "capabilities": {
+      "vision": false,
+      "audio": true,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "VibeVoice-ASR-Streaming-1.5B.litertlm",
+      "sha256": "4e3cecb6c4d55feccf129b99d541be0879abf0b194a779979c1d194900881603",
+      "size_bytes": 1992209664,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1194
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142166
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 237024176,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 801863952,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 951137536,
+          "model_type": "tf_lite_audio_encoder_hw"
+        }
+      ],
+      "quantization": "LM: int4 blockwise-128 min-max, int8 embedding; audio encoder: int8 dynamic on linears, fp32 convs, 3.47 s (26-frame) window",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.16.1",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "LM on Metal: 1766 tok/s prefill / 114 tok/s decode vs 305 / 56 on CPU; 0.33 s per 2.93 s chunk end-to-end; the audio encoder stays on CPU (audio_backend cpu)"
+        },
+        {
+          "platform": "android",
+          "backend": "gpu",
+          "reason": "Galaxy S26: LM on OpenCL 628 tok/s prefill / 46.3 tok/s decode vs 317 / 46.5 on CPU, peak 1483 MB vs 2511 MB; the audio encoder must stay on CPU (audio_backend cpu)"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 2511,
+        "platform_notes": [
+          "Drive it as a MULTI-TURN conversation: one user turn = one audio window of 83 200 samples at 24 kHz (26 frames x 3200), then advance 70 400 samples (22 frames) keeping the 4-frame look-ahead; zero-pad the last window. Fed a whole clip in one turn the model transcribes only the last 3.5 s",
+          "Bare-prompt template (no ChatML): the vendor's streaming prompt is rendered once; each model turn ends with <|text_chunk_end|>; stop tokens <|text_chunk_end|> / <|endoftext|>. Hotwords: a system message '... with these keys: speaker, content and extra info: <words>'",
+          "audio_backend must be cpu (--audio_backend=cpu / audio_backend=CPU()); the LM may run on gpu",
+          "Accuracy: 20 LibriSpeech dev-clean clips (448 words, 73 windows), WER after stripping the 'Speaker N:' label: 7.81 % macOS CPU, 6.92 % LM-on-Metal, 7.81 % Galaxy S26 CPU, 7.14 % Galaxy S26 LM-on-GPU (fp32 PyTorch reference of the vendor streaming protocol 7.59 %; the non-streaming VibeVoice-ASR-BitNet bundle scores 2.68 % on the same clips with a 30 s window)",
+          "KV budget 2048 tokens ~ 2.5 minutes of continuous audio per conversation (about 40 tokens per 2.93 s chunk)",
+          "Peak private footprint on Galaxy S26 (streaming run, --report_peak_memory_footprint): 2511 MB CPU/CPU, 1483 MB LM-on-GPU; Pixel 8a: 2210 MB CPU/CPU, 2521 MB LM-on-Mali-GPU",
+          "Pixel 8a (Tensor G3): WER 7.81 % CPU, 7.37 % LM-on-Mali-GPU; keep the LM on the CPU there (Mali decode 12.7 tok/s vs 22.5 on CPU)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 305.41,
+          "decode_tps": 56.0,
+          "ttft_s": 0.86,
+          "load_s": 1.16,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-17",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --backend cpu (text prompt; LM only)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1765.63,
+          "decode_tps": 113.66,
+          "ttft_s": 0.15,
+          "load_s": 1.49,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-17",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --backend gpu (text prompt; LM only; rested >= 300 s)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 317,
+          "decode_tps": 46.5,
+          "ttft_s": 0.83,
+          "peak_memory_mb": 2511,
+          "runs": 1,
+          "date": "2026-09-17",
+          "source": "--benchmark --benchmark_prefill_tokens=256 --benchmark_decode_tokens=256, one reading (LM only; CPU uncapped, SKIN < 40 C before the leg)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 628,
+          "decode_tps": 46.3,
+          "ttft_s": 0.43,
+          "peak_memory_mb": 1483,
+          "runs": 1,
+          "date": "2026-09-17",
+          "source": "--benchmark --benchmark_prefill_tokens=256 --benchmark_decode_tokens=256, one reading (LM only; audio encoder on CPU)"
+        },
+        {
+          "device": "Pixel 8a",
+          "os": "Android 16",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 117.43,
+          "decode_tps": 22.51,
+          "ttft_s": 2.22,
+          "peak_memory_mb": 2210,
+          "runs": 1,
+          "date": "2026-09-17",
+          "source": "--benchmark --benchmark_prefill_tokens=256 --benchmark_decode_tokens=256, one reading (LM only; CPU uncapped before the leg)"
+        },
+        {
+          "device": "Pixel 8a",
+          "os": "Android 16",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 156.19,
+          "decode_tps": 12.65,
+          "ttft_s": 1.72,
+          "peak_memory_mb": 2521,
+          "runs": 1,
+          "date": "2026-09-17",
+          "source": "--benchmark --benchmark_prefill_tokens=256 --benchmark_decode_tokens=256, one reading (LM only; audio encoder on CPU; Mali GPU)"
+        }
+      ],
+      "known_issues": [
+        "Audio encoder does not run on the GPU delegates (Metal/WebGPU and Adreno OpenCL return an empty transcript, also with fp32 activations); keep audio_backend=cpu",
+        "Single-turn use (whole clip in one message, e.g. a chat app's audio attachment) yields only the last 3.5 s of transcript — the model was trained on the per-chunk protocol and needs the multi-turn loop"
+      ]
+    },
+    {
+      "file": "VibeVoice-ASR-Streaming-1.5B_int8.litertlm",
+      "sha256": "0e09bc6a00667db7198636dab5c503c7d3136c59490b87a0ed68d413aa3d8459",
+      "size_bytes": 2771449088,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1194
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142166
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 237024176,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1581093680,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 951137536,
+          "model_type": "tf_lite_audio_encoder_hw"
+        }
+      ],
+      "quantization": "LM: int8 dynamic, int8 embedding; audio encoder: int8 dynamic on linears, fp32 convs, 3.47 s (26-frame) window",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.16.1",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "desktop build: LM on Metal 1977 tok/s prefill / 140 tok/s decode vs 251 / 47 on CPU; +0.6 pp WER over the int4 file on the Mac CPU (7.14 % vs 7.81 %)"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 3159,
+        "platform_notes": [
+          "Same multi-turn protocol and audio_backend=cpu rule as the int4 file",
+          "Accuracy on the same 20 clips: 7.14 % macOS CPU, 7.37 % LM-on-Metal, 7.14 % Galaxy S26 CPU, 6.92 % Galaxy S26 LM-on-GPU",
+          "Peak private footprint on Galaxy S26: 3159 MB CPU/CPU, 1613 MB LM-on-GPU"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 251.4,
+          "decode_tps": 46.81,
+          "ttft_s": 1.04,
+          "load_s": 6.1,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-17",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --backend cpu (text prompt; LM only)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1977.31,
+          "decode_tps": 139.61,
+          "ttft_s": 0.14,
+          "load_s": 1.59,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-17",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --backend gpu (text prompt; LM only; rested >= 300 s)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 514,
+          "decode_tps": 32.8,
+          "ttft_s": 0.53,
+          "peak_memory_mb": 3159,
+          "runs": 1,
+          "date": "2026-09-17",
+          "source": "--benchmark --benchmark_prefill_tokens=256 --benchmark_decode_tokens=256, one reading (LM only; CPU uncapped, SKIN < 40 C before the leg)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 610,
+          "decode_tps": 30.5,
+          "ttft_s": 0.45,
+          "peak_memory_mb": 1613,
+          "runs": 1,
+          "date": "2026-09-17",
+          "source": "--benchmark --benchmark_prefill_tokens=256 --benchmark_decode_tokens=256, one reading (LM only; audio encoder on CPU)"
+        }
+      ],
+      "known_issues": [
+        "Same as the int4 file: audio encoder CPU-only; multi-turn loop required"
+      ]
+    }
+  ]
+}

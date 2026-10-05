@@ -2,10 +2,11 @@
 
 Snapshots of every live `litertlm_manifest.json` the
 [hf-to-litertlm](https://github.com/john-rocky/hf-to-litertlm) converter had
-shipped as of 2026-09-02 — 28 repos, 51 variants — plus
+shipped as of 2026-10-05 — 71 repos, 112 variants — plus
 `reference_goldens.json`: the file and backend the converter's own reference
 reader (`readers/dart` in that repo) picks for every repo × platform × backend
-hint over the same snapshot, 896 rows. The regression sweep in
+hint over the same snapshot, 2272 rows, and a `_generator` row naming the
+reader revision that produced them. The regression sweep in
 `../shipped_manifests_regression_test.dart` runs the resolver over all of it,
 offline, so the resolver is tested against the real published data rather
 than synthetic shapes — and pinned to the reference selection on every
@@ -36,10 +37,28 @@ done
 ```
 
 Then regenerate `reference_goldens.json` with the reference reader. It is not a
-dependency of this package, so use a throwaway Dart package that depends on
-`readers/dart` from a hf-to-litertlm checkout (`litertlm_manifest`) and run
-this over the fixtures directory (`dart run dump.dart <this directory> >
-reference_goldens.json`):
+dependency of this package, so use a throwaway Dart package that depends on it
+at a pinned commit — an empty directory with this `pubspec.yaml`:
+
+```yaml
+name: dump_goldens
+publish_to: none
+environment:
+  sdk: ^3.0.0
+dependencies:
+  litertlm_manifest:
+    git:
+      url: https://github.com/john-rocky/hf-to-litertlm
+      path: readers/dart
+      ref: 6a620c8aa767d9f33bcc3c04a7d11f6a1d0743b4 # litertlm_manifest 0.2.2
+```
+
+and this `dump.dart` next to it. Run `dart pub get`, then `dart run dump.dart
+<this directory> > reference_goldens.json` from that package. To move to a
+newer reader, change `ref:` to a later commit of that repo; the dump reads the
+revision back from `pubspec.lock`, so the `_generator` row always names the
+reader that ran, and a reader that did not come from a git revision writes
+nothing:
 
 ```dart
 import 'dart:convert';
@@ -52,6 +71,29 @@ import 'package:litertlm_manifest/litertlm_manifest.dart';
 const platforms = [null, 'android', 'ios', 'macos', 'windows', 'linux', 'web', 'unknown'];
 const hints = [null, 'cpu', 'gpu', 'npu'];
 
+/// The reader revision pub resolved, read back from this package's
+/// pubspec.lock — what actually ran, not what someone typed. A reader that
+/// did not come from a git revision (a path dependency, say) has no
+/// `resolved-ref`, and then no goldens are written.
+Map<String, String> generator() {
+  final lock = File('pubspec.lock').readAsStringSync();
+  final entry = RegExp(r'^  litertlm_manifest:\n((?:    .*\n)+)', multiLine: true)
+      .firstMatch(lock)?[1] ?? '';
+  String? field(String name) =>
+      RegExp('^ +$name: "?([^"\n]+)"?\$', multiLine: true).firstMatch(entry)?[1];
+  final ref = field('resolved-ref');
+  if (ref == null) {
+    throw StateError('pubspec.lock has no git resolved-ref for litertlm_manifest');
+  }
+  return {
+    'package': 'litertlm_manifest',
+    'version': field('version')!,
+    'url': field('url')!,
+    'path': field('path')!,
+    'ref': ref,
+  };
+}
+
 void main(List<String> args) {
   final files = Directory(args.first)
       .listSync()
@@ -59,7 +101,7 @@ void main(List<String> args) {
       .where((f) => f.path.endsWith('.json') && !f.path.endsWith('reference_goldens.json'))
       .toList()
     ..sort((a, b) => a.path.compareTo(b.path));
-  final out = <String, Map<String, String>>{};
+  final out = <String, Map<String, String>>{'_generator': generator()};
   for (final f in files) {
     final manifest = LitertlmManifest.fromJson(f.readAsStringSync());
     for (final p in platforms) {

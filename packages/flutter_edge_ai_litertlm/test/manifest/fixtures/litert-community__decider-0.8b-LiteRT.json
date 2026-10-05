@@ -1,0 +1,275 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/decider-0.8b-LiteRT",
+  "generated": "2026-09-23",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "decider-0.8b (LiteRT-LM)",
+    "base_model": "Mapika/decider-0.8b",
+    "architecture": "Qwen3.5 text-only hybrid: 18 GatedDeltaNet linear-attention + 6 full-attention layers; 4096-token exported cache; no vision/MTP",
+    "parameters_b": 0.752393024,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "decider-0.8b_fp16.litertlm",
+      "sha256": "477c1dcadbb229833cbcb9613f3436ad7057dcdbc4de2038ca3e8f4ec0485f25",
+      "size_bytes": 1625055920,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 253
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3201
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913268
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1621090992,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "fp16 float-casting of FULLY_CONNECTED + EMBEDDING_LOOKUP weights, explicit dequantization and float compute; convs/delta rule float",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.15.0",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "cpu",
+          "reason": "Recommended when preservation of upstream probabilities matters: 120/120 argmax, max |Δp| 6.61612e-6."
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires LiteRT-LM >=0.15 for generalized hybrid-state binding; describe/engine verified on 0.17.1.",
+          "4096 tokens maximum per rendered independent row; use reference/systemone_litert.py, not generated answer text."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 8,
+          "prefill_tps": 533.23,
+          "decode_tps": 18.82,
+          "ttft_s": 0.5335,
+          "load_s": 42.3812,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-23",
+          "num_threads": 4,
+          "timing": "quiet machine (no other Codex run; supervisor checked)",
+          "warmup_runs": 1,
+          "max_num_tokens": 4096,
+          "source": "CLI mean of 3 measured iterations for prefill/decode/TTFT; init from first measured iteration; one warmup excluded; generation diagnostic only, not System One latency; Mac VmHWM not measured"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 S4 kit (2026-08-17)",
+          "prompt_tokens": 262,
+          "source_prompt_tokens": 262,
+          "decode_tokens": 3834,
+          "prefill_tps": 44.94,
+          "decode_tps": 10.98,
+          "ttft_s": 5.92,
+          "load_s": 18.08928,
+          "peak_memory_mb": 6093.80859375,
+          "peak_memory_units": "MiB from VmHWM kB / 1024",
+          "max_num_tokens": 4096,
+          "cache": "no; disk caches deleted before run",
+          "cold": true,
+          "runs": 1,
+          "date": "2026-09-23",
+          "sampler_backend": "cpu",
+          "exit_code": 0,
+          "source": "One cold, thermal/frequency-checked S26 run; generation diagnostic only, not System One latency or S26 probability calibration"
+        }
+      ],
+      "known_issues": [
+        "Use independent graph rows, piecewise label IDs and T=1.03; whole-text retokenization changes the 255-option row.",
+        "RunTextScoring requires a fresh process/engine for each target on this hybrid; shared engines may retain stale recurrent/conv state.",
+        "The earlier weight-only int8 build is not this dynamic-int8 file and remains unpublished after two S26 kernel panics; cause unidentified.",
+        "S26 fp16 CPU262 completed at 44.94 tok/s and 6093.809 MiB; CPU503 was interrupted by a logged framework restart with kernel uptime unchanged and incomplete metrics. Not recommended on phones.",
+        "This exact fp16 form failed S26 CL GPU engine creation because partial delegation was refused; declared backend is CPU only."
+      ]
+    },
+    {
+      "file": "decider-0.8b_int8.litertlm",
+      "sha256": "3e3c03da33034115dade6094c8ae94a90a7169d2a7cb4c6f8145e2dcc49a143b",
+      "size_bytes": 963184864,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 253
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3201
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913268
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 959219936,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "dynamic int8 FULLY_CONNECTED + int8 CHANNELWISE EMBEDDING_LOOKUP (wi8fc); convs/delta rule float; fp32 activation preference",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.15.0",
+      "recommended": [
+        {
+          "platform": "android",
+          "backend": "cpu",
+          "reason": "At 262 tokens, prefill is approximately the same as GPU (287.75 vs 300.48 tok/s), with 13.81788 s init and 1941 MiB (1.90 GiB) peak; accept the documented CPU probability differences."
+        },
+        {
+          "platform": "android",
+          "backend": "gpu",
+          "reason": "Calibration-oriented option based on the Mac Metal probability gate; S26 CL fully delegates, with 78–97 s init and 4553–5317 MiB peak. S26 probability calibration remains unmeasured."
+        },
+        {
+          "platform": "macos",
+          "backend": "cpu",
+          "reason": "Quiet M4 Max CPU, 4 threads: 695.41 tok/s prefill; smaller file, with the documented dynamic-activation probability differences."
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires LiteRT-LM >=0.15 for hybrid state binding; Mac 0.17.1 and S26 S4-kit 0.16.0 measured.",
+          "Graph probability gates: ai-edge-litert 2.2.0, Metal enforce_f32=True. 4096-token CPU cache; GPU row limit 1024.",
+          "GPU decision readout requires ONE padded prefill chunk using token ID 0 and the graph pad convention, then decode the last token; GPU multi-chunk prefill corrupts carried hybrid state. Route rows longer than 1024 tokens to CPU. Included reference is CPU-only."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max (Mac16,9)",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 8,
+          "prefill_tps": 695.41,
+          "decode_tps": 42.48,
+          "ttft_s": 0.3917,
+          "load_s": 40.3517,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-23",
+          "num_threads": 4,
+          "timing": "quiet machine (supervisor checked)",
+          "warmup_runs": 1,
+          "max_num_tokens": 4096,
+          "source": "CLI mean of 3 measured iterations for prefill/decode/TTFT; init from first measured iteration; one warmup excluded; generation diagnostic only, not System One latency; Mac VmHWM not measured"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 S4 kit",
+          "prompt_tokens": 262,
+          "source_prompt_tokens": 262,
+          "decode_tokens": 3834,
+          "prefill_tps": 300.48,
+          "decode_tps": 25.29,
+          "ttft_s": 0.91,
+          "load_s": 78.28922999999999,
+          "peak_memory_mb": 4552.68359375,
+          "peak_memory_units": "MiB from VmHWM kB / 1024",
+          "max_num_tokens": 4096,
+          "cache": "no; disk caches deleted before run",
+          "cold": true,
+          "runs": 1,
+          "date": "2026-09-23",
+          "sampler_backend": "cpu",
+          "exit_code": 0,
+          "source": "One cold, thermal/frequency-checked S26 run; generation diagnostic only, not System One latency or S26 probability calibration",
+          "fully_delegated": true,
+          "delegated_ops": 188522,
+          "total_ops": 188522,
+          "subgraphs": 12
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 S4 kit",
+          "prompt_tokens": 503,
+          "source_prompt_tokens": 503,
+          "decode_tokens": 3,
+          "prefill_tps": 567.19,
+          "decode_tps": 12.05,
+          "ttft_s": 0.97,
+          "load_s": 97.37262,
+          "peak_memory_mb": 5317.46484375,
+          "peak_memory_units": "MiB from VmHWM kB / 1024",
+          "max_num_tokens": 4096,
+          "cache": "no; disk caches deleted before run",
+          "cold": true,
+          "runs": 1,
+          "date": "2026-09-23",
+          "sampler_backend": "cpu",
+          "exit_code": 0,
+          "source": "One cold, thermal/frequency-checked S26 run; generation diagnostic only, not System One latency or S26 probability calibration",
+          "fully_delegated": true,
+          "delegated_ops": 188522,
+          "total_ops": 188522,
+          "subgraphs": 12
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 S4 kit",
+          "prompt_tokens": 262,
+          "source_prompt_tokens": 262,
+          "decode_tokens": 3834,
+          "prefill_tps": 287.75,
+          "decode_tps": 36.89,
+          "ttft_s": 0.94,
+          "load_s": 13.817879999999999,
+          "peak_memory_mb": 1941.1328125,
+          "peak_memory_units": "MiB from VmHWM kB / 1024",
+          "max_num_tokens": 4096,
+          "cache": "no; disk caches deleted before run",
+          "cold": true,
+          "runs": 1,
+          "date": "2026-09-23",
+          "sampler_backend": "cpu",
+          "exit_code": 0,
+          "source": "One cold, thermal/frequency-checked S26 run; generation diagnostic only, not System One latency or S26 probability calibration"
+        }
+      ],
+      "known_issues": [
+        "Mac M4 Max vs fp32 oracle: int8 CPU exact-fit 117/120 argmax, max/p95 |Δp| 0.159999788/0.067937851, 27 rows >0.02; CPU padded 116/119, 0.129208088/0.070914835; Metal GPU one padded chunk 118/119, 0.073165774/0.025039411, 10 rows >0.02. CPU dynamically quantizes activations; GPU computes int8 weights in float. Choose fp16 for upstream probability fidelity; S26 probability calibration unmeasured.",
+        "GPU decision readout requires ONE padded prefill chunk using token ID 0 and the graph pad convention, then decode the last token; GPU multi-chunk prefill corrupts carried hybrid state. Route rows longer than 1024 tokens to CPU. Included reference is CPU-only.",
+        "Use independent graph rows, piecewise label IDs and T=1.03; whole-text retokenization changes the 255-option row.",
+        "RunTextScoring requires a fresh process/engine for each target on this hybrid; shared engines may retain stale recurrent/conv state.",
+        "The earlier weight-only int8 build is not this dynamic-int8 file and remains unpublished after two S26 kernel panics; cause unidentified.",
+        "S26 GPU initialization costs 78–97 s and roughly 2–3x CPU262 peak memory; at about 260 tokens it is not materially faster than CPU.",
+        "No device rankings or Android probability-equivalence claim; each S26 performance row is a single cold run."
+      ]
+    }
+  ]
+}

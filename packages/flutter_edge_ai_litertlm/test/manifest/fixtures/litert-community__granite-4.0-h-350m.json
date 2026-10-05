@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/granite-4.0-h-350m",
-  "generated": "2026-08-28",
+  "generated": "2026-09-07",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "granite-4.0-h-350m",
@@ -46,6 +46,24 @@
       "backends": [
         "cpu"
       ],
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 224,
+          "decode_tokens": 141,
+          "prefill_tps": "9.0-13.7",
+          "decode_tps": "9.54-11.33",
+          "ttft_s": "16.39-25.05",
+          "load_s": 7.9,
+          "peak_memory_mb": 6473,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
+      ],
       "default_backend": "cpu",
       "known_issues": [
         "CPU only, for two independent reasons. The same rank-5/6 scan graph as _int8 above, and - even after that is rewritten - float-casting EMBEDDING_LOOKUP leaves empty quantization params plus a DEQUANTIZE the delegate will not take (3326 of 3536 ops, engine refused). There is no fp16 GPU variant; use _int8_gpu.",
@@ -79,6 +97,40 @@
       "quantization": "int8 dynamic weight-only (linears + embedding; convs and the SSM stay float)",
       "backends": [
         "cpu"
+      ],
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 224,
+          "decode_tokens": 134,
+          "prefill_tps": 10.6,
+          "decode_tps": "10.68-11.48",
+          "ttft_s": 21.29,
+          "load_s": 2.5,
+          "peak_memory_mb": 2882,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 224,
+          "decode_tokens": 134,
+          "prefill_tps": "5.9-8.0",
+          "decode_tps": "6.98-8.86",
+          "ttft_s": "28.01-38.21",
+          "load_s": 3.6,
+          "peak_memory_mb": 2876,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
       ],
       "default_backend": "cpu",
       "known_issues": [
@@ -116,6 +168,20 @@
         "gpu"
       ],
       "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "measured on one Galaxy S26 with one binary (S5 gate 2026-08-27, 205-token prompt): CPU decodes 97.6 tok/s against the GPU's 48.8, and peaks at 1105 MB against 2131 MB; the GPU wins only prefill (486.5 vs 305.6 tok/s). Same-device CPU control taken, so this is a measured win for CPU on decode and memory; choose gpu only for prompt-heavy, short-output work. This file (not the _int8 sibling, which cannot create a GPU engine) is the one both backends were measured on"
+        },
+        {
+          "platform": "android",
+          "device_class": "midrange",
+          "backend": "cpu",
+          "reason": "measured on one Pixel 8a with one binary (S7 Android backfill 2026-09-07, 205-token prompt, 2 cold runs per backend, cooled before each run): cpu decodes 40.42 tok/s against gpu's 20.54 (2.0x), prefill 102.8-110.6 vs 180.4 tok/s, peak 1081 vs 4307 MB, engine init 3.1 vs 37.3 s. Same-device GPU control taken - a measured win for cpu on decode. Same direction as the flagship recommendation on the Galaxy S26 (cpu, 2.0x there). The GPU path runs fully delegated (all 12 subgraphs on LiteRT GPU) and answered the probe, but needs a 37 s engine init and peaks at 4.3 GB on this 7.75 GB phone against 1.1 GB on the CPU; it wins only prefill (180 vs 103-111 tok/s). Ship this file, not the CPU-lineage _int8 sibling, on 8 GB-class Android as well: on this phone's CPU the same weights decode 40 tok/s from this export against 7-9 tok/s from _int8 (row of 2026-09-05)"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Requires litert-lm >= 0.15: the hybrid conv/SSM state buffers bind through the ExecutorMetadata section, which the 0.14 engine does not read",
@@ -148,6 +214,38 @@
           "runs": 1,
           "date": "2026-08-27",
           "source": "S5 same-device CPU control, identical prompt file and flags; phone already warm from the GPU runs"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 224,
+          "decode_tokens": 141,
+          "prefill_tps": 180.4,
+          "decode_tps": 20.54,
+          "ttft_s": 1.29,
+          "load_s": 37.3,
+          "peak_memory_mb": 4307,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (38313 ops across 12 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 224,
+          "decode_tokens": 122,
+          "prefill_tps": "102.8-110.6",
+          "decode_tps": 40.42,
+          "ttft_s": "2.05-2.2",
+          "load_s": 3.1,
+          "peak_memory_mb": 1081,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
         }
       ],
       "known_issues": [

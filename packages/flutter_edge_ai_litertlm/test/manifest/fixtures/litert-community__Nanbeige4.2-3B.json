@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Nanbeige4.2-3B",
-  "generated": "2026-08-31",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Nanbeige4.2-3B",
@@ -26,18 +26,25 @@
           "start": "<think>\n",
           "end": "\n</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "model.litertlm",
-      "sha256": "d4a55ec390bd5e1a2ef52e37f51dc5ffd1589e0f60e8d35765a0498f7ebf2f83",
+      "sha256": "565a806e59938ab15fd099e9e0a9bc02f3ca5b618422e53481292378679cc04e",
       "size_bytes": 2579277808,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1458
+          "size_bytes": 1841
         },
         {
           "type": "SP_Tokenizer",
@@ -82,6 +89,22 @@
           "runs": 3,
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness); no run log was retained for this row"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 225,
+          "decode_tokens": 3871,
+          "prefill_tps": 20.9,
+          "decode_tps": 4.1,
+          "ttft_s": 11.0,
+          "load_s": 9.3,
+          "peak_memory_mb": 4248,
+          "cache": "no",
+          "runs": 1,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 1 cold run (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
         }
       ],
       "known_issues": [
@@ -94,12 +117,12 @@
     },
     {
       "file": "model_fp32act.litertlm",
-      "sha256": "2a3388f958ad22faabc306856bfa026515b2352ca9564964f3e5e9129f22f289",
+      "sha256": "18fb9fd6b6ac2bc2f5996ecf00c8ef2d57106556c10390ab114e2efc8144378a",
       "size_bytes": 2579277808,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1458
+          "size_bytes": 1841
         },
         {
           "type": "SP_Tokenizer",

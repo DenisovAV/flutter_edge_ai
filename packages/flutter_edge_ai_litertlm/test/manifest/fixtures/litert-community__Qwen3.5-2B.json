@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Qwen3.5-2B",
-  "generated": "2026-08-25",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Qwen3.5-2B",
@@ -114,6 +114,38 @@
           "runs": 1,
           "date": "2026-08-25",
           "source": "qwen35vl_work/iphone_results/*quality_2026-08-25T13-30-34Z.json"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 207,
+          "decode_tokens": 386,
+          "prefill_tps": 449.1,
+          "decode_tps": "16.86-17.47",
+          "ttft_s": 0.52,
+          "load_s": 76.7,
+          "peak_memory_mb": 3980,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (99187 ops across 7 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 207,
+          "decode_tokens": 3889,
+          "prefill_tps": "180.7-197.5",
+          "decode_tps": "18.48-18.98",
+          "ttft_s": "1.1-1.2",
+          "load_s": 17.0,
+          "peak_memory_mb": 3121,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
         }
       ],
       "known_issues": [
@@ -123,12 +155,12 @@
     },
     {
       "file": "Qwen3.5-2B_int8.litertlm",
-      "sha256": "86c97baba6d3fb4109588562f0b9411e502c883be7fc2479f93ce3a6ea3efb6b",
+      "sha256": "8ae5027136e0b89039ed76eedfb61f0cf4b7277024d99bf765359264295b86b1",
       "size_bytes": 2116592816,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 362
+          "size_bytes": 729
         },
         {
           "type": "ExecutorMetadataProto",
@@ -150,6 +182,14 @@
         "gpu"
       ],
       "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (188522 ops across 12 subgraphs) and a correct answer to the probe; 20.1 tok/s decode, engine init 90.0 s, peak 3516 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
       "requirements": {
         "min_runtime": "litert-lm 0.15.0",
         "platform_notes": [
@@ -188,6 +228,21 @@
           "runs": 1,
           "date": "2026-08-14",
           "source": "dmbench yardstick quality task, 138-token prompt, cold start"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 207,
+          "decode_tokens": 310,
+          "prefill_tps": 249.7,
+          "decode_tps": 20.12,
+          "ttft_s": 0.88,
+          "load_s": 90.0,
+          "peak_memory_mb": 3516,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (188522 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
         }
       ],
       "known_issues": [

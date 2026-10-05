@@ -1,0 +1,339 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/LFM2.5-VL-450M",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "LFM2.5-VL-450M",
+    "base_model": "LiquidAI/LFM2.5-VL-450M",
+    "architecture": "Hybrid LFM2 text backbone (16 layers: gated short-convolutions + grouped-query attention, 64k vocab) with a compact SigLIP2 vision tower (12 layers, hidden 768).",
+    "license": "lfm-open-license-v1.0",
+    "parameters_b": 0.45,
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "LFM2.5-VL-450M_int4.litertlm",
+      "sha256": "45a0224180c89a25299078524e5a8dfcce131686fd0f941cdcf3507095db4797",
+      "size_bytes": 406820224,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 900
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 1421
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 906905
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 240287200,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 67897504,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 89198064,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 8443264,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "text int4 blockwise-32 OCTAV linears, int8 embedding + lm_head; vision tower int8",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.16.0",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "midrange-2023+",
+          "backend": "gpu",
+          "reason": "the Android path measured on a Pixel 8a (Tensor G3): 33.1 tok/s decode on gpu; the same phone's cpu row decodes 22.6 tok/s; the repo's LFM2.5-VL-450M_int8.litertlm decodes 31.1 tok/s on the same device and backend, so this file carries the class"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary: GPU 103.12 tok/s decode / 2052.3 prefill, peak 526 MB, init 1.2 s (S4 GPU gate 2026-08-25, 1 run) against CPU 83.4-99.25 decode / 341.6-403.6 prefill, peak 689 MB, init 1.0 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device CPU control taken - a measured win for gpu on decode (1.1x) and prefill"
+        },
+        {
+          "platform": "ios",
+          "backend": "cpu",
+          "reason": "card: iOS Metal fails at engine creation for this family, tracked upstream in [LiteRT-LM#3129](https://github.com/google-ai-edge/LiteRT-LM/issues/3129) — use CPU on iOS"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 4096 max; one image per prompt, resized to 512x512 -> 256 tokens, PNG/JPEG via --attachment.",
+          "--vision-backend cpu|gpu selects the vision encoder backend independently of the text backend; text-only prompts work without --attachment.",
+          "The text graph delegates fully on Android OpenCL (543/543 nodes, zero rejected ops).",
+          "int4 prefills slower than int8 on CPU (blockwise-int4 repacking) but decodes ~40% faster — pick by whether prompts or outputs dominate.",
+          "Galaxy S26 GPU gate covers engine creation and the text path only (no image in the gate prompt); the vision path on the GPU is not measured there. XNNPACK takes 1 of 4 nodes in main.",
+          "int4 is the better variant of this model on our gates (text 8/8, image 4/5 on CPU; also passes the image gate on GPU, 4/5) — it misses only the shape question."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0 pip",
+          "prompt_tokens": 256,
+          "prefill_tps": 1026,
+          "decode_tps": 127.0,
+          "ttft_s": 0.26,
+          "cache": "no",
+          "source": "model card: card: Speed, CPU backend table (Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0 pip",
+          "prompt_tokens": 256,
+          "prefill_tps": 8296,
+          "decode_tps": 354.2,
+          "ttft_s": 0.03,
+          "cache": "no",
+          "source": "model card: card: Speed, GPU backend table (Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main built from the v0.16.0 release tag",
+          "prompt_tokens": 296,
+          "prefill_tps": 528,
+          "decode_tps": 33.1,
+          "ttft_s": 0.59,
+          "cache": "no",
+          "source": "model card: card: Speed, Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "cpu",
+          "runtime": "litert_lm_main built from the v0.16.0 release tag",
+          "prompt_tokens": 296,
+          "prefill_tps": 92,
+          "decode_tps": 22.6,
+          "ttft_s": 3.3,
+          "cache": "no",
+          "source": "model card: card: Speed, Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 205,
+          "decode_tokens": 117,
+          "prefill_tps": 2052.3,
+          "decode_tps": 103.12,
+          "ttft_s": 0.11,
+          "load_s": 1.2,
+          "peak_memory_mb": 526,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (6443 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 205,
+          "decode_tokens": 192,
+          "prefill_tps": "341.6-403.6",
+          "decode_tps": "83.4-99.25",
+          "ttft_s": "0.52-0.61",
+          "load_s": 1.0,
+          "peak_memory_mb": 689,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
+      ],
+      "known_issues": [
+        "On litert-lm 0.16.0 and current main only the top quarter of the image reaches the model; captioning, colour questions and OCR of a large dominant subject work, but positional questions (locate, count, enumerate) come back wrong with no error.",
+        "Cause: a shrink-factor assumption in the runtime's vision path, reported upstream as LiteRT-LM#3246; affects every LFM2.5-VL bundle (2x2 pixel-unshuffle lives in the adapter, runtime assumes the encoder).",
+        "Band-ruler check (16 numbered bands, top to bottom): expected 1..16, actual '1 2 3 4 4 4 1 2 3 3 1 2 2 1 1 2 2 1 1'.",
+        "A repaired build exists (pooling moved into the exported encoder) but the published files were not replaced pending the upstream fix; open a discussion if needed.",
+        "iOS Metal (GPU) fails at engine creation for this family (LiteRT-LM#3129); use CPU on iOS.",
+        "Image-gate misses (shape; on int8 also others) are the runtime defect, not a 450M-scale limitation: the shape and counting fixtures sit below the visible quarter; repairing the bundle flips 'Square.' to 'Circle.' with nothing else changed."
+      ]
+    },
+    {
+      "file": "LFM2.5-VL-450M_int8.litertlm",
+      "sha256": "f941a5f9482e31c1b7980456ac94269f2e45fffa28cd49f50c8435475c106dda",
+      "size_bytes": 563549568,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 900
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 1421
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 906905
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 397012272,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 67897504,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 89198064,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 8443264,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "int8 dynamic (text linears + convs + embedding, vision tower)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.16.0",
+      "recommended": [
+        {
+          "platform": "ios",
+          "backend": "cpu",
+          "reason": "card: iOS Metal fails at engine creation for this family, tracked upstream in [LiteRT-LM#3129](https://github.com/google-ai-edge/LiteRT-LM/issues/3129) — use CPU on iOS"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 4096 max; one image per prompt, resized to 512x512 -> 256 tokens, PNG/JPEG via --attachment.",
+          "--vision-backend cpu|gpu selects the vision encoder backend independently of the text backend; text-only prompts work without --attachment.",
+          "The text graph delegates fully on Android OpenCL (543/543 nodes, zero rejected ops).",
+          "int4 prefills slower than int8 on CPU (blockwise-int4 repacking) but decodes ~40% faster — pick by whether prompts or outputs dominate.",
+          "Galaxy S26 GPU gate covers engine creation and the text path only (no image in the gate prompt); the vision path on the GPU is not measured there. XNNPACK takes 1 of 4 nodes in main."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0 pip",
+          "prompt_tokens": 256,
+          "prefill_tps": 1088,
+          "decode_tps": 129.2,
+          "ttft_s": 0.24,
+          "cache": "no",
+          "source": "model card: card: Speed, CPU backend table (Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0 pip",
+          "prompt_tokens": 256,
+          "prefill_tps": 8443,
+          "decode_tps": 360.0,
+          "ttft_s": 0.03,
+          "cache": "no",
+          "source": "model card: card: Speed, GPU backend table (Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main built from the v0.16.0 release tag",
+          "prompt_tokens": 296,
+          "prefill_tps": 578,
+          "decode_tps": 31.1,
+          "ttft_s": 0.54,
+          "cache": "no",
+          "source": "model card: card: Speed, Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "cpu",
+          "runtime": "litert_lm_main built from the v0.16.0 release tag",
+          "prompt_tokens": 296,
+          "prefill_tps": 177,
+          "decode_tps": 15.8,
+          "ttft_s": 1.7,
+          "cache": "no",
+          "source": "model card: card: Speed, Pixel 8a table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 205,
+          "decode_tokens": 139,
+          "prefill_tps": 3634.9,
+          "decode_tps": 99.12,
+          "ttft_s": 0.07,
+          "load_s": 1.0,
+          "peak_memory_mb": 529,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (6443 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 205,
+          "decode_tokens": 149,
+          "prefill_tps": 759.3,
+          "decode_tps": 70.49,
+          "ttft_s": "0.28-0.29",
+          "load_s": 1.1,
+          "peak_memory_mb": 832,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset. An earlier pair the same afternoon read 1108 / 91 tok/s (both pairs internally consistent, thermal status 0): S26 CPU figures drift about 25% between sittings, so read this row with that spread"
+        }
+      ],
+      "known_issues": [
+        "On litert-lm 0.16.0 and current main only the top quarter of the image reaches the model; captioning, colour questions and OCR of a large dominant subject work, but positional questions (locate, count, enumerate) come back wrong with no error.",
+        "Cause: a shrink-factor assumption in the runtime's vision path, reported upstream as LiteRT-LM#3246; affects every LFM2.5-VL bundle (2x2 pixel-unshuffle lives in the adapter, runtime assumes the encoder).",
+        "Band-ruler check (16 numbered bands, top to bottom): expected 1..16, actual '1 2 3 4 4 4 1 2 3 3 1 2 2 1 1 2 2 1 1'.",
+        "A repaired build exists (pooling moved into the exported encoder) but the published files were not replaced pending the upstream fix; open a discussion if needed.",
+        "iOS Metal (GPU) fails at engine creation for this family (LiteRT-LM#3129); use CPU on iOS.",
+        "Image-gate misses (shape; on int8 also others) are the runtime defect, not a 450M-scale limitation: the shape and counting fixtures sit below the visible quarter; repairing the bundle flips 'Square.' to 'Circle.' with nothing else changed.",
+        "int8 scores lower on the gates than int4: text 6/8, image 3/5 (LiteRT int8, CPU); int4 is the better variant of this model on our gates."
+      ]
+    }
+  ]
+}

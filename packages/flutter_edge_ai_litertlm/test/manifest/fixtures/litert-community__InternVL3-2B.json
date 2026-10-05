@@ -1,0 +1,143 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/InternVL3-2B",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "InternVL3-2B",
+    "base_model": "OpenGVLab/InternVL3-2B",
+    "architecture": "InternVL3-2B is a compact vision-language model: an InternViT vision encoder + pixel-shuffle + MLP projector feeding a Qwen2.5-1.5B language decoder.",
+    "license": "apache-2.0",
+    "parameters_b": 2.0,
+    "context_length": 2048,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "InternVL3-2B.litertlm",
+      "sha256": "cb7d63cbf2f5d9b3eb307012b54dc4fc4d68fef78dc3a5d4fbba41c59812f9b6",
+      "size_bytes": 1429640560,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 2168
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1968130
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 234793552,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 872651808,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 311452464,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 8705392,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "Decoder Qwen2.5-1.5B int4 weights (symmetric, blockwise-32 + OCTAV optimal-clipping), input embedding INT8 (externalized section); vision encoder + pixel-shuffle + MLP projector int8 weights; integer compute",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary: GPU 40.41 tok/s decode / 631.0 prefill, peak 736 MB, init 3.7 s (S4 GPU gate 2026-08-25, 1 run) against CPU 34.83-43.67 decode / 132.1-207.9 prefill, peak 1364 MB, init 1.7 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device CPU control taken: decode is a wash (within 10%); gpu is kept for its prefill advantage (time to first token), a deliberate choice rather than a decode win"
+        },
+        {
+          "platform": "macos",
+          "backend": "cpu",
+          "reason": "card: Use the CPU backend on the desktop."
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "iPhone 17 Pro rows are carried over from the repository's earlier on-device note (model loads in about 3–4 s); run logs are not retained, so run count and prompt are unknown. The GPU row covers single-image VQA.",
+          "Multi-turn text works: follow-up questions about the same image are supported.",
+          "Vision-only bundle (no audio tower): bring up the engine with the vision modality only (Modality.textImage / [.vision]); requesting the audio tower (.all) fails at session creation.",
+          "Galaxy S26 GPU gate prompt carries no image: it covers engine creation and the text path only; the vision path on the GPU is not measured there.",
+          "Galaxy S26 GPU gate: XNNPACK additionally takes 1 of the 4 nodes in `main`; the runtime accepts that split.",
+          "2026-08-28 start_token fix (metadata-only, weights unchanged): the literal start token \"None\" was removed. Accuracy figures on the card were measured on the previous file and not re-measured.",
+          "2026-08-29 default system prompt restored (metadata-only, weights unchanged): with no system message the prompt now adds 37 prefill tokens, so time-to-first-token grows by that much; per-token speed is unchanged. Accuracy figures not re-measured.",
+          "2026-08-30 tokenizer section replaced with the upstream tokenizer.json (weights unchanged): answers to prompts with accented letters/symbols/emoji can change; accuracy figures and any on-device rows were measured on the previous file; the on-device gate has not been re-run.",
+          "2026-08-31 chat template fix (metadata-only, weights unchanged): history turns with role 'assistant' are now accepted; single-turn renders, token ids, prefill counts and greedy answers are unchanged, so the card's numbers still describe this file.",
+          "Not a measured row: card reports iPhone 17 Pro cpu decode_tps 20 (Performance table (iPhone rows carried over from the repository's earlier on-device note; run logs not retained); runtime/run count not stated)",
+          "Not a measured row: card reports iPhone 17 Pro gpu decode_tps 45 (Performance table (iPhone rows carried over from the repository's earlier on-device note; run logs not retained); runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 157,
+          "decode_tps": 50.0,
+          "ttft_s": 1.79,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (litert-lm benchmark, Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 203,
+          "decode_tokens": 1845,
+          "prefill_tps": 631.0,
+          "decode_tps": 40.41,
+          "ttft_s": 0.35,
+          "load_s": 3.7,
+          "peak_memory_mb": 736,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3618 ops across 3 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 239,
+          "decode_tokens": 182,
+          "prefill_tps": "132.1-207.9",
+          "decode_tps": "34.83-43.67",
+          "ttft_s": "1.17-1.84",
+          "load_s": 1.7,
+          "peak_memory_mb": 1364,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
+      ],
+      "known_issues": [
+        "macOS GPU backend is not usable on litert-lm 0.15.0: with --backend gpu it returns a run of '!' characters instead of a caption; the benchmark still reports 2,031 tok/s prefill / 183 tok/s decode on that unusable path, so no GPU row is quoted. Desktop-runtime observation only.",
+        "GPU (Metal) backend: a second image in the same conversation truncates the answer; ask about one image per chat. GPU-delegate-specific, not a model/bundle issue — on the CPU backend multi-image works perfectly (verified); reproduces with FastVLM-0.5B, general to the runtime's GPU fast_vlm path."
+      ]
+    }
+  ]
+}

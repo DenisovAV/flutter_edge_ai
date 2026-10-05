@@ -1,0 +1,158 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Zamba2-1.2B-instruct",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Zamba2-1.2B-instruct",
+    "base_model": "Zyphra/Zamba2-1.2B-instruct",
+    "architecture": "Zamba2 is Zyphra's shared-attention hybrid: a Mamba2 selective-scan backbone (32 layers) with a **single shared transformer block** applied at 6 interleaved positions — one set of attention+MLP weights reused at every position, specialized by per-position LoRA adapters, attending over the concatenation of the running hidden state and the original embeddings.",
+    "license": "apache-2.0",
+    "parameters_b": 1.2,
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Zamba2-1.2B-instruct_int8.litertlm",
+      "sha256": "0f6a065674ee6e36717439c901e56698ff34b3d72c3da7ef12da4b5abb81b0bc",
+      "size_bytes": 1430400528,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 579
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 5913
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 458661
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1429892624,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic on linears + embedding (convs and the scan stay float); fp32 activations declared for GPU",
+      "backends": [
+        "gpu",
+        "cpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.15",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary: GPU 11.6 tok/s decode / 117.2 prefill, peak 3620 MB, init 22.8 s (S4 GPU gate 2026-08-24, 1 run) against CPU 10.17-12.21 decode / 66.2-87.8 prefill, peak 3283 MB, init 2.7 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device CPU control taken: decode is a wash (within 10%); gpu is kept for its prefill advantage (time to first token), a deliberate choice rather than a decode win"
+        },
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "card: On the long composite probe the two backends split two model-edge questions differently (see Correctness) — deterministically, and identically on Mac and iPhone. For maximum fidelity to the HF reference use GPU; for the "
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "GPU runs with fp32 activations (declared in the bundle) — expect a memory multiple over CPU; 5.43 GB iPhone GPU peak includes fp32 KV caches at 4096 context; a 12 GB phone runs the full 12-signature ladder without memory pressure.",
+          "On the long composite probe GPU and CPU split two model-edge questions differently — deterministically, identically on Mac and iPhone.",
+          "Multi-length prefill signatures (1–1024) exported; bundle carries tokenizer and stock ChatML Zamba2 chat template.",
+          "Prompt-length robustness: hermetic prefill-chunk sweep — CPU fills 12–51 and GPU fills 12–31 all clean.",
+          "Tokenizer's Strip decoder removed for streaming detokenization; only behavior change is a sequence-initial space, which the runtime trims.",
+          "Not a measured row: card reports iPhone 17 Pro gpu prefill_tps 96.6, decode_tps 12.8, ttft_s 1.63 (Performance — on-device table; runtime/run count not stated)",
+          "Not a measured row: card reports iPhone 17 Pro cpu prefill_tps 87.3, decode_tps 7.4, ttft_s 1.73 (Performance — on-device table; runtime/run count not stated)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1033,
+          "decode_tps": 74.0,
+          "ttft_s": 0.26,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 450,
+          "decode_tps": 22.7,
+          "ttft_s": 0.61,
+          "cache": "no",
+          "runs": 3,
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 24.3,
+          "decode_tps": 1.8,
+          "ttft_s": 11.1,
+          "peak_memory_mb": 2900,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 214,
+          "decode_tokens": 203,
+          "prefill_tps": 117.2,
+          "decode_tps": 11.6,
+          "ttft_s": 1.91,
+          "load_s": 22.8,
+          "peak_memory_mb": 3620,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (54510 ops across 12 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 213,
+          "decode_tokens": 267,
+          "prefill_tps": "66.2-87.8",
+          "decode_tps": "10.17-12.21",
+          "ttft_s": "2.51-3.32",
+          "load_s": 2.7,
+          "peak_memory_mb": 3283,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
+      ],
+      "known_issues": [
+        "iPhone 17 Pro GPU (Metal): 8-item composite quality probe answers 6/8 (CPU 8/8); both misses are questions the HF fp32 reference itself answers incorrectly. The individual 8-question gate is 8/8 on both backends.",
+        "Accuracy figures were measured on the previous file (before the 2026-08-28 start_token metadata fix) and have not been re-measured; re-download if fetched before 2026-08-28.",
+        "Files downloaded before 2026-08-28 prepended a duplicate <|im_start|> start token to every prompt (a stream the model was never trained on)."
+      ]
+    }
+  ]
+}

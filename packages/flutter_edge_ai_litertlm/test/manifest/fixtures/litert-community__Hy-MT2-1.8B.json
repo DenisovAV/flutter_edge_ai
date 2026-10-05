@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Hy-MT2-1.8B",
-  "generated": "2026-08-27",
+  "generated": "2026-09-22",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Hy-MT2-1.8B",
@@ -21,12 +21,12 @@
   "variants": [
     {
       "file": "Hy-MT2-1.8B_int8.litertlm",
-      "sha256": "7bbd0b65d7e69c8d92b8ab3033e353536ef40c77f4dc5f4c32f2931417c13eda",
+      "sha256": "529e6d378df5869d89a5a08717c06604105a32d8a4dab4800175d6baabc4da50",
       "size_bytes": 1815622960,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 673
+          "size_bytes": 1056
         },
         {
           "type": "HF_Tokenizer_Zlib",
@@ -44,6 +44,20 @@
         "gpu"
       ],
       "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): gpu decodes 20.38-20.84 tok/s against cpu's 12.27-16.97 (1.4x), prefill 385.7 vs 126.3-217.2 tok/s, peak 742 vs 2760 MB, engine init 3.5 vs 6.0 s. Same-device CPU control taken - a measured win for gpu on decode. Gate prompt was the card's translation instruction (English to Japanese); both backends returned a correct translation"
+        },
+        {
+          "platform": "android",
+          "device_class": "midrange",
+          "backend": "cpu",
+          "reason": "measured on one Pixel 8a with one binary (S7 Android backfill 2026-09-05, 2 cold runs, 205-token prompt, cooled before each run): cpu 46.1-50.8 tok/s prefill / 6.37-8.3 decode, peak 2685 MB, engine init 14.3 s. The GPU path was not attempted on this 8 GB phone: a 1.82 GB int8 file with the Mali GPU's roughly 4x file-size residency would exceed its memory budget, so this is a verified choice, not a measured win. Gate prompt was the card's translation instruction (English to Japanese) and the CPU returned a correct translation. On the Galaxy S26 the flagship recommendation is gpu (1.4x)"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Measured with litert-lm 0.16.0; the bundle is a plain dense prefill/decode export (generic_model)",
@@ -82,6 +96,54 @@
           "runs": 3,
           "date": "2026-08-27",
           "source": "litertlm-convert reports/shiplogs_20260827/bench_hymt2_gpu.log; litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, taken after a >=300 s rest. Backend gated on real generations first (8-question gate 6/8 via litert-lm run --backend gpu, same misses as CPU). Second protocol run: prefill 2002.78 / decode 105.39 / ttft 0.1373 (~0.3% spread)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 197,
+          "decode_tokens": 93,
+          "prefill_tps": 385.7,
+          "decode_tps": "20.38-20.84",
+          "ttft_s": 0.56,
+          "load_s": 3.5,
+          "peak_memory_mb": 742,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (2848 ops across 2 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 197,
+          "decode_tokens": 88,
+          "prefill_tps": "126.3-217.2",
+          "decode_tps": "12.27-16.97",
+          "ttft_s": "0.97-1.64",
+          "load_s": 6.0,
+          "peak_memory_mb": 2760,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 197,
+          "decode_tokens": 88,
+          "prefill_tps": "46.1-50.8",
+          "decode_tps": "6.37-8.3",
+          "ttft_s": "4.0-4.43",
+          "load_s": 14.3,
+          "peak_memory_mb": 2685,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path was not run for this file on this handset (1.82 GB int8: Mali GPU residency ~4x file size - not attempted), so this row has no GPU counterpart"
         }
       ],
       "known_issues": [

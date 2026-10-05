@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "mlboydaisuke/S1-mini-LiteRT",
-  "generated": "2026-08-25",
+  "generated": "2026-09-22",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "S1-mini (LiteRT-LM)",
@@ -22,18 +22,25 @@
           "start": "<think>",
           "end": "</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "S1-mini_int8.litertlm",
-      "sha256": "0376f042102cd1409055374d3e823faaaf3a66c5f61c6c744ffe01193d0ae397",
+      "sha256": "94828f0da7774e36acaedf36bfbc54ec9d81a3076ea10ed3c5e45f4ccbdb94e5",
       "size_bytes": 688157792,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 770
+          "size_bytes": 1137
         },
         {
           "type": "HF_Tokenizer_Zlib",
@@ -51,6 +58,20 @@
         "gpu"
       ],
       "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "midrange",
+          "backend": "cpu",
+          "reason": "measured on one Pixel 8a with one binary (2026-08-25, 205-token prompt, single run each): GPU 434 tok/s prefill / 12.3 decode against CPU 40.4 / 5.8 - the GPU is faster, but on this phone it deterministically drops a date separator on number-dense input ('March 3rd, 2026.' -> 'March 32026.') while the CPU output is byte-identical to macOS on all 12 test cases. For a text-normalization model exactness is the job, so CPU is the default here; choose gpu when time-to-first-token matters more (0.67 s vs 6.46 s). Same-device pair taken, so the speed ordering is measured, not assumed"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): gpu decodes 25.13-25.8 tok/s against cpu's 12.29 (2.1x), prefill 940.7-1027.5 vs 166.7-175.3 tok/s, peak 1323 vs 2129 MB, engine init 6.3 vs 2.2 s. Same-device CPU control taken - a measured win for gpu on decode. On the Pixel 8a's Mali GPU this model deterministically dropped a date separator on number-dense input ('March 3rd, 2026.' -> 'March 32026.'); the same date vector run on this Adreno GPU came back intact ('The invoice came to $23,450 and it's due on March 3, 2026.', S7 probe 2026-09-05, same binary), so that Mali defect does not reproduce here. The full 12-case exactness check was not repeated on Adreno; where byte-exactness is the job, cpu remains the conservative choice"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Context (KV cache) 4096; prefill signatures 1..1024",
@@ -147,6 +168,38 @@
           "date": "2026-08-25",
           "source": "on-device harness, single run; device reported thermal state 'serious' — read as a floor.",
           "peak_mem_mb": 1427
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 254,
+          "decode_tokens": 195,
+          "prefill_tps": "940.7-1027.5",
+          "decode_tps": "25.13-25.8",
+          "ttft_s": "0.29-0.31",
+          "load_s": 6.3,
+          "peak_memory_mb": 1323,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (15474 ops across 12 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 254,
+          "decode_tokens": 195,
+          "prefill_tps": "166.7-175.3",
+          "decode_tps": 12.29,
+          "ttft_s": "1.53-1.61",
+          "load_s": 2.2,
+          "peak_memory_mb": 2129,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for the gpu row of the same date"
         }
       ],
       "known_issues": [

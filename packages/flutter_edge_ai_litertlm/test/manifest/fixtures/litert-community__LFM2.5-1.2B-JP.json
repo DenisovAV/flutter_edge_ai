@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/LFM2.5-1.2B-JP",
-  "generated": "2026-08-25",
+  "generated": "2026-09-21",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "LFM2.5-1.2B-JP",
@@ -19,18 +19,25 @@
           "start": "<think>",
           "end": "</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>",
+          "end": "</think>"
+        }
+      ]
     }
   },
   "variants": [
     {
       "file": "LFM2.5-1.2B-JP_int4.litertlm",
-      "sha256": "97909ba9e275470b69a202b506fa347a2b92dfef69ac7048f771e375319dee2e",
+      "sha256": "af0928e06bbb57f4950d2664381181c41058d49bfdd040ddf45b32860f088c23",
       "size_bytes": 736015744,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1856
+          "size_bytes": 2223
         },
         {
           "type": "ExecutorMetadataProto",
@@ -105,12 +112,12 @@
     },
     {
       "file": "LFM2.5-1.2B-JP_int4_gpu.litertlm",
-      "sha256": "2c826a9cdeefc614c9b7de1d1c5565c9a64f704e5f3291ad2cd5d7da396790d5",
+      "sha256": "d5f16d752c7bfa5d8856761e95977404c827c727769b291edf290d812703c683",
       "size_bytes": 736220768,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1856
+          "size_bytes": 2223
         },
         {
           "type": "ExecutorMetadataProto",
@@ -211,12 +218,12 @@
     },
     {
       "file": "LFM2.5-1.2B-JP_int8.litertlm",
-      "sha256": "8fc5367c35a4771cb60784a86be5eb1f358e94cc71eb2eaf15ad006205339001",
+      "sha256": "905111eeca3a56a6d3626394317bf056a94f4ca326e4ff772532a977046da2c7",
       "size_bytes": 1244594224,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1856
+          "size_bytes": 2223
         },
         {
           "type": "ExecutorMetadataProto",
@@ -274,6 +281,22 @@
           "runs": 3,
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 205,
+          "decode_tokens": 124,
+          "prefill_tps": "389.1-485.1",
+          "decode_tps": "37.1-41.32",
+          "ttft_s": "0.45-0.55",
+          "load_s": 1.9,
+          "peak_memory_mb": 1771,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
         }
       ],
       "known_issues": [
@@ -283,12 +306,12 @@
     },
     {
       "file": "LFM2.5-1.2B-JP_int8_gpu.litertlm",
-      "sha256": "1316b5381a45f01b1a06da6ebe1a99bb55b430653e6a7ee19d50a6d0ad01d869",
+      "sha256": "6f7d1002d9d49402ec3bf2db3a31013347911b5e6c75579ed938d81a27aa1855",
       "size_bytes": 1244763648,
       "sections": [
         {
           "type": "LlmMetadataProto",
-          "size_bytes": 1856
+          "size_bytes": 2223
         },
         {
           "type": "ExecutorMetadataProto",

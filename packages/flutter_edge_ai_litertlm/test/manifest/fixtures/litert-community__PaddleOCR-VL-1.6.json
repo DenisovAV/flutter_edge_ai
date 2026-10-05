@@ -1,0 +1,146 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/PaddleOCR-VL-1.6",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "PaddleOCR-VL-1.6",
+    "base_model": "PaddlePaddle/PaddleOCR-VL-1.6",
+    "architecture": "A NaViT-style dynamic-resolution SigLIP vision encoder + the tiny ERNIE-4.5-0.3B decoder, ~0.9B parameters total, supporting 109 languages; a task-prompted document-parsing / OCR model.",
+    "parameters_b": 0.9,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "PaddleOCR-VL-1.6.litertlm",
+      "sha256": "314df8b34d6911990d488e825602550a5bbcc5d6700cb1a8914e853e9043f4f1",
+      "size_bytes": 1390305472,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1179
+        },
+        {
+          "type": "SP_Tokenizer",
+          "size_bytes": 1691700
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 211814656,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 725310720,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 425351152,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 26058944,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "Decoder ERNIE-4.5-0.3B fp16 weights (+ fp16 externalized embedder); vision encoder int8 weights; adapter int8",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Task-prompted model: the prompt selects the task (OCR:, Table Recognition:, Formula Recognition:, Chart Recognition:, Spotting:, Seal Recognition:).",
+          "Context (KV cache) 4096; image resized by the runtime to 560x560 -> 400 image tokens.",
+          "Decoder kept at fp16 (~460 MB extra) because this 0.36 B decoder is unusually quantization-sensitive: int4 and integer-compute int8 measurably corrupt transcription.",
+          "Vision tower has zero FLEX/CUSTOM ops (GPU-clean); corr 1.0 fp32 / 0.9975 shipped int8 vs the reference.",
+          "M-RoPE replaced by fast_vlm's sequential positions: identical for text tokens; an A/B eager test showed no quality loss on OCR/table tasks for image tokens.",
+          "Desktop macOS CPU table output is byte-identical to the full-precision eager reference, including the <fcel>/<nl> cell tokens.",
+          "Gallery UI on the Pixel 8a renders the model's structured table markup (<fcel>/<nl>) as plain text.",
+          "Galaxy S26 GPU gate covers engine creation and the text path only (no image in the gate prompt); the vision path on the GPU is not measured there. XNNPACK takes 1 of 5 nodes in main.",
+          "Card claims the same file runs on macOS, Linux and Windows (Linux/Windows not measured on the card)."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 653,
+          "decode_tps": 53.2,
+          "ttft_s": 0.5,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: card: Performance table (litert-lm benchmark) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 4391,
+          "decode_tps": 208.3,
+          "ttft_s": 0.07,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: card: Performance table (litert-lm benchmark) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 204,
+          "decode_tokens": 1,
+          "prefill_tps": "292.0-308.8",
+          "ttft_s": "1.26-1.32",
+          "load_s": 1.6,
+          "peak_memory_mb": 3438,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset; the model stopped after 1 decode token(s) on this generic prompt (task-prompted model), so no decode speed is reported from this run"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 204,
+          "decode_tokens": 1,
+          "prefill_tps": 34.8,
+          "ttft_s": 7.84,
+          "load_s": 10.2,
+          "peak_memory_mb": 3385,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path was not run for this file on this handset (1.39 GB with an fp16 decoder: over this phone's GPU budget - not attempted), so this row has no GPU counterpart; the model stopped after 1 decode token(s) on this generic prompt (task-prompted model), so no decode speed is reported from this run"
+        }
+      ],
+      "known_issues": [
+        "A generic instruction such as 'describe this image' returns nothing — the prompt must be one of the task prompts.",
+        "Aspect ratio: the runtime resizes to a fixed square, so extreme aspect ratios (very wide single lines) get distorted; feed roughly page/paragraph-shaped crops.",
+        "One image per chat: a second image in the same chat degrades (context bleed from the first turn was observed on CPU).",
+        "Scope: recognition component only; no layout-detection front-end, so best on single elements or simple pages.",
+        "Swift runtime: bring the engine up with the vision modality only — requesting .all fails at session creation on bundles without an audio section.",
+        "2026-08-30 tokenizer-only change (weights unchanged): accuracy figures and on-device rows were measured on the previous file; the on-device gate has not been re-run. Re-download if downloaded before 2026-08-30.",
+        "Before 2026-08-30 the SentencePiece control-symbol specials meant the </s> after each history turn reached the model as several tokens; multi-turn prompts now tokenize as upstream. Single-turn prompts were unaffected."
+      ]
+    }
+  ]
+}

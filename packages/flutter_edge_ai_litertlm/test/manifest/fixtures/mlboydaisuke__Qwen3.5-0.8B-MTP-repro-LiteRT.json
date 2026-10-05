@@ -1,0 +1,100 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "mlboydaisuke/Qwen3.5-0.8B-MTP-repro-LiteRT",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Qwen3.5-0.8B MTP (speculative decoding) repro bundle",
+    "base_model": "Qwen/Qwen3.5-0.8B",
+    "architecture": "Qwen3.5 hybrid (Qwen3_5ForConditionalGeneration text decoder: 18 GatedDeltaNet linear-attention + 6 gated full-attention layers) with a verify signature and the checkpoint's own 1-layer MTP head as the LiteRT-LM drafter section",
+    "parameters_b": 0.8,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Qwen3.5-0.8B_mtp_drafter_int8.litertlm",
+      "sha256": "4b78b6839c33ae95bdb71432115d0f0aa68399114adbad3563096685ca511e42",
+      "size_bytes": 1471086000,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 729
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3415
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913268
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 928891136,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 260243376,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 277970352,
+          "model_type": "tf_lite_mtp_drafter"
+        }
+      ],
+      "quantization": "dynamic int8 (linears + embedding tables) on the base graph, the externalized embedder and the drafter; convs and the delta rule stay float",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.16.0; speculative decoding is opt-in (CLI --speculative-decoding true, python enable_speculative_decoding=True)",
+          "Bug-repro artifact for LiteRT-LM #3439, not a release; CPU only (GPU not gated with the drafter section)",
+          "Flag off, the bundle behaves as a plain Qwen3.5-0.8B int8 conversion with a simple ChatML template (thinking disabled)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0 (speculative decoding off)",
+          "prompt_tokens": 128,
+          "decode_tokens": 256,
+          "prefill_tps": 611.54,
+          "decode_tps": 52.34,
+          "cache": "no",
+          "date": "2026-09-01",
+          "source": "litertlm-convert mtp_work/e2e_08b.json (bench.off); litert-lm benchmark -p 128 -d 256 --cache no"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0 (--speculative-decoding true)",
+          "prompt_tokens": 128,
+          "decode_tokens": 256,
+          "prefill_tps": 627.07,
+          "decode_tps": 58.39,
+          "cache": "no",
+          "date": "2026-09-01",
+          "source": "litertlm-convert mtp_work/e2e_08b.json (bench.on); engine acceptance 0.476-0.710 per prompt, mean 2.76 tokens/round"
+        }
+      ],
+      "known_issues": [
+        "Under --speculative-decoding true the runtime never commits the turn-final stop token (LiteRT-LM #3439): multi-turn transcripts lose <|im_end|> after every assistant turn and this 0.8B degrades on later turns; single-turn use unaffected. Reproduces on litert-lm 0.16.0 and 0.16.1."
+      ]
+    }
+  ]
+}

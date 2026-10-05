@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/granite-docling-258M",
-  "generated": "2026-08-24",
+  "generated": "2026-09-05",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "granite-docling-258M",
@@ -58,6 +58,20 @@
         "cpu"
       ],
       "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "measured on one Galaxy S26 with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): cpu 167.9-313.4 tok/s prefill / 28.59-33.49 decode, peak 3466 MB, engine init 1.8 s. GPU engine creation fails on this handset (LiteRT GPU accepts all 1538 ops, then the ML Drift kernel init rejects the quantized 576x576 FC - the failure the card documents), so cpu is the only Android path: a verified choice, not a measured win. The bench prompt is generic text, outside the model's page-to-DocTags contract; task output on this handset's CPU was verified separately on the card (5x6 table page, 25/25 cells)"
+        },
+        {
+          "platform": "android",
+          "device_class": "midrange",
+          "backend": "cpu",
+          "reason": "measured on one Pixel 8a with one binary (S7 Android backfill 2026-09-05, 205-token prompt, 2 cold runs per backend, cooled before each run): cpu 65.6-88.7 tok/s prefill / 19.42-23.25 decode, peak 3439 MB, engine init 4.0 s. GPU engine creation fails on this phone the same way as on the Galaxy S26 (all 1538 ops accepted, then the kernel init rejects the quantized 576x576 FC), so cpu is the only Android path: a verified choice, not a measured win. The bench prompt is generic text, outside the page-to-DocTags contract; the decode ran to the token cap"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Input contract: pre-resize the page to exactly 512x512 with BILINEAR resampling in the app before sending — the runtime's own downscale from larger images uses a different filter and the model hallucinates the page (base-model trait of the single-global-512 path, present in eager too)",
@@ -83,6 +97,38 @@
           "runs": 3,
           "date": "2026-08-24",
           "source": "docling_work/FINDINGS.md device-gate section; litert-lm benchmark -p 256 -d 256 --cache no, backend gated on a real docling generation"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 204,
+          "decode_tokens": 3892,
+          "prefill_tps": "167.9-313.4",
+          "decode_tps": "28.59-33.49",
+          "ttft_s": "0.68-1.25",
+          "load_s": 1.8,
+          "peak_memory_mb": 3466,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 204,
+          "decode_tokens": 3892,
+          "prefill_tps": "65.6-88.7",
+          "decode_tps": "19.42-23.25",
+          "ttft_s": "2.34-3.16",
+          "load_s": 4.0,
+          "peak_memory_mb": 3439,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
         }
       ],
       "known_issues": [

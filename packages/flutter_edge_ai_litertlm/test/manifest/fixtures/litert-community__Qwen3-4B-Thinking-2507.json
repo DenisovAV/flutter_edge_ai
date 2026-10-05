@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Qwen3-4B-Thinking-2507",
-  "generated": "2026-08-31",
+  "generated": "2026-09-06",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Qwen3-4B-Thinking-2507",
@@ -23,7 +23,14 @@
           "start": "<think>\n",
           "end": "\n</think>"
         }
-      }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      ]
     }
   },
   "variants": [
@@ -55,7 +62,32 @@
         "cpu",
         "gpu"
       ],
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 3894,
+          "prefill_tps": 225.3,
+          "decode_tps": 15.29,
+          "ttft_s": 0.96,
+          "load_s": 11.0,
+          "peak_memory_mb": 1627,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3764 ops across 3 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
       "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-24): full delegation (3764 ops across 3 subgraphs) and a correct answer to the probe; 15.3 tok/s decode, engine init 11.0 s, peak 1627 MB; the repo's other S26-verified file (model.litertlm) decodes 9.0 tok/s on the same handset. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
       "min_runtime_version": "0.15.0",
       "known_issues": [
         "Block-32 int4 corrupts GPU output beyond iPhone: macOS Metal also degenerates (question-echo loops, truncated reasoning; measured 2026-08-31 before and after the metadata repair, pre-existing). Use this file on CPU; it delegated and generated on the Galaxy S26 Android GPU gate (2026-08-24). The block-128 file is the GPU-safe choice"
@@ -142,9 +174,42 @@
           "runs": 3,
           "date": "2026-08-11",
           "source": "cardbench Mac LLM sweep; model card Performance table"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 202,
+          "decode_tokens": 1908,
+          "prefill_tps": 129.4,
+          "decode_tps": 8.98,
+          "ttft_s": 1.67,
+          "load_s": 11.0,
+          "peak_memory_mb": 971,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (3270 ops across 2 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 204,
+          "decode_tokens": 1694,
+          "prefill_tps": "63.0-64.7",
+          "decode_tps": 5.96,
+          "ttft_s": "3.32-3.4",
+          "load_s": 3.4,
+          "peak_memory_mb": 3787,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset"
         }
       ],
-      "known_issues": []
+      "known_issues": [
+        "Pixel 8a (8 GB): the prefill graph delegates 1674/1674 nodes on OpenCL but execution OOM-reboots the phone (Android GPU re-gate 2026-08-17, transfer verified byte-for-byte); use CPU or a 12 GB-class device for GPU"
+      ]
     }
   ]
 }

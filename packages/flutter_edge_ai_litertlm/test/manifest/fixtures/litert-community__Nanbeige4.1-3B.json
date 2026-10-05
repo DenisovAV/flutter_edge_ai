@@ -1,0 +1,165 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Nanbeige4.1-3B",
+  "generated": "2026-09-22",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Nanbeige4.1-3B",
+    "base_model": "Nanbeige/Nanbeige4.1-3B",
+    "architecture": "A fresh (Dec 2025) phone-size reasoning model on a plain dense Llama architecture (standard dense LlamaForCausalLM); it works the problem inside a <think>...</think> block before giving the final answer.",
+    "parameters_b": 3,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      },
+      "channels": [
+        {
+          "name": "thought",
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      ]
+    }
+  },
+  "variants": [
+    {
+      "file": "model.litertlm",
+      "sha256": "3393e469417d847d0a60d765d1af66cbf6c396e430dccc59162fb4867bd9f4e7",
+      "size_bytes": 2409326576,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1832
+        },
+        {
+          "type": "SP_Tokenizer",
+          "size_bytes": 2783410
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1977174416,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 429320176,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 weights — blockwise (block 32) + OCTAV optimal-clipping, symmetric; embedding INT8; integer compute",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary: gpu 10.68 tok/s decode / 117.3 prefill, peak 1213 MB, init 24.3 s (S4 GPU gate 2026-08-24, 1 run) against cpu 9.46-10.58 tok/s decode / 39.3-68.2 prefill, peak 3098 MB, init 5.5 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device control taken: decode is a wash (within 10%), so the choice rests on the other numbers. gpu is kept for its prefill (117 vs 39-68 tok/s) and its 1.2 GB peak against 3.1 GB on the CPU, at the cost of a 24 s engine init; a thinking model that decodes about 3900 tokens per answer sits near 10 tok/s on either backend of this handset. The GPU figure is the S4 gate's first run; its second run in the same sitting decoded 8.29 tok/s, a heat uncertainty the CPU pair (framework thermal status 1 before each run) does not carry"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 4096; ~2.2 GB file with the embedding externalized so every section is <2 GiB and the model loads on iOS.",
+          "externalize_embedder=True is required for iPhone: the 166k-token vocab would otherwise exceed the ~2 GiB single-section mmap limit on iOS; externalizing lets it load on iPhone (Metal GPU) as well as Android/desktop.",
+          "Reasoning model: emits a <think>...</think> chain then the answer, stops cleanly at <|im_end|>; give it a high max-tokens.",
+          "Mac benchmark reproducibility: GPU rows repeat to within about 1%; CPU rows are noisier — treat the CPU column as accurate to roughly ±7%.",
+          "Galaxy S26 GPU gate: XNNPACK takes 1 of the 4 nodes in decode_embedder and 1 of the 4 in prefill_embedder_128; the runtime accepts that split.",
+          "Added-tokens tokenizer fix: the 10 special tokens (<|im_start|>, <|im_end|>, <think>, </think>, ...) at ids 166100–166109 are appended as USER_DEFINED pieces at their exact ids, so <think> decodes instead of crashing with 'Token id out of range'.",
+          "GSM8K 84.0% (n=50, greedy, 0-shot CoT, max-tokens 2048) and local quality gate 8/8 with a clean stop at <|im_end|>.",
+          "The 2026-08-29 default-system-prompt restore adds 21 prefill tokens to a conversation that sends no system message, so time-to-first-token grows by that much; per-token speed is unchanged."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 125,
+          "decode_tps": 24.4,
+          "ttft_s": 2.39,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: card: Performance table (litert-lm benchmark) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1256,
+          "decode_tps": 90.1,
+          "ttft_s": 0.22,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: card: Performance table (litert-lm benchmark) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 16.5,
+          "decode_tps": 2.5,
+          "ttft_s": 18.1,
+          "peak_memory_mb": 3100,
+          "runs": 3,
+          "source": "model card: card: Raspberry Pi 5 (CPU) table; median of 3 invocations, 4 threads (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 223,
+          "decode_tokens": 3873,
+          "prefill_tps": "39.3-68.2",
+          "decode_tps": "9.46-10.58",
+          "ttft_s": "3.37-5.77",
+          "load_s": 5.5,
+          "peak_memory_mb": 3098,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 203,
+          "decode_tokens": 3893,
+          "prefill_tps": 117.3,
+          "decode_tps": 10.68,
+          "ttft_s": 1.82,
+          "load_s": 24.3,
+          "peak_memory_mb": 1213,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (2715 ops across 2 subgraphs); generation gate answered the probe correctly (a long thinking reply that ends on Paris's landmarks). A second run in the same sitting decoded 8.29 tok/s. The cpu row of 2026-09-05 is the same-device control"
+        }
+      ],
+      "known_issues": [
+        "Before 2026-08-28 the bundle prepended a start_token on top of the template's own <|im_start|>, so the model read <|im_start|><|im_start|>...; the start token has been removed and system.prefix corrected (metadata-only).",
+        "2026-08-28/29 metadata-only changes (weights unchanged): accuracy figures on the card were measured on the previous file and not re-measured; re-download if downloaded before 2026-08-29.",
+        "Scoring GSM8K at 512 tokens falsely penalises this reasoning model; it needs the budget (max-tokens 2048) to finish."
+      ]
+    }
+  ]
+}

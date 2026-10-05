@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "litert-community/Qwen2-VL-2B",
-  "generated": "2026-08-31",
+  "generated": "2026-09-05",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "Qwen2-VL-2B-Instruct (LiteRT-LM)",
@@ -59,6 +59,14 @@
         "gpu"
       ],
       "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-25): full delegation (4861 ops across 4 subgraphs) and a correct answer to the probe; 36.7 tok/s decode, engine init 4.1 s, peak 775 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
       "requirements": {
         "platform_notes": [
           "Context (KV cache) 4096; image input resized to 672x672",
@@ -98,6 +106,21 @@
           "runs": 3,
           "date": "2026-08-24",
           "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 203,
+          "decode_tokens": 191,
+          "prefill_tps": 519.6,
+          "decode_tps": 36.74,
+          "ttft_s": 0.42,
+          "load_s": 4.1,
+          "peak_memory_mb": 775,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (4861 ops across 4 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
         }
       ],
       "known_issues": [

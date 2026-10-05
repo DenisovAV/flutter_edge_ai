@@ -1,0 +1,132 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/InternVL3_5-4B",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "InternVL3.5-4B",
+    "base_model": "OpenGVLab/InternVL3_5-4B",
+    "architecture": "InternVL3.5-4B is a compact vision-language model: an InternViT vision encoder + pixel-shuffle + MLP projector feeding a Qwen3-4B language decoder (the newer Qwen3 backbone is what distinguishes it from the InternVL3-2B build, which used Qwen2.5-1.5B).",
+    "license": "apache-2.0",
+    "parameters_b": 4.0,
+    "context_length": 2048,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "model.litertlm",
+      "sha256": "2721a08faaa12dfb3af5f336c76b56274093468c1e25c1b35edfddfdcc8cb649",
+      "size_bytes": 2992182640,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1186
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142251
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 390781600,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2270596992,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 311465584,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 17126768,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "Decoder Qwen3-4B int4 weights (symmetric, blockwise-32 + OCTAV optimal-clipping), input embedding INT8 (externalized section); vision encoder + pixel-shuffle + MLP projector int8 weights; integer compute",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "the Android path verified on a Galaxy S26 (S4 gate 2026-08-25): full delegation (4944 ops across 3 subgraphs) and a correct answer to the probe; 13.3 tok/s decode, engine init 22.5 s, peak 1289 MB. No same-device CPU control was taken, so this is the verified choice for the class, not a measured win over CPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "iPhone 17 Pro figures (~20 tok/s CPU, ~45 tok/s GPU, single-image VQA) are stated expectations carried from the InternVL3-2B build, not measurements of this build; the card recommends independent on-device measurement before quoting exact numbers.",
+          "Vision-only bundle (no audio tower): bring up the engine with the vision modality only (Modality.textImage / [.vision]); requesting the audio tower (.all) fails at session creation.",
+          "Embedding is externalized so the bundle's sections stay under the iOS mmap limit (~2.99 GB file).",
+          "Galaxy S26 GPU gate prompt carries no image: it covers engine creation and the text path only; the vision path on the GPU is not measured there.",
+          "Galaxy S26 GPU gate: XNNPACK additionally takes 1 of the 4 nodes in `main`; the runtime accepts that split.",
+          "2026-08-28 start_token fix (metadata-only, weights unchanged): the literal start token \"None\" was removed. Accuracy figures on the card were measured on the previous file and not re-measured.",
+          "2026-08-30 tokenizer section replaced with the upstream tokenizer.json (weights unchanged): answers to prompts with accented letters/symbols/emoji can change; accuracy figures and any on-device rows were measured on the previous file; the on-device gate has not been re-run.",
+          "2026-08-31 chat template fix (metadata-only, weights unchanged): history turns with role 'assistant' are now accepted; single-turn renders, token ids, prefill counts and greedy answers are unchanged, so the card's numbers still describe this file."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 57,
+          "decode_tps": 21.3,
+          "ttft_s": 4.89,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (litert-lm benchmark, Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 736,
+          "decode_tps": 86.5,
+          "ttft_s": 0.37,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "source": "model card: Performance table (litert-lm benchmark, Apple M4 Max) (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 203,
+          "decode_tokens": 206,
+          "prefill_tps": 136.9,
+          "decode_tps": 13.33,
+          "ttft_s": 1.56,
+          "load_s": 22.5,
+          "peak_memory_mb": 1289,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (4944 ops across 3 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        }
+      ],
+      "known_issues": [
+        "GPU (Metal) backend: a second image in the same conversation truncates the answer; ask about one image per chat. GPU-delegate-specific, not a model/bundle issue — on the CPU backend multi-image works; reproduces with FastVLM-0.5B, general to the runtime's GPU fast_vlm path."
+      ]
+    }
+  ]
+}

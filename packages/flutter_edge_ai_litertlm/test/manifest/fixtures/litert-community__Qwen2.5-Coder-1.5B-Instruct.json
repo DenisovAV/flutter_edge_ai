@@ -1,0 +1,147 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Qwen2.5-Coder-1.5B-Instruct",
+  "generated": "2026-09-05",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Qwen2.5-Coder-1.5B-Instruct",
+    "base_model": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+    "architecture": "A 1.54B code model at **1.12 GB** — small enough that a phone-class device runs it at conversational speed rather than merely running it.",
+    "parameters_b": 1.54,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Qwen2.5-Coder-1.5B-Instruct_int4.litertlm",
+      "sha256": "273ecc7771ba2dd5fe1bb6d4d4726ad0353102f04ad094082ccf59bca9f21213",
+      "size_bytes": 1117385648,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 459
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142126
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 878182176,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 237024176,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 blockwise-32 + OCTAV on linears, int8 embedding (externalised)",
+      "backends": [
+        "gpu",
+        "cpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.16",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "measured on one Galaxy S26 with one binary: GPU 8.55 tok/s decode / 234.9 prefill, peak 885 MB, init 8.3 s (S4 GPU gate 2026-08-24, 1 run) against CPU 27.01-29.73 decode / 57.1-106.0 prefill, peak 1566 MB, init 2.7 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device CPU control taken: the CPU decodes 3.3x faster than the GPU on this handset, so the earlier GPU choice is reversed; gpu keeps the prefill advantage for prompt-heavy, short-output work"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "A Mac's GPU-vs-CPU ratio (GPU decodes 2.9x CPU here) does not transfer to a phone; on phone hardware the GPU's win is prefill and time-to-first-token.",
+          "Embedding table is stored in its own bundle section, keeping the file at 1.12 GB (inline it would be 2.53 GB).",
+          "Android GPU: XNNPACK takes 1 of 4 nodes in decode_embedder and prefill_embedder_1024; the runtime accepts that split.",
+          "4096-token KV budget and six prefill signatures (1024, 256, 64, 16, 4, 1).",
+          "Chat template bakes in Qwen's default system prompt, inserted when no system message is supplied."
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 3037,
+          "decode_tps": 137.8,
+          "ttft_s": 0.099,
+          "load_s": 2.38,
+          "cache": "no",
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 292,
+          "decode_tps": 47.1,
+          "ttft_s": 1.06,
+          "load_s": 2.87,
+          "cache": "no",
+          "source": "model card: Performance — Apple M4 Max benchmark table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Raspberry Pi 5 (Model B Rev 1.1, 8 GB, Raspberry Pi OS 64-bit)",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark 0.16.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 41.7,
+          "decode_tps": 5.6,
+          "ttft_s": 7.3,
+          "peak_memory_mb": 1800,
+          "runs": 3,
+          "source": "model card: Raspberry Pi 5 (CPU) table (card retrieved 2026-09-05)",
+          "date": "2026-09-05"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 223,
+          "decode_tokens": 360,
+          "prefill_tps": 234.9,
+          "decode_tps": 8.55,
+          "ttft_s": 1.07,
+          "load_s": 8.3,
+          "peak_memory_mb": 885,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark, single run; full delegation (8451 ops across 7 subgraphs); generation gate answered the probe correctly. No same-device CPU control was taken, so this is a GPU speed, not a measured win over CPU."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 223,
+          "decode_tokens": 409,
+          "prefill_tps": "57.1-106.0",
+          "decode_tps": "27.01-29.73",
+          "ttft_s": "2.14-3.94",
+          "load_s": 2.7,
+          "peak_memory_mb": 1566,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path does not run for this file on this handset, so this row has no GPU counterpart"
+        }
+      ]
+    }
+  ]
+}

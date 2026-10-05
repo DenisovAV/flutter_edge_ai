@@ -1,0 +1,252 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/sarashina2.2-1b-instruct-v0.1",
+  "generated": "2026-09-07",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "sarashina2.2-1b-instruct-v0.1",
+    "base_model": "sbintuitions/sarashina2.2-1b-instruct-v0.1",
+    "architecture": "llama dense (24L, hidden 1792, GQA 16:8, inter 6272, rope theta 500k), 102,400-entry untied vocab, Japanese-first general instruct (non-thinking)",
+    "parameters_b": 1.0,
+    "license": "MIT",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "sarashina2.2-1b-instruct-v0.1_int4.litertlm",
+      "sha256": "7313d5f3442f0b412d975ba6fbc4567a5c2c076f6cd49038e55a3f82522f02b7",
+      "size_bytes": 903657808,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 202
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1832200
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 901790032,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "export-time int4 blockwise-32 + OCTAV on linears, int8 embedding (BOCTAV4) - JCommonsenseQA (own harness, n=100) 77 vs bf16 75 (paired: bf16-only 4, int4-only 6); 8Q EN 8/8 cpu + 8/8 gpu, 8Q JA 8/8 cpu + 8/8 gpu",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.16.0",
+      "requirements": {
+        "platform_notes": [
+          "Same tokenizer / start_token / template / shape notes as the int8 file",
+          "Size option (40% smaller, 904 MB). On the Galaxy S26: GPU decode 27.4 vs int8's 23.5 tok/s (+17%), CPU decode a wash (13.5 vs 13.4), CPU prefill 2-2.9x slower (84 vs 168-239); peak resident memory 1.1 GB GPU / 2.0 GB CPU"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 3577.5,
+          "decode_tps": 159.4,
+          "ttft_s": 0.088,
+          "load_s": 2.57,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-02",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (all evals finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 336.4,
+          "decode_tps": 34.7,
+          "ttft_s": 0.922,
+          "load_s": 3.69,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-02",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (all evals finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q, Adreno)",
+          "os": "Android",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "403-592",
+          "decode_tps": "27.4-27.5",
+          "ttft_s": "0.58-0.83",
+          "load_s": 10.5,
+          "peak_memory_mb": 1127,
+          "runs": 2,
+          "date": "2026-09-02",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold; full LITERT_CL delegation (every node of all 12 subgraphs) and Japanese generation check on the same file (answered 東京); GPU prefill and load spread with shader-compile state - quote the range"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q)",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "83.7-83.9",
+          "decode_tps": "13.5",
+          "ttft_s": "3.90-3.91",
+          "load_s": 5.8,
+          "peak_memory_mb": 1973,
+          "runs": 2,
+          "date": "2026-09-02",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold; generation verified on the same file (answered 東京)"
+        }
+      ],
+      "known_issues": []
+    },
+    {
+      "file": "sarashina2.2-1b-instruct-v0.1_int8.litertlm",
+      "sha256": "6b9967b24dbf7af4252a671f9f255400905ed940f47ddeccc86eb10d2b96bee5",
+      "size_bytes": 1504709824,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 202
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1832200
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1502842048,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "export-time dynamic int8 on linears + embedding (dynamic_wi8_afp32) - JCommonsenseQA (own harness, n=100) 76 vs bf16 75 (paired: bf16-only 2, int8-only 3); 8Q EN 8/8 cpu + 8/8 gpu, 8Q JA 8/8 cpu + 8/8 gpu (bf16 EN 8/8, JA 7/8)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "measured on one Galaxy S26 with one binary (2026-09-02, 205-token prompt, 2 runs per cell): GPU 535-586 tok/s prefill / 23.3-23.7 decode against CPU 168-239 / 13.4-13.5; peak 951-1017 MB (GPU) vs 2394 MB (CPU). Same-device CPU control taken - a measured win. int8 is the card's recommended file (bf16-class on every gate); the int4 sibling decodes 17% faster on this GPU (27.4) at a 40% smaller download - a size option, not the default"
+        },
+        {
+          "platform": "android",
+          "device_class": "midrange",
+          "backend": "cpu",
+          "reason": "measured on one Pixel 8a with one binary (S7 Android backfill 2026-09-07, 2 cold runs, 205-token prompt, cooled before each run): cpu 95.5-97.7 tok/s prefill / 8.55-9.5 decode, peak 2449 MB, engine init 9.4 s. The GPU path was not attempted on this 7.75 GB phone: a 1.5 GB int8 file at the Mali GPU's roughly 4x file-size residency would run at or past its memory budget (a 2.47 GB bundle OOM-rebooted this phone on 2026-08-17; the 0.48 GB granite-4.0-h-350m _int8_gpu file peaked at 4.3 GB on this GPU the same day as this row), so this is a verified choice, not a measured win. The CPU answered the probe correctly; the 205-token English prompt tokenizes to 321 tokens with this Japanese tokenizer. On the Galaxy S26 the flagship recommendation is gpu (1.7x, same-device pair of 2026-09-02); the int4 sibling was not measured on this phone"
+        }
+      ],
+      "min_runtime_version": "0.16.0",
+      "requirements": {
+        "platform_notes": [
+          "Tested on litert-lm 0.16.x (macOS CLI + python API, Android litert_lm_advanced_main v0.16.0 kit)",
+          "Embeds the HF tokenizer.json, not the vendor tokenizer.model: sarashina's SentencePiece model types every chat special (<|user|> <|assistant|> <|system|> </s>) as CONTROL, which a bare sentencepiece encoder never matches from text; engine-vs-HF ids identical on 7 probes",
+          "No start_token: add_bos_token is false and the official template emits no <s> (the 0.5b sibling measurably loses accuracy with one; the 1b is unmoved in bf16 but ships the same contract)",
+          "Structured prompt templates (<|user|>...</s>, <|assistant|>...</s>, <|system|>...</s>), stop id 2; KV budget 4096, 11 prefill signatures (1-1024)",
+          "Recommended file: bf16-class on every gate; 1.5 GB - peak resident memory 2.4 GB on the Android CPU path, 1.0 GB on the GPU path"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 3554.2,
+          "decode_tps": 146.4,
+          "ttft_s": 0.09,
+          "load_s": 2.26,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-02",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (all evals finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 822.4,
+          "decode_tps": 35.1,
+          "ttft_s": 0.844,
+          "load_s": 12.86,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-02",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine (all evals finished, 90 s settle), 300 s rest before each GPU cell; backend verified to generate on this file first (scripts/cardbench/gate_backend.py: OK); load_s = the tool's Init time under --cache no"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q, Adreno)",
+          "os": "Android",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "535-586",
+          "decode_tps": "23.3-23.7",
+          "ttft_s": "0.59-0.64",
+          "load_s": 5.4,
+          "peak_memory_mb": 1017,
+          "runs": 2,
+          "date": "2026-09-02",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold, no other load on the device; GPU rows only with full LITERT_CL delegation (1066/1066 nodes on prefill_2-1024, 947/947 on prefill_1, 975/975 on decode, zero blocking XNNPack) and a Japanese generation check on the same file (answered 東京)"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q)",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "168-239",
+          "decode_tps": "13.4-13.5",
+          "ttft_s": "1.42-1.99",
+          "load_s": 0.45,
+          "peak_memory_mb": 2395,
+          "runs": 2,
+          "date": "2026-09-02",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell (load_s = mean of the two engine init times), owned device hold; generation verified on the same file (answered 東京); CPU prefill spreads with thermal state"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3, Mali-G715, 7.75 GB RAM)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 321,
+          "decode_tokens": 281,
+          "prefill_tps": "95.5-97.7",
+          "decode_tps": "8.55-9.5",
+          "ttft_s": "3.4-3.47",
+          "load_s": 9.4,
+          "peak_memory_mb": 2449,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-07",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); the GPU path was not run for this file on this handset (1.5 GB int8: Mali GPU weight residency ~4x file size exceeds this 8 GB phone (CATALOG_REGATE precedent) - not attempted), so this row has no GPU counterpart"
+        }
+      ],
+      "known_issues": []
+    }
+  ]
+}

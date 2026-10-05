@@ -1,7 +1,7 @@
 {
-  "manifest_schema": "0.1.0",
+  "manifest_schema": "0.1.2",
   "repo": "mlboydaisuke/OvisOCR2-LiteRT",
-  "generated": "2026-09-01",
+  "generated": "2026-09-06",
   "generator": "make_manifest.py",
   "model": {
     "display_name": "OvisOCR2",
@@ -73,6 +73,12 @@
           "platform": "ios",
           "backend": "gpu",
           "reason": "verified on iPhone 17 Pro (Metal): decode 48.5 tok/s vs 18.0 CPU; peak 3.8 GB GPU vs 0.9 GB CPU"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "measured on one Galaxy S26 with one binary: cpu 35.56-37.62 tok/s decode / 216.7 prefill, peak 1778 MB, init 15.7 s (S7 Android backfill 2026-09-05, 2 cold runs) against gpu 35.02 tok/s decode / 537.1-576.2 prefill, peak 3771 MB, init 81.3 s (S7 Android backfill 2026-09-05, 2 cold runs). Same-device control taken: decode is a wash (within 10%), so the choice rests on the other numbers. The engine init (16 s against 81 s) and the peak memory (1.8 GB against 3.8 GB) decide for cpu: for an OCR model whose input is an image and whose output is short, the GPU's prefill lead does not pay back its init. Neither backend's generation gate on this generic text prompt returned a usable answer (the CPU echoed the question, the GPU looped the answer - the general-chat echo mode listed in known_issues), so both speed rows are throughput only; the OCR output itself was verified on macOS and iPhone (card), not on this handset"
         }
       ],
       "requirements": {
@@ -122,7 +128,7 @@
           "runtime": "litert-lm v0.16.0 (vendored xcframework)",
           "decode_tps": 48.5,
           "ttft_s": 1.51,
-          "peak_mb": 3828,
+          "peak_memory_mb": 3828,
           "runs": 1,
           "date": "2026-09-01",
           "source": "litertlm-convert ovisocr2_work/device_gate_20260901/ (quality Metal leg, cold start)"
@@ -134,10 +140,42 @@
           "runtime": "litert-lm v0.16.0 (vendored xcframework)",
           "decode_tps": 18.0,
           "ttft_s": 1.02,
-          "peak_mb": 915,
+          "peak_memory_mb": 915,
           "runs": 1,
           "date": "2026-09-01",
           "source": "litertlm-convert ovisocr2_work/device_gate_20260901/ (quality CPU leg, cold start)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 207,
+          "decode_tokens": 195,
+          "prefill_tps": "537.1-576.2",
+          "decode_tps": 35.02,
+          "ttft_s": "0.39-0.41",
+          "load_s": 81.3,
+          "peak_memory_mb": 3771,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); GPU gate full LITERT_CL delegation (99187 ops across 7 subgraphs), generation verified on the gate prompt; the cpu row of the same date is the same-device control"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 (XNNPACK CPU)",
+          "prompt_tokens": 207,
+          "decode_tokens": 195,
+          "prefill_tps": 216.7,
+          "decode_tps": "35.56-37.62",
+          "ttft_s": "0.97-0.99",
+          "load_s": 15.7,
+          "peak_memory_mb": 1778,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-09-05",
+          "source": "S7 Android backfill: same-device CPU control - identical binary, prompt file and flags, only --backend differs; 205-token prompt with --benchmark, 2 cold runs (compile/weight caches deleted between runs, device cooled below 42 C before each run); same-device control for an existing GPU row on this handset; the CPU generation gate on this generic prompt did not produce an answer (task-prompted model, outside its contract), so this row is throughput only"
         }
       ],
       "known_issues": [

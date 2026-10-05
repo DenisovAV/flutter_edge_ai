@@ -1,0 +1,149 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "mlboydaisuke/Confucius4-R2T2-LiteRT",
+  "generated": "2026-10-02",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Confucius4-R2T2 (streaming speech-to-text: Qwen3-ASR-1.7B fine-tune, one clip of up to 30 s per message)",
+    "base_model": "netease-youdao/Confucius4-R2T2",
+    "architecture": "Qwen3-ASR: in-graph Whisper-style log-mel (128 bins, the original feature extractor's STFT / Slaney filterbank / normalization) -> 24-layer audio encoder (104-token attention windows) -> projector -> 28-layer Qwen3 LM; LiteRT-LM generic audio path (raw 16 kHz PCM in 160-sample frames, no mel extraction in the runtime)",
+    "parameters_b": 2.04,
+    "license": "netease-model-use-license-agreement (MODEL_LICENSE / MODEL_LICENSE_zh in the repo; the Chinese text prevails)",
+    "session_defaults": {
+      "top_k": 1,
+      "temperature": 0.0,
+      "notes": "Greedy decoding (top_k 1, top_p 1, temperature 0) for every measurement. One conversation per clip of up to 30 s; the answer is 'language <name><asr_text><transcript>', split it at <asr_text>."
+    },
+    "context_length": 1024,
+    "capabilities": {
+      "vision": false,
+      "audio": true,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Confucius4-R2T2.litertlm",
+      "sha256": "6938f236ec25b0a3c2c8d8a2a43bf6c5891b857331e3246f28b9e95140312c5e",
+      "size_bytes": 2693064192,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 932
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3790
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142501
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1740478768,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 312990368,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 637380096,
+          "model_type": "tf_lite_audio_encoder_hw"
+        }
+      ],
+      "quantization": "LM: int8 dynamic weights with an int8 embedding table; audio encoder: fp16 weights, fp32 compute, in-graph log-mel, 30 s window (3000 frames x 160 samples at 16 kHz -> 390 audio tokens)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.16.1",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "155 clips end to end (litert-lm-api 0.17.1, one conversation per clip): RTF 0.053 with the LM on the GPU (WebGPU over Metal, prefill_128 and decode fully delegated) vs 0.124 on the CPU; FLEURS en WER 4.52 % / zh CER 6.45 % / ja CER 6.06 % vs 4.43 / 6.40 / 6.21 on the CPU; the audio encoder stays on CPU (audio_backend cpu)"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "Galaxy S26: the LM on OpenCL (prefill_128 and decode fully delegated) transcribed 5/5 example clips with a peak private footprint of 1,932 MB vs 7,470 MB for the CPU leg (run without a weight cache); per-process wall 5.6-9.3 s vs 10.4-19.6 s, both under a CPU frequency cap - verified choice, not a measured speed win"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 7470,
+        "platform_notes": [
+          "One message = one clip of up to 30 s: the runtime zero-fills the 30 s window after the clip and the encoder emits 390 audio tokens per window (encoding and prefill cost the same for any clip length). Clips longer than 30 s were not tested",
+          "The answer is 'language <name><asr_text><transcript>'. To force the language, send the text item 'language Chinese<asr_text>' (or another language name) in the same message as the audio: the template puts the user's text items after 'assistant\\n', where the original code puts a forced language",
+          "Template = the litert-torch Qwen3-ASR prompt (<|im_start|>user<|audio_start|>…<|audio_end|><|im_end|><|im_start|>assistant\\n, no system turn); system messages are ignored. The original repository's prompt (empty system turn) scored FLEURS zh CER 10.75 % / ja CER 9.33 % with this file (language tags English/None on Mandarin clips, Chinese numerals, one Mandarin and one Japanese clip translated into English)",
+          "audio_backend must be cpu (audio_backend=CPU() / --audio_backend=cpu); the LM runs on cpu or gpu",
+          "Accuracy, FLEURS test 50 clips per language, greedy: macOS CPU en WER 4.43 % / zh CER 6.40 % / ja CER 6.21 %, macOS LM-on-GPU 4.52 % / 6.45 % / 6.06 % (original model in PyTorch fp32 with the same prompt 4.43 % / 6.24 % / 6.21 %); no empty transcript",
+          "The first load writes about 3.0 GB of CPU weight caches (encoder 1.27 GB, LM 1.73 GB) into cache_dir, or next to the model file when none is set; that first load peaked at 6.6 GB RSS on macOS (4.5 GB with the caches present)",
+          "Streaming: the original r2t2 streaming_transcribe loop (2 s chunks; the accumulated audio plus the previous answer minus its last 5 tokens as a text item, in a new conversation per call) runs through these calls; about 1 s per call on Apple M4 Max CPU (211 calls over 35 clips; FLEURS scores of the 30 FLEURS clips equal the offline scores)",
+          "Galaxy S26 rows are reference values: the CPU frequency limit fell from 3.63 / 4.74 GHz to 1.79 / 1.75 GHz during the CPU leg and the GPU leg started under it; the CPU leg ran without a weight cache (cache_dir did not exist), peak private 7,470 MB; LM on OpenCL 1,932 MB; transcripts equal to the macOS CPU run on 15 of 20 (CPU) and 4 of 5 (GPU) clips"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm-api 0.17.1 (Python)",
+          "max_num_tokens": 1024,
+          "peak_memory_mb": 4335.4,
+          "cache": "yes",
+          "runs": 1,
+          "date": "2026-10-02",
+          "source": "155-clip transcription (FLEURS test en_us / cmn_hans_cn / ja_jp x 50 + 5 example clips, 1,836.1 s of audio), one conversation per clip, greedy, LM and audio encoder on CPU (4 threads): 227.1 s processing, RTF 0.124, per clip 1.08-2.64 s (median 1.42 s); peak_memory_mb = /usr/bin/time maximum resident set size of a second 155-clip run with the weight caches present (4,546,035,712 B / 2^20; transcripts identical 155/155)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm-api 0.17.1 (Python)",
+          "max_num_tokens": 1024,
+          "peak_memory_mb": 2558.2,
+          "cache": "yes",
+          "runs": 1,
+          "date": "2026-10-02",
+          "source": "same 155 clips, LM on the GPU (WebGPU over Metal; 'Replacing 1298 out of 1298 node(s) with delegate (LITERT_WEBGPU)' for prefill_128 and 1244 of 1244 for decode), audio encoder on CPU (4 threads): 96.9 s processing, RTF 0.053, per clip 0.49-1.06 s (median 0.61 s); peak_memory_mb = /usr/bin/time maximum resident set size (2,682,519,552 B / 2^20)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "max_num_tokens": 1024,
+          "peak_memory_mb": 7470.18,
+          "cache": "no",
+          "runs": 1,
+          "date": "2026-10-02",
+          "source": "20 shortest clips of the set (127.6 s of audio), one process per clip, --num_cpu_threads=4 --audio_backend=cpu, no weight cache (cache_dir missing); wall per process including engine load 10.4-19.6 s; 'Peak private footprint' from --report_peak_memory_footprint on the first clip; scaling_max_freq fell to 1785600 / 1747200 kHz during the leg (reference value under a thermal cap); transcripts = macOS CPU 15/20"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "max_num_tokens": 1024,
+          "peak_memory_mb": 1931.7,
+          "cache": "yes",
+          "runs": 1,
+          "date": "2026-10-02",
+          "source": "5 example clips, one process per clip, LM on OpenCL ('Replacing 1298 out of 1298 node(s) with delegate (LITERT_CL)' for prefill_128, 1244 of 1244 for decode), audio encoder on CPU; wall per process including engine load 5.6-9.3 s; started under the CPU frequency cap left by the CPU leg (reference value); transcripts = macOS CPU 4/5"
+        }
+      ],
+      "known_issues": [
+        "The audio encoder does not run on the GPU delegate: with audio_backend=GPU() create_conversation fails ('BATCH_MATMUL: Not supported batched mat mul case: non-constant tensor' on macOS WebGPU); keep audio_backend=cpu",
+        "The original streaming procedure's committed text (latest answer minus its last 5 tokens) shrinks by 1-2 characters when a call adds fewer than 5 tokens (2 of 211 calls with this file's prompt)"
+      ]
+    }
+  ]
+}

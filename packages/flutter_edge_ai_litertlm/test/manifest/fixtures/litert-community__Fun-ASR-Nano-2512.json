@@ -1,0 +1,217 @@
+{
+  "manifest_schema": "0.1.2",
+  "repo": "litert-community/Fun-ASR-Nano-2512",
+  "generated": "2026-09-27",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Fun-ASR-Nano-2512 (speech-to-text: SenseVoice encoder + Qwen3-0.6B, one utterance of up to 30 s per message)",
+    "base_model": "FunAudioLLM/Fun-ASR-Nano-2512",
+    "architecture": "Fun-ASR-Nano: in-graph Kaldi fbank + LFR front end -> SenseVoice SAN-M encoder (70 layers) -> 2-layer transformer adaptor -> Qwen3-0.6B LM; LiteRT-LM generic audio path (raw 16 kHz PCM in 960-sample frames, no mel extraction in the runtime)",
+    "parameters_b": 0.83,
+    "license": "apache-2.0",
+    "session_defaults": {
+      "top_k": 1,
+      "temperature": 0.0,
+      "notes": "Greedy decoding (top_k 1), as the original funasr pipeline decodes; max_output_tokens 512 was used for every measurement. One conversation per utterance of up to 30 s."
+    },
+    "context_length": 2048,
+    "capabilities": {
+      "vision": false,
+      "audio": true,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Fun-ASR-Nano-2512.litertlm",
+      "sha256": "508c3c7e2ea0df9a756d4b42f9751d5aa08db3d60f959ade6bb2c2a2dafebcd4",
+      "size_bytes": 1255894736,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1707
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142149
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 159232944,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 621148256,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 473329360,
+          "model_type": "tf_lite_audio_encoder_hw"
+        }
+      ],
+      "quantization": "LM: int8 dynamic weights with an int8 embedding table, fp32 activations declared on the prefill/decode section (prefer_activation_type fp32); audio encoder: fp16 weights, fp32 compute, 30.24 s window (504 frames x 960 samples at 16 kHz)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.16.1",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "End to end (engine loaded once, 25 clips, audio encoder on CPU): 0.37 s per clip with the LM on the GPU (RTF 0.046) vs 0.68 s on the CPU (RTF 0.091); measured on a shared machine (1-minute load 5.8–16.0)"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "cpu",
+          "reason": "Galaxy S26: decode 31.6 tok/s on the CPU vs 26.3 on the GPU (OpenCL), prefill 331 vs 386 tok/s; per clip with a loaded engine measured on the CPU only (1.0-1.4 s for 5.6-7.2 s clips); peak 2,411 MB (CPU) vs 2,233 MB (GPU); both backends give English WER 20/448 and 20/448"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 2411,
+        "platform_notes": [
+          "One message = one utterance of up to 30.24 s (the encoder window: 504 frames x 960 samples at 16 kHz). A longer clip in one message is transcribed only up to its first window (WER 83/143 on a 60.2 s clip)",
+          "Longer audio: split it into pieces of at most 30 s and send each piece in a NEW conversation, then join the texts (60.2 s clip cut at 30.24 s: WER 10/143, the original model on the whole clip 10/143; the two pieces as two turns of one conversation: 22/143)",
+          "audio_backend must be cpu (--audio_backend=cpu / audio_backend=CPU()); the LM runs on cpu or gpu",
+          "The prefill/decode section declares prefer_activation_type fp32: with fp16 activations the LM emits only '!' tokens on the GPU (also for a text-only prompt). Leave the engine activation type unset",
+          "Prompt: a message with audio only gets the default instruction 语音转写： from the bundle template; the model's other instructions (no inverse text normalization 语音转写，不进行文本规整：, language 语音转写成英文：, the hotword prompt) go as a text item in the same message",
+          "Accuracy, 25 clips (5 official examples + 20 LibriSpeech dev-clean, 448 words), greedy: English WER 4.24 % (19/448) macOS CPU, 4.46 % (20/448) macOS LM-on-GPU, 4.46 % (20/448) Galaxy S26 CPU, 4.46 % (20/448) Galaxy S26 LM-on-GPU (funasr fp32 reference 4.46 % (20/448)). FLEURS test, 50 clips per language, macOS CPU: English WER 5.48 %, Mandarin CER 6.86 %, Japanese CER 6.81 % (reference 5.13 % / 6.86 % / 6.95 %)",
+          "Peak memory on Galaxy S26 (25-clip transcription run, --report_peak_memory_footprint): 2,411 MB CPU/CPU, 2,233 MB LM-on-GPU (private footprint)",
+          "End to end on Apple M4 Max (litert-lm 0.17.1 Python, engine loaded once, one conversation per clip, 25 clips, 217.5 s of audio, shared machine): median 0.37 s per clip with the LM on the GPU (RTF 0.046), 0.68 s on the CPU (RTF 0.091); the audio encoder alone 164 ms per 30.24 s window (ai_edge_litert, 8 threads)",
+          "Galaxy S26, per clip with the engine loaded (Kotlin app, LiteRT-LM Android 0.17.1, CPU): 1.03 s for a 5.6 s clip, 1.24 s and 1.42 s for 7.2 s clips (sendMessage wall time); engine load 0.64 s with the runtime cache; not measured with the LM on the GPU",
+          "Send 16 kHz mono PCM WAV: the runtime's own MP3 decoding changed the text on 3 of 5 official MP3 samples"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1027.03,
+          "decode_tps": 48.94,
+          "ttft_s": 0.4803,
+          "load_s": 2.1189,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-27",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --backend cpu (text prompt; LM only; 256 tokens run as two 128-token prefill calls); contended machine, 1-minute load average 6.0 at cell start"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.17.1",
+          "prompt_tokens": 512,
+          "decode_tokens": 256,
+          "prefill_tps": 1349.72,
+          "decode_tps": 50.21,
+          "ttft_s": 0.6209,
+          "load_s": 2.1022,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-27",
+          "source": "litert-lm benchmark -p 512 -d 256 --runs 3 --cache no --backend cpu (text prompt; LM only); contended machine, 1-minute load average 5.8 at cell start"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.1",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 3090.74,
+          "decode_tps": 143.03,
+          "ttft_s": 0.0967,
+          "load_s": 1.127,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-27",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no --backend gpu (text prompt; LM only; WebGPU over Metal; 256 tokens run in the 512-token prefill signature; rested >= 300 s); contended machine, 1-minute load average 16.0 at cell start"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.17.1",
+          "prompt_tokens": 512,
+          "decode_tokens": 256,
+          "prefill_tps": 6169.85,
+          "decode_tps": 137.18,
+          "ttft_s": 0.0974,
+          "load_s": 1.1946,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-27",
+          "source": "litert-lm benchmark -p 512 -d 256 --runs 3 --cache no --backend gpu (text prompt; LM only; WebGPU over Metal; rested >= 300 s); contended machine, 1-minute load average 11.5 at cell start"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 331.43,
+          "decode_tps": 31.55,
+          "ttft_s": 0.8,
+          "max_num_tokens": 2048,
+          "runs": 1,
+          "date": "2026-09-27",
+          "source": "--benchmark --benchmark_prefill_tokens=256 --benchmark_decode_tokens=256 --input_prompt_file (text prompt; LM only; audio_backend cpu), one reading; CPU uncapped and SKIN < 40 C before the leg"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 386.45,
+          "decode_tps": 26.26,
+          "ttft_s": 0.7,
+          "max_num_tokens": 2048,
+          "runs": 1,
+          "date": "2026-09-27",
+          "source": "--benchmark --benchmark_prefill_tokens=256 --benchmark_decode_tokens=256 --input_prompt_file (text prompt; LM only; OpenCL; audio_backend cpu), one reading; CPU uncapped and SKIN < 40 C before the leg"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "max_num_tokens": 2048,
+          "runs": 1,
+          "peak_memory_mb": 2411.11,
+          "date": "2026-09-27",
+          "source": "25-clip transcription run (audio in, one process per clip, audio_backend cpu, max_output_tokens 512); peak private footprint from --report_peak_memory_footprint on the first clip"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q)",
+          "os": "Android 16",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.1 tag build",
+          "max_num_tokens": 2048,
+          "runs": 1,
+          "peak_memory_mb": 2233.34,
+          "date": "2026-09-27",
+          "source": "25-clip transcription run (audio in, one process per clip, LM on OpenCL, audio_backend cpu, max_output_tokens 512); peak private footprint from --report_peak_memory_footprint on the first clip"
+        }
+      ],
+      "known_issues": [
+        "The audio encoder does not start on the GPU (macOS: DEQUANTIZE / PAD / SELECT_V2 are not delegated and conversation creation fails); keep audio_backend=cpu",
+        "A message longer than 30.24 s is transcribed only up to its first window; split the audio and use one conversation per piece",
+        "Two pieces sent as two turns of one conversation: the second turn repeats the start of the first",
+        "No timestamps or CTC output (the checkpoint has no CTC decoder weights)"
+      ]
+    }
+  ]
+}

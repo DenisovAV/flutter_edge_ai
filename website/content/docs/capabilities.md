@@ -47,7 +47,7 @@ native platforms).
 |---|---|---|---|---|
 | **Vision** | ✅ Native | ✅ | — | ✅ Android |
 | **Audio** | ✅ Native | ✅ Mobile | — | — |
-| **Function calling** | ✅ Native | ✅ Prompt | ✅ Prompt | ✅ Prompt |
+| **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
 | **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
 
 - **Function calling.** *Native*: the engine hands the tools to the runtime.
@@ -62,8 +62,10 @@ native platforms).
   tags (Qwen3, DeepSeek R1). Core parses the tags, so this works on any engine.
   *Full* adds Gemma 4's separate thinking channel, which needs LiteRT-LM on a
   native platform.
-- **Built-in AI**: vision works on Android, and on iOS and macOS from version
-  27. Apple Foundation Models (iOS and macOS 26+) also has native tool calling.
+- **Built-in AI**: vision works on Android. On iOS and macOS it needs OS 27 and
+  an app built with the OS 27 SDK, and is not verified on a device yet; on OS 26
+  it is text-only. Apple Foundation Models (iOS and macOS 26+) also has native
+  tool calling.
   `BuiltInAiEngine` does not pass tools to it, because `InferenceChat` already
   runs the tool loop; you can reach it through the experimental
   `BuiltInAiModel.localAiModel`. Gemini Nano, Phi Silica and the Chrome Prompt

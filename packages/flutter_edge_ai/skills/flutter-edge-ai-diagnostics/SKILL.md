@@ -48,16 +48,18 @@ Future<InferenceModel> loadAndMeasure() async {
 }
 ```
 
-Sample during generation every so many chunks, not on each one:
+Sample during generation at most once a second, not on each chunk:
 
 ```dart
 Future<String> answerAndMeasure(InferenceModelSession session) async {
   final reply = StringBuffer();
-  var chunks = 0;
+  final sinceLast = Stopwatch()..start();
   MemorySnapshot? peak;
   await for (final chunk in session.getResponseAsync()) {
     reply.write(chunk);
-    if (++chunks % 32 == 0 && FlutterEdgeAiDiagnostics.isSupported) {
+    if (sinceLast.elapsed >= const Duration(seconds: 1) &&
+        FlutterEdgeAiDiagnostics.isSupported) {
+      sinceLast.reset();
       final now = await FlutterEdgeAiDiagnostics.memorySnapshot();
       if ((now.anonymousBytes ?? 0) > (peak?.anonymousBytes ?? 0)) peak = now;
     }

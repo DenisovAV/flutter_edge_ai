@@ -159,6 +159,40 @@ void main() {
       );
     });
 
+    test('the read does not block the calling isolate', () async {
+      if (Platform.isWindows) {
+        markTestSkipped('no FIFOs on Windows');
+        return;
+      }
+      // A FIFO has no data until a writer shows up, so a blocking read stalls
+      // for as long as the writer waits.
+      final fifo = '${dir.path}/smaps_rollup';
+      expect(Process.runSync('mkfifo', [fifo]).exitCode, 0);
+      final fixture = File('${dir.path}/rollup_fixture')
+        ..writeAsStringSync(_smapsRollup);
+      final writer = await Process.start('sh', [
+        '-c',
+        'sleep 0.5; cat "${fixture.path}" > "$fifo"',
+      ]);
+
+      final started = Stopwatch()..start();
+      final reading = readProcMemorySnapshot(
+        smapsRollupPath: fifo,
+        meminfoPath: meminfoFixture().path,
+      );
+      final returned = started.elapsedMilliseconds;
+      final snapshot = await reading;
+      await writer.exitCode;
+
+      expect(
+        returned,
+        lessThan(100),
+        reason: 'the call must hand back a Future',
+      );
+      expect(started.elapsedMilliseconds, greaterThanOrEqualTo(400));
+      expect(snapshot.anonymousBytes, (1880 + 32) * 1024);
+    });
+
     test('a permission error is a failed read, not a null', () async {
       if (Platform.isWindows) {
         markTestSkipped('chmod has no effect on Windows');

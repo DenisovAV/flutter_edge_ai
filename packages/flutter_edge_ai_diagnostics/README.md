@@ -38,7 +38,7 @@ if (FlutterEdgeAiDiagnostics.isSupported) {
 }
 ```
 
-Each Android snapshot walks the process's page tables (about 150 ms on a low-end device with a 4.9 kernel, and before Linux 5.10 it holds `mmap_lock`), so do not poll faster than about once a second. The read is asynchronous, which moves the wait off your isolate but not the kernel's cost.
+Each Android snapshot walks the process's page tables (about 150 ms on a low-end device with a 4.9 kernel, and before Linux 5.10 it stalls the process's mmap calls), so do not poll faster than about once a second. The read is asynchronous, which moves the wait off your isolate but not the kernel's cost.
 
 Take a snapshot before loading a model, after loading it, and during generation. The difference in `anonymousBytes` is what the model costs in memory the OS cannot reclaim.
 

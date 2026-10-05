@@ -2,6 +2,8 @@ import 'package:advisor_core/advisor_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../chat/chat_panel.dart';
+
 /// The advisor surface state machine (VA-2.1, ADR 0006 §4).
 ///
 /// The model may *request* a state through `present`; the user owns the
@@ -88,17 +90,14 @@ class _AdvisorPanel extends StatelessWidget {
     final theme = Theme.of(context);
     return Material(
       color: theme.colorScheme.surfaceContainerHigh,
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const SizedBox(width: 16),
-              Expanded(child: Text(label, style: theme.textTheme.titleSmall)),
-              toggle,
-            ],
-          ),
-          const Expanded(child: Center(child: Text('Conversation goes here'))),
-        ],
+      child: ChatPanel(
+        header: Row(
+          children: [
+            const SizedBox(width: 16),
+            Expanded(child: Text(label, style: theme.textTheme.titleSmall)),
+            toggle,
+          ],
+        ),
       ),
     );
   }

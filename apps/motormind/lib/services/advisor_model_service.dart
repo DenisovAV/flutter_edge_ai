@@ -109,10 +109,19 @@ class FlutterEdgeAiGateway implements EdgeAiGateway {
   Future<void> uninstall(AdvisorModelSpec spec) => FlutterEdgeAi.uninstallModel(spec.filename);
 
   @override
-  Future<InferenceModel> load(AdvisorModelSpec spec) => FlutterEdgeAi.getActiveModel(
-    maxTokens: spec.maxTokens,
-    preferredBackend: spec.preferredBackend,
-  );
+  Future<InferenceModel> load(AdvisorModelSpec spec) async {
+    // `getActiveModel` loads whichever model the SDK last marked active. Re-running
+    // the install for an already-downloaded file is the SDK's way to mark it
+    // active without copying (mirrors the upstream example's loader).
+    await FlutterEdgeAi.installModel(
+      modelType: spec.modelType,
+      fileType: spec.fileType,
+    ).fromNetwork(spec.url).install();
+    return FlutterEdgeAi.getActiveModel(
+      maxTokens: spec.maxTokens,
+      preferredBackend: spec.preferredBackend,
+    );
+  }
 }
 
 final edgeAiGatewayProvider = Provider<EdgeAiGateway>((ref) => FlutterEdgeAiGateway());

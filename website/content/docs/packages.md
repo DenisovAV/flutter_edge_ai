@@ -1,7 +1,9 @@
 ---
 title: Packages
 description: Modular inference, embedding, speech, RAG orchestration, and storage packages for Flutter Edge AI.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 The former `flutter_gemma` monolith is now a set of opt-in modules. Core owns

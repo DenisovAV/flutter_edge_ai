@@ -1,7 +1,9 @@
 ---
 title: Migration
 description: Upgrade to Flutter Edge AI 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 ## Flutter Edge AI 1.x → 2.0: RAG leaves core

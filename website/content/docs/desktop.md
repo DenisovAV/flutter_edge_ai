@@ -1,7 +1,9 @@
 ---
 title: Desktop Support
 description: Setup and reference for running flutter_edge_ai on macOS, Windows, and Linux via dart:ffi.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Detailed setup and reference for running flutter_edge_ai on **macOS, Windows, and

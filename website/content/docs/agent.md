@@ -1,7 +1,9 @@
 ---
 title: Agent Skills
 description: On-device agentic skills for flutter_edge_ai — give the model a SKILL.md catalog and let it pick and run skills through the tool-calling loop, fully offline.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 `flutter_edge_ai_agent` is an opt-in satellite package that turns the inference

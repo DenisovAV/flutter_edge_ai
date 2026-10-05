@@ -1,7 +1,9 @@
 ---
 title: Genkit
 description: Use flutter_edge_ai through Genkit — on-device model/embedder provider and hybrid on-device/cloud routing.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 [Genkit](https://pub.dev/packages/genkit) is Google's open-source framework

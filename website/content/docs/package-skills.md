@@ -1,7 +1,9 @@
 ---
 title: Package Skills
 description: flutter_edge_ai ships agent skills for coding assistants — Claude Code, Codex, Cursor, Copilot and others learn the API from skills bundled in the package, installed with one dart run skills@ get --all.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 A coding assistant that has never seen flutter_edge_ai writes plausible code that

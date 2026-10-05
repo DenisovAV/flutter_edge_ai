@@ -1,7 +1,9 @@
 ---
 title: Models
 description: Supported models, file formats, capabilities, ModelType reference, and download URLs.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 flutter_edge_ai supports Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2,

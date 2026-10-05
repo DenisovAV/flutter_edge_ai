@@ -1,7 +1,9 @@
 ---
 title: Getting Started
 description: Run Gemma and other on-device LLMs in your Flutter app — Android, iOS, Web, and Desktop.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Bring the power of Google's lightweight Gemma language models and other on-device

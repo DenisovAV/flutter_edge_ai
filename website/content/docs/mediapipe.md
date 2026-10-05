@@ -1,7 +1,9 @@
 ---
 title: MediaPipe
 description: Run .task / .bin models on Android, iOS and Web through Google's MediaPipe (tasks-genai) engine — chat templates handled internally for .task, GPU-only on Web.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 flutter_edge_ai's engines are **pluggable**: you register them in

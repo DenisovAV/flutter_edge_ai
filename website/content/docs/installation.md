@@ -1,7 +1,9 @@
 ---
 title: Installation
 description: Add the packages, register engines, and complete per-platform setup for iOS, Android, Web, and Desktop.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Since **1.0** (then `flutter_gemma`), the plugin is split into a small **core** package plus

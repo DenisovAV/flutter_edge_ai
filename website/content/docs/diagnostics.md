@@ -1,7 +1,9 @@
 ---
 title: Memory Diagnostics
 description: Measure what an on-device model costs in memory the OS cannot reclaim — the anonymous footprint and the memory still available, read from the OS on Android and iOS with flutter_edge_ai_diagnostics.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 `flutter_edge_ai_diagnostics` answers one question: how much memory does this

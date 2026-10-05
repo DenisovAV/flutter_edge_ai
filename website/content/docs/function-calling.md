@@ -1,7 +1,9 @@
 ---
 title: Function Calling
 description: Let on-device models call external functions and integrate with other services.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Function calling lets a model request that your app run an external function —

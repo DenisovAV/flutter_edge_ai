@@ -1,7 +1,9 @@
 ---
 title: Multimodal
 description: Send image and audio input to vision/audio models like Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2, and LLaVA-OneVision.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 flutter_edge_ai supports **text + image** input (vision) and **audio** input with

@@ -1,7 +1,9 @@
 ---
 title: Embeddings & RAG
 description: Generate embeddings and build profile-safe on-device RAG with pluggable SQLite or Qdrant storage.
-image: https://flutteredge.ai/images/og-image.png
+meta:
+  - property: og:image
+    content: https://flutteredge.ai/images/og-image.png
 ---
 
 Flutter Edge AI separates three concerns:

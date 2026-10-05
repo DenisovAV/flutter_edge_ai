@@ -1,0 +1,99 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "mlboydaisuke/Mordant-3B-Think-LiteRT",
+  "generated": "2026-08-25",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Mordant-3B-Think",
+    "base_model": "Kezmark/Mordant-3B-Think",
+    "architecture": "Dense granite-4.1 (GraniteForCausalLM, 40L, 3.40B) full SFT for image-prompt composition with chain-of-thought; thinking-form chat template opens the assistant turn with <think>",
+    "parameters_b": 3.4,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Mordant-3B-Think_int8.litertlm",
+      "sha256": "85205709015e412915ca86ca1e790177f204d438fbee288317b2c7cc2deb484e",
+      "size_bytes": 3762196400,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1816
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404545
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3501434512,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 259313584,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "dynamic int8 (linears + embedding), externalized int8 embedder, reduced 7-signature prefill ladder",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.16",
+          "Thinking model: answers open with a <think> block - budget max output tokens >= 2048",
+          "Metadata start token deliberately dropped: family declares bos == eos (<|end_of_text|>) and the template never renders a leading BOS; a prepended start token flips greedy output into a code-fence loop (measured on this checkpoint)",
+          "GPU gated on a real generation (correct answer with think block) before benching"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 97.25,
+          "decode_tps": 20.18,
+          "ttft_s": 2.68,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "litertlm-convert reports/shiplogs_20260825/bench_mordant_tashkeel.log; litert-lm benchmark -p 256 -d 256 --runs 3 --cache no"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1128.98,
+          "decode_tps": 71.85,
+          "ttft_s": 0.24,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "litertlm-convert reports/shiplogs_20260825/bench_mordant_tashkeel.log; backend gated on a real generation first"
+        }
+      ],
+      "known_issues": []
+    }
+  ]
+}

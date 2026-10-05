@@ -1,0 +1,99 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Permissions for downloading models -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Required on Android 13+ (API 33) for foreground downloads (#356,
+         #357 review): without a RUNTIME grant of this permission, the
+         foreground service does NOT activate at all (background_downloader's
+         displayNotification() bails out before calling setForeground() when
+         it isn't granted) — declaring it here is necessary but not
+         sufficient. flutter_gemma now requests it at runtime automatically
+         before starting a foreground download. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Required on Android 14+ (API 34+) for foreground downloads (#356
+         layer 3): background_downloader's foreground path runs through
+         WorkManager's androidx.work.impl.foreground.SystemForegroundService.
+         On API 34+ startForeground() requires BOTH a matching
+         FOREGROUND_SERVICE_<type> permission AND a matching
+         android:foregroundServiceType on that service's manifest entry —
+         otherwise it throws IllegalArgumentException:
+         "foregroundServiceType ... is not a subset of ... 0x00000000".
+         This is host-app responsibility (flutter_gemma does not impose it on
+         every consumer — see README's Foreground Service section). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Permission for audio recording (Gemma 3n E4B audio input) -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <application
+        android:label="flutter_gemma_example"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!-- GPU backend (LiteRT-LM): on Android 12+ the app linker namespace
+             can't dlopen the vendor OpenCL ICD without declaring its loader.
+             libvndksupport.so provides android_load_sphal_library(), which the
+             v0.13.x OpenCL loader uses to reach libOpenCL.so in the sphal
+             namespace. Without it OpenCL fails to load and the engine falls
+             back to WebGPU, which hard-freezes some Mali drivers on the vision
+             encoder (#324). Required per Google's LiteRT-LM Android docs. -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false"/>
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false"/>
+        <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false"/>
+        <!-- Override WorkManager's shared foreground service to declare a
+             foregroundServiceType (#356 layer 3, API 34+ requirement — see
+             the FOREGROUND_SERVICE_DATA_SYNC permission comment above).
+             tools:node="merge" merges this attribute onto the
+             background_downloader/WorkManager-provided <service> declaration
+             instead of replacing it. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility?hl=en and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

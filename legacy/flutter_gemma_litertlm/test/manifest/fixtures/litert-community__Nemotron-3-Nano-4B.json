@@ -1,0 +1,102 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Nemotron-3-Nano-4B",
+  "generated": "2026-08-31",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Nemotron-3-Nano-4B",
+    "base_model": "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+    "architecture": "Three-kind hybrid (NemotronHForCausalLM, 42L, 3.97B): 21 Mamba2 selective-scan + 17 plain-MLP + 4 GQA attention layers; hidden 3136, 40 query / 8 KV heads, mamba 96 heads x 80 dim (state 128, conv 4, 8 groups), vocab 131072, untied embeddings. Reasoning model: ChatML turns, answers open with a <think> block",
+    "parameters_b": 3.97,
+    "license": "nvidia-nemotron-open-model-license",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Nemotron-3-Nano-4B_int8.litertlm",
+      "sha256": "ba73d2ad1d878bc2b796eb3a1d993eb1b3bd5105743cd85bd6fa9d86e58a013d",
+      "size_bytes": 4126697184,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 10575
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 3365
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2806488
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 4123829984,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "dynamic int8 (linears + embedding; convolutions and the selective scan stay float), fp32 activations declared, reduced 7-signature prefill ladder",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.15",
+          "GPU requires --cache no on this bundle: with the compiled-graph cache, litert-lm run --backend gpu fails with WebGPU Invalid BindGroup validation errors and an 8-question sweep through litert-mac-verify returns token soup (0/8); the same file with --cache no answers 8/8. Isolated as a one-variable comparison (same runner, same file, cache flag flipped); root cause not isolated further",
+          "Thinking model: answers open with a <think> block - budget max output tokens >= 2048 (the 8-question gate used 3200)",
+          "Metadata start token deliberately dropped: the source tokenizer sets add_bos_token False and the template never renders a leading BOS. At this scale the model is robust either way (gate 7/8 with and without), so this aligns the runtime stream with the training stream rather than fixing a failure",
+          "Not measured on a phone. A 4B of this family did not fit an 8 GB Android phone when the sibling Nemotron-H-4B was measured"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 99.57,
+          "decode_tps": 22.73,
+          "ttft_s": 2.6432,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-27",
+          "source": "litertlm-convert reports/shiplogs_20260827/bench_nano4b_protocol.log; litert-lm benchmark -p 256 -d 256 --runs 3 --cache no. Host was NOT idle (a concurrent export); a second protocol run in bench_nano4b_run2.log gave prefill 113.29 / decode 22.47 / ttft 2.3049, so CPU prefill spreads ~13%"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 803.37,
+          "decode_tps": 83.3,
+          "ttft_s": 0.3307,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-27",
+          "source": "litertlm-convert reports/shiplogs_20260827/bench_nano4b_protocol.log; litert-lm benchmark -p 256 -d 256 --runs 3 --cache no. Backend gated on real generations first (8-question gate 8/8 via litert-lm run --backend gpu --cache no). Second run: prefill 792.07 / decode 82.37 / ttft 0.3354 (~1.4% spread)"
+        }
+      ],
+      "known_issues": [
+        "GPU is unusable with the compiled-graph cache enabled (WebGPU Invalid BindGroup); pass --cache no. The exit gate's verifier (litert-mac-verify) takes no cache flag, so the routed convert.py CPU gate certifies nothing about GPU for this family",
+        "CPU 8-question gate scores 7/8: the miss is the rhyme-completion item (answers 'violets are purple'); the GPU run answers 'blue'. Every arithmetic, factual and translation item is correct on both backends"
+      ]
+    }
+  ]
+}

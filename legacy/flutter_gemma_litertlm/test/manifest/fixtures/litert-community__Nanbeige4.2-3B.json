@@ -1,0 +1,190 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Nanbeige4.2-3B",
+  "generated": "2026-08-31",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Nanbeige4.2-3B",
+    "base_model": "Nanbeige/Nanbeige4.2-3B",
+    "architecture": "Looped transformer: 22 layers run twice per token (num_loops=2), unrolled at export to 44 layer executions over shared weights; reasoning model",
+    "parameters_b": 3,
+    "license": "apache-2.0",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Reasoning model — the chat template auto-opens the <think> block and the visible answer follows </think>. Sampling is required: official recipe temperature 0.6, top_k 20, top_p 0.95; the model collapses under greedy decoding (do not run at temperature 0).",
+      "temperature": 0.6,
+      "top_k": 20,
+      "top_p": 0.95
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "model.litertlm",
+      "sha256": "d4a55ec390bd5e1a2ef52e37f51dc5ffd1589e0f60e8d35765a0498f7ebf2f83",
+      "size_bytes": 2579277808,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1458
+        },
+        {
+          "type": "SP_Tokenizer",
+          "size_bytes": 2783410
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2062065968,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 514385904,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 weights — blockwise (block 32) + OCTAV optimal-clipping, symmetric; embedding INT8",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "The loop makes this ~2x the per-token compute of a normal 3B — expect roughly 8B-class decode rates on CPU",
+          "Android: push the file and import it in Google AI Edge Gallery (+ -> import, keep CPU)",
+          "Context (KV cache): 4096 (44 KV slots: 22 layers x 2 loops)",
+          "iPhone 17 Pro CPU decode was observed at ~3.2 tok/s in an earlier on-device note; its run log is not retained, so it is not listed as a measured row"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 56,
+          "decode_tps": 12.5,
+          "ttft_s": 4.74,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness); no run log was retained for this row"
+        }
+      ],
+      "known_issues": [
+        "Sampling is required — the model collapses under greedy decoding (official recipe: temperature 0.6, top_k 20, top_p 0.95)",
+        "CPU only. On a GPU this file emits a flood of <unk> — measured on Apple Metal and on the Galaxy S26 Adreno, with the same binary and prompt returning a correct answer on CPU. It delegates in full on both, so this is an activation-dtype numeric fault and not an op wall; use model_fp32act.litertlm for GPU.",
+        "The published card's 'GPU (Metal) 556 / 52.6 tok/s' row describes this file on that broken path. Re-measured with logs at 547.92 / 51.45 and 550.91 / 51.77 tok/s -- the numbers reproduce and mean nothing — the benchmark path never checks that any text was produced.",
+        "Not tested on an iPhone 17 Pro, so no claim is made in either direction. The sibling model_fp32act.litertlm does run there (8/8 on both backends, 2026-08-28)."
+      ],
+      "min_runtime_version": "0.15.0"
+    },
+    {
+      "file": "model_fp32act.litertlm",
+      "sha256": "2a3388f958ad22faabc306856bfa026515b2352ca9564964f3e5e9129f22f289",
+      "size_bytes": 2579277808,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1458
+        },
+        {
+          "type": "SP_Tokenizer",
+          "size_bytes": 2783410
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2062065968,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 514385904,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 weights — blockwise (block 32) + OCTAV optimal-clipping, symmetric; embedding INT8; fp32 activations declared",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Same weights as model.litertlm and the same byte size — the two differ only in the prefer_activation_type line in model.toml",
+          "The loop makes this ~2x the per-token compute of a normal 3B — expect roughly 8B-class decode rates",
+          "Apple GPU is the backend this file is for: on an M4 Max the Metal path is 7.2x the CPU's prefill and 3.1x its decode",
+          "On a Galaxy S26 the picture is different — decode is a wash against CPU and the GPU's only clear advantage is peak memory",
+          "Android: push the file and import it in Google AI Edge Gallery",
+          "Context (KV cache): 4096 (44 KV slots: 22 layers x 2 loops)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0, Metal",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 408.65,
+          "decode_tps": 39.74,
+          "ttft_s": 0.6705,
+          "max_num_tokens": 4096,
+          "runs": 2,
+          "date": "2026-08-27",
+          "source": "litert-lm benchmark --backend gpu --cache no -p 256 -d 256 --runs 3, two invocations: 408.65 / 409.16 tok/s prefill and 39.74 / 39.76 tok/s decode, within 0.1%; TTFT 0.6705 / 0.6710 s and engine init 3.24 / 3.31 s. The same file was separately asked to generate and returned a correct, coherent answer with the think block closed. Taken while the machine was NOT idle (load average ~3, other work running); the published card's methodology says 'otherwise idle machine', so re-take the absolute values in a quiet, serialised window before publication. The GPU:CPU ratio is the robust part -- both legs saw the same load."
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 56.66,
+          "decode_tps": 12.89,
+          "ttft_s": 4.5465,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-27",
+          "source": "same-machine CPU control, litert-lm benchmark --backend cpu --cache no -p 256 -d 256 --runs 3, one invocation; agrees with the published card's 56 / 12.5 CPU row. Taken while the machine was NOT idle (load average ~3, other work running); the published card's methodology says 'otherwise idle machine', so re-take the absolute values in a quiet, serialised window before publication. The GPU:CPU ratio is the robust part -- both legs saw the same load."
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0",
+          "prompt_tokens": 205,
+          "decode_tokens": 3891,
+          "prefill_tps": 29.64,
+          "decode_tps": 3.45,
+          "ttft_s": 7.21,
+          "peak_mem_mb": 4152,
+          "runs": 1,
+          "date": "2026-08-27",
+          "source": "S5 same-device CPU control, 205-token prompt; the phone had been under sustained load for over half an hour, so treat it as a floor"
+        }
+      ],
+      "known_issues": [
+        "Sampling is required — the model collapses under greedy decoding (official recipe: temperature 0.6, top_k 20, top_p 0.95)",
+        "No Galaxy S26 GPU speed row is published on purpose: each benchmark decodes ~3900 tokens because the model thinks before answering, so a pair of runs holds the GPU for over half an hour and the second is measurably throttled (prefill 46.2 then 27.0 tok/s; engine init 12.4 s then 29.2 s). Functionally it passes — full delegation, correct output, exit 0.",
+        "Some replies open with a garbled first word ('Weimplify is asked:' where 'We are asked:' belongs) and a closing </think> can appear with no opener. It is intermittent and prompt-dependent, reproduces on Mac CPU, Mac Metal and Adreno alike, is present on the Nanbeige4.1 bundle too, and is not the tokenizer — a round trip through the bundle's own SentencePiece model is clean. The answer after </think> has been correct in every case seen, so this is cosmetic rather than a correctness fault.",
+        "Runs on an iPhone 17 Pro: 8/8 on GPU (Metal) and 8/8 on CPU in an 8-question on-device sanity gate, engine init 6.77 s and 2.53 s, measured 2026-08-28. An earlier claim that it could not start there was a harness defect, not a model or device limit: the test app never created a window, so iOS killed it at the 20.00 s process-launch watchdog (0x8BADF00D) regardless of the model, which on the console is indistinguishable from an OOM kill."
+      ],
+      "min_runtime_version": "0.16.0"
+    }
+  ]
+}

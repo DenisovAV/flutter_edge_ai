@@ -1,0 +1,159 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "mlboydaisuke/S1-mini-LiteRT",
+  "generated": "2026-08-25",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "S1-mini (LiteRT-LM)",
+    "base_model": "superwhisper/s1-mini",
+    "architecture": "Dense 0.6B ASR-transcript normalizer, Qwen3ForCausalLM finetune, 28 layers, GQA 16Q:8KV, tied embeddings",
+    "parameters_b": 0.6,
+    "license": "other",
+    "session_defaults": {
+      "notes": "Single-task text normalizer, NOT a chat model — it rewrites a question instead of answering it. Greedy is the trained behaviour (upstream generation_config sets do_sample=false): use top-k 1 / temperature 0. Every input is a control line '[Styling: casual|semi-casual|semi-formal|formal] [Structure: prose|lists] [Context: general|email]', a newline, then one raw transcript; values outside those sets are out of contract. The required system prompt is baked into the bundle template, so callers send only the control line and transcript. English only, inputs up to ~1000 tokens. License carries a naming term: distribution must keep identifying it as \"S1-mini\" by \"Superwhisper\"."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "S1-mini_int8.litertlm",
+      "sha256": "0376f042102cd1409055374d3e823faaaf3a66c5f61c6c744ffe01193d0ae397",
+      "size_bytes": 688157792,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 770
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142162
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 685978720,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic on linears + embedding (dynamic_wi8_afp32)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 4096; prefill signatures 1..1024",
+          "int8 is the only variant: an int4 block-32 build was measured and rejected — it drops commas and discourse words and decodes slower at this size",
+          "Pixel 8a (Tensor G3): graph runs entirely on the OpenCL delegate — 1247/1247 decode nodes, zero XNNPACK fallback",
+          "iPhone 17 Pro verified (Metal): loads and generates, peak ~1.7 GB",
+          "Android: Google AI Edge Gallery imports the file, but Gallery builds current as of 2026-08 give imported models no accelerator choice and run them on the CPU; set TopK 1 / temperature 0.00 in the import dialog (its defaults are sampling values)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 3673,
+          "decode_tps": 144.6,
+          "ttft_s": 0.077,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "litert-lm benchmark, -p 256 -d 256 --runs 3 --cache no, quiet machine"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 427,
+          "decode_tps": 33.3,
+          "ttft_s": 0.63,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "litert-lm benchmark, -p 256 -d 256 --runs 3 --cache no, quiet machine"
+        },
+        {
+          "device": "Pixel 8a",
+          "os": "Android",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 kit (LiteRT CompiledModel, LITERT_CL)",
+          "prompt_tokens": 205,
+          "prefill_tps": 434,
+          "decode_tps": 12.3,
+          "ttft_s": 0.67,
+          "max_num_tokens": 4096,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "on-device benchmark run, 205-token prompt"
+        },
+        {
+          "device": "Pixel 8a",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 kit (XNNPACK)",
+          "prompt_tokens": 205,
+          "prefill_tps": 40.4,
+          "decode_tps": 5.8,
+          "ttft_s": 6.46,
+          "max_num_tokens": 4096,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "on-device benchmark run, 205-token prompt"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "os": "iOS",
+          "backend": "gpu",
+          "runtime": "litert-lm (Swift, yardstick harness)",
+          "prompt_tokens": 180,
+          "prefill_tps": 801,
+          "decode_tps": 32.0,
+          "ttft_s": 0.31,
+          "max_num_tokens": 4096,
+          "runs": 2,
+          "date": "2026-08-25",
+          "source": "on-device harness; the two runs that agreed (32.02 / 32.01 tok/s). An earlier run of the same build read 30.2. Device reported thermal state 'serious' throughout — read as a floor."
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "os": "iOS",
+          "backend": "cpu",
+          "runtime": "litert-lm (Swift, yardstick harness)",
+          "prompt_tokens": 180,
+          "prefill_tps": 281,
+          "decode_tps": 15.5,
+          "ttft_s": 0.74,
+          "max_num_tokens": 4096,
+          "runs": 1,
+          "date": "2026-08-25",
+          "source": "on-device harness, single run; device reported thermal state 'serious' — read as a floor.",
+          "peak_mem_mb": 1427
+        }
+      ],
+      "known_issues": [
+        "Pixel 8a GPU: on number-dense input a date separator can be lost ('March 3rd, 2026.' -> 'March 32026.'), deterministic on repeat runs; the CPU backend on the same phone is byte-identical to macOS across all 12 test cases. Prefer CPU on this phone when exactness matters, GPU when time-to-first-token matters.",
+        "The released checkpoint itself drifts from its own upstream card's example table (it keeps 'Hmm,' / 'So' discourse markers the card drops); parity here is stated against HF fp32, not against those published examples.",
+        "All iPhone 17 Pro rows were measured with the device reporting a 'serious' thermal state; they are floors, not peaks."
+      ]
+    }
+  ]
+}

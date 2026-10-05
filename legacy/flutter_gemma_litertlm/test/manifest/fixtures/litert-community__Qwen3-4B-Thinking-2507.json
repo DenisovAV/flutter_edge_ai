@@ -1,0 +1,150 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Qwen3-4B-Thinking-2507",
+  "generated": "2026-08-31",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Qwen3-4B-Thinking-2507",
+    "base_model": "Qwen/Qwen3-4B-Thinking-2507",
+    "architecture": "qwen3-dense (36 layers)",
+    "parameters_b": 4.0,
+    "license": "apache-2.0",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Reasoning model: it emits a <think>...</think> chain before the answer. At a short output budget it is cut off mid-thought and never answers."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Qwen3_4b_thinking_dynamic_wi4b32_afp32.litertlm",
+      "sha256": "a412d77da3a15047232ce525d126a8cdb803691d29df791f13a9ef4cffab309a",
+      "size_bytes": 2274193168,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 3228
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4967
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142162
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2271997712,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "dynamic int4 block-32 weights, fp32 activations; GPU graph optimizations (RoPE/fused-QKV/fused-GateUp composites), static prefill allocation",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "min_runtime_version": "0.15.0",
+      "known_issues": [
+        "Block-32 int4 corrupts GPU output beyond iPhone: macOS Metal also degenerates (question-echo loops, truncated reasoning; measured 2026-08-31 before and after the metadata repair, pre-existing). Use this file on CPU; it delegated and generated on the Galaxy S26 Android GPU gate (2026-08-24). The block-128 file is the GPU-safe choice"
+      ]
+    },
+    {
+      "file": "model.litertlm",
+      "sha256": "356b2d7778d27d55fbb0d2e0c5e8801e9de136db59849c41c882bd97333840d5",
+      "size_bytes": 2474357680,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 191
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142162
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2079558192,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 392606640,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 block-128 symmetric weights + OCTAV optimal clipping; int8 embeddings (externalized section)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "min_runtime_version": "0.15.0",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "~9x prefill and ~3.8x decode vs CPU on the same file"
+        },
+        {
+          "platform": "ios",
+          "backend": "gpu",
+          "reason": "block-128 is the iPhone-safe int4 recipe for this family; prefer this file over the block-32 variant on iPhone GPU"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "4B-class file (2.47 GB): budget device RAM accordingly; on Android import via AI Edge Gallery and enable the GPU toggle at import",
+          "iPhone 17 Pro Metal decode was observed at ~14 tok/s in an earlier on-device note; its run log is not retained, so it is not listed as a measured row"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0 (pip CLI benchmark)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 999.3,
+          "decode_tps": 68.5,
+          "ttft_s": 0.28,
+          "max_num_tokens": 4096,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-11",
+          "source": "cardbench Mac LLM sweep; model card Performance table"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0 (pip CLI benchmark)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 111.0,
+          "decode_tps": 17.8,
+          "ttft_s": 2.49,
+          "max_num_tokens": 4096,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-11",
+          "source": "cardbench Mac LLM sweep; model card Performance table"
+        }
+      ],
+      "known_issues": []
+    }
+  ]
+}

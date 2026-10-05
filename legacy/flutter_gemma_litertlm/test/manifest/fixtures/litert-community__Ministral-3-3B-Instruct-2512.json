@@ -1,0 +1,106 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Ministral-3-3B-Instruct-2512",
+  "generated": "2026-08-29",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Ministral-3-3B-Instruct-2512",
+    "base_model": "mistralai/Ministral-3-3B-Instruct-2512",
+    "architecture": "Standard dense decoder (Ministral3ForCausalLM, YaRN RoPE); text-only conversion, Pixtral vision tower dropped",
+    "parameters_b": 3,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Ministral-3-3B-Instruct-2512_q4_block32_ekv4096.litertlm",
+      "sha256": "df5f84608e8db475edb74cac2549eb03727e4941b65980c1d95e310bad996ada",
+      "size_bytes": 2340982768,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 3542
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2806689
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1932325376,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 405802992,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 weights - blockwise (block 32), symmetric, OCTAV clipping; tied embedding/lm_head at INT8",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Gallery on Android offers GPU only on ~12 GB+ devices (GPU needs roughly 2x the model size incl. the ML Drift GPU weight cache); on an 8 GB phone only CPU is selectable in the Gallery and ~4 GB RAM must be free or the app is OOM-killed on load",
+          "Gallery import needs package com.google.ai.edge.gallery 1.0.15+ (older 1.0.x builds only accept the legacy .task format and reject .litertlm)",
+          "Embedding externalized so every section is <2 GiB, which is what lets the ~2.3 GB file load on iOS (Metal GPU) under the ~2 GiB single-section mmap limit",
+          "The Gallery's accelerator choice is fixed at import time from device RAM; driving litert_lm_main directly on a Pixel 8a (8 GB) this file runs entirely on the OpenCL delegate (1187/1187 prefill, 1087/1087 decode nodes) and answers correctly"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 123,
+          "decode_tps": 22.3,
+          "ttft_s": 2.39,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1234,
+          "decode_tps": 95.4,
+          "ttft_s": 0.23,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "os": "iOS 27.0",
+          "backend": "gpu",
+          "runtime": "LiteRTDemo harness (Metal GPU backend)",
+          "prefill_tps": 41,
+          "decode_tps": "14-18",
+          "ttft_s": 0.4,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ]
+    }
+  ]
+}

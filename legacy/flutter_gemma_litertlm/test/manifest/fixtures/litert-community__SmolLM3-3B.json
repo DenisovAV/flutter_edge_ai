@@ -1,0 +1,138 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/SmolLM3-3B",
+  "generated": "2026-08-31",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "SmolLM3-3B",
+    "base_model": "HuggingFaceTB/SmolLM3-3B",
+    "architecture": "Fully-open 3B decoder with GQA and a NoPE attention schedule (SmolLM3ForCausalLM, rotary disabled every 4th layer), multilingual, long-context trained",
+    "parameters_b": 3,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "SmolLM3-3B.litertlm",
+      "sha256": "f9aa844c27f5ccfae9cb701c7ca63f2faba501ed187aacc85044b6200df15a37",
+      "size_bytes": 3109328112,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 3318
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2608153
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3106673904,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int4 (recipe not stated on card)",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "measured": [],
+      "known_issues": [
+        "File is present in the repo tree (3.11 GB) but not documented anywhere on the model card"
+      ]
+    },
+    {
+      "file": "SmolLM3-3B_q4_block32_ekv4096.litertlm",
+      "sha256": "2d989ddf434a25682e580eb45dcf65c2cbd6a57f76278b8f651a8cf195c2273e",
+      "size_bytes": 2002257840,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 2580
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2608153
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1733852544,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 265750448,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 weights - blockwise (block 32) + OCTAV optimal-clipping, symmetric; embedding INT8",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Gallery import needs package com.google.ai.edge.gallery 1.0.15+ (older 1.0.x builds reject .litertlm); Gallery v1.0.16+ can import litert-lm models directly from Hugging Face inside the app",
+          "Embedding externalized into its own bundle section so the main weights section stays under the iOS ~2 GiB single-mmap limit",
+          "On a Pixel 8a (Tensor G3, 8 GB) litert_lm_main runs the graph entirely on the OpenCL delegate (1476/1476 prefill, 1308/1308 decode nodes, zero rejected ops) and answers correctly"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 141,
+          "decode_tps": 24.1,
+          "ttft_s": 2.14,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1354,
+          "decode_tps": 93.2,
+          "ttft_s": 0.21,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "os": "iOS 27.0",
+          "backend": "gpu",
+          "runtime": "LiteRTDemo harness (Metal GPU backend)",
+          "prefill_tps": 30.8,
+          "decode_tps": 22.5,
+          "ttft_s": 0.63,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ]
+    }
+  ]
+}

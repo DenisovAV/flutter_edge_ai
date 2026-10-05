@@ -1,0 +1,229 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/LFM2.5-2.6B",
+  "generated": "2026-08-24",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "LFM2.5-2.6B",
+    "base_model": "LiquidAI/LFM2.5-2.6B",
+    "architecture": "Hybrid: 22 gated short-convolution blocks + 8 grouped-query attention layers; thinking model (reasons in a <think> block, thought channel declared)",
+    "parameters_b": 2.6,
+    "license": "lfm-open-license-v1.0",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Thinking model — reasoning turns are long; give at least 2048 tokens of budget for math/complex questions or the think block may not close. Decode speed drops as the token budget grows, so don't set it higher than needed."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "LFM2.5-2.6B_int4.litertlm",
+      "sha256": "f4797d5a16812231deb6d505b4f417dd835b9b3dc47bb74d9ec71facfd0c91a4",
+      "size_bytes": 1668151680,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1310
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 2465
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2574159
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1665513856,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int4 blockwise-32 + OCTAV linears, int8 embedding, convs float",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "backend": "gpu",
+          "reason": "at this size the GPU wins across the board on-device (needs litert-lm >= 0.16.0)"
+        },
+        {
+          "platform": "ios",
+          "backend": "cpu",
+          "reason": "int4 is the recommended phone variant; iOS Metal fails at engine creation (upstream LiteRT-LM#3129) — CPU on iOS"
+        },
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "~12x prefill, ~3.7x decode vs CPU on the same file"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.14; GPU requires litert-lm >= 0.16.0 (Android OpenCL and macOS, verified by generation)",
+          "AI Edge Gallery bundles its own runtime which may lag 0.16.0 — if its GPU toggle fails, use CPU there",
+          "Context (KV cache): 4096 max"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Mac M4 Max",
+          "backend": "cpu",
+          "prompt_tokens": 256,
+          "prefill_tps": 156,
+          "decode_tps": 43.7,
+          "ttft_s": 1.66,
+          "max_num_tokens": 1024,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)",
+          "runtime": "litert-lm (version not stated on card)"
+        },
+        {
+          "device": "Mac M4 Max",
+          "backend": "cpu",
+          "prompt_tokens": 1024,
+          "prefill_tps": 193,
+          "max_num_tokens": 2048,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)",
+          "runtime": "litert-lm (version not stated on card)"
+        },
+        {
+          "device": "Mac M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "prefill_tps": 1972,
+          "decode_tps": 161.6,
+          "cache": "no",
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main v0.16.0 built from the release tag",
+          "prompt_tokens": 261,
+          "decode_tokens": 256,
+          "prefill_tps": "87.8-88.4",
+          "decode_tps": "11.0-11.2",
+          "ttft_s": "3.04-3.06",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "cpu",
+          "runtime": "litert_lm_main v0.16.0 built from the release tag",
+          "prompt_tokens": 261,
+          "decode_tokens": 256,
+          "prefill_tps": "16.2-30.2",
+          "decode_tps": "7.4-10.2",
+          "ttft_s": "8.7-16.3",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ],
+      "known_issues": [
+        "iOS Metal still fails at engine creation (tracked upstream in LiteRT-LM#3129)",
+        "Multi-turn: the conversation context retains previous turns' reasoning, so long chats fill the context faster than the visible text suggests — prefer fresh conversations for unrelated questions"
+      ],
+      "min_runtime_version": "0.14.0"
+    },
+    {
+      "file": "LFM2.5-2.6B_int8.litertlm",
+      "sha256": "36299f191c5ad447b148b78f9d965748598aca52786096c3e0de802b47eeca59",
+      "size_bytes": 2868199040,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1310
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 2465
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2574159
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2865561216,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic (linears + convs + embedding)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.14; GPU requires litert-lm >= 0.16.0 (Android OpenCL and macOS, verified by generation)",
+          "iPhone 17 Pro: loads and runs only when the host app carries the extended-virtual-addressing / increased-memory entitlements (the 2.87 GB single weight section exceeds what a default-entitlement app will memory-map); int4 is the recommended phone variant",
+          "AI Edge Gallery bundles its own runtime which may lag 0.16.0 — if its GPU toggle fails, use CPU there",
+          "Context (KV cache): 4096 max"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Mac M4 Max",
+          "backend": "cpu",
+          "prompt_tokens": 256,
+          "prefill_tps": 169,
+          "decode_tps": 38.0,
+          "ttft_s": 1.54,
+          "max_num_tokens": 1024,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)",
+          "runtime": "litert-lm (version not stated on card)"
+        },
+        {
+          "device": "Mac M4 Max",
+          "backend": "cpu",
+          "prompt_tokens": 1024,
+          "prefill_tps": 434,
+          "max_num_tokens": 2048,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)",
+          "runtime": "litert-lm (version not stated on card)"
+        },
+        {
+          "device": "Mac M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "prefill_tps": 1893,
+          "decode_tps": 125.6,
+          "cache": "no",
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ],
+      "known_issues": [
+        "iOS Metal still fails at engine creation (tracked upstream in LiteRT-LM#3129)",
+        "Multi-turn: the conversation context retains previous turns' reasoning, so long chats fill the context faster than the visible text suggests — prefer fresh conversations for unrelated questions"
+      ],
+      "min_runtime_version": "0.14.0"
+    }
+  ]
+}

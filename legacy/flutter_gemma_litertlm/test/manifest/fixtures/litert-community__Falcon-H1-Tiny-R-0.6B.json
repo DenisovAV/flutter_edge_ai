@@ -1,0 +1,153 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Falcon-H1-Tiny-R-0.6B",
+  "generated": "2026-09-01",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Falcon-H1-Tiny-R-0.6B",
+    "base_model": "tiiuae/Falcon-H1-Tiny-R-0.6B",
+    "architecture": "Fully-hybrid decoder (FalconH1ForCausalLM, 44L, hidden 1024, GQA 8:2): every layer runs grouped-query attention and a Mamba2 selective-scan branch in parallel and sums them, so each layer carries KV plus constant-size conv/SSM state (176 state buffers). Reasoning model: self-emits <think>...</think> before answering; thought channel declared in bundle metadata",
+    "parameters_b": 0.62,
+    "license": "falcon-llm-license",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Reasoning model: give it a generous output budget (>=2048) or set a thinking budget - truncated mid-thought it produces no final answer. Multi-turn fact recall is weak at this size (the bf16 model fails the same recall probes); treat it as a single-turn reasoner."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Falcon-H1-Tiny-R-0.6B_int8.litertlm",
+      "sha256": "66b9e6a5fa630d453d59516cc362e44fff3943eb7c63d07b116cf9a525a1bb94",
+      "size_bytes": 873254788,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1807
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 11901
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 418553
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 738556176,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 134221700,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int8 dynamic on FC only; embedding table externalized to its own CPU-side section and kept FLOAT (int8 embedding, even per-row, measurably destabilizes this checkpoint's reasoning); convs and the scan stay float; fp32 activations declared for GPU",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "verified by generation (8Q 7/8); 2216 tok/s prefill / 97.8 tok/s decode / TTFT 0.13 s - GPU wins both directions on M4 Max"
+        },
+        {
+          "platform": "ios",
+          "backend": "cpu",
+          "reason": "verified by generation on iPhone 17 Pro (8Q 6/8 both backends, identical answers): CPU decodes FASTER than Metal at this size (29.4 vs 22.8 tok/s) at a quarter of the peak memory (0.82 vs 3.0 GB); the Metal engine works but pays setup overhead a 0.6B never amortizes"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.16",
+          "Full prefill ladder (1024,512,...,1), 4096-token KV budget",
+          "Give the session a generous output budget (>=2048) or set --thinking-budget: a reasoning model truncated mid-thought produces no final answer",
+          "The embedder is a separate CPU-side section; the decoder graph is fully GPU-delegable"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.16.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 2215.8,
+          "decode_tps": 97.76,
+          "ttft_s": 0.126,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-01",
+          "source": "cardbench harness, machine rested 300 s before the GPU cell; backend verified by generation (8Q gate) before quoting",
+          "evidence": "falcon_h1_work/bench_tinyr_mac.log"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.16.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 381.32,
+          "decode_tps": 47.75,
+          "ttft_s": 0.693,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-09-01",
+          "source": "cardbench harness; backend verified by generation (8Q gate) before quoting",
+          "evidence": "falcon_h1_work/bench_tinyr_mac.log"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "gpu",
+          "runtime": "BenchmarkApp yardstick quality harness, litert-lm 0.16 xcframework",
+          "prompt_tokens": 148,
+          "prefill_tps": 259.8,
+          "decode_tps": 22.84,
+          "ttft_s": 12.9,
+          "runs": 1,
+          "date": "2026-09-01",
+          "source": "cold single run, 148-token composite quality prompt; TTFT includes first-launch Metal init (load 32.5 s); peak-during-decode 3.01 GB; 8Q answers 6/8 identical to CPU",
+          "evidence": "falcon_h1_work/device_gate_tinyr_20260901/results2/litert-lm_litert-local_falconh1-tinyr-int8_quality_2026-09-01T04-47-33Z.json"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "cpu",
+          "runtime": "BenchmarkApp yardstick quality harness, litert-lm 0.16 xcframework",
+          "prompt_tokens": 148,
+          "prefill_tps": 223.9,
+          "decode_tps": 29.38,
+          "ttft_s": 8.8,
+          "runs": 1,
+          "date": "2026-09-01",
+          "source": "cold single run, 148-token composite quality prompt; TTFT includes first-launch init (load 4.0 s); peak-during-decode 0.82 GB; 8Q answers 6/8",
+          "evidence": "falcon_h1_work/device_gate_tinyr_20260901/results/litert-lm_litert-local_falconh1-tinyr-int8_quality_2026-09-01T04-25-43Z.json"
+        }
+      ],
+      "quality": [
+        {
+          "task": "GSM8K (100 questions, greedy, 2048-token budget, scored after </think>)",
+          "score": "76/100",
+          "reference": "bf16 PyTorch on the identical prompt stream and protocol: 71/100",
+          "date": "2026-09-01",
+          "evidence": "falcon_h1_work/gsm8k_tinyr_int8.json vs falcon_h1_work/gsm8k_bf16_tinyr.json"
+        }
+      ]
+    }
+  ]
+}

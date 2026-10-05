@@ -1,0 +1,93 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Hy-MT2-1.8B",
+  "generated": "2026-08-27",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Hy-MT2-1.8B",
+    "base_model": "tencent/Hy-MT2-1.8B",
+    "architecture": "Dense (HunYuanDenseV1ForCausalLM, 32L, 2.04B): GQA attention with QK-norm, hidden 2048, 16 query / 4 KV heads, head_dim 128, intermediate 6144, vocab 120818, tied embeddings. Multilingual translation model (33 languages, instruction-following translation, not open chat)",
+    "parameters_b": 2.04,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Hy-MT2-1.8B_int8.litertlm",
+      "sha256": "7bbd0b65d7e69c8d92b8ab3033e353536ef40c77f4dc5f4c32f2931417c13eda",
+      "size_bytes": 1815622960,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 673
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2006574
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1813574960,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "export-time dynamic int8 (linears + embedding)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Measured with litert-lm 0.16.0; the bundle is a plain dense prefill/decode export (generic_model)",
+          "Translation model: prompt with the source card's translation instructions (e.g. 'Translate the following text into <language>. Note that you should **only output the translated result without any additional explanation**:'), not open chat",
+          "Metadata start token deliberately dropped: the chat template renders <|hy_begin_of_sentence|> itself and the engine prepends the metadata start_token unconditionally (proved inside the runtime: [start_token]+prompt and [template-BOS]+prompt generate byte-identical greedy output), so the default export fed BOS twice. This file carries the training stream",
+          "Source rope_scaling {type: dynamic, alpha: 1000} is baked statically at conversion (rope_theta 11158839.925); inv_freq and teacher-forced logits are bitwise-equal to the HF reference, valid to 262144 positions - far past this bundle's 4096 context"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 210.95,
+          "decode_tps": 33.97,
+          "ttft_s": 1.2431,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-27",
+          "source": "litertlm-convert reports/shiplogs_20260827/bench_hymt2_cpu.log; litert-lm benchmark -p 256 -d 256 --runs 3 --cache no. Second protocol run: prefill 209.98 / decode 32.37 / ttft 1.2500 (prefill spread ~0.5%, decode ~5%). Quiet host (load ~3.3)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 2008.37,
+          "decode_tps": 105.8,
+          "ttft_s": 0.1369,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-27",
+          "source": "litertlm-convert reports/shiplogs_20260827/bench_hymt2_gpu.log; litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, taken after a >=300 s rest. Backend gated on real generations first (8-question gate 6/8 via litert-lm run --backend gpu, same misses as CPU). Second protocol run: prefill 2002.78 / decode 105.39 / ttft 0.1373 (~0.3% spread)"
+        }
+      ],
+      "known_issues": [
+        "8-question sanity gate scores 6/8 on BOTH backends with the same two misses ('Cool' for opposite-of-hot, 'pink' for the rhyme) - a property of this translation-tuned 1.8B, not of a backend. Arithmetic, factual and translation items are all correct; no degeneration",
+        "Translation greedy A/B vs HF bf16 (source README default-translation prompt): byte-identical on 1 of 3 probes, fluent int8-class alternates on the other two (e.g. spectaculaire -> significative)"
+      ]
+    }
+  ]
+}

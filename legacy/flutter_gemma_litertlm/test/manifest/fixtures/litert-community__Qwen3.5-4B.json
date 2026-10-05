@@ -1,0 +1,268 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Qwen3.5-4B",
+  "generated": "2026-08-27",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Qwen3.5-4B",
+    "base_model": "Qwen/Qwen3.5-4B",
+    "architecture": "Hybrid GatedDeltaNet: 24 linear-attention + 8 gated full-attention layers; text decoder only (vision tower and MTP heads dropped)",
+    "parameters_b": 4,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Qwen3.5-4B_int8.litertlm",
+      "sha256": "f0abbbc69b4126ddcb208a75e8904ecadff87aa24202e3de6ffd518c198af1ec",
+      "size_bytes": 4407428464,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 362
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4293
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913268
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 4403463536,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic on linears + embedding (convs and the delta rule stay float), fp32 activations declared",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "Metal verified on macOS; ~2.8x prefill, ~3.1x decode vs CPU on M4 Max"
+        },
+        {
+          "platform": "ios",
+          "backend": "gpu",
+          "reason": "Metal verified on iPhone 17 Pro; watch the ~4.98 GB GPU peak memory"
+        },
+        {
+          "platform": "android",
+          "backend": "cpu",
+          "reason": "Adreno GPU unverified — use CPU unless confirmed on your own device"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.15 (both backends gated on 0.15.0 and 0.16.0)",
+          "GPU inference runs with fp32 activations; iPhone 17 Pro GPU peak ~4.98 GB, model load 66 s on first launch",
+          "Pixel 8a and 8 GB-class Android phones: not attempted and not expected to fit — Apple-hardware-first release; an Android row can follow on 12 GB+ devices",
+          "Reduced prefill signature ladder (1024/256/64/16/4/1) keeps iPhone GPU engine creation under the 12 GB jetsam ceiling",
+          "Ships a simplified ChatML template with thinking disabled; tool-calling and vision sections not included"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 672,
+          "decode_tps": 62.0,
+          "ttft_s": 0.4,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 243,
+          "decode_tps": 19.9,
+          "ttft_s": 1.11,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "gpu",
+          "prompt_tokens": 138,
+          "prefill_tps": 87.1,
+          "decode_tps": 9.3,
+          "ttft_s": 1.93,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)",
+          "runtime": "LiteRT-LM Swift runtime (version not stated on card)"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "cpu",
+          "prompt_tokens": 138,
+          "prefill_tps": 24.0,
+          "decode_tps": 5.4,
+          "ttft_s": 6.88,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)",
+          "runtime": "LiteRT-LM Swift runtime (version not stated on card)"
+        }
+      ],
+      "known_issues": [
+        "GPU execution not verified on Qualcomm Adreno devices — use CPU there unless confirmed",
+        "On the harder composite 8-question probe the CPU int8 path answers 6 of 8 (every answer it gives is correct — it skips two); GPU matches HF fp32 word-for-word"
+      ],
+      "min_runtime_version": "0.15.0"
+    },
+    {
+      "file": "Qwen3.5-4B_mixed_int4.litertlm",
+      "sha256": "176b5a2b6c20bde7739fba98e653a04f5d5b4a753a4b9dd0ff529aba7c35be99",
+      "size_bytes": 2754365536,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 362
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4293
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 3913268
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 2750400608,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "Mixed INT4: int4 blockwise-32 min-max on linears, int8 channelwise on embedding + lm_head (convs and the delta rule stay float), fp32 activations declared",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "Metal verified on macOS; 669 tok/s prefill / 68.5 tok/s decode on M4 Max"
+        },
+        {
+          "platform": "ios",
+          "backend": "gpu",
+          "reason": "Metal verified on iPhone 17 Pro (8/8 composite probe); watch the ~5.7 GB GPU peak memory"
+        },
+        {
+          "platform": "android",
+          "backend": "cpu",
+          "reason": "Measured on Pixel 8a (8 GB): 22.1/6.3 tok/s, VmHWM 4.43 GB, coherent output; Adreno/Mali GPU unverified and expected to exceed 8 GB budgets"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.15 (both backends gated on 0.15.0 and 0.16.0)",
+          "GPU inference runs with fp32 activations; iPhone 17 Pro GPU peak ~5.74 GB, model load ~65 s on first launch",
+          "CPU prefill is slower than the int8 file on desktop (Mac 100 vs 243 tok/s); decode equal or faster everywhere",
+          "GSM8K n=100 (0-shot CoT, greedy, 2048-token budget): 93/100 vs the int8 file's 97/100 on the same export and harness",
+          "Same reduced prefill ladder (1024/256/64/16/4/1), simplified ChatML template, thinking disabled",
+          "Pixel 8a (8 GB) CPU: measured fit — VmHWM 4.43 GB, prefill 22.1 / decode 6.3 tok/s, engine init 30-50 s"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 669.3,
+          "decode_tps": 68.5,
+          "ttft_s": 0.4,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-27",
+          "source": "qwen35_work/bench_int4_mac.log (litert-lm benchmark, quiet machine, 300 s GPU rest)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 100.1,
+          "decode_tps": 20.1,
+          "ttft_s": 2.61,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-27",
+          "source": "qwen35_work/bench_int4_mac.log"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "gpu",
+          "prompt_tokens": 138,
+          "prefill_tps": 88.7,
+          "decode_tps": 11.38,
+          "ttft_s": 1.89,
+          "runs": 1,
+          "date": "2026-08-27",
+          "source": "qwen35_work/device_gate_int4_20260826/final_qwen35-4b-mixed-int4-b32_gpu.log (cold, unplugged)",
+          "runtime": "LiteRT-LM Swift runtime (CLiteRTLM.xcframework v0.16.0)"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "cpu",
+          "prompt_tokens": 138,
+          "prefill_tps": 46.7,
+          "decode_tps": 8.87,
+          "ttft_s": 3.12,
+          "runs": 1,
+          "date": "2026-08-27",
+          "source": "qwen35_work/device_gate_int4_20260826/final_qwen35-4b-mixed-int4-b32_cpu.log (cold, unplugged)",
+          "runtime": "LiteRT-LM Swift runtime (CLiteRTLM.xcframework v0.16.0)"
+        },
+        {
+          "device": "Pixel 8a (8 GB)",
+          "backend": "cpu",
+          "runtime": "litert_lm_main android_arm64 v0.16.0 (XNNPACK, warm weight cache)",
+          "prompt_tokens": 260,
+          "decode_tokens": 204,
+          "prefill_tps": 22.1,
+          "decode_tps": 6.3,
+          "ttft_s": 11.9,
+          "runs": 1,
+          "date": "2026-08-27",
+          "source": "qwen35_work/pixel8a_int4_20260827/pixel_bench.log (VmHWM peak 4.43 GB; engine init 48 s warm)"
+        }
+      ],
+      "known_issues": [
+        "GPU execution not verified on Qualcomm Adreno devices - use CPU there unless confirmed",
+        "GSM8K accuracy 4 points below the int8 file (93 vs 97, n=100) - the int4 cost is real on math word problems though invisible to sanity gates",
+        "First CPU run writes a 2.66 GB XNNPACK weight cache next to the model (one-time); keep ~3 GB storage free"
+      ],
+      "min_runtime_version": "0.15.0"
+    }
+  ]
+}

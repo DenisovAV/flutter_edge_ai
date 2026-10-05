@@ -1,0 +1,107 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/LLaVA-OneVision-0.5B",
+  "generated": "2026-08-31",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "LLaVA-OneVision-0.5B (LiteRT-LM)",
+    "base_model": "llava-hf/llava-onevision-qwen2-0.5b-ov-hf",
+    "architecture": "Compact vision-language model: SigLIP vision encoder (384x384) + MLP projector + Qwen2-0.5B decoder, LiteRT-LM fast_vlm bundle",
+    "parameters_b": 0.5,
+    "license": "apache-2.0",
+    "context_length": 2048,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "LLaVA-OneVision-0.5B.litertlm",
+      "sha256": "7f7cd7ae3d2ae435a1f69651de02a9d51e916be60fdfef5cadc721725310971a",
+      "size_bytes": 828590400,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1885
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1967910
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 138018208,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 281761472,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 404903056,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1870144,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "decoder int4 (symmetric, blockwise-32 + OCTAV); SigLIP vision encoder + MLP projector int8; tied embedding INT8 (externalized)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 2048; image input resized to 384x384",
+          "iPhone/macOS (Swift runtime / LiteRTDemo): load with the vision tower enabled (Modality.textImage / [.vision]); vision-only bundle, no audio tower",
+          "Android: Google AI Edge Gallery import must check 'Support image' (required for image input); pick GPU (fast) or CPU; v1.0.16+ imports directly from Hugging Face",
+          "Best for single-image VQA: ask about one image per chat and start a new conversation for a different image"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 955,
+          "decode_tps": 113.7,
+          "ttft_s": 0.31,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 7030,
+          "decode_tps": 239.3,
+          "ttft_s": 0.04,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ],
+      "known_issues": [
+        "Becomes unreliable when a second image is added to the same conversation (the answer truncates) — single-image VQA only, new conversation per image"
+      ]
+    }
+  ]
+}

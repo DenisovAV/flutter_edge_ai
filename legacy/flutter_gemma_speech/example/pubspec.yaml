@@ -1,0 +1,55 @@
+name: flutter_gemma_speech_example
+description: "Agentic voice loop (STT → LLM → TTS) with function calling and the on-device agent, built on flutter_gemma_speech."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The speech package this example showcases + the pieces the voice loop needs:
+  # core (chat/tools), the litertlm inference engine, and the on-device agent
+  # (agent mode). All local-path for in-repo development.
+  flutter_gemma_speech:
+    path: ../
+  flutter_gemma:
+    path: ../../flutter_gemma
+  flutter_gemma_litertlm:
+    path: ../../flutter_gemma_litertlm
+  flutter_gemma_agent:
+    path: ../../flutter_gemma_agent
+
+  cupertino_icons: ^1.0.6
+  path_provider: ^2.1.5
+  record: ^6.0.0 # microphone capture
+  permission_handler: ^11.3.1 # mic permission
+  just_audio: ^0.9.36 # reply-audio playback
+
+# The satellite packages declare HOSTED deps on flutter_gemma / flutter_gemma_litertlm
+# for publishing; this example consumes the local source, so override both to the
+# local path (resolves the path-vs-hosted conflict — every package resolves core +
+# litertlm from source). Ignored for published packages.
+# litertlm 1.5.0 (embedder decoupling) also hosted-depends on
+# flutter_gemma_embeddings ^2.0.0, which is not yet published — override to
+# local path too, or pub falls back to the (nonexistent) hosted version.
+dependency_overrides:
+  flutter_gemma:
+    path: ../../flutter_gemma
+  flutter_gemma_litertlm:
+    path: ../../flutter_gemma_litertlm
+  flutter_gemma_embeddings:
+    path: ../../flutter_gemma_embeddings
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

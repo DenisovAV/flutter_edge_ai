@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="example">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <!-- flutter_gemma_builtin_ai web arm (Chrome Prompt API / Gemini Nano):
+       no CDN script needed (the browser owns `self.LanguageModel`), but the
+       feature is origin-trial-gated on plain web pages. Register this site
+       at https://developer.chrome.com/origintrials and uncomment with your
+       token to enable it in production, or use
+       chrome://flags/#prompt-api-for-gemini-nano for local dev. See
+       packages/flutter_gemma_builtin_ai/README.md "Web setup". -->
+  <!-- <meta http-equiv="origin-trial" content="YOUR_TOKEN_HERE"> -->
+
+  <title>example</title>
+  <link rel="manifest" href="manifest.json">
+
+  <script>
+    // Use the {{flutter_service_worker_version}} template token
+    const serviceWorkerVersion = "{{flutter_service_worker_version}}";
+  </script>
+  <!-- This script adds the flutter initialization JS code -->
+  <!-- MediaPipe GenAI for Inference (used by .task models) -->
+  <script type="module">
+  import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+  window.FilesetResolver = FilesetResolver;
+  window.LlmInference = LlmInference;
+  </script>
+
+  <!-- LiteRT-LM Web Inference for .litertlm models via WebGPU/WASM (early preview).
+       The `@litert-lm/core` ESM does not assign to window globals by default, and
+       module scripts are deferred — without an explicit handshake the Dart side
+       reaches `LiteRtLmEngine.create()` before `Engine` is bound. We expose a
+       promise (`window.litertLmReady`) that resolves to the Engine constructor
+       and that Dart awaits before calling any static interop. See
+       lib/web/litert_lm_web.dart and litert_lm_web_inference.dart. -->
+  <script type="module">
+  window.litertLmReady = (async () => {
+    const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.17.1/+esm');
+    window.Engine = m.Engine;
+    return m.Engine;
+  })();
+  </script>
+
+  <!-- ONNX Runtime Web (flutter_gemma_onnx web embeddings arm, WebGPU/WASM).
+       Same readiness-handshake shape as the litert-lm shim above:
+       `window.ortReady` resolves once the module has loaded, and also sets
+       `window.ort` for the Dart side's `dart:js_interop` bindings
+       (lib/src/web/ort_web_client.dart). `env.wasm.wasmPaths` points at the
+       CDN's own `dist/` directory so the WASM/JSEP runtime files it fetches
+       at session-create time resolve correctly; self-hosting them under
+       web/ instead (the `flutter_gemma_rag_sqlite` sqlite3.wasm posture) is
+       an app-level choice documented in flutter_gemma_onnx's README. -->
+  <script type="module">
+  window.ortReady = (async () => {
+    const m = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.bundle.min.mjs');
+    m.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
+    window.ort = m;
+    return m;
+  })();
+  </script>
+
+  <!-- Transformers.js v4 (flutter_gemma_onnx web TEXT-GENERATION arm).
+       Same readiness-handshake shape as the shims above: `window.transformersReady`
+       resolves once the module has loaded, and also sets `window.transformers`
+       for the Dart side's `dart:js_interop` bindings
+       (lib/src/web/transformers_js_interop.dart). Unlike onnxruntime-web
+       above (a plain forward pass driven from Dart), Transformers.js owns
+       tokenization, chat templating, generation AND fetching/caching each
+       model repo itself (browser Cache Storage / IndexedDB) from the repo
+       id alone — core's `ModelFileType.onnx` web install never downloads
+       model bytes (see WebModelManager). -->
+  <script type="module">
+  window.transformersReady = (async () => {
+    const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+    window.transformers = m;
+    return m;
+  })();
+  </script>
+
+  <!-- Cache API for persistent storage -->
+  <script src="cache_api.js"></script>
+
+  <!-- OPFS Helper for large model streaming (>2GB) -->
+  <script src="opfs_helper.js"></script>
+
+  <!-- LiteRT.js Embeddings (bundled with Vite) -->
+  <script type="module" src="litert_embeddings.js"></script>
+
+  <!-- SQLite vector store (flutter_gemma_rag_sqlite): sqlite-vec / vec0 is
+       statically linked into a custom sqlite3.wasm and loaded directly from
+       Dart via package:sqlite3/wasm.dart (WasmSqlite3.loadFromUrl). The wasm
+       ships as the package web asset web/rag/sqlite3.wasm — no <script> tag and
+       no wa-sqlite CDN module are needed anymore. -->
+</head>
+<body>
+<script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

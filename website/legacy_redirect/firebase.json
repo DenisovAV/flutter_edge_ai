@@ -1,0 +1,13 @@
+{
+  "hosting": {
+    "site": "fluttergemma",
+    "public": "public",
+    "redirects": [
+      {
+        "source": "/:path*",
+        "destination": "https://flutteredge.ai/:path",
+        "type": 301
+      }
+    ]
+  }
+}

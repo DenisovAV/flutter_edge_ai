@@ -1,0 +1,99 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/DeepSeek-R1-Distill-Qwen-7B",
+  "generated": "2026-08-31",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "DeepSeek-R1-Distill-Qwen-7B",
+    "base_model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+    "architecture": "Qwen2 dense decoder (Qwen2ForCausalLM, shallow-wide 28 layers); reasoning model that emits a <think>...</think> chain before the answer",
+    "parameters_b": 7,
+    "license": "mit",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Reasoning model emitting a <think>...</think> chain before the answer; the card's GSM8K accuracy run uses max_new_tokens=2048 to fit the reasoning chain."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>\n",
+          "end": "\n</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "DeepSeek-R1-Distill-Qwen-7B_q4_block32_ekv4096.litertlm",
+      "sha256": "511d59c11704f7ab39b9cb3a0eef1a88f8c05673d0b74bcb4b19c15845ab4a7f",
+      "size_bytes": 4531978224,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 598
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142167
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3981133856,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 548650992,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 weights - blockwise (block 32) + OCTAV optimal-clipping, symmetric; embedding INT8",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Desktop (Mac) and high-RAM (12 GB+) Android only; iPhone / 8 GB phones are excluded - at ~4.2-4.5 GB the build exceeds the budget and its weights section exceeds the iOS mmap budget, so there is no on-device row"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 64,
+          "decode_tps": 18.2,
+          "ttft_s": 4.69,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 644,
+          "decode_tps": 65.9,
+          "ttft_s": 0.43,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Shieldstral-1.0-3B",
+  "generated": "2026-08-31",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Shieldstral-1.0-3B",
+    "base_model": "mistralai/Shieldstral-1.0-3B",
+    "architecture": "Mistral3ForConditionalGeneration — pixtral vision tower plus a Ministral3 text decoder; a yes/no safety classifier over text and images",
+    "parameters_b": 3.0,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Shieldstral-1.0-3B-vision_int4.litertlm",
+      "sha256": "180b948a4d1d4eacb5219c1124429ee9be392367dcb558e255f7ed466f0f4092",
+      "size_bytes": 2783331824,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 892
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2806635
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 404228320,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1950043824,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 409057104,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 17122800,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "int4 blockwise-32 (OCTAV) decoder + int8 embedding, int8 pixtral tower, static 560x560",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "known_issues": [
+        "Cannot create a GPU engine: litert-torch 0.9.2 marks the attention softmax as an odml.softmax StableHLO composite and litert-converter 0.3.0 cannot lower it, so the delegate takes 52 of 1187 ops on the first subgraph and the engine is refused. Use Shieldstral-1.0-3B-vision_int4_gpu.litertlm for the same weights on GPU."
+      ],
+      "min_runtime_version": "0.15.0"
+    },
+    {
+      "file": "Shieldstral-1.0-3B-vision_int4_gpu.litertlm",
+      "sha256": "487639d5e90ff600dd3a9515a9526f11d4f6959c58c2db9bd411c94c1bf6d4d7",
+      "size_bytes": 2783086064,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 892
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2806635
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 404228320,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1949796112,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 409057104,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 17122800,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "int4 blockwise-32 (OCTAV) decoder + int8 embedding, int8 pixtral tower, static 560x560",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "vision_backend must be passed explicitly: without it the engine loads, the conversation is created, and only the first image message fails",
+          "The scoring API is text-only, so image documents get the generated verdict but no continuous score",
+          "Same weights and same pixtral tower as Shieldstral-1.0-3B-vision_int4.litertlm; only the decoder was re-exported"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 205,
+          "prefill_tps": 294.2,
+          "decode_tps": 10.8,
+          "ttft_s": 0.88,
+          "runs": 2,
+          "date": "2026-08-28",
+          "source": "S5 Adreno gate, 205-token benchmark; full delegation 15202/15202 across 13 subgraphs, gate peak 1493 MB. No same-device CPU control was taken, so this is a GPU speed and not a reason to prefer GPU over CPU."
+        }
+      ],
+      "known_issues": [
+        "The 100-image letterboxed parity gate was re-run on 2026-08-28: this file returns the same verdict on all 100 images as Shieldstral-1.0-3B-vision_int4.litertlm and as the 2026-08-11 record (accuracy 0.77, F1 0.736, zero flips), both files scored in the same session on the same runtime so the older one is the control. The two device-side margin probes were NOT re-run — the images they used are not archived."
+      ],
+      "min_runtime_version": "0.15.0"
+    },
+    {
+      "file": "Shieldstral-1.0-3B_int4.litertlm",
+      "sha256": "271ed72950196a064d72947bff68a4080233aa34aa88c24ae2d28ffc83d413dc",
+      "size_bytes": 2358595568,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 357
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2806635
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1949933824,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 405802992,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 blockwise-32 (OCTAV) + int8 embedding, externalised embedder, text only",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 205,
+          "prefill_tps": 298.7,
+          "decode_tps": 9.12,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "S4 GPU gate, 205-token benchmark; full delegation 15202/15202 across 13 subgraphs"
+        }
+      ],
+      "min_runtime_version": "0.15.0"
+    },
+    {
+      "file": "Shieldstral-1.0-3B_int8.litertlm",
+      "sha256": "f950d2d172af44dddc200cdcc23af6646b6ab4e285f406f273f2dee902f7db3a",
+      "size_bytes": 3978727408,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 357
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2806635
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3570066064,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 405802992,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "export-time dynamic int8, externalised embedder, text only",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "known_issues": [
+        "Its 3.33 GiB single section exceeds the practical iOS mmap budget; desktop and high-memory devices only."
+      ],
+      "min_runtime_version": "0.15.0"
+    }
+  ]
+}

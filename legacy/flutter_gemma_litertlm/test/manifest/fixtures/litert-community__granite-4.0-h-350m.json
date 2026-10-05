@@ -1,0 +1,160 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/granite-4.0-h-350m",
+  "generated": "2026-08-28",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "granite-4.0-h-350m",
+    "base_model": "ibm-granite/granite-4.0-h-350m",
+    "architecture": "IBM Granite 4.0-h hybrid: 28 Mamba2 selective-scan blocks interleaved with 4 grouped-query attention blocks; per-layer conv + SSM recurrent state instead of a growing KV cache",
+    "parameters_b": 0.35,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "granite-4.0-h-350m_fp16.litertlm",
+      "sha256": "76c2a3e1475b29cfa2817c4677744e1fc680c6e98d2ca8de4fe5fdccedf20552",
+      "size_bytes": 723260832,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 6457
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4285
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404724
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 721802656,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "fp16 weights (float-casting on linears + embedding; convs and the SSM stay fp32)",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "known_issues": [
+        "CPU only, for two independent reasons. The same rank-5/6 scan graph as _int8 above, and - even after that is rewritten - float-casting EMBEDDING_LOOKUP leaves empty quantization params plus a DEQUANTIZE the delegate will not take (3326 of 3536 ops, engine refused). There is no fp16 GPU variant; use _int8_gpu.",
+        "The CPU runtime unpacks fp16 weights to fp32 in RAM (~3.7 GB peak on iPhone vs ~2.1 GB for int8) - treat fp16 as the desktop/quality variant."
+      ],
+      "min_runtime_version": "0.15.0"
+    },
+    {
+      "file": "granite-4.0-h-350m_int8.litertlm",
+      "sha256": "feae9e8c2aa8832c254770e88d81e80c424ab9b5c0e9a3f3d2689b3ace4810f1",
+      "size_bytes": 435971888,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 6457
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4285
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404724
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 434513712,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic weight-only (linears + embedding; convs and the SSM stay float)",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "known_issues": [
+        "Cannot create a GPU engine: this export writes the Mamba2 SSD contractions as broadcast-multiply-reduce, materialising rank-5 and rank-6 intermediates that every mobile GPU delegate refuses. On a Galaxy S26 the delegate takes 109 of 3673 ops and the runtime refuses the partial split - use the _int8_gpu file for the same weights on GPU.",
+        "Engine state reuse: chat-templated lengths 33-37 (LiteRT-LM#3165); a fresh Engine per conversation is clean."
+      ],
+      "min_runtime_version": "0.15.0"
+    },
+    {
+      "file": "granite-4.0-h-350m_int8_gpu.litertlm",
+      "sha256": "f85136cfd308676e8da5182ca4f29a5d4d63d9bb3d230d9c6e837d5b39a05086",
+      "size_bytes": 481218880,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 6457
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4285
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404724
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 479760704,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic weight-only (linears + embedding; convs and the SSM stay float), fp32 activations declared",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.15: the hybrid conv/SSM state buffers bind through the ExecutorMetadata section, which the 0.14 engine does not read",
+          "The bundle does not prepend a BOS token, matching Granite's official chat template; at 350M scale a prepended <|end_of_text|> measurably degrades greedy answers",
+          "On a Galaxy S26 the GPU path wins prefill and loses decode - pick the backend by workload, not by assuming GPU is faster"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0, LiteRT CL delegate",
+          "prompt_tokens": 224,
+          "decode_tokens": 141,
+          "prefill_tps": 486.5,
+          "decode_tps": 48.8,
+          "ttft_s": 0.48,
+          "runs": 2,
+          "date": "2026-08-27",
+          "source": "S5 Adreno gate, 205-token benchmark"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, Qualcomm SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0",
+          "prompt_tokens": 224,
+          "decode_tokens": 122,
+          "prefill_tps": 305.6,
+          "decode_tps": 97.6,
+          "runs": 1,
+          "date": "2026-08-27",
+          "source": "S5 same-device CPU control, identical prompt file and flags; phone already warm from the GPU runs"
+        }
+      ],
+      "known_issues": [
+        "Engine state reuse, not quantization: reusing one Engine across conversations whose prompts share a growing common prefix can end a reply after a few tokens, on this file at chat-templated lengths 37-41 (LiteRT-LM#3165). A fresh Engine per conversation is clean at every length tested, 35-45.",
+        "GPU peak memory is about twice the CPU path's (2131 MB vs 1105 MB on the S26 benchmark)."
+      ],
+      "min_runtime_version": "0.15.0"
+    }
+  ]
+}

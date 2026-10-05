@@ -1,0 +1,12 @@
+analyzer:
+  exclude:
+    - build/**
+include: package:flutter_lints/flutter.yaml
+
+# Additional information about this file can be found at
+# https://dart.dev/guides/language/analysis-options
+
+linter:
+  rules:
+    # Allow underscores in test function names (common pattern for test methods)
+    non_constant_identifier_names: false

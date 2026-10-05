@@ -1,0 +1,79 @@
+# Uncomment this line to define a global platform for your project
+platform :ios, '16.0'
+
+# CocoaPods analytics sends network stats synchronously affecting flutter build latency.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks! :linkage => :static
+  use_modular_headers!
+
+  target 'RunnerUITests' do
+    inherit! :complete
+  end
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    # Force every pod target's minimum iOS to 16.0. The generated
+    # Flutter.podspec still declares 13.0, which conflicts with SPM plugins that
+    # require 14+ (e.g. background_downloader) — surfaces as "requires minimum
+    # platform version 14.0 … but this target supports 13.0" under `flutter run`.
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+    end
+  end
+
+  # As of flutter_gemma 0.14.1, the upstream LiteRT-LM dlopen path is patched
+  # (see native/litert_lm/patch_c_api.sh "FLUTTER_GEMMA_GPU_REGISTRY_PATCH")
+  # to load accelerator frameworks by their full @executable_path/Frameworks/
+  # <X>.framework/<X> path on iOS. No host-side symlinks are needed anymore —
+  # which means App Store Connect (ITMS-90432, #245) no longer rejects the
+  # build for unexpected lib*.dylib files in Frameworks/.
+  #
+  # The block below only sweeps any leftover lib*.dylib symlinks from older
+  # flutter_gemma versions so a re-pod-install yields a clean Frameworks/.
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.user_targets.each do |user_target|
+      phase_name = '[flutter_gemma] Setup LiteRT-LM iOS'
+      existing = user_target.shell_script_build_phases.find { |p| p.name == phase_name }
+      phase = existing || user_target.new_shell_script_build_phase(phase_name)
+      phase.shell_script = <<~SHELL
+        set -e
+        FRAMEWORKS="${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Frameworks"
+        if [ ! -d "${FRAMEWORKS}" ]; then
+          exit 0
+        fi
+        for base in LiteRtMetalAccelerator LiteRtTopKMetalSampler GemmaModelConstraintProvider; do
+          rm -f "${FRAMEWORKS}/lib${base}.dylib"
+        done
+      SHELL
+    end
+  end
+end

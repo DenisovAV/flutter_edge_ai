@@ -1,0 +1,36 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- LAYERING NOTE: the <uses-native-library> declarations below serve the
+             opt-in `flutter_gemma_litertlm` engine (its GPU/NPU native backends),
+             NOT the engine-agnostic core. They live here because that engine ships
+             as a Native-Assets FFI package with no Android library module of its
+             own, so it cannot contribute an AndroidManifest to the merge — the
+             core plugin is the only manifest in the graph that can declare them.
+             All are required="false": pure namespace declarations (not loads), so
+             they are inert for apps that never use the GPU/NPU path (the libs are
+             never dlopen'd) and never block install on devices that lack them. -->
+
+        <!-- Required for Qualcomm HTP (NPU) dispatch: lets Bionic resolve
+             libcdsprpc.so from the vendor partition when
+             libLiteRtDispatch_Qualcomm.so is loaded. -->
+        <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
+        <!-- Required for the GPU backend on Android 12+: the LiteRT-LM OpenCL
+             loader (v0.13.x) uses libvndksupport.so's android_load_sphal_library()
+             to dlopen the vendor OpenCL ICD from the app's linker namespace.
+             Without it OpenCL fails to load and the engine falls back to WebGPU,
+             which hard-freezes some Mali GPU drivers compiling the vision
+             encoder (#324). Merged into every consumer app via manifest merger
+             so the GPU path works without each app re-declaring it. -->
+        <uses-native-library android:name="libvndksupport.so" android:required="false"/>
+        <!-- libvndksupport.so only opens the door to the SP-HAL namespace; the
+             OpenCL ICD itself must ALSO be declared or the second hop
+             (android_load_sphal_library("libOpenCL.so")) is denied, OpenCL
+             still fails to load, and the Mali freeze persists (#324). Declare
+             the base loader name plus the two vendor-specific ICD names some
+             devices use. All required="false" — pure namespace declarations,
+             inert on devices that lack them, never block install. -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false"/>
+    </application>
+</manifest>

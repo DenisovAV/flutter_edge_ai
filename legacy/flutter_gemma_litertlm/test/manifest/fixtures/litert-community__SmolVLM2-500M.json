@@ -1,0 +1,95 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/SmolVLM2-500M",
+  "generated": "2026-08-30",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "SmolVLM2-500M",
+    "base_model": "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+    "architecture": "VLM (fast_vlm bundle): SigLIP vision encoder + pixel-shuffle x4 connector feeding a SmolLM2-360M (Llama) decoder; image path only",
+    "parameters_b": 0.5,
+    "license": "apache-2.0",
+    "context_length": 2048,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "SmolVLM2-500M.litertlm",
+      "sha256": "b808b328d845a600a33c5295f93d9217487317bd334dbc91b2a8d50e26e60ad0",
+      "size_bytes": 360822960,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 647
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 644845
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 47902368,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 208930496,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 91469200,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 11810992,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "vision encoder + connector int8; decoder int4 (blockwise-32 + OCTAV); tied embedding int8 (externalized)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Best for single-image VQA — ask about one image per chat (start a new conversation for a different image)",
+          "Use the CPU backend on the desktop (macOS GPU unusable on litert-lm 0.15.0)",
+          "Android: Gallery v1.0.16+ imports directly from Hugging Face; in the Import Model dialog check 'Support image' (required for image input), set a sensible max tokens, pick GPU (fast) or CPU",
+          "iPhone/macOS Swift runtime: load with the vision tower enabled (Modality.textImage / [.vision]) — vision-only bundle, no audio tower",
+          "Image input resized to 512x512; context (KV cache) 2048; benchmark figures cover the text path only (the vision encoder runs once per image and is not included)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 409,
+          "decode_tps": 63.9,
+          "ttft_s": 0.64,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ],
+      "known_issues": [
+        "macOS GPU backend not usable on litert-lm 0.15.0 — returns a stream of <|endoftext|> tokens instead of a caption (desktop-runtime observation; says nothing about the iPhone or Android GPU paths)",
+        "On the GPU backend a second image in the same conversation may degrade (a GPU-delegate trait shared across fast_vlm models); CPU handles multi-image",
+        "Very small (500M) model — can be repetitive/verbose at pure greedy; use sampling (e.g. top-p) and keep a sensible max_tokens"
+      ]
+    }
+  ]
+}

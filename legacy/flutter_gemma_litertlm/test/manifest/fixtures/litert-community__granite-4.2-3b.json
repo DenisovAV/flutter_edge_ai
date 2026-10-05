@@ -1,0 +1,254 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/granite-4.2-3b",
+  "generated": "2026-09-01",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "granite-4.2-3b",
+    "base_model": "ibm-granite/granite-4.2-3b",
+    "architecture": "Dense decoder-only transformer (GraniteForCausalLM, 40L, hidden 2560, GQA 40:8, untied embeddings); reasoning model that works problems inside <think>...</think>, thought channel declared in bundle metadata and the think opener pre-filled by the bundle's assistant prefix",
+    "parameters_b": 3.66,
+    "license": "apache-2.0",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Reasoning model: give it a generous output budget (>=2048) - truncated mid-thought it produces no final answer. The declared thought channel routes reasoning out of the streamed answer and makes a thinking budget effective."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "granite-4.2-3b_int4.litertlm",
+      "sha256": "2abaaca65ecd4cf13cd0acd594cec53d48cae1ef975e30bfa898a7d2f6e7dbc0",
+      "size_bytes": 2190708656,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 388
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404571
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1929950320,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 259313584,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 blockwise-32 + OCTAV linears, int8 embedding",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "smaller AND faster than int8 on Metal (85.5 vs 70.7 tok/s decode); the phone build by size"
+        },
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "full OpenCL delegation on Adreno (1783/1783, zero rejected ops), 1.7x the int8 decode, TTFT under 1 s; peak process RSS 1.4 GB"
+        },
+        {
+          "platform": "ios",
+          "backend": "gpu",
+          "reason": "verified by generation on iPhone 17 Pro: Metal engine creates at the bundle's full 4096-token budget (init 13.0 s), composite 8Q gate 7/8 GPU / 8/8 CPU with the one GPU miss a composite-format artifact (the same question is answered correctly standalone on every platform); available memory never dropped below ~4.2 GB"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.16",
+          "Six prefill signatures (1024,256,64,16,4,1), 4096-token KV budget; the 6-signature ladder is deliberate - each exported signature is charged engine memory, and an 11-signature build of the same-shape granite-4.1-3b was killed by iOS at Metal engine init",
+          "Give the session a generous output budget (>=2048): a reasoning model truncated mid-thought produces no final answer"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.16.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1240.0,
+          "decode_tps": 85.5,
+          "ttft_s": 0.237,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-31",
+          "source": "cardbench harness, machine rested 300 s before the reading; backend verified by generation (gate_backend.py) before quoting"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.16.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 106.4,
+          "decode_tps": 21.5,
+          "ttft_s": 2.944,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-31",
+          "source": "cardbench harness; backend verified by generation (gate_backend.py) before quoting"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main, litert-lm v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "235.1-241.3",
+          "decode_tps": "12.3-15.6",
+          "ttft_s": "0.93-0.94",
+          "max_num_tokens": 4096,
+          "runs": 2,
+          "date": "2026-08-31",
+          "source": "205-token prompt with --benchmark; decode low end is the second back-to-back run (thermal), high end the rested one; generation verified (correct answer through the thought channel), full LITERT_CL delegation 1783/1783, zero rejected ops"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main, litert-lm v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "22.4-42.2",
+          "decode_tps": "9.5-9.8",
+          "ttft_s": "5.0-9.3",
+          "max_num_tokens": 4096,
+          "runs": 2,
+          "date": "2026-08-31",
+          "source": "same-device CPU contrast for the GPU rows; generation verified"
+        }
+      ],
+      "known_issues": [
+        "GSM8K parity cost is real on this thinking model: bf16 91.0 / int8 90.0 / int4 80.0 (n=100, greedy, max_tokens 2048, litert-lm 0.16.1 CPU engine, 2026-09-01) - noticeably more than the -4 pt the same block-32 recipe cost the non-thinking granite-4.1-3b; prefer int8 where 3.76 GB fits"
+      ],
+      "min_runtime_version": "0.16.0"
+    },
+    {
+      "file": "granite-4.2-3b_int8.litertlm",
+      "sha256": "3e5a0dd0c4eff06a50997e9966db9fee7d20e1c34cd04c7b5755c755339402a6",
+      "size_bytes": 3761622960,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 388
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404571
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 3500863808,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 259313584,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int8 dynamic (linears + embedding)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "quality-reference build; on Metal it prefills like int4 but decodes 17% slower - prefer int4 unless int8 quality is the point"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.16",
+          "Desktop / quality-reference build - 3.76 GB file; GPU weight residency puts it out of phone range",
+          "Give the session a generous output budget (>=2048): a reasoning model truncated mid-thought produces no final answer"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.16.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1207.6,
+          "decode_tps": 70.7,
+          "ttft_s": 0.244,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-31",
+          "source": "cardbench harness, machine rested 300 s before the reading; backend verified by generation (gate_backend.py) before quoting"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.16.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 264.5,
+          "decode_tps": 21.1,
+          "ttft_s": 2.612,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-31",
+          "source": "cardbench harness; backend verified by generation (gate_backend.py) before quoting"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main, litert-lm v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "238.5-240.9",
+          "decode_tps": "9.19-9.22",
+          "ttft_s": "0.96-0.97",
+          "max_num_tokens": 4096,
+          "runs": 2,
+          "date": "2026-08-31",
+          "source": "205-token prompt with --benchmark; generation verified (correct answer through the thought channel), full LITERT_CL delegation 1783/1783, zero rejected ops"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, SM8850, Adreno)",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main, litert-lm v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": "50.8-95.0",
+          "decode_tps": "7.0",
+          "ttft_s": "2.3-4.2",
+          "max_num_tokens": 4096,
+          "runs": 2,
+          "date": "2026-08-31",
+          "source": "same-device CPU contrast for the GPU rows; generation verified; peak VmHWM 4.3 GB"
+        }
+      ],
+      "known_issues": [],
+      "min_runtime_version": "0.16.0"
+    }
+  ]
+}

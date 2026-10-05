@@ -1,0 +1,106 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/VibeThinker-3B",
+  "generated": "2026-08-29",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "VibeThinker-3B (LiteRT-LM)",
+    "base_model": "WeiboAI/VibeThinker-3B",
+    "architecture": "Dense 3B math/reasoning model, Qwen2ForCausalLM, 36 layers, inline chain-of-thought",
+    "parameters_b": 3,
+    "license": "mit",
+    "session_defaults": {
+      "max_output_tokens_min": 2048,
+      "notes": "Reasoning model: solves with a step-by-step chain-of-thought then a \\boxed{} answer; card says run with max_tokens >= 2048 or it gets cut off before the answer (all quality numbers measured at 2048)."
+    },
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "model.litertlm",
+      "sha256": "df27fe62ddcec6ef8220bbd7d6998a65cff550719dbc4eeb7d26a5056f4f8c18",
+      "size_bytes": 2057106352,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1318
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 2142143
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1740096624,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 314815408,
+          "model_type": "tf_lite_embedder"
+        }
+      ],
+      "quantization": "int4 block 32 (symmetric) + OCTAV optimal-clipping; embeddings INT8 (externalized section)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 4096",
+          "Android: Google AI Edge Gallery 1.0.15+ supports .litertlm (v1.0.16+ imports directly from Hugging Face); choose the GPU backend and raise max-tokens to >= 2048",
+          "iPhone 17 Pro verified (Swift runtime): the block-32 build's 1.62 GiB section is under the iOS limit; loads and generates correct answers (no on-device timing quoted)",
+          "Pixel 8a (Tensor G3, Mali-G715, 8 GB): graph runs entirely on the OpenCL delegate — 1603/1603 prefill and 1452/1452 decode nodes, zero rejected ops (no throughput numbers quoted)"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 139,
+          "decode_tps": 28.4,
+          "ttft_s": 2.15,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1386,
+          "decode_tps": 94.1,
+          "ttft_s": 0.2,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ],
+      "known_issues": [
+        "CPU benchmark rows are noisy (treat as roughly +/-7%; GPU rows repeat within ~1%)",
+        "Math-specialised model: on general-knowledge prompts it reasons at length and can settle on a wrong answer — identically on CPU and GPU (a model-domain property, not a backend issue)"
+      ]
+    }
+  ]
+}

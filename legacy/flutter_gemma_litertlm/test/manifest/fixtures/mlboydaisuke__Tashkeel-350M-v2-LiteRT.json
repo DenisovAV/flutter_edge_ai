@@ -1,0 +1,133 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "mlboydaisuke/Tashkeel-350M-v2-LiteRT",
+  "generated": "2026-08-25",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Tashkeel-350M-v2",
+    "base_model": "Etherll/Tashkeel-350M-v2",
+    "architecture": "granite-4.0-h Mamba2/attention hybrid (32L: 28 mamba + 4 attention, 0.34B) SFT for Arabic diacritization (Misraj/Sadeed_Tashkeela)",
+    "parameters_b": 0.34,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Tashkeel-350M-v2_fp16.litertlm",
+      "sha256": "02034a77bd178608eb9da106c95cb7e2dead2507424969bef8e8bc8788d5af67",
+      "size_bytes": 768502912,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 6457
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4285
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404724
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 767044736,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "fp16 weights on linears + embedding (convs/SSM fp32) - exact-parity build: task gate 10/10 byte-identical to HF fp32 greedy",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.15 (hybrid state binds via ExecutorMetadata)",
+          "CPU only: Mamba2 selective-scan ops exceed the mobile GPU delegate's rank limit (family trait)",
+          "Prompt contract: user message 'قم بتشكيل هذا النص :\\n' + text (the checkpoint's trained form)",
+          "Start token dropped: at 350M scale a prepended <|end_of_text|> flips diacritization to garbage (measured)",
+          "On phones the CPU runtime unpacks fp16 to fp32 in RAM - prefer int8 on mobile"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 661.63,
+          "decode_tps": 58.18,
+          "ttft_s": 0.4,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "litertlm-convert reports/shiplogs_20260825/bench_mordant_tashkeel.log; litert-lm benchmark -p 256 -d 256 --runs 3 --cache no"
+        }
+      ],
+      "known_issues": []
+    },
+    {
+      "file": "Tashkeel-350M-v2_int8.litertlm",
+      "sha256": "e962e6287a3b1e109498d1bca09d20fe55131bb1cd7431165bf255cfd2de1cd7",
+      "size_bytes": 481214000,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 6457
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 4285
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404724
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 479755824,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "dynamic int8 (linears + embedding; convs/SSM fp32) - task gate 8/10 vs HF fp32: two single-diacritic greedy flips, both byte-exact on the float parent (quantization cost, the base 350m's documented int8 sensitivity)",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.15",
+          "CPU only (family trait)",
+          "38% of the fp16 size - the practical mobile choice"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 761.25,
+          "decode_tps": 97.21,
+          "ttft_s": 0.35,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "litertlm-convert reports/shiplogs_20260825/bench_mordant_tashkeel.log"
+        }
+      ],
+      "known_issues": []
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/Qwen2-VL-2B",
+  "generated": "2026-08-31",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "Qwen2-VL-2B-Instruct (LiteRT-LM)",
+    "base_model": "Qwen/Qwen2-VL-2B-Instruct",
+    "architecture": "Vision-language model: Qwen2-VL ViT vision encoder (made static 672x672) + PatchMerger adapter + Qwen2-1.5B decoder, LiteRT-LM fast_vlm bundle",
+    "parameters_b": 2,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "Qwen2-VL-2B.litertlm",
+      "sha256": "cf481776bcb16fe539a38c924a67fc213bb5ee55e6fa600729f060e64849066b",
+      "size_bytes": 1783424544,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1906
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1967897
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 235199136,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 874259104,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 637714480,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 34203168,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "decoder int4 (symmetric, blockwise-32 + OCTAV); vision encoder int8; adapter int8; int8 externalized embedder",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Context (KV cache) 4096; image input resized to 672x672",
+          "iPhone/macOS (Swift runtime): load with the vision modality only (Modality.textImage) — requesting .all fails at session creation on bundles without an audio section",
+          "Android: recent Google AI Edge Gallery; import with 'Support image' enabled",
+          "Device-verified on Pixel 8a via Gallery with vision on GPU + decoder on CPU",
+          "Send one image per chat — start a fresh conversation for each image"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 141,
+          "decode_tps": 42.7,
+          "ttft_s": 1.96,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1753,
+          "decode_tps": 139.1,
+          "ttft_s": 0.16,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ],
+      "known_issues": [
+        "Cross-cell comparison/ranking over 2-D structures (e.g. 'which row has the highest value') can pick the wrong cell: the fast_vlm runtime supplies 1-D positions instead of M-RoPE; reading/OCR of tables is unaffected",
+        "One image per chat: a second image in the same conversation degrades (context bleed from the first turn observed on CPU)"
+      ]
+    }
+  ]
+}

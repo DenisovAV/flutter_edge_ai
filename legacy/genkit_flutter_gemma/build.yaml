@@ -1,0 +1,6 @@
+targets:
+  $default:
+    builders:
+      schemantic:
+        generate_for:
+          - lib/src/flutter_gemma_options.dart

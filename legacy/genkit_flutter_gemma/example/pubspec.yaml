@@ -1,0 +1,44 @@
+name: genkit_flutter_gemma_example
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_gemma: ^1.0.0
+  # flutter_gemma 1.0.0 split engines/backends into opt-in packages; register
+  # them via FlutterGemma.initialize() in main.dart. The bridge package itself
+  # stays engine-agnostic — these deps live in the consuming app only.
+  flutter_gemma_litertlm: ^1.8.0
+  # Declared again as of litertlm 1.8.0: the engine no longer depends on this
+  # package, so the tokenizer provider an app registers comes from here and
+  # arrives through nobody else.
+  flutter_gemma_embeddings: ^2.2.0
+  flutter_gemma_mediapipe: ^1.0.0
+  genkit: ^0.16.0
+  genkit_flutter_gemma:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+dependency_overrides:
+  flutter_gemma:
+    path: ../../flutter_gemma
+  flutter_gemma_litertlm:
+    path: ../../flutter_gemma_litertlm
+  flutter_gemma_mediapipe:
+    path: ../../flutter_gemma_mediapipe
+  flutter_gemma_embeddings:
+    path: ../../flutter_gemma_embeddings
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/

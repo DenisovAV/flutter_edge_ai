@@ -1,0 +1,268 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/LFM2.5-230M",
+  "generated": "2026-09-02",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "LFM2.5-230M",
+    "base_model": "LiquidAI/LFM2.5-230M",
+    "architecture": "lfm2 ShortConv/attention hybrid (14L: 8 conv + 6 GQA attention, hidden 1024, tied embeddings, 65k vocab), general-purpose instruct (non-thinking)",
+    "parameters_b": 0.23,
+    "license": "lfm1.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "LFM2.5-230M_int4.litertlm",
+      "sha256": "a4683cdafbf7b0ae526ba688fa905fd3db8546fc58221d10082443d4d0a6315c",
+      "size_bytes": 176756720,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 5011
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 1289
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 906962
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 175790064,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "post-hoc OCTAV int4 blockwise-32 on linears + int8 embedding - IFEval-style strict 53.3% (-6.7pt vs bf16, the size trade); GSM8K 22; 8Q 6/8 cpu + 8/8 gpu",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.15 (tested on 0.16.x); same template/shape notes as the int8 file",
+          "At 230M the int4/int8 speed ordering is per-device: iPhone Metal decode 162 vs int8's 143 tok/s, but Adreno GPU decode 43 vs int8's 122 (blockwise dequant dominates at this size) and Mac is a wash - pick int4 for size or iPhone, not for Android speed"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 12862.3,
+          "decode_tps": 555.3,
+          "ttft_s": 0.022,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-01",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine, 300 s rest before each GPU cell; backend verified by generation (8Q gate) before quoting"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1612.9,
+          "decode_tps": 149.4,
+          "ttft_s": 0.166,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-01",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine, 300 s rest before each GPU cell; backend verified by generation (8Q gate) before quoting"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q, Adreno)",
+          "os": "Android",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": 2475.9,
+          "decode_tps": 42.6,
+          "runs": 2,
+          "date": "2026-09-01",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell; GPU rows only with full LITERT_CL delegation and generation verified; prefill 1101 cold-compile / 2476 rested - quote the pair; decode 41.6/43.6; peak VmHWM 406 MB; full LITERT_CL delegation"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q)",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": 262.6,
+          "decode_tps": 52.3,
+          "runs": 2,
+          "date": "2026-09-01",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell; GPU rows only with full LITERT_CL delegation and generation verified; decode 50.7/53.9; peak VmHWM 538 MB"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "os": "iOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0 xcframework (BenchmarkApp yardstick)",
+          "prompt_tokens": 128,
+          "prefill_tps": 3036.1,
+          "decode_tps": 161.7,
+          "ttft_s": 0.071,
+          "runs": 1,
+          "date": "2026-09-01",
+          "source": "BenchmarkApp yardstick quality run, 128-token prompt, cold run, one reading; generation verified on the same leg; cold run; load 2.42 s, peak resident 650 MB"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "os": "iOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0 xcframework (BenchmarkApp yardstick)",
+          "prompt_tokens": 128,
+          "prefill_tps": 808.5,
+          "decode_tps": 93.9,
+          "ttft_s": 0.206,
+          "runs": 1,
+          "date": "2026-09-01",
+          "source": "BenchmarkApp yardstick quality run, 128-token prompt, cold run, one reading; generation verified on the same leg; peak resident 791 MB"
+        }
+      ],
+      "known_issues": []
+    },
+    {
+      "file": "LFM2.5-230M_int8.litertlm",
+      "sha256": "f8bc1a685e07e4f547d0390476b7d21b72c6dba3a7e4a76400b211b3d28628a9",
+      "size_bytes": 266053344,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 5011
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 1289
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 906962
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 265086688,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "post-hoc dynamic int8 on linears + embedding, convs float (export-time conv-int8 costs ~5pt instruction-following on this tune) - IFEval-style strict 58.3% vs bf16 60.0% (paired, indistinguishable); GSM8K 23 = bf16 parity; 8Q 7/8 cpu + 7/8 gpu (bf16 8/8, miss is one rhyme line)",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.15 (hybrid conv/KV state binds via ExecutorMetadata; tested on 0.16.x)",
+          "Embedded chat template is a render-equivalent repair of the upstream one (minijinja rejects HF {% generation %} markers and map .get) - byte-identical rendering proven across 6 conversation shapes",
+          "KV budget 4096 with 11 prefill signatures (1-1024); a 4099 budget fails GPU shader compile against the 1024 signature",
+          "Recommended file everywhere except iPhone-Metal-decode-bound deployments: more accurate than int4 and 2.8x faster decode on Adreno GPU"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 12809.7,
+          "decode_tps": 561.2,
+          "ttft_s": 0.022,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-01",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine, 300 s rest before each GPU cell; backend verified by generation (8Q gate) before quoting"
+        },
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1727.0,
+          "decode_tps": 153.8,
+          "ttft_s": 0.155,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-09-01",
+          "source": "litert-lm benchmark -p 256 -d 256 --runs 3 --cache no, quiet machine, 300 s rest before each GPU cell; backend verified by generation (8Q gate) before quoting"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q, Adreno)",
+          "os": "Android",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": 3814.1,
+          "decode_tps": 121.8,
+          "ttft_s": 0.06,
+          "runs": 2,
+          "date": "2026-09-01",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell; GPU rows only with full LITERT_CL delegation and generation verified; full LITERT_CL delegation, zero rejected ops; peak VmHWM 444 MB"
+        },
+        {
+          "device": "Samsung Galaxy S26 (SM-S942Q)",
+          "os": "Android",
+          "backend": "cpu",
+          "runtime": "litert_lm_advanced_main v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": 1073.0,
+          "decode_tps": 95.0,
+          "runs": 2,
+          "date": "2026-09-01",
+          "source": "litert_lm_advanced_main (v0.16.0 release kit), 205-token prompt with --benchmark, 2 runs per cell; GPU rows only with full LITERT_CL delegation and generation verified; runs 1006/1140 prefill, 94.7/95.4 decode; peak VmHWM 636-706 MB"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "os": "iOS",
+          "backend": "gpu",
+          "runtime": "litert-lm 0.16.0 xcframework (BenchmarkApp yardstick)",
+          "prompt_tokens": 128,
+          "prefill_tps": 3422.1,
+          "decode_tps": 143.2,
+          "ttft_s": 0.075,
+          "runs": 1,
+          "date": "2026-09-01",
+          "source": "BenchmarkApp yardstick quality run, 128-token prompt, cold run, one reading; generation verified on the same leg; cold run; load 4.85 s, peak resident 610 MB"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "os": "iOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.16.0 xcframework (BenchmarkApp yardstick)",
+          "prompt_tokens": 128,
+          "prefill_tps": 1529.9,
+          "decode_tps": 86.6,
+          "ttft_s": 0.107,
+          "runs": 1,
+          "date": "2026-09-01",
+          "source": "BenchmarkApp yardstick quality run, 128-token prompt, cold run, one reading; generation verified on the same leg; peak resident 941 MB"
+        }
+      ],
+      "known_issues": []
+    }
+  ]
+}

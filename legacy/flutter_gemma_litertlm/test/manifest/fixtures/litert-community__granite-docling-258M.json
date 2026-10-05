@@ -1,0 +1,94 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/granite-docling-258M",
+  "generated": "2026-08-24",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "granite-docling-258M",
+    "base_model": "ibm-granite/granite-docling-258M",
+    "architecture": "VLM (fast_vlm bundle): SigLIP-base-512 vision encoder + pixel-shuffle x4 connector feeding a Llama-architecture granite decoder (576-dim/30L, 100k vocab); DocTags document-conversion output (Docling's model)",
+    "parameters_b": 0.26,
+    "license": "apache-2.0",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": true,
+      "audio": false,
+      "thinking": {
+        "declared": false
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "granite-docling-258M.litertlm",
+      "sha256": "11a14f547dda752d35c222b2a781d277fa499d94d14a3b575f719bb16391e113",
+      "size_bytes": 337946336,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 761
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 1404486
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 59009312,
+          "model_type": "tf_lite_embedder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 178906944,
+          "model_type": "tf_lite_prefill_decode"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 91480080,
+          "model_type": "tf_lite_vision_encoder"
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 7087840,
+          "model_type": "tf_lite_vision_adapter"
+        }
+      ],
+      "quantization": "vision encoder + connector int8 (dynamic); decoder int8 weights with FLOAT compute (integer-compute int8/int4 corrupt DocTags structure); prefer_activation_type fp32_fp16 declared in-bundle",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Input contract: pre-resize the page to exactly 512x512 with BILINEAR resampling in the app before sending — the runtime's own downscale from larger images uses a different filter and the model hallucinates the page (base-model trait of the single-global-512 path, present in eager too)",
+          "Scope: pages legible at 512^2 (report pages, tables, layout). Dense multi-column pages and small formulas degrade in single-512 mode — also in the original model run this way",
+          "Prompt 'Convert this page to docling.' -> DocTags markup; convert to Markdown/HTML with docling-core. One page per conversation",
+          "Device-verified (Galaxy S26 / SM8850, CPU, LiteRT-LM v0.16.1 CLI): synthetic 5x6 table page -> exact title, complete OTSL grid, 25/25 cells, clean stop, 35.4 s/page (1025 output tokens), two runs byte-identical",
+          "macOS CPU (litert-lm 0.15.0): same gate perfect at 5.2 s/page (~240 output tokens); the vision encoder runs once per image (~0.5 s M4 Max CPU) and is outside the benchmark figures",
+          "iPhone/macOS Swift runtime: load with the vision tower enabled (Modality.textImage) — vision-only bundle, no audio tower; context (KV cache) 4096"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "os": "macOS",
+          "backend": "cpu",
+          "runtime": "litert-lm 0.15.0",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 912,
+          "decode_tps": 63.96,
+          "ttft_s": 0.57,
+          "max_num_tokens": 4096,
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "docling_work/FINDINGS.md device-gate section; litert-lm benchmark -p 256 -d 256 --cache no, backend gated on a real docling generation"
+        }
+      ],
+      "known_issues": [
+        "GPU engine creation fails on the shipped bundle: the ML Drift delegate rejects the quantized 576x576 FC at kernel init (Shape mismatch {576,1,1,576} vs {1,1,576,576}) — identical on macOS WebGPU and Android OpenCL. An fp16-decoder variant runs correctly on Android OpenCL but ~4x slower than CPU, so CPU-only ships",
+        "Feeding images larger than 512 without app-side BILINEAR pre-resize degrades output to a hallucinated page (see input contract)"
+      ]
+    }
+  ]
+}

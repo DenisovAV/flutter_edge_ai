@@ -1,0 +1,53 @@
+name: flutter_gemma_litertlm
+description: "Renamed to flutter_edge_ai_litertlm. This is the final flutter_gemma_litertlm release; new versions ship as flutter_edge_ai_litertlm, part of Flutter Edge AI."
+version: 1.8.6
+homepage: https://fluttergemma.dev
+repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/legacy/flutter_gemma_litertlm
+topics: [gemma, llm, litert, on-device, ffi]
+
+# All six platforms: 5 native via dart:ffi (LiteRT-LM C API) + web via
+# @litert-lm/core. Declared explicitly so the supported set is the package's own
+# contract, not inferred from the transitive import graph.
+platforms:
+  android:
+  ios:
+  web:
+  macos:
+  windows:
+  linux:
+
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # ^1.11.0: this version passes `activeBackend:` to `ForwardPassDescriptor` —
+  # a named parameter that does not exist before 1.11.0, so an older core is a
+  # compile error — and overrides `EmbeddingModel.activeBackend`, which lands in
+  # 1.11.0 too. That also covers the older floors it still depends on: 1.10.0's
+  # `activationDataType`, 1.9.0's embedding seam and tokenizer registry
+  # (`EmbeddingTokenizerRegistry`), 1.8.4's runtime tool path for FunctionGemma,
+  # and 1.7.3's `createChat` fix, without which web function calling resolves,
+  # compiles, and the tools silently never reach the model.
+  flutter_gemma: ^1.11.0
+  ffi: ^2.1.0
+  mutex: ^3.1.0
+  hooks: ^2.0.0
+  code_assets: ^1.2.0
+  crypto: ^3.0.6
+  path_provider: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # Only live_hugging_face_test.dart (opt-in) drives the full
+  # FlutterGemma.initialize() path; headless that needs shared_preferences'
+  # in-memory mock store. The registration contract is tested in core.
+  shared_preferences: ^2.5.2
+
+# No flutter: plugin/asset block — the native lib is delivered as a CodeAsset by
+# hook/build.dart (Native Assets). This package OWNS the litertlm bundle.

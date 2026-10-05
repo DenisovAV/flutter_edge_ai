@@ -1,0 +1,415 @@
+{
+  "manifest_schema": "0.1.0",
+  "repo": "litert-community/LFM2.5-1.2B-JP",
+  "generated": "2026-08-25",
+  "generator": "make_manifest.py",
+  "model": {
+    "display_name": "LFM2.5-1.2B-JP",
+    "base_model": "LiquidAI/LFM2.5-1.2B-JP",
+    "architecture": "Liquid AI hybrid conv-attention decoder (LFM2 ShortConv + attention); Japanese-optimized chat variant",
+    "parameters_b": 1.2,
+    "license": "other (lfm-open-license-v1.0, LFM Open License v1.0)",
+    "context_length": 4096,
+    "capabilities": {
+      "vision": false,
+      "audio": false,
+      "thinking": {
+        "declared": true,
+        "channel": {
+          "start": "<think>",
+          "end": "</think>"
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "file": "LFM2.5-1.2B-JP_int4.litertlm",
+      "sha256": "97909ba9e275470b69a202b506fa347a2b92dfef69ac7048f771e375319dee2e",
+      "size_bytes": 736015744,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1856
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 1421
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 906962
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 735049088,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int4 blockwise-32 + OCTAV linears, int8 embedding, convs float",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "midrange",
+          "backend": "cpu",
+          "reason": "~1.7x faster than int8 on a Pixel 8a CPU and 41% smaller"
+        }
+      ],
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.14 / a recent AI Edge Gallery; files were updated in place 2026-08-04 to add the ExecutorMetadata section litert-lm >= 0.15 requires (weights and graph byte-identical, still runs on 0.14)",
+          "In the Gallery select the CPU backend",
+          "First device load compiles the graph and can take about a minute; later loads are instant"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 387,
+          "decode_tps": 119.0,
+          "ttft_s": 0.67,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 340,
+          "decode_tps": 79.3,
+          "ttft_s": 0.76,
+          "max_num_tokens": 4096,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ],
+      "known_issues": [
+        "Cannot create a GPU engine: pre-0.9.2 ShortConv export carries INT64 ADD/CAST/SUM, GATHER_ND and a const-input GREATER_EQUAL; the GPU delegate takes 536 of 579 ops and the runtime refuses the partial split - use the CPU backend, or the _int4_gpu file for the same weights on GPU"
+      ],
+      "min_runtime_version": "0.14.0"
+    },
+    {
+      "file": "LFM2.5-1.2B-JP_int4_gpu.litertlm",
+      "sha256": "2c826a9cdeefc614c9b7de1d1c5565c9a64f704e5f3291ad2cd5d7da396790d5",
+      "size_bytes": 736220768,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1856
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 1421
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 906962
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 735254112,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "same int4 recipe and weights as the int4 file (int4 blockwise-32 + OCTAV linears, int8 embedding, convs float), re-exported with litert-torch 0.9.3 + litert-converter 0.3.1 so it runs on the GPU",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "midrange",
+          "backend": "gpu",
+          "reason": "3-6x the prefill and time-to-first-token of the same file on CPU; 41% smaller than int8_gpu and faster to decode, at 10 fewer GSM8K points"
+        },
+        {
+          "platform": "ios",
+          "backend": "gpu",
+          "reason": "verified by generation on an iPhone 17 Pro at maxNumTokens 1024 - decode 70.0 tok/s, peak ~560 MB"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 617,
+        "platform_notes": [
+          "GPU needs litert-lm >= 0.16.0 (verified by generation on Android OpenCL, macOS and iOS Metal, not just by a benchmark table); the Gallery bundles its own runtime which may lag that version - if its GPU toggle fails there, use CPU",
+          "On iOS Metal set maxNumTokens to 1024: the Metal delegate compiles kernels against the KV cache maxNumTokens pre-allocates, and a mismatched value fails engine creation with a shader-compile error",
+          "Delegates fully on Android OpenCL - 501/501 and 519/519 nodes, zero rejected ops",
+          "Includes the ExecutorMetadata section litert-lm >= 0.15 needs"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Pixel 8a (Tensor G3)",
+          "backend": "gpu",
+          "runtime": "litert_lm_main built from the litert-lm v0.16.0 release tag",
+          "prompt_tokens": 263,
+          "decode_tokens": 256,
+          "prefill_tps": "190-194",
+          "decode_tps": "19.8-21.2",
+          "ttft_s": "1.40-1.44",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Galaxy S26 (SM-S942Q, SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main, litert-lm v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "prefill_tps": 919.0,
+          "decode_tps": 54.63,
+          "max_num_tokens": 4096,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-08-24",
+          "source": "GPU gate sweep of the shipped catalog on this device"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.16.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 3682,
+          "decode_tps": 316.0,
+          "ttft_s": 0.07,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "iPhone 17 Pro",
+          "backend": "gpu",
+          "runtime": "litert-lm v0.16.0 xcframework",
+          "decode_tps": 70.0,
+          "ttft_s": 0.091,
+          "max_num_tokens": 1024,
+          "runs": 1,
+          "date": "2026-08-24",
+          "source": "model card iPhone section; single run, device charging, short prompt"
+        }
+      ],
+      "min_runtime_version": "0.16.0"
+    },
+    {
+      "file": "LFM2.5-1.2B-JP_int8.litertlm",
+      "sha256": "8fc5367c35a4771cb60784a86be5eb1f358e94cc71eb2eaf15ad006205339001",
+      "size_bytes": 1244594224,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1856
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 1421
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 906962
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1243627568,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "int8 dynamic (linears + embedding; convs float)",
+      "backends": [
+        "cpu"
+      ],
+      "default_backend": "cpu",
+      "requirements": {
+        "platform_notes": [
+          "Requires litert-lm >= 0.14 / a recent AI Edge Gallery; files were updated in place 2026-08-04 to add the ExecutorMetadata section litert-lm >= 0.15 requires (weights and graph byte-identical, still runs on 0.14)",
+          "In the Gallery select the CPU backend",
+          "First device load compiles the graph and can take about a minute; later loads are instant"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1526,
+          "decode_tps": 98.5,
+          "ttft_s": 0.18,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 1071,
+          "decode_tps": 82.5,
+          "ttft_s": 0.25,
+          "max_num_tokens": 4096,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-24",
+          "source": "model card Performance table (cardbench harness)"
+        }
+      ],
+      "known_issues": [
+        "Cannot create a GPU engine: pre-0.9.2 ShortConv export carries INT64 ADD/CAST/SUM, GATHER_ND and a const-input GREATER_EQUAL; the GPU delegate takes 536 of 579 ops and the runtime refuses the partial split - use the CPU backend, or the _int8_gpu file for the same weights on GPU"
+      ],
+      "min_runtime_version": "0.14.0"
+    },
+    {
+      "file": "LFM2.5-1.2B-JP_int8_gpu.litertlm",
+      "sha256": "1316b5381a45f01b1a06da6ebe1a99bb55b430653e6a7ee19d50a6d0ad01d869",
+      "size_bytes": 1244763648,
+      "sections": [
+        {
+          "type": "LlmMetadataProto",
+          "size_bytes": 1856
+        },
+        {
+          "type": "ExecutorMetadataProto",
+          "size_bytes": 1421
+        },
+        {
+          "type": "HF_Tokenizer_Zlib",
+          "size_bytes": 906962
+        },
+        {
+          "type": "TFLiteModel",
+          "size_bytes": 1243796992,
+          "model_type": "tf_lite_prefill_decode"
+        }
+      ],
+      "quantization": "same int8 recipe and weights as the int8 file (post-hoc int8 on FULLY_CONNECTED + channelwise EMBEDDING_LOOKUP; convs left float), re-exported with litert-torch 0.9.3 + litert-converter 0.3.1 so it runs on the GPU",
+      "backends": [
+        "cpu",
+        "gpu"
+      ],
+      "default_backend": "gpu",
+      "recommended": [
+        {
+          "platform": "android",
+          "device_class": "flagship",
+          "backend": "gpu",
+          "reason": "delegates fully on Adreno OpenCL and is 10 GSM8K points more accurate than the int4_gpu file; choose int4_gpu instead when decode speed or the 41% smaller download matters more"
+        },
+        {
+          "platform": "macos",
+          "backend": "gpu",
+          "reason": "~10x the prefill and ~3.4x the decode of the same file on CPU"
+        }
+      ],
+      "requirements": {
+        "peak_ram_mb": 571,
+        "platform_notes": [
+          "GPU needs litert-lm >= 0.16.0, verified by generation (not merely by a benchmark table) on Adreno OpenCL and macOS Metal; the Gallery bundles its own runtime which may lag that version - if its GPU toggle fails there, use CPU",
+          "Delegates fully on Adreno OpenCL - 542/542 nodes across all ten prefill signatures, 501/501 prefill_1 and 519/519 decode, zero rejected ops",
+          "Includes the ExecutorMetadata section litert-lm >= 0.15 needs",
+          "Not gated on iOS Metal; the sibling _int4_gpu file of the same export lineage is iPhone-verified at maxNumTokens 1024, but that measurement does not transfer to this file"
+        ]
+      },
+      "measured": [
+        {
+          "device": "Galaxy S26 (SM-S942Q, SM8850, Adreno)",
+          "backend": "gpu",
+          "runtime": "litert_lm_advanced_main, litert-lm v0.16.0 release kit",
+          "prompt_tokens": 205,
+          "decode_tokens": 108,
+          "prefill_tps": "940.4-978.8",
+          "decode_tps": "41.9-41.9",
+          "ttft_s": "0.23-0.24",
+          "max_num_tokens": 4096,
+          "cache": "no",
+          "runs": 2,
+          "date": "2026-08-25",
+          "source": "device gate log, 205-token prompt file with --benchmark and no token-count flags"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.16.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 3708.1,
+          "decode_tps": 248.2,
+          "ttft_s": 0.073,
+          "max_num_tokens": 4096,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "cardbench harness, idle machine"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "gpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 4626.7,
+          "decode_tps": 271.9,
+          "ttft_s": 0.059,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "cardbench harness, idle machine"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 409.7,
+          "decode_tps": 85.5,
+          "ttft_s": 0.637,
+          "max_num_tokens": 1024,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "cardbench harness, idle machine"
+        },
+        {
+          "device": "Apple M4 Max",
+          "backend": "cpu",
+          "runtime": "litert-lm benchmark (litert-lm 0.15.0)",
+          "prompt_tokens": 256,
+          "decode_tokens": 256,
+          "prefill_tps": 364.8,
+          "decode_tps": 71.1,
+          "ttft_s": 0.716,
+          "max_num_tokens": 4096,
+          "cache": "no",
+          "runs": 3,
+          "date": "2026-08-25",
+          "source": "cardbench harness, idle machine"
+        }
+      ],
+      "min_runtime_version": "0.16.0"
+    }
+  ]
+}

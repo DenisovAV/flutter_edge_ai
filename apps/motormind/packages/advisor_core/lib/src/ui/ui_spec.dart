@@ -84,58 +84,57 @@ abstract final class ComponentRegistry {
   // --- result components --------------------------------------------------
   static const paymentSummary = UiComponent(
     id: 'payment_summary',
-    description: 'One card: monthly payment, amount financed, cash at signing.',
+    description: 'Payment, amount financed, cash at signing.',
     acceptsTools: {'estimate_payment'},
   );
   static const paymentBreakdown = UiComponent(
     id: 'payment_breakdown',
-    description: 'Full purchase breakdown with assumptions and what-if variants.',
+    description: 'Full purchase breakdown.',
     acceptsTools: {'estimate_payment'},
     defaultSurface: SurfaceState.fullscreen,
   );
   static const amortizationChart = UiComponent(
     id: 'amortization_chart',
-    description: 'Principal versus interest over the term.',
+    description: 'Principal vs interest over time.',
     acceptsTools: {'estimate_payment'},
     defaultSurface: SurfaceState.fullscreen,
   );
   static const affordabilityGauge = UiComponent(
     id: 'affordability_gauge',
-    description: 'Payment-to-income and debt-to-income with guideline markers and warnings.',
+    description: 'Affordability ratios and warnings.',
     acceptsTools: {'assess_affordability', 'max_affordable_price'},
   );
   static const tradeEquityCard = UiComponent(
     id: 'trade_equity_card',
-    description: 'Value, payoff and equity, with negative equity stated plainly.',
+    description: 'Trade value, payoff, equity.',
     acceptsTools: {'trade_equity'},
   );
   static const leaseVsBuy = UiComponent(
     id: 'lease_vs_buy',
-    description: 'Side-by-side lease and purchase estimates.',
+    description: 'Lease vs buy side by side.',
     acceptsTools: {'estimate_lease', 'estimate_payment'},
     defaultSurface: SurfaceState.fullscreen,
   );
   static const ownershipCost = UiComponent(
     id: 'ownership_cost',
-    description: 'Stacked cost of ownership by category.',
+    description: 'Cost of ownership by category.',
     acceptsTools: {'ownership_cost'},
     defaultSurface: SurfaceState.fullscreen,
   );
   static const vehicleCard = UiComponent(
     id: 'vehicle_card',
-    description: 'One listing, with its image and source link when it came from a page.',
+    description: 'One listing.',
     acceptsTools: {'find_vehicles', 'read_page'},
   );
   static const vehicleCompare = UiComponent(
     id: 'vehicle_compare',
-    description: 'Two or three listings side by side with payment and ownership cost.',
+    description: '2–3 listings compared.',
     acceptsTools: {'find_vehicles'},
     defaultSurface: SurfaceState.fullscreen,
   );
   static const pageExtract = UiComponent(
     id: 'page_extract',
-    description:
-        'What was read from a web page: key facts, images, and a link to open the full page.',
+    description: 'Facts read from a web page.',
     acceptsTools: {'read_page'},
   );
 
@@ -143,26 +142,19 @@ abstract final class ComponentRegistry {
   static final choice = UiComponent(
     id: 'choice',
     description:
-        'A question with 2 to 6 tappable answers (single select). Use instead of an open question '
-        'whenever the answer is one of a few options. props: {question, options: [{id, label}]}. '
-        'The user can always pick "something else" and type.',
+        'Question with 2–6 tappable answers; use instead of an open question when the answer is one of a few options.',
     acceptsTools: const {},
     validateProps: (p) => _validateOptions(p, min: 2, max: 6),
   );
   static final multiChoice = UiComponent(
     id: 'multi_choice',
-    description:
-        'A question with 2 to 8 tappable answers where several may apply (e.g. must-have features). '
-        'props: {question, options: [{id, label}]}.',
+    description: 'Question with 2–8 answers where several may apply.',
     acceptsTools: const {},
     validateProps: (p) => _validateOptions(p, min: 2, max: 8),
   );
   static final inputForm = UiComponent(
     id: 'input_form',
-    description:
-        'A short form of 1 to 6 typed fields (number, currency, percent, text, select) for values '
-        'you need before calling a finance tool, e.g. price, down payment, payoff. props: '
-        '{title, fields: [{id, label, type, options?}]}. Faster and more exact than asking in prose.',
+    description: 'Short form (1–6 fields) to collect numbers before a finance tool.',
     acceptsTools: const {},
     validateProps: _validateFields,
   );

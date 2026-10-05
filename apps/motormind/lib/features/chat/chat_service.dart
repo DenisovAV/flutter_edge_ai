@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:advisor_core/advisor_core.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -105,6 +106,9 @@ class ChatState {
 typedef ChatDriverFactory = Future<ChatDriver> Function(String systemInstruction);
 
 final chatDriverFactoryProvider = Provider<ChatDriverFactory?>((ref) => null);
+
+/// Null disables the per-turn timeout (tests); the app uses four minutes.
+final turnTimeoutProvider = Provider<Duration?>((ref) => const Duration(minutes: 4));
 
 final promptAssetsProvider = FutureProvider<SystemPromptBuilder>((ref) async {
   final persona = await rootBundle.loadString('assets/prompts/persona.md');
@@ -249,7 +253,17 @@ class ChatService extends Notifier<ChatState> {
     }
 
     try {
-      await for (final e in pipeline.run(text.trim())) {
+      final timeout = ref.read(turnTimeoutProvider);
+      var events = pipeline.run(text.trim());
+      if (timeout != null) {
+        events = events.timeout(
+          timeout,
+          onTimeout: (sink) =>
+              sink.addError(TimeoutException('The advisor took too long to answer.')),
+        );
+      }
+      debugPrint('[motormind] turn start');
+      await for (final e in events) {
         switch (e) {
           case TextDelta(:final text):
             updateReply(reply.copyWith(text: reply.text + text));
@@ -285,14 +299,11 @@ class ChatService extends Notifier<ChatState> {
         }
       }
     } catch (e) {
-      updateReply(
-        reply.copyWith(
-          text: reply.text.isEmpty ? 'Something went wrong: $e' : reply.text,
-          streaming: false,
-        ),
-      );
-      state = state.copyWith(error: e.toString());
+      final msg = _friendly(e);
+      updateReply(reply.copyWith(text: reply.text.isEmpty ? msg : reply.text, streaming: false));
+      state = state.copyWith(error: msg);
     } finally {
+      debugPrint('[motormind] turn done');
       state = state.copyWith(busy: false, clearActiveTool: true);
     }
   }
@@ -312,4 +323,13 @@ class ChatService extends Notifier<ChatState> {
   }
 
   BuyerProfile get profile => _pipeline?.profile ?? const BuyerProfile();
+
+  static String _friendly(Object e) {
+    final s = e.toString();
+    if (s.contains('exceeds available state') || s.contains('context')) {
+      return 'The conversation grew past what this model can hold in memory. Start a new conversation to continue.';
+    }
+    if (e is TimeoutException) return e.message ?? 'The advisor took too long to answer.';
+    return 'Something went wrong: $s';
+  }
 }

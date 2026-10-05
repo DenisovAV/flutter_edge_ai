@@ -24,12 +24,43 @@ class ToolResult {
 
   bool get isError => error != null;
 
-  /// What goes back to the model as the tool response.
-  Map<String, Object?> toModelJson() => {
-    'result_id': id,
-    ...?result,
-    if (error != null) 'error': error,
-  };
+  /// What goes back to the model: the outputs, rounded, plus the inputs it
+  /// may need to repeat, without assumption prose. The full result (with
+  /// assumptions) goes to the UI, never through the model (ADR 0002). Context
+  /// is scarce on a phone, so this is deliberately small.
+  Map<String, Object?> toModelJson() {
+    if (error != null) return {'result_id': id, 'error': error};
+    final r = result ?? const {};
+    Object? compact(Object? v) {
+      if (v is double) {
+        return v == v.roundToDouble() ? v.round() : double.parse(v.toStringAsFixed(2));
+      }
+      if (v is Map) return {for (final e in v.entries) e.key.toString(): compact(e.value)};
+      if (v is List) return [for (final x in v) compact(x)];
+      return v;
+    }
+
+    if (!r.containsKey('outputs') && !r.containsKey('inputs')) {
+      // Not a CalcResult (search, page read): pass it through, compacted.
+      return {'result_id': id, ...(compact(r) as Map).cast<String, Object?>()};
+    }
+    final outputs = compact(r['outputs']) as Map?;
+    final inputs = compact(r['inputs']) as Map?;
+    final assumptions = r['assumptions'];
+    final inputsNoNulls = inputs == null
+        ? null
+        : {
+            for (final e in inputs.entries)
+              if (e.value != null) e.key: e.value,
+          };
+    return {
+      'result_id': id,
+      'inputs': ?inputsNoNulls,
+      'outputs': ?outputs,
+      if (assumptions is List && assumptions.isNotEmpty)
+        'assumptions': [for (final a in assumptions.cast<Map>()) '${a['key']}=${a['value']}'],
+    };
+  }
 }
 
 /// Turns finance tool arguments into `vehicle_finance` calls.

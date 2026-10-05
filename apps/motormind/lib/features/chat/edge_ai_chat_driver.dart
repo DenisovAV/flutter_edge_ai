@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:advisor_core/advisor_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import '../models/model_catalog.dart';
@@ -30,26 +33,52 @@ class EdgeAiChatDriver implements ChatDriver {
       modelType: spec.modelType,
       systemInstruction: systemInstruction,
     );
+    if (kDebugMode) {
+      debugPrint(
+        '[motormind] system instruction: ${systemInstruction.length} chars (~${systemInstruction.length ~/ 4} tokens) of ${spec.maxTokens} context',
+      );
+    }
     return EdgeAiChatDriver._(chat, model, spec);
   }
 
+  /// Generation errors inside the SDK can surface on an unawaited future
+  /// (observed: a context-window overflow during a tool-result prefill). A
+  /// zone catches those and fails this stream, so the UI never hangs.
   @override
-  Stream<DriverChunk> send(String userText, {required ToolCallHandler onToolCall}) async* {
-    await _chat.addQueryChunk(Message.text(text: userText, isUser: true));
-    final stream = _chat.generateChatResponseWithTools(
-      onToolCall: (call) => onToolCall(call.name, call.args.cast<String, Object?>()),
-      maxToolTurns: 6,
+  Stream<DriverChunk> send(String userText, {required ToolCallHandler onToolCall}) {
+    final out = StreamController<DriverChunk>();
+    runZonedGuarded(
+      () async {
+        try {
+          await _chat.addQueryChunk(Message.text(text: userText, isUser: true));
+          final stream = _chat.generateChatResponseWithTools(
+            onToolCall: (call) => onToolCall(call.name, call.args.cast<String, Object?>()),
+            maxToolTurns: 6,
+          );
+          await for (final r in stream) {
+            switch (r) {
+              case TextResponse(:final token):
+                out.add(DriverText(token));
+              case ThinkingResponse(:final content):
+                out.add(DriverThinking(content));
+              case FunctionCallResponse() || ParallelFunctionCallResponse():
+                break; // consumed by the loop
+            }
+          }
+        } catch (e, st) {
+          if (!out.isClosed) out.addError(e, st);
+        } finally {
+          if (!out.isClosed) await out.close();
+        }
+      },
+      (e, st) {
+        if (!out.isClosed) {
+          out.addError(e, st);
+          out.close();
+        }
+      },
     );
-    await for (final r in stream) {
-      switch (r) {
-        case TextResponse(:final token):
-          yield DriverText(token);
-        case ThinkingResponse(:final content):
-          yield DriverThinking(content);
-        case FunctionCallResponse() || ParallelFunctionCallResponse():
-          break; // consumed by the loop
-      }
-    }
+    return out.stream;
   }
 
   @override

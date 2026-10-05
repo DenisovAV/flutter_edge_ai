@@ -66,6 +66,7 @@ abstract final class ModelCatalog {
     isThinking: true,
     temperature: 1.0,
     topK: 64,
+    maxTokens: 8192,
   );
 
   /// Light option and the fallback for older devices.

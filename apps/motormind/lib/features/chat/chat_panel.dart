@@ -34,10 +34,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
   }
 
+  int _lastLen = 0;
+
   @override
   Widget build(BuildContext context) {
     final chat = ref.watch(chatServiceProvider);
     final theme = Theme.of(context);
+    if (chat.timeline.length != _lastLen) {
+      _lastLen = chat.timeline.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      });
+    }
 
     return Column(
       children: [
@@ -165,9 +173,12 @@ class _Bubble extends StatelessWidget {
     final theme = Theme.of(context);
     final isUser = message.role == 'user';
     if (message.text.isEmpty && message.streaming) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 8),
-        child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+      return const Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
       );
     }
     if (message.text.isEmpty) return const SizedBox.shrink();

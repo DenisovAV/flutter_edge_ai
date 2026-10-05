@@ -240,6 +240,6 @@ void main() {
     expect(prompt, contains('payment ceiling: \$450/mo'));
     expect(prompt, contains('keyboard up'));
     final noMode = builder.build(profile: const BuyerProfile());
-    expect(noMode, contains('Not known yet'));
+    expect(noMode, contains('Shopping mode: unknown'));
   });
 }

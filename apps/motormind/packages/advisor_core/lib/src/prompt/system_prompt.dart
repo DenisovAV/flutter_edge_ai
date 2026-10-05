@@ -56,22 +56,20 @@ class SystemPromptBuilder {
       ..writeln()
       ..writeln('# Numbers')
       ..writeln(
-        'Never compute or guess a dollar amount, rate, payment or percentage. Call a tool and '
-        'repeat only the numbers it returns. If you lack an input, ask for it (prefer an '
-        'input_form) rather than assuming it.',
+        'Never compute or guess a dollar amount, rate, payment or percentage: call a tool and repeat '
+        'only what it returns. Missing an input? Ask with an input_form, do not assume.',
       )
       ..writeln()
-      ..writeln('# Showing things on screen')
+      ..writeln('# Screen')
       ..writeln(
-        'After a tool returns, call `present` with a component and the result_id so the person '
-        'sees the numbers; do not retype them. When you need an answer that is one of a few '
-        'options or a number, call `present` with choice, multi_choice or input_form instead of '
-        'asking in prose. Keep prose short when something is on screen that the person is '
-        'deciding about. At most one structured prompt per turn.',
+        'After a tool returns, call present(component, result_id) so the numbers are shown as a card; '
+        'then one or two sentences at most. To ask something with a few possible answers, or to '
+        'collect numbers, call present with choice/multi_choice/input_form instead of asking in prose. '
+        'One structured prompt per turn.',
       )
-      ..writeln()
-      ..writeln('Components you can present:')
-      ..writeln(ComponentRegistry.describeForPrompt())
+      ..writeln(
+        'Components: ${ComponentRegistry.all.map((c) => '${c.id} (${c.description})').join('; ')}',
+      )
       ..writeln();
 
     if (mode != null && modeGuidance[mode] != null) {
@@ -81,23 +79,19 @@ class SystemPromptBuilder {
         ..writeln();
     } else {
       buffer
-        ..writeln('# Shopping mode')
         ..writeln(
-          'Not known yet. Infer it from what the person says (browsing, dreaming, practical, '
-          'buying) and record it with update_profile; confirm with a choice if unsure.',
+          '# Shopping mode: unknown. Infer it (browsing/dreaming/practical/buying) and record it with update_profile.',
         )
         ..writeln();
     }
 
     buffer
-      ..writeln('# What you know about this person')
-      ..writeln(profile.toPromptSummary())
+      ..writeln('# Known about this person: ${profile.toPromptSummary()}')
       ..writeln();
 
     if (viewport != null) {
       buffer
-        ..writeln('# Screen')
-        ..writeln(viewport.describe())
+        ..writeln('# Viewport: ${viewport.describe()}')
         ..writeln();
     }
     return buffer.toString();

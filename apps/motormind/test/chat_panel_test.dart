@@ -59,6 +59,7 @@ Future<Widget> _app(ScriptedDriver driver) async {
   return ProviderScope(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
+      turnTimeoutProvider.overrideWithValue(null),
       chatDriverFactoryProvider.overrideWithValue((instruction) async {
         driver.systemInstructions.add(instruction);
         return driver;
@@ -90,7 +91,7 @@ void main() {
     final driver = ScriptedDriver();
     await _openFullscreenAdvisor(tester, driver);
     expect(driver.systemInstructions.single, contains('payment_summary'));
-    expect(driver.systemInstructions.single, contains('Never urge'));
+    expect(driver.systemInstructions.single, contains('No urgency'));
     // The app opens with the shopping-mode choice before any model turn.
     expect(find.byKey(const Key('choice-mode-practical')), findsOneWidget);
 

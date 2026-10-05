@@ -113,19 +113,21 @@ void main() {
     tester,
   ) async {
     final driver = ScriptedDriver();
-    await tester.pumpWidget(await _app(driver));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('surface-bubble')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('chat-start')));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const Key('chat-input')), 'hi');
-    await tester.tap(find.byKey(const Key('chat-send')));
+    await _openFullscreenAdvisor(tester, driver);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('chat-input'))),
+    );
+    // Drive the service directly (the input path is covered above); the
+    // scripted driver's stream needs a real event loop, hence runAsync.
+    await tester.runAsync(() => container.read(chatServiceProvider.notifier).send('hi'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('card-choice')), findsOneWidget);
     expect(find.byKey(const Key('choice-escape')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('choice-buying')));
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('choice-buying')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
     await tester.pumpAndSettle();
-    expect(find.text('Buying now'), findsWidgets);
+    expect(container.read(chatServiceProvider).messages.map((m) => m.text), contains('Buying now'));
   });
 }

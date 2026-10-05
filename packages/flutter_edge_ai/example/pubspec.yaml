@@ -109,7 +109,8 @@ dev_dependencies:
     sdk: flutter
   path: ^1.9.0
   # Used by integration_test/diagnostics_memory_test.dart and
-  # integration_test/benchmark_comparison_test.dart.
+  # integration_test/benchmark_comparison_test.dart, benchmark_peak_sampler.dart
+  # and test/benchmark_peak_sampler_test.dart.
   flutter_edge_ai_diagnostics:
     path: ../../flutter_edge_ai_diagnostics
 

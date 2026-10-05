@@ -75,6 +75,11 @@ void main() {
     expect(reading.firstFailure, contains('read #1 failed'));
     expect(reading.bytes, 7, reason: 'later reads still count');
     expect(reading.samples, greaterThanOrEqualTo(2));
+    expect(
+      reading.samples + reading.failures,
+      calls,
+      reason: 'every read is a sample or a failure, nothing in between',
+    );
   });
 
   test('nothing readable gives a null peak, not zero', () async {
@@ -91,7 +96,75 @@ void main() {
 
     expect(reading.bytes, isNull);
     expect(reading.failures, 0);
+    expect(reading.samples, 0, reason: 'a null read is not a sample');
+    expect(reading.readMs, isNull);
   });
+
+  test('read time covers the successful reads only', () async {
+    var calls = 0;
+    final sampler = PeakSampler(
+      read: () async {
+        calls++;
+        if (calls == 1) throw MemoryReadException('slow and failed');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        return 1;
+      },
+      interval: _tick,
+    )..start();
+    await _until(() => calls, 3);
+    final reading = await sampler.stop();
+
+    expect(reading.intervalMs, _tick.inMilliseconds);
+    expect(reading.readMs!.mean, greaterThanOrEqualTo(15));
+    expect(reading.readMs!.max, greaterThanOrEqualTo(15));
+    expect(reading.readMs!.max, greaterThanOrEqualTo(reading.readMs!.mean));
+  });
+
+  test('a zero interval switches the sampler off', () async {
+    var calls = 0;
+    final sampler =
+        PeakSampler(
+            read: () async {
+              calls++;
+              return 1;
+            },
+            interval: Duration.zero,
+          )
+          ..observe(42)
+          ..start();
+    await Future<void>.delayed(_tick * 6);
+    final reading = await sampler.stop(last: 10);
+
+    expect(calls, 0);
+    expect(reading.bytes, 42);
+    expect(reading.samples, 0);
+    expect(reading.intervalMs, isNull);
+    expect(reading.readMs, isNull);
+  });
+
+  test(
+    'cancel stops reads and hides an error from the read in flight',
+    () async {
+      final release = Completer<void>();
+      var calls = 0;
+      final sampler = PeakSampler(
+        read: () async {
+          calls++;
+          await release.future;
+          throw StateError('bug in the reader');
+        },
+        interval: _tick,
+      )..start();
+      await _until(() => calls, 1);
+
+      final cancelling = sampler.cancel();
+      release.complete();
+      await cancelling; // must not throw
+      final atCancel = calls;
+      await Future<void>.delayed(_tick * 6);
+      expect(calls, atCancel);
+    },
+  );
 
   test('a slow read makes ticks skip instead of piling up', () async {
     var started = 0;

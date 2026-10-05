@@ -91,12 +91,18 @@ void main() {
     await _openFullscreenAdvisor(tester, driver);
     expect(driver.systemInstructions.single, contains('payment_summary'));
     expect(driver.systemInstructions.single, contains('Never urge'));
+    // The app opens with the shopping-mode choice before any model turn.
+    expect(find.byKey(const Key('choice-mode-practical')), findsOneWidget);
 
     await tester.enterText(find.byKey(const Key('chat-input')), 'I can do 450 a month');
     await tester.tap(find.byKey(const Key('chat-send')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('card-payment_summary')), findsOneWidget);
+    // Cards sit above the narration that comments on them.
+    final cardY = tester.getTopLeft(find.byKey(const Key('card-payment_summary'))).dy;
+    final replyY = tester.getTopLeft(find.textContaining('a month over 60 months')).dy;
+    expect(cardY, lessThan(replyY));
     final expected = monthlyPayment(
       principal: 20000,
       apr: defaultAprTable.aprFor(CreditBand.good, isNew: false),
@@ -121,6 +127,7 @@ void main() {
     // scripted driver's stream needs a real event loop, hence runAsync.
     await tester.runAsync(() => container.read(chatServiceProvider.notifier).send('hi'));
     await tester.pumpAndSettle();
+    // The opening mode prompt was retired when 'hi' was sent; the model's choice is live.
     expect(find.byKey(const Key('card-choice')), findsOneWidget);
     expect(find.byKey(const Key('choice-escape')), findsOneWidget);
     await tester.runAsync(() async {
@@ -129,5 +136,24 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(container.read(chatServiceProvider).messages.map((m) => m.text), contains('Buying now'));
+  });
+
+  testWidgets('tapping an opening mode chip sets the mode and sends a sentence', (tester) async {
+    final driver = ScriptedDriver();
+    await _openFullscreenAdvisor(tester, driver);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('chat-input'))),
+    );
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('choice-mode-practical')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    final svc = container.read(chatServiceProvider.notifier);
+    expect(svc.profile.mode, ShoppingMode.practical);
+    expect(container.read(chatServiceProvider).messages.first.text, contains('practical options'));
+    // The opening chips are retired, not deleted.
+    expect(find.byKey(const Key('choice-mode-practical')), findsNothing);
+    expect(find.textContaining('How are you shopping today?'), findsAtLeastNWidgets(1));
   });
 }

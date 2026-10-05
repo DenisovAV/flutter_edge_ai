@@ -87,20 +87,18 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   controller: _scroll,
                   padding: const EdgeInsets.all(12),
                   children: [
-                    if (chat.messages.isEmpty)
-                      Text(
-                        'Tell me about the car you have in mind, or what you can spend each month.',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    for (final m in chat.messages) _Bubble(message: m),
-                    for (final s in chat.shown)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: ResultCard(
-                          shown: s,
-                          onChoice: (label) => ref.read(chatServiceProvider.notifier).choose(label),
+                    for (final e in chat.timeline)
+                      switch (e) {
+                        MessageEntry(:final message) => _Bubble(message: message),
+                        ComponentEntry(:final shown) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: ResultCard(
+                            shown: shown,
+                            onChoice: (id, label) =>
+                                ref.read(chatServiceProvider.notifier).choose(id, label),
+                          ),
                         ),
-                      ),
+                      },
                     if (chat.activeTool != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),

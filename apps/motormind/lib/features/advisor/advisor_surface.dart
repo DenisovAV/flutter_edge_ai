@@ -65,14 +65,24 @@ class AdvisorSurfaceHost extends ConsumerWidget {
           ),
         ],
       ),
-      SurfaceState.docked => Column(
-        children: [
-          Expanded(flex: 55, child: content),
-          Expanded(
-            flex: 45,
-            child: _AdvisorPanel(toggle: toggle, label: 'Advisor (docked)'),
-          ),
-        ],
+      // Keyboard rule (DD-R7): while typing, the conversation gets the space and
+      // the content shrinks to a strip, so the thing being answered stays visible.
+      SurfaceState.docked => Builder(
+        builder: (context) {
+          final keyboardUp = MediaQuery.viewInsetsOf(context).bottom > 0;
+          return Column(
+            children: [
+              Expanded(
+                flex: keyboardUp ? 15 : 55,
+                child: ClipRect(child: content),
+              ),
+              Expanded(
+                flex: keyboardUp ? 85 : 45,
+                child: _AdvisorPanel(toggle: toggle, label: 'Advisor (docked)'),
+              ),
+            ],
+          );
+        },
       ),
       SurfaceState.fullscreen => _AdvisorPanel(toggle: toggle, label: 'Advisor (fullscreen)'),
     };

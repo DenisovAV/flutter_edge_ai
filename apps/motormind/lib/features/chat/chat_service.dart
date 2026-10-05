@@ -13,7 +13,7 @@ import 'edge_ai_chat_driver.dart';
 class ChatMessage {
   const ChatMessage({required this.role, required this.text, this.streaming = false});
 
-  final String role; // 'user' | 'advisor' | 'system'
+  final String role; // 'user' | 'advisor'
   final String text;
   final bool streaming;
 
@@ -21,18 +21,39 @@ class ChatMessage {
       ChatMessage(role: role, text: text ?? this.text, streaming: streaming ?? this.streaming);
 }
 
-/// A card or prompt the model asked to show, kept in order with messages.
+/// A card or prompt the model (or the app) asked to show.
 class ShownComponent {
-  const ShownComponent({required this.request, this.result});
+  const ShownComponent({required this.request, this.result, this.answered = false});
   final PresentRequest request;
   final ToolResult? result;
+
+  /// True once the person answered an interaction component; it then renders
+  /// collapsed so the conversation keeps its history without live buttons.
+  final bool answered;
+
+  ShownComponent copyWith({bool? answered}) =>
+      ShownComponent(request: request, result: result, answered: answered ?? this.answered);
+}
+
+/// Messages and components interleaved in the order they happened.
+sealed class TimelineEntry {
+  const TimelineEntry();
+}
+
+class MessageEntry extends TimelineEntry {
+  const MessageEntry(this.message);
+  final ChatMessage message;
+}
+
+class ComponentEntry extends TimelineEntry {
+  const ComponentEntry(this.shown);
+  final ShownComponent shown;
 }
 
 /// Everything the chat panel renders.
 class ChatState {
   const ChatState({
-    this.messages = const [],
-    this.shown = const [],
+    this.timeline = const [],
     this.activeTool,
     this.busy = false,
     this.policyFlags = const [],
@@ -41,8 +62,7 @@ class ChatState {
     this.ready = false,
   });
 
-  final List<ChatMessage> messages;
-  final List<ShownComponent> shown;
+  final List<TimelineEntry> timeline;
   final String? activeTool;
   final bool busy;
   final List<PolicyFlag> policyFlags;
@@ -50,9 +70,17 @@ class ChatState {
   final String? error;
   final bool ready;
 
+  List<ChatMessage> get messages => [
+    for (final e in timeline)
+      if (e is MessageEntry) e.message,
+  ];
+  List<ShownComponent> get shown => [
+    for (final e in timeline)
+      if (e is ComponentEntry) e.shown,
+  ];
+
   ChatState copyWith({
-    List<ChatMessage>? messages,
-    List<ShownComponent>? shown,
+    List<TimelineEntry>? timeline,
     String? activeTool,
     bool clearActiveTool = false,
     bool? busy,
@@ -63,8 +91,7 @@ class ChatState {
     bool clearError = false,
     bool? ready,
   }) => ChatState(
-    messages: messages ?? this.messages,
-    shown: shown ?? this.shown,
+    timeline: timeline ?? this.timeline,
     activeTool: clearActiveTool ? null : (activeTool ?? this.activeTool),
     busy: busy ?? this.busy,
     policyFlags: policyFlags ?? this.policyFlags,
@@ -109,6 +136,16 @@ Map<ShoppingMode, String> _parseModes(String md) {
   return out;
 }
 
+/// The opening prompt (Q43): the app, not the model, offers the shopping-mode
+/// choice so the first screen demonstrates structured interaction without a
+/// model round trip. Answering sets the mode locally and tells the model.
+const Map<String, (ShoppingMode, String)> openingChoices = {
+  'mode-browsing': (ShoppingMode.browsing, 'I\'m just looking for now.'),
+  'mode-practical': (ShoppingMode.practical, 'I want practical options that fit my budget.'),
+  'mode-buying': (ShoppingMode.buying, 'I\'m buying now and want to work through the numbers.'),
+  'mode-dreaming': (ShoppingMode.dreaming, 'Let\'s have some fun and look at a dream car.'),
+};
+
 final chatServiceProvider = NotifierProvider<ChatService, ChatState>(ChatService.new);
 
 class ChatService extends Notifier<ChatState> {
@@ -149,11 +186,45 @@ class ChatService extends Notifier<ChatState> {
       await _driver?.close();
       _driver = driver;
       _pipeline = TurnPipeline(driver: driver, profile: profile);
-      state = const ChatState(ready: true);
+      state = ChatState(ready: true, timeline: [ComponentEntry(_openingPrompt(profile))]);
     } catch (e) {
       state = state.copyWith(busy: false, error: 'Could not start the advisor: $e');
     }
   }
+
+  ShownComponent _openingPrompt(BuyerProfile profile) {
+    final v = PresentRequest.validate({
+      'component': 'choice',
+      'props': {
+        'question': profile.mode == null
+            ? 'How are you shopping today?'
+            : 'Pick up where you left off, or change how you\'re shopping:',
+        'options': [
+          {'id': 'mode-browsing', 'label': 'Just looking'},
+          {'id': 'mode-practical', 'label': 'Practical options'},
+          {'id': 'mode-buying', 'label': 'Buying now'},
+          {'id': 'mode-dreaming', 'label': 'Dream car'},
+        ],
+      },
+    }, resultTool: null);
+    return ShownComponent(request: v.request!);
+  }
+
+  void _replaceEntry(int index, TimelineEntry entry) {
+    final t = [...state.timeline];
+    t[index] = entry;
+    state = state.copyWith(timeline: t);
+  }
+
+  /// Marks every unanswered interaction component as answered, so old chips
+  /// stop being live once the conversation moves on.
+  List<TimelineEntry> _retireInteractions(List<TimelineEntry> timeline) => [
+    for (final e in timeline)
+      if (e is ComponentEntry && e.shown.request.component.isInteraction && !e.shown.answered)
+        ComponentEntry(e.shown.copyWith(answered: true))
+      else
+        e,
+  ];
 
   Future<void> send(String text) async {
     final pipeline = _pipeline;
@@ -161,17 +232,20 @@ class ChatService extends Notifier<ChatState> {
     final userMsg = ChatMessage(role: 'user', text: text.trim());
     var reply = const ChatMessage(role: 'advisor', text: '', streaming: true);
     state = state.copyWith(
-      messages: [...state.messages, userMsg, reply],
+      timeline: [
+        ..._retireInteractions(state.timeline),
+        MessageEntry(userMsg),
+        MessageEntry(reply),
+      ],
       busy: true,
       clearGuardNote: true,
       clearError: true,
       policyFlags: const [],
     );
+    var replyIndex = state.timeline.length - 1;
     void updateReply(ChatMessage m) {
       reply = m;
-      final msgs = [...state.messages];
-      msgs[msgs.length - 1] = m;
-      state = state.copyWith(messages: msgs);
+      _replaceEntry(replyIndex, MessageEntry(m));
     }
 
     try {
@@ -188,12 +262,12 @@ class ChatService extends Notifier<ChatState> {
           case ProfileUpdated():
             break;
           case Presented(:final request, :final result):
-            state = state.copyWith(
-              shown: [
-                ...state.shown,
-                ShownComponent(request: request, result: result),
-              ],
-            );
+            // Components go in front of the streaming reply so the narration
+            // reads as commentary on the card above it.
+            final t = [...state.timeline];
+            t.insert(replyIndex, ComponentEntry(ShownComponent(request: request, result: result)));
+            replyIndex += 1;
+            state = state.copyWith(timeline: t);
             ref.read(surfaceProvider.notifier).request(request.surface);
           case PresentRejected():
             state = state.copyWith(clearActiveTool: true);
@@ -223,8 +297,19 @@ class ChatService extends Notifier<ChatState> {
     }
   }
 
-  /// Answer a choice prompt: sends the chosen label as the user's turn.
-  Future<void> choose(String label) => send(label);
+  /// Answer a choice prompt. Opening-mode choices set the mode locally and
+  /// send a sentence; other choices send the label the person tapped.
+  Future<void> choose(String id, String label) async {
+    final opening = openingChoices[id];
+    if (opening != null) {
+      final (mode, sentence) = opening;
+      _pipeline?.profile = (_pipeline?.profile ?? const BuyerProfile()).applyUpdate({
+        'shopping_mode': mode.name,
+      });
+      return send(sentence);
+    }
+    return send(label);
+  }
 
   BuyerProfile get profile => _pipeline?.profile ?? const BuyerProfile();
 }

@@ -1,3 +1,6 @@
+## 0.2.1
+- Android `/proc` reads are asynchronous, so a snapshot no longer blocks the calling isolate.
+
 ## 0.2.0
 - **Breaking:** remove the `FlutterGemmaDiagnostics` alias; `dart fix --apply` still migrates.
 

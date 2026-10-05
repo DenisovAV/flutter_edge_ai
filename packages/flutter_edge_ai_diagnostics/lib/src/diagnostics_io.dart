@@ -16,8 +16,9 @@ abstract final class FlutterEdgeAiDiagnostics {
   /// enforce them. Throws `MemoryReadException` when the OS read itself
   /// fails; a null field is reserved for a value that does not exist here.
   ///
-  /// Asynchronous so later fields that need a platform call can be added
-  /// without changing the signature.
+  /// On Android the `/proc` files are read asynchronously, so calling this from
+  /// the UI isolate does not block it. iOS reads are Mach calls that take
+  /// microseconds.
   static Future<MemorySnapshot> memorySnapshot() async {
     if (Platform.isAndroid) return readProcMemorySnapshot();
     if (Platform.isIOS) return readMachMemorySnapshot();

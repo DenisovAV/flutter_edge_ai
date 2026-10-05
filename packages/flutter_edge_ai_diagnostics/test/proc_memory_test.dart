@@ -85,12 +85,12 @@ void main() {
     setUp(() => dir = Directory.systemTemp.createTempSync('diag_proc_'));
     tearDown(() => dir.deleteSync(recursive: true));
 
-    test('reads both files', () {
+    test('reads both files', () async {
       final rollup = File('${dir.path}/smaps_rollup')
         ..writeAsStringSync(_smapsRollup);
       final meminfo = File('${dir.path}/meminfo')..writeAsStringSync(_meminfo);
 
-      final snapshot = readProcMemorySnapshot(
+      final snapshot = await readProcMemorySnapshot(
         smapsRollupPath: rollup.path,
         meminfoPath: meminfo.path,
       );
@@ -102,19 +102,22 @@ void main() {
     File meminfoFixture() =>
         File('${dir.path}/meminfo')..writeAsStringSync(_meminfo);
 
-    test('an absent smaps_rollup (kernel < 4.14) is the documented null', () {
-      final snapshot = readProcMemorySnapshot(
-        smapsRollupPath: '${dir.path}/absent_rollup',
-        meminfoPath: meminfoFixture().path,
-      );
+    test(
+      'an absent smaps_rollup (kernel < 4.14) is the documented null',
+      () async {
+        final snapshot = await readProcMemorySnapshot(
+          smapsRollupPath: '${dir.path}/absent_rollup',
+          meminfoPath: meminfoFixture().path,
+        );
 
-      expect(snapshot.anonymousBytes, isNull);
-      expect(snapshot.availableBytes, 9126572 * 1024);
-    });
+        expect(snapshot.anonymousBytes, isNull);
+        expect(snapshot.availableBytes, 9126572 * 1024);
+      },
+    );
 
-    test('an absent meminfo is a failed read, not a null', () {
-      expect(
-        () => readProcMemorySnapshot(
+    test('an absent meminfo is a failed read, not a null', () async {
+      await expectLater(
+        readProcMemorySnapshot(
           smapsRollupPath: '${dir.path}/absent_rollup',
           meminfoPath: '${dir.path}/absent_meminfo',
         ),
@@ -122,13 +125,13 @@ void main() {
       );
     });
 
-    test('smaps_rollup without its fields is a failed read', () {
+    test('smaps_rollup without its fields is a failed read', () async {
       final rollup = File('${dir.path}/smaps_rollup')
         ..writeAsStringSync(
           _smapsRollup.replaceAll(RegExp(r'SwapPss:.*\n'), ''),
         );
-      expect(
-        () => readProcMemorySnapshot(
+      await expectLater(
+        readProcMemorySnapshot(
           smapsRollupPath: rollup.path,
           meminfoPath: meminfoFixture().path,
         ),
@@ -142,13 +145,13 @@ void main() {
       );
     });
 
-    test('meminfo without MemAvailable is a failed read', () {
+    test('meminfo without MemAvailable is a failed read', () async {
       final meminfo = File('${dir.path}/meminfo')
         ..writeAsStringSync(
           _meminfo.replaceAll(RegExp(r'MemAvailable:.*\n'), ''),
         );
-      expect(
-        () => readProcMemorySnapshot(
+      await expectLater(
+        readProcMemorySnapshot(
           smapsRollupPath: '${dir.path}/absent_rollup',
           meminfoPath: meminfo.path,
         ),
@@ -156,7 +159,7 @@ void main() {
       );
     });
 
-    test('a permission error is a failed read, not a null', () {
+    test('a permission error is a failed read, not a null', () async {
       if (Platform.isWindows) {
         markTestSkipped('chmod has no effect on Windows');
         return;
@@ -172,8 +175,8 @@ void main() {
         // Denied, as intended.
       }
 
-      expect(
-        () => readProcMemorySnapshot(
+      await expectLater(
+        readProcMemorySnapshot(
           smapsRollupPath: rollup.path,
           meminfoPath: meminfoFixture().path,
         ),
@@ -194,30 +197,29 @@ void main() {
   final hasProc =
       Platform.isLinux && File('/proc/self/smaps_rollup').existsSync();
 
-  group(
-    'real /proc on this Linux host',
-    () {
-      test('both values are present and positive', () {
-        final snapshot = readProcMemorySnapshot();
-        expect(snapshot.anonymousBytes, isNotNull);
-        expect(snapshot.anonymousBytes, greaterThan(0));
-        expect(snapshot.availableBytes, isNotNull);
-        expect(snapshot.availableBytes, greaterThan(0));
-      });
+  group('real /proc on this Linux host', () {
+    test('both values are present and positive', () async {
+      final snapshot = await readProcMemorySnapshot();
+      expect(snapshot.anonymousBytes, isNotNull);
+      expect(snapshot.anonymousBytes, greaterThan(0));
+      expect(snapshot.availableBytes, isNotNull);
+      expect(snapshot.availableBytes, greaterThan(0));
+    });
 
-      test('anonymousBytes rises by what the process actually allocates', () {
+    test(
+      'anonymousBytes rises by what the process actually allocates',
+      () async {
         const size = 128 * 1024 * 1024;
-        final before = readProcMemorySnapshot().anonymousBytes!;
+        final before = (await readProcMemorySnapshot()).anonymousBytes!;
 
         // Zeroed pages are not resident until written, so touch every one.
         final block = Uint8List(size)..fillRange(0, size, 1);
-        final after = readProcMemorySnapshot().anonymousBytes!;
+        final after = (await readProcMemorySnapshot()).anonymousBytes!;
 
         // Keep `block` reachable until after the second read.
         expect(block[size - 1], 1);
         expect(after - before, greaterThanOrEqualTo(size * 3 ~/ 4));
-      });
-    },
-    skip: hasProc ? false : 'needs a Linux /proc/self/smaps_rollup',
-  );
+      },
+    );
+  }, skip: hasProc ? false : 'needs a Linux /proc/self/smaps_rollup');
 }

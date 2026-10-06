@@ -293,4 +293,14 @@ void main() {
     final firstText = events.indexWhere((e) => e is TextDelta);
     expect(presentedAt, lessThan(firstText));
   });
+
+  test('leaked tool-call JSON is stripped from narration', () {
+    const leaked =
+        'What is your budget? {"role":"assistant","tool_calls":[{"type":"function","function":'
+        '{"name":"update_profile","arguments":{"shopping_mode":"practical"}}}]}What is your '
+        'approximate budget?';
+    expect(stripLeakedToolCalls(leaked), 'What is your budget? What is your approximate budget?');
+    expect(stripLeakedToolCalls('Plain {"price": 5} text'), 'Plain {"price": 5} text');
+    expect(stripLeakedToolCalls('a <tool_call>x</tool_call> b'), 'a x b');
+  });
 }

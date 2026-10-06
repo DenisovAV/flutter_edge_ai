@@ -205,7 +205,7 @@ class TurnPipeline {
       }
     }
 
-    var narration = await _generate(out, userText, onToolCall);
+    var narration = stripLeakedToolCalls(await _generate(out, userText, onToolCall));
 
     var report = guard.check(
       narration: narration,
@@ -217,7 +217,7 @@ class TurnPipeline {
           'Your last reply contained numbers that did not come from a tool result: '
           '${report.unmatched.map((m) => m.raw).join(', ')}. Restate it using only numbers from '
           'the tool results, or no numbers at all. Do not call tools again.';
-      narration = await _generate(out, correction, onToolCall, silent: true);
+      narration = stripLeakedToolCalls(await _generate(out, correction, onToolCall, silent: true));
       report = guard.check(
         narration: narration,
         sources: [...turnResults.map((r) => r.result), ...userInputs],
@@ -264,4 +264,37 @@ class TurnPipeline {
     final names = turnResults.map((r) => r.tool.replaceAll('_', ' ')).toSet().join(', ');
     return 'Here are the results of $names. The numbers are on the card.';
   }
+}
+
+/// Small models sometimes write a tool call as text after they have started a
+/// prose reply (seen with Gemma 4: an OpenAI-style `{"role":"assistant",
+/// "tool_calls":[...]}` object in the middle of a sentence). The SDK may still
+/// parse and run it; the text must not reach the person.
+String stripLeakedToolCalls(String text) {
+  var out = text;
+  // Balanced-brace scan for JSON objects that mention tool_calls / function.
+  var i = out.indexOf('{');
+  while (i >= 0) {
+    var depth = 0;
+    var j = i;
+    for (; j < out.length; j++) {
+      if (out[j] == '{') depth++;
+      if (out[j] == '}') {
+        depth--;
+        if (depth == 0) break;
+      }
+    }
+    if (j >= out.length) break;
+    final candidate = out.substring(i, j + 1);
+    if (candidate.contains('tool_calls') ||
+        candidate.contains('"function"') ||
+        candidate.contains('"name"')) {
+      out = out.replaceRange(i, j + 1, ' ');
+      i = out.indexOf('{', i);
+    } else {
+      i = out.indexOf('{', j + 1);
+    }
+  }
+  out = out.replaceAll(RegExp(r'<\/?tool_call>|<\/?function_call>|```(?:json|tool_code)?'), ' ');
+  return out.replaceAll(RegExp(r'[ \t]{2,}'), ' ').trim();
 }

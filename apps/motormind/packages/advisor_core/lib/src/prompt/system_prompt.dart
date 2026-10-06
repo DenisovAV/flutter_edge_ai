@@ -62,8 +62,8 @@ class SystemPromptBuilder {
       ..writeln()
       ..writeln('# Replying')
       ..writeln(
-        'Start every reply with one short sentence the person can read right away, then call '
-        'tools. Keep replies under 80 words. Plain text, no Markdown.',
+        'If a tool is needed, call it first; the card appears for the person while you work. '
+        'Then reply in under 80 words. Plain text, no Markdown.',
       )
       ..writeln()
       ..writeln('# Screen')

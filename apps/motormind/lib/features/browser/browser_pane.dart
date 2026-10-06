@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../search/search_strip.dart';
 import 'browser_service.dart';
 
 /// The web pane on the stage: a curated-site chip row, a slim address line and
@@ -46,6 +47,7 @@ class _BrowserPaneState extends ConsumerState<BrowserPane> {
     return Column(
       key: const Key('browser-pane'),
       children: [
+        const SearchStrip(),
         SizedBox(
           height: 40,
           child: ListView(

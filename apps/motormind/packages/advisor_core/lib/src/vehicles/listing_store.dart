@@ -1,4 +1,5 @@
 import 'listing.dart';
+import 'search_query.dart';
 
 /// Listings read during this session (Q45: session scope; saving across
 /// conversations is a separate, explicit action). `find_vehicles` searches
@@ -21,6 +22,22 @@ class ListingStore {
   }
 
   void clear() => _all.clear();
+
+  /// Search with the live query; listings carry no body style yet, so that
+  /// filter is applied by the site, not here.
+  List<VehicleListing> searchQuery(SearchQuery q, {int limit = 8}) {
+    final results = _all.where((l) {
+      if (q.maxPrice != null && (l.price == null || l.price! > q.maxPrice!)) return false;
+      if (q.minPrice != null && (l.price == null || l.price! < q.minPrice!)) return false;
+      if (q.maxMileage != null && l.mileage != null && l.mileage! > q.maxMileage!) return false;
+      if (q.minYear != null && l.year != null && l.year! < q.minYear!) return false;
+      final hay = l.title.toLowerCase();
+      if (q.make != null && !hay.contains(q.make!.toLowerCase())) return false;
+      if (q.model != null && !hay.contains(q.model!.toLowerCase())) return false;
+      return true;
+    }).toList()..sort((a, b) => (a.price ?? double.infinity).compareTo(b.price ?? double.infinity));
+    return results.take(limit).toList();
+  }
 
   List<VehicleListing> search({
     double? maxPrice,

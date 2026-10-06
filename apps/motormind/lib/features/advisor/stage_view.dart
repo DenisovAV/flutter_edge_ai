@@ -145,20 +145,11 @@ ShownComponent? starterFor(ShoppingMode mode) {
         ],
       },
     },
-    ShoppingMode.browsing || ShoppingMode.dreaming => {
-      'component': 'choice',
-      'props': {
-        'question': 'What kind of vehicle are we talking about?',
-        'options': [
-          {'id': 'kind-suv', 'label': 'SUV'},
-          {'id': 'kind-car', 'label': 'Sedan or hatchback'},
-          {'id': 'kind-pickup', 'label': 'Pickup'},
-          {'id': 'kind-van', 'label': 'Van or minivan'},
-          {'id': 'kind-unsure', 'label': 'Not sure yet'},
-        ],
-      },
-    },
+    // Browsing and dreaming: the live search strip over the web pane is the
+    // starter; nothing to ask first.
+    ShoppingMode.browsing || ShoppingMode.dreaming => null,
   };
+  if (args == null) return null;
   final v = PresentRequest.validate(args, resultTool: null);
   return v.request == null ? null : ShownComponent(request: v.request!);
 }

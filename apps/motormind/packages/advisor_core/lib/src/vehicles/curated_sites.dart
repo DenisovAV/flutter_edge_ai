@@ -1,3 +1,5 @@
+import 'search_query.dart';
+
 /// Sites the project tests page reading against (Q10, Q31). Each knows how
 /// to build a search URL from the advisor's query, so `find_vehicles` can open
 /// a results page when nothing has been read yet. User-initiated, one page at
@@ -17,6 +19,22 @@ class CuratedSite {
   /// Builds a results URL. [maxPrice] in dollars; [bodyStyle] one of
   /// car/suv/pickup/van; [keywords] free text.
   final String Function({double? maxPrice, String? bodyStyle, String? keywords}) search;
+
+  /// Results URL for a live [SearchQuery]. Make/model ride in the keyword
+  /// slot; sites that ignore a parameter still list inventory, and the app
+  /// filters what it reads.
+  String urlFor(SearchQuery q) => search(
+    maxPrice: q.maxPrice,
+    bodyStyle: q.bodyStyle,
+    keywords:
+        [
+          q.make,
+          q.model,
+          q.keywords,
+        ].whereType<String>().where((s) => s.isNotEmpty).join(' ').trim().isEmpty
+        ? null
+        : [q.make, q.model, q.keywords].whereType<String>().where((s) => s.isNotEmpty).join(' '),
+  );
 }
 
 String _q(String s) => Uri.encodeQueryComponent(s);
@@ -71,17 +89,25 @@ abstract final class CuratedSites {
 
   static String _body(String b) => switch (b.toLowerCase()) {
     'suv' => 'SUV',
-    'car' => 'Sedan',
+    'car' || 'sedan' => 'Sedan',
+    'coupe' => 'Coupe',
+    'convertible' => 'Convertible',
+    'hatchback' => 'Hatchback',
     'pickup' => 'Truck',
     'van' => 'Van',
+    'wagon' => 'Wagon',
     _ => b,
   };
 
   static String _atStyle(String b) => switch (b.toLowerCase()) {
     'suv' => 'SUVCROSS',
-    'car' => 'SEDAN',
+    'car' || 'sedan' => 'SEDAN',
+    'coupe' => 'COUPE',
+    'convertible' => 'CONVERT',
+    'hatchback' => 'HATCH',
     'pickup' => 'TRUCKS',
     'van' => 'VANS',
+    'wagon' => 'WAGON',
     _ => b,
   };
 }

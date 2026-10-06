@@ -349,8 +349,8 @@ InlineChoice? extractInlineChoice(String text) {
   }
   final after = lines.sublist(end + 1);
   final beforeText = before.join('\n').trim();
-  final q = RegExp(r'([^.!?\n]*\?)\s*$').firstMatch(beforeText);
-  final question = q?.group(1)?.trim() ?? 'Which matters most?';
+  final qs = RegExp(r'([^.!?\n]*\?)').allMatches(beforeText).toList();
+  final question = qs.isEmpty ? 'Which of these?' : qs.last.group(1)!.trim();
   final remainder = [
     beforeText,
     after.join('\n'),

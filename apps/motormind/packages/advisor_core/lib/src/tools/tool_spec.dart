@@ -27,6 +27,20 @@ class ToolSpec {
 }
 
 const _bands = ['excellent', 'good', 'fair', 'poor', 'rebuilding'];
+
+abstract final class SearchQueryBodyStyles {
+  static const values = [
+    'suv',
+    'sedan',
+    'coupe',
+    'convertible',
+    'hatchback',
+    'pickup',
+    'van',
+    'wagon',
+  ];
+}
+
 const _classes = ['car', 'suv', 'pickup', 'van'];
 
 Map<String, Object?> _num([String? d]) => {'type': 'number', 'description': ?d};
@@ -53,6 +67,7 @@ abstract final class AdvisorTools {
   static const String assessAffordability = 'assess_affordability';
   static const String ownershipCost = 'ownership_cost';
   static const String updateProfile = 'update_profile';
+  static const String updateSearch = 'update_search';
   static const String findVehicles = 'find_vehicles';
   static const String readPage = 'read_page';
   static const String present = 'present';
@@ -177,6 +192,25 @@ abstract final class AdvisorTools {
           'browsing=just looking, dreaming=for fun, practical, buying=buying now',
           ['browsing', 'dreaming', 'practical', 'buying'],
         ),
+      }),
+    ),
+    ToolSpec(
+      name: updateSearch,
+      changesUi: true,
+      description:
+          'Set or change the vehicle search filters from what the user said; the listing site '
+          'updates on screen at once. Call it instead of asking what kind of vehicle when they '
+          'already implied it: "sports car" is body_style coupe, "dream car" means no max_price, '
+          '"something for the family" is suv or van. Pass only the fields that change; "any" clears one.',
+      parameters: _obj({
+        'body_style': _str(null, [...SearchQueryBodyStyles.values, 'any']),
+        'max_price': _num('dollars'),
+        'min_price': _num('dollars'),
+        'make': _str(),
+        'model': _str(),
+        'max_mileage': _int(),
+        'min_year': _int(),
+        'keywords': _str('free text the site should search for'),
       }),
     ),
     ToolSpec(

@@ -115,7 +115,7 @@ void main() {
           ],
         },
       }, resultTool: null);
-      expect(bad.errors.single, contains('2 to 6'));
+      expect(bad.errors.single, contains('at least 2'));
     });
 
     test('input_form validates field types', () {

@@ -332,5 +332,9 @@ void main() {
     final c = extractInlineChoice('Pick one:\n1. fuel economy\n2. cargo space\nThanks.');
     expect(c!.options.length, 2);
     expect(c.remainder, 'Pick one:\nThanks.');
+    final d = extractInlineChoice(
+      'Great! What kind of car? For example:\n* SUV\n* Sports car\nLet me know.',
+    );
+    expect(d!.question, 'What kind of car?');
   });
 }

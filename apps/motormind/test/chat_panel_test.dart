@@ -5,7 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:motormind/app/app.dart';
 import 'package:motormind/app/prefs.dart';
 import 'package:motormind/features/advisor/stage_view.dart';
+import 'package:motormind/features/browser/browser_service.dart';
 import 'package:motormind/features/chat/chat_service.dart';
+import 'package:motormind/features/search/search_service.dart';
+import 'package:motormind/features/search/search_strip.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vehicle_finance/vehicle_finance.dart';
 
@@ -55,6 +58,52 @@ class ScriptedDriver implements ChatDriver {
   Future<void> close() async {}
 }
 
+/// A page reader that returns two listings for any URL, so the live search
+/// can be exercised without a webview.
+Future<PageExtract> fakeReader(String url) async {
+  final now = DateTime(2026, 10, 6);
+  return PageExtract(
+    url: url,
+    title: 'Fake results',
+    text: '',
+    listings: [
+      VehicleListing(
+        id: 'f1',
+        title: '2021 Honda CR-V EX',
+        sourceUrl: url,
+        readAt: now,
+        price: 27995,
+        mileage: 45000,
+        year: 2021,
+        make: 'Honda',
+      ),
+      VehicleListing(
+        id: 'f2',
+        title: '2023 BMW X3',
+        sourceUrl: url,
+        readAt: now,
+        price: 41000,
+        mileage: 20000,
+        year: 2023,
+        make: 'BMW',
+      ),
+    ],
+  );
+}
+
+/// The web pane minus the platform webview: the strip plus a placeholder.
+class SearchStripOnly extends StatelessWidget {
+  const SearchStripOnly({super.key});
+  @override
+  Widget build(BuildContext context) => const Column(
+    key: Key('browser-pane'),
+    children: [
+      SearchStrip(),
+      Expanded(child: SizedBox()),
+    ],
+  );
+}
+
 Future<Widget> _app(ScriptedDriver driver) async {
   SharedPreferences.setMockInitialValues({
     'disclosures.acknowledgedVersion': Disclosures.gateVersion,
@@ -64,7 +113,8 @@ Future<Widget> _app(ScriptedDriver driver) async {
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       turnIdleLimitProvider.overrideWithValue(null),
-      webPaneBuilderProvider.overrideWithValue(() => const SizedBox(key: Key('browser-pane'))),
+      webPaneBuilderProvider.overrideWithValue(() => const SearchStripOnly()),
+      pageReaderProvider.overrideWithValue(fakeReader),
       chatDriverFactoryProvider.overrideWithValue((instruction) async {
         driver.systemInstructions.add(instruction);
         return driver;
@@ -212,5 +262,38 @@ void main() {
       ),
       findsNothing,
     );
+  });
+
+  testWidgets('a price chip applies the search at once and badges Cards with listings', (
+    tester,
+  ) async {
+    final driver = ScriptedDriver();
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(await _app(driver));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('search-strip')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('price-35000')));
+    await tester.pump(const Duration(milliseconds: 600)); // debounce
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('search-strip'))),
+    );
+    expect(container.read(searchProvider).query.maxPrice, 35000);
+    // The fake page had two listings; one is under 35k.
+    expect(container.read(searchProvider).lastCount, 1);
+    expect(container.read(listingStoreProvider).all, hasLength(2));
+    // The web pane stays in view; the Cards tab shows the badge.
+    expect(find.byKey(const Key('browser-pane')), findsOneWidget);
+    expect(find.text('Cards (1)'), findsOneWidget);
+    // Typing a description applies obvious filters without the model.
+    await tester.enterText(find.byKey(const Key('describe-field')), 'a Honda sports car');
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    final q = container.read(searchProvider).query;
+    expect(q.bodyStyle, 'coupe');
+    expect(q.make, 'Honda');
   });
 }

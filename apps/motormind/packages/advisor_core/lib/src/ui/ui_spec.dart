@@ -40,18 +40,20 @@ List<String> _validateOptions(Map<String, Object?> props, {required int min, req
   final question = props['question'];
   if (question is! String || question.trim().isEmpty) errors.add('props.question is required');
   final options = props['options'];
-  if (options is! List || options.length < min || options.length > max) {
-    errors.add('props.options must be a list of $min to $max items');
+  if (options is! List || options.length < min) {
+    errors.add('props.options must be a list of at least $min items');
     return errors;
+  }
+  if (options.length > max) {
+    options.removeRange(max, options.length); // keep the first [max]; do not refuse
   }
   for (final o in options) {
     if (o is! Map || o['id'] is! String || o['label'] is! String) {
       errors.add('each option needs string "id" and "label"');
       break;
     }
-    if ((o['label'] as String).length > 40) {
-      errors.add('option labels must be 40 characters or fewer: "${o['label']}"');
-    }
+    // Long labels are truncated at render time rather than refused: a
+    // refused prompt leaves the person with nothing to tap.
   }
   return errors;
 }

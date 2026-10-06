@@ -30,11 +30,20 @@ class StageNotifier extends Notifier<StageState> {
   @override
   StageState build() => const StageState();
 
-  void show(ShownComponent c) {
+  /// Adds a component at the front. [bringForward] flips to Cards; the live
+  /// search leaves the web page in view and only badges the Cards tab.
+  void show(ShownComponent c, {bool bringForward = true}) {
     final id = c.result?.id;
     final kept = id == null ? state.cards : state.cards.where((s) => s.result?.id != id).toList();
-    state = state.copyWith(mode: StageMode.cards, cards: [c, ...kept], focus: 0);
+    state = state.copyWith(
+      mode: bringForward ? StageMode.cards : state.mode,
+      cards: [c, ...kept],
+      focus: 0,
+    );
   }
+
+  void removeWhere(bool Function(ShownComponent) test) =>
+      state = state.copyWith(cards: state.cards.where((s) => !test(s)).toList(), focus: 0);
 
   void focusCard(int i) => state = state.copyWith(focus: i, mode: StageMode.cards);
 

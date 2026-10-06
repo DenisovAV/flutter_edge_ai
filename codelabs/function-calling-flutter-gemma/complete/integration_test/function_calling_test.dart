@@ -59,7 +59,7 @@ void main() {
       tools: toolbox,
       supportsFunctionCalls: true,
       toolChoice: ToolChoice.auto,
-      isThinking: model.supportsThinking,
+      enableThinking: model.supportsThinking,
       maxOutputTokens: 512,
     );
 

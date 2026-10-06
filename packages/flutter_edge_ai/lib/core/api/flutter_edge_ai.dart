@@ -382,7 +382,7 @@ class FlutterEdgeAi {
   ///   above wins over the matching field here, which in turn wins over the SDK
   ///   default — so `getActiveModel(defaults: r.runtime)` applies the manifest's
   ///   guidance and `getActiveModel()` behaves exactly as before. NOTE: the two
-  ///   session-level fields (`isThinking`, `minOutputTokens`) are NOT applied
+  ///   session-level fields (`thinkingDeclared`, `minOutputTokens`) are NOT applied
   ///   here — forward them to `createSession` yourself.
   ///
   /// Throws:
@@ -462,16 +462,16 @@ class FlutterEdgeAi {
       false,
     );
 
-    // [defaults] also carries two SESSION-level fields (isThinking,
+    // [defaults] also carries two SESSION-level fields (thinkingDeclared,
     // minOutputTokens) that this model-level call cannot apply. Warn (debug
     // builds) so a caller who passes `defaults:` here and forgets to forward
     // them to createSession finds out, instead of a reasoning model silently
     // truncating mid-<think>.
     if (defaults != null &&
-        (defaults.isThinking != null || defaults.minOutputTokens != null)) {
+        (defaults.thinkingDeclared != null || defaults.minOutputTokens != null)) {
       edgeAiLog(
         '[flutter_edge_ai] getActiveModel: manifest defaults carry session-level '
-        'fields (isThinking/minOutputTokens) that getActiveModel does not apply '
+        'fields (thinkingDeclared/minOutputTokens) that getActiveModel does not apply '
         '— forward them to createSession(enableThinking:, maxOutputTokens:).',
       );
     }
@@ -561,7 +561,7 @@ class FlutterEdgeAi {
   /// // keep it >= r.runtime.minOutputTokens); passing the floor AS the cap
   /// // would truncate a reasoning model mid-thought.
   /// final session = await model.createSession(
-  ///   enableThinking: r.runtime.isThinking ?? false,
+  ///   enableThinking: r.runtime.thinkingDeclared ?? false,
   /// );
   /// ```
   ///

@@ -25,6 +25,7 @@ import 'package:flutter_edge_ai/web/web_model_source.dart';
 import 'package:flutter_edge_ai/web/web_image_format.dart';
 
 import 'litert_lm_web.dart';
+import '../thinking_context.dart';
 
 /// Web `.litertlm` inference via the upstream `@litert-lm/core` early-preview
 /// JS API (`@litert-lm/core` 0.17.1 on web through WebGPU/WASM).
@@ -36,12 +37,11 @@ import 'litert_lm_web.dart';
 /// **Limitations (matches upstream early-preview status):**
 /// - Text-in/text-out only — vision/audio are warn-and-ignore (the TS
 ///   EngineSettings doesn't expose Audio/VisionExecutor yet).
-/// - Thinking Mode is NOT verified on web. We pass `extra_context:
-///   {thinking: true}` + `filterChannelContentFromKvCache` (the same wiring
-///   native FFI uses), but `@litert-lm/core`'s TS surface types `extra_context`
-///   as an opaque `Record<string, JsonValue>` and never references a `thinking`
-///   key, so end-to-end thinking on web is unconfirmed. Treat as unsupported
-///   until verified against a real Gemma 4 `.litertlm` web run.
+/// - Thinking reaches the model as `extra_context` with an explicit
+///   `enable_thinking` ([thinkingContext]), the key the chat templates read —
+///   measured on Gemma 4 E2B in Chrome (`web_thinking_test.dart`). The earlier
+///   `{thinking: true}` reached no template, which is why web thinking was
+///   once documented as unsupported.
 /// - LoRA throws [UnsupportedError] (parity with FFI path).
 /// - `stopGeneration()` closes the local stream and calls the upstream
 ///   `conversation.cancel()` to abort the JS-side generation (wrapped in
@@ -400,7 +400,8 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     final prefaceMap = <String, Object>{
       if (prefaceMessages.isNotEmpty) 'messages': prefaceMessages,
       if (toolsForPreface.isNotEmpty) 'tools': toolsForPreface,
-      if (enableThinking) 'extra_context': <String, Object>{'thinking': true},
+      // The key the templates read, sent both ways — see [thinkingContext].
+      'extra_context': thinkingContext(enableThinking),
     };
     final prefaceJs = prefaceMap.isNotEmpty
         ? prefaceMap.jsify() as JSObject

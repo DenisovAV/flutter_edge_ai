@@ -23,11 +23,11 @@ with the on-device model exactly as it would with any cloud provider.
 ```
 dependencies:
   genkit: ^0.16.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.7.0
-  flutter_edge_ai: ^2.0.1
+  genkit_flutter_edge_ai: ^0.7.1
+  flutter_edge_ai: ^2.1.0
   # Add the inference engine(s) you need:
-  flutter_edge_ai_litertlm: ^1.8.8   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.0.9  # .task / .bin models (mobile + web)
+  flutter_edge_ai_litertlm: ^1.9.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.1.0  # .task / .bin models (mobile + web)
   # Optional — for embeddings (needs a backend, e.g. flutter_edge_ai_litertlm above):
   flutter_edge_ai_embeddings: ^2.2.2
 ```

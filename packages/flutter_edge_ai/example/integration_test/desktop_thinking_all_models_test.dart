@@ -79,7 +79,7 @@ void main() {
         try {
           final chat = await model.createChat(
             modelType: config.modelType,
-            isThinking: false,
+            enableThinking: false,
           );
 
           await chat.addQuery(
@@ -134,7 +134,7 @@ void main() {
         try {
           final chat = await model.createChat(
             modelType: config.modelType,
-            isThinking: true,
+            enableThinking: true,
           );
 
           await chat.addQuery(

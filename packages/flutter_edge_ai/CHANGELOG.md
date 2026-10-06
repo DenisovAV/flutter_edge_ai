@@ -1,5 +1,9 @@
-## 2.0.1
-- Add `ModelType.qwen35`; thought-channel reasoning is a `ThinkingResponse` for every type; no ` /no_think` on audio.
+## 2.1.0
+- **Breaking:** `isThinking` is `enableThinking`; `ModelRuntimeDefaults.isThinking` is `thinkingDeclared`.
+- Add `ModelType.qwen35`; thought-channel reasoning is a `ThinkingResponse` for every type; no `/no_think` on audio.
+- Print a one-time note per chat when reasoning was hidden with thinking off.
+- `installTts()` also takes `fromAsset`, `fromFile` and `fromBundled`; `install()` throws on web.
+- Fix `fromAsset` installs on desktop.
 
 ## 2.0.0
 - **Breaking:** RAG APIs and storage contracts move to `flutter_edge_ai_rag`.

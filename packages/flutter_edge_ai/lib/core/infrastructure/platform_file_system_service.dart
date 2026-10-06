@@ -128,14 +128,11 @@ class PlatformFileSystemService implements FileSystemService {
       // Android: Copy from native assets to filesDir (MediaPipe can't read from APK directly)
       final dir = await _getDocumentsDirectory();
       final destPath = path.join(dir.path, resourceName);
-      final destFile = File(destPath);
 
-      // Check if already copied
-      if (await destFile.exists()) {
-        return destPath;
-      }
-
-      // Copy from native assets via platform channel
+      // The native side reuses an existing copy only when it made that copy
+      // from the APK installed now; a file merely being there is not enough
+      // (an app update may have changed the asset, or another source may have
+      // left a file of this name). So always ask it.
       const platform = MethodChannel('flutter_gemma_bundled');
       final result = await platform.invokeMethod<String>('copyAssetToFile', {
         'assetPath': 'models/$resourceName',

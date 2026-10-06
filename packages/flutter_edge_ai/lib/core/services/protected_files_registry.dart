@@ -48,4 +48,8 @@ abstract interface class ProtectedFilesRegistry {
   ///
   /// Returns null if no external path registered
   Future<String?> getExternalPath(String filename);
+
+  /// Removes the external path mapping for [filename], if any. The external
+  /// file itself is not touched.
+  Future<void> unregisterExternalPath(String filename);
 }

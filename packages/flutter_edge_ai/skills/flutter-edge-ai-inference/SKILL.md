@@ -198,17 +198,22 @@ try {
 ## Thinking models
 
 Gemma 4, Qwen3 and DeepSeek R1 can emit reasoning on their supported engines.
-Pass `isThinking: true` to `createChat`. Reasoning arrives as
+Pass `enableThinking: true` to `createChat`. Reasoning arrives as
 `ThinkingResponse` only from `generateChatResponseAsync()`;
-`generateChatResponse()` strips it. On Web, core parses Qwen3's emitted
-`<think>` tags into `ThinkingResponse`. Do not extend that claim to Gemma 4:
-the measured `.litertlm` Web test receives only text even though the engine
-passes `extra_context` and filter config. MediaPipe Web has no thinking API,
-ONNX Web ignores `enableThinking`, and DeepSeek R1 thinks on Android and iOS
-only — it ships as a mobile `.task` build.
+`generateChatResponse()` strips it. On a native `.litertlm`, reasoning that a
+bundle streams on its thought channel arrives as `ThinkingResponse` whatever
+the `modelType`, and `enableThinking: false` sends `enable_thinking: false` to the
+template — a Qwen3 template that reads the flag thinks when it is missing. With
+`ModelType.qwen3`, core also appends ` /no_think` to text turns, the only off
+switch for a bundle whose template ignores the flag; Qwen3.5 and later take
+`ModelType.qwen35` and no suffix. On Web, the `.litertlm` engine sends the
+same `enable_thinking`, and Gemma 4 E2B returns `ThinkingResponse` in Chrome;
+core also parses Qwen3's emitted `<think>` tags there. MediaPipe Web has no
+thinking API, ONNX Web ignores `enableThinking`, and DeepSeek R1 thinks on
+Android and iOS only — it ships as a mobile `.task` build.
 
 ```dart
-final chat = await model.createChat(isThinking: true, modelType: ModelType.qwen3);
+final chat = await model.createChat(enableThinking: true, modelType: ModelType.qwen3);
 final answer = StringBuffer();
 await chat.addQueryChunk(Message(text: question, isUser: true));
 await for (final r in chat.generateChatResponseAsync()) {

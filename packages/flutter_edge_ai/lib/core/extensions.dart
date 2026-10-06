@@ -439,7 +439,7 @@ class ModelThinkingFilter {
   /// Cleans model response from service tags and thinking blocks
   static String cleanResponse(
     String response, {
-    required bool isThinking,
+    required bool enableThinking,
     required ModelType modelType,
     required ModelFileType fileType,
   }) {

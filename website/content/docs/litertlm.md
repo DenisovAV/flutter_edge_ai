@@ -29,7 +29,7 @@ embedding backend — see [Embeddings & RAG](/docs/embeddings-and-rag).
 | Web | ⚠️ early preview via `@litert-lm/core` (text-only) |
 
 > **Web is a text-only preview.** It runs through `@litert-lm/core` (WebGPU/WASM)
-> and supports function calling, but **not** vision, audio, Gemma 4's thinking channel or LoRA. Qwen3's emitted `<think>` tags are parsed by core on Web. Native platforms have the full feature set. On web you also need the JS
+> and supports function calling and thinking, but **not** vision, audio or LoRA. Qwen3's emitted `<think>` tags are parsed by core on Web. Native platforms have the full feature set. On web you also need the JS
 > handshake in `web/index.html` (see [Web setup](#web-setup)).
 
 ## Setup

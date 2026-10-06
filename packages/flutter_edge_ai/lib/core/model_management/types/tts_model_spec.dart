@@ -24,7 +24,7 @@ const _qwen3TableFiles = [
 /// [TtsModelTypeManifest.fetchLocationFor]. Exactly two shapes exist:
 /// a [TtsRelativeSuffix] resolved against the model's install base URL, or a
 /// [TtsAbsoluteUrl] fetched as-is (a cross-repo file, e.g. Inflect's reused
-/// Matcha G2P bundle). `TtsInstallationBuilder`'s joinUrl exhaustively
+/// Matcha G2P bundle). [TtsModelTypeManifest.sourceFor] exhaustively
 /// switches on this, so the two cases can never be confused by string
 /// sniffing.
 sealed class TtsFetchLocation {
@@ -62,6 +62,40 @@ class TtsAbsoluteUrl extends TtsFetchLocation {
 
   @override
   String toString() => 'TtsAbsoluteUrl($url)';
+}
+
+/// Where a whole TTS bundle is installed from — the one base every manifest
+/// file is resolved against by [TtsModelTypeManifest.sourceFor]. Internal: the
+/// public surface is `TtsInstallationBuilder`'s `fromNetwork` / `fromAsset` /
+/// `fromFile` / `fromBundled`.
+sealed class TtsBundleBase {
+  const TtsBundleBase();
+}
+
+/// A URL the bundle is served under, laid out like the model's Hugging Face
+/// repo.
+final class TtsNetworkBase extends TtsBundleBase {
+  final String url;
+  final String? token;
+  const TtsNetworkBase(this.url, {this.token});
+}
+
+/// A Flutter asset directory, laid out like the model's Hugging Face repo.
+final class TtsAssetBase extends TtsBundleBase {
+  final String directory;
+  const TtsAssetBase(this.directory);
+}
+
+/// An absolute directory on disk, laid out like the model's Hugging Face repo.
+final class TtsFileBase extends TtsBundleBase {
+  final String directory;
+  const TtsFileBase(this.directory);
+}
+
+/// Native bundled resources, one per manifest file, named
+/// `<type>__<basename>` (flat: a bundled resource name cannot contain `/`).
+final class TtsBundledBase extends TtsBundleBase {
+  const TtsBundledBase();
 }
 
 /// The filenames a given TTS model needs, installed together as a bundle from
@@ -111,7 +145,7 @@ extension TtsModelTypeManifest on TtsModelType {
     // so it REUSES Matcha's G2P bundle (config.json symbol table, g2p_dict word
     // dictionary, dp_g2p neural OOV fallback + its meta) — those 4 are fetched
     // from the Matcha repo, the 2 tflites from the Inflect repo (per-file
-    // sourceFor in the installer).
+    // [TtsModelTypeManifest.sourceFor]).
     TtsModelType.inflect => const [
       'inflect_text_encoder_fp16.tflite',
       'inflect_decoder_fp16.tflite',
@@ -127,7 +161,7 @@ extension TtsModelTypeManifest on TtsModelType {
   };
 
   /// Where a bundle member is fetched from, resolved by
-  /// [TtsInstallationBuilder]'s joinUrl. USUALLY a [TtsRelativeSuffix]
+  /// [sourceFor]. USUALLY a [TtsRelativeSuffix]
   /// against the model's `resolve/main/` base ([plainFilename] itself, or a
   /// `tables/`/`voices/` subdir for [TtsModelType.qwen3]'s
   /// embedding-table/demo-voice members). For [TtsModelType.inflect] the 4
@@ -166,6 +200,42 @@ extension TtsModelTypeManifest on TtsModelType {
       return TtsRelativeSuffix('voices/$plainFilename');
     }
     return TtsRelativeSuffix(plainFilename);
+  }
+
+  /// The source [plainFilename] is installed from when the bundle comes from
+  /// [base].
+  ///
+  /// Network, asset and file bases share the Hugging Face repo layout, so a
+  /// downloaded copy of the repo works as-is: a relative member (including
+  /// qwen3's `tables/` and `voices/`) is joined onto the base. A member the
+  /// network install fetches from another repo (Inflect's Matcha G2P files) is
+  /// expected directly under a local directory, next to the model's own files.
+  /// A bundled resource is flat and carries the type prefix
+  /// (`matcha__config.json`), which [TtsBundleFile.fromSource] strips back to
+  /// the plain name.
+  ModelSource sourceFor(String plainFilename, TtsBundleBase base) {
+    final location = fetchLocationFor(plainFilename);
+    final relative = switch (location) {
+      TtsAbsoluteUrl() => plainFilename,
+      TtsRelativeSuffix(:final suffix) => suffix,
+    };
+    String under(String dir) => dir.endsWith('/') || dir.endsWith(r'\')
+        ? '$dir$relative'
+        : '$dir/$relative';
+    return switch (base) {
+      TtsNetworkBase(:final url, :final token) => ModelSource.network(
+        switch (location) {
+          TtsAbsoluteUrl(url: final absolute) => absolute,
+          TtsRelativeSuffix() => under(url),
+        },
+        authToken: token,
+      ),
+      TtsAssetBase(:final directory) => ModelSource.asset(under(directory)),
+      TtsFileBase(:final directory) => ModelSource.file(under(directory)),
+      TtsBundledBase() => ModelSource.bundled(
+        FileNameUtils.namespaced(name, plainFilename),
+      ),
+    };
   }
 }
 

@@ -14,14 +14,19 @@ answer.
 
 - **Gemma 4** (E2B, E4B) — `ModelType.gemma4`
 - **DeepSeek R1** — `ModelType.deepSeek`
-- **Qwen3 0.6B** — `ModelType.qwen3`; thinks by default. With `isThinking: false`
+- **Qwen3 0.6B** — `ModelType.qwen3`; thinks by default. With `enableThinking: false`
   flutter_edge_ai sends `enable_thinking: false` and appends ` /no_think` to each
   text message — the only off switch for a bundle whose template ignores the flag.
 - **Any bundle with a thought channel** (e.g. Qwen3 4B Thinking 2507) — the
   runtime streams the reasoning on the channel, and it arrives as
   `ThinkingResponse` whatever the `ModelType`.
 
-Enable it with `isThinking: true` and the matching `ModelType`.
+Enable it with `enableThinking: true` and the matching `ModelType`.
+
+Some models always reason — DeepSeek R1, Qwen3 4B Thinking 2507. With
+`enableThinking: false` their reasoning is hidden, not skipped: it still costs
+time and output tokens, and flutter_edge_ai prints a one-time `NOTE` per chat
+when it hides any.
 
 <Warning>
 
@@ -66,15 +71,13 @@ final thinkingMessage = Message.thinking(text: "Let me analyze this problem...")
 | Android | ✅ Full with `.litertlm`; tag-based models only with `.task` |
 | iOS | ✅ Full with `.litertlm`; tag-based models only with `.task` |
 | Desktop (macOS/Windows/Linux) | ✅ Full |
-| Web | ⚠️ Qwen3 tag-based reasoning only |
+| Web | ✅ Full with `.litertlm` (Gemma 4 measured in Chrome); not on MediaPipe |
 
 <Warning>
 
-On Web, core can split Qwen3's emitted <code>&lt;think&gt;...&lt;/think&gt;</code> tags into
-<code>ThinkingResponse</code> because that parser is platform-independent. Gemma 4 is a
-different path: the <code>.litertlm</code> engine passes <code>extra_context</code> and filter config,
-but the measured <code>web_thinking_limitation_test.dart</code> still receives only
-<code>TextResponse</code>, so its thinking channel is unsupported. MediaPipe Web has no
+On Web, the <code>.litertlm</code> engine sends the same <code>enable_thinking</code> as native, and
+Gemma 4 E2B returns <code>ThinkingResponse</code> in Chrome; core also splits Qwen3's emitted
+<code>&lt;think&gt;...&lt;/think&gt;</code> tags there. MediaPipe Web has no
 thinking API, ONNX ignores <code>enableThinking</code> (on Web and native alike, though
 core still parses <code>&lt;think&gt;</code> tags a model emits), and the catalog's DeepSeek R1
 <code>.task</code> model has no Web entry.
@@ -93,12 +96,12 @@ import 'package:flutter_edge_ai/core/extensions.dart';
 
 String cleanedResponse = ModelThinkingFilter.cleanResponse(
   rawResponse,
-  isThinking: true,
+  enableThinking: true,
   modelType: ModelType.deepSeek,
   fileType: ModelFileType.task,
 );
 
-// It removes the reasoning blocks (even when isThinking is false):
+// It removes the reasoning blocks (even when enableThinking is false):
 // - <|channel>thought\n...<channel|> (a thought channel, every model type)
 // - <think>...</think> (DeepSeek and the Qwen types); for DeepSeek, which
 //   starts inside its reasoning, everything up to the first </think>

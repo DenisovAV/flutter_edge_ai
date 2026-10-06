@@ -80,6 +80,15 @@ class SharedPreferencesProtectedRegistry implements ProtectedFilesRegistry {
     return paths[filename];
   }
 
+  @override
+  Future<void> unregisterExternalPath(String filename) async {
+    final prefs = await _prefsProvider();
+    final paths = await _getExternalPaths(prefs);
+    if (paths.remove(filename) != null) {
+      await _saveExternalPaths(prefs, paths);
+    }
+  }
+
   /// Gets set of protected filenames
   Future<Set<String>> _getProtectedFiles(SharedPreferences prefs) async {
     final json = prefs.getString(_protectedKey);

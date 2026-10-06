@@ -30,6 +30,12 @@ class AssetSourceHandler implements SourceHandler {
   @override
   bool supports(ModelSource source) => source is AssetSource;
 
+  /// Whether the streamed large_file_handler copy lands where models are read.
+  bool get _streamsIntoModelDirectory => switch (assetLoader) {
+    final FlutterAssetLoader loader => loader.copiesIntoModelDirectory,
+    _ => false,
+  };
+
   @override
   Future<void> install(
     ModelSource source, {
@@ -47,15 +53,18 @@ class AssetSourceHandler implements SourceHandler {
 
     // LargeFileHandler's `targetName` parameter is *just* a filename — the
     // plugin prepends app docs dir itself. We keep the bare filename here.
-    // On platforms where large_file_handler doesn't ship a plugin (desktop:
-    // macOS/Windows/Linux, web stub) the channel call throws
-    // MissingPluginException — fall back to in-memory loadAsset → writeFile.
+    // Only Android and iOS store models in that same Documents directory; a
+    // desktop build keeps them in app support (see getWriteTargetPath), so
+    // the streamed copy would land where nothing reads it (see
+    // FlutterAssetLoader.copiesIntoModelDirectory). Desktop, and any platform
+    // without the plugin (MissingPluginException), load the asset into memory
+    // and write it to targetPath instead.
     //
     // Lookup keys differ between paths:
     // - `pathForLookupKey` (no `assets/` prefix) for the native channel call
     // - `normalizedPath` (with `assets/` prefix) for the Flutter rootBundle
     //   fallback (#250 Mode 2)
-    if (assetLoader is FlutterAssetLoader) {
+    if (_streamsIntoModelDirectory) {
       try {
         await (assetLoader as FlutterAssetLoader).copyAssetToFile(
           source.pathForLookupKey,
@@ -100,7 +109,7 @@ class AssetSourceHandler implements SourceHandler {
     // ignore: deprecated_member_use_from_same_package
     final targetPath = await fileSystem.getWriteTargetPath(filename);
 
-    if (assetLoader is FlutterAssetLoader) {
+    if (_streamsIntoModelDirectory) {
       try {
         await for (final progress
             in (assetLoader as FlutterAssetLoader).copyAssetToFileWithProgress(

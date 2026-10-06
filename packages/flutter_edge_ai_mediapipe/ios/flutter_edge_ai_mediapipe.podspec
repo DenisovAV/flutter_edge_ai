@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_edge_ai_mediapipe'
-  s.version          = '1.0.9'
+  s.version          = '1.1.0'
   s.summary          = 'MediaPipe GenAI (.task) inference backend for flutter_edge_ai on iOS.'
   s.description      = <<-DESC
 MediaPipe GenAI (`.task`) inference backend for the flutter_edge_ai plugin.

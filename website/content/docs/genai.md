@@ -91,11 +91,11 @@ audio part per message.
 
 ## Thinking
 
-Create the chat with `isThinking: true`. The model turn comes back with its
+Create the chat with `enableThinking: true`. The model turn comes back with its
 reasoning in a `ThinkingPart` alongside the answer's `TextPart`:
 
 ```dart
-final chat = await model.createChat(isThinking: true);
+final chat = await model.createChat(enableThinking: true);
 
 final reply = await chat.sendMessage(
   ChatMessage.user('Why is the sky blue?'),

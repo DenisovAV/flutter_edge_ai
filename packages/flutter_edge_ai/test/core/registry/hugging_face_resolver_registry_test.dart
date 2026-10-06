@@ -127,7 +127,7 @@ void main() {
         sizeBytes: 123,
         runtime: ModelRuntimeDefaults(
           maxTokens: 4096,
-          isThinking: true,
+          thinkingDeclared: true,
           minOutputTokens: 2048,
         ),
       );
@@ -135,7 +135,7 @@ void main() {
       expect(r.fileType, ModelFileType.litertlm);
       expect(r.modelType, ModelType.qwen3);
       expect(r.runtime.maxTokens, 4096);
-      expect(r.runtime.isThinking, true);
+      expect(r.runtime.thinkingDeclared, true);
       expect(r.runtime.minOutputTokens, 2048);
       // A field the manifest was silent on stays null → falls back to the SDK
       // default at the call site.

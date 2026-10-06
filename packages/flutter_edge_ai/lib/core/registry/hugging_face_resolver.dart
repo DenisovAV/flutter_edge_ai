@@ -31,10 +31,10 @@ class ModelRuntimeDefaults {
   /// Declared audio capability (`capabilities.audio`).
   final bool? supportAudio;
 
-  /// Whether the model emits a thinking channel
-  /// (`capabilities.thinking.declared`). Apply as `createSession`'s
-  /// `enableThinking`.
-  final bool? isThinking;
+  /// Whether the manifest declares a thinking channel
+  /// (`capabilities.thinking.declared`): what the bundle carries, not a
+  /// request. A hint for `createChat`'s / `createSession`'s `enableThinking`.
+  final bool? thinkingDeclared;
 
   /// The **minimum** output-token budget the model needs
   /// (`session_defaults.max_output_tokens_min`) — e.g. a reasoning model is cut
@@ -49,7 +49,7 @@ class ModelRuntimeDefaults {
     this.preferredBackend,
     this.supportImage,
     this.supportAudio,
-    this.isThinking,
+    this.thinkingDeclared,
     this.minOutputTokens,
   });
 }

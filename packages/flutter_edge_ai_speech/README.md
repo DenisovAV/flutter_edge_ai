@@ -55,6 +55,12 @@ print(synth.sampleRate); // 22050
 await synth.close();
 ```
 
+A voice can also ship with the app: `fromAsset(directory)` and
+`fromFile(directory)` take a directory laid out like the Hugging Face repo, and
+`fromBundled()` takes native resources named `<type>__<file>`
+(`matcha__config.json`). See
+[Voice files shipped with the app](https://flutteredge.ai/docs/speech).
+
 ### Speech-to-text output language (Whisper)
 
 Whisper's shipped checkpoints are multilingual. The output language is one token

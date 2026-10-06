@@ -109,7 +109,7 @@ void main() {
             temperature: model.temperature,
             topK: model.topK,
             topP: model.topP,
-            isThinking: true,
+            enableThinking: true,
             modelType: model.modelType,
           );
 
@@ -190,7 +190,7 @@ void main() {
             temperature: model.temperature,
             topK: model.topK,
             topP: model.topP,
-            isThinking: false,
+            enableThinking: false,
             modelType: model.modelType,
           );
 

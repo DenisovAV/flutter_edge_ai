@@ -34,8 +34,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.0.1
-  flutter_edge_ai_speech: ^0.5.3
+  flutter_edge_ai: ^2.1.0
+  flutter_edge_ai_speech: ^0.5.4
 ```
 
 ## Register the backend
@@ -203,6 +203,48 @@ final synth = await FlutterEdgeAi.getActiveTts();
 final pcm = await synth.synthesize('Hello there!'); // Uint8List, 16-bit PCM @ 24 kHz
 await synth.close();
 ```
+
+### Voice files shipped with the app
+
+`fromNetwork` is one of four sources for the same bundle. The other three take
+it from the app or the device, and a voice installed from any of them is active
+again after a restart:
+
+| Source | Where the files are | Copied into app storage | Platforms |
+|---|---|---|---|
+| `fromAsset('assets/tts/matcha/')` | Flutter assets | yes | Android, iOS, desktop |
+| `fromFile('/path/to/matcha')` | a directory on disk | no, used in place | Android, iOS, desktop |
+| `fromBundled()` | native resources | once on Android, not on iOS | Android, iOS |
+
+```dart
+// pubspec.yaml lists the directory: flutter: assets: [assets/tts/matcha/]
+await FlutterEdgeAi.installTts()
+    .fromAsset('assets/tts/matcha/')
+    .ofType(TtsModelType.matcha)
+    .install();
+```
+
+- **Layout.** An asset or file directory mirrors the Hugging Face repo: Qwen3's
+  tables stay in `tables/` and its demo voice in `voices/`, and Inflect's four
+  Matcha G2P files sit next to its own two. Flutter does not include asset
+  subdirectories recursively, so list each one in `pubspec.yaml`.
+- **Bundled names.** Each resource is the file name prefixed with the type —
+  `matcha__config.json`, `qwen3__tokenizer.json` — in
+  `android/app/src/main/assets/models/` on Android and in the Runner target on
+  iOS.
+- An incomplete bundle fails, naming every missing file, before it replaces the
+  voice you have. If a switch fails partway (a lost connection), the voice stays
+  inactive until `install()` is run again, rather than mixing two bundles.
+- `fromFile` uses your files in place, so `uninstallTts()` deletes them.
+  Installing from another source later leaves them where they are.
+- **App updates.** A bundled voice is current after an update: Android copies
+  it again from the new APK, iOS reads the bundle. An asset install of the same
+  directory is kept as it was, so ship a changed voice in a new asset directory.
+  iOS moves the app's data directory on update, so an app that uses `fromFile`
+  should call `install()` at launch; it only registers the files again.
+- An asset install keeps two copies, one in the app package and one in app
+  storage, so for the 1.9 GB Qwen3 bundle prefer `fromNetwork` or `fromFile`.
+- TTS does not run on web, so `install()` throws `UnsupportedError` there.
 
 ## Voice loop
 

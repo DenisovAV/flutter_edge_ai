@@ -97,7 +97,7 @@ Future<List<int>> _turnLoop(PreferredBackend backend, int turns) async {
         temperature: 0.2,
         topK: 20,
         tokenBuffer: 256,
-        isThinking: false,
+        enableThinking: false,
       );
       var chunks = 0;
       try {

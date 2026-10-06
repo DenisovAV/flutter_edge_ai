@@ -422,7 +422,7 @@ stream, so it collects both:
           pending.addAll(calls);
         case ThinkingResponse():
           // Filtered out upstream unless the chat was opened with
-          // `isThinking: true` — `complete` does exactly that. Here the branch
+          // `enableThinking: true` — `complete` does exactly that. Here the branch
           // exists so the switch stays exhaustive.
           break;
       }
@@ -991,7 +991,7 @@ parameters specialised for one skill, and reasoning is not it. One flag:
 ```dart
         // Reason first, then answer. On weights with no thinking training this
         // buys nothing, which is why the switch is disabled for those.
-        isThinking: _thinking,
+        enableThinking: _thinking,
 ```
 
 With it on, the stream carries a third kind of chunk:
@@ -999,13 +999,13 @@ With it on, the stream carries a third kind of chunk:
 ```dart
           case ThinkingResponse(:final content):
             // These reach the stream only because the chat was opened with
-            // `isThinking: true`; with it false the SDK drops them before this
+            // `enableThinking: true`; with it false the SDK drops them before this
             // loop ever sees one.
             _thought.write(content);
             if (mounted) setState(_paintThinking);
 ```
 
-`isThinking: false` is not a display choice — the SDK filters `ThinkingResponse`
+`enableThinking: false` is not a display choice — the SDK filters `ThinkingResponse`
 out of the stream entirely, so an app that ignores the case sees nothing either
 way. And the reasoning goes *above* the answer, because that is the order it
 happened in:
@@ -1030,7 +1030,7 @@ which is why the session asks for more room when it is on:
 
 ### Both settings belong to the session
 
-Neither `toolChoice` nor `isThinking` can be changed on a live chat. One
+Neither `toolChoice` nor `enableThinking` can be changed on a live chat. One
 travels with the declarations the session was opened with; the other switches
 on a generation channel. Both are settled when the session is created,
 so changing either closes the chat and opens another — and the transcript goes
@@ -1039,7 +1039,7 @@ with it:
 ```dart
   /// Rebuilds the session because a session setting changed.
   ///
-  /// There is no way to change `toolChoice` or `isThinking` on a live chat:
+  /// There is no way to change `toolChoice` or `enableThinking` on a live chat:
   /// both are decided when the session is created — one travels with the
   /// declarations the session is opened with, the other switches on a
   /// generation channel — so the honest thing is to close this one and open

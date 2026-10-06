@@ -165,7 +165,7 @@ Future<ModelResponse> _executeGeneration({
   final randomSeed = config?.randomSeed ?? 1;
   final supportImage = config?.supportImage ?? false;
   final supportAudio = config?.supportAudio ?? false;
-  final isThinking = config?.isThinking ?? false;
+  final enableThinking = config?.enableThinking ?? false;
   final enableSpeculativeDecoding = config?.enableSpeculativeDecoding;
   // Prefer the native top-level request.toolChoice (Genkit 0.15's standard
   // field) over the legacy config.toolChoice custom option. Fails loud on an
@@ -240,7 +240,7 @@ Future<ModelResponse> _executeGeneration({
     supportAudio: supportAudio,
     tools: gemmaTools,
     supportsFunctionCalls: supportsFunctionCalls,
-    isThinking: isThinking,
+    enableThinking: enableThinking,
     modelType: modelType,
     toolChoice: gemmaToolChoice,
     systemInstruction: systemInstruction,

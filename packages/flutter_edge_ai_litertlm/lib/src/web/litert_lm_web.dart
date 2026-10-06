@@ -97,8 +97,9 @@ class LiteRtLmConversationOptions {
 
     /// `Preface` from upstream TS:
     ///   { messages?: Message[], tools?: Tool[], extra_context?: {...} }
-    /// `extra_context` is the same channel native FFI uses to enable
-    /// Gemma 4 thinking mode (`{ "thinking": true }`).
+    /// `extra_context` reaches the chat template as variables, as the native
+    /// FFI's does: thinking goes as `{ "enable_thinking": <bool> }`
+    /// (`thinkingContext`).
     JSObject? preface,
 
     /// `filterChannelContentFromKvCache`: when thinking is enabled this

@@ -76,7 +76,7 @@ class ModelChoice {
 
   /// Can these weights reason out loud before answering?
   ///
-  /// A property of the checkpoint, not of the app: `isThinking: true` on a
+  /// A property of the checkpoint, not of the app: `enableThinking: true` on a
   /// model with no thinking training does not produce reasoning, it produces
   /// an empty channel. FunctionGemma is a 270M model specialised for one
   /// thing, and reasoning is not it.

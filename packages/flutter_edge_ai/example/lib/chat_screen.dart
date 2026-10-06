@@ -204,7 +204,7 @@ class ChatScreenState extends State<ChatScreen> {
         supportAudio: widget.model.supportAudio,
         supportsFunctionCalls: widget.model.supportsFunctionCalls,
         tools: _tools,
-        isThinking: widget.model.isThinking,
+        enableThinking: widget.model.isThinking,
         modelType: widget.model.modelType,
       );
       debugPrint('[ChatScreen] Step 3: Chat created ✅');

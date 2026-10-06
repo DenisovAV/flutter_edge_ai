@@ -91,7 +91,7 @@ void main() {
     test('on non-iOS just trims', () {
       final result = ModelThinkingFilter.cleanResponse(
         '  Hello world  <end_of_turn>  ',
-        isThinking: false,
+        enableThinking: false,
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.litertlm,
       );
@@ -106,7 +106,7 @@ void main() {
 
       final result = ModelThinkingFilter.cleanResponse(
         '  Hello world  <end_of_turn>  ',
-        isThinking: false,
+        enableThinking: false,
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.litertlm,
       );
@@ -117,7 +117,7 @@ void main() {
     test('task fileType just trims', () {
       final result = ModelThinkingFilter.cleanResponse(
         '  Hello world  ',
-        isThinking: false,
+        enableThinking: false,
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.task,
       );
@@ -128,7 +128,7 @@ void main() {
     test('binary fileType with gemmaIt applies model-specific cleaning', () {
       final result = ModelThinkingFilter.cleanResponse(
         'Hello world<end_of_turn>',
-        isThinking: false,
+        enableThinking: false,
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.binary,
       );

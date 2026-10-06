@@ -5,13 +5,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:motormind/app/app.dart';
 import 'package:motormind/app/prefs.dart';
 import 'package:motormind/features/advisor/advisor_surface.dart';
+import 'package:motormind/features/advisor/stage_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<Widget> _app({int? acknowledgedVersion}) async {
   SharedPreferences.setMockInitialValues({'disclosures.acknowledgedVersion': ?acknowledgedVersion});
   final prefs = await SharedPreferences.getInstance();
   return ProviderScope(
-    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(prefs),
+      webPaneBuilderProvider.overrideWithValue(() => const SizedBox(key: Key('browser-pane'))),
+    ],
     child: const MotormindApp(),
   );
 }

@@ -186,6 +186,8 @@ abstract final class ComponentRegistry {
     'assess_affordability' || 'max_affordable_price' => affordabilityGauge,
     'estimate_lease' => leaseVsBuy,
     'ownership_cost' => ownershipCost,
+    'find_vehicles' => vehicleCard,
+    'read_page' => pageExtract,
     _ => null,
   };
 

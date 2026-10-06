@@ -30,7 +30,7 @@ dependencies:
   flutter_secure_storage: ^11.2.0
   firebase_core: ^4.15.0
   firebase_analytics: ^12.6.0
-
+  webview_flutter: ^4.14.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -12,3 +12,7 @@ export 'src/prompt/system_prompt.dart';
 export 'src/tools/finance_tool_handlers.dart';
 export 'src/tools/tool_spec.dart';
 export 'src/ui/ui_spec.dart';
+export 'src/vehicles/curated_sites.dart';
+export 'src/vehicles/listing.dart';
+export 'src/vehicles/listing_extractor.dart';
+export 'src/vehicles/listing_store.dart';

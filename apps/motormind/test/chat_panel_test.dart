@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:motormind/app/app.dart';
 import 'package:motormind/app/prefs.dart';
+import 'package:motormind/features/advisor/stage_view.dart';
 import 'package:motormind/features/chat/chat_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vehicle_finance/vehicle_finance.dart';
@@ -63,6 +64,7 @@ Future<Widget> _app(ScriptedDriver driver) async {
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       turnIdleLimitProvider.overrideWithValue(null),
+      webPaneBuilderProvider.overrideWithValue(() => const SizedBox(key: Key('browser-pane'))),
       chatDriverFactoryProvider.overrideWithValue((instruction) async {
         driver.systemInstructions.add(instruction);
         return driver;
@@ -134,9 +136,9 @@ void main() {
     // scripted driver's stream needs a real event loop, hence runAsync.
     await tester.runAsync(() => container.read(chatServiceProvider.notifier).send('hi'));
     await tester.pumpAndSettle();
-    // The opening mode prompt was retired when 'hi' was sent; the model's choice is live.
-    expect(find.byKey(const Key('card-choice')), findsOneWidget);
-    expect(find.byKey(const Key('choice-escape')), findsOneWidget);
+    // The opening mode prompt stays live (Q60) and the model's choice joins it.
+    expect(find.byKey(const Key('card-choice')), findsNWidgets(2));
+    expect(find.byKey(const Key('choice-buying')), findsOneWidget);
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const Key('choice-buying')));
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -173,7 +175,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(await _app(driver));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('stage-empty')), findsOneWidget);
+    expect(find.byKey(const Key('browser-pane')), findsOneWidget);
     await tester.tap(find.byKey(const Key('surface-bubble')));
     await tester.pumpAndSettle();
     final container = ProviderScope.containerOf(
@@ -186,19 +188,23 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pumpAndSettle();
+    // The starter form is on the stage, and the web pane stepped back.
     expect(find.byKey(const Key('stage')), findsOneWidget);
     expect(find.byKey(const Key('card-input_form')), findsOneWidget);
+    expect(find.byKey(const Key('browser-pane')), findsNothing);
     await tester.runAsync(
       () => container
           .read(chatServiceProvider.notifier)
           .send('I can do 450 a month on a 22000 car with 1000 down'),
     );
     await tester.pumpAndSettle();
+    // The newest card is focused on the stage; the form became a chip.
     final stage = find.byKey(const Key('stage'));
     expect(
       find.descendant(of: stage, matching: find.byKey(const Key('card-payment_summary'))),
       findsOneWidget,
     );
+    expect(find.byKey(const Key('stage-chip-1')), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const Key('chat-list')),

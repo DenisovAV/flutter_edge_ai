@@ -41,7 +41,13 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     final text = _controller.text;
     if (text.trim().isEmpty) return;
     _controller.clear();
-    await ref.read(chatServiceProvider.notifier).send(text);
+    final svc = ref.read(chatServiceProvider.notifier);
+    // A new prompt during a turn restarts with it (Q58): interrupt, then send.
+    if (ref.read(chatServiceProvider).busy) {
+      await svc.interrupt();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    await svc.send(text);
     if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
   }
 
@@ -114,8 +120,14 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: ResultCard(
                             shown: shown,
-                            onChoice: (id, label) =>
-                                ref.read(chatServiceProvider.notifier).choose(id, label),
+                            onChoice: (id, label) {
+                              // A selection sends with whatever was typed (Q60).
+                              final extra = _controller.text;
+                              _controller.clear();
+                              ref
+                                  .read(chatServiceProvider.notifier)
+                                  .choose(id, label, supplement: extra, source: shown);
+                            },
                           ),
                         ),
                       },
@@ -138,11 +150,12 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                                 style: theme.textTheme.labelSmall,
                               ),
                             ),
-                            TextButton.icon(
-                              key: const Key('chat-stop'),
-                              onPressed: () => ref.read(chatServiceProvider.notifier).stop(),
-                              icon: const Icon(Icons.stop_circle_outlined, size: 18),
-                              label: const Text('Stop'),
+                            IconButton(
+                              key: const Key('chat-interrupt'),
+                              tooltip: 'Show what you have so far',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () => ref.read(chatServiceProvider.notifier).interrupt(),
+                              icon: const Icon(Icons.close, size: 18),
                             ),
                           ],
                         ),
@@ -160,7 +173,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                   child: TextField(
                     key: const Key('chat-input'),
                     controller: _controller,
-                    enabled: chat.ready && !chat.busy,
+                    enabled: chat.ready,
                     minLines: 1,
                     maxLines: 4,
                     textInputAction: TextInputAction.send,
@@ -175,7 +188,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                 const SizedBox(width: 8),
                 IconButton.filled(
                   key: const Key('chat-send'),
-                  onPressed: chat.ready && !chat.busy ? _send : null,
+                  onPressed: chat.ready ? _send : null,
                   icon: const Icon(Icons.send),
                 ),
               ],

@@ -44,6 +44,8 @@ class ResultCard extends StatelessWidget {
       'payment_summary' => _PaymentSummaryCard(shown: shown),
       'payment_breakdown' => _PaymentBreakdownCard(shown: shown),
       'trade_equity_card' => _TradeEquityCard(shown: shown),
+      'vehicle_card' => _VehicleCard(shown: shown),
+      'page_extract' => _PageExtractCard(shown: shown),
       _ => _OutputsCard(shown: shown),
     };
   }
@@ -504,6 +506,137 @@ class _FormCardState extends State<_FormCard> {
                 ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VehicleCard extends StatelessWidget {
+  const _VehicleCard({required this.shown});
+  final ShownComponent shown;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final r = shown.result?.result ?? const {};
+    final listings = (r['listings'] as List?)?.cast<Map>() ?? const [];
+    final source = r['source']?.toString();
+    return Card(
+      key: const Key('card-vehicle_card'),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              shown.request.title ?? (listings.isEmpty ? 'No listings yet' : 'Listings'),
+              style: theme.textTheme.titleMedium,
+            ),
+            if (source != null)
+              Text(
+                source,
+                style: theme.textTheme.labelSmall,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            const SizedBox(height: 6),
+            if (listings.isEmpty)
+              Text(
+                '${r['note'] ?? 'Open a listings page and the advisor can read it.'}',
+                style: theme.textTheme.bodySmall,
+              ),
+            for (final l in listings)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.directions_car_outlined),
+                title: Text('${l['title']}'),
+                subtitle: Text(
+                  [
+                    if (l['price'] != null) money(l['price'], cents: false),
+                    if (l['mileage'] != null) '${_thousands(l['mileage'])} mi',
+                  ].join(' · '),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _thousands(Object? v) => v is num
+    ? v.round().toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},')
+    : '';
+
+class _PageExtractCard extends StatelessWidget {
+  const _PageExtractCard({required this.shown});
+  final ShownComponent shown;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final r = shown.result?.result ?? const {};
+    final facts = (r['facts'] as Map?)?.cast<String, Object?>() ?? const {};
+    final listings = (r['listings'] as List?)?.cast<Map>() ?? const [];
+    final text = r['text']?.toString() ?? '';
+    return Card(
+      key: const Key('card-page_extract'),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${r['title'] ?? 'Page'}',
+              style: theme.textTheme.titleMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              '${r['url'] ?? ''}',
+              style: theme.textTheme.labelSmall,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 6),
+            if (facts.isNotEmpty)
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  if (facts['prices'] is List)
+                    for (final p in (facts['prices'] as List).take(3))
+                      Chip(
+                        label: Text(money(p, cents: false)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  if (facts['mileage'] != null)
+                    Chip(
+                      label: Text('${_thousands(facts['mileage'])} mi'),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  if (facts['year'] != null)
+                    Chip(label: Text('${facts['year']}'), visualDensity: VisualDensity.compact),
+                ],
+              ),
+            if (listings.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text('${listings.length} listings read', style: theme.textTheme.labelLarge),
+              for (final l in listings.take(5))
+                Text(
+                  '• ${l['title']}${l['price'] != null ? ' · ${money(l['price'], cents: false)}' : ''}',
+                  style: theme.textTheme.bodySmall,
+                ),
+            ] else if (text.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                text.length > 400 ? '${text.substring(0, 400)}…' : text,
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
           ],
         ),
       ),

@@ -9,6 +9,7 @@ import '../../services/advisor_model_service.dart';
 import '../advisor/advisor_surface.dart';
 import '../advisor/stage.dart';
 import '../advisor/stage_view.dart' show starterFor;
+import '../browser/browser_service.dart';
 import '../models/model_catalog.dart';
 import 'edge_ai_chat_driver.dart';
 
@@ -200,7 +201,7 @@ class ChatService extends Notifier<ChatState> {
       }
       await _driver?.close();
       _driver = driver;
-      _pipeline = TurnPipeline(driver: driver, profile: profile);
+      _pipeline = TurnPipeline(driver: driver, profile: profile, external: _externalTool);
       state = ChatState(ready: true, timeline: [ComponentEntry(_openingPrompt(profile))]);
     } catch (e) {
       state = state.copyWith(busy: false, error: 'Could not start the advisor: $e');
@@ -231,34 +232,19 @@ class ChatService extends Notifier<ChatState> {
     state = state.copyWith(timeline: t);
   }
 
-  /// Marks every unanswered interaction component as answered, so old chips
-  /// stop being live once the conversation moves on.
-  List<TimelineEntry> _retireInteractions(List<TimelineEntry> timeline) => [
-    for (final e in timeline)
-      if (e is ComponentEntry && e.shown.request.component.isInteraction && !e.shown.answered)
-        ComponentEntry(e.shown.copyWith(answered: true))
-      else
-        e,
-  ];
-
   Future<void> send(String text) async {
     final pipeline = _pipeline;
     if (pipeline == null || state.busy || text.trim().isEmpty) return;
     final userMsg = ChatMessage(role: 'user', text: text.trim());
     var reply = const ChatMessage(role: 'advisor', text: '', streaming: true);
     state = state.copyWith(
-      timeline: [
-        ..._retireInteractions(state.timeline),
-        MessageEntry(userMsg),
-        MessageEntry(reply),
-      ],
+      timeline: [...state.timeline, MessageEntry(userMsg), MessageEntry(reply)],
       busy: true,
       clearGuardNote: true,
       clearError: true,
       policyFlags: const [],
       turnStartedAt: DateTime.now(),
     );
-    ref.read(stageProvider.notifier).retireInteractions();
     var replyIndex = state.timeline.length - 1;
     void updateReply(ChatMessage m) {
       reply = m;
@@ -357,36 +343,116 @@ class ChatService extends Notifier<ChatState> {
     }
   }
 
-  /// The person's escape from a long turn (DD-R11).
-  Future<void> stop() async {
+  /// Cancels the generation in flight; whatever was produced so far stays
+  /// (cards, partial text). The person can type a new prompt (Q58).
+  Future<void> interrupt() async {
     await _driver?.cancel();
   }
 
-  /// Answer a choice prompt. Opening-mode choices set the mode locally, put a
-  /// mode-specific starter on the stage immediately, and send a sentence;
-  /// other choices send the label the person tapped.
-  Future<void> choose(String id, String label) async {
+  /// Answer a choice prompt or a form. [supplement] is text the person typed
+  /// alongside the selection (Q60): it is sent with the selection. Opening-mode
+  /// choices set the mode locally and put a starter on the stage before the
+  /// model answers. [source] is the card answered; it is marked answered but
+  /// stays visible.
+  Future<void> choose(String id, String label, {String? supplement, ShownComponent? source}) async {
+    if (source != null) {
+      ref.read(stageProvider.notifier).markAnswered(source);
+      final t = [
+        for (final e in state.timeline)
+          if (e is ComponentEntry && identical(e.shown, source))
+            ComponentEntry(source.copyWith(answered: true))
+          else
+            e,
+      ];
+      state = state.copyWith(timeline: t);
+    }
+    final extra = (supplement ?? '').trim();
+    String withExtra(String text) => extra.isEmpty ? text : '$text $extra';
     final opening = openingChoices[id];
     if (opening != null) {
       final (mode, sentence) = opening;
       _pipeline?.profile = (_pipeline?.profile ?? const BuyerProfile()).applyUpdate({
         'shopping_mode': mode.name,
       });
-      // send() retires open prompts synchronously before its first await, so
-      // the starter goes on the stage after send() has started.
-      final turn = send(sentence);
+      // send() is synchronous up to its first await, so the starter goes on
+      // the stage after send() has started.
+      final turn = send(withExtra(sentence));
       final starter = starterFor(mode);
       if (starter != null) ref.read(stageProvider.notifier).show(starter);
       return turn;
     }
     if (id.startsWith('kind-')) {
       return send(
-        id == 'kind-unsure'
-            ? 'I am not sure what kind of vehicle yet.'
-            : 'I am looking at a $label.',
+        withExtra(
+          id == 'kind-unsure'
+              ? 'I am not sure what kind of vehicle yet.'
+              : 'I am looking at a $label.',
+        ),
       );
     }
-    return send(label);
+    return send(withExtra(label));
+  }
+
+  /// Tools the pipeline does not own: the web pane and the session listings.
+  Future<Map<String, Object?>> _externalTool(String name, Map<String, Object?> args) async {
+    switch (name) {
+      case AdvisorTools.readPage:
+        final url = args['url']?.toString();
+        ref.read(stageProvider.notifier).showWeb();
+        final PageExtract extract;
+        try {
+          extract = await ref.read(browserProvider.notifier).readPage(url: url);
+        } on PageChallengeException catch (e) {
+          return {'error': e.toString()};
+        }
+        final facts = extractFacts(extract.text);
+        return {
+          'url': extract.url,
+          'title': extract.title,
+          'text': extract.text.length > 1500 ? '${extract.text.substring(0, 1500)}…' : extract.text,
+          'facts': facts,
+          'listings': [for (final l in extract.listings.take(8)) l.toModelJson()],
+        };
+      case AdvisorTools.findVehicles:
+        final store = ref.read(listingStoreProvider);
+        final maxPrice = (args['max_price'] as num?)?.toDouble();
+        final body = args['vehicle_class']?.toString();
+        final keywords = args['keywords']?.toString();
+        var results = store.search(
+          maxPrice: maxPrice,
+          bodyStyle: body,
+          maxMileage: (args['max_mileage'] as num?)?.toInt(),
+          keywords: keywords,
+          limit: (args['limit'] as num?)?.toInt() ?? 5,
+        );
+        String? opened;
+        if (results.isEmpty) {
+          // Nothing read yet: open the default curated site's results page for
+          // this query and read it (user-visible, one page, Q31).
+          final site = CuratedSites.defaultSite;
+          opened = site.search(maxPrice: maxPrice, bodyStyle: body, keywords: keywords);
+          ref.read(stageProvider.notifier).showWeb();
+          try {
+            await ref.read(browserProvider.notifier).readPage(url: opened);
+          } on PageChallengeException catch (e) {
+            return {'error': e.toString(), 'opened': opened};
+          }
+          results = store.search(
+            maxPrice: maxPrice,
+            bodyStyle: body,
+            keywords: keywords,
+            limit: (args['limit'] as num?)?.toInt() ?? 5,
+          );
+        }
+        return {
+          'count': results.length,
+          'source': opened ?? 'listings read this session',
+          'listings': [for (final l in results) l.toModelJson()],
+          if (results.isEmpty) 'note': 'No listings could be read from the page. Ask the person to open a listings page they like, then read it.',
+        };
+      default:
+        throw StateError('no handler for $name');
+    }
   }
 
   BuyerProfile get profile => _pipeline?.profile ?? const BuyerProfile();

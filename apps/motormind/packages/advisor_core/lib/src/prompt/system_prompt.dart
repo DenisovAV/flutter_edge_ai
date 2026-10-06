@@ -63,7 +63,9 @@ class SystemPromptBuilder {
       ..writeln('# Replying')
       ..writeln(
         'If a tool is needed, call it first; the card appears for the person while you work. '
-        'Then reply in under 80 words. Plain text, no Markdown.',
+        'When the person names a budget, a body style or a model, call find_vehicles. '
+        'Then reply in under 80 words. Plain text, no Markdown. Never write options as a list in '
+        'prose: offer them with present(choice).',
       )
       ..writeln()
       ..writeln('# Screen')

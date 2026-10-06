@@ -182,7 +182,9 @@ abstract final class AdvisorTools {
     ToolSpec(
       name: findVehicles,
       description:
-          'Search listings the user has looked at. Use estimate_payment on a result before quoting a payment.',
+          'Find vehicles for sale that fit a budget, body style or keywords; opens and reads a '
+          'results page when needed. Call as soon as the user names what they want (e.g. an SUV '
+          'under 50000). Use estimate_payment on a result before quoting a payment.',
       parameters: _obj({
         'max_price': _num(),
         'vehicle_class': _str(null, _classes),

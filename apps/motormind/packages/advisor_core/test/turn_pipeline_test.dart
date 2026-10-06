@@ -303,4 +303,34 @@ void main() {
     expect(stripLeakedToolCalls('Plain {"price": 5} text'), 'Plain {"price": 5} text');
     expect(stripLeakedToolCalls('a <tool_call>x</tool_call> b'), 'a x b');
   });
+
+  test('a prose option list becomes a real choice component', () async {
+    final driver = FakeDriver([
+      FakeTurn(
+        text: (_) =>
+            'Got it. What matters most to you in an SUV?\n\nchoice:\n option1: fuel economy\n option2: cargo space\n option3: safety features',
+      ),
+    ]);
+    final events = await TurnPipeline(driver: driver).run('I want an SUV').toList();
+    final p = events.whereType<Presented>().single;
+    expect(p.request.component.id, 'choice');
+    expect(p.request.props['question'], 'What matters most to you in an SUV?');
+    expect((p.request.props['options'] as List).map((o) => o['label']), [
+      'fuel economy',
+      'cargo space',
+      'safety features',
+    ]);
+    expect(
+      events.whereType<TurnDone>().single.narration,
+      'Got it. What matters most to you in an SUV?',
+    );
+  });
+
+  test('inline choice parsing edge cases', () {
+    expect(extractInlineChoice('No list here at all.'), isNull);
+    expect(extractInlineChoice('1. only one item'), isNull);
+    final c = extractInlineChoice('Pick one:\n1. fuel economy\n2. cargo space\nThanks.');
+    expect(c!.options.length, 2);
+    expect(c.remainder, 'Pick one:\nThanks.');
+  });
 }

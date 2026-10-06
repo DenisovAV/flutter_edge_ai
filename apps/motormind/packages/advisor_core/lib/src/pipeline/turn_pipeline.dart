@@ -232,6 +232,18 @@ class TurnPipeline {
       out.add(GuardTripped(report, replaced: false));
     }
 
+    // A model that writes "choice: option1: ..." meant to present a choice.
+    // The app renders it as one (DD principle 3) and drops the prose list.
+    final inline = extractInlineChoice(narration);
+    if (inline != null) {
+      narration = inline.remainder;
+      final v = PresentRequest.validate({
+        'component': 'choice',
+        'props': {'question': inline.question, 'options': inline.options},
+      }, resultTool: null);
+      if (v.request != null) out.add(Presented(v.request!, automatic: true));
+    }
+
     final flags = policy.check(narration);
     if (flags.isNotEmpty) out.add(PolicyFlagged(flags));
 
@@ -297,4 +309,57 @@ String stripLeakedToolCalls(String text) {
   }
   out = out.replaceAll(RegExp(r'<\/?tool_call>|<\/?function_call>|```(?:json|tool_code)?'), ' ');
   return out.replaceAll(RegExp(r'[ \t]{2,}'), ' ').trim();
+}
+
+class InlineChoice {
+  const InlineChoice({required this.question, required this.options, required this.remainder});
+  final String question;
+  final List<Map<String, String>> options;
+  final String remainder;
+}
+
+/// Finds a prose-formatted option list such as
+/// `choice:\n option1: fuel economy\n option2: cargo space` or
+/// `1. fuel economy\n2. cargo space`, and returns it with the text that
+/// remains once the list is removed. Null when there is no such list.
+InlineChoice? extractInlineChoice(String text) {
+  final lines = text.split('\n');
+  final optionLine = RegExp(
+    r'^\s*(?:option\s*\d+\s*[:.)-]|\d+\s*[.)]|[-*•])\s*(.+?)\s*$',
+    caseSensitive: false,
+  );
+  final headerLine = RegExp(r'^\s*(?:choice|options?)\s*:\s*$', caseSensitive: false);
+  var start = -1;
+  var end = -1;
+  final opts = <String>[];
+  for (var i = 0; i < lines.length; i++) {
+    final m = optionLine.firstMatch(lines[i]);
+    if (m != null) {
+      if (start < 0) start = i;
+      opts.add(m.group(1)!.trim());
+      end = i;
+    } else if (start >= 0 && lines[i].trim().isNotEmpty) {
+      break;
+    }
+  }
+  if (opts.length < 2 || opts.length > 8 || opts.any((o) => o.length > 60)) return null;
+  var before = lines.sublist(0, start);
+  if (before.isNotEmpty && headerLine.hasMatch(before.last)) {
+    before = before.sublist(0, before.length - 1);
+  }
+  final after = lines.sublist(end + 1);
+  final beforeText = before.join('\n').trim();
+  final q = RegExp(r'([^.!?\n]*\?)\s*$').firstMatch(beforeText);
+  final question = q?.group(1)?.trim() ?? 'Which matters most?';
+  final remainder = [
+    beforeText,
+    after.join('\n'),
+  ].join('\n').replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+  return InlineChoice(
+    question: question,
+    options: [
+      for (var i = 0; i < opts.length; i++) {'id': 'opt-${i + 1}', 'label': opts[i]},
+    ],
+    remainder: remainder,
+  );
 }

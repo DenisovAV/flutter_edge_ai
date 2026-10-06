@@ -37,8 +37,10 @@ interface InferenceSession {
      * Generate response asynchronously (streaming).
      * Consumes accumulated chunks/images.
      * Results emitted via engine's partialResults SharedFlow.
+     * [onSettled] runs exactly once when the generation is over (done,
+     * cancelled or failed), or at once if it could not start.
      */
-    fun generateResponseAsync()
+    fun generateResponseAsync(onSettled: () -> Unit = {})
 
     /**
      * Estimate token count for text.

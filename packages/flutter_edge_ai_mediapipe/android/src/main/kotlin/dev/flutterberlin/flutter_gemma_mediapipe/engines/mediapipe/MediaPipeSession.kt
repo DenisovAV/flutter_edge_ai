@@ -5,6 +5,7 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.genai.llminference.GraphOptions
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
+import com.google.mediapipe.tasks.genai.llminference.ProgressListener
 import android.util.Log
 import dev.flutterberlin.flutter_gemma_mediapipe.engines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -83,8 +84,8 @@ class MediaPipeSession(
         }
     }
 
-    override fun generateResponseAsync() {
-        session.generateResponseAsync { result, done ->
+    override fun generateResponseAsync(onSettled: () -> Unit) {
+        startAsync(onSettled) { result, done ->
             if (result != null) {
                 resultFlow.tryEmit(result to done)
             } else if (done) {
@@ -99,14 +100,30 @@ class MediaPipeSession(
      * sessionId and demux on the Dart side. Bypasses the SharedFlow entirely
      * — the legacy singleton path ([generateResponseAsync]) is untouched.
      */
-    fun generateResponseAsyncTagged(onResult: (String, Boolean) -> Unit) {
-        session.generateResponseAsync { result, done ->
+    fun generateResponseAsyncTagged(
+        onResult: (String, Boolean) -> Unit,
+        onSettled: () -> Unit = {},
+    ) {
+        startAsync(onSettled) { result, done ->
             if (result != null) {
                 onResult(result, done)
             } else if (done) {
                 onResult("", true)
             }
         }
+    }
+
+    // MediaPipe completes the returned future however the generation ends,
+    // including a failure that never reports done, so it is what tells
+    // [onSettled] the native call is over.
+    private fun startAsync(onSettled: () -> Unit, listener: ProgressListener<String>) {
+        val future = try {
+            session.generateResponseAsync(listener)
+        } catch (e: Exception) {
+            onSettled()
+            throw e
+        }
+        future.addListener({ onSettled() }, { it.run() })
     }
 
     override fun sizeInTokens(prompt: String): Int {

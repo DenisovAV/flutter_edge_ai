@@ -1,8 +1,8 @@
 ## 2.1.0
 - **Breaking:** `isThinking` is `enableThinking`; `ModelRuntimeDefaults.isThinking` is `thinkingDeclared`.
-- Add `ModelType.qwen35`; thought-channel reasoning is a `ThinkingResponse` for every type; no ` /no_think` on audio.
+- Add `ModelType.qwen35`; thought-channel reasoning is a `ThinkingResponse` for every type; no `/no_think` on audio.
 - Print a one-time note per chat when reasoning was hidden with thinking off.
-- TTS installs from assets, files and native bundles too; its `install()` throws on web.
+- `installTts()` also takes `fromAsset`, `fromFile` and `fromBundled`; `install()` throws on web.
 - Fix `fromAsset` installs on desktop.
 
 ## 2.0.0

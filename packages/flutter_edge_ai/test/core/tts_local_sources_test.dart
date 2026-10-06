@@ -348,6 +348,58 @@ void main() {
     );
   });
 
+  group('replacing the active voice', () {
+    test('a switch that fails halfway leaves no voice active, not a mix, '
+        'and a retry finishes it', () async {
+      final download = _RecordingDownloadService(failFrom: 3);
+      await ServiceRegistry.initialize(downloadService: download);
+      await _writeBundle(userDir, TtsModelType.matcha);
+      await FlutterEdgeAi.installTts()
+          .fromFile(userDir.path)
+          .ofType(TtsModelType.matcha)
+          .install();
+
+      Future<TtsInstallation> toNetwork() => FlutterEdgeAi.installTts()
+          .fromNetwork('https://example.com/matcha/')
+          .ofType(TtsModelType.matcha)
+          .install();
+      await expectLater(toNetwork(), throwsA(anything));
+
+      final manager = FlutterEdgeAiPlugin.instance.modelManager;
+      expect(manager.activeTtsModel, isNull);
+      final restarted = MobileModelManager();
+      await restarted.initialize();
+      expect(restarted.activeTtsModel, isNull);
+
+      download.failFrom = null;
+      await toNetwork();
+      expect(manager.activeTtsModel, isA<TtsModelSpec>());
+    });
+
+    test('installing another type leaves the active voice alone', () async {
+      await ServiceRegistry.initialize(
+        downloadService: _RecordingDownloadService(failFrom: 1),
+      );
+      await _writeBundle(userDir, TtsModelType.matcha);
+      await FlutterEdgeAi.installTts()
+          .fromFile(userDir.path)
+          .ofType(TtsModelType.matcha)
+          .install();
+
+      await expectLater(
+        FlutterEdgeAi.installTts()
+            .fromNetwork('https://example.com/inflect/')
+            .ofType(TtsModelType.inflect)
+            .install(),
+        throwsA(anything),
+      );
+
+      final active = FlutterEdgeAiPlugin.instance.modelManager.activeTtsModel;
+      expect(active, isA<TtsModelSpec>());
+      expect((active! as TtsModelSpec).ttsModelType, TtsModelType.matcha);
+    });
+  });
+
   group('fromAsset', () {
     test('installs from an asset directory laid out like the repo', () async {
       final keys = {
@@ -640,6 +692,11 @@ class _FailingDownloadService implements DownloadService {
 class _RecordingDownloadService implements DownloadService {
   final List<String> requestedUrls = [];
 
+  /// When set, the download with this 1-based number and every later one
+  /// fails, like a connection lost partway through a bundle.
+  int? failFrom;
+  _RecordingDownloadService({this.failFrom});
+
   @override
   Future<void> download(
     String url,
@@ -648,6 +705,10 @@ class _RecordingDownloadService implements DownloadService {
     CancelToken? cancelToken,
   }) async {
     requestedUrls.add(url);
+    final failAt = failFrom;
+    if (failAt != null && requestedUrls.length >= failAt) {
+      throw const SocketException('connection lost');
+    }
     await File(targetPath).writeAsBytes(_bytesFor(url.split('/').last));
   }
 

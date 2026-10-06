@@ -35,7 +35,7 @@ inference.
 ```
 dependencies:
   flutter_edge_ai: ^2.1.0
-  flutter_edge_ai_speech: ^0.5.3
+  flutter_edge_ai_speech: ^0.5.4
 ```
 
 ## Register the backend
@@ -233,7 +233,8 @@ await FlutterEdgeAi.installTts()
   `android/app/src/main/assets/models/` on Android and in the Runner target on
   iOS.
 - An incomplete bundle fails, naming every missing file, before it replaces the
-  voice you have.
+  voice you have. If a switch fails partway (a lost connection), the voice stays
+  inactive until `install()` is run again, rather than mixing two bundles.
 - `fromFile` uses your files in place, so `uninstallTts()` deletes them.
   Installing from another source later leaves them where they are.
 - **App updates.** A bundled voice is current after an update: Android copies

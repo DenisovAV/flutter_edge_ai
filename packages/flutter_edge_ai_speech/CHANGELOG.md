@@ -1,3 +1,6 @@
+## 0.5.4
+- Require `flutter_edge_ai` ^2.1.0; README covers TTS from assets, files and bundles.
+
 ## 0.5.3
 - Require `flutter_edge_ai` 2.x.
 

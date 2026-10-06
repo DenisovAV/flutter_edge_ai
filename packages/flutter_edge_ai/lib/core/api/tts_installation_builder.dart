@@ -168,19 +168,37 @@ class TtsInstallationBuilder {
     // MobileModelManager._migrateLegacyCompanionForRestore.
     final files = spec.files;
     final fs = registry.fileSystemService;
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final records = [
+      for (final file in files) await repository.loadModel(file.filename),
+    ];
+    bool installedHere(int i) =>
+        records[i]?.source.encode() == files[i].source.encode();
+
+    // Files are replaced one by one, so a switch that fails halfway would
+    // leave the active voice made of two bundles, and a restart would restore
+    // that mix. Take the voice of this type out of service first; it is
+    // activated again only once the whole bundle is in place, and a retry of
+    // install() finishes the job.
+    final active = manager.activeTtsModel;
+    if (active is TtsModelSpec &&
+        active.ttsModelType == ttsModelType &&
+        !List.generate(files.length, installedHere).every((same) => same)) {
+      await manager.clearActiveTtsIdentity();
+    }
+
     var done = 0;
     for (var i = 0; i < files.length; i++) {
       _cancelToken?.throwIfCancelled();
       final file = files[i];
-      final installed = await repository.loadModel(file.filename);
+      final installed = records[i];
 
       // Skip only a file installed from this same place. One installed from
       // elsewhere (another directory, or a file used in place before a switch
       // to a download) is installed again, or the spec would point at a copy
       // that was never made. encode() leaves out auth tokens, so a new token
       // alone does not re-download.
-      if (installed != null &&
-          installed.source.encode() == file.source.encode()) {
+      if (installedHere(i)) {
         edgeAiLog('ℹ️  TTS bundle file already installed: ${file.filename}');
       } else {
         edgeAiLog('📥 Installing TTS bundle file: ${file.filename}...');
@@ -221,7 +239,6 @@ class TtsInstallationBuilder {
     }
 
     // AUTO-SET as active TTS model (even if already installed).
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
     await activateInstalledModel(manager, spec);
 
     edgeAiLog('✅ TTS model installed and set as active: ${spec.name}');

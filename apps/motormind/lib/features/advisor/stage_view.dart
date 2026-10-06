@@ -1,4 +1,3 @@
-import 'package:advisor_core/advisor_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -123,33 +122,4 @@ String cardSummary(ShownComponent s) {
     'choice' || 'multi_choice' => 'Question',
     _ => labelFor(s.request.component.id),
   };
-}
-
-/// Mode-specific starters the app presents the moment a mode is chosen, so
-/// the screen responds before the model has said a word (Q43, DD principle 3).
-ShownComponent? starterFor(ShoppingMode mode) {
-  final args = switch (mode) {
-    ShoppingMode.practical || ShoppingMode.buying => {
-      'component': 'input_form',
-      'props': {
-        'title': 'The numbers that matter most',
-        'fields': [
-          {'id': 'payment', 'label': 'Monthly payment you can live with (\$)', 'type': 'currency'},
-          {'id': 'down', 'label': 'Cash down (\$)', 'type': 'currency'},
-          {
-            'id': 'credit',
-            'label': 'Credit: excellent, good, fair, poor or rebuilding',
-            'type': 'text',
-          },
-          {'id': 'term', 'label': 'Loan length in months (48, 60, 72)', 'type': 'number'},
-        ],
-      },
-    },
-    // Browsing and dreaming: the live search strip over the web pane is the
-    // starter; nothing to ask first.
-    ShoppingMode.browsing || ShoppingMode.dreaming => null,
-  };
-  if (args == null) return null;
-  final v = PresentRequest.validate(args, resultTool: null);
-  return v.request == null ? null : ShownComponent(request: v.request!);
 }

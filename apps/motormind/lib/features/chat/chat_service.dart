@@ -8,16 +8,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/advisor_model_service.dart';
 import '../advisor/advisor_surface.dart';
 import '../advisor/stage.dart';
-import '../advisor/stage_view.dart' show starterFor;
 import '../browser/browser_service.dart';
 import '../models/model_catalog.dart';
+import '../search/search_service.dart';
 import 'edge_ai_chat_driver.dart';
 
 /// One rendered message in the transcript.
 class ChatMessage {
   const ChatMessage({required this.role, required this.text, this.streaming = false});
 
-  final String role; // 'user' | 'advisor'
+  final String role; // 'user' | 'advisor' | 'system' (a note in the transcript)
   final String text;
   final bool streaming;
 
@@ -203,9 +203,26 @@ class ChatService extends Notifier<ChatState> {
       _driver = driver;
       _pipeline = TurnPipeline(driver: driver, profile: profile, external: _externalTool);
       state = ChatState(ready: true, timeline: [ComponentEntry(_openingPrompt(profile))]);
+      // Every applied search becomes a line in the conversation, so the
+      // transcript shows what the person chose and the model can be told.
+      ref.read(searchProvider.notifier).onApplied = (s) {
+        final line =
+            'Looking for ${s.query.describe()} on ${CuratedSites.byId(s.siteId)?.name ?? s.siteId}: ${s.lastCount ?? 0} listings read.';
+        state = state.copyWith(
+          timeline: [
+            ...state.timeline,
+            MessageEntry(ChatMessage(role: 'system', text: line)),
+          ],
+        );
+      };
     } catch (e) {
       state = state.copyWith(busy: false, error: 'Could not start the advisor: $e');
     }
+  }
+
+  ShownComponent _filtersCard() {
+    final v = PresentRequest.validate({'component': 'search_filters'}, resultTool: null);
+    return ShownComponent(request: v.request!);
   }
 
   ShownComponent _openingPrompt(BuyerProfile profile) {
@@ -232,11 +249,32 @@ class ChatService extends Notifier<ChatState> {
     state = state.copyWith(timeline: t);
   }
 
-  Future<void> send(String text) async {
+  /// [filtersCardComing] is set by [choose] when the filters card is about to
+  /// join the conversation, so the first turn already knows it is on screen.
+  Future<void> send(String text, {bool filtersCardComing = false}) async {
     final pipeline = _pipeline;
     if (pipeline == null || state.busy || text.trim().isEmpty) return;
     final userMsg = ChatMessage(role: 'user', text: text.trim());
     var reply = const ChatMessage(role: 'advisor', text: '', streaming: true);
+    // The obvious filters in a sentence ("a Honda sports car under 40k") apply
+    // before the model has read it, so the page is already changing.
+    ref.read(searchProvider.notifier).updateFromText(text);
+    // The model is told the current search (it cannot see the card); the
+    // bubble shows only what the person typed.
+    final search = ref.read(searchProvider);
+    final hasFiltersCard =
+        filtersCardComing ||
+        state.timeline.any(
+          (e) => e is ComponentEntry && e.shown.request.component.id == 'search_filters',
+        );
+    final siteName = CuratedSites.byId(search.siteId)?.name ?? search.siteId;
+    final searchContext = !hasFiltersCard
+        ? ''
+        : search.query.isEmpty
+        ? '\n\n[A filter card (vehicle type, price, miles, site) is on screen; nothing set yet, '
+              'site $siteName. Do not ask what kind or what price; they can tap or tell you.]'
+        : '\n\n[Already set on the filter card: ${search.query.describe()} on $siteName; '
+              '${search.lastCount ?? 0} listings read. Do not ask about these again.]';
     state = state.copyWith(
       timeline: [...state.timeline, MessageEntry(userMsg), MessageEntry(reply)],
       busy: true,
@@ -266,7 +304,7 @@ class ChatService extends Notifier<ChatState> {
 
       arm();
       debugPrint('[motormind] turn start');
-      await for (final e in pipeline.run(text.trim())) {
+      await for (final e in pipeline.run(text.trim() + searchContext)) {
         arm();
         switch (e) {
           case TextDelta(:final text):
@@ -374,11 +412,17 @@ class ChatService extends Notifier<ChatState> {
       _pipeline?.profile = (_pipeline?.profile ?? const BuyerProfile()).applyUpdate({
         'shopping_mode': mode.name,
       });
-      // send() is synchronous up to its first await, so the starter goes on
-      // the stage after send() has started.
-      final turn = send(withExtra(sentence));
-      final starter = starterFor(mode);
-      if (starter != null) ref.read(stageProvider.notifier).show(starter);
+      // The live filters join the conversation the moment a mode is chosen, so
+      // the screen responds before the model has said a word (Q43, DD
+      // principle 3). The card is app-owned: it tracks the search state.
+      // send() is synchronous up to its first await, so the card lands after
+      // the sentence and before the reply bubble fills in.
+      final turn = send(withExtra(sentence), filtersCardComing: true);
+      if (!state.timeline.any(
+        (e) => e is ComponentEntry && e.shown.request.component.id == 'search_filters',
+      )) {
+        state = state.copyWith(timeline: [...state.timeline, ComponentEntry(_filtersCard())]);
+      }
       return turn;
     }
     if (id.startsWith('kind-')) {
@@ -413,42 +457,42 @@ class ChatService extends Notifier<ChatState> {
           'facts': facts,
           'listings': [for (final l in extract.listings.take(8)) l.toModelJson()],
         };
+      case AdvisorTools.updateSearch:
       case AdvisorTools.findVehicles:
-        final store = ref.read(listingStoreProvider);
-        final maxPrice = (args['max_price'] as num?)?.toDouble();
-        final body = args['vehicle_class']?.toString();
-        final keywords = args['keywords']?.toString();
-        var results = store.search(
-          maxPrice: maxPrice,
-          bodyStyle: body,
-          maxMileage: (args['max_mileage'] as num?)?.toInt(),
-          keywords: keywords,
-          limit: (args['limit'] as num?)?.toInt() ?? 5,
-        );
-        String? opened;
-        if (results.isEmpty) {
-          // Nothing read yet: open the default curated site's results page for
-          // this query and read it (user-visible, one page, Q31).
-          final site = CuratedSites.defaultSite;
-          opened = site.search(maxPrice: maxPrice, bodyStyle: body, keywords: keywords);
-          ref.read(stageProvider.notifier).showWeb();
-          try {
-            await ref.read(browserProvider.notifier).readPage(url: opened);
-          } on PageChallengeException catch (e) {
-            return {'error': e.toString(), 'opened': opened};
-          }
-          results = store.search(
-            maxPrice: maxPrice,
-            bodyStyle: body,
-            keywords: keywords,
-            limit: (args['limit'] as num?)?.toInt() ?? 5,
-          );
-        }
+        // Both go through the live search: the chosen site, the current
+        // filters plus what the model passed, one visible page, read once.
+        final search = ref.read(searchProvider.notifier);
+        final changes = <String, Object?>{
+          for (final k in const [
+            'body_style',
+            'max_price',
+            'min_price',
+            'make',
+            'model',
+            'max_mileage',
+            'min_year',
+            'keywords',
+          ])
+            if (args.containsKey(k)) k: args[k],
+          if (args.containsKey('vehicle_class')) 'body_style': args['vehicle_class'],
+        };
+        search.update(changes, applyNow: false);
+        await search.apply();
+        final s = ref.read(searchProvider);
+        final site = CuratedSites.byId(s.siteId)?.name ?? s.siteId;
+        if (s.note != null) return {'error': s.note, 'query': s.query.describe(), 'site': site};
+        final results = ref
+            .read(listingStoreProvider)
+            .searchQuery(s.query, limit: (args['limit'] as num?)?.toInt() ?? 5);
         return {
-          'count': results.length,
-          'source': opened ?? 'listings read this session',
+          'query': s.query.describe(),
+          'site': site,
+          'count': s.lastCount ?? results.length,
           'listings': [for (final l in results) l.toModelJson()],
-          if (results.isEmpty) 'note': 'No listings could be read from the page. Ask the person to open a listings page they like, then read it.',
+          if (results.isEmpty)
+            'note':
+                'The $site page for this search is open and was read; nothing on it matched. '
+                'Say so plainly and suggest loosening a filter or trying another site.',
         };
       default:
         throw StateError('no handler for $name');

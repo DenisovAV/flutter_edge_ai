@@ -248,7 +248,11 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
 - **VA-11.1.3** As a buyer, I want the screen to change shape with the conversation (one
   card, a breakdown, a compare, a question), so that nothing is pre-designed. AC: the same
   conversation demonstrably yields different compositions. **first form done**: the stage
-  above the chat composes from presented cards; starters per mode; fullscreen inline.
+  above the chat composes from presented cards; fullscreen inline.
+- **VA-11.1.5** As a buyer, I want the standard search questions (type, price, miles, site)
+  as a live card inside the conversation that applies on every tap, with the advisor told
+  what is already set, so that I am never asked what the screen already answers. **done**
+  (app-owned `search_filters` component; the input hint is the escape, no chip).
 
 ### VA-11.2 Layout allocation, control and situation (P1)
 

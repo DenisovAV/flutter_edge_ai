@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../search/search_service.dart';
 import 'chat_service.dart';
 import 'result_card.dart';
 
@@ -178,10 +179,10 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     maxLines: 4,
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => _send(),
-                    decoration: const InputDecoration(
-                      hintText: 'Type here…',
+                    decoration: InputDecoration(
+                      hintText: _hint(chat, ref),
                       isDense: true,
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
@@ -209,6 +210,12 @@ class _Bubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isUser = message.role == 'user';
+    if (message.role == 'system') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Text(message.text, key: const Key('system-line'), style: theme.textTheme.labelSmall),
+      );
+    }
     if (message.text.isEmpty && message.streaming) {
       return const Align(
         alignment: Alignment.centerLeft,
@@ -242,3 +249,20 @@ String _plain(String text) => text
     .replaceAll('**', '')
     .replaceAllMapped(RegExp(r'^\s*[-*]\s+', multiLine: true), (_) => '• ')
     .trim();
+
+/// The input is the escape from any prompt (there is no "something else"
+/// chip): the hint says so while a choice or form is live, and invites more
+/// once filters exist.
+String _hint(ChatState chat, WidgetRef ref) {
+  final pending = chat.timeline.any(
+    (e) =>
+        e is ComponentEntry &&
+        e.shown.request.component.isInteraction &&
+        e.shown.request.component.id != 'search_filters' &&
+        !e.shown.answered,
+  );
+  if (pending) return 'Something else? Type it here…';
+  final search = ref.watch(searchProvider);
+  if (!search.query.isEmpty) return 'Tell me more: must-haves, a budget, a trade-in…';
+  return 'Tell me about the car you have in mind…';
+}

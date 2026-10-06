@@ -11,6 +11,7 @@ import '../chat/chat_service.dart';
 class SearchState {
   const SearchState({
     this.query = const SearchQuery(),
+    this.siteId = 'echopark',
     this.applying = false,
     this.lastCount,
     this.lastSource,
@@ -18,6 +19,10 @@ class SearchState {
   });
 
   final SearchQuery query;
+
+  /// The curated site the search applies to. The person picks it in the
+  /// filters card and it sticks until changed.
+  final String siteId;
   final bool applying;
   final int? lastCount;
   final String? lastSource;
@@ -25,6 +30,7 @@ class SearchState {
 
   SearchState copyWith({
     SearchQuery? query,
+    String? siteId,
     bool? applying,
     int? lastCount,
     String? lastSource,
@@ -32,6 +38,7 @@ class SearchState {
     bool clearNote = false,
   }) => SearchState(
     query: query ?? this.query,
+    siteId: siteId ?? this.siteId,
     applying: applying ?? this.applying,
     lastCount: lastCount ?? this.lastCount,
     lastSource: lastSource ?? this.lastSource,
@@ -51,7 +58,7 @@ final searchProvider = NotifierProvider<SearchService, SearchState>(SearchServic
 
 /// Owns the query, applies it to the curated site the moment it changes
 /// (debounced), reads the results, and puts a listings card on the stage.
-/// The model changes the query through `update_search`; the strip's chips
+/// The model changes the query through `update_search`; the filters card's chips
 /// change it directly; free text goes through `inferSearchArgs` first so the
 /// obvious cases never wait on the model.
 class SearchService extends Notifier<SearchState> {
@@ -64,7 +71,23 @@ class SearchService extends Notifier<SearchState> {
     return const SearchState();
   }
 
-  CuratedSite get site => CuratedSites.defaultSite;
+  CuratedSite get site => CuratedSites.byId(state.siteId) ?? CuratedSites.defaultSite;
+
+  /// Called after every applied search so the conversation can note it.
+  void Function(SearchState)? onApplied;
+
+  /// Choose where to look. Opens the site's home if nothing is filtered yet,
+  /// or re-applies the current filters there.
+  void selectSite(String id) {
+    if (CuratedSites.byId(id) == null) return;
+    state = state.copyWith(siteId: id, clearNote: true);
+    if (state.query.isEmpty) {
+      ref.read(browserProvider.notifier).open(site.home);
+      ref.read(stageProvider.notifier).showWeb();
+    } else {
+      scheduleApply(delay: Duration.zero);
+    }
+  }
 
   /// Merge [args] (update_search shape) and apply. Returns the new query.
   SearchQuery update(Map<String, Object?> args, {bool applyNow = true}) {
@@ -101,6 +124,7 @@ class SearchService extends Notifier<SearchState> {
       final results = store.searchQuery(q, limit: 8);
       state = state.copyWith(applying: false, lastCount: results.length);
       _showResults(results, extract.url, q);
+      onApplied?.call(state);
     } on PageChallengeException catch (e) {
       if (gen == _generation) state = state.copyWith(applying: false, note: e.toString());
     } catch (e) {

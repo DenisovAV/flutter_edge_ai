@@ -8,7 +8,6 @@ import 'package:motormind/features/advisor/stage_view.dart';
 import 'package:motormind/features/browser/browser_service.dart';
 import 'package:motormind/features/chat/chat_service.dart';
 import 'package:motormind/features/search/search_service.dart';
-import 'package:motormind/features/search/search_strip.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:vehicle_finance/vehicle_finance.dart';
 
@@ -16,9 +15,16 @@ import 'package:vehicle_finance/vehicle_finance.dart';
 /// the real computed payment, so the guard passes.
 class ScriptedDriver implements ChatDriver {
   final List<String> systemInstructions = [];
+  final List<String> prompts = [];
 
   @override
   Stream<DriverChunk> send(String userText, {required ToolCallHandler onToolCall}) async* {
+    prompts.add(userText);
+    if (userText.contains('just looking') || userText.contains('sports car')) {
+      // A plain reply: nothing pending, so the input hint reflects the search.
+      yield const DriverText('Take a look around; tap a filter or tell me more.');
+      return;
+    }
     if (userText.contains('450')) {
       final r = await onToolCall('estimate_payment', {
         'price': 22000,
@@ -91,17 +97,11 @@ Future<PageExtract> fakeReader(String url) async {
   );
 }
 
-/// The web pane minus the platform webview: the strip plus a placeholder.
-class SearchStripOnly extends StatelessWidget {
-  const SearchStripOnly({super.key});
+/// The web pane minus the platform webview.
+class WebPanePlaceholder extends StatelessWidget {
+  const WebPanePlaceholder({super.key});
   @override
-  Widget build(BuildContext context) => const Column(
-    key: Key('browser-pane'),
-    children: [
-      SearchStrip(),
-      Expanded(child: SizedBox()),
-    ],
-  );
+  Widget build(BuildContext context) => const SizedBox.expand(key: Key('browser-pane'));
 }
 
 Future<Widget> _app(ScriptedDriver driver) async {
@@ -113,7 +113,7 @@ Future<Widget> _app(ScriptedDriver driver) async {
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       turnIdleLimitProvider.overrideWithValue(null),
-      webPaneBuilderProvider.overrideWithValue(() => const SearchStripOnly()),
+      webPaneBuilderProvider.overrideWithValue(() => const WebPanePlaceholder()),
       pageReaderProvider.overrideWithValue(fakeReader),
       chatDriverFactoryProvider.overrideWithValue((instruction) async {
         driver.systemInstructions.add(instruction);
@@ -138,7 +138,11 @@ Future<void> _openFullscreenAdvisor(WidgetTester tester, ScriptedDriver driver) 
   final container = ProviderScope.containerOf(tester.element(find.byKey(const Key('chat-start'))));
   await tester.runAsync(() => container.read(chatServiceProvider.notifier).start());
   await tester.pumpAndSettle();
-  expect(container.read(chatServiceProvider).ready, isTrue);
+  expect(
+    container.read(chatServiceProvider).ready,
+    isTrue,
+    reason: container.read(chatServiceProvider).error,
+  );
 }
 
 void main() {
@@ -174,7 +178,7 @@ void main() {
     expect(find.byKey(const Key('policy-banner')), findsNothing);
   });
 
-  testWidgets('a choice prompt renders options plus the escape, and tapping one sends it', (
+  testWidgets('a choice prompt renders options and tapping one sends it; the input is the escape', (
     tester,
   ) async {
     final driver = ScriptedDriver();
@@ -189,6 +193,8 @@ void main() {
     // The opening mode prompt stays live (Q60) and the model's choice joins it.
     expect(find.byKey(const Key('card-choice')), findsNWidgets(2));
     expect(find.byKey(const Key('choice-buying')), findsOneWidget);
+    expect(find.byKey(const Key('choice-escape')), findsNothing);
+    expect(_hintOf(tester), startsWith('Something else'));
     await tester.runAsync(() async {
       await tester.tap(find.byKey(const Key('choice-buying')));
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -238,23 +244,28 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pumpAndSettle();
-    // The starter form is on the stage, and the web pane stepped back.
-    expect(find.byKey(const Key('stage')), findsOneWidget);
-    expect(find.byKey(const Key('card-input_form')), findsOneWidget);
-    expect(find.byKey(const Key('browser-pane')), findsNothing);
+    // The live filters join the conversation; the web pane stays in view.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('chat-list')),
+        matching: find.byKey(const Key('card-search_filters')),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('browser-pane')), findsOneWidget);
     await tester.runAsync(
       () => container
           .read(chatServiceProvider.notifier)
           .send('I can do 450 a month on a 22000 car with 1000 down'),
     );
     await tester.pumpAndSettle();
-    // The newest card is focused on the stage; the form became a chip.
+    // The computed card is focused on the stage, not in the conversation.
     final stage = find.byKey(const Key('stage'));
     expect(
       find.descendant(of: stage, matching: find.byKey(const Key('card-payment_summary'))),
       findsOneWidget,
     );
-    expect(find.byKey(const Key('stage-chip-1')), findsOneWidget);
+    expect(find.byKey(const Key('browser-pane')), findsNothing);
     expect(
       find.descendant(
         of: find.byKey(const Key('chat-list')),
@@ -264,36 +275,58 @@ void main() {
     );
   });
 
-  testWidgets('a price chip applies the search at once and badges Cards with listings', (
-    tester,
-  ) async {
+  testWidgets('filter chips live in the conversation and apply at once', (tester) async {
     final driver = ScriptedDriver();
-    tester.view.physicalSize = const Size(1080, 2400);
-    tester.view.devicePixelRatio = 2.0;
-    addTearDown(tester.view.reset);
-    await tester.pumpWidget(await _app(driver));
+    await _openFullscreenAdvisor(tester, driver);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('chat-input'))),
+    );
+    expect(find.byKey(const Key('card-search_filters')), findsNothing);
+    expect(_hintOf(tester), startsWith('Something else')); // the mode choice is pending
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('choice-mode-browsing')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('search-strip')), findsOneWidget);
+    // The filters card joins the conversation once a mode is chosen.
+    expect(find.byKey(const Key('card-search_filters')), findsOneWidget);
+    expect(_hintOf(tester), startsWith('Tell me about'));
     await tester.tap(find.byKey(const Key('price-35000')));
     await tester.pump(const Duration(milliseconds: 600)); // debounce
     await tester.pumpAndSettle();
-    final container = ProviderScope.containerOf(
-      tester.element(find.byKey(const Key('search-strip'))),
-    );
     expect(container.read(searchProvider).query.maxPrice, 35000);
+    expect(_hintOf(tester), startsWith('Tell me more'));
     // The fake page had two listings; one is under 35k.
     expect(container.read(searchProvider).lastCount, 1);
     expect(container.read(listingStoreProvider).all, hasLength(2));
-    // The web pane stays in view; the Cards tab shows the badge.
-    expect(find.byKey(const Key('browser-pane')), findsOneWidget);
-    expect(find.text('Cards (1)'), findsOneWidget);
-    // Typing a description applies obvious filters without the model.
-    await tester.enterText(find.byKey(const Key('describe-field')), 'a Honda sports car');
-    await tester.testTextInput.receiveAction(TextInputAction.search);
+    expect(find.text('1 read'), findsOneWidget);
+    // The applied search is a line in the transcript.
+    expect(
+      find.textContaining('Looking for under \$35k on EchoPark: 1 listings read'),
+      findsOneWidget,
+    );
+    // Site choice sticks: the search re-applies there.
+    await tester.tap(find.byKey(const Key('site-autotrader')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(container.read(searchProvider).siteId, 'autotrader');
+    expect(find.textContaining('on Autotrader'), findsOneWidget);
+    // Typing a description applies obvious filters before the model answers,
+    // and the model is told the current search without it showing in the bubble.
+    await tester.runAsync(
+      () => container.read(chatServiceProvider.notifier).send('a Honda sports car'),
+    );
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pumpAndSettle();
     final q = container.read(searchProvider).query;
     expect(q.bodyStyle, 'coupe');
     expect(q.make, 'Honda');
+    expect(driver.prompts.last, contains('[Already set on the filter card: '));
+    expect(driver.prompts.last, contains('Honda'));
+    expect(find.text('a Honda sports car'), findsOneWidget);
+    expect(find.textContaining('[Already set'), findsNothing);
   });
 }
+
+String _hintOf(WidgetTester tester) =>
+    tester.widget<TextField>(find.byKey(const Key('chat-input'))).decoration!.hintText!;

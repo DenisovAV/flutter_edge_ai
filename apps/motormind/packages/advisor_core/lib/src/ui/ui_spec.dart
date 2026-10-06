@@ -19,6 +19,7 @@ class UiComponent {
     required this.acceptsTools,
     this.defaultSurface = SurfaceState.docked,
     this.validateProps,
+    this.appOwned = false,
   });
 
   final String id;
@@ -33,6 +34,10 @@ class UiComponent {
   final List<String> Function(Map<String, Object?> props)? validateProps;
 
   bool get isInteraction => acceptsTools.isEmpty;
+
+  /// True for components the app shows on its own (bound to app state). They
+  /// are left out of the model's vocabulary so they cost no prompt tokens.
+  final bool appOwned;
 }
 
 List<String> _validateOptions(Map<String, Object?> props, {required int min, required int max}) {
@@ -154,6 +159,16 @@ abstract final class ComponentRegistry {
     acceptsTools: const {},
     validateProps: (p) => _validateOptions(p, min: 2, max: 8),
   );
+
+  /// The live vehicle filters (type, price, miles, site). App-owned: it is
+  /// bound to the search state, so it needs no props and never retires.
+  static final searchFilters = UiComponent(
+    id: 'search_filters',
+    description: 'the live vehicle filters; the app keeps it current',
+    acceptsTools: const {},
+    validateProps: (_) => const [],
+    appOwned: true,
+  );
   static final inputForm = UiComponent(
     id: 'input_form',
     description: 'Short form (1–6 fields) to collect numbers before a finance tool.',
@@ -175,9 +190,13 @@ abstract final class ComponentRegistry {
     choice,
     multiChoice,
     inputForm,
+    searchFilters,
   ];
 
   static UiComponent? byId(String id) => all.where((c) => c.id == id).firstOrNull;
+
+  /// What the model may present.
+  static Iterable<UiComponent> get forModel => all.where((c) => !c.appOwned);
 
   /// The component the app shows for a tool result when the model computed
   /// something and did not call `present` (DD principle 1: the model decides

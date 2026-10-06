@@ -108,6 +108,18 @@ Run on a device or arm64 emulator:
 cd "/Users/sirisdev/Documents/personal work/demo-projects/motormind/edge_ai_demo/apps/motormind" && flutter run
 ```
 
+Emulator GPU mode matters for the web pane. With `-gpu host` the Android WebView aborts the
+whole app (Chromium: "Chrome runs only on top of OpenGL ES … VERSION =") as soon as a page
+asks for WebGL, which Cars.com's human check does. Software GL avoids that at the cost of a
+slower emulator (rendering and inference share the CPU):
+
+```bash
+emulator -avd motormind_pixel8 -no-boot-anim -no-audio -gpu swiftshader_indirect
+```
+
+Use `-gpu host` when the pane is not the point and speed is. A physical phone has neither
+problem.
+
 ## 7. Models: no token needed
 
 Both catalog models are `.litertlm` bundles from the public `litert-community` Hugging Face

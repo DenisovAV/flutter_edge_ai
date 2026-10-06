@@ -76,7 +76,7 @@ class SystemPromptBuilder {
         'One structured prompt per turn.',
       )
       ..writeln(
-        'Components: ${ComponentRegistry.all.map((c) => '${c.id} (${c.description})').join('; ')}',
+        'Components: ${ComponentRegistry.forModel.map((c) => '${c.id} (${c.description})').join('; ')}',
       )
       ..writeln();
 

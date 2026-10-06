@@ -1,6 +1,7 @@
 import 'package:advisor_core/advisor_core.dart';
 import 'package:flutter/material.dart';
 
+import '../search/search_filters_card.dart';
 import 'chat_service.dart';
 
 String money(Object? v, {bool cents = true}) {
@@ -41,6 +42,7 @@ class ResultCard extends StatelessWidget {
     return switch (req.component.id) {
       'choice' || 'multi_choice' => _ChoiceCard(shown: shown, onChoice: onChoice),
       'input_form' => _FormCard(shown: shown, onSubmit: (text) => onChoice('form', text)),
+      'search_filters' => const SearchFiltersCard(),
       'payment_summary' => _PaymentSummaryCard(shown: shown),
       'payment_breakdown' => _PaymentBreakdownCard(shown: shown),
       'trade_equity_card' => _TradeEquityCard(shown: shown),
@@ -411,12 +413,6 @@ class _ChoiceCard extends StatelessWidget {
                     label: Text('${o['label']}'),
                     onPressed: () => onChoice('${o['id']}', '${o['label']}'),
                   ),
-                ActionChip(
-                  key: const Key('choice-escape'),
-                  avatar: const Icon(Icons.edit_outlined, size: 16),
-                  label: const Text('Something else'),
-                  onPressed: () => onChoice('escape', 'Something else; let me explain.'),
-                ),
               ],
             ),
           ],

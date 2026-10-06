@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import '../search/search_strip.dart';
 import 'browser_service.dart';
 
-/// The web pane on the stage: a curated-site chip row, a slim address line and
+/// The web pane on the stage: a slim address line and
 /// the webview. The advisor reads from it; the person browses it, including
 /// answering any human-verification step a site shows.
 class BrowserPane extends ConsumerStatefulWidget {
@@ -47,26 +46,6 @@ class _BrowserPaneState extends ConsumerState<BrowserPane> {
     return Column(
       key: const Key('browser-pane'),
       children: [
-        const SearchStrip(),
-        SizedBox(
-          height: 40,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            children: [
-              for (final s in CuratedSites.all)
-                Padding(
-                  padding: const EdgeInsets.only(right: 6, top: 4, bottom: 4),
-                  child: ActionChip(
-                    key: Key('site-${s.id}'),
-                    label: Text(s.name),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => ref.read(browserProvider.notifier).open(s.home),
-                  ),
-                ),
-            ],
-          ),
-        ),
         if (browser.loading) const LinearProgressIndicator(minHeight: 2),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_edge_ai/core/api/tts_asset_listing.dart';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/handlers/asset_source_handler.dart';
 import 'package:flutter_edge_ai/core/infrastructure/flutter_asset_loader.dart';
@@ -77,7 +78,7 @@ void main() {
 
   tearDown(() async {
     debugDefaultTargetPlatformOverride = null;
-    TtsInstallationBuilder.debugListAssets = _realListAssets;
+    listAppAssets = _realListAssets;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMessageHandler('flutter/assets', null);
     ServiceRegistry.reset();
@@ -288,15 +289,72 @@ void main() {
     });
   });
 
+  group('switching away from fromFile', () {
+    test('a failed download keeps the user files registered', () async {
+      await ServiceRegistry.initialize(
+        downloadService: _FailingDownloadService(),
+      );
+      await _writeBundle(userDir, TtsModelType.matcha);
+      final file = await FlutterEdgeAi.installTts()
+          .fromFile(userDir.path)
+          .ofType(TtsModelType.matcha)
+          .install();
+
+      await expectLater(
+        FlutterEdgeAi.installTts()
+            .fromNetwork('https://example.com/matcha/')
+            .ofType(TtsModelType.matcha)
+            .install(),
+        throwsA(anything),
+      );
+
+      final protectedFiles = ServiceRegistry.instance.protectedFilesRegistry;
+      final first = file.spec.files.first;
+      expect(
+        await protectedFiles.getExternalPath(first.filename),
+        (first.source as FileSource).path,
+      );
+      expect(await protectedFiles.isProtected(first.filename), isTrue);
+    });
+
+    test(
+      'a later fromFile deletes the downloaded copies, not the user files',
+      () async {
+        await ServiceRegistry.initialize(
+          downloadService: _RecordingDownloadService(),
+        );
+        final network = await FlutterEdgeAi.installTts()
+            .fromNetwork('https://example.com/matcha/')
+            .ofType(TtsModelType.matcha)
+            .install();
+        final managed = [
+          for (final f in network.spec.files)
+            File('${fakeAppSupport.path}/flutter_gemma/${f.filename}'),
+        ];
+        expect(managed.every((f) => f.existsSync()), isTrue);
+
+        await _writeBundle(userDir, TtsModelType.matcha);
+        final local = await FlutterEdgeAi.installTts()
+            .fromFile(userDir.path)
+            .ofType(TtsModelType.matcha)
+            .install();
+
+        expect(managed.where((f) => f.existsSync()), isEmpty);
+        final paths = await FlutterEdgeAiPlugin.instance.modelManager
+            .getModelFilePaths(local.spec);
+        expect(paths!['config.json'], '${userDir.path}/config.json');
+        expect(File('${userDir.path}/config.json').existsSync(), isTrue);
+      },
+    );
+  });
+
   group('fromAsset', () {
     test('installs from an asset directory laid out like the repo', () async {
-      // Desktop is where the copy used to land in the wrong directory.
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
       final keys = {
         for (final fn in TtsModelType.qwen3.manifest)
           'assets/tts/qwen3/${_relative(TtsModelType.qwen3, fn)}',
       };
-      TtsInstallationBuilder.debugListAssets = () async => keys;
+      listAppAssets = () async => keys;
       _serveAssets(keys);
       await ServiceRegistry.initialize();
 
@@ -320,7 +378,7 @@ void main() {
         for (final fn in TtsModelType.inflect.manifest)
           if (fn != 'g2p_meta.json') 'assets/tts/inflect/$fn',
       };
-      TtsInstallationBuilder.debugListAssets = () async => keys;
+      listAppAssets = () async => keys;
       await ServiceRegistry.initialize();
 
       await expectLater(
@@ -389,6 +447,37 @@ void main() {
           ),
         ),
       );
+      // The six present resources were resolved but none was recorded, so a
+      // restart cannot rebuild a half-replaced voice.
+      expect(
+        await ServiceRegistry.instance.modelRepository.listInstalled(),
+        isEmpty,
+      );
+    });
+
+    test('replacing a download deletes the copies it no longer uses', () async {
+      await ServiceRegistry.initialize(
+        downloadService: _RecordingDownloadService(),
+        fileSystemService: _BundleFileSystem(
+          Directory('${userDir.path}/bundle'),
+        ),
+      );
+      final network = await FlutterEdgeAi.installTts()
+          .fromNetwork('https://example.com/matcha/')
+          .ofType(TtsModelType.matcha)
+          .install();
+      final managed = [
+        for (final f in network.spec.files)
+          File('${fakeAppSupport.path}/flutter_gemma/${f.filename}'),
+      ];
+      expect(managed.every((f) => f.existsSync()), isTrue);
+
+      await FlutterEdgeAi.installTts()
+          .fromBundled()
+          .ofType(TtsModelType.matcha)
+          .install();
+
+      expect(managed.where((f) => f.existsSync()), isEmpty);
     });
 
     test('survives a restart: restore resolves each resource again', () async {
@@ -413,7 +502,7 @@ void main() {
 
   group('AssetSourceHandler on desktop', () {
     test('writes the copy where models are read, not into Documents', () async {
-      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      // The test host is a desktop, as Platform sees it.
       _serveAssets({'assets/m/config.json'});
       final loader = _DocumentsCopyingAssetLoader(fakeDocuments);
       final fs = PlatformFileSystemService();
@@ -445,7 +534,7 @@ void main() {
   });
 }
 
-final _realListAssets = TtsInstallationBuilder.debugListAssets;
+final _realListAssets = listAppAssets;
 
 /// Serves [_bytesFor]-sized bytes for each of [keys] through the asset channel that
 /// `rootBundle` reads in tests.
@@ -521,6 +610,29 @@ class _FixedPathProviderPlatform extends PathProviderPlatform {
 
   @override
   Future<String?> getTemporaryPath() async => Directory.systemTemp.path;
+}
+
+/// A download that always fails, like a lost connection.
+class _FailingDownloadService implements DownloadService {
+  @override
+  Future<void> download(
+    String url,
+    String targetPath, {
+    String? token,
+    CancelToken? cancelToken,
+  }) async => throw const SocketException('offline');
+
+  @override
+  Stream<int> downloadWithProgress(
+    String url,
+    String targetPath, {
+    String? token,
+    int maxRetries = 10,
+    CancelToken? cancelToken,
+    bool? foreground,
+  }) async* {
+    throw const SocketException('offline');
+  }
 }
 
 /// Writes bytes sized for each file instead of downloading, and records the

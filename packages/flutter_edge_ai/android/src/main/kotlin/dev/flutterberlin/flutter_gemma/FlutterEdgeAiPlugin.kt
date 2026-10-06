@@ -1,6 +1,8 @@
 package dev.flutterberlin.flutter_gemma
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -9,7 +11,6 @@ import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
-import java.io.OutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.zip.GZIPOutputStream
@@ -30,15 +31,10 @@ import io.flutter.plugin.common.MethodChannel
 class FlutterEdgeAiPlugin: FlutterPlugin {
   private lateinit var bundledChannel: MethodChannel
   private lateinit var context: Context
-  // A bundled model can be hundreds of MB. Copy it off the platform thread so
-  // the copy cannot freeze the UI or trigger an ANR, and reply on the main
-  // thread, which MethodChannel.Result requires.
-  private lateinit var copyExecutor: ExecutorService
   private val mainHandler = Handler(Looper.getMainLooper())
 
   override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     context = flutterPluginBinding.applicationContext
-    copyExecutor = Executors.newSingleThreadExecutor()
 
     // Setup bundled assets channel
     bundledChannel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter_gemma_bundled")
@@ -50,9 +46,12 @@ class FlutterEdgeAiPlugin: FlutterPlugin {
           if (assetPath == null || destPath == null) {
             result.error("INVALID_ARGS", "assetPath and destPath are required", null)
           } else {
-            copyExecutor.execute {
+            // A bundled model can be hundreds of MB: copy it off the platform
+            // thread, so the copy cannot freeze the UI or trigger an ANR, and
+            // reply on the main thread, which MethodChannel.Result requires.
+            BUNDLED_COPIES.execute {
               try {
-                copyAssetToFile(assetPath, destPath)
+                ensureAssetCopy(assetPath, File(destPath))
                 mainHandler.post { result.success("success") }
               } catch (e: Exception) {
                 mainHandler.post { result.error("COPY_ERROR", e.message, null) }
@@ -72,22 +71,58 @@ class FlutterEdgeAiPlugin: FlutterPlugin {
     }
   }
 
-  // Writes a sibling temp file and renames it into place. The Dart side treats
-  // an existing destPath as already copied, so a copy killed halfway must never
-  // leave a truncated file there.
-  private fun copyAssetToFile(assetPath: String, destPath: String) {
-    val outputFile = File(destPath)
-    outputFile.parentFile?.mkdirs()
-    val tempFile = File(outputFile.path + ".part")
+  // Makes dest a copy of the asset from the installed APK. An existing file is
+  // kept only when its marker says this app install copied it at its current
+  // size. Anything else is copied again: a copy made by an earlier app version
+  // (the asset may have changed in the update), a file another source left at
+  // the same path (a download under the same name), or a copy from before
+  // markers existed (possibly truncated). So a resource missing from the APK
+  // is reported even when a file of that name is already on disk.
+  private fun ensureAssetCopy(assetPath: String, dest: File) {
+    val installedAt = appInstallTime()
+    val markers = context.getSharedPreferences(COPY_MARKERS, Context.MODE_PRIVATE)
+    if (dest.isFile && markers.getString(dest.path, null) == "$installedAt:${dest.length()}") {
+      return
+    }
+    copyAssetToFile(assetPath, dest)
+    markers.edit().putString(dest.path, "$installedAt:${dest.length()}").commit()
+  }
+
+  // When the installed APK last changed; an app update moves it forward.
+  private fun appInstallTime(): Long {
+    val packageManager = context.packageManager
+    val info = if (Build.VERSION.SDK_INT >= 33) {
+      packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+    } else {
+      @Suppress("DEPRECATION")
+      packageManager.getPackageInfo(context.packageName, 0)
+    }
+    return info.lastUpdateTime
+  }
+
+  // Writes a sibling temp file, syncs it to disk and renames it into place, so
+  // neither a killed copy nor a power cut leaves a partial file at dest.
+  private fun copyAssetToFile(assetPath: String, dest: File) {
+    dest.parentFile?.mkdirs()
+    val tempFile = File(dest.path + ".part")
     try {
       val (source, regzip) = openAsset(assetPath)
       source.use { input ->
-        val file = FileOutputStream(tempFile)
-        val output: OutputStream = if (regzip) GZIPOutputStream(file, 1 shl 16) else file
-        output.use { input.copyTo(it, bufferSize = 1 shl 16) }
+        FileOutputStream(tempFile).use { file ->
+          if (regzip) {
+            GZIPOutputStream(file, BUFFER_SIZE).use { gzip ->
+              input.copyTo(gzip, BUFFER_SIZE)
+              gzip.finish()
+              file.fd.sync()
+            }
+          } else {
+            input.copyTo(file, BUFFER_SIZE)
+            file.fd.sync()
+          }
+        }
       }
-      if (!tempFile.renameTo(outputFile)) {
-        throw IOException("Failed to move $tempFile to $outputFile")
+      if (!tempFile.renameTo(dest)) {
+        throw IOException("Failed to move $tempFile to $dest")
       }
     } catch (e: Exception) {
       tempFile.delete()
@@ -103,12 +138,27 @@ class FlutterEdgeAiPlugin: FlutterPlugin {
       context.assets.open(assetPath) to false
     } catch (e: FileNotFoundException) {
       if (!assetPath.endsWith(".gz")) throw e
-      context.assets.open(assetPath.removeSuffix(".gz")) to true
+      try {
+        context.assets.open(assetPath.removeSuffix(".gz")) to true
+      } catch (stripped: FileNotFoundException) {
+        // Report the name that was asked for, not the fallback.
+        e.addSuppressed(stripped)
+        throw e
+      }
     }
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
     bundledChannel.setMethodCallHandler(null)
-    copyExecutor.shutdown()
+  }
+
+  private companion object {
+    // One copy at a time for the whole process, so two engines asking for the
+    // same resource take turns instead of writing one temp file at once.
+    val BUNDLED_COPIES: ExecutorService = Executors.newSingleThreadExecutor { task ->
+      Thread(task, "flutter_edge_ai-bundled-copy").apply { isDaemon = true }
+    }
+    const val COPY_MARKERS = "flutter_edge_ai_bundled_copies"
+    const val BUFFER_SIZE = 1 shl 16
   }
 }
 

@@ -166,7 +166,7 @@ To ship the voice with the app instead of downloading it, swap `fromNetwork` for
 | `fromFile('/abs/dir')` | Directory on disk, same layout | Used in place — `uninstallTts()` deletes these files |
 | `fromBundled()` | Native resources named `<type>__<file>`, e.g. `matcha__config.json` | Android `assets/models/`, iOS Runner target; Android and iOS only |
 
-Inflect's four Matcha G2P files go next to its own two. A missing file fails `install()` with the full list before anything is installed. `install()` throws `UnsupportedError` on web.
+Inflect's four Matcha G2P files go next to its own two. A missing file fails `install()` with the full list before the current voice is replaced. `install()` throws `UnsupportedError` on web. To ship a changed voice in an app update, use a new asset directory (a bundled voice refreshes itself); with `fromFile` on iOS, call `install()` at launch, because the data directory moves on update.
 
 Switching the Qwen3 language — full lowercase names, not ISO codes, and only with the Qwen3 bundle installed (Matcha still throws the same `StateError` but the language changes nothing):
 

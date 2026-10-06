@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter_edge_ai/core/api/tts_asset_listing.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
@@ -29,14 +30,6 @@ class TtsInstallationBuilder {
   String? _name;
   void Function(int overallPercent)? _onProgress;
   CancelToken? _cancelToken;
-
-  /// Lists the app's Flutter asset keys, so [fromAsset] can report every
-  /// missing file before installing any. Replaced in tests.
-  @visibleForTesting
-  static Future<Set<String>> Function() debugListAssets = () async =>
-      (await AssetManifest.loadFromAssetBundle(
-        rootBundle,
-      )).listAssets().toSet();
 
   /// Base URL the bundle files live under (each manifest filename is
   /// appended to it to derive the per-file network source).
@@ -174,7 +167,7 @@ class TtsInstallationBuilder {
     // migration path for genuinely-legacy TTS installs is restore-time, in
     // MobileModelManager._migrateLegacyCompanionForRestore.
     final files = spec.files;
-    final bundledFailures = <String>[];
+    final fs = registry.fileSystemService;
     var done = 0;
     for (var i = 0; i < files.length; i++) {
       _cancelToken?.throwIfCancelled();
@@ -190,42 +183,41 @@ class TtsInstallationBuilder {
           installed.source.encode() == file.source.encode()) {
         edgeAiLog('ℹ️  TTS bundle file already installed: ${file.filename}');
       } else {
-        // A file used in place stays registered under this name. Drop that
-        // before installing a copy, so reads and uninstall reach the copy and
-        // never the user's own file, which is left where it is.
+        edgeAiLog('📥 Installing TTS bundle file: ${file.filename}...');
+        await handlerRegistry
+            .getHandler(file.source)!
+            .install(
+              file.source,
+              cancelToken: _cancelToken,
+              targetFilename: file.filename,
+              modelType: repo.ModelType.tts,
+            );
+        // Only now that the new copy is in place: a file used in place stays
+        // registered under this name, so drop that, letting reads and uninstall
+        // reach the copy and never the user's own file (left where it is).
         if (file.source is! FileSource &&
             await protectedFiles.getExternalPath(file.filename) != null) {
           await protectedFiles.unregisterExternalPath(file.filename);
           await protectedFiles.unprotect(file.filename);
         }
-        edgeAiLog('📥 Installing TTS bundle file: ${file.filename}...');
-        final handler = handlerRegistry.getHandler(file.source);
-        try {
-          await handler!.install(
-            file.source,
-            cancelToken: _cancelToken,
-            targetFilename: file.filename,
-            modelType: repo.ModelType.tts,
-          );
-        } on Exception catch (e) {
-          // A missing bundled resource is only found by trying to open it, so
-          // collect them and report every one, as _requireLocalFiles does.
-          if (base is! TtsBundledBase) rethrow;
-          bundledFailures.add(
-            '${(file.source as BundledSource).resourceName}: $e',
-          );
-          continue;
+        // A copy the app made earlier (download, asset or Android bundled
+        // copy) is dead weight once the file is read from somewhere else, and
+        // orphan cleanup does not reclaim .npy/.gz members, so delete it.
+        if (installed != null && installed.source is! FileSource) {
+          final managed = await fs.getWriteTargetPath(file.filename);
+          final now = switch (file.source) {
+            FileSource(:final path) => path,
+            BundledSource(:final resourceName) =>
+              await fs.getBundledResourcePath(resourceName),
+            _ => managed,
+          };
+          if (now != managed && await fs.fileExists(managed)) {
+            await fs.deleteFile(managed);
+          }
         }
       }
       done++;
       _onProgress?.call(((done / files.length) * 100).round());
-    }
-    if (bundledFailures.isNotEmpty) {
-      throw Exception(
-        'TTS bundle is incomplete: ${bundledFailures.length} of '
-        '${files.length} bundled resources could not be installed:\n  '
-        '${bundledFailures.join('\n  ')}',
-      );
     }
 
     // AUTO-SET as active TTS model (even if already installed).
@@ -237,30 +229,46 @@ class TtsInstallationBuilder {
     return TtsInstallation(spec: spec);
   }
 
-  /// Fails before anything is installed when a local bundle is incomplete,
+  /// Fails before any file is recorded when a local bundle is incomplete,
   /// naming every missing file rather than the first one the install loop
-  /// would stop at.
+  /// would stop at, so a failed install never leaves the active voice half
+  /// replaced.
   Future<void> _requireLocalFiles(
     TtsBundleBase base,
     List<ModelFile> files,
   ) async {
+    final fs = ServiceRegistry.instance.fileSystemService;
     final List<String> missing;
     switch (base) {
       case TtsFileBase():
-        final fs = ServiceRegistry.instance.fileSystemService;
         missing = [
           for (final file in files)
             if (file.source case FileSource(:final path))
               if (!await fs.fileExists(path)) path,
         ];
       case TtsAssetBase():
-        final assets = await debugListAssets();
+        final assets = await listAppAssets();
         missing = [
           for (final file in files)
             if (file.source case AssetSource(:final normalizedPath))
               if (!assets.contains(normalizedPath)) normalizedPath,
         ];
-      case TtsNetworkBase() || TtsBundledBase():
+      case TtsBundledBase():
+        // A bundled resource is only found by resolving it; on Android that
+        // is the copy out of the APK, which the install then reuses.
+        missing = [];
+        for (final file in files) {
+          if (file.source case BundledSource(:final resourceName)) {
+            try {
+              await fs.getBundledResourcePath(resourceName);
+            } on Exception catch (e) {
+              missing.add(
+                '$resourceName (${e is PlatformException ? e.message : e})',
+              );
+            }
+          }
+        }
+      case TtsNetworkBase():
         return;
     }
     if (missing.isEmpty) return;

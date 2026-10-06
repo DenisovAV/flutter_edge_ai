@@ -12,6 +12,9 @@ class FlutterAssetLoader implements AssetLoader {
     'FlutterAssetLoader is not available on this platform',
   );
 
+  /// Never on web; see the io implementation.
+  bool get copiesIntoModelDirectory => false;
+
   Future<void> copyAssetToFile(String assetPath, String targetPath) =>
       throw UnsupportedError(
         'FlutterAssetLoader is not available on this platform',

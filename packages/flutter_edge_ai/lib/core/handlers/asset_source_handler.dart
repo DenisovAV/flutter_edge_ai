@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/core/domain/model_source.dart';
 import 'package:flutter_edge_ai/core/handlers/source_handler.dart';
@@ -31,13 +30,11 @@ class AssetSourceHandler implements SourceHandler {
   @override
   bool supports(ModelSource source) => source is AssetSource;
 
-  /// Whether large_file_handler writes into the directory models are read
-  /// from: its Documents directory is the model directory on Android and iOS
-  /// only.
-  static bool get _streamsIntoModelDirectory =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS);
+  /// Whether the streamed large_file_handler copy lands where models are read.
+  bool get _streamsIntoModelDirectory => switch (assetLoader) {
+    final FlutterAssetLoader loader => loader.copiesIntoModelDirectory,
+    _ => false,
+  };
 
   @override
   Future<void> install(
@@ -58,15 +55,16 @@ class AssetSourceHandler implements SourceHandler {
     // plugin prepends app docs dir itself. We keep the bare filename here.
     // Only Android and iOS store models in that same Documents directory; a
     // desktop build keeps them in app support (see getWriteTargetPath), so
-    // the streamed copy would land where nothing reads it. Desktop, and any
-    // platform without the plugin (MissingPluginException), load the asset
-    // into memory and write it to targetPath instead.
+    // the streamed copy would land where nothing reads it (see
+    // FlutterAssetLoader.copiesIntoModelDirectory). Desktop, and any platform
+    // without the plugin (MissingPluginException), load the asset into memory
+    // and write it to targetPath instead.
     //
     // Lookup keys differ between paths:
     // - `pathForLookupKey` (no `assets/` prefix) for the native channel call
     // - `normalizedPath` (with `assets/` prefix) for the Flutter rootBundle
     //   fallback (#250 Mode 2)
-    if (assetLoader is FlutterAssetLoader && _streamsIntoModelDirectory) {
+    if (_streamsIntoModelDirectory) {
       try {
         await (assetLoader as FlutterAssetLoader).copyAssetToFile(
           source.pathForLookupKey,
@@ -111,7 +109,7 @@ class AssetSourceHandler implements SourceHandler {
     // ignore: deprecated_member_use_from_same_package
     final targetPath = await fileSystem.getWriteTargetPath(filename);
 
-    if (assetLoader is FlutterAssetLoader && _streamsIntoModelDirectory) {
+    if (_streamsIntoModelDirectory) {
       try {
         await for (final progress
             in (assetLoader as FlutterAssetLoader).copyAssetToFileWithProgress(

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/core/services/asset_loader.dart';
@@ -27,6 +28,12 @@ class FlutterAssetLoader implements AssetLoader {
       byteData.lengthInBytes,
     );
   }
+
+  /// Whether [copyAssetToFile] writes into the directory models are read
+  /// from. LargeFileHandler resolves `targetPath` against the app's Documents
+  /// directory, which is the model directory on Android and iOS only; desktop
+  /// keeps models in app support (`PlatformFileSystemService`).
+  bool get copiesIntoModelDirectory => Platform.isAndroid || Platform.isIOS;
 
   /// Copies asset file directly to target path using LargeFileHandler
   /// This is the CORRECT way to handle large files

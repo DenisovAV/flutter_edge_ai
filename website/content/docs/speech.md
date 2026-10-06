@@ -232,10 +232,15 @@ await FlutterEdgeAi.installTts()
   `matcha__config.json`, `qwen3__tokenizer.json` — in
   `android/app/src/main/assets/models/` on Android and in the Runner target on
   iOS.
-- An incomplete bundle fails before anything is installed, naming every missing
-  file.
+- An incomplete bundle fails, naming every missing file, before it replaces the
+  voice you have.
 - `fromFile` uses your files in place, so `uninstallTts()` deletes them.
   Installing from another source later leaves them where they are.
+- **App updates.** A bundled voice is current after an update: Android copies
+  it again from the new APK, iOS reads the bundle. An asset install of the same
+  directory is kept as it was, so ship a changed voice in a new asset directory.
+  iOS moves the app's data directory on update, so an app that uses `fromFile`
+  should call `install()` at launch; it only registers the files again.
 - An asset install keeps two copies, one in the app package and one in app
   storage, so for the 1.9 GB Qwen3 bundle prefer `fromNetwork` or `fromFile`.
 - TTS does not run on web, so `install()` throws `UnsupportedError` there.

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 
 import io.flutter.plugin.common.EventChannel
+import java.util.concurrent.Executors
 import kotlinx.coroutines.*
 
 import dev.flutterberlin.flutter_gemma_mediapipe.engines.*
@@ -13,7 +14,17 @@ internal class PlatformServiceImpl(
 ) : PlatformService, EventChannel.StreamHandler {
   companion object {
     private const val TAG = "FlutterEdgeAiMediaPipePlugin"
+
+    // Process-wide: a release held back by one engine instance may come due
+    // after that instance (and its coroutine scope) is gone.
+    private val RELEASES = Executors.newSingleThreadExecutor { task ->
+      Thread(task, "flutter_edge_ai_mediapipe-release").apply { isDaemon = true }
+    }
   }
+
+  // Every session and engine is released through this, never closed directly:
+  // MediaPipe throws or crashes when one is released mid-generation (#590).
+  private val gate = ReleaseGate(RELEASES) { Log.w(TAG, it) }
   private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
   private var eventSink: EventChannel.EventSink? = null
   private var streamJob: kotlinx.coroutines.Job? = null  // Track stream collection job
@@ -36,19 +47,25 @@ internal class PlatformServiceImpl(
   // via dart:ffi). The pigeon contract below is kept for ABI continuity
   // but the Dart side never calls into it.
 
+  // Runs inside FlutterEngine.destroy(), possibly while a response is still
+  // generating. Nothing here may throw, or the engine teardown stops short and
+  // the exception escapes Activity.onDestroy (#590). Generation is cancelled;
+  // the gate releases the sessions and the engine once it has stopped.
   fun cleanup() {
     scope.cancel()
     streamJob?.cancel()
     streamJob = null
     synchronized(engineLock) {
-      session?.close()
+      val sessions = synchronized(sessionMapLock) {
+        sessionMap.values.toList().also { sessionMap.clear() }
+      }
+      for (s in listOfNotNull(session) + sessions) {
+        s.cancelGeneration()
+        gate.retire(session = s)
+      }
+      gate.retire(engine = engine)
       session = null
-      engine?.close()
       engine = null
-    }
-    synchronized(sessionMapLock) {
-      sessionMap.values.forEach { runCatching { it.close() } }
-      sessionMap.clear()
     }
     // 0.15.2: embedding lifetime managed by Dart (LitertEmbeddingModel).
   }
@@ -85,13 +102,8 @@ internal class PlatformServiceImpl(
           streamJob?.cancel()
           streamJob = null
           session?.cancelGeneration()
-          try {
-            session?.close()
-          } catch (e: Exception) {
-            Log.w(TAG, "Session close during active inference: ${e.message}")
-          }
+          gate.retire(session = session, engine = engine)
           session = null
-          engine?.close()
           engine = newEngine
         }
 
@@ -105,18 +117,15 @@ internal class PlatformServiceImpl(
   override fun closeModel(callback: (Result<Unit>) -> Unit) {
     synchronized(engineLock) {
       try {
-        session?.cancelGeneration()
-        try {
-          session?.close()
-        } catch (e: Exception) {
-          Log.w(TAG, "Session close during active inference: ${e.message}")
+        val sessions = synchronized(sessionMapLock) {
+          sessionMap.values.toList().also { sessionMap.clear() }
         }
+        for (s in listOfNotNull(session) + sessions) {
+          s.cancelGeneration()
+          gate.retire(session = s)
+        }
+        gate.retire(engine = engine)
         session = null
-        synchronized(sessionMapLock) {
-          sessionMap.values.forEach { runCatching { it.close() } }
-          sessionMap.clear()
-        }
-        engine?.close()
         engine = null
         callback(Result.success(Unit))
       } catch (e: Exception) {
@@ -155,7 +164,7 @@ internal class PlatformServiceImpl(
             enableThinking = enableThinking ?: false,
           )
 
-          session?.close()
+          gate.retire(session = session)
           session = currentEngine.createSession(config)
         }
         callback(Result.success(Unit))
@@ -168,7 +177,7 @@ internal class PlatformServiceImpl(
   override fun closeSession(callback: (Result<Unit>) -> Unit) {
     synchronized(engineLock) {
       try {
-        session?.close()
+        gate.retire(session = session)
         session = null
         callback(Result.success(Unit))
       } catch (e: Exception) {
@@ -232,7 +241,12 @@ internal class PlatformServiceImpl(
       try {
         val currentSession = session
           ?: throw IllegalStateException("Session not created")
-        val result = currentSession.generateResponse()
+        gate.begin()
+        val result = try {
+          currentSession.generateResponse()
+        } finally {
+          gate.end()
+        }
         callback(Result.success(result))
       } catch (e: Exception) {
         callback(Result.failure(e))
@@ -245,7 +259,8 @@ internal class PlatformServiceImpl(
       try {
         val currentSession = session
           ?: throw IllegalStateException("Session not created")
-        currentSession.generateResponseAsync()
+        gate.begin()
+        currentSession.generateResponseAsync(onSettled = gate::end)
         callback(Result.success(Unit))
       } catch (e: Exception) {
         callback(Result.failure(e))
@@ -308,7 +323,7 @@ internal class PlatformServiceImpl(
         }
         val newSession = currentEngine.createSession(config)
         synchronized(sessionMapLock) {
-          sessionMap[sessionId]?.let { runCatching { it.close() } }
+          sessionMap[sessionId]?.let { gate.retire(session = it) }
           sessionMap[sessionId] = newSession
         }
         callback(Result.success(Unit))
@@ -321,7 +336,7 @@ internal class PlatformServiceImpl(
   override fun closeSessionId(sessionId: Long, callback: (Result<Unit>) -> Unit) {
     try {
       synchronized(sessionMapLock) {
-        sessionMap.remove(sessionId)?.let { runCatching { it.close() } }
+        sessionMap.remove(sessionId)?.let { gate.retire(session = it) }
       }
       callback(Result.success(Unit))
     } catch (e: Exception) {
@@ -394,7 +409,14 @@ internal class PlatformServiceImpl(
   ) {
     scope.launch {
       try {
-        callback(Result.success(requireSession(sessionId).generateResponse()))
+        val s = requireSession(sessionId)
+        gate.begin()
+        val result = try {
+          s.generateResponse()
+        } finally {
+          gate.end()
+        }
+        callback(Result.success(result))
       } catch (e: Exception) {
         callback(Result.failure(e))
       }
@@ -415,14 +437,18 @@ internal class PlatformServiceImpl(
         // channel directly (NOT via endOfStream — that would close the channel
         // for other sessions). Dart demuxes by the sessionId key.
         try {
-          mpSession.generateResponseAsyncTagged { result, done ->
-            val payload = mapOf(
-              "partialResult" to result,
-              "done" to done,
-              "sessionId" to sessionId,
-            )
-            scope.launch(Dispatchers.Main) { eventSink?.success(payload) }
-          }
+          gate.begin()
+          mpSession.generateResponseAsyncTagged(
+            onResult = { result, done ->
+              val payload = mapOf(
+                "partialResult" to result,
+                "done" to done,
+                "sessionId" to sessionId,
+              )
+              scope.launch(Dispatchers.Main) { eventSink?.success(payload) }
+            },
+            onSettled = gate::end,
+          )
         } catch (e: Exception) {
           // Surface a generation-time error as a TAGGED DATA event (not an
           // EventChannel error, which would hit every session's listener and

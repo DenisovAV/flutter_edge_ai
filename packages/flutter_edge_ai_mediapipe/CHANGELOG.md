@@ -1,5 +1,6 @@
 ## 1.1.0
 - **Breaking:** `createChat(isThinking:)` is `enableThinking`; require `flutter_edge_ai` ^2.1.0.
+- Android: destroying the activity mid-generation no longer crashes the app (#590).
 
 ## 1.0.9
 - Require `flutter_edge_ai` 2.x.

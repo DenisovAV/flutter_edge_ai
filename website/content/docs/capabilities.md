@@ -11,15 +11,18 @@ add brings its own capabilities. This page shows what you can swap for what.
 
 ## What each runtime provides
 
-| Runtime | Packages | Text generation | Embeddings | Speech-to-text | Text-to-speech |
-|---|---|---|---|---|---|
-| **LiteRT** | `flutter_edge_ai_litertlm`, `flutter_edge_ai_speech` | ✅ All | ✅ All | ✅ Native, ❌ Web | ✅ Native, ❌ Web |
-| **ONNX Runtime** | `flutter_edge_ai_onnx` | ✅ All | ✅ All | ❌ | ❌ |
-| **MediaPipe** | `flutter_edge_ai_mediapipe` | ✅ Android, iOS, Web | ❌ | ❌ | ❌ |
-| **Built-in AI** (OS models) | `flutter_edge_ai_builtin_ai` | ✅ All except Linux | ❌ | ❌ | ❌ |
+| | LiteRT | ONNX Runtime | MediaPipe | Built-in AI |
+|---|---|---|---|---|
+| **Text generation** | ✅ All | ✅ All | ✅ Mobile + Web | ✅ All but Linux |
+| **Embeddings** | ✅ All | ✅ All | — | — |
+| **Speech-to-text** | ✅ Native | — | — | — |
+| **Text-to-speech** | ✅ Native | — | — | — |
 
 All means Android, iOS, macOS, Windows, Linux and Web; Native means all of
-them except Web.
+them except Web; Mobile means Android and iOS. The packages are
+`flutter_edge_ai_litertlm` (plus `flutter_edge_ai_speech` for speech),
+`flutter_edge_ai_onnx`, `flutter_edge_ai_mediapipe` and
+`flutter_edge_ai_builtin_ai`.
 
 So text generation has four interchangeable runtimes, embeddings have two
 (LiteRT and ONNX, both on every platform), and speech has one (LiteRT, on
@@ -40,28 +43,34 @@ native platforms).
 
 ## What each engine supports for text generation
 
-| Engine | Vision | Audio | Function calling | Thinking |
+| | LiteRT-LM | MediaPipe | ONNX | Built-in AI |
 |---|---|---|---|---|
-| **LiteRT-LM** | ✅ Native, ❌ Web | ✅ Native, ❌ Web | ✅ Native for Gemma 4 and FunctionGemma, prompt-based for other models | ✅ Gemma 4 on native platforms, tag-based models everywhere |
-| **MediaPipe** | ✅ | ✅ Android, iOS | Prompt-based, ⚠️ not Gemma 4 | Tag-based models |
-| **ONNX** | ❌ | ❌ | Prompt-based, ⚠️ not Gemma 4 | Tag-based models |
-| **Built-in AI** | ✅ Android, ⚠️ iOS and macOS 27+ | ❌ | Prompt-based; Apple Foundation Models also has native tools | ❌ |
+| **Vision** | ✅ Native | ✅ | — | ✅ Android |
+| **Audio** | ✅ Native | ✅ Mobile | — | — |
+| **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
+| **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
 
-- **Prompt-based function calling**: `InferenceChat` describes the tools in the
-  prompt and parses the call out of the reply. **Native**: the engine hands the
-  tools to the runtime; on native platforms LiteRT-LM also constrains decoding
-  to the call format.
+- **Function calling.** *Native*: the engine hands the tools to the runtime.
+  LiteRT-LM does this for Gemma 4 and FunctionGemma, and on native platforms
+  also constrains decoding to the call format; other models on LiteRT-LM use
+  the prompt path. *Prompt*: `InferenceChat` describes the tools in the prompt
+  and parses the call out of the reply, so it works with any model that follows
+  the format.
 - **Gemma 4 function calling** needs LiteRT-LM (`.litertlm`). On MediaPipe and
   ONNX the tools do not reach a Gemma 4 model.
-- **Built-in AI**: Apple Foundation Models (iOS and macOS 26+) has native tool
-  calling. `BuiltInAiEngine` does not pass tools to it, because `InferenceChat`
-  already runs the tool loop; you can reach it through the experimental
+- **Thinking.** *Tags*: models that write their reasoning between `<think>`
+  tags (Qwen3, DeepSeek R1). Core parses the tags, so this works on any engine.
+  *Full* adds Gemma 4's separate thinking channel, which needs LiteRT-LM on a
+  native platform.
+- **Built-in AI**: vision works on Android. On iOS and macOS it needs OS 27 and
+  an app built with the OS 27 SDK, and is not verified on a device yet; on OS 26
+  it is text-only. Apple Foundation Models (iOS and macOS 26+) also has native
+  tool calling.
+  `BuiltInAiEngine` does not pass tools to it, because `InferenceChat` already
+  runs the tool loop; you can reach it through the experimental
   `BuiltInAiModel.localAiModel`. Gemini Nano, Phi Silica and the Chrome Prompt
   API have no native tool calling. Phi Silica returns the whole reply as one
   chunk instead of streaming it.
-- **Tag-based thinking**: models that write their reasoning between `<think>`
-  tags (Qwen3, DeepSeek R1). Core parses the tags, so this works on any engine.
-  Gemma 4's separate thinking channel needs LiteRT-LM on a native platform.
 
 ## Checking support at runtime
 

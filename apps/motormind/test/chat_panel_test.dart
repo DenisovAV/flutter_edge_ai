@@ -244,11 +244,19 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await tester.pumpAndSettle();
-    // The live filters join the conversation; the web pane stays in view.
+    // The live filters and the numbers form join the conversation (Q64); the
+    // web pane stays in view.
     expect(
       find.descendant(
         of: find.byKey(const Key('chat-list')),
         matching: find.byKey(const Key('card-search_filters')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('chat-list')),
+        matching: find.byKey(const Key('card-input_form')),
       ),
       findsOneWidget,
     );
@@ -325,6 +333,74 @@ void main() {
     expect(driver.prompts.last, contains('Honda'));
     expect(find.text('a Honda sports car'), findsOneWidget);
     expect(find.textContaining('[Already set'), findsNothing);
+  });
+  testWidgets('dream car says what it did, offers kinds, and a kind chip filters at once', (
+    tester,
+  ) async {
+    final driver = ScriptedDriver();
+    await _openFullscreenAdvisor(tester, driver);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('chat-input'))),
+    );
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('choice-mode-dreaming')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(find.textContaining('No price ceiling for a dream car'), findsOneWidget);
+    expect(find.byKey(const Key('choice-kind-convertible')), findsOneWidget);
+    // The one-time hint that the screen is negotiable (Q64).
+    expect(find.textContaining('show, hide or change anything'), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('choice-kind-convertible')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(container.read(searchProvider).query.bodyStyle, 'convertible');
+  });
+
+  testWidgets('search notes do not repeat, and the filters card collapses when docked', (
+    tester,
+  ) async {
+    final driver = ScriptedDriver();
+    await _openFullscreenAdvisor(tester, driver);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('chat-input'))),
+    );
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('choice-mode-browsing')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    // Two searches in a row leave one note (Q65).
+    await tester.tap(find.byKey(const Key('price-35000')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('price-25000')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Looking for'), findsOneWidget);
+    expect(find.textContaining('under \$25k on EchoPark'), findsOneWidget);
+    // Fullscreen keeps the full card; docked collapses it to a summary line
+    // with a funnel (DD-R32), and the notes go out of view (Q65).
+    expect(find.byKey(const Key('filters-summary')), findsNothing);
+    await tester.tap(find.byKey(const Key('surface-toggle'))); // fullscreen -> collapsed
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('surface-bubble')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('filters-summary')), findsOneWidget);
+    expect(find.textContaining('Looking for'), findsNothing);
+    // The person can reopen it, and that choice sticks until a filter changes.
+    await tester.tap(find.byKey(const Key('filters-summary')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('filters-summary')), findsNothing);
+    expect(container.read(searchProvider).userExpanded, isTrue);
+    await tester.tap(find.byKey(const Key('body-suv')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(container.read(searchProvider).userExpanded, isNull);
+    expect(find.byKey(const Key('filters-summary')), findsOneWidget);
   });
 }
 

@@ -8,26 +8,46 @@ import 'dart:convert';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../recipes/recipe_store.dart';
+
 /// The web pane's state: what is loaded and whether it is still loading.
 class BrowserState {
-  const BrowserState({this.url, this.title, this.loading = false, this.lastExtract});
+  const BrowserState({
+    this.url,
+    this.title,
+    this.loading = false,
+    this.lastExtract,
+    this.lastCheck,
+    this.lastHtml,
+  });
 
   final String? url;
   final String? title;
   final bool loading;
   final PageExtract? lastExtract;
 
+  /// The recipe's verdict on the last page read (null when the text
+  /// strategies were used because no recipe applied).
+  final SelfCheck? lastCheck;
+
+  /// The rendered HTML of the last page read, kept for Capture.
+  final String? lastHtml;
+
   BrowserState copyWith({
     String? url,
     String? title,
     bool? loading,
     PageExtract? lastExtract,
+    SelfCheck? lastCheck,
+    String? lastHtml,
     bool clearExtract = false,
   }) => BrowserState(
     url: url ?? this.url,
     title: title ?? this.title,
     loading: loading ?? this.loading,
     lastExtract: clearExtract ? null : (lastExtract ?? this.lastExtract),
+    lastCheck: clearExtract ? null : (lastCheck ?? this.lastCheck),
+    lastHtml: clearExtract ? null : (lastHtml ?? this.lastHtml),
   );
 }
 
@@ -87,13 +107,42 @@ class BrowserService extends Notifier<BrowserState> {
     await c.loadRequest(Uri.parse(url));
   }
 
-  /// Waits for the current load (or [timeout]), then extracts the page's
-  /// visible text, title, og:image and any listings it contains.
+  /// Which curated site a URL belongs to, by host.
+  static String? siteIdFor(String? url) {
+    final host = Uri.tryParse(url ?? '')?.host ?? '';
+    for (final s in CuratedSites.all) {
+      if (host.endsWith(Uri.parse(s.home).host.replaceFirst('www.', ''))) return s.id;
+    }
+    return null;
+  }
+
+  /// Scrolls the page the way a person would (a screen at a time, with a
+  /// pause), so lazily loaded images and cards render, then returns to the
+  /// top. Used only right after the app itself opened a results page; it
+  /// never runs on a page the person is reading.
+  Future<void> _scrollToLoad(WebViewController c, {int maxSteps = 6}) async {
+    for (var i = 0; i < maxSteps; i++) {
+      final atBottom = await c.runJavaScriptReturningResult(
+        '(function(){window.scrollBy({top: window.innerHeight * 0.9, behavior: "smooth"});'
+        'return (window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10;})();',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (atBottom.toString() == 'true') break;
+    }
+    await c.runJavaScript('window.scrollTo({top: 0, behavior: "smooth"});');
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+  }
+
+  /// Waits for the current load (or [timeout]), then reads the page: the
+  /// site's recipe over the rendered HTML when one applies and passes its
+  /// self-check, otherwise the generic text strategies. Keeps the HTML for
+  /// Capture.
   Future<PageExtract> readPage({
     String? url,
     Duration timeout = const Duration(seconds: 20),
   }) async {
-    if (url != null && url != state.url) {
+    final appOpened = url != null && url != state.url;
+    if (appOpened) {
       await open(url);
       // The webview's onLoadStart fires asynchronously; give it a beat.
       await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -122,10 +171,15 @@ class BrowserService extends Notifier<BrowserState> {
       lastLength = probeText.length;
       if (hasListings || (stable >= 1 && i >= 2)) break;
     }
-    final map = _decode(raw);
-    final text = (map['text'] as String? ?? '').trim();
+    var map = _decode(raw);
+    var text = (map['text'] as String? ?? '').trim();
     final pageUrl = map['url'] as String? ?? state.url ?? '';
     final title = (map['title'] as String? ?? '').trim();
+    if (appOpened && !_looksLikeChallenge(title, text)) {
+      await _scrollToLoad(c);
+      map = _decode(await c.runJavaScriptReturningResult(_extractJs));
+      text = (map['text'] as String? ?? '').trim();
+    }
     if (_looksLikeChallenge(title, text)) {
       // The site is asking the person to prove they are human. That is theirs
       // to answer in the pane; the advisor only reports it and reads again
@@ -140,11 +194,24 @@ class BrowserService extends Notifier<BrowserState> {
       state = state.copyWith(lastExtract: extract, url: pageUrl, title: title);
       throw const PageChallengeException();
     }
-    final listings = const ListingExtractor().extract(
-      text,
-      sourceUrl: pageUrl,
-      now: DateTime.now(),
-    );
+    final html = map['html'] as String? ?? '';
+    final now = DateTime.now();
+    List<VehicleListing> listings = const [];
+    SelfCheck? check;
+    final siteId = siteIdFor(pageUrl);
+    final recipeStore = ref.read(recipeStoreProvider.notifier);
+    final recipe = siteId == null ? null : recipeStore.forSite(siteId);
+    if (recipe != null && html.isNotEmpty) {
+      final r = const RecipeReader().read(html, recipe, sourceUrl: pageUrl, now: now);
+      check = r.check;
+      recipeStore.recordCheck(siteId!, r.check);
+      if (r.check.ok) listings = r.listings;
+      if (kDebugMode) debugPrint('[motormind] recipe $siteId v${recipe.version}: ${r.check}');
+    }
+    if (listings.isEmpty) {
+      // The floor every page gets (ADR 0007): patterns over the visible text.
+      listings = const ListingExtractor().extract(text, sourceUrl: pageUrl, now: now);
+    }
     ref.read(listingStoreProvider).addAll(listings);
     final extract = PageExtract(
       url: pageUrl,
@@ -153,7 +220,13 @@ class BrowserService extends Notifier<BrowserState> {
       imageUrl: map['image'] as String?,
       listings: listings,
     );
-    state = state.copyWith(lastExtract: extract, url: pageUrl, title: extract.title);
+    state = state.copyWith(
+      lastExtract: extract,
+      lastCheck: check,
+      lastHtml: html,
+      url: pageUrl,
+      title: extract.title,
+    );
     if (kDebugMode) {
       debugPrint(
         '[motormind] read_page: ${text.length} chars, ${listings.length} listings from $pageUrl',
@@ -162,6 +235,20 @@ class BrowserService extends Notifier<BrowserState> {
       debugPrint('[motormind] read_page sample: ${sample.replaceAll('\n', ' | ')}');
     }
     return extract;
+  }
+
+  /// The page as the person sees it right now, for Capture: fresh HTML,
+  /// title and URL. No navigation, no scrolling.
+  Future<({String url, String title, String html, String text})> snapshot() async {
+    final c = _controller;
+    if (c == null) throw StateError('The web pane is not open.');
+    final map = _decode(await c.runJavaScriptReturningResult(_extractJs));
+    return (
+      url: map['url'] as String? ?? state.url ?? '',
+      title: (map['title'] as String? ?? '').trim(),
+      html: map['html'] as String? ?? '',
+      text: (map['text'] as String? ?? '').trim(),
+    );
   }
 
   /// Android returns a JSON string (sometimes quoted twice); iOS returns the object.
@@ -199,7 +286,10 @@ class BrowserService extends Notifier<BrowserState> {
   if (text.length > 60000) {
     text = text.substring(0, 60000);
   }
-  return JSON.stringify({ url: location.href, title: document.title, image: og ? og.getAttribute('content') : null, text: text });
+  var html = '';
+  try { html = document.documentElement.outerHTML || ''; } catch (e) { html = ''; }
+  if (html.length > 1500000) { html = html.substring(0, 1500000); }
+  return JSON.stringify({ url: location.href, title: document.title, image: og ? og.getAttribute('content') : null, text: text, html: html });
 })();
 ''';
 }

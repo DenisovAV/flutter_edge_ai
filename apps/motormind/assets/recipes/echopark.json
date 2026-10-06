@@ -1,0 +1,20 @@
+{
+  "siteId": "echopark",
+  "version": 1,
+  "status": "unverified",
+  "note": "Guessed from the rendered text of EchoPark's /used-cars page (year, mileage, stock, title, 'Price', amount). The card selector needs a captured page to confirm; until then the text strategies read EchoPark.",
+  "card": "[data-testid*='vehicle-card'], [class*='VehicleCard'], [class*='vehicle-card'], article",
+  "fields": {
+    "title": {"selector": "h2, h3, [class*='title']"},
+    "price": {"selector": "[class*='price'], [data-testid*='price']"},
+    "mileage": {"selector": "[class*='mileage'], [class*='miles']"},
+    "image": {"selector": "img", "attrs": ["src", "data-src", "srcset"]},
+    "link": {"selector": "a[href*='/used-cars/'], a[href*='/vehicle/']", "attrs": ["href"]}
+  },
+  "selfCheck": {
+    "minCards": 3,
+    "minPriceFraction": 0.7,
+    "minImageFraction": 0.0,
+    "totalPattern": "([\\d,]+)\\s+used cars at EchoPark"
+  }
+}

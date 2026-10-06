@@ -208,9 +208,19 @@ class ChatService extends Notifier<ChatState> {
       ref.read(searchProvider.notifier).onApplied = (s) {
         final line =
             'Looking for ${s.query.describe()} on ${CuratedSites.byId(s.siteId)?.name ?? s.siteId}: ${s.lastCount ?? 0} listings read.';
+        final t = [...state.timeline];
+        // One note per run of searches (Q65): a consecutive note is replaced,
+        // an identical one is skipped, so the transcript never repeats itself.
+        if (t.isNotEmpty &&
+            t.last is MessageEntry &&
+            (t.last as MessageEntry).message.role == 'system' &&
+            (t.last as MessageEntry).message.text.startsWith('Looking for')) {
+          if ((t.last as MessageEntry).message.text == line) return;
+          t.removeLast();
+        }
         state = state.copyWith(
           timeline: [
-            ...state.timeline,
+            ...t,
             MessageEntry(ChatMessage(role: 'system', text: line)),
           ],
         );
@@ -218,6 +228,50 @@ class ChatService extends Notifier<ChatState> {
     } catch (e) {
       state = state.copyWith(busy: false, error: 'Could not start Motormind: $e');
     }
+  }
+
+  /// What the app adds under the filters card for each mode. Dreaming clears
+  /// the price ceiling and says so with a choice; practical and buying get the
+  /// numbers form in the conversation. Browsing gets nothing extra.
+  List<TimelineEntry>? _starterFor(ShoppingMode mode) {
+    final args = switch (mode) {
+      ShoppingMode.dreaming => {
+        'component': 'choice',
+        'props': {
+          'question': 'No price ceiling for a dream car. Start with a kind, or name it below?',
+          'options': [
+            {'id': 'kind-coupe', 'label': 'Sports / coupe'},
+            {'id': 'kind-convertible', 'label': 'Convertible'},
+            {'id': 'kind-suv', 'label': 'A big SUV'},
+            {'id': 'kind-pickup', 'label': 'A truck'},
+          ],
+        },
+      },
+      ShoppingMode.practical || ShoppingMode.buying => {
+        'component': 'input_form',
+        'props': {
+          'title': 'The numbers that matter most',
+          'fields': [
+            {
+              'id': 'payment',
+              'label': 'Monthly payment you can live with (\$)',
+              'type': 'currency',
+            },
+            {'id': 'down', 'label': 'Cash down (\$)', 'type': 'currency'},
+            {
+              'id': 'credit',
+              'label': 'Credit: excellent, good, fair, poor or rebuilding',
+              'type': 'text',
+            },
+            {'id': 'term', 'label': 'Loan length in months (48, 60, 72)', 'type': 'number'},
+          ],
+        },
+      },
+      ShoppingMode.browsing => null,
+    };
+    if (args == null) return null;
+    final v = PresentRequest.validate(args, resultTool: null);
+    return v.request == null ? null : [ComponentEntry(ShownComponent(request: v.request!))];
   }
 
   ShownComponent _filtersCard() {
@@ -443,11 +497,27 @@ class ChatService extends Notifier<ChatState> {
       if (!state.timeline.any(
         (e) => e is ComponentEntry && e.shown.request.component.id == 'search_filters',
       )) {
-        state = state.copyWith(timeline: [...state.timeline, ComponentEntry(_filtersCard())]);
+        state = state.copyWith(
+          timeline: [
+            ...state.timeline,
+            ComponentEntry(_filtersCard()),
+            // Mode starters (Q64, Q66): the app says what it did and asks,
+            // so the person can correct it instead of living with a default.
+            ...?_starterFor(mode),
+            MessageEntry(
+              const ChatMessage(
+                role: 'system',
+                text: 'You can ask Motormind to show, hide or change anything here.',
+              ),
+            ),
+          ],
+        );
       }
       return turn;
     }
     if (id.startsWith('kind-')) {
+      final style = SearchQuery.normalizeBodyStyle(id.substring(5));
+      if (style != null) ref.read(searchProvider.notifier).update({'body_style': style});
       return send(
         withExtra(
           id == 'kind-unsure'

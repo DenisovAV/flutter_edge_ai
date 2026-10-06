@@ -31,6 +31,7 @@ dependencies:
   firebase_core: ^4.15.0
   firebase_analytics: ^12.6.0
   webview_flutter: ^4.14.1
+  path_provider: ^2.1.4
   flutter_edge_ai_diagnostics: ^0.1.0
 dev_dependencies:
   flutter_test:
@@ -41,3 +42,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/prompts/
+    - assets/recipes/

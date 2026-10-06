@@ -322,6 +322,16 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
 - **VA-6.1.2** `read_page`: DOM cleanup, readability extraction, token cap, pattern-found
   price, mileage, year; figures flow to finance tools as labeled inputs. **done** (generic;
   per-site recipes pending, TQ65)
+- **VA-6.1.4** As a developer, I want each curated site read by a JSON recipe with a
+  self-check, replaceable at runtime, with the text strategies as the floor, so that a site
+  change is detected and repaired without a release. **done** (ADR 0007; shipped recipes
+  unverified until captured pages prove them)
+- **VA-6.1.5** As the owner, I want a Capture control on the web pane and a Captures
+  screen with the pages worth capturing, so that real pages reach the tests without the
+  app loading anything on its own. **done**
+- **VA-6.1.6** As a developer, I want a repaired recipe to come from a hosted help service
+  that receives page structure and the broken recipe, so that every app using it is fixed
+  at once. (DD-R27; not before the capture process is proven)
 - **VA-6.1.3** As a buyer, I want third-party pages to be usable in half a screen
   (auto-scroll to content, reader mode, or go fullscreen), so that ads and headers do not
   eat the view. AC: prototype on three curated sites. (Q23)

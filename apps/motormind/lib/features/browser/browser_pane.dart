@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../captures/captures_screen.dart';
 import 'browser_service.dart';
 
 /// The web pane on the stage: a slim address line and
@@ -48,12 +49,19 @@ class _BrowserPaneState extends ConsumerState<BrowserPane> {
       children: [
         if (browser.loading) const LinearProgressIndicator(minHeight: 2),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          child: Text(
-            browser.url ?? '',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall,
+          padding: const EdgeInsets.only(left: 12, right: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  browser.url ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall,
+                ),
+              ),
+              const CaptureButton(),
+            ],
           ),
         ),
         Expanded(child: WebViewWidget(controller: _controller)),

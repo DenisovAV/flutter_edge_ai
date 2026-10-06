@@ -1,0 +1,20 @@
+{
+  "siteId": "cars",
+  "version": 1,
+  "status": "unverified",
+  "note": "Written from Cars.com's documented results markup (vehicle-card); not yet read on a real page. Capture a results page in the app to verify.",
+  "card": "div.vehicle-card",
+  "fields": {
+    "title": {"selector": "h2.title"},
+    "price": {"selector": ".primary-price"},
+    "mileage": {"selector": ".mileage"},
+    "image": {"selector": "img.vehicle-image, img", "attrs": ["src", "data-src", "srcset"]},
+    "link": {"selector": "a.vehicle-card-link, a[href*='/vehicledetail/']", "attrs": ["href"]}
+  },
+  "selfCheck": {
+    "minCards": 3,
+    "minPriceFraction": 0.7,
+    "minImageFraction": 0.5,
+    "totalPattern": "([\\d,]+)\\s+matches"
+  }
+}

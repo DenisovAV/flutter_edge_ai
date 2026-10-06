@@ -16,4 +16,5 @@ export 'src/vehicles/curated_sites.dart';
 export 'src/vehicles/listing.dart';
 export 'src/vehicles/listing_extractor.dart';
 export 'src/vehicles/listing_store.dart';
+export 'src/vehicles/reading_recipe.dart';
 export 'src/vehicles/search_query.dart';

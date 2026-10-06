@@ -2,6 +2,8 @@ import 'package:advisor_core/advisor_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../advisor/advisor_surface.dart';
+import '../advisor/display_rules.dart';
 import 'search_service.dart';
 
 /// The standard questions, as a live card inside the conversation. It is bound
@@ -16,6 +18,41 @@ class SearchFiltersCard extends ConsumerWidget {
     final q = search.query;
     final svc = ref.read(searchProvider.notifier);
     final theme = Theme.of(context);
+    final mode = DisplayRules.filtersCard(
+      DisplayContext(
+        surface: ref.watch(surfaceProvider),
+        filtersSet: !q.isEmpty,
+        keyboardOpen: MediaQuery.viewInsetsOf(context).bottom > 0,
+        userExpandedFilters: search.userExpanded,
+      ),
+    );
+    if (mode == FiltersCardMode.hidden)
+      return const SizedBox.shrink(key: Key('card-search_filters'));
+    if (mode == FiltersCardMode.summary) {
+      return Card(
+        key: const Key('card-search_filters'),
+        child: ListTile(
+          key: const Key('filters-summary'),
+          dense: true,
+          leading: const Icon(Icons.filter_alt_outlined),
+          title: Text(
+            '${q.describe()} · ${CuratedSites.byId(search.siteId)?.name ?? search.siteId}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            search.applying
+                ? 'reading…'
+                : search.lastCount == null
+                ? ''
+                : '${search.lastCount} read',
+            key: const Key('search-status'),
+          ),
+          trailing: const Icon(Icons.expand_more),
+          onTap: () => svc.setExpanded(true),
+        ),
+      );
+    }
 
     Widget chip(String label, bool selected, VoidCallback onTap, {Key? key}) => FilterChip(
       key: key,
@@ -39,6 +76,14 @@ class SearchFiltersCard extends ConsumerWidget {
                 Expanded(
                   child: Text('What are we looking for?', style: theme.textTheme.titleMedium),
                 ),
+                if (!q.isEmpty)
+                  IconButton(
+                    key: const Key('filters-collapse'),
+                    tooltip: 'Collapse',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.expand_less),
+                    onPressed: () => svc.setExpanded(false),
+                  ),
                 Text(
                   search.applying
                       ? 'reading…'

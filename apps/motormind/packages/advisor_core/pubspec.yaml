@@ -10,6 +10,7 @@ environment:
   sdk: ^3.12.0
 
 dependencies:
+  html: ^0.15.4
   vehicle_finance:
     path: ../vehicle_finance
 

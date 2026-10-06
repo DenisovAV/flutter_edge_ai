@@ -12,6 +12,7 @@ class SearchState {
   const SearchState({
     this.query = const SearchQuery(),
     this.siteId = 'echopark',
+    this.userExpanded,
     this.applying = false,
     this.lastCount,
     this.lastSource,
@@ -23,6 +24,10 @@ class SearchState {
   /// The curated site the search applies to. The person picks it in the
   /// filters card and it sticks until changed.
   final String siteId;
+
+  /// The person's last explicit expand/collapse of the filters card; null
+  /// means the display rule decides.
+  final bool? userExpanded;
   final bool applying;
   final int? lastCount;
   final String? lastSource;
@@ -31,6 +36,8 @@ class SearchState {
   SearchState copyWith({
     SearchQuery? query,
     String? siteId,
+    bool? userExpanded,
+    bool clearUserExpanded = false,
     bool? applying,
     int? lastCount,
     String? lastSource,
@@ -39,6 +46,7 @@ class SearchState {
   }) => SearchState(
     query: query ?? this.query,
     siteId: siteId ?? this.siteId,
+    userExpanded: clearUserExpanded ? null : (userExpanded ?? this.userExpanded),
     applying: applying ?? this.applying,
     lastCount: lastCount ?? this.lastCount,
     lastSource: lastSource ?? this.lastSource,
@@ -89,10 +97,15 @@ class SearchService extends Notifier<SearchState> {
     }
   }
 
+  void setExpanded(bool? expanded) =>
+      state = state.copyWith(userExpanded: expanded, clearUserExpanded: expanded == null);
+
   /// Merge [args] (update_search shape) and apply. Returns the new query.
+  /// A change clears the person's manual expand/collapse (DD-R13: the
+  /// override lasts until the context changes).
   SearchQuery update(Map<String, Object?> args, {bool applyNow = true}) {
     final q = state.query.applyArgs(args);
-    state = state.copyWith(query: q, clearNote: true);
+    state = state.copyWith(query: q, clearNote: true, clearUserExpanded: true);
     if (applyNow) scheduleApply();
     return q;
   }

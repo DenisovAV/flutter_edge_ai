@@ -33,10 +33,12 @@ at runtime from the conversation** rather than pre-designed screens
 - **Composes the screen.** The model asks for a component from a registry (payment card,
   fullscreen breakdown, compare, question chips) and a surface (docked or fullscreen); the
   user can override and pin.
-- **Reads the web for the buyer.** An in-app browser the assistant can read from, with a
-  curated list of tested listing and valuation sites. Figures found on a page become
-  labeled inputs. Form filling only on sites the user approved, previewed and confirmed
-  every time.
+- **Browses with the buyer.** The top of the screen is a web pane showing a curated listing
+  site (EchoPark by default). It is the person's browser: they scroll, tap, and answer any
+  verification a site shows. The assistant reads only the page they have open, pulls
+  listings and figures out of it, and can open a site's filtered results page for a stated
+  budget and body style. Figures found on a page become labeled inputs. Form filling only on
+  sites the user approved, previewed and confirmed every time.
 - **Lets the user pick the model.** A short catalog of on-device models (Gemma 4 E2B
   default, Qwen3 0.6B light, OS built-in where available), delivered over the air with
   checksums, switchable at runtime. See [docs/MODELS.md](docs/MODELS.md).

@@ -196,6 +196,18 @@ Three states, one widget tree, a toggle control the user owns:
 
 ## 10. Browser agent (VA-6, Q20, Q23, TQ18, TQ19, TQ36)
 
+**Built 2026-10-05, first cut.** `BrowserService` owns one `webview_flutter` WebView on the
+stage (curated-site chips: EchoPark, Cars.com, Autotrader). `read_page` waits for the load,
+injects JavaScript that removes scripts, navigation, header and footer and returns the
+visible text, title and og:image; `ListingExtractor` pulls listings by pattern (a
+year-make-model line followed by a price and optional mileage) into a session
+`ListingStore`; `find_vehicles` searches the store and, when it is empty, opens the default
+site's filtered results URL and reads it. A human-verification page is detected and
+reported to the person to complete; nothing tries to get around it. The stage flips to Web
+when a page is opened and to Cards when a card is presented; the person can flip it back.
+
+Original plan, still the direction:
+
 - Navigation policy: `http(s)` only, downloads and external schemes blocked, JavaScript on.
 - `read_page`: inject a Readability-style extraction, strip navigation, ads and headers at
   the DOM level before text extraction, cap to a token budget, return cleaned text plus

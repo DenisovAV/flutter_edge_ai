@@ -295,7 +295,8 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
 - **VA-5.2.2** a curated, tested list of listing and valuation sites with extraction
   recipes (an HTML pre-rendering step, not scraping); unknown sites fall back to generic
   extraction. The browser is a capability the advisor uses, not a feature the app sells
-  (Q44). (Q10, Q31)
+  (Q44). **curated list with filtered-results URLs done** (EchoPark, Cars.com,
+  Autotrader); recipes pending; URL parameters unverified (TQ64).
 - **VA-5.2.3** NHTSA vPIC and FuelEconomy.gov adapters, cached, source shown. (TQ17)
 - **VA-5.2.4** `ValuationSource` interface with user-entered and browser-assisted
   implementations. (Q11)
@@ -303,6 +304,7 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
 ### VA-5.3 Content area (P1)
 
 - **VA-5.3.1** vehicle list and detail; selection updates conversation context.
+  **`vehicle_card` list done**; detail and selection pending.
 - **VA-5.3.2** compare two or three vehicles including payment and ownership cost.
 
 ---
@@ -311,10 +313,11 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
 
 ### VA-6.1 Read-only browsing (P1)
 
-- **VA-6.1.1** in-app webview mode (`flutter_inappwebview`), http(s) only, downloads and
-  external schemes blocked. (TQ18)
+- **VA-6.1.1** in-app webview on the stage (`webview_flutter`; `flutter_inappwebview` does
+  not build on AGP 9), http(s) only, external schemes blocked. **done**
 - **VA-6.1.2** `read_page`: DOM cleanup, readability extraction, token cap, pattern-found
-  price, mileage, year; figures flow to finance tools as labeled inputs. (TQ19)
+  price, mileage, year; figures flow to finance tools as labeled inputs. **done** (generic;
+  per-site recipes pending, TQ65)
 - **VA-6.1.3** As a buyer, I want third-party pages to be usable in half a screen
   (auto-scroll to content, reader mode, or go fullscreen), so that ads and headers do not
   eat the view. AC: prototype on three curated sites. (Q23)

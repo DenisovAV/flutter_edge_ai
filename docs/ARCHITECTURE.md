@@ -123,6 +123,22 @@ toggle over the same `DealEstimate` (Q19, stretch).
 - `ComponentRegistry` and `PresentRequest`: the generative-UI vocabulary and its validator
   (ADR 0006).
 
+## 6b. The stage (DD principle 2, realized 2026-10-05)
+
+The content area above the conversation is the **stage**: components presented while the
+advisor is docked land there, newest first, and the chat below is commentary. A result
+re-presented with a richer component replaces its card. In fullscreen, cards sit inline.
+The app itself puts things on the stage without waiting for the model: a mode-specific
+starter the moment a shopping mode is chosen, and every finance result the instant its
+tool returns. Interaction prompts (choice, form) stay in the conversation.
+
+## 6c. Turn control
+
+Replies are capped at 400 tokens and tool turns at four. The panel shows elapsed time and a
+Stop button during a turn (`stopGeneration()` underneath). An idle watchdog cancels a turn
+that produces no event for 75 s. These numbers are emulator-era and become catalog fields
+once measured on a device (TQ60).
+
 ## 7. The advisor surface (VA-2.1, Q8)
 
 Three states, one widget tree, a toggle control the user owns:

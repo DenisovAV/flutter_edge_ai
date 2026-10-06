@@ -208,7 +208,8 @@ VA-10, then VA-8 and VA-12.
 
 ### VA-2.2 Chat (P0)
 
-- **VA-2.2.1** streamed replies with stop. **streaming done**; stop pending.
+- **VA-2.2.1** streamed replies with stop. **done** (Stop button, elapsed counter, idle
+  watchdog, 400-token reply cap)
 - **VA-2.2.2** tool activity shown as status chips. **done**
 - **VA-2.2.3** `choice`, `multi_choice` and `input_form` interaction components with the
   implicit "something else" escape, so the advisor asks with options and forms rather than
@@ -246,7 +247,8 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
   anyway with its default component. **done**
 - **VA-11.1.3** As a buyer, I want the screen to change shape with the conversation (one
   card, a breakdown, a compare, a question), so that nothing is pre-designed. AC: the same
-  conversation demonstrably yields different compositions.
+  conversation demonstrably yields different compositions. **first form done**: the stage
+  above the chat composes from presented cards; starters per mode; fullscreen inline.
 
 ### VA-11.2 Layout allocation, control and situation (P1)
 
@@ -263,7 +265,7 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
   so that I am not shown cars that are gone. (DD-R15, Q45)
 - **VA-11.2.7** As a buyer, I want the empty content area to show something the advisor
   chose for me (recent conversations, what it can help with, profile or garage completion),
-  not a fixed screen. (DD-R16, Q44)
+  not a fixed screen. (DD-R16, Q44) **template empty state done**; model-chosen pending.
 
 - **VA-11.2.1** As a developer, I want `present` choices logged (component, surface, timing)
   so the model picker can score how well each model uses the registry.

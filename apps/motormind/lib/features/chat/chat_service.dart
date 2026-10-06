@@ -312,6 +312,7 @@ class ChatService extends Notifier<ChatState> {
           case ThinkingDelta():
             break;
           case ToolStarted(:final name):
+            debugPrint('[motormind] tool $name');
             state = state.copyWith(activeTool: name);
           case ToolFinished():
             state = state.copyWith(clearActiveTool: true);
@@ -360,8 +361,12 @@ class ChatService extends Notifier<ChatState> {
             if (replaced) updateReply(reply.copyWith(text: ''));
           case PolicyFlagged(:final flags):
             state = state.copyWith(policyFlags: flags);
-          case TurnDone(:final narration):
-            updateReply(reply.copyWith(text: narration, streaming: false));
+          case TurnDone(:final narration, :final results):
+            // Gemma sometimes ends a turn right after a tool call with no
+            // words. The screen must still answer, so the app writes the
+            // sentence from what it knows (counts, not the model's numbers).
+            final text = narration.trim().isNotEmpty ? narration : _silentTurnText(results);
+            updateReply(reply.copyWith(text: text, streaming: false));
         }
       }
       watchdog?.cancel();
@@ -379,6 +384,23 @@ class ChatService extends Notifier<ChatState> {
       debugPrint('[motormind] turn done');
       state = state.copyWith(busy: false, clearActiveTool: true, clearTurnStartedAt: true);
     }
+  }
+
+  String _silentTurnText(List<ToolResult> results) {
+    final searched = results.any(
+      (r) => r.tool == AdvisorTools.findVehicles || r.tool == AdvisorTools.updateSearch,
+    );
+    if (searched) {
+      final s = ref.read(searchProvider);
+      final site = CuratedSites.byId(s.siteId)?.name ?? s.siteId;
+      final n = s.lastCount ?? 0;
+      if (n == 0) {
+        return 'Nothing on $site matched ${s.query.describe()}. Loosen a filter or try another site.';
+      }
+      return '$n listings on $site match ${s.query.describe()}. Tap a type or price to narrow it, or tell me more.';
+    }
+    if (results.isNotEmpty) return 'Here is what I found. Tell me more when you are ready.';
+    return 'Nothing to add yet. Pick an option above, change a filter, or tell me more.';
   }
 
   /// Cancels the generation in flight; whatever was produced so far stays

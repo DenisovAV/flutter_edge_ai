@@ -167,7 +167,7 @@ void main() {
               topP: model.topP,
               tools: _testTools,
               supportsFunctionCalls: true,
-              isThinking: model.isThinking,
+              enableThinking: model.isThinking,
               modelType: model.modelType,
               toolChoice: ToolChoice.auto,
             );
@@ -226,7 +226,7 @@ void main() {
               topP: model.topP,
               tools: _testTools,
               supportsFunctionCalls: true,
-              isThinking: model.isThinking,
+              enableThinking: model.isThinking,
               modelType: model.modelType,
               toolChoice: ToolChoice.required,
             );
@@ -280,7 +280,7 @@ void main() {
               topP: model.topP,
               tools: _testTools,
               supportsFunctionCalls: true,
-              isThinking: model.isThinking,
+              enableThinking: model.isThinking,
               modelType: model.modelType,
               toolChoice: ToolChoice.none,
             );
@@ -331,7 +331,7 @@ void main() {
               topP: model.topP,
               tools: _testTools,
               supportsFunctionCalls: true,
-              isThinking: model.isThinking,
+              enableThinking: model.isThinking,
               modelType: model.modelType,
               toolChoice: ToolChoice.auto,
             );
@@ -393,7 +393,7 @@ void main() {
               topP: model.topP,
               tools: _testTools,
               supportsFunctionCalls: true,
-              isThinking: model.isThinking,
+              enableThinking: model.isThinking,
               modelType: model.modelType,
               toolChoice: ToolChoice.auto,
             );

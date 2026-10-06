@@ -19,7 +19,7 @@ base class FlutterEdgeAiModelOptions {
     double? topP,
     bool? supportImage,
     bool? supportAudio,
-    bool? isThinking,
+    bool? enableThinking,
     int? randomSeed,
     String? toolChoice,
     String? systemInstruction,
@@ -36,7 +36,7 @@ base class FlutterEdgeAiModelOptions {
       'topP': ?topP,
       'supportImage': ?supportImage,
       'supportAudio': ?supportAudio,
-      'isThinking': ?isThinking,
+      'enableThinking': ?enableThinking,
       'randomSeed': ?randomSeed,
       'toolChoice': ?toolChoice,
       'systemInstruction': ?systemInstruction,
@@ -125,15 +125,15 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  bool? get isThinking {
-    return _json['isThinking'] as bool?;
+  bool? get enableThinking {
+    return _json['enableThinking'] as bool?;
   }
 
-  set isThinking(bool? value) {
+  set enableThinking(bool? value) {
     if (value == null) {
-      _json.remove('isThinking');
+      _json.remove('enableThinking');
     } else {
-      _json['isThinking'] = value;
+      _json['enableThinking'] = value;
     }
   }
 
@@ -264,7 +264,7 @@ base class _FlutterEdgeAiModelOptionsTypeFactory
             'topP': $Schema.number(),
             'supportImage': $Schema.boolean(),
             'supportAudio': $Schema.boolean(),
-            'isThinking': $Schema.boolean(),
+            'enableThinking': $Schema.boolean(),
             'randomSeed': $Schema.integer(),
             'toolChoice': $Schema.string(),
             'systemInstruction': $Schema.string(),

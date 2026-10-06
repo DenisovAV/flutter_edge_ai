@@ -62,7 +62,7 @@ void main() {
     test('trim-only cleaning', () {
       final cleaned = ModelThinkingFilter.cleanResponse(
         '  Answer text  \n',
-        isThinking: false,
+        enableThinking: false,
         modelType: ModelType.general,
         fileType: ModelFileType.onnx,
       );
@@ -74,7 +74,7 @@ void main() {
       () {
         final gemma = ModelThinkingFilter.cleanResponse(
           'keep <end_of_turn> literal',
-          isThinking: false,
+          enableThinking: false,
           modelType: ModelType.gemmaIt,
           fileType: ModelFileType.onnx,
         );
@@ -82,7 +82,7 @@ void main() {
 
         final qwen = ModelThinkingFilter.cleanResponse(
           'keep <|im_end|> literal',
-          isThinking: false,
+          enableThinking: false,
           modelType: ModelType.qwen3,
           fileType: ModelFileType.onnx,
         );

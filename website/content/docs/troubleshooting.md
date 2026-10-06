@@ -111,25 +111,19 @@ path. MediaPipe `.task` on web is unaffected and remains fully supported.
 
 **Works on web `.litertlm`:** text generation (sync + streaming), multi-turn chat
 with history, system instruction, **function calling / tool calls** (Gemma 4),
-concurrent sessions (serialized), large models via OPFS streaming.
+**thinking mode** (Gemma 4 measured in Chrome; Qwen3 `<think>` tags parsed by
+core), concurrent sessions (serialized), large models via OPFS streaming.
 
 **Not supported on web `.litertlm` yet (mobile/desktop only):**
 
 - ❌ **Vision / image input** — image inputs are dropped with a debug warning.
 - ❌ **Audio input** — no Audio executor config in the JS API.
-- ⚠️ **Thinking mode** — Qwen3's emitted `<think>` tags are split out of the
-  token stream by platform-independent core code. Gemma 4 is measured
-  unsupported: the web engine passes `extra_context` and filter config, but
-  `web_thinking_limitation_test.dart` receives only `TextResponse`. The catalog
-  has no DeepSeek Web entry.
 - ❌ **LoRA weights** — `loraPath` throws `UnsupportedError`.
 
 <Info>
 
 For vision on Web today, use a compatible MediaPipe `.task` build. Neither Web
-engine supports audio; Qwen3 tag-based reasoning can be parsed on Web when
-emitted, but Gemma 4's thinking channel is unavailable. These Web `.litertlm`
-limits track the upstream
+engine supports audio. These Web `.litertlm` limits track the upstream
 `@litert-lm/core` early-preview API and will lift as Google extends the JS
 executor surface.
 

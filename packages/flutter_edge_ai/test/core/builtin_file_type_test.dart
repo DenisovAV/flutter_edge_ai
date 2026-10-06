@@ -28,7 +28,7 @@ void main() {
     test('trim-only cleaning', () {
       final cleaned = ModelThinkingFilter.cleanResponse(
         '  Answer text  \n',
-        isThinking: false,
+        enableThinking: false,
         modelType: ModelType.general,
         fileType: ModelFileType.builtIn,
       );
@@ -38,7 +38,7 @@ void main() {
     test('does not strip model-specific tags mid-text', () {
       final cleaned = ModelThinkingFilter.cleanResponse(
         'keep <end_of_turn> literal',
-        isThinking: false,
+        enableThinking: false,
         modelType: ModelType.gemmaIt,
         fileType: ModelFileType.builtIn,
       );

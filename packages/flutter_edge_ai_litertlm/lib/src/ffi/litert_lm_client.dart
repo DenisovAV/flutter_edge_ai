@@ -17,17 +17,12 @@ import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
 
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
+import '../thinking_context.dart';
 
-/// The per-turn `extra_context` that sets thinking for this turn.
-///
-/// Always an explicit bool. A template that reads the flag — Qwen3's
-/// `enable_thinking|default(true)` and its Hugging Face original — thinks when
-/// the key is absent, so sending nothing for "off" left those bundles
-/// reasoning: Qwen3-0.6B_dynamic spent a 768-token budget on reasoning and
-/// never answered. A template that ignores the key (Gemma 4 renders the same
-/// prompt, the legacy Qwen3 prompt_templates) is unaffected.
+/// The per-turn `extra_context` JSON that sets thinking for this turn; see
+/// [thinkingContext].
 String thinkingExtraContext(bool enableThinking) =>
-    jsonEncode({'enable_thinking': enableThinking});
+    jsonEncode(thinkingContext(enableThinking));
 
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
 typedef _StreamCallbackNative = Void Function(

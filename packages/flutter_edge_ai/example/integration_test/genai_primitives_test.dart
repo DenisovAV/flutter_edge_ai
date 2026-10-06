@@ -231,7 +231,7 @@ void main() {
 
   testWidgets('sendMessage — thinking', (tester) async {
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(isThinking: true);
+    final chat = await model.createChat(enableThinking: true);
     final reply = await chat.sendMessage(
       ChatMessage.user('Why is the sky blue?'),
     );

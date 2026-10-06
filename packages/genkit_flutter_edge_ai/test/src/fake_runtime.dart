@@ -94,7 +94,7 @@ class FakeInferenceModel extends gemma.InferenceModel {
     bool? supportAudio,
     List<gemma.Tool> tools = const [],
     bool? supportsFunctionCalls,
-    bool isThinking = false,
+    bool enableThinking = false,
     gemma.ModelType? modelType,
     gemma.ToolChoice toolChoice = gemma.ToolChoice.auto,
     String? systemInstruction,

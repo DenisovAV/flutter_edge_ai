@@ -61,7 +61,7 @@ void main() {
           temperature: 1.0,
           topK: 64,
           topP: 0.95,
-          isThinking: true,
+          enableThinking: true,
           modelType: ModelType.gemmaIt,
         );
 
@@ -145,7 +145,7 @@ void main() {
           temperature: 1.0,
           topK: 64,
           topP: 0.95,
-          isThinking: false,
+          enableThinking: false,
           modelType: ModelType.gemmaIt,
         );
 

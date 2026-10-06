@@ -1,5 +1,7 @@
-## 2.0.1
+## 2.1.0
+- **Breaking:** `isThinking` is `enableThinking`; `ModelRuntimeDefaults.isThinking` is `thinkingDeclared`.
 - Add `ModelType.qwen35`; thought-channel reasoning is a `ThinkingResponse` for every type; no ` /no_think` on audio.
+- Print a one-time note per chat when reasoning was hidden with thinking off.
 
 ## 2.0.0
 - **Breaking:** RAG APIs and storage contracts move to `flutter_edge_ai_rag`.

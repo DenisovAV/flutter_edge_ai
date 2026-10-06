@@ -85,9 +85,9 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 devices. The Simulator stays CPU-only because Metal sim has a 256 MB
 single-allocation cap.
 
-² Web `.litertlm` is an **early preview** via `@litert-lm/core` — text plus function calling. No
-vision, audio, the Gemma 4 thinking channel, or LoRA; Qwen3 reasoning tags are
-still parsed when the model emits them. See the feature matrix in
+² Web `.litertlm` is an **early preview** via `@litert-lm/core` — text, function calling and
+thinking. No vision, audio or LoRA; Qwen3 reasoning tags are parsed when the
+model emits them. See the feature matrix in
 [Troubleshooting](/docs/troubleshooting). For full multimodal on web, use a
 MediaPipe `.task` build.
 
@@ -120,9 +120,9 @@ runtime: probe with `BuiltInAi.availability()`.
 | **SmolLM3 3B** | Multilingual small LLM with reasoning mode | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.0GB |
 | **TranslateGemma 4B** † | Single-shot 55-language translation | ❌ | ❌ | ❌ | 55 languages | 2-4GB |
 
-¹ Gemma 4 **Thinking Mode** needs the native `extraContext` channel: Android, iOS
-and Desktop only. The measured Web `.litertlm` test receives no Gemma 4
-`ThinkingResponse`; MediaPipe Web cannot enable it and ONNX Web ignores it.
+¹ Gemma 4 **Thinking Mode** needs LiteRT-LM (`.litertlm`): Android, iOS, Desktop
+and Web (measured on Gemma 4 E2B in Chrome). MediaPipe Web cannot enable it and
+ONNX Web ignores it.
 Qwen3 is different: core parses its emitted `<think>` tags on every platform,
 including Web.
 
@@ -296,7 +296,7 @@ final model = await FlutterEdgeAi.getActiveModel(defaults: install.runtime);
 // keep it >= `install.runtime?.minOutputTokens`). Passing the floor as the cap
 // would truncate a reasoning model mid-thought.
 final session = await model.createSession(
-  enableThinking: install.runtime?.isThinking ?? false,
+  enableThinking: install.runtime?.thinkingDeclared ?? false,
 );
 ```
 

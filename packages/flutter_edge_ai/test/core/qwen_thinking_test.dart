@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/core/extensions.dart';
@@ -82,7 +83,7 @@ Future<List<String>> _staged(
     maxTokens: 1024,
     supportAudio: true,
     modelType: type,
-    isThinking: isThinking,
+    enableThinking: isThinking,
     fileType: ModelFileType.litertlm,
   );
   await chat.initSession();
@@ -194,6 +195,47 @@ void main() {
         );
       });
     }
+  });
+
+  group('hidden reasoning notice', () {
+    Future<List<String>> printedOverTwoTurns(List<String> tokens) async {
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          final chat = InferenceChat(
+            sessionCreator: () async => _RecordingSession(tokens),
+            maxTokens: 1024,
+            modelType: ModelType.general,
+            fileType: ModelFileType.litertlm,
+          );
+          await chat.initSession();
+          for (var turn = 0; turn < 2; turn++) {
+            await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+            await chat.generateChatResponseAsync().toList();
+          }
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      return printed
+          .where((l) => l.contains('reasoned although thinking is off'))
+          .toList();
+    }
+
+    test(
+      'reasoning hidden with thinking off is reported once per chat',
+      () async {
+        final chunks = _thinkingBundleChunks
+            .map(SdkTextExtractor.extractTextFromResponse)
+            .toList();
+        expect(await printedOverTwoTurns(chunks), hasLength(1));
+      },
+    );
+
+    test('an answer without reasoning is not reported', () async {
+      expect(await printedOverTwoTurns(['2 + 2 = 4.']), isEmpty);
+    });
   });
 
   group('/no_think suffix', () {

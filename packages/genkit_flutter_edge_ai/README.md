@@ -56,11 +56,11 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 ```yaml
 # pubspec.yaml (your app)
 dependencies:
-  genkit_flutter_edge_ai: ^0.7.0
-  flutter_edge_ai: ^2.0.0
-  flutter_edge_ai_litertlm: ^1.8.7   # only the engines/backends you actually use
+  genkit_flutter_edge_ai: ^0.8.0
+  flutter_edge_ai: ^2.1.0
+  flutter_edge_ai_litertlm: ^1.9.0   # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.2.2  # the tokenizers an embedding backend needs
-  flutter_edge_ai_mediapipe: ^1.0.9
+  flutter_edge_ai_mediapipe: ^1.1.0
 ```
 
 ```dart
@@ -144,7 +144,7 @@ final response = await ai.generate(
 | `topP` | `double?` | null | Top-P (nucleus) sampling |
 | `supportImage` | `bool?` | false | Enable multimodal image input |
 | `supportAudio` | `bool?` | false | Enable audio input (Gemma 4, Gemma3n) |
-| `isThinking` | `bool?` | false | Enable thinking mode (Gemma 4, DeepSeek, Qwen3) |
+| `enableThinking` | `bool?` | false | Enable thinking mode (Gemma 4, DeepSeek, Qwen3) |
 | `randomSeed` | `int?` | 1 | Random seed for deterministic output |
 | `toolChoice` | `String?` | `'auto'` | Tool calling mode: `'auto'`, `'required'`, `'none'` |
 | `systemInstruction` | `String?` | null | System-level instruction (overrides system-role messages) |
@@ -247,4 +247,4 @@ for (final embedding in embeddings) {
 - **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
 - **Model installation**: The plugin does NOT manage model installation. The host app must install models via `FlutterEdgeAi.installModel()` and embedders via `FlutterEdgeAi.installEmbedder()` before using the plugin.
 - **System role**: System messages are passed natively via `createChat(systemInstruction:)`. Only text content is supported in system messages. The capability first shipped under the old package name in `flutter_gemma` 0.13.0.
-- **Thinking mode**: DeepSeek `.task` exposes thinking on Android/iOS; Gemma 4 exposes it on native `.litertlm` engines, while its measured Web path still produces no `ThinkingResponse`. Qwen3's emitted `<think>` tags are parsed by core platform-independently, including Web. MediaPipe Web has no thinking API, ONNX Web ignores `enableThinking`, and the catalog has no DeepSeek Web entry.
+- **Thinking mode**: DeepSeek `.task` exposes thinking on Android/iOS; Gemma 4 exposes it through `.litertlm` engines, native and Web. Qwen3's emitted `<think>` tags are parsed by core platform-independently, including Web. MediaPipe Web has no thinking API, ONNX Web ignores `enableThinking`, and the catalog has no DeepSeek Web entry.

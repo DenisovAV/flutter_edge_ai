@@ -309,7 +309,7 @@ abstract class InferenceModel {
     bool? supportAudio,
     List<Tool> tools = const [],
     bool? supportsFunctionCalls,
-    bool isThinking = false, // Add isThinking parameter
+    bool enableThinking = false,
     ModelType? modelType, // Add modelType parameter
     ToolChoice toolChoice = ToolChoice.auto, // Tool calling mode
     int? maxFunctionBufferLength,
@@ -326,7 +326,7 @@ abstract class InferenceModel {
         enableVisionModality: supportImage ?? false,
         enableAudioModality: supportAudio ?? false,
         systemInstruction: systemInstruction,
-        enableThinking: isThinking,
+        enableThinking: enableThinking,
         // Load-bearing, and it was missing: for a format whose
         // `runtimeInjectsToolDeclarations` is true (Gemma 4 ->
         // SdkPassthroughFunctionCallFormat), `InferenceChat` deliberately does
@@ -347,7 +347,7 @@ abstract class InferenceModel {
       maxFunctionBufferLength:
           maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
       tools: tools,
-      isThinking: isThinking,
+      enableThinking: enableThinking,
       modelType: modelType ?? ModelType.gemmaIt,
       fileType: fileType,
       toolChoice: toolChoice,
@@ -381,7 +381,7 @@ abstract class InferenceModel {
     bool? supportAudio,
     List<Tool> tools = const [],
     bool? supportsFunctionCalls,
-    bool isThinking = false,
+    bool enableThinking = false,
     ModelType? modelType,
     ToolChoice toolChoice = ToolChoice.auto,
     int? maxFunctionBufferLength,
@@ -398,7 +398,7 @@ abstract class InferenceModel {
         enableVisionModality: supportImage ?? false,
         enableAudioModality: supportAudio ?? false,
         systemInstruction: systemInstruction,
-        enableThinking: isThinking,
+        enableThinking: enableThinking,
         tools: tools,
         maxOutputTokens: maxOutputTokens,
       ),
@@ -410,7 +410,7 @@ abstract class InferenceModel {
       maxFunctionBufferLength:
           maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
       tools: tools,
-      isThinking: isThinking,
+      enableThinking: enableThinking,
       modelType: modelType ?? ModelType.gemmaIt,
       fileType: fileType,
       toolChoice: toolChoice,

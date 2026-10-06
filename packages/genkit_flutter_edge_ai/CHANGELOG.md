@@ -1,3 +1,6 @@
+## 0.8.0
+- **Breaking:** the `isThinking` option is `enableThinking`; require `flutter_edge_ai` ^2.1.0.
+
 ## 0.7.0
 - Require `flutter_edge_ai` 2.x.
 - **Breaking:** remove the `genkit_flutter_gemma` name aliases; `dart fix --apply` still migrates.

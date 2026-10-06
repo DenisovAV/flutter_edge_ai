@@ -26,8 +26,10 @@ abstract class $FlutterEdgeAiModelOptions {
   /// Whether the model supports audio input (Gemma 3n E4B).
   bool? get supportAudio;
 
-  /// Whether to enable thinking mode (DeepSeek-style reasoning).
-  bool? get isThinking;
+  /// Whether to show the model's reasoning (Gemma 4, Qwen3, DeepSeek, any
+  /// bundle with a thought channel). Off, it is requested off where the model
+  /// can switch it off, and hidden either way.
+  bool? get enableThinking;
 
   /// Random seed for deterministic output. Defaults to 1.
   int? get randomSeed;

@@ -28,7 +28,9 @@ class InferenceChat {
   final bool supportsFunctionCalls;
   final int maxFunctionBufferLength;
   final ModelType modelType; // Add modelType parameter
-  final bool isThinking; // Add isThinking flag for thinking models
+  /// Whether the app asked to see the model's reasoning. Off, it is requested
+  /// off where the model can switch it off, and hidden either way.
+  final bool enableThinking;
   final ModelFileType fileType; // Add fileType parameter
   final ToolChoice toolChoice; // Tool calling mode
   late InferenceModelSession session;
@@ -99,7 +101,7 @@ class InferenceChat {
     this._tools = const [],
     this.modelType =
         ModelType.gemmaIt, // Default to gemmaIt for backward compatibility
-    this.isThinking = false, // Default to false for backward compatibility
+    this.enableThinking = false,
     this.fileType =
         ModelFileType.task, // Default to task for backward compatibility
     this.toolChoice =
@@ -116,6 +118,37 @@ class InferenceChat {
 
   Future<void> initSession() async {
     session = await sessionCreator!();
+  }
+
+  bool _reportedHiddenThinking = false;
+
+  /// Drops [ThinkingResponse]s when thinking is off, and says once per chat
+  /// when a turn had any. `enableThinking: false` asks the model not to
+  /// reason, and some cannot comply — DeepSeek R1 and Qwen3 Thinking 2507
+  /// always reason, and a template may ignore the flag — so the reasoning
+  /// still costs time and output tokens, and a turn that ran out of budget
+  /// mid-thought arrives with no text at all.
+  Stream<ModelResponse> _hideThinking(Stream<ModelResponse> source) async* {
+    var hidden = 0;
+    await for (final response in source) {
+      if (response is ThinkingResponse) {
+        hidden += response.content.length;
+        continue;
+      }
+      yield response;
+    }
+    if (hidden > 0 && !_reportedHiddenThinking) {
+      _reportedHiddenThinking = true;
+      // A release build is where an empty or slow answer gets reported, and
+      // edgeAiLog is silent there.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai] NOTE: the model reasoned although thinking is off; '
+        '$hidden characters of reasoning were hidden. Not every model can '
+        'switch reasoning off, and hidden reasoning still costs time and '
+        'output tokens. Shown once per chat.',
+      );
+    }
   }
 
   Future<void> addQuery(Message message) async {
@@ -167,7 +200,7 @@ class InferenceChat {
     // requested. Only to a plain text turn: in a tool response it is noise,
     // and next to audio a bundle may print the user's text as the start of
     // its answer (Qwen3-ASR then returns an empty transcript).
-    if (!isThinking &&
+    if (!enableThinking &&
         modelType == ModelType.qwen3 &&
         message.isUser &&
         message.type == MessageType.text &&
@@ -211,7 +244,7 @@ class InferenceChat {
     final response = await session.getResponse();
     final cleanedResponse = ModelThinkingFilter.cleanResponse(
       response,
-      isThinking: isThinking,
+      enableThinking: enableThinking,
       modelType: modelType,
       fileType: fileType,
     );
@@ -380,9 +413,9 @@ class InferenceChat {
         );
 
     // If user didn't request thinking, discard ThinkingResponse events
-    final Stream<ModelResponse> thinkingHandledStream = isThinking
+    final Stream<ModelResponse> thinkingHandledStream = enableThinking
         ? filteredStream
-        : filteredStream.where((r) => r is! ThinkingResponse);
+        : _hideThinking(filteredStream);
 
     await for (final response in thinkingHandledStream) {
       if (response is TextResponse) {

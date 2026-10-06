@@ -1,3 +1,6 @@
+## 1.1.0
+- **Breaking:** `createChat(isThinking:)` is `enableThinking`; require `flutter_edge_ai` ^2.1.0.
+
 ## 1.0.9
 - Require `flutter_edge_ai` 2.x.
 

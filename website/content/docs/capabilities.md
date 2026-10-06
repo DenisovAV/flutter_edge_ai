@@ -60,8 +60,8 @@ native platforms).
   ONNX the tools do not reach a Gemma 4 model.
 - **Thinking.** *Tags*: models that write their reasoning between `<think>`
   tags (Qwen3, DeepSeek R1). Core parses the tags, so this works on any engine.
-  *Full* adds Gemma 4's separate thinking channel, which needs LiteRT-LM on a
-  native platform.
+  *Full* adds Gemma 4's separate thinking channel, which needs LiteRT-LM
+  (`.litertlm`) — native or web.
 - **Built-in AI**: vision works on Android. On iOS and macOS it needs OS 27 and
   an app built with the OS 27 SDK, and is not verified on a device yet; on OS 26
   it is text-only. Apple Foundation Models (iOS and macOS 26+) also has native
@@ -98,7 +98,7 @@ final canOpen = rag.canOpen(spec);
 ```
 
 **Model features are flags you set**: `supportImage` and `supportAudio` on
-`getActiveModel`, `supportsFunctionCalls` and `isThinking` on `createChat`.
+`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `createChat`.
 ONNX and Built-in AI throw `UnsupportedError` for image or audio input they
 cannot take.
 

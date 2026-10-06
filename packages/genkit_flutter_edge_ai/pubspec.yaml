@@ -1,6 +1,6 @@
 name: genkit_flutter_edge_ai
 description: Genkit Dart plugin for flutter_edge_ai — on-device LLM inference (Gemma, Qwen, Phi, DeepSeek, and more) with streaming, tools, JSON output, and embeddings.
-version: 0.7.0
+version: 0.8.0
 homepage: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/genkit_flutter_edge_ai
 repository: https://github.com/DenisovAV/flutter_edge_ai
 issue_tracker: https://github.com/DenisovAV/flutter_edge_ai/issues
@@ -21,7 +21,7 @@ dependencies:
   flutter:
     sdk: flutter
   genkit: ^0.16.0
-  flutter_edge_ai: ^2.0.0
+  flutter_edge_ai: ^2.1.0
   http: ^1.2.0
   schemantic: ^0.2.2
 

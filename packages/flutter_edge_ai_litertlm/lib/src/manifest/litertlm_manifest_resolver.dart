@@ -41,7 +41,7 @@ export 'manifest_fetch_types.dart' show ManifestFetch, ManifestFetchException;
 ///     .install();
 /// final model = await FlutterEdgeAi.getActiveModel(defaults: r.runtime);
 /// final session = await model.createSession(
-///   enableThinking: r.runtime.isThinking ?? false,
+///   enableThinking: r.runtime.thinkingDeclared ?? false,
 ///   // minOutputTokens is a FLOOR, not a cap: keep the app's own budget
 ///   // unless the manifest asks for more (`max` from dart:math).
 ///   maxOutputTokens: max(1024, r.runtime.minOutputTokens ?? 0),
@@ -227,7 +227,7 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
         supportAudio: capabilitiesDeclared
             ? resolution.capabilities.audio
             : null,
-        isThinking: capabilitiesDeclared
+        thinkingDeclared: capabilitiesDeclared
             ? resolution.capabilities.thinkingDeclared
             : null,
         minOutputTokens: _minOutputTokens(resolution.sessionDefaults, repo),

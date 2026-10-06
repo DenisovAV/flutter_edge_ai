@@ -102,7 +102,7 @@ void main() {
           modelType: ModelType.qwen3,
           runtime: ModelRuntimeDefaults(
             maxTokens: 4096,
-            isThinking: true,
+            thinkingDeclared: true,
             minOutputTokens: 2048,
           ),
           notes: ['heads up: verified on cpu only'],
@@ -124,7 +124,7 @@ void main() {
       // Runtime defaults ride on the RESULT, not the spec.
       expect(install.runtime, isNotNull);
       expect(install.runtime!.maxTokens, 4096);
-      expect(install.runtime!.isThinking, true);
+      expect(install.runtime!.thinkingDeclared, true);
       expect(install.runtime!.minOutputTokens, 2048);
       expect(install.notes, ['heads up: verified on cpu only']);
       // Manifest modelType wins over the passed fallback.

@@ -1,6 +1,7 @@
-## 1.8.8
-- Native: send `enable_thinking: false` when thinking is off; Qwen3.5 and later resolve to `qwen35`.
-- Require `flutter_edge_ai` ^2.0.1.
+## 1.9.0
+- **Breaking:** `createChat(isThinking:)` is `enableThinking`.
+- Send `enable_thinking` both ways, on web under the key templates read; Qwen3.5 and later resolve to `qwen35`.
+- Require `flutter_edge_ai` ^2.1.0.
 
 ## 1.8.7
 - Require `flutter_edge_ai` 2.x.

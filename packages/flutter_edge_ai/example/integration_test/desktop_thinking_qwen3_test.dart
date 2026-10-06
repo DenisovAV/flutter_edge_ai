@@ -30,7 +30,7 @@ void main() {
         // Create chat WITHOUT thinking mode
         final chat = await model.createChat(
           modelType: ModelType.qwen3,
-          isThinking: false,
+          enableThinking: false,
         );
 
         await chat.addQuery(const Message(text: 'What is 2+2?', isUser: true));
@@ -77,7 +77,7 @@ void main() {
         // Create chat WITH thinking mode
         final chat = await model.createChat(
           modelType: ModelType.qwen3,
-          isThinking: true,
+          enableThinking: true,
         );
 
         await chat.addQuery(const Message(text: 'What is 2+2?', isUser: true));

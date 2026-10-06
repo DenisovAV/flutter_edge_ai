@@ -153,7 +153,7 @@ void main() {
       // context_length lives on model, not the variant.
       expect(r.runtime.maxTokens, 4096);
       // capabilities.thinking is an object; `declared` is what maps here.
-      expect(r.runtime.isThinking, true);
+      expect(r.runtime.thinkingDeclared, true);
       // session_defaults.max_output_tokens_min → the minOutputTokens FLOOR.
       expect(r.runtime.minOutputTokens, 2048);
       expect(r.runtime.supportImage, false);
@@ -338,7 +338,7 @@ void main() {
         // is "silent" (null) — not "declared unsupported" (false).
         expect(r.runtime.supportImage, isNull);
         expect(r.runtime.supportAudio, isNull);
-        expect(r.runtime.isThinking, isNull);
+        expect(r.runtime.thinkingDeclared, isNull);
       },
     );
 
@@ -357,7 +357,7 @@ void main() {
           .resolve('org/name');
       expect(r.runtime.supportImage, true);
       expect(r.runtime.supportAudio, false);
-      expect(r.runtime.isThinking, false);
+      expect(r.runtime.thinkingDeclared, false);
     });
 
     test(

@@ -672,7 +672,7 @@ class InferenceInstallation {
   /// installed via `fromHuggingFace(repo)` (no `file`); `null` for every other
   /// source. Apply the model-level fields with
   /// `getActiveModel(defaults: installation.runtime)`, and forward the two
-  /// session-level fields (`isThinking`, `minOutputTokens`) to `createSession`
+  /// session-level fields (`thinkingDeclared`, `minOutputTokens`) to `createSession`
   /// yourself.
   ///
   /// EPHEMERAL — not persisted. After an app restart the restored active model

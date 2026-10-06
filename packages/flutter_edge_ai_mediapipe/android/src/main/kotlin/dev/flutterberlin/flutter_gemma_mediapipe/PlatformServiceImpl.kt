@@ -36,18 +36,34 @@ internal class PlatformServiceImpl(
   // via dart:ffi). The pigeon contract below is kept for ABI continuity
   // but the Dart side never calls into it.
 
+  // Runs inside FlutterEngine.destroy(), possibly while a response is still
+  // generating: MediaPipe's close() then throws "Previous invocation still
+  // processing". Nothing here may throw, or the engine teardown stops short
+  // and the exception escapes Activity.onDestroy (#590).
   fun cleanup() {
     scope.cancel()
     streamJob?.cancel()
     streamJob = null
     synchronized(engineLock) {
-      session?.close()
+      session?.cancelGeneration()
+      try {
+        session?.close()
+      } catch (e: Exception) {
+        Log.w(TAG, "Session close during active inference: ${e.message}")
+      }
       session = null
-      engine?.close()
+      try {
+        engine?.close()
+      } catch (e: Exception) {
+        Log.w(TAG, "Engine close during teardown: ${e.message}")
+      }
       engine = null
     }
     synchronized(sessionMapLock) {
-      sessionMap.values.forEach { runCatching { it.close() } }
+      sessionMap.values.forEach {
+        it.cancelGeneration()
+        runCatching { it.close() }
+      }
       sessionMap.clear()
     }
     // 0.15.2: embedding lifetime managed by Dart (LitertEmbeddingModel).

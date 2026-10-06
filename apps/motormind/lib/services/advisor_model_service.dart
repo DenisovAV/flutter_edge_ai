@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -117,8 +119,9 @@ class FlutterEdgeAiGateway implements EdgeAiGateway {
       modelType: spec.modelType,
       fileType: spec.fileType,
     ).fromNetwork(spec.url).install();
+    final maxTokens = await contextWindowFor(spec);
     return FlutterEdgeAi.getActiveModel(
-      maxTokens: spec.maxTokens,
+      maxTokens: maxTokens,
       preferredBackend: spec.preferredBackend,
     );
   }
@@ -212,4 +215,29 @@ class AdvisorModelService extends AsyncNotifier<ModelsState> {
       state = AsyncData(ModelsState(statuses: {...statuses, m.id: Failed(e.toString())}));
     }
   }
+}
+
+/// The context window is memory: the KV cache grows with it. Seen on a 6 GB
+/// emulator: Gemma 4 E2B with an 8k window plus a WebView reached 4.8 GB
+/// resident and the OS killed the app. So the catalog value is a ceiling,
+/// and a device with less room gets a smaller window.
+Future<int> contextWindowFor(AdvisorModelSpec spec) async {
+  var window = spec.maxTokens;
+  try {
+    if (FlutterEdgeAiDiagnostics.isSupported) {
+      final snap = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      final available = snap.availableBytes;
+      if (available != null) {
+        final gb = available / (1024 * 1024 * 1024);
+        if (gb < 5.5 && window > 4096) window = 4096;
+        if (gb < 3.0 && window > 2048) window = 2048;
+        if (kDebugMode) {
+          debugPrint('[motormind] available memory ${gb.toStringAsFixed(1)} GB -> context $window');
+        }
+      }
+    }
+  } catch (e) {
+    if (kDebugMode) debugPrint('[motormind] memory snapshot failed: $e');
+  }
+  return window;
 }

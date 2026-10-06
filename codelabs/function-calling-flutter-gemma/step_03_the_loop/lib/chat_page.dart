@@ -194,7 +194,7 @@ class _ChatPageState extends State<ChatPage> {
             }
           case ThinkingResponse():
             // Discarded upstream unless the chat was opened with
-            // `isThinking: true` — `complete` does exactly that.
+            // `enableThinking: true` — `complete` does exactly that.
             break;
           case FunctionCallResponse() || ParallelFunctionCallResponse():
             // Never arrives here: the loop consumes calls itself and passes

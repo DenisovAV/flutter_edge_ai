@@ -280,7 +280,7 @@ class _ChatPageState extends State<ChatPage> {
           pending.addAll(calls);
         case ThinkingResponse():
           // Filtered out upstream unless the chat was opened with
-          // `isThinking: true` — `complete` does exactly that. Here the branch
+          // `enableThinking: true` — `complete` does exactly that. Here the branch
           // exists so the switch stays exhaustive.
           break;
       }

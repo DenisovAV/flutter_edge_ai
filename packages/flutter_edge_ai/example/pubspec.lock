@@ -255,7 +255,7 @@ packages:
       path: "../../flutter_edge_ai_builtin_ai"
       relative: true
     source: path
-    version: "0.4.0"
+    version: "0.3.2"
   flutter_edge_ai_diagnostics:
     dependency: "direct dev"
     description:

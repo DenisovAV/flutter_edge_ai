@@ -1,5 +1,6 @@
-## 0.8.0
+## 0.7.1
 - **Breaking:** the `isThinking` option is `enableThinking`; require `flutter_edge_ai` ^2.1.0.
+- Require `schemantic` ^0.2.3; the options schema is generated again (`schemantic_builder`).
 
 ## 0.7.0
 - Require `flutter_edge_ai` 2.x.

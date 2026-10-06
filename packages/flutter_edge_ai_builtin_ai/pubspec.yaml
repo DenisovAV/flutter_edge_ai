@@ -1,6 +1,6 @@
 name: flutter_edge_ai_builtin_ai
 description: "Opt-in flutter_edge_ai engine for the OS built-in model: Gemini Nano (Android), Apple Foundation Models (iOS/macOS), Windows AI Foundry, Chrome's Prompt API on Web."
-version: 0.4.0
+version: 0.3.2
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_builtin_ai
 topics: [gemma, llm, gemini-nano, on-device, prompt-api]

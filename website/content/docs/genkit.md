@@ -23,7 +23,7 @@ with the on-device model exactly as it would with any cloud provider.
 ```
 dependencies:
   genkit: ^0.16.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.8.0
+  genkit_flutter_edge_ai: ^0.7.1
   flutter_edge_ai: ^2.1.0
   # Add the inference engine(s) you need:
   flutter_edge_ai_litertlm: ^1.9.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend

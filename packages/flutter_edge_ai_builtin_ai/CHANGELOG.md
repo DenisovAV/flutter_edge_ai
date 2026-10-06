@@ -1,4 +1,4 @@
-## 0.4.0
+## 0.3.2
 - **Breaking:** `createChat(isThinking:)` is `enableThinking`; require `flutter_edge_ai` ^2.1.0.
 
 ## 0.3.1

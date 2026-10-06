@@ -315,7 +315,7 @@ void main() {
     final p = events.whereType<Presented>().single;
     expect(p.request.component.id, 'choice');
     expect(p.request.props['question'], 'What matters most to you in an SUV?');
-    expect((p.request.props['options'] as List).map((o) => o['label']), [
+    expect((p.request.props['options'] as List).cast<Map>().map((o) => o['label']), [
       'fuel economy',
       'cargo space',
       'safety features',

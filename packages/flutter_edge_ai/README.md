@@ -298,6 +298,7 @@ await model.close();
 | Gemma 3 1B, Gemma 3 270M | `gemmaIt` | — | — | — |
 | FunctionGemma 270M | `functionGemma` | ✅ | — | — |
 | Qwen3 0.6B | `qwen3` | ✅ | ✅ | — |
+| Qwen3.5 / 3.6 / 3.8 | `qwen35` | — | — | — |
 | Qwen 2.5 0.5B / 1.5B | `qwen` | ✅ | — | — |
 | DeepSeek R1 | `deepSeek` | ✅ | ✅ | — |
 | Phi-4 Mini | `phi` | ✅ | — | — |

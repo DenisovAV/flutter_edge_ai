@@ -748,11 +748,18 @@ void main() {
         ),
         ModelType.deepSeek,
       );
+      // deepseek is checked before any qwen rule, whatever the Qwen generation.
+      expect(map('deepseek-ai/DeepSeek-R1-0528-Qwen3-8B'), ModelType.deepSeek);
     });
 
-    test('qwen3.5 is qwen (ChatML without the qwen3 /no_think injection)', () {
-      expect(map('Qwen/Qwen3.5-4B'), ModelType.qwen);
-      expect(map('Qwen/Qwen3.5-0.8B'), ModelType.qwen);
+    test('qwen3.5 and later are qwen35 (no /no_think soft switch)', () {
+      expect(map('Qwen/Qwen3.5-4B'), ModelType.qwen35);
+      expect(map('Qwen/Qwen3.5-0.8B'), ModelType.qwen35);
+      expect(map('Qwen/Qwen3.6-35B-A3B'), ModelType.qwen35);
+      expect(map('Qwen/Qwen3.8-27B'), ModelType.qwen35);
+      // A size after a dash or an underscore is Qwen3, not a minor version.
+      expect(map('Qwen/Qwen3-8B'), ModelType.qwen3);
+      expect(map('someorg/qwen3_8b_int4'), ModelType.qwen3);
     });
 
     test('qwen3 by id, and by the Qwen3ForCausalLM class token when the id '
@@ -784,7 +791,7 @@ void main() {
     test('architecture prose naming a compute lineage must NOT map — only '
         'ids and exact class tokens do', () {
       // "Llama-architecture granite decoder" describes compute, not the chat
-      // contract; ModelType.llama here would break iOS conversations.
+      // contract; ModelType.llama here would switch the tool-call parser.
       expect(
         map(
           'ibm-granite/granite-docling-258M',

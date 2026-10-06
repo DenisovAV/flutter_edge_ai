@@ -298,19 +298,18 @@ void main() {
       'litert-community/FastContext-1.0-4B-SFT': ModelType.qwen3,
       'litert-community/Jan-nano': ModelType.qwen3,
       // Speech-to-text repos whose LM is Qwen3: base_model or display_name
-      // names it, so the id rule maps them. Pinned as the rule returns it
-      // today: none of the three declares thinking, and for qwen3 with
-      // thinking off core's chat appends ` /no_think` to user turns
-      // (FastContext above is the same pair). No shipped repo had that pair
-      // on 09-02; its effect on these models is not measured.
+      // names it, so the id rule maps them. Core appends ` /no_think` only to
+      // a text turn, so their audio turns go out as they are (measured on
+      // litert-lm 0.17.1: with the suffix next to the audio Qwen3-ASR-1.7B
+      // returned an empty transcript for every clip).
       'litert-community/Fun-ASR-Nano-2512': ModelType.qwen3,
       'litert-community/Qwen3-ASR-1.7B': ModelType.qwen3,
       'mlboydaisuke/Confucius4-R2T2-LiteRT': ModelType.qwen3,
-      // Qwen3.5 is ChatML without qwen3's /no_think injection.
-      'litert-community/Qwen3.5-0.8B': ModelType.qwen,
-      'litert-community/Qwen3.5-2B': ModelType.qwen,
-      'litert-community/Qwen3.5-4B': ModelType.qwen,
-      'mlboydaisuke/Qwen3.5-0.8B-MTP-repro-LiteRT': ModelType.qwen,
+      // Qwen3.5 switches thinking by template argument only, no /no_think.
+      'litert-community/Qwen3.5-0.8B': ModelType.qwen35,
+      'litert-community/Qwen3.5-2B': ModelType.qwen35,
+      'litert-community/Qwen3.5-4B': ModelType.qwen35,
+      'mlboydaisuke/Qwen3.5-0.8B-MTP-repro-LiteRT': ModelType.qwen35,
       'litert-community/Qwen2-VL-2B': ModelType.qwen,
       'litert-community/Qwen2.5-Coder-1.5B-Instruct': ModelType.qwen,
       'litert-community/LLaVA-OneVision-0.5B': ModelType.qwen,

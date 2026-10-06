@@ -44,4 +44,8 @@ jobs:
           # Optional. Raises the anonymous rate limit; empty when the secret
           # is not configured, which the suite treats as "no token".
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: flutter test test/manifest/live_hugging_face_test.dart
+        # --run-skipped: the suite skips itself unless FLUTTER_GEMMA_LIVE_HF is
+        # set, and an all-skipped run exits 0. Without the flag, a renamed or
+        # dropped variable would turn every weekly run green with nothing
+        # checked. It also runs any skip added to this file later.
+        run: flutter test --run-skipped test/manifest/live_hugging_face_test.dart

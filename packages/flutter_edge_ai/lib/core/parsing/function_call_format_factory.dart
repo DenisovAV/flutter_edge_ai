@@ -32,6 +32,8 @@ class FunctionCallFormatFactory {
       ModelType.gemma4 => SdkPassthroughFunctionCallFormat(),
       ModelType.qwen => QwenFunctionCallFormat(),
       ModelType.qwen3 => QwenFunctionCallFormat(),
+      // Qwen3.5+ emit XML tool calls; JSON parsing until a format exists.
+      ModelType.qwen35 => QwenFunctionCallFormat(),
       ModelType.deepSeek => DeepSeekFunctionCallFormat(),
       ModelType.llama => LlamaFunctionCallFormat(),
       ModelType.phi => PhiFunctionCallFormat(),

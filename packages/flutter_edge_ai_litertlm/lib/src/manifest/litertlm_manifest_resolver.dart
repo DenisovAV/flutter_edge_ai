@@ -306,10 +306,12 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
   /// mapping is certain — the app then supplies one (`r.modelType ??
   /// ModelType.general`).
   ///
-  /// Deliberately conservative: on iOS `.litertlm` chats are formatted
-  /// manually by [ModelType] (Android/desktop read the template from the
-  /// bundle), so a wrong guess breaks conversations there. The manifest's
-  /// `architecture` is free prose that names *compute* lineage — e.g.
+  /// Deliberately conservative: the bundle supplies the chat template, but
+  /// core still drives a conversation by [ModelType] — which tool-call format
+  /// it parses, single-turn FunctionGemma, which models' thinking it parses,
+  /// qwen3's ` /no_think` — so a wrong guess changes conversations on every
+  /// platform. The manifest's `architecture` is free prose that names
+  /// *compute* lineage — e.g.
   /// granite-docling says "Llama-architecture granite decoder", which must NOT
   /// become [ModelType.llama] — so family words match only the curated
   /// `base_model` + `display_name` ids, and `architecture` is consulted for
@@ -317,9 +319,11 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
   /// finetunes whose ids drop the family name, e.g. an ASR normalizer built
   /// on Qwen3).
   ///
-  /// Qwen3.5 maps to [ModelType.qwen], not `qwen3`: same ChatML handling,
-  /// but `qwen3` also appends ` /no_think` to user turns when thinking is
-  /// off, which Qwen3.5 does not understand and would read as literal text.
+  /// Qwen3.5, 3.6 and 3.8 map to [ModelType.qwen35]: thinking there is the
+  /// `enable_thinking` template argument only, and qwen3's ` /no_think` would
+  /// be literal text. `capabilities.thinking.declared` is not consulted: it
+  /// says whether the bundle declares a thought channel, not whether the
+  /// model can switch thinking off.
   @visibleForTesting
   static ModelType? mapModelType({
     required String baseModel,
@@ -340,7 +344,10 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
       return ModelType.gemma4;
     }
     if (id.contains('gemma')) return ModelType.gemmaIt;
-    if (id.contains('qwen3.5')) return ModelType.qwen;
+    // A minor version, not a size: "qwen3-8b" and "qwen3_8b" stay Qwen3.
+    if (RegExp(r'qwen3[._][5-9](?![0-9b])').hasMatch(id)) {
+      return ModelType.qwen35;
+    }
     if (id.contains('qwen3') || arch.contains('qwen3forcausallm')) {
       return ModelType.qwen3;
     }

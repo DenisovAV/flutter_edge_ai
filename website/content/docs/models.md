@@ -179,8 +179,9 @@ When installing models, specify the correct `ModelType`:
 | **Gemma 4** | `ModelType.gemma4` | Gemma 4 E2B, Gemma 4 E4B (native function-call tokens) |
 | **Gemma 3 / Gemma3n** | `ModelType.gemmaIt` | Gemma 3 1B, Gemma 3 270M, Gemma3n E2B/E4B |
 | **DeepSeek** | `ModelType.deepSeek` | DeepSeek R1 |
-| **Qwen 2.5** | `ModelType.qwen` | Qwen 2.5 1.5B, Qwen 2.5 0.5B |
-| **Qwen 3** | `ModelType.qwen3` | Qwen3 0.6B |
+| **Qwen 2.5, Qwen3-2507** | `ModelType.qwen` | Qwen 2.5 1.5B, Qwen 2.5 0.5B, Qwen3 4B Instruct/Thinking 2507 (installed from a Hugging Face manifest, 2507 still resolves to `qwen3`; pass `qwen` yourself) |
+| **Qwen 3** (the original hybrid) | `ModelType.qwen3` | Qwen3 0.6B |
+| **Qwen 3.5 / 3.6 / 3.8** | `ModelType.qwen35` | Qwen3.5 0.8B, 2B, 4B |
 | **Phi-4** | `ModelType.phi` | Phi-4 Mini (parses Phi's own tool-call markers) |
 | **FunctionGemma** | `ModelType.functionGemma` | FunctionGemma 270M IT |
 | **General** | `ModelType.general` | FastVLM 0.5B, SmolLM 135M, LFM2.5 230M, SmolLM3 3B, Phi-4 Mini Reasoning, Qwen2-VL 2B, SmolVLM2 500M, LLaVA-OneVision 0.5B |

@@ -1041,7 +1041,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     _inFlight = true;
     _stopRequested = false;
     final messageJson = jsonEncode(message);
-    final extraContext = enableThinking ? '{"enable_thinking": true}' : null;
+    final extraContext = thinkingExtraContext(enableThinking);
     // Snapshot history BEFORE this turn — the live message is sent separately.
     final historySnapshot = List<Map<String, Object?>>.from(_history);
     final assistantText = StringBuffer();

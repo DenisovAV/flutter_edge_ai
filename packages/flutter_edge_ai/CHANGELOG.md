@@ -1,3 +1,6 @@
+## 2.0.1
+- Add `ModelType.qwen35`; thought-channel reasoning is a `ThinkingResponse` for every type; no ` /no_think` on audio.
+
 ## 2.0.0
 - **Breaking:** RAG APIs and storage contracts move to `flutter_edge_ai_rag`.
 - **Breaking:** remove `ModelFileManager.setActiveModel`; use `ensureModelReadyFromSpec`.

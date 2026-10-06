@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/advisor_model_service.dart';
 import '../advisor/advisor_surface.dart';
+import '../advisor/stage.dart';
+import '../advisor/stage_view.dart' show starterFor;
 import '../models/model_catalog.dart';
 import 'edge_ai_chat_driver.dart';
 
@@ -61,6 +63,7 @@ class ChatState {
     this.guardNote,
     this.error,
     this.ready = false,
+    this.turnStartedAt,
   });
 
   final List<TimelineEntry> timeline;
@@ -70,6 +73,9 @@ class ChatState {
   final String? guardNote;
   final String? error;
   final bool ready;
+
+  /// When the current turn began; null when idle. The panel shows elapsed time.
+  final DateTime? turnStartedAt;
 
   List<ChatMessage> get messages => [
     for (final e in timeline)
@@ -91,6 +97,8 @@ class ChatState {
     String? error,
     bool clearError = false,
     bool? ready,
+    DateTime? turnStartedAt,
+    bool clearTurnStartedAt = false,
   }) => ChatState(
     timeline: timeline ?? this.timeline,
     activeTool: clearActiveTool ? null : (activeTool ?? this.activeTool),
@@ -99,6 +107,7 @@ class ChatState {
     guardNote: clearGuardNote ? null : (guardNote ?? this.guardNote),
     error: clearError ? null : (error ?? this.error),
     ready: ready ?? this.ready,
+    turnStartedAt: clearTurnStartedAt ? null : (turnStartedAt ?? this.turnStartedAt),
   );
 }
 
@@ -107,8 +116,10 @@ typedef ChatDriverFactory = Future<ChatDriver> Function(String systemInstruction
 
 final chatDriverFactoryProvider = Provider<ChatDriverFactory?>((ref) => null);
 
-/// Null disables the per-turn timeout (tests); the app uses four minutes.
-final turnTimeoutProvider = Provider<Duration?>((ref) => const Duration(minutes: 4));
+/// How long a turn may go with no event (no token, no tool) before the app
+/// stops it. Null disables it (tests). Generous for the emulator's CPU; a
+/// phone should trip this far less often.
+final turnIdleLimitProvider = Provider<Duration?>((ref) => const Duration(seconds: 75));
 
 final promptAssetsProvider = FutureProvider<SystemPromptBuilder>((ref) async {
   final persona = await rootBundle.loadString('assets/prompts/persona.md');
@@ -245,7 +256,9 @@ class ChatService extends Notifier<ChatState> {
       clearGuardNote: true,
       clearError: true,
       policyFlags: const [],
+      turnStartedAt: DateTime.now(),
     );
+    ref.read(stageProvider.notifier).retireInteractions();
     var replyIndex = state.timeline.length - 1;
     void updateReply(ChatMessage m) {
       reply = m;
@@ -253,17 +266,22 @@ class ChatService extends Notifier<ChatState> {
     }
 
     try {
-      final timeout = ref.read(turnTimeoutProvider);
-      var events = pipeline.run(text.trim());
-      if (timeout != null) {
-        events = events.timeout(
-          timeout,
-          onTimeout: (sink) =>
-              sink.addError(TimeoutException('The advisor took too long to answer.')),
-        );
+      final idleLimit = ref.read(turnIdleLimitProvider);
+      Timer? watchdog;
+      var stoppedByWatchdog = false;
+      void arm() {
+        watchdog?.cancel();
+        if (idleLimit == null) return;
+        watchdog = Timer(idleLimit, () async {
+          stoppedByWatchdog = true;
+          await _driver?.cancel();
+        });
       }
+
+      arm();
       debugPrint('[motormind] turn start');
-      await for (final e in events) {
+      await for (final e in pipeline.run(text.trim())) {
+        arm();
         switch (e) {
           case TextDelta(:final text):
             updateReply(reply.copyWith(text: reply.text + text));
@@ -276,13 +294,32 @@ class ChatService extends Notifier<ChatState> {
           case ProfileUpdated():
             break;
           case Presented(:final request, :final result):
-            // Components go in front of the streaming reply so the narration
-            // reads as commentary on the card above it.
-            final t = [...state.timeline];
-            t.insert(replyIndex, ComponentEntry(ShownComponent(request: request, result: result)));
-            replyIndex += 1;
-            state = state.copyWith(timeline: t);
-            ref.read(surfaceProvider.notifier).request(request.surface);
+            final surface = ref.read(surfaceProvider);
+            final toStage =
+                !request.component.isInteraction &&
+                surface != SurfaceState.fullscreen &&
+                request.surface != SurfaceState.fullscreen;
+            final shown = ShownComponent(request: request, result: result);
+            if (toStage) {
+              ref.read(stageProvider.notifier).show(shown);
+            } else {
+              // Replace an earlier card for the same result (auto-present then
+              // the model's own present), else insert above the reply.
+              final t = [...state.timeline];
+              final existing = result == null
+                  ? -1
+                  : t.indexWhere((e) => e is ComponentEntry && e.shown.result?.id == result.id);
+              if (existing >= 0) {
+                t[existing] = ComponentEntry(shown);
+              } else {
+                t.insert(replyIndex, ComponentEntry(shown));
+                replyIndex += 1;
+              }
+              state = state.copyWith(timeline: t);
+            }
+            if (request.surface == SurfaceState.fullscreen) {
+              ref.read(surfaceProvider.notifier).request(SurfaceState.fullscreen);
+            }
           case InputRejected(:final arguments):
             state = state.copyWith(
               guardNote:
@@ -303,18 +340,31 @@ class ChatService extends Notifier<ChatState> {
             updateReply(reply.copyWith(text: narration, streaming: false));
         }
       }
+      watchdog?.cancel();
+      if (stoppedByWatchdog) {
+        state = state.copyWith(
+          error:
+              'Stopped: the advisor went ${idleLimit!.inSeconds} seconds without a word. Try a shorter message.',
+        );
+      }
     } catch (e) {
       final msg = _friendly(e);
       updateReply(reply.copyWith(text: reply.text.isEmpty ? msg : reply.text, streaming: false));
       state = state.copyWith(error: msg);
     } finally {
       debugPrint('[motormind] turn done');
-      state = state.copyWith(busy: false, clearActiveTool: true);
+      state = state.copyWith(busy: false, clearActiveTool: true, clearTurnStartedAt: true);
     }
   }
 
-  /// Answer a choice prompt. Opening-mode choices set the mode locally and
-  /// send a sentence; other choices send the label the person tapped.
+  /// The person's escape from a long turn (DD-R11).
+  Future<void> stop() async {
+    await _driver?.cancel();
+  }
+
+  /// Answer a choice prompt. Opening-mode choices set the mode locally, put a
+  /// mode-specific starter on the stage immediately, and send a sentence;
+  /// other choices send the label the person tapped.
   Future<void> choose(String id, String label) async {
     final opening = openingChoices[id];
     if (opening != null) {
@@ -322,7 +372,19 @@ class ChatService extends Notifier<ChatState> {
       _pipeline?.profile = (_pipeline?.profile ?? const BuyerProfile()).applyUpdate({
         'shopping_mode': mode.name,
       });
-      return send(sentence);
+      // send() retires open prompts synchronously before its first await, so
+      // the starter goes on the stage after send() has started.
+      final turn = send(sentence);
+      final starter = starterFor(mode);
+      if (starter != null) ref.read(stageProvider.notifier).show(starter);
+      return turn;
+    }
+    if (id.startsWith('kind-')) {
+      return send(
+        id == 'kind-unsure'
+            ? 'I am not sure what kind of vehicle yet.'
+            : 'I am looking at a $label.',
+      );
     }
     return send(label);
   }

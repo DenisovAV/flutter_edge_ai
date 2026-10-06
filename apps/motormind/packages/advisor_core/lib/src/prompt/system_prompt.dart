@@ -60,6 +60,12 @@ class SystemPromptBuilder {
         'only what it returns. Missing an input? Ask with an input_form, do not assume.',
       )
       ..writeln()
+      ..writeln('# Replying')
+      ..writeln(
+        'Start every reply with one short sentence the person can read right away, then call '
+        'tools. Keep replies under 80 words. Plain text, no Markdown.',
+      )
+      ..writeln()
       ..writeln('# Screen')
       ..writeln(
         'After a tool returns, call present(component, result_id) so the numbers are shown as a card; '

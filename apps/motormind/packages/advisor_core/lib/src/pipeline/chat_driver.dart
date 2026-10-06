@@ -31,5 +31,9 @@ abstract class ChatDriver {
   /// it without losing history. Drivers that cannot may ignore it.
   Future<void> updateSystemInstruction(String instruction);
 
+  /// Stops the generation in flight, if any. The stream returned by [send]
+  /// ends (possibly with the text produced so far). Best effort.
+  Future<void> cancel();
+
   Future<void> close();
 }

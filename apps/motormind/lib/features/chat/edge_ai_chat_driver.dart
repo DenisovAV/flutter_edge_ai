@@ -14,6 +14,7 @@ class EdgeAiChatDriver implements ChatDriver {
   final InferenceChat _chat;
   final InferenceModel _model;
   final AdvisorModelSpec _spec;
+  bool _cancelled = false;
 
   static Future<EdgeAiChatDriver> open(
     InferenceModel model,
@@ -32,6 +33,7 @@ class EdgeAiChatDriver implements ChatDriver {
       isThinking: false,
       modelType: spec.modelType,
       systemInstruction: systemInstruction,
+      maxOutputTokens: 400,
     );
     if (kDebugMode) {
       debugPrint(
@@ -50,10 +52,12 @@ class EdgeAiChatDriver implements ChatDriver {
     runZonedGuarded(
       () async {
         try {
+          _cancelled = false;
           await _chat.addQueryChunk(Message.text(text: userText, isUser: true));
           final stream = _chat.generateChatResponseWithTools(
             onToolCall: (call) => onToolCall(call.name, call.args.cast<String, Object?>()),
-            maxToolTurns: 6,
+            maxToolTurns: 4,
+            isCancelled: () => _cancelled,
           );
           await for (final r in stream) {
             switch (r) {
@@ -85,6 +89,16 @@ class EdgeAiChatDriver implements ChatDriver {
   Future<void> updateSystemInstruction(String instruction) async {
     // The SDK fixes the instruction at chat creation; a new chat would drop
     // history. Left as a no-op until a history-preserving path exists.
+  }
+
+  @override
+  Future<void> cancel() async {
+    _cancelled = true;
+    try {
+      await _chat.stopGeneration();
+    } catch (_) {
+      // Best effort: nothing may be in flight.
+    }
   }
 
   @override

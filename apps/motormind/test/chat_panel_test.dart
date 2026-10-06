@@ -48,6 +48,9 @@ class ScriptedDriver implements ChatDriver {
   Future<void> updateSystemInstruction(String instruction) async {}
 
   @override
+  Future<void> cancel() async {}
+
+  @override
   Future<void> close() async {}
 }
 
@@ -59,7 +62,7 @@ Future<Widget> _app(ScriptedDriver driver) async {
   return ProviderScope(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
-      turnTimeoutProvider.overrideWithValue(null),
+      turnIdleLimitProvider.overrideWithValue(null),
       chatDriverFactoryProvider.overrideWithValue((instruction) async {
         driver.systemInstructions.add(instruction);
         return driver;
@@ -159,5 +162,49 @@ void main() {
     // The opening chips are retired, not deleted.
     expect(find.byKey(const Key('choice-mode-practical')), findsNothing);
     expect(find.textContaining('How are you shopping today?'), findsAtLeastNWidgets(1));
+  });
+
+  testWidgets('while docked, a presented card lands on the stage above the conversation', (
+    tester,
+  ) async {
+    final driver = ScriptedDriver();
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(await _app(driver));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('stage-empty')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('surface-bubble')));
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('chat-start'))),
+    );
+    await tester.runAsync(() => container.read(chatServiceProvider.notifier).start());
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('choice-mode-practical')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('stage')), findsOneWidget);
+    expect(find.byKey(const Key('card-input_form')), findsOneWidget);
+    await tester.runAsync(
+      () => container
+          .read(chatServiceProvider.notifier)
+          .send('I can do 450 a month on a 22000 car with 1000 down'),
+    );
+    await tester.pumpAndSettle();
+    final stage = find.byKey(const Key('stage'));
+    expect(
+      find.descendant(of: stage, matching: find.byKey(const Key('card-payment_summary'))),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('chat-list')),
+        matching: find.byKey(const Key('card-payment_summary')),
+      ),
+      findsNothing,
+    );
   });
 }

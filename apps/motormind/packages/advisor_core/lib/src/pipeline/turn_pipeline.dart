@@ -128,7 +128,6 @@ class TurnPipeline {
 
   Future<void> _runInto(StreamController<TurnEvent> out, String userText) async {
     final turnResults = <ToolResult>[];
-    final presentedIds = <String>{};
     userInputs.add({'user_text': userText});
 
     Future<Map<String, Object?>> onToolCall(String name, Map<String, Object?> args) async {
@@ -150,6 +149,22 @@ class TurnPipeline {
         results[r.id] = r;
         turnResults.add(r);
         out.add(ToolFinished(r));
+        // Show the number the moment it exists (DD-R18c): the model may still
+        // re-present it with a different component, which replaces this card.
+        final component = r.isError ? null : ComponentRegistry.defaultFor(name);
+        if (component != null) {
+          out.add(
+            Presented(
+              PresentRequest(
+                component: component,
+                surface: component.defaultSurface,
+                resultId: r.id,
+              ),
+              result: r,
+              automatic: true,
+            ),
+          );
+        }
         return r.toModelJson();
       }
       switch (name) {
@@ -166,7 +181,6 @@ class TurnPipeline {
             out.add(PresentRejected(v.errors));
             return {'error': v.errors.join('; ')};
           }
-          if (resultId != null) presentedIds.add(resultId);
           out.add(Presented(v.request!, result: target));
           return {'ok': true, 'shown': v.request!.component.id};
         default:
@@ -192,18 +206,6 @@ class TurnPipeline {
     }
 
     var narration = await _generate(out, userText, onToolCall);
-    for (final r in turnResults) {
-      if (r.isError || presentedIds.contains(r.id)) continue;
-      final component = ComponentRegistry.defaultFor(r.tool);
-      if (component == null) continue;
-      out.add(
-        Presented(
-          PresentRequest(component: component, surface: component.defaultSurface, resultId: r.id),
-          result: r,
-          automatic: true,
-        ),
-      );
-    }
 
     var report = guard.check(
       narration: narration,

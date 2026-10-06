@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,7 +22,16 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   final _scroll = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && ref.read(chatServiceProvider).busy) setState(() {});
+    });
+  }
+
+  @override
   void dispose() {
+    _ticker?.cancel();
     _controller.dispose();
     _scroll.dispose();
     super.dispose();
@@ -35,6 +46,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
   }
 
   int _lastLen = 0;
+  Timer? _ticker;
 
   @override
   Widget build(BuildContext context) {
@@ -107,20 +119,32 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           ),
                         ),
                       },
-                    if (chat.activeTool != null)
+                    if (chat.busy && chat.turnStartedAt != null)
                       Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Chip(
-                            key: const Key('tool-chip'),
-                            avatar: const SizedBox(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                        child: Row(
+                          children: [
+                            const SizedBox(
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            label: Text(chat.activeTool!.replaceAll('_', ' ')),
-                          ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${chat.activeTool == null ? 'Thinking' : chat.activeTool!.replaceAll('_', ' ')} · '
+                                '${DateTime.now().difference(chat.turnStartedAt!).inSeconds}s',
+                                key: const Key('turn-status'),
+                                style: theme.textTheme.labelSmall,
+                              ),
+                            ),
+                            TextButton.icon(
+                              key: const Key('chat-stop'),
+                              onPressed: () => ref.read(chatServiceProvider.notifier).stop(),
+                              icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                              label: const Text('Stop'),
+                            ),
+                          ],
                         ),
                       ),
                   ],

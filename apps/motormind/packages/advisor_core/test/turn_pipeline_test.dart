@@ -29,6 +29,9 @@ class FakeDriver implements ChatDriver {
   Future<void> updateSystemInstruction(String instruction) async {}
 
   @override
+  Future<void> cancel() async {}
+
+  @override
   Future<void> close() async {}
 }
 
@@ -81,10 +84,11 @@ void main() {
       'present',
     ]);
     expect(events.whereType<ProfileUpdated>().single.profile.mode, ShoppingMode.practical);
-    final presented = events.whereType<Presented>().single;
-    expect(presented.request.component.id, 'payment_summary');
-    expect(presented.result!.id, 'r1');
-    expect(presented.request.highlights, ['monthlyPayment']);
+    final presented = events.whereType<Presented>().toList();
+    expect(presented.map((p) => p.automatic), [true, false]);
+    expect(presented.last.request.component.id, 'payment_summary');
+    expect(presented.last.result!.id, 'r1');
+    expect(presented.last.request.highlights, ['monthlyPayment']);
     expect(events.whereType<GuardTripped>(), isEmpty);
     expect(events.whereType<PolicyFlagged>(), isEmpty);
     final done = events.whereType<TurnDone>().single;
@@ -284,5 +288,9 @@ void main() {
     expect(p.automatic, isTrue);
     expect(p.request.component.id, 'trade_equity_card');
     expect(p.result!.tool, 'trade_equity');
+    // Immediate: the card event precedes the narration text.
+    final presentedAt = events.indexOf(p);
+    final firstText = events.indexWhere((e) => e is TextDelta);
+    expect(presentedAt, lessThan(firstText));
   });
 }

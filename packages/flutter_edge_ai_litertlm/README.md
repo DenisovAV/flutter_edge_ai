@@ -251,10 +251,10 @@ Up to 1.8.7 "thinking off" sent nothing to the template, and a Qwen3 template
 that reads `enable_thinking` treats a missing key as on: a bundle such as
 `Qwen3-0.6B_dynamic` spent its whole output budget reasoning. Bundles that
 declare a thought channel also streamed that reasoning into the answer as
-`<|channel>thought…<channel|>` text. 1.8.8 sends `enable_thinking` both ways, and
-`flutter_edge_ai` 2.0.1 turns channel reasoning into `ThinkingResponse` for every
-`ModelType` and no longer appends ` /no_think` to an audio message (Qwen3-ASR
-returned an empty transcript).
+`<|channel>thought…<channel|>` text. 1.8.8 sends `enable_thinking` both ways on
+native platforms (web is unchanged), and `flutter_edge_ai` 2.0.1 turns channel
+reasoning into `ThinkingResponse` for every `ModelType` and no longer appends
+` /no_think` to an audio message (Qwen3-ASR returned an empty transcript).
 
 ### A stopped chat answers every later message with nothing (fixed in 1.8.1)
 

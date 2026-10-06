@@ -312,6 +312,10 @@ class ModelThinkingFilter {
               }
             }
           } else {
+            // Reasoning that came on the thought channel: the runtime already
+            // split it out and consumed the closing tag, so the text after it
+            // is the answer, not more reasoning.
+            if (response is ThinkingResponse) dsInside = false;
             yield response;
           }
         }
@@ -391,8 +395,9 @@ class ModelThinkingFilter {
   ///
   /// Thought-channel blocks (`<|channel>thought\n...<channel|>`) go for every
   /// [modelType], as in [filterThinkingStream]. DeepSeek and Qwen also lose
-  /// `<think>...</think>` blocks, and everything up to a `</think>` with no
-  /// opening tag — the shape a model that starts inside its reasoning leaves.
+  /// `<think>...</think>` blocks. DeepSeek starts inside its reasoning, so its
+  /// first `</think>` with no opening tag before it ends the reasoning; a Qwen
+  /// answer starts outside, and a `</think>` in it is text.
   /// Note: For streaming thinking output, use [filterThinkingStream] with generateChatResponseAsync() instead.
   static String removeThinkingFromText(
     String text, {
@@ -402,20 +407,20 @@ class ModelThinkingFilter {
       RegExp(r'<\|channel>thought\n.*?<channel\|>', dotAll: true),
       '',
     );
+    final thinkBlock = RegExp(r'<think>.*?</think>', dotAll: true);
     switch (modelType) {
       case ModelType.deepSeek:
+        final end = withoutChannel.indexOf(_thinkEnd);
+        final open = withoutChannel.indexOf(_thinkStart);
+        final answer = end >= 0 && (open < 0 || open > end)
+            ? withoutChannel.substring(end + _thinkEnd.length)
+            : withoutChannel;
+        return answer.replaceAll(thinkBlock, '').trim();
+
       case ModelType.qwen:
       case ModelType.qwen3:
       case ModelType.qwen35:
-        final withoutBlocks = withoutChannel.replaceAll(
-          RegExp(r'<think>.*?</think>', dotAll: true),
-          '',
-        );
-        final orphanEnd = withoutBlocks.lastIndexOf(_thinkEnd);
-        return (orphanEnd < 0
-                ? withoutBlocks
-                : withoutBlocks.substring(orphanEnd + _thinkEnd.length))
-            .trim();
+        return withoutChannel.replaceAll(thinkBlock, '').trim();
 
       case ModelType.gemmaIt:
       case ModelType.gemma4:

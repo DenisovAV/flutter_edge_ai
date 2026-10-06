@@ -1,5 +1,5 @@
 ## 1.8.8
-- Send `enable_thinking: false` when thinking is off; Qwen3.5 and later resolve to `ModelType.qwen35`.
+- Native: send `enable_thinking: false` when thinking is off; Qwen3.5 and later resolve to `qwen35`.
 - Require `flutter_edge_ai` ^2.0.1.
 
 ## 1.8.7

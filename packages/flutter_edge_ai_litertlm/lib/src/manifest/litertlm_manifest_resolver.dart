@@ -344,8 +344,8 @@ class LitertlmManifestResolver implements HuggingFaceResolver {
       return ModelType.gemma4;
     }
     if (id.contains('gemma')) return ModelType.gemmaIt;
-    // A minor version after the dot: "qwen3-8b" stays Qwen3.
-    if (RegExp(r'qwen3[._][5-9](?![0-9])').hasMatch(id)) {
+    // A minor version, not a size: "qwen3-8b" and "qwen3_8b" stay Qwen3.
+    if (RegExp(r'qwen3[._][5-9](?![0-9b])').hasMatch(id)) {
       return ModelType.qwen35;
     }
     if (id.contains('qwen3') || arch.contains('qwen3forcausallm')) {

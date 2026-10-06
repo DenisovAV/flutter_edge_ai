@@ -98,6 +98,9 @@ void main() {
       ModelType.qwen35,
       ModelType.general,
       ModelType.gemma4,
+      // DeepSeek's own filter starts inside the reasoning; reasoning that
+      // came on the channel must not keep it there for the answer.
+      ModelType.deepSeek,
     ]) {
       test('${type.name}: reasoning is thinking, the answer is text', () async {
         final r = await _split(_sdkStream(_thinkingBundleChunks), type);
@@ -128,9 +131,21 @@ void main() {
     String strip(String text, ModelType type) =>
         ModelThinkingFilter.removeThinkingFromText(text, modelType: type);
 
-    test('an orphan </think> ends the reasoning (qwen, deepSeek)', () {
-      expect(strip('reasoning</think>\n\nanswer', ModelType.qwen), 'answer');
+    // DeepSeek starts inside its reasoning, so its first </think> ends it;
+    // a later </think> is the answer talking about the tag.
+    test('deepSeek: the first orphan </think> ends the reasoning', () {
       expect(strip('reasoning</think>answer', ModelType.deepSeek), 'answer');
+      expect(
+        strip('r</think>The tag </think> closes it.', ModelType.deepSeek),
+        'The tag </think> closes it.',
+      );
+    });
+
+    // A Qwen answer starts outside any reasoning: a </think> in it is text.
+    test('qwen: a </think> in the answer is kept', () {
+      const answer = 'Use text.split("</think>")[-1] to drop it.';
+      expect(strip(answer, ModelType.qwen), answer);
+      expect(strip(answer, ModelType.qwen3), answer);
     });
 
     test('an empty think block goes (qwen3)', () {
@@ -152,7 +167,11 @@ void main() {
   // tag their reasoning: a Qwen-based bundle typed `general` streams it on
   // the thought channel too.
   group('InferenceChat, thought channel with thinking off', () {
-    for (final type in [ModelType.general, ModelType.qwen3]) {
+    for (final type in [
+      ModelType.general,
+      ModelType.qwen3,
+      ModelType.deepSeek,
+    ]) {
       test('${type.name}: only the answer reaches the app', () async {
         final session = _RecordingSession(
           _thinkingBundleChunks

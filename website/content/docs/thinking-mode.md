@@ -26,11 +26,12 @@ Enable it with `isThinking: true` and the matching `ModelType`.
 <Warning>
 
 Reasoning tags are parsed per `ModelType`, and `ModelType.general` has no tag
-parser (a bundle's thought channel is still split out). Models that reason but run as `general` — **SmolLM3 3B**,
-**Phi-4 Mini Reasoning** — emit no `ThinkingResponse`, and their thinking tags
-are not stripped either: the raw blocks arrive inside the answer as ordinary
-`TextResponse` tokens. Strip them yourself, or don't advertise a thinking UI for
-those models.
+parser. On a `.litertlm` whose bundle declares a thought channel — **SmolLM3 3B**
+and **Phi-4 Mini Reasoning** among them — the runtime splits the reasoning out
+and it arrives as `ThinkingResponse` whatever the type. Without a channel, a
+model that reasons but runs as `general` emits no `ThinkingResponse`, and its
+raw thinking blocks arrive inside the answer as ordinary `TextResponse` tokens.
+Strip them yourself, or don't advertise a thinking UI for those models.
 
 </Warning>
 
@@ -97,10 +98,10 @@ String cleanedResponse = ModelThinkingFilter.cleanResponse(
   fileType: ModelFileType.task,
 );
 
-// It removes the reasoning blocks (for these model types even when
-// isThinking is false):
-// - <think>...</think> (DeepSeek, Qwen, Qwen3)
-// - <|channel>thought\n...<channel|> (Gemma 3 / Gemma 4 types)
+// It removes the reasoning blocks (even when isThinking is false):
+// - <|channel>thought\n...<channel|> (a thought channel, every model type)
+// - <think>...</think> (DeepSeek and the Qwen types); for DeepSeek, which
+//   starts inside its reasoning, everything up to the first </think>
 // and trims whitespace. Turn markers (<end_of_turn>, <|im_end|>) are stripped
 // only for .bin / .tflite files — on .task and .litertlm the runtime already
 // ends the turn.

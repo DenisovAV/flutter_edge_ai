@@ -204,6 +204,42 @@ final pcm = await synth.synthesize('Hello there!'); // Uint8List, 16-bit PCM @ 2
 await synth.close();
 ```
 
+### Voice files shipped with the app
+
+`fromNetwork` is one of four sources for the same bundle. The other three take
+it from the app or the device, and a voice installed from any of them is active
+again after a restart:
+
+| Source | Where the files are | Copied into app storage | Platforms |
+|---|---|---|---|
+| `fromAsset('assets/tts/matcha/')` | Flutter assets | yes | Android, iOS, desktop |
+| `fromFile('/path/to/matcha')` | a directory on disk | no, used in place | Android, iOS, desktop |
+| `fromBundled()` | native resources | once on Android, not on iOS | Android, iOS |
+
+```dart
+// pubspec.yaml lists the directory: flutter: assets: [assets/tts/matcha/]
+await FlutterEdgeAi.installTts()
+    .fromAsset('assets/tts/matcha/')
+    .ofType(TtsModelType.matcha)
+    .install();
+```
+
+- **Layout.** An asset or file directory mirrors the Hugging Face repo: Qwen3's
+  tables stay in `tables/` and its demo voice in `voices/`, and Inflect's four
+  Matcha G2P files sit next to its own two. Flutter does not include asset
+  subdirectories recursively, so list each one in `pubspec.yaml`.
+- **Bundled names.** Each resource is the file name prefixed with the type —
+  `matcha__config.json`, `qwen3__tokenizer.json` — in
+  `android/app/src/main/assets/models/` on Android and in the Runner target on
+  iOS.
+- An incomplete bundle fails before anything is installed, naming every missing
+  file.
+- `fromFile` uses your files in place, so `uninstallTts()` deletes them.
+  Installing from another source later leaves them where they are.
+- An asset install keeps two copies, one in the app package and one in app
+  storage, so for the 1.9 GB Qwen3 bundle prefer `fromNetwork` or `fromFile`.
+- TTS does not run on web, so `install()` throws `UnsupportedError` there.
+
 ## Voice loop
 
 `VoiceSession` chains STT → LLM → TTS into one push-to-talk turn — transcribe,

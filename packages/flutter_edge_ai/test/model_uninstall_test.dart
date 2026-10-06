@@ -194,6 +194,11 @@ class MockProtectedFilesRegistry implements ProtectedFilesRegistry {
   @override
   Future<String?> getExternalPath(String filename) async =>
       _externalPaths[filename];
+
+  @override
+  Future<void> unregisterExternalPath(String filename) async {
+    _externalPaths.remove(filename);
+  }
 }
 
 void main() {

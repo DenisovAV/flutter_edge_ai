@@ -584,7 +584,9 @@ class MobileModelManager extends ModelFileManager
   /// _persistActiveTtsIdentity only stores `name` + `ttsModelType`, so the
   /// namespaced on-disk filename must be re-derived here, matching exactly
   /// what TtsBundleFile.fromSource computes at install time) and required
-  /// to exist.
+  /// to exist. Where the file lives comes from its repository record: a file
+  /// used in place (`fromFile`, or `fromBundled` on iOS) is found where it
+  /// was installed from, the rest in the managed directory.
   Future<void> _restoreActiveTtsModel() async {
     final prefs = await SharedPreferences.getInstance();
     final name = prefs.getString(PreferencesKeys.activeTtsName);
@@ -602,10 +604,25 @@ class MobileModelManager extends ModelFileManager
     }
 
     final fs = ServiceRegistry.instance.fileSystemService;
+    final repository = ServiceRegistry.instance.modelRepository;
     final paths = <String, String>{};
     for (final fn in ttsModelType.manifest) {
       final namespacedFn = FileNameUtils.namespaced(ttsModelType.name, fn);
-      final p = await fs.getTargetPath(namespacedFn);
+      final String p;
+      try {
+        p = switch ((await repository.loadModel(namespacedFn))?.source) {
+          FileSource(:final path) => path,
+          BundledSource(:final resourceName) => await fs.getBundledResourcePath(
+            resourceName,
+          ),
+          _ => await fs.getReadTargetPath(namespacedFn),
+        };
+      } catch (e) {
+        edgeAiLog(
+          '[ModelManager] active TTS restore: cannot resolve $namespacedFn ($e) — skipping',
+        );
+        return;
+      }
       if (!File(p).existsSync()) {
         edgeAiLog(
           '[ModelManager] active TTS restore: file missing ($namespacedFn) — skipping',

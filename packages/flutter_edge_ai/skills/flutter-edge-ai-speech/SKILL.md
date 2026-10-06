@@ -158,6 +158,16 @@ try {
 
 `TtsModelType.supertonic` and `TtsModelType.kokoro` are in the enum but throw `UnimplementedError` — do not use them.
 
+To ship the voice with the app instead of downloading it, swap `fromNetwork` for one of:
+
+| Call | Expects | Notes |
+| --- | --- | --- |
+| `fromAsset('assets/tts/matcha/')` | Flutter asset directory laid out like the HF repo | Declare every subdirectory in `pubspec.yaml` (Qwen3 has `tables/` and `voices/`); copied into app storage |
+| `fromFile('/abs/dir')` | Directory on disk, same layout | Used in place — `uninstallTts()` deletes these files |
+| `fromBundled()` | Native resources named `<type>__<file>`, e.g. `matcha__config.json` | Android `assets/models/`, iOS Runner target; Android and iOS only |
+
+Inflect's four Matcha G2P files go next to its own two. A missing file fails `install()` with the full list before anything is installed. `install()` throws `UnsupportedError` on web.
+
 Switching the Qwen3 language — full lowercase names, not ISO codes, and only with the Qwen3 bundle installed (Matcha still throws the same `StateError` but the language changes nothing):
 
 ```dart

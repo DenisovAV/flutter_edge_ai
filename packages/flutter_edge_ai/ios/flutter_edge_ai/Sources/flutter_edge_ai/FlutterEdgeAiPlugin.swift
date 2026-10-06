@@ -16,13 +16,10 @@ public class FlutterEdgeAiPlugin: NSObject, FlutterPlugin {
             return
           }
 
-          // Split resourceName into name and extension
-          let components = resourceName.split(separator: ".")
-          let name = String(components[0])
-          let ext = components.count > 1 ? String(components[1]) : ""
-
-          // Get path from Bundle.main
-          if let path = Bundle.main.path(forResource: name, ofType: ext) {
+          // Look the resource up by its full name. Splitting it at the dots
+          // kept only the first two parts, so "g2p_dict.txt.gz" was searched
+          // as "g2p_dict" + "txt" and never found.
+          if let path = Bundle.main.path(forResource: resourceName, ofType: nil) {
             result(path)
           } else {
             result(FlutterError(code: "NOT_FOUND",

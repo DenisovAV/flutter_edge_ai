@@ -33,7 +33,7 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 | Gemma 4 | `ModelType.gemma4` | Multimodal (image, audio); thinking mode; native `.litertlm` tool-call tokens |
 | Gemma 3 / Gemma3n IT | `ModelType.gemmaIt` | Gemma 3 text models and Gemma3n multimodal models |
 | DeepSeek | `ModelType.deepSeek` | Thinking mode |
-| Qwen / Qwen3 | `ModelType.qwen` / `ModelType.qwen3` | Qwen3 supports thinking mode |
+| Qwen / Qwen3 / Qwen3.5+ | `ModelType.qwen` / `ModelType.qwen3` / `ModelType.qwen35` | Qwen3 supports thinking mode |
 | Llama | `ModelType.llama` | |
 | Phi | `ModelType.phi` | Phi-4 |
 | FunctionGemma | `ModelType.functionGemma` | Specialized function calling |

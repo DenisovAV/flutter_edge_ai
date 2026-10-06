@@ -733,17 +733,12 @@ void main() {
   });
 
   group('modelType mapping (conservative: null over a wrong guess)', () {
-    ModelType? map(
-      String base, {
-      String display = '',
-      String arch = '',
-      bool noThinking = false,
-    }) => LitertlmManifestResolver.mapModelType(
-      baseModel: base,
-      displayName: display,
-      architecture: arch,
-      declaresNoThinking: noThinking,
-    );
+    ModelType? map(String base, {String display = '', String arch = ''}) =>
+        LitertlmManifestResolver.mapModelType(
+          baseModel: base,
+          displayName: display,
+          architecture: arch,
+        );
 
     test('deepseek wins over the qwen in a distill id', () {
       expect(
@@ -753,11 +748,17 @@ void main() {
         ),
         ModelType.deepSeek,
       );
+      // deepseek is checked before any qwen rule, whatever the Qwen generation.
+      expect(map('deepseek-ai/DeepSeek-R1-0528-Qwen3-8B'), ModelType.deepSeek);
     });
 
-    test('qwen3.5 is qwen (ChatML without the qwen3 /no_think injection)', () {
-      expect(map('Qwen/Qwen3.5-4B'), ModelType.qwen);
-      expect(map('Qwen/Qwen3.5-0.8B'), ModelType.qwen);
+    test('qwen3.5 and later are qwen35 (no /no_think soft switch)', () {
+      expect(map('Qwen/Qwen3.5-4B'), ModelType.qwen35);
+      expect(map('Qwen/Qwen3.5-0.8B'), ModelType.qwen35);
+      expect(map('Qwen/Qwen3.6-35B-A3B'), ModelType.qwen35);
+      expect(map('Qwen/Qwen3.8-27B'), ModelType.qwen35);
+      // A size after a dash is Qwen3, not a minor version.
+      expect(map('Qwen/Qwen3-8B'), ModelType.qwen3);
     });
 
     test('qwen3 by id, and by the Qwen3ForCausalLM class token when the id '
@@ -772,68 +773,6 @@ void main() {
         ),
         ModelType.qwen3,
       );
-    });
-
-    // qwen3 differs from qwen only in the ` /no_think` core appends to user
-    // turns while thinking is off; a model with no thinking at all reads it
-    // as literal text.
-    test('qwen3 that declares no thinking is qwen, by id or class token', () {
-      expect(
-        map('Qwen/Qwen3-ASR-1.7B', display: 'Qwen3-ASR-1.7B', noThinking: true),
-        ModelType.qwen,
-      );
-      expect(
-        map(
-          'superwhisper/s1-mini',
-          arch:
-              'Dense 0.6B ASR-transcript normalizer, Qwen3ForCausalLM '
-              'finetune',
-          noThinking: true,
-        ),
-        ModelType.qwen,
-      );
-    });
-
-    // The call site decides what counts as "declares no thinking": a
-    // capabilities block saying so, never a manifest that says nothing.
-    test('resolve(): Qwen3 stays qwen3 when the manifest is silent, and is '
-        'qwen only when its capabilities say no thinking', () async {
-      Map<String, dynamic> qwen3({Map<String, dynamic>? capabilities}) =>
-          manifest(
-            model: {
-              'display_name': 'Qwen3 0.6B',
-              'base_model': 'Qwen/Qwen3-0.6B',
-              'capabilities': ?capabilities,
-            },
-          );
-      final f = _Fetches();
-      final silent = await f.resolver(qwen3()).resolve('org/name');
-      expect(silent.modelType, ModelType.qwen3);
-      expect(silent.runtime.isThinking, isNull);
-
-      final none = await f
-          .resolver(
-            qwen3(
-              capabilities: {
-                'thinking': {'declared': false},
-              },
-            ),
-          )
-          .resolve('org/name');
-      expect(none.modelType, ModelType.qwen);
-      expect(none.runtime.isThinking, isFalse);
-
-      final declared = await f
-          .resolver(
-            qwen3(
-              capabilities: {
-                'thinking': {'declared': true},
-              },
-            ),
-          )
-          .resolve('org/name');
-      expect(declared.modelType, ModelType.qwen3);
-      expect(declared.runtime.isThinking, isTrue);
     });
 
     test('qwen2-family by id or class token', () {

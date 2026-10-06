@@ -163,8 +163,15 @@ class InferenceChat {
       );
     }
 
-    // Qwen3: append /no_think to suppress thinking at model level when not requested
-    if (!isThinking && modelType == ModelType.qwen3 && message.isUser) {
+    // Qwen3: append /no_think to suppress thinking at model level when not
+    // requested. Only to a plain text turn: in a tool response it is noise,
+    // and next to audio a bundle may print the user's text as the start of
+    // its answer (Qwen3-ASR then returns an empty transcript).
+    if (!isThinking &&
+        modelType == ModelType.qwen3 &&
+        message.isUser &&
+        message.type == MessageType.text &&
+        !message.hasAudio) {
       messageToSend = messageToSend.copyWith(
         text: '${messageToSend.text} /no_think',
       );
@@ -362,20 +369,15 @@ class InferenceChat {
       (token) => TextResponse(token),
     );
 
-    // Apply thinking filter for models that may generate <think> tags.
-    // enable_thinking=false is passed via extraContext for .litertlm but is not
-    // reliable for all model bundles — keep filter as safety net.
-    final bool modelCanThink =
-        modelType == ModelType.deepSeek ||
-        modelType == ModelType.qwen ||
-        modelType == ModelType.qwen3 ||
-        modelType == ModelType.gemmaIt;
-    final Stream<ModelResponse> filteredStream = (isThinking || modelCanThink)
-        ? ModelThinkingFilter.filterThinkingStream(
-            originalStream,
-            modelType: modelType,
-          )
-        : originalStream;
+    // Split reasoning out of the stream for every model: a bundle that
+    // declares a thought channel streams its reasoning there whatever the
+    // family, and a model may think even when thinking is off (a
+    // thinking-only model, or a template that ignores enable_thinking).
+    final Stream<ModelResponse> filteredStream =
+        ModelThinkingFilter.filterThinkingStream(
+          originalStream,
+          modelType: modelType,
+        );
 
     // If user didn't request thinking, discard ThinkingResponse events
     final Stream<ModelResponse> thinkingHandledStream = isThinking

@@ -122,6 +122,7 @@ extension MessageExtension on Message {
           ModelType.deepSeek => _transformDeepSeek(),
           ModelType.qwen => _transformQwen(),
           ModelType.qwen3 => _transformQwen(),
+          ModelType.qwen35 => _transformQwen(),
           ModelType.llama => _transformLlama(),
           ModelType.hammer => _transformHammer(),
           ModelType.functionGemma => _transformFunctionGemma(),
@@ -250,21 +251,38 @@ extension MessageExtension on Message {
 
 // Filter class for thinking models
 class ModelThinkingFilter {
+  /// The wrapper `SdkTextExtractor` puts around reasoning the LiteRT-LM
+  /// runtime streams on a bundle's thought channel — and Gemma 4's own
+  /// thinking markers, which it mirrors.
+  static const _channelStart = '<|channel>thought\n';
+  static const _channelEnd = '<channel|>';
+  static const _thinkStart = '<think>';
+  static const _thinkEnd = '</think>';
+
   /// Filters ModelResponse stream for models with thinking support.
-  /// Supports DeepSeek/Qwen3 (`<think>...</think>`) and Gemma 4 (`<|channel>thought\n...<channel|>`).
+  ///
+  /// Reasoning on a thought channel (`<|channel>thought\n...<channel|>`) is
+  /// split out for every [modelType]: the runtime separates it for any bundle
+  /// that declares the channel, whatever the family. Then the family's own
+  /// tags: `<think>...</think>` for DeepSeek and Qwen.
   static Stream<ModelResponse> filterThinkingStream(
     Stream<ModelResponse> originalStream, {
     required ModelType modelType,
   }) async* {
+    final channelSplit = _splitTagged(
+      originalStream,
+      startTag: _channelStart,
+      endTag: _channelEnd,
+    );
     switch (modelType) {
       case ModelType.deepSeek:
         // DeepSeek starts in thinking mode (no opening <think> tag).
         // Uses buffer to handle partial </think> across token boundaries.
-        const endTag = '</think>';
+        const endTag = _thinkEnd;
         bool dsInside = true;
         String dsBuffer = '';
 
-        await for (final response in originalStream) {
+        await for (final response in channelSplit) {
           if (response is TextResponse) {
             dsBuffer += response.token;
 
@@ -304,202 +322,112 @@ class ModelThinkingFilter {
 
       case ModelType.qwen:
       case ModelType.qwen3:
-        // Qwen3 emits <think>...</think>, Qwen2.5 emits nothing.
-        // Starts insideThinking=false — safe for non-thinking models.
-        // Uses buffer to handle partial tags across token boundaries.
-        const startTag = '<think>';
-        const endTag = '</think>';
-        bool qwenInside = false;
-        String qwenBuffer = '';
-
-        await for (final response in originalStream) {
-          if (response is TextResponse) {
-            qwenBuffer += response.token;
-
-            while (qwenBuffer.isNotEmpty) {
-              if (qwenInside) {
-                final endIdx = qwenBuffer.indexOf(endTag);
-                if (endIdx >= 0) {
-                  final thinking = qwenBuffer.substring(0, endIdx);
-                  if (thinking.isNotEmpty) {
-                    yield ThinkingResponse(thinking);
-                  }
-                  qwenBuffer = qwenBuffer.substring(endIdx + endTag.length);
-                  qwenInside = false;
-                } else {
-                  final partial = _findPartialSuffix(qwenBuffer, endTag);
-                  final safe = qwenBuffer.substring(
-                    0,
-                    qwenBuffer.length - partial,
-                  );
-                  if (safe.isNotEmpty) {
-                    yield ThinkingResponse(safe);
-                  }
-                  qwenBuffer = qwenBuffer.substring(
-                    qwenBuffer.length - partial,
-                  );
-                  break;
-                }
-              } else {
-                final startIdx = qwenBuffer.indexOf(startTag);
-                if (startIdx >= 0) {
-                  final textBefore = qwenBuffer.substring(0, startIdx);
-                  if (textBefore.isNotEmpty) {
-                    yield TextResponse(textBefore);
-                  }
-                  qwenBuffer = qwenBuffer.substring(startIdx + startTag.length);
-                  qwenInside = true;
-                } else {
-                  final partial = _findPartialSuffix(qwenBuffer, startTag);
-                  final safe = qwenBuffer.substring(
-                    0,
-                    qwenBuffer.length - partial,
-                  );
-                  if (safe.isNotEmpty) {
-                    yield TextResponse(safe);
-                  }
-                  qwenBuffer = qwenBuffer.substring(
-                    qwenBuffer.length - partial,
-                  );
-                  break;
-                }
-              }
-            }
-          } else {
-            yield response;
-          }
-        }
-        if (qwenBuffer.isNotEmpty) {
-          yield qwenInside
-              ? ThinkingResponse(qwenBuffer)
-              : TextResponse(qwenBuffer);
-        }
+      case ModelType.qwen35:
+        // Qwen3 emits <think>...</think>, Qwen2.5 emits nothing. Starts
+        // outside — safe for non-thinking models. A thinking-only model
+        // whose prompt opens <think> needs its bundle's thought channel,
+        // which the runtime splits before this point.
+        yield* _splitTagged(
+          channelSplit,
+          startTag: _thinkStart,
+          endTag: _thinkEnd,
+        );
         break;
 
       case ModelType.gemmaIt:
       case ModelType.gemma4:
-        // Gemma 4 E2B/E4B: <|channel>thought\n...<channel|>
-        const startMarker = '<|channel>thought\n';
-        const endMarker = '<channel|>';
-        bool gemmaInsideThinking = false;
-        String gemmaBuffer = '';
-
-        await for (final response in originalStream) {
-          if (response is TextResponse) {
-            gemmaBuffer += response.token;
-
-            while (gemmaBuffer.isNotEmpty) {
-              if (gemmaInsideThinking) {
-                final endIdx = gemmaBuffer.indexOf(endMarker);
-                if (endIdx >= 0) {
-                  final thinkingContent = gemmaBuffer.substring(0, endIdx);
-                  if (thinkingContent.isNotEmpty) {
-                    yield ThinkingResponse(thinkingContent);
-                  }
-                  gemmaBuffer = gemmaBuffer.substring(
-                    endIdx + endMarker.length,
-                  );
-                  gemmaInsideThinking = false;
-                } else {
-                  // Check for partial end marker at tail
-                  final partial = _findPartialSuffix(gemmaBuffer, endMarker);
-                  final safe = gemmaBuffer.substring(
-                    0,
-                    gemmaBuffer.length - partial,
-                  );
-                  if (safe.isNotEmpty) {
-                    yield ThinkingResponse(safe);
-                  }
-                  gemmaBuffer = gemmaBuffer.substring(
-                    gemmaBuffer.length - partial,
-                  );
-                  break;
-                }
-              } else {
-                final startIdx = gemmaBuffer.indexOf(startMarker);
-                if (startIdx >= 0) {
-                  final textBefore = gemmaBuffer.substring(0, startIdx);
-                  if (textBefore.isNotEmpty) {
-                    yield TextResponse(textBefore);
-                  }
-                  gemmaBuffer = gemmaBuffer.substring(
-                    startIdx + startMarker.length,
-                  );
-                  gemmaInsideThinking = true;
-                } else {
-                  // Check for partial start marker at tail
-                  final partial = _findPartialSuffix(gemmaBuffer, startMarker);
-                  final safe = gemmaBuffer.substring(
-                    0,
-                    gemmaBuffer.length - partial,
-                  );
-                  if (safe.isNotEmpty) {
-                    yield TextResponse(safe);
-                  }
-                  gemmaBuffer = gemmaBuffer.substring(
-                    gemmaBuffer.length - partial,
-                  );
-                  break;
-                }
-              }
-            }
-          } else {
-            yield response;
-          }
-        }
-        // Flush remaining buffer
-        if (gemmaBuffer.isNotEmpty) {
-          yield gemmaInsideThinking
-              ? ThinkingResponse(gemmaBuffer)
-              : TextResponse(gemmaBuffer);
-        }
-        break;
-
+      // Gemma 4 E2B/E4B thinks in <|channel>thought\n...<channel|>, which
+      // the channel split above already separated.
       case ModelType.general:
       case ModelType.llama:
       case ModelType.hammer:
       case ModelType.functionGemma:
       case ModelType.phi:
-        // For all other models just pass original stream
-        // Thinking not supported
-        yield* originalStream;
+        yield* channelSplit;
         break;
     }
   }
 
+  /// Splits the text of [source] at [startTag]...[endTag] blocks: inside a
+  /// block becomes [ThinkingResponse], outside [TextResponse]. A tag split
+  /// across tokens is held back until it resolves; other responses pass
+  /// through unchanged.
+  static Stream<ModelResponse> _splitTagged(
+    Stream<ModelResponse> source, {
+    required String startTag,
+    required String endTag,
+  }) async* {
+    var inside = false;
+    var buffer = '';
+    ModelResponse piece(String text) =>
+        inside ? ThinkingResponse(text) : TextResponse(text);
+
+    await for (final response in source) {
+      if (response is! TextResponse) {
+        yield response;
+        continue;
+      }
+      buffer += response.token;
+      while (buffer.isNotEmpty) {
+        final tag = inside ? endTag : startTag;
+        final idx = buffer.indexOf(tag);
+        if (idx >= 0) {
+          if (idx > 0) yield piece(buffer.substring(0, idx));
+          buffer = buffer.substring(idx + tag.length);
+          inside = !inside;
+        } else {
+          final partial = _findPartialSuffix(buffer, tag);
+          final safe = buffer.substring(0, buffer.length - partial);
+          if (safe.isNotEmpty) yield piece(safe);
+          buffer = buffer.substring(buffer.length - partial);
+          break;
+        }
+      }
+    }
+    if (buffer.isNotEmpty) yield piece(buffer);
+  }
+
   /// Removes thinking blocks from final text.
-  /// Supports DeepSeek/Qwen3 (`<think>...</think>`) and Gemma 4 (`<|channel>thought\n...<channel|>`).
+  ///
+  /// Thought-channel blocks (`<|channel>thought\n...<channel|>`) go for every
+  /// [modelType], as in [filterThinkingStream]. DeepSeek and Qwen also lose
+  /// `<think>...</think>` blocks, and everything up to a `</think>` with no
+  /// opening tag — the shape a model that starts inside its reasoning leaves.
   /// Note: For streaming thinking output, use [filterThinkingStream] with generateChatResponseAsync() instead.
   static String removeThinkingFromText(
     String text, {
     required ModelType modelType,
   }) {
+    final withoutChannel = text.replaceAll(
+      RegExp(r'<\|channel>thought\n.*?<channel\|>', dotAll: true),
+      '',
+    );
     switch (modelType) {
       case ModelType.deepSeek:
       case ModelType.qwen:
       case ModelType.qwen3:
-        // Remove all <think>...</think> blocks (DeepSeek/Qwen3 format)
-        RegExp thinkingRegex = RegExp(r'<think>.*?</think>', dotAll: true);
-        return text.replaceAll(thinkingRegex, '').trim();
+      case ModelType.qwen35:
+        final withoutBlocks = withoutChannel.replaceAll(
+          RegExp(r'<think>.*?</think>', dotAll: true),
+          '',
+        );
+        final orphanEnd = withoutBlocks.lastIndexOf(_thinkEnd);
+        return (orphanEnd < 0
+                ? withoutBlocks
+                : withoutBlocks.substring(orphanEnd + _thinkEnd.length))
+            .trim();
 
       case ModelType.gemmaIt:
       case ModelType.gemma4:
-        // Remove all <|channel>thought\n...<channel|> blocks (Gemma 4 E2B/E4B)
-        return text
-            .replaceAll(
-              RegExp(r'<\|channel>thought\n.*?<channel\|>', dotAll: true),
-              '',
-            )
-            .trim();
+        return withoutChannel.trim();
 
       case ModelType.general:
       case ModelType.llama:
       case ModelType.hammer:
       case ModelType.functionGemma:
       case ModelType.phi:
-        // For all other models return text without changes
-        // Thinking not supported
-        return text;
+        // Only the runtime's thought channel; no family thinking tags.
+        return withoutChannel == text ? text : withoutChannel.trim();
     }
   }
 
@@ -510,18 +438,8 @@ class ModelThinkingFilter {
     required ModelType modelType,
     required ModelFileType fileType,
   }) {
-    String cleaned = response;
-
-    // Strip thinking tags for models that may generate them
-    final bool modelCanThink =
-        modelType == ModelType.deepSeek ||
-        modelType == ModelType.qwen ||
-        modelType == ModelType.qwen3 ||
-        modelType == ModelType.gemmaIt ||
-        modelType == ModelType.gemma4;
-    if (isThinking || modelCanThink) {
-      cleaned = removeThinkingFromText(cleaned, modelType: modelType);
-    }
+    // Every model: a bundle's thought channel can reach any family.
+    String cleaned = removeThinkingFromText(response, modelType: modelType);
 
     // For .task files, minimal cleaning - MediaPipe handles formatting
     if (fileType == ModelFileType.task) {
@@ -556,6 +474,7 @@ class ModelThinkingFilter {
         return cleaned.replaceAll(RegExp(r'<end_of_turn>\s*$'), '').trim();
       case ModelType.qwen:
       case ModelType.qwen3:
+      case ModelType.qwen35:
         // Remove trailing <|im_end|> tags and trim whitespace
         return cleaned.replaceAll(RegExp(r'<\|im_end\|>\s*$'), '').trim();
       case ModelType.llama:

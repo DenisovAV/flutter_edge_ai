@@ -47,5 +47,5 @@ jobs:
         # --run-skipped: the suite skips itself unless FLUTTER_GEMMA_LIVE_HF is
         # set, and an all-skipped run exits 0. Without the flag, a renamed or
         # dropped variable would turn every weekly run green with nothing
-        # checked.
+        # checked. It also runs any skip added to this file later.
         run: flutter test --run-skipped test/manifest/live_hugging_face_test.dart

@@ -14,14 +14,19 @@ answer.
 
 - **Gemma 4** (E2B, E4B) — `ModelType.gemma4`
 - **DeepSeek R1** — `ModelType.deepSeek`
-- **Qwen3 0.6B** — `ModelType.qwen3`; generates thinking by default, tags are stripped when `isThinking: false`.
+- **Qwen3 0.6B** — `ModelType.qwen3`; thinks by default. With `isThinking: false`
+  flutter_edge_ai sends `enable_thinking: false` and appends ` /no_think` to each
+  text message — the only off switch for a bundle whose template ignores the flag.
+- **Any bundle with a thought channel** (e.g. Qwen3 4B Thinking 2507) — the
+  runtime streams the reasoning on the channel, and it arrives as
+  `ThinkingResponse` whatever the `ModelType`.
 
 Enable it with `isThinking: true` and the matching `ModelType`.
 
 <Warning>
 
-The reasoning channel is parsed per `ModelType`, and `ModelType.general` has no
-parser at all. Models that reason but run as `general` — **SmolLM3 3B**,
+Reasoning tags are parsed per `ModelType`, and `ModelType.general` has no tag
+parser (a bundle's thought channel is still split out). Models that reason but run as `general` — **SmolLM3 3B**,
 **Phi-4 Mini Reasoning** — emit no `ThinkingResponse`, and their thinking tags
 are not stripped either: the raw blocks arrive inside the answer as ordinary
 `TextResponse` tokens. Strip them yourself, or don't advertise a thinking UI for

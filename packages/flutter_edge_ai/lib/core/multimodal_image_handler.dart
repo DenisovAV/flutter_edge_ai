@@ -273,6 +273,7 @@ class MultimodalImageHandler {
       case ModelType.general:
       case ModelType.qwen:
       case ModelType.qwen3:
+      case ModelType.qwen35:
       case ModelType.llama:
       case ModelType.hammer:
       case ModelType.functionGemma:
@@ -292,6 +293,7 @@ class MultimodalImageHandler {
       case ModelType.general:
       case ModelType.qwen:
       case ModelType.qwen3:
+      case ModelType.qwen35:
       case ModelType.llama:
       case ModelType.hammer:
       case ModelType.functionGemma:

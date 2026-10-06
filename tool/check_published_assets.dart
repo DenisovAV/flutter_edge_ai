@@ -41,10 +41,13 @@ const publishedTrees = {
   // them one by one after excluding `web/*.js` — the #578 shape.
   'packages/flutter_edge_ai': ['skills', 'web'],
   // Apps copy the four LiteRT.js files; the build hook runs the staging
-  // script from the package root and skips staging without it.
+  // script from the package root and skips staging without it. tool/web_build
+  // is the recipe that rebuilds web/ — lockfile and tests included — and an
+  // unanchored `test/` in .pubignore once dropped its tests.
   'packages/flutter_edge_ai_litertlm': [
     'web',
     'tool/stage_macos_companions.sh',
+    'tool/web_build',
   ],
   // Apps copy the vec0-enabled sqlite3.wasm into their web root.
   'packages/flutter_edge_ai_sqlite': ['web'],

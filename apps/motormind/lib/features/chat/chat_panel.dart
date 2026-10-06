@@ -106,7 +106,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         ? null
                         : () => ref.read(chatServiceProvider.notifier).start(),
                     icon: const Icon(Icons.play_arrow),
-                    label: Text(chat.busy ? 'Starting…' : 'Start the advisor'),
+                    label: Text(chat.busy ? 'Starting…' : 'Ask Motormind'),
                   ),
                 )
               : ListView(

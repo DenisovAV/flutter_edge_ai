@@ -53,7 +53,10 @@ apps/motormind/                       Flutter app (pub workspace member; not cre
                                       disclosures, profile, component registry      ← exists
 ```
 
-## 4. The advisor turn
+## 4. The Motormind turn
+
+*Naming:* the person-facing name is **Motormind**; the interface never says "advisor" or
+"advice" (the product is informational). `advisor` survives in package and type names only.
 
 ```
 user text ──► AdvisorSession

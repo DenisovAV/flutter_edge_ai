@@ -57,10 +57,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('surface-bubble')));
     await tester.pumpAndSettle();
-    expect(find.text('Advisor (docked)'), findsOneWidget);
+    expect(find.text('Motormind (docked)'), findsOneWidget);
     await tester.tap(find.byKey(const Key('surface-toggle')));
     await tester.pumpAndSettle();
-    expect(find.text('Advisor (fullscreen)'), findsOneWidget);
+    expect(find.text('Motormind (fullscreen)'), findsOneWidget);
     await tester.tap(find.byKey(const Key('surface-toggle')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('surface-bubble')), findsOneWidget);

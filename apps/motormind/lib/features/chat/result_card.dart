@@ -540,7 +540,7 @@ class _VehicleCard extends StatelessWidget {
             const SizedBox(height: 6),
             if (listings.isEmpty)
               Text(
-                '${r['note'] ?? 'Open a listings page and the advisor can read it.'}',
+                '${r['note'] ?? 'Open a listings page and Motormind can read it.'}',
                 style: theme.textTheme.bodySmall,
               ),
             for (final l in listings)

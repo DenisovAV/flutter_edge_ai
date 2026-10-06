@@ -216,7 +216,7 @@ class ChatService extends Notifier<ChatState> {
         );
       };
     } catch (e) {
-      state = state.copyWith(busy: false, error: 'Could not start the advisor: $e');
+      state = state.copyWith(busy: false, error: 'Could not start Motormind: $e');
     }
   }
 
@@ -355,7 +355,7 @@ class ChatService extends Notifier<ChatState> {
           case GuardTripped(:final report, :final replaced):
             state = state.copyWith(
               guardNote: replaced
-                  ? 'The advisor\'s wording was replaced because it contained numbers not from a calculation.'
+                  ? 'Motormind\'s wording was replaced because it contained numbers not from a calculation.'
                   : 'Checking numbers: ${report.unmatched.map((m) => m.raw).join(', ')}',
             );
             if (replaced) updateReply(reply.copyWith(text: ''));
@@ -373,7 +373,7 @@ class ChatService extends Notifier<ChatState> {
       if (stoppedByWatchdog) {
         state = state.copyWith(
           error:
-              'Stopped: the advisor went ${idleLimit!.inSeconds} seconds without a word. Try a shorter message.',
+              'Stopped: Motormind went ${idleLimit!.inSeconds} seconds without a word. Try a shorter message.',
         );
       }
     } catch (e) {
@@ -528,7 +528,7 @@ class ChatService extends Notifier<ChatState> {
     if (s.contains('exceeds available state') || s.contains('context')) {
       return 'The conversation grew past what this model can hold in memory. Start a new conversation to continue.';
     }
-    if (e is TimeoutException) return e.message ?? 'The advisor took too long to answer.';
+    if (e is TimeoutException) return e.message ?? 'Motormind took too long to answer.';
     return 'Something went wrong: $s';
   }
 }

@@ -44,7 +44,7 @@ class AdvisorSurfaceHost extends ConsumerWidget {
     final notifier = ref.read(surfaceProvider.notifier);
     final toggle = IconButton(
       key: const Key('surface-toggle'),
-      tooltip: 'Expand or collapse the advisor',
+      tooltip: 'Expand or collapse Motormind',
       icon: const Icon(Icons.code),
       onPressed: notifier.cycle,
     );
@@ -59,8 +59,8 @@ class AdvisorSurfaceHost extends ConsumerWidget {
             child: FloatingActionButton.extended(
               key: const Key('surface-bubble'),
               onPressed: () => notifier.userSet(SurfaceState.docked),
-              icon: const Icon(Icons.chat_bubble_outline),
-              label: const Text('Advisor'),
+              icon: const Icon(Icons.chevron_right),
+              label: const Text('Motormind'),
             ),
           ),
         ],
@@ -78,13 +78,13 @@ class AdvisorSurfaceHost extends ConsumerWidget {
               ),
               Expanded(
                 flex: keyboardUp ? 85 : 45,
-                child: _AdvisorPanel(toggle: toggle, label: 'Advisor (docked)'),
+                child: _AdvisorPanel(toggle: toggle, label: 'Motormind (docked)'),
               ),
             ],
           );
         },
       ),
-      SurfaceState.fullscreen => _AdvisorPanel(toggle: toggle, label: 'Advisor (fullscreen)'),
+      SurfaceState.fullscreen => _AdvisorPanel(toggle: toggle, label: 'Motormind (fullscreen)'),
     };
   }
 }

@@ -1,12 +1,17 @@
 import 'listing.dart';
 
 /// Pulls vehicle listings out of a page's visible text with patterns, not
-/// per-site scraping: a line that looks like "2021 Honda CR-V EX-L" followed
-/// within a few lines by a price and, optionally, a mileage.
+/// per-site scraping. Two shapes are recognized:
 ///
-/// This is deliberately generic (Q31: user-initiated, one page at a time). A
-/// curated site may later add a recipe that does better; the generic pass is
-/// the floor every page gets.
+/// - A: "2021 Honda CR-V EX-L" on one line, with a price and optional mileage
+///   within a few lines below (common results pages).
+/// - B: a bare year line, then mileage ("35K mi") and stock lines, a title line
+///   ("Toyota RAV4 XLE"), then a "Price" label and the price (EchoPark-style
+///   cards).
+///
+/// Deliberately generic (Q31: user-initiated, one page at a time). A curated
+/// site may later add a recipe that does better; this is the floor every page
+/// gets.
 class ListingExtractor {
   const ListingExtractor({this.maxListings = 25});
 
@@ -15,43 +20,44 @@ class ListingExtractor {
   static final _yearMakeModel = RegExp(
     r'^(?:(?:New|Used|Certified|CPO)\s+)?((?:19|20)\d{2})\s+([A-Z][A-Za-z\-]+)\s+([A-Za-z0-9][^\n]{1,40})$',
   );
+  static final _yearOnly = RegExp(r'^(?:(?:New|Used|Certified|CPO)\s+)?((?:19|20)\d{2})$');
+  static final _titleLine = RegExp(
+    r'^[A-Z][A-Za-z0-9\-]+(?:\s+[A-Za-z0-9][A-Za-z0-9\-\./&]*){1,7}$',
+  );
   static final _price = RegExp(r'\$\s?(\d{1,3}(?:,\d{3})+|\d{4,6})(?!\s*/\s*mo)');
   static final _mileage = RegExp(
-    r'(\d{1,3}(?:,\d{3})+|\d{3,6})\s*(?:mi\b|miles)',
+    r'(\d{1,3}(?:,\d{3})+|\d{3,6}|\d{1,3}(?:\.\d)?[kK])\s*(?:mi\b|miles)',
     caseSensitive: false,
   );
   static final _monthly = RegExp(r'\$\s?\d{2,4}\s*/\s*mo', caseSensitive: false);
+  static const _labels = {
+    'price',
+    'favorite icon',
+    'pickup at',
+    'schedule test drive',
+    'price drop',
+    'total transparent price',
+    'document & other fees',
+    'just dropped',
+    'sort by',
+    'filters',
+  };
+
+  static int parseMiles(String raw) {
+    final v = raw.toLowerCase();
+    if (v.endsWith('k')) return (double.parse(v.substring(0, v.length - 1)) * 1000).round();
+    return int.parse(v.replaceAll(',', ''));
+  }
 
   List<VehicleListing> extract(String text, {required String sourceUrl, required DateTime now}) {
     final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
     final out = <VehicleListing>[];
     final seen = <String>{};
-    for (var i = 0; i < lines.length && out.length < maxListings; i++) {
-      final m = _yearMakeModel.firstMatch(lines[i]);
-      if (m == null) continue;
-      final year = int.parse(m.group(1)!);
-      final make = m.group(2)!;
-      final model = m.group(3)!.trim();
-      double? price;
-      int? mileage;
-      // Look ahead a few lines for a price (not a monthly figure) and a mileage.
-      for (var j = i + 1; j < lines.length && j <= i + 8; j++) {
-        final line = lines[j];
-        if (_yearMakeModel.hasMatch(line)) break; // next listing
-        if (price == null && !_monthly.hasMatch(line)) {
-          final p = _price.firstMatch(line);
-          if (p != null) price = double.parse(p.group(1)!.replaceAll(',', ''));
-        }
-        if (mileage == null) {
-          final mi = _mileage.firstMatch(line);
-          if (mi != null) mileage = int.parse(mi.group(1)!.replaceAll(',', ''));
-        }
-        if (price != null && mileage != null) break;
-      }
-      if (price == null) continue; // a title without a price is navigation, not a listing
-      final title = '$year $make $model';
-      final key = '$title|$price|$mileage';
-      if (!seen.add(key)) continue;
+
+    void add(int year, String make, String model, double? price, int? mileage) {
+      if (price == null || out.length >= maxListings) return;
+      final title = '$year $make $model'.trim();
+      if (!seen.add('$title|$price|$mileage')) return;
       out.add(
         VehicleListing(
           id: 'v${out.length + 1}',
@@ -65,6 +71,65 @@ class ListingExtractor {
           model: model,
         ),
       );
+    }
+
+    for (var i = 0; i < lines.length && out.length < maxListings; i++) {
+      final m = _yearMakeModel.firstMatch(lines[i]);
+      if (m != null) {
+        double? price;
+        int? mileage;
+        for (var j = i + 1; j < lines.length && j <= i + 8; j++) {
+          final line = lines[j];
+          if (_yearMakeModel.hasMatch(line) || _yearOnly.hasMatch(line)) break;
+          if (price == null && !_monthly.hasMatch(line)) {
+            final p = _price.firstMatch(line);
+            if (p != null) price = double.parse(p.group(1)!.replaceAll(',', ''));
+          }
+          if (mileage == null) {
+            final mi = _mileage.firstMatch(line);
+            if (mi != null) mileage = parseMiles(mi.group(1)!);
+          }
+          if (price != null && mileage != null) break;
+        }
+        add(int.parse(m.group(1)!), m.group(2)!, m.group(3)!.trim(), price, mileage);
+        continue;
+      }
+      final y = _yearOnly.firstMatch(lines[i]);
+      if (y == null) continue;
+      int? mileage;
+      String? title;
+      double? price;
+      for (var j = i + 1; j < lines.length && j <= i + 12; j++) {
+        final line = lines[j];
+        if (_yearOnly.hasMatch(line)) break;
+        final lower = line.toLowerCase();
+        if (mileage == null) {
+          final mi = _mileage.firstMatch(line);
+          if (mi != null) {
+            mileage = parseMiles(mi.group(1)!);
+            continue;
+          }
+        }
+        if (title == null) {
+          if (line == '|' ||
+              lower.startsWith('stock') ||
+              _labels.any(lower.startsWith) ||
+              _price.hasMatch(line)) {
+            continue;
+          }
+          if (_titleLine.hasMatch(line)) title = line;
+        } else if (price == null && !_monthly.hasMatch(line)) {
+          final p = _price.firstMatch(line);
+          if (p != null) {
+            price = double.parse(p.group(1)!.replaceAll(',', ''));
+            break;
+          }
+        }
+      }
+      if (title != null) {
+        final parts = title.split(RegExp(r'\s+'));
+        add(int.parse(y.group(1)!), parts.first, parts.skip(1).join(' '), price, mileage);
+      }
     }
     return out;
   }
@@ -80,7 +145,7 @@ Map<String, Object?> extractFacts(String text) {
       .toList();
   if (p.isNotEmpty) facts['prices'] = p.take(5).toList();
   final mi = ListingExtractor._mileage.firstMatch(text);
-  if (mi != null) facts['mileage'] = int.parse(mi.group(1)!.replaceAll(',', ''));
+  if (mi != null) facts['mileage'] = ListingExtractor.parseMiles(mi.group(1)!);
   final y = RegExp(r'\b(20[0-2]\d|19[89]\d)\b').firstMatch(text);
   if (y != null) facts['year'] = int.parse(y.group(1)!);
   return facts;

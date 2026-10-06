@@ -69,4 +69,62 @@ void main() {
     expect(CuratedSites.carsDotCom.search(keywords: 'honda crv'), contains('keyword=honda+crv'));
     expect(CuratedSites.defaultSite.id, 'echopark');
   });
+
+  test('extracts EchoPark-style cards: year line, mileage, stock, title, price', () {
+    const page = '''
+334 used cars at EchoPark
+Favorite Icon
+2023
+|
+35K mi
+|
+Stock #: PPWY18150
+BMW 5 Series 530i xDrive
+Price
+\$34,997
+Document & other fees (if applicable)
+\$799
+Price drop
+-\$4,000
+Total Transparent Price
+\$31,796
+Pickup at
+Charlotte (3 mi)
+Schedule test drive
+Favorite Icon
+Just dropped \$2,200
+2025
+|
+29K mi
+|
+Stock #: RS5120864
+Ford Mustang EcoBoost Premium
+Price
+\$31,497
+Favorite Icon
+2020
+|
+114K mi
+|
+Stock #: CLE027433
+Honda CR-V Hybrid EX-L
+Price
+\$21,997
+''';
+    final listings = const ListingExtractor().extract(
+      page,
+      sourceUrl: 'https://www.echopark.com/used-cars',
+      now: now,
+    );
+    expect(listings.map((l) => l.title), [
+      '2023 BMW 5 Series 530i xDrive',
+      '2025 Ford Mustang EcoBoost Premium',
+      '2020 Honda CR-V Hybrid EX-L',
+    ]);
+    expect(listings[0].price, 34997);
+    expect(listings[0].mileage, 35000);
+    expect(listings[2].mileage, 114000);
+    expect(listings[1].make, 'Ford');
+    expect(listings[1].model, 'Mustang EcoBoost Premium');
+  });
 }

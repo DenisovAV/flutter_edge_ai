@@ -102,23 +102,27 @@ class BrowserService extends Notifier<BrowserState> {
     if (pending != null && !pending.isCompleted) {
       await pending.future.timeout(timeout, onTimeout: () {});
     }
-    // Dynamic sites keep rendering after load; a short settle helps.
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
     final c = _controller;
     if (c == null) {
       throw StateError('The web pane is not open.');
     }
-    final raw = await c.runJavaScriptReturningResult(_extractJs);
-    // Android returns a JSON string (sometimes quoted twice); iOS returns the object.
-    Object? decoded = raw;
-    for (var i = 0; i < 2 && decoded is String; i++) {
-      try {
-        decoded = jsonDecode(decoded);
-      } on FormatException {
-        break;
-      }
+    // Listing sites render their cards after load, from a fetch. Poll until
+    // the visible text stops growing or listings appear, up to ~10 s.
+    Object? raw;
+    var lastLength = -1;
+    var stable = 0;
+    for (var i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
+      raw = await c.runJavaScriptReturningResult(_extractJs);
+      final probeText = _decode(raw)['text'] as String? ?? '';
+      final hasListings = const ListingExtractor()
+          .extract(probeText, sourceUrl: '', now: DateTime.now())
+          .isNotEmpty;
+      stable = probeText.length == lastLength ? stable + 1 : 0;
+      lastLength = probeText.length;
+      if (hasListings || (stable >= 1 && i >= 2)) break;
     }
-    final map = decoded is Map ? decoded.cast<String, Object?>() : <String, Object?>{};
+    final map = _decode(raw);
     final text = (map['text'] as String? ?? '').trim();
     final pageUrl = map['url'] as String? ?? state.url ?? '';
     final title = (map['title'] as String? ?? '').trim();
@@ -154,8 +158,23 @@ class BrowserService extends Notifier<BrowserState> {
       debugPrint(
         '[motormind] read_page: ${text.length} chars, ${listings.length} listings from $pageUrl',
       );
+      final sample = text.length > 1200 ? text.substring(0, 1200) : text;
+      debugPrint('[motormind] read_page sample: ${sample.replaceAll('\n', ' | ')}');
     }
     return extract;
+  }
+
+  /// Android returns a JSON string (sometimes quoted twice); iOS returns the object.
+  static Map<String, Object?> _decode(Object? raw) {
+    Object? decoded = raw;
+    for (var i = 0; i < 2 && decoded is String; i++) {
+      try {
+        decoded = jsonDecode(decoded);
+      } on FormatException {
+        break;
+      }
+    }
+    return decoded is Map ? decoded.cast<String, Object?>() : <String, Object?>{};
   }
 
   /// Visible text only: scripts, styles, nav, header, footer and hidden

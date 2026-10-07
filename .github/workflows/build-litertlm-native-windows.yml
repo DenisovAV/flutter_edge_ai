@@ -324,10 +324,32 @@ jobs:
           # satisfy -notcontains while being exactly the mismatch this checks
           # for. Today's openvino.dll embeds precisely one, so requiring one is
           # not a tightening in practice, only in principle.
-          if ($embedded.Count -ne 1 -or $embedded[0] -ne $sdkBuild) {
+          #
+          # Compare the release (version + build number), not the whole string.
+          # Intel's own 2026.3.1 archive — the v0.18.0 pin — disagrees with
+          # itself: runtime\version.txt says 2026.3.1-22476-56d9685302d while
+          # openvino.dll embeds 2026.3.1-22476-759c5a6ab8c (checked on the
+          # official zip). The commit hash is not stable across Intel's
+          # packaging; version and build number identify the release.
+          $releaseOf = { param($s) if ($s -match '^(\d+\.\d+\.\d+-\d+)-') { $Matches[1] } else { $null } }
+          $sdkRelease = & $releaseOf $sdkBuild
+          $dllRelease = if ($embedded.Count -eq 1) { & $releaseOf $embedded[0] } else { $null }
+          if (-not $sdkRelease -or $dllRelease -ne $sdkRelease) {
             throw "shipped openvino.dll reports '$($embedded -join ', ')' but the dispatch was built against '$sdkBuild'"
           }
-          Write-Host "OpenVino build verified: $sdkBuild"
+          # The property all of this protects is "every shipped OpenVino/TBB DLL
+          # is the file from the SDK the dispatch linked against". Assert that
+          # directly, byte for byte, so it does not hinge on Intel's strings.
+          # Two SDK files sharing a basename (the Debug\ trap above) fail here
+          # too: only one of them can match the copy that won.
+          foreach ($d in $ovDlls) {
+            $shippedHash = (Get-FileHash "artifacts\$($d.Name)" -Algorithm SHA256).Hash
+            $sdkHash = (Get-FileHash $d.FullName -Algorithm SHA256).Hash
+            if ($shippedHash -ne $sdkHash) {
+              throw "artifacts\$($d.Name) is not the SDK's $($d.FullName) (sha256 $shippedHash vs $sdkHash)"
+            }
+          }
+          Write-Host "OpenVino release verified: $sdkRelease (version.txt '$sdkBuild', openvino.dll '$($embedded[0])'); $($ovDlls.Count) DLLs byte-identical to the SDK"
           Write-Host "NPU stack: LiteRtDispatch + $($ovDlls.Count) OpenVino/TBB DLLs"
           Get-ChildItem artifacts\
           # Every DLL we build ourselves, at the END of this step so that all

@@ -13,6 +13,8 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
+import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
+import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/core/domain/model_source.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
@@ -61,9 +63,16 @@ void main() {
 
       final prefs = await SharedPreferences.getInstance();
       await Future<void>.delayed(Duration.zero);
-      expect(prefs.getString('active_inference_file_type'), 'builtIn');
-      expect(prefs.getString('active_inference_filename'), 'gemini-nano');
-      expect(prefs.getString('active_inference_source'), 'bundled|gemini-nano');
+      final identity = ActiveIdentityStore.read(
+        prefs,
+        ActiveIdentityKind.inference,
+      )!;
+      expect(identity[PreferencesKeys.activeInferenceFileType], 'builtIn');
+      expect(identity[PreferencesKeys.activeInferenceFilename], 'gemini-nano');
+      expect(
+        identity[PreferencesKeys.activeInferenceSource],
+        'bundled|gemini-nano',
+      );
     });
 
     test('builtIn install with LoRA throws ArgumentError', () async {

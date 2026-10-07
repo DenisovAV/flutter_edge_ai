@@ -1,11 +1,5 @@
 part of '../../../mobile/flutter_edge_ai_mobile.dart';
 
-void _requireSuccessfulIdentityWrites(List<bool> results, String modelKind) {
-  if (results.any((succeeded) => !succeeded)) {
-    throw StateError('Failed to persist the active $modelKind model identity.');
-  }
-}
-
 /// Main unified model manager that orchestrates all model operations
 class MobileModelManager extends ModelFileManager
     implements InstalledModelActivation, ActiveEmbeddingIdentityObserver {
@@ -173,13 +167,13 @@ class MobileModelManager extends ModelFileManager
   /// callers had to re-invoke `installModel()` every launch.
   Future<void> _restoreActiveInferenceModel() async {
     final prefs = await SharedPreferences.getInstance();
-    final modelTypeName = prefs.getString(
-      PreferencesKeys.activeInferenceModelType,
+    final identity = ActiveIdentityStore.read(
+      prefs,
+      ActiveIdentityKind.inference,
     );
-    final fileTypeName = prefs.getString(
-      PreferencesKeys.activeInferenceFileType,
-    );
-    final filename = prefs.getString(PreferencesKeys.activeInferenceFilename);
+    final modelTypeName = identity?[PreferencesKeys.activeInferenceModelType];
+    final fileTypeName = identity?[PreferencesKeys.activeInferenceFileType];
+    final filename = identity?[PreferencesKeys.activeInferenceFilename];
 
     if (modelTypeName == null || fileTypeName == null || filename == null) {
       return;
@@ -529,17 +523,26 @@ class MobileModelManager extends ModelFileManager
   /// persisted/restored (unlike embeddings, which have no type dimension).
   Future<void> _restoreActiveSttModel() async {
     final prefs = await SharedPreferences.getInstance();
-    final modelFilename = prefs.getString(PreferencesKeys.activeSttFilename);
-    final tokenizerFilename = prefs.getString(
-      PreferencesKeys.activeSttTokenizerFilename,
-    );
-    final sttModelTypeName = prefs.getString(
-      PreferencesKeys.activeSttModelType,
-    );
+    final identity = ActiveIdentityStore.read(prefs, ActiveIdentityKind.stt);
+    final modelFilename = identity?[PreferencesKeys.activeSttFilename];
+    final tokenizerFilename =
+        identity?[PreferencesKeys.activeSttTokenizerFilename];
+    final sttModelTypeName = identity?[PreferencesKeys.activeSttModelType];
 
     if (modelFilename == null ||
         tokenizerFilename == null ||
         sttModelTypeName == null) {
+      return;
+    }
+    // Keys written one by one by an older release can come from two models.
+    if (!ActiveIdentityStore.sttTokenizerBelongsToModel(
+      FileNameUtils.getBaseName(modelFilename),
+      tokenizerFilename,
+    )) {
+      edgeAiLog(
+        '[ModelManager] active STT restore: tokenizer $tokenizerFilename does '
+        'not belong to $modelFilename — skipping',
+      );
       return;
     }
 
@@ -589,8 +592,9 @@ class MobileModelManager extends ModelFileManager
   /// was installed from, the rest in the managed directory.
   Future<void> _restoreActiveTtsModel() async {
     final prefs = await SharedPreferences.getInstance();
-    final name = prefs.getString(PreferencesKeys.activeTtsName);
-    final typeName = prefs.getString(PreferencesKeys.activeTtsModelType);
+    final identity = ActiveIdentityStore.read(prefs, ActiveIdentityKind.tts);
+    final name = identity?[PreferencesKeys.activeTtsName];
+    final typeName = identity?[PreferencesKeys.activeTtsModelType];
     if (name == null || typeName == null) return;
 
     final TtsModelType ttsModelType;
@@ -1416,10 +1420,7 @@ class MobileModelManager extends ModelFileManager
     await _ensureInitialized();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(PreferencesKeys.activeInferenceModelType);
-      await prefs.remove(PreferencesKeys.activeInferenceFileType);
-      await prefs.remove(PreferencesKeys.activeInferenceFilename);
-      await prefs.remove(PreferencesKeys.activeInferenceSource);
+      await ActiveIdentityStore.clear(prefs, ActiveIdentityKind.inference);
       _activeInferenceModel = null;
     } catch (e) {
       edgeAiLog('[ModelManager] clearActiveInferenceIdentity failed: $e');
@@ -1447,11 +1448,7 @@ class MobileModelManager extends ModelFileManager
     await _ensureInitialized();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(PreferencesKeys.activeSttFilename);
-      await prefs.remove(PreferencesKeys.activeSttTokenizerFilename);
-      await prefs.remove(PreferencesKeys.activeSttModelType);
-      await prefs.remove(PreferencesKeys.activeSttSource);
-      await prefs.remove(PreferencesKeys.activeSttTokenizerSource);
+      await ActiveIdentityStore.clear(prefs, ActiveIdentityKind.stt);
       _activeSttModel = null;
     } catch (e) {
       edgeAiLog('[ModelManager] clearActiveSttIdentity failed: $e');
@@ -1465,8 +1462,7 @@ class MobileModelManager extends ModelFileManager
     await _ensureInitialized();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(PreferencesKeys.activeTtsName);
-      await prefs.remove(PreferencesKeys.activeTtsModelType);
+      await ActiveIdentityStore.clear(prefs, ActiveIdentityKind.tts);
       _activeTtsModel = null;
     } catch (e) {
       edgeAiLog('[ModelManager] clearActiveTtsIdentity failed: $e');
@@ -1568,22 +1564,12 @@ class MobileModelManager extends ModelFileManager
           )
           .filename;
       final prefs = await SharedPreferences.getInstance();
-      final results = await Future.wait([
-        prefs.setString(
-          PreferencesKeys.activeInferenceModelType,
-          spec.modelType.name,
-        ),
-        prefs.setString(
-          PreferencesKeys.activeInferenceFileType,
-          spec.fileType.name,
-        ),
-        prefs.setString(PreferencesKeys.activeInferenceFilename, filename),
-        prefs.setString(
-          PreferencesKeys.activeInferenceSource,
-          spec.modelSource.encode(),
-        ),
-      ]);
-      _requireSuccessfulIdentityWrites(results, 'inference');
+      await ActiveIdentityStore.write(prefs, ActiveIdentityKind.inference, {
+        PreferencesKeys.activeInferenceModelType: spec.modelType.name,
+        PreferencesKeys.activeInferenceFileType: spec.fileType.name,
+        PreferencesKeys.activeInferenceFilename: filename,
+        PreferencesKeys.activeInferenceSource: spec.modelSource.encode(),
+      });
     } catch (e, stackTrace) {
       edgeAiLog('[ModelManager] persistActiveInferenceIdentity failed: $e');
       Error.throwWithStackTrace(e, stackTrace);
@@ -1605,26 +1591,13 @@ class MobileModelManager extends ModelFileManager
         (f) => f.prefsKey == PreferencesKeys.sttTokenizerFile,
       );
       final prefs = await SharedPreferences.getInstance();
-      final results = await Future.wait([
-        prefs.setString(PreferencesKeys.activeSttFilename, modelFile.filename),
-        prefs.setString(
-          PreferencesKeys.activeSttTokenizerFilename,
-          tokenizerFile.filename,
-        ),
-        prefs.setString(
-          PreferencesKeys.activeSttModelType,
-          spec.sttModelType.name,
-        ),
-        prefs.setString(
-          PreferencesKeys.activeSttSource,
-          spec.modelSource.encode(),
-        ),
-        prefs.setString(
-          PreferencesKeys.activeSttTokenizerSource,
-          spec.tokenizerSource.encode(),
-        ),
-      ]);
-      _requireSuccessfulIdentityWrites(results, 'STT');
+      await ActiveIdentityStore.write(prefs, ActiveIdentityKind.stt, {
+        PreferencesKeys.activeSttFilename: modelFile.filename,
+        PreferencesKeys.activeSttTokenizerFilename: tokenizerFile.filename,
+        PreferencesKeys.activeSttModelType: spec.sttModelType.name,
+        PreferencesKeys.activeSttSource: spec.modelSource.encode(),
+        PreferencesKeys.activeSttTokenizerSource: spec.tokenizerSource.encode(),
+      });
     } catch (e, stackTrace) {
       edgeAiLog('[ModelManager] persistActiveSttIdentity failed: $e');
       Error.throwWithStackTrace(e, stackTrace);
@@ -1634,14 +1607,10 @@ class MobileModelManager extends ModelFileManager
   Future<void> _persistActiveTtsIdentity(TtsModelSpec spec) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final results = await Future.wait([
-        prefs.setString(PreferencesKeys.activeTtsName, spec.name),
-        prefs.setString(
-          PreferencesKeys.activeTtsModelType,
-          spec.ttsModelType.name,
-        ),
-      ]);
-      _requireSuccessfulIdentityWrites(results, 'TTS');
+      await ActiveIdentityStore.write(prefs, ActiveIdentityKind.tts, {
+        PreferencesKeys.activeTtsName: spec.name,
+        PreferencesKeys.activeTtsModelType: spec.ttsModelType.name,
+      });
     } catch (e, stackTrace) {
       edgeAiLog('[ModelManager] persistActiveTtsIdentity failed: $e');
       Error.throwWithStackTrace(e, stackTrace);

@@ -8,15 +8,10 @@ import 'package:flutter_edge_ai/core/infrastructure/web_file_system_service.dart
 import 'package:flutter_edge_ai/core/infrastructure/web_download_service.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/core/model_management/active_embedding_identity.dart';
+import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/core/model_management/model_activation.dart';
 import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
-
-void _requireSuccessfulIdentityWrites(List<bool> results, String modelKind) {
-  if (results.any((succeeded) => !succeeded)) {
-    throw StateError('Failed to persist the active $modelKind model identity.');
-  }
-}
 
 /// Web Model Manager - Modern API Facade Pattern
 ///
@@ -81,16 +76,14 @@ class WebModelManager extends ModelFileManager
   /// we have to recover the original ModelSource (not just a filename).
   Future<void> _restoreActiveInferenceModel() async {
     final prefs = await SharedPreferences.getInstance();
-    final modelTypeName = prefs.getString(
-      PreferencesKeys.activeInferenceModelType,
+    final identity = ActiveIdentityStore.read(
+      prefs,
+      ActiveIdentityKind.inference,
     );
-    final fileTypeName = prefs.getString(
-      PreferencesKeys.activeInferenceFileType,
-    );
-    final filename = prefs.getString(PreferencesKeys.activeInferenceFilename);
-    final sourceEncoded = prefs.getString(
-      PreferencesKeys.activeInferenceSource,
-    );
+    final modelTypeName = identity?[PreferencesKeys.activeInferenceModelType];
+    final fileTypeName = identity?[PreferencesKeys.activeInferenceFileType];
+    final filename = identity?[PreferencesKeys.activeInferenceFilename];
+    final sourceEncoded = identity?[PreferencesKeys.activeInferenceSource];
 
     if (modelTypeName == null ||
         fileTypeName == null ||
@@ -368,23 +361,31 @@ class WebModelManager extends ModelFileManager
   /// persisted/restored (unlike embeddings, which have no type dimension).
   Future<void> _restoreActiveSttModel() async {
     final prefs = await SharedPreferences.getInstance();
-    final modelFilename = prefs.getString(PreferencesKeys.activeSttFilename);
-    final tokenizerFilename = prefs.getString(
-      PreferencesKeys.activeSttTokenizerFilename,
-    );
-    final sttModelTypeName = prefs.getString(
-      PreferencesKeys.activeSttModelType,
-    );
-    final modelSourceEncoded = prefs.getString(PreferencesKeys.activeSttSource);
-    final tokenizerSourceEncoded = prefs.getString(
-      PreferencesKeys.activeSttTokenizerSource,
-    );
+    final identity = ActiveIdentityStore.read(prefs, ActiveIdentityKind.stt);
+    final modelFilename = identity?[PreferencesKeys.activeSttFilename];
+    final tokenizerFilename =
+        identity?[PreferencesKeys.activeSttTokenizerFilename];
+    final sttModelTypeName = identity?[PreferencesKeys.activeSttModelType];
+    final modelSourceEncoded = identity?[PreferencesKeys.activeSttSource];
+    final tokenizerSourceEncoded =
+        identity?[PreferencesKeys.activeSttTokenizerSource];
 
     if (modelFilename == null ||
         tokenizerFilename == null ||
         sttModelTypeName == null ||
         modelSourceEncoded == null ||
         tokenizerSourceEncoded == null) {
+      return;
+    }
+    // Keys written one by one by an older release can come from two models.
+    if (!ActiveIdentityStore.sttTokenizerBelongsToModel(
+      FileNameUtils.getBaseName(modelFilename),
+      tokenizerFilename,
+    )) {
+      edgeAiLog(
+        '[WebModelManager] active STT restore: tokenizer $tokenizerFilename '
+        'does not belong to $modelFilename — skipping',
+      );
       return;
     }
 
@@ -1132,10 +1133,7 @@ class WebModelManager extends ModelFileManager
     await _ensureInitialized();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(PreferencesKeys.activeInferenceModelType);
-      await prefs.remove(PreferencesKeys.activeInferenceFileType);
-      await prefs.remove(PreferencesKeys.activeInferenceFilename);
-      await prefs.remove(PreferencesKeys.activeInferenceSource);
+      await ActiveIdentityStore.clear(prefs, ActiveIdentityKind.inference);
       _activeInferenceModel = null;
     } catch (e) {
       edgeAiLog('[WebModelManager] clearActiveInferenceIdentity failed: $e');
@@ -1163,11 +1161,7 @@ class WebModelManager extends ModelFileManager
     await _ensureInitialized();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(PreferencesKeys.activeSttFilename);
-      await prefs.remove(PreferencesKeys.activeSttTokenizerFilename);
-      await prefs.remove(PreferencesKeys.activeSttModelType);
-      await prefs.remove(PreferencesKeys.activeSttSource);
-      await prefs.remove(PreferencesKeys.activeSttTokenizerSource);
+      await ActiveIdentityStore.clear(prefs, ActiveIdentityKind.stt);
       _activeSttModel = null;
     } catch (e) {
       edgeAiLog('[WebModelManager] clearActiveSttIdentity failed: $e');
@@ -1323,32 +1317,15 @@ class WebModelManager extends ModelFileManager
           )
           .filename;
       final prefs = await SharedPreferences.getInstance();
-      // Issued together, with no `await` between them, and that is the whole
-      // fix for #468. `SharedPreferences._setValue` is not async: it writes
-      // `_preferenceCache[key]` synchronously and only then starts the platform
-      // write, and `getInstance()` memoises one instance per isolate — so every
-      // reader, on any manager instance, shares that map. Awaiting each call in
-      // turn yielded between them, and a reader that interleaved saw a partial
-      // identity (measured: one key of four) or, on a re-install, a mixed one:
-      // the new modelType with the old filename, which is well-formed, passes
-      // `isInstalled`, and loads the wrong weights silently. Written in one
-      // uninterrupted burst, neither state can be observed at all.
-      final results = await Future.wait([
-        prefs.setString(
-          PreferencesKeys.activeInferenceModelType,
-          spec.modelType.name,
-        ),
-        prefs.setString(
-          PreferencesKeys.activeInferenceFileType,
-          spec.fileType.name,
-        ),
-        prefs.setString(PreferencesKeys.activeInferenceFilename, filename),
-        prefs.setString(
-          PreferencesKeys.activeInferenceSource,
-          spec.modelSource.encode(),
-        ),
-      ]);
-      _requireSuccessfulIdentityWrites(results, 'inference');
+      // One setString, so no reader can see half of it (#468: readers on any
+      // manager instance share one preferences cache) and no crash can leave
+      // one model's filename next to another's type.
+      await ActiveIdentityStore.write(prefs, ActiveIdentityKind.inference, {
+        PreferencesKeys.activeInferenceModelType: spec.modelType.name,
+        PreferencesKeys.activeInferenceFileType: spec.fileType.name,
+        PreferencesKeys.activeInferenceFilename: filename,
+        PreferencesKeys.activeInferenceSource: spec.modelSource.encode(),
+      });
     } catch (e, stackTrace) {
       edgeAiLog('[WebModelManager] persistActiveInferenceIdentity failed: $e');
       Error.throwWithStackTrace(e, stackTrace);
@@ -1370,27 +1347,14 @@ class WebModelManager extends ModelFileManager
         (f) => f.prefsKey == PreferencesKeys.sttTokenizerFile,
       );
       final prefs = await SharedPreferences.getInstance();
-      // One burst — see _persistActiveInferenceIdentity for why (#468).
-      final results = await Future.wait([
-        prefs.setString(PreferencesKeys.activeSttFilename, modelFile.filename),
-        prefs.setString(
-          PreferencesKeys.activeSttTokenizerFilename,
-          tokenizerFile.filename,
-        ),
-        prefs.setString(
-          PreferencesKeys.activeSttModelType,
-          spec.sttModelType.name,
-        ),
-        prefs.setString(
-          PreferencesKeys.activeSttSource,
-          spec.modelSource.encode(),
-        ),
-        prefs.setString(
-          PreferencesKeys.activeSttTokenizerSource,
-          spec.tokenizerSource.encode(),
-        ),
-      ]);
-      _requireSuccessfulIdentityWrites(results, 'STT');
+      // One setString — see _persistActiveInferenceIdentity.
+      await ActiveIdentityStore.write(prefs, ActiveIdentityKind.stt, {
+        PreferencesKeys.activeSttFilename: modelFile.filename,
+        PreferencesKeys.activeSttTokenizerFilename: tokenizerFile.filename,
+        PreferencesKeys.activeSttModelType: spec.sttModelType.name,
+        PreferencesKeys.activeSttSource: spec.modelSource.encode(),
+        PreferencesKeys.activeSttTokenizerSource: spec.tokenizerSource.encode(),
+      });
     } catch (e, stackTrace) {
       edgeAiLog('[WebModelManager] persistActiveSttIdentity failed: $e');
       Error.throwWithStackTrace(e, stackTrace);

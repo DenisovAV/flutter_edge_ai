@@ -12,6 +12,7 @@ import 'package:flutter_edge_ai/core/domain/model_source.dart';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai/core/model_management/active_embedding_identity.dart';
+import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
@@ -50,13 +51,14 @@ void main() {
     await WebModelManager().ensureInitialized();
 
     final prefs = await SharedPreferences.getInstance();
-    expect(
-      prefs.getString(PreferencesKeys.activeInferenceModelType),
-      isNotNull,
-    );
-    expect(prefs.getString(PreferencesKeys.activeInferenceFileType), isNotNull);
-    expect(prefs.getString(PreferencesKeys.activeInferenceFilename), isNotNull);
-    expect(prefs.getString(PreferencesKeys.activeInferenceSource), isNotNull);
+    final identity = ActiveIdentityStore.read(
+      prefs,
+      ActiveIdentityKind.inference,
+    )!;
+    expect(identity[PreferencesKeys.activeInferenceModelType], isNotNull);
+    expect(identity[PreferencesKeys.activeInferenceFileType], isNotNull);
+    expect(identity[PreferencesKeys.activeInferenceFilename], isNotNull);
+    expect(identity[PreferencesKeys.activeInferenceSource], isNotNull);
   });
 
   test('a re-install is never observable half-applied', () async {
@@ -72,8 +74,12 @@ void main() {
     await WebModelManager().ensureInitialized();
 
     final prefs = await SharedPreferences.getInstance();
-    final filename = prefs.getString(PreferencesKeys.activeInferenceFilename);
-    final source = prefs.getString(PreferencesKeys.activeInferenceSource);
+    final identity = ActiveIdentityStore.read(
+      prefs,
+      ActiveIdentityKind.inference,
+    )!;
+    final filename = identity[PreferencesKeys.activeInferenceFilename];
+    final source = identity[PreferencesKeys.activeInferenceSource];
 
     // Both keys must describe the SAME model, whichever one won.
     final fromFilename = filename!.contains('second') ? 'second' : 'first';

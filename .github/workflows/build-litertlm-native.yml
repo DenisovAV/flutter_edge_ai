@@ -12,7 +12,7 @@ on:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
       prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (default: 4453b286, the first refresh with the new Constraint ABI)'
+        description: 'Upstream ref to take prebuilt companion libs from (default: b2f686e2, the v0.18.0 tag itself — its provider already has the new Constraint ABI)'
         required: false
       publish_release:
         description: 'Publish to GitHub Release'
@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 60
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '4453b286c549d216584866ed49b6fed6d11fa3a7' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -85,10 +85,9 @@ jobs:
           # RTLD_GLOBAL preload of libLiteRt.so, at the cost of two copies of
           # the runtime in one process — the suspected reason a second
           # engine_create trips 'wgpu::Instance already set'. Upstream docs
-          # require both defines for GPU on every platform.
+          # require litert_runtime_link_mode=dynamic for GPU on every platform.
           bazelisk build -c opt --strip=always \
             --define=litert_runtime_link_mode=dynamic \
-            --define=resolve_symbols_in_exec=false \
             '//c:libLiteRtLm.dylib'
 
       - name: Build libStreamProxy.so
@@ -162,7 +161,7 @@ jobs:
     timeout-minutes: 60
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '4453b286c549d216584866ed49b6fed6d11fa3a7' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -212,10 +211,9 @@ jobs:
           # RTLD_GLOBAL preload of libLiteRt.so, at the cost of two copies of
           # the runtime in one process — the suspected reason a second
           # engine_create trips 'wgpu::Instance already set'. Upstream docs
-          # require both defines for GPU on every platform.
+          # require litert_runtime_link_mode=dynamic for GPU on every platform.
           bazelisk build -c opt --strip=always \
             --define=litert_runtime_link_mode=dynamic \
-            --define=resolve_symbols_in_exec=false \
             '//c:libLiteRtLm.dylib'
 
       - name: Build libStreamProxy.so
@@ -291,7 +289,7 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '4453b286c549d216584866ed49b6fed6d11fa3a7' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:
@@ -357,7 +355,7 @@ jobs:
         # litert_runtime_link_mode=dynamic keeps the LiteRt C API OUT of
         # libLiteRtLm so it resolves against the separately shipped libLiteRt at
         # runtime — which is what the prebuilt WebGPU accelerator and the split
-        # libwebgpu_dawn expect. Upstream documents both defines as mandatory
+        # libwebgpu_dawn expect. Upstream documents it as mandatory
         # for GPU (docs/getting-started/build-and-run.md).
         #
         # It replaces `litert_link_capi_so=true`, which upstream has since
@@ -367,8 +365,9 @@ jobs:
         # accelerator; from then on it is what crashes GPU engine_create
         # (#2957) — a clean v0.13.1→v0.14.0 symptom with a downstream cause.
         #
-        # resolve_symbols_in_exec=false stays: without it bazel cannot resolve
-        # LiteRt* imports at link time (167 unresolved externals, commit f4c485e).
+        # resolve_symbols_in_exec=false is gone: LiteRT fd031ae5 (in the v0.18.0
+        # pin) deleted the flag and hard-wired the DLL import library it used
+        # to select, so passing it would be a silent no-op like the one above.
         #
         # static_link_msvcrt (/MT) makes LiteRtLm.dll carry its own C++ runtime,
         # as Google's companion DLLs and our StreamProxy.dll already do. On the
@@ -386,7 +385,6 @@ jobs:
             --features=static_link_msvcrt `
             --spawn_strategy=local `
             --define=litert_runtime_link_mode=dynamic `
-            --define=resolve_symbols_in_exec=false `
             '//c:libLiteRtLm.dylib'
 
       - name: Build Intel NPU dispatch
@@ -411,7 +409,6 @@ jobs:
             --features=archive_param_file `
             --spawn_strategy=local `
             --define=litert_runtime_link_mode=dynamic `
-            --define=resolve_symbols_in_exec=false `
             '@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch'
           if ($LASTEXITCODE -ne 0) {
             # Retry once: a cleanup-only failure leaves the action cache warm,
@@ -426,7 +423,6 @@ jobs:
               --features=archive_param_file `
               --spawn_strategy=local `
               --define=litert_runtime_link_mode=dynamic `
-              --define=resolve_symbols_in_exec=false `
               '@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch'
             if ($LASTEXITCODE -ne 0) {
               # Do not lean on PowerShell's implicit $LASTEXITCODE trailer: one
@@ -682,7 +678,7 @@ jobs:
       contents: write
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '4453b286c549d216584866ed49b6fed6d11fa3a7' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
     steps:
       - uses: actions/download-artifact@v4
         with:

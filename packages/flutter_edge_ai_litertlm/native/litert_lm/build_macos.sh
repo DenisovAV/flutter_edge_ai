@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./build_macos.sh [ref]
-#   ./build_macos.sh e9fd8c53       # v0.17.0 (the default)
+#   ./build_macos.sh b2f686e2       # v0.18.0 (the default)
 #   ./build_macos.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
 #                                   # are ABI-incompatible with libLiteRtLm
 #                                   # rebuilt from v0.11.0 source — crashes
@@ -22,8 +22,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/macos_arm64"
 LITERT_LM_DIR="/tmp/LiteRT-LM"
-DEFAULT_REF="e9fd8c53ff968071774206163027dd84bedfe925"   # v0.17.0
+DEFAULT_REF="b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"   # v0.18.0
 VERSION="${1:-}"
+
+# Since v0.18.0 the WORKSPACE registers the Android NDK toolchain whenever
+# ANDROID_NDK_HOME is set, even for an Apple build — and a value pointing at an
+# NDK that is no longer installed fails analysis ("can't readdir(), not a
+# directory"). This build needs no NDK.
+unset ANDROID_NDK_HOME
 
 echo "=== Building libLiteRtLm.dylib for macOS arm64 ==="
 
@@ -76,7 +82,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-4453b286c549d216584866ed49b6fed6d11fa3a7}"
+PREBUILT_REF="${PREBUILT_REF:-b2f686e2ed4718fb84ec398a61dd59ca0f0aff27}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/macos_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the

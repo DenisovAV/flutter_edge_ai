@@ -20,6 +20,13 @@ whole verification checklist read as passing while touching no artifact at all �
 the same defect the checklist exists to catch, applied to itself. When you add a
 command here, run it from the root first and confirm it produces output.
 
+**Use `/usr/bin/grep` when you paste a check into an interactive shell.** In the
+agent's zsh, `grep` is a shell function over a ripgrep-style search that skips
+binary files and hidden files. `grep -q LogitMask <provider>` then answers "no"
+for a provider that has it (a false ABI MISMATCH at the v0.18.0 bump), and a
+recursive search never opens `.bazelrc`. The build scripts are unaffected —
+they run under bash, which does not inherit zsh functions.
+
 ---
 
 ## Pre-build setup
@@ -70,7 +77,7 @@ grep -rohE "LiteRt[A-Za-z_]+" \
 
 **Diff the structs too, not only the function signatures.** A struct we mirror by hand (`LiteRtLayout`, `LiteRtRankedTensorType`) can change layout while every symbol and signature stays the same, so the symbol list above passes. LiteRT `d84656955` (2026-07-09) turned `bool has_strides : 1` into `unsigned int has_strides : 1`, which moved `dimensions[]` from offset 8 to 4 **under MSVC only**; our Windows-only mirror kept offset 8 and broke Windows embeddings and speech from native-v0.16.0 on (pitfall #16). Diff `litert/c/litert_layout.h` and `litert/c/litert_model_types.h` at both refs, and when a divergence we work around disappears upstream, delete the workaround in the same bump. `test/ffi/litert_layout_abi_test.dart` pins the current sizes.
 
-Known pins: v0.14.0 → `622f1f3c` (**breaking** for embeddings; predates `d84656955`); v0.15.0 → `3cb830ad` (safe — four headers byte-identical, `litert_compiled_model.h` only gains `LiteRtGetCompiledModelEnvironment()`); v0.16.0 → `0ff28117f1cb5556d0e015bf80b773f74e2bee51` (contains `d84656955`); v0.17.0 → `9fe5be45564c868408e6514c8aabb83e211a0911` (headers additive; the GPU samplers' `Create` gained a leading `runtime_c_api` argument, prebuilt samplers refreshed upstream in `a24911058`).
+Known pins: v0.14.0 → `622f1f3c` (**breaking** for embeddings; predates `d84656955`); v0.15.0 → `3cb830ad` (safe — four headers byte-identical, `litert_compiled_model.h` only gains `LiteRtGetCompiledModelEnvironment()`); v0.16.0 → `0ff28117f1cb5556d0e015bf80b773f74e2bee51` (contains `d84656955`); v0.17.0 → `9fe5be45564c868408e6514c8aabb83e211a0911` (headers additive; the GPU samplers' `Create` gained a leading `runtime_c_api` argument, prebuilt samplers refreshed upstream in `a24911058`); v0.18.0 → `26895c9fbcc25c43faa8c1a98cd1fd28951602c3` (the seven binding headers byte-identical, `litert_common.h` / `litert_tensor_buffer_types.h` comment-only; deletes `resolve_symbols_in_exec` in `fd031ae5`, see below).
 
 **Never hardcode this ref in a build script.** `build_qualcomm_dispatch.sh` carried a literal `5c5b9ce6` from the native-v0.12.0 era and nobody noticed for four releases, because a stale dispatch library does not fail politely — see the NPU section below. Derive it from the WORKSPACE of the LiteRT-LM revision being built:
 
@@ -89,20 +96,28 @@ A `--define` that upstream has deleted is **not an error**. Bazel accepts any `-
 
 We passed `--define=litert_link_capi_so=true` on Windows and Linux for three releases. Upstream removed the name; **no `config_setting` reads it** in the v0.16.0 tree (a plain grep still finds one commented-out mention in `.github/workflows/ci-build-mac.yml`, which is why the recipe below greps only `.bzl`/`BUILD`/`.bazelrc`). The live name is `litert_runtime_link_mode=dynamic`. This was harmless until v0.14.0 split Dawn out of the WebGPU accelerator, from which point the statically-linked runtime is exactly what crashed GPU `engine_create` — reported upstream as #2957 and **retracted**, because the cause was ours.
 
-Before trusting any define in a build command, grep the tree you are about to build:
+Before trusting any define in a build command, grep **both** trees it can live in — LiteRT-LM, and LiteRT at the derived `LITERT_REF` (a define read only by `@litert` never appears in the LiteRT-LM tree, so grepping that alone reports "dead" for a live flag and "dead" for a dead one alike):
 
 ```bash
-for d in litert_runtime_link_mode resolve_symbols_in_exec <any-other>; do
-  printf "%-32s %s\n" "$d" "$(grep -rl "$d" /tmp/LiteRT-LM --include='*.bzl' --include='BUILD*' --include='*.bazelrc' 2>/dev/null | wc -l)"
+# Query the LiteRT-LM workspace, not the repo root (not a Bazel workspace), and
+# only after a build/fetch at this pin — otherwise LR points nowhere and every
+# define reads litert=0.
+LR="$(cd /tmp/LiteRT-LM && bazelisk info output_base 2>/dev/null)/external/litert"
+[ -d "$LR/litert" ] || echo "LiteRT not fetched at $LR — run a build or 'bazelisk fetch' first"
+for d in litert_runtime_link_mode <any-other>; do
+  printf "%-32s lm=%s litert=%s\n" "$d" \
+    "$(/usr/bin/grep -rl "$d" /tmp/LiteRT-LM --include='*.bzl' --include='BUILD*' --include='.bazelrc' --include='*.bazelrc' 2>/dev/null | wc -l)" \
+    "$(/usr/bin/grep -rl "$d" "$LR" --include='*.bzl' --include='BUILD*' 2>/dev/null | wc -l)"
 done
 ```
 
-Zero files means the flag is dead — find the replacement in `docs/getting-started/build-and-run.md`, do not leave it in "just in case". Both of the current desktop defines are documented there as **mandatory for GPU**:
+Zero in both means the flag is dead — find the replacement in `docs/getting-started/build-and-run.md`, do not leave it in "just in case". The one current desktop define is documented there as **mandatory for GPU**:
 
 | Define | Why |
 |---|---|
 | `litert_runtime_link_mode=dynamic` | Keeps the LiteRt C API **out** of `libLiteRtLm` so it resolves against the separately shipped `libLiteRt` at runtime — which is what the prebuilt WebGPU accelerator and the split `libwebgpu_dawn` expect. |
-| `resolve_symbols_in_exec=false` | Without it Bazel cannot resolve `LiteRt*` imports at link time (167 unresolved externals). |
+
+`resolve_symbols_in_exec=false` used to sit in this table. LiteRT `fd031ae5` (2026-08-28, inside the v0.18.0 pin) deleted the flag together with every `select` that read it and hard-wired the branch `=false` picked (the DLL import library on Windows), so dropping it changes nothing in the build. It was removed from both workflows at the v0.18.0 bump.
 
 ### Required linker flags
 
@@ -156,11 +171,13 @@ LOG=/tmp/patch_c_api.log
 bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM 2>&1 | tee "$LOG"
 grep -q WARN "$LOG" && { echo "PATCH INCOMPLETE — a target moved, do not build"; exit 1; }
 
-# Assert the artifact, not the log line: §10b's macro must be in the patched file.
-grep -q FLUTTER_GEMMA_METAL_FW_PATH \
-  /tmp/LiteRT-LM/litert/runtime/accelerators/gpu_registry.cc \
+# Assert the artifact, not the log line. gpu_registry.cc lives in LiteRT, not
+# in this tree — §10b patches WORKSPACE so Bazel rewrites it at fetch time.
+grep -q FLUTTER_GEMMA_GPU_REGISTRY_PATCH /tmp/LiteRT-LM/WORKSPACE \
   || { echo "§10b did not apply — iOS GPU would ship broken"; exit 1; }
 ```
+
+That proves the patch is queued, not that it compiled in — post-build check #5 (the `@executable_path` string inside the dylib) is what proves that. At v0.18.0 the WARN fired for real: upstream rewrote the `litert` `patch_cmds` entry our anchor matched, and the script exited 0. §10b now anchors on the `patch_cmds = [` list of the `litert` archive itself.
 
 On Windows/git-bash, `python3` resolves to the Microsoft Store stub, which prints "Python was not found" **and still exits 0** — so sections 10b and 11 silently no-op. Shim it first:
 `printf '#!/bin/sh\nexec "<path>/python.exe" "$@"\n' > /somewhere/python3 && chmod +x` and prepend that dir to `PATH`.
@@ -198,7 +215,7 @@ Both dispatch libraries build from the same pin as the runtime:
 | Bundle | Target | Notes |
 |---|---|---|
 | `windows_x86_64` | `@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch` | Bazel fetches the OpenVino SDK itself (`configurable_repo`) — no preinstalled toolkit on the runner. Built in CI. |
-| `android_arm64` | `//litert/vendors/qualcomm/dispatch:dispatch_api_so` | From the **LiteRT** repo at the derived `LITERT_REF`, not LiteRT-LM. Bazel auto-downloads QAIRT 2.44.0.260225 (~500 MB), or point `LITERT_QAIRT_SDK` at a local copy. Built locally by `build_qualcomm_dispatch.sh`. |
+| `android_arm64` | `//litert/vendors/qualcomm/dispatch:dispatch_api_so` | From the **LiteRT** repo at the derived `LITERT_REF`, not LiteRT-LM. Bazel auto-downloads the QAIRT that LiteRT's `third_party/qairt/workspace.bzl` pins (~500 MB) — 2.44 at v0.16.0, 2.47 at v0.17.x, **2.50.0.260828 at v0.18.0** — or point `LITERT_QAIRT_SDK` at a local copy of that same version. The script prints the version it staged from the SDK's `sdk.yaml`. Built locally by `build_qualcomm_dispatch.sh`. |
 
 Why the old rule was believable and still wrong: a fresh LiteRT-LM build genuinely emits neither library, because neither lives in the LiteRT-LM tree — they are LiteRT vendor targets. "Absent from the output" was read as "unbuildable" instead of "wrong target".
 
@@ -393,6 +410,8 @@ install_name_tool -id @rpath/this_is_a_long_test_path_pad_to_native_assets_targe
 ```
 
 Run this for **every** dylib in `prebuilt/<dir>/`, not just the one you rebuilt. Native Assets rewrites all of them.
+
+**One known, accepted failure: `ios_sim_arm64/libLiteRtMetalAccelerator.dylib`.** It is an upstream prebuilt with only **48 bytes** of header slack, so the 91-character test path above does not fit. The name the iOS build actually writes, `@rpath/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator` (62 characters), does fit — test that one for this file. The published native-v0.17.1-a carried a file with the same slack, so this is not a regression; it surfaced at the v0.18.0 bump. The device slice (`ios_arm64`) passes the long path. If a future upstream refresh shrinks the slack further, the framework name stops fitting too, and then it is a blocker: relink or report upstream (see "When upstream is broken").
 
 ### 5. Phase 8 patch markers (iOS / macOS only)
 
@@ -594,9 +613,25 @@ provider in the importer's NEEDED closure. `build_android.sh` runs it as step
 fails, is `patchelf --add-needed` on the importer (steps 8b/8c), never an
 allowlist. patchelf missing is a build error, not a warning.
 
+It also asserts that every NEEDED entry is loadable at all — in the bundle, an
+NDK platform library, or a vendor library the core manifest requests with
+`<uses-native-library>` (`VENDOR` in the script; keep the two in step). The
+symbol rule alone cannot see a NEEDED library that is simply absent: its
+exports are unknown, so every symbol it would provide reads as "no known
+provider" and is skipped. That is pitfall #18.
+
 ```
-  [ok]   15 aarch64 libraries checked against API 35 stubs
+  [ok]   12 aarch64 libraries checked against API 35 stubs
 ```
+
+12, not 15: since native-v0.18.0 the Android bundle no longer carries the three
+Dawn-dependent companions (`libLiteRtGpuAccelerator.so`,
+`libLiteRtWebGpuAccelerator.so`, `libLiteRtTopKWebGpuSampler.so`). Android GPU
+is OpenCL only — the same as Google's `litertlm-android` AAR (one
+`liblitertlm_jni.so` with ML Drift OpenCL linked in) and `litert-gpu` (only
+`libLiteRtClGlAccelerator.so`). Do not "fix" the bundle by adding
+`libwebgpu_dawn.so`: that puts `libLiteRtGpuAccelerator` first in
+`gpu_registry`'s Android order, a path no shipped SDK uses.
 
 ### 10. NPU on real silicon — the only check that covers the dispatch libraries
 
@@ -716,6 +751,7 @@ Put a worktree of the branch on each VM instead of switching its checkout, drop 
 | 15 | QNN runtime libs left at an old QAIRT while the dispatch moved — `Qnn System library version 1.8.0 is mismatched` | Check #9 on device; compare file sizes against the SDK | native-v0.12.0 → v0.16.0, **caught on device** |
 | 16 | Windows-only `LiteRtLayoutMsvc` mirror kept after LiteRT `d84656955` unified the layout — every host-memory tensor buffer got a shape 4 bytes off: `CreateTensorBufferFromHostMemory` `status=3` in embeddings and STT | Check #10 on Windows; struct diff at both `LITERT_REF`s | **native-v0.16.0 → fixed in `67b9857f`**; seen on Tiber 2026-08-10 and misread as a bad box cache |
 | 17 | Upstream companion imports a symbol its NEEDED cannot reach: sampler without `libLiteRtLm.so` (#270, silent CPU fallback); v0.17.0 accelerators without `libandroid.so` (#545, SIGSEGV on Mali only) | Check #9c (`check_android_needed.py`); Android GPU on Adreno **and** Mali | #270: 0.14.x; **#545: native-v0.17.0 → v0.17.1**, upstream #3575 open six days before our first release |
+| 18 | Three Android companions NEED `libwebgpu_dawn.so`, which the bundle never carried — `dlopen` fails, `gpu_registry` silently moves on to OpenCL, ~18 MB of unloadable code in every APK | Check #9c (now also asserts every NEEDED is loadable); compare against what Google's own AARs ship | **native-v0.14.0 → v0.17.x**, found by a Codex review at the v0.18.0 bump; fixed by dropping the three, not by adding Dawn |
 
 Every one of those would have been caught by checks 1-10 before commit. **Run them all every time.**
 

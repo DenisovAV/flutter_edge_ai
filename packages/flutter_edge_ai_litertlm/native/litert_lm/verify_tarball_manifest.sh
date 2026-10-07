@@ -39,6 +39,12 @@ INTENTIONAL_DROPS=(
   "windows_x86_64:tbbbind_2_5_debug.dll"
   "windows_x86_64:tbbmalloc_debug.dll"
   "windows_x86_64:tbbmalloc_proxy_debug.dll"
+  # native-v0.18.0: all three list libwebgpu_dawn.so in NEEDED, and Dawn was
+  # never in the Android bundle, so none of them could load (~18 MB per APK).
+  # Android GPU is OpenCL only, as in Google's own Android SDKs.
+  "android_arm64:libLiteRtGpuAccelerator.so"
+  "android_arm64:libLiteRtWebGpuAccelerator.so"
+  "android_arm64:libLiteRtTopKWebGpuSampler.so"
 )
 
 _is_intentional() {

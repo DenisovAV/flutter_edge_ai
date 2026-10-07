@@ -15,9 +15,9 @@ on:
       litertlm_version:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
-        default: 'e9fd8c53ff968071774206163027dd84bedfe925'
+        default: 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27'
       prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (blank = 4453b286, the first refresh with the new Constraint ABI)'
+        description: 'Upstream ref to take prebuilt companion libs from (blank = b2f686e2, the v0.18.0 tag itself — its provider already has the new Constraint ABI)'
         required: false
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '4453b286c549d216584866ed49b6fed6d11fa3a7' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:
@@ -105,7 +105,6 @@ jobs:
             --features=static_link_msvcrt `
             --spawn_strategy=local `
             --define=litert_runtime_link_mode=dynamic `
-            --define=resolve_symbols_in_exec=false `
             '//c:libLiteRtLm.dylib'
 
       - name: Build Intel NPU dispatch
@@ -122,7 +121,6 @@ jobs:
             --features=archive_param_file `
             --spawn_strategy=local `
             --define=litert_runtime_link_mode=dynamic `
-            --define=resolve_symbols_in_exec=false `
             '@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch'
           if ($LASTEXITCODE -ne 0) {
             # Retry once: a cleanup-only failure leaves the action cache warm,
@@ -137,7 +135,6 @@ jobs:
               --features=archive_param_file `
               --spawn_strategy=local `
               --define=litert_runtime_link_mode=dynamic `
-              --define=resolve_symbols_in_exec=false `
               '@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch'
             if ($LASTEXITCODE -ne 0) {
               # Do not lean on PowerShell's implicit $LASTEXITCODE trailer: one

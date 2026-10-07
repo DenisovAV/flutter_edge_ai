@@ -17,6 +17,13 @@ platform stubs and in the bundle's own exports. If it has a provider and no
 provider is in the library's NEEDED closure, that is a FAIL. Symbols with no
 known provider are not ours to judge (absl leak-check hooks, gcov, …).
 
+Every NEEDED entry must itself be loadable: in the bundle, an NDK platform
+library, or a vendor library the plugin manifest requests. A NEEDED library
+that is none of those fails dlopen outright — and the symbol check above cannot
+see it, because the missing library's exports are unknown to it. That is how
+three Dawn-dependent accelerators shipped unloadable from native-v0.14.0 to
+v0.17.x: their libwebgpu_dawn.so was never in the bundle.
+
 Usage: check_android_needed.py <bundle_dir>
 NDK: $ANDROID_NDK_HOME / $ANDROID_NDK_ROOT, else the newest ndk/* under
 $ANDROID_HOME, $ANDROID_SDK_ROOT, ~/Library/Android/sdk or ~/Android/Sdk.
@@ -35,6 +42,10 @@ ALIAS = {"libGLESv3.so": "libGLESv2.so"}
 # lives in libnativewindow, which libandroid links — needing libandroid reaches
 # it, and that is exactly how upstream fixed #545.
 PLATFORM_NEEDED = {"libandroid.so": ["libnativewindow.so"]}
+# Vendor libraries that come from /vendor, not the NDK stubs, and that the core
+# plugin's AndroidManifest.xml requests with <uses-native-library>.
+VENDOR = {"libcdsprpc.so", "libOpenCL.so", "libOpenCL-car.so",
+          "libOpenCL-pixel.so", "libvndksupport.so"}
 
 
 def norm(lib):
@@ -110,10 +121,12 @@ def is_aarch64(p):
 
 
 providers = {}
+platform = set()
 for s in glob.glob(os.path.join(stubs, "*.so")):
     with open(s, "rb") as fh:
         if fh.read(4) != b"\x7fELF":
             continue                  # libc++.so is a linker script, not a stub
+    platform.add(norm(os.path.basename(s)))
     for sym in exports(s):
         providers.setdefault(sym, set()).add(norm(os.path.basename(s)))
 # Skel blobs are Hexagon DSP images, not aarch64 — they never meet bionic.
@@ -144,6 +157,15 @@ def closure(p):
 
 
 fail = 0
+for p in libs:
+    name = os.path.basename(p)
+    absent = [n for n in needed(p)
+              if not os.path.exists(os.path.join(bundle, n))
+              and norm(n) not in platform and n not in VENDOR]
+    if absent:
+        print(f"  [FAIL] {name}: NEEDED {', '.join(absent)} — neither in the bundle "
+              f"nor a platform or manifest-requested vendor library (dlopen fails)")
+        fail = 1
 for p in libs:
     name, reach = os.path.basename(p), closure(p)
     missing = {}

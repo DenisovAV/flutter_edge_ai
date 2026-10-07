@@ -240,8 +240,11 @@ const _litertlmBundle = _NativeBundle(
     'GemmaModelConstraintProvider',
     'LiteRtMetalAccelerator', // macOS + iOS GPU (Metal)
     'LiteRtTopKMetalSampler', // macOS + iOS device GPU sampler (Metal)
-    'LiteRtGpuAccelerator', // Android GPU
-    'LiteRtOpenClAccelerator', // Android OpenCL
+    // Not shipped on any platform since native-v0.18.0 (on Android it needs
+    // Dawn, which no bundle carries); kept so flat-layout cleanup still
+    // removes a copy an older bundle left behind.
+    'LiteRtGpuAccelerator',
+    'LiteRtOpenClAccelerator', // Android GPU (OpenCL)
     'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
     'LiteRtTopKOpenClSampler', // Android OpenCL GPU sampler — honors seed
     'LiteRtTopKWebGpuSampler', // Linux/Windows GPU sampler

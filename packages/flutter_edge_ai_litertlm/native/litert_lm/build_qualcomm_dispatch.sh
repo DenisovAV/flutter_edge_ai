@@ -9,12 +9,15 @@
 #   - Bazel (via bazelisk): brew install bazelisk
 #   - Android NDK at ~/Library/Android/sdk/ndk/<version>/
 #   - Internet access (Bazel auto-downloads QAIRT SDK ~500MB on first run)
-#     OR set LITERT_QAIRT_SDK=/path/to/qairt/2.44.0.260225 to use local copy
+#     OR set LITERT_QAIRT_SDK=/path/to/qairt/<version> to use local copy.
+#     The version is whatever LiteRT's third_party/qairt/workspace.bzl pins at
+#     the derived LITERT_REF (2.50.0.260828 at the v0.18.0 pin) — a local SDK
+#     must be that same version.
 #
 # Usage:
 #   ./build_qualcomm_dispatch.sh
 #   LITERTLM_REF=<sha> ./build_qualcomm_dispatch.sh          # match a specific engine build
-#   LITERT_QAIRT_SDK=/path/to/qairt/2.44.0.260225 ./build_qualcomm_dispatch.sh
+#   LITERT_QAIRT_SDK=/path/to/qairt/<version> ./build_qualcomm_dispatch.sh
 #
 # Env:
 #   LITERTLM_REF      LiteRT-LM commit to derive LITERT_REF from (default below).
@@ -40,7 +43,7 @@ LITERT_DIR="/tmp/LiteRT"
 #
 # Do NOT go back to a literal, and do NOT use LiteRT v2.1.1 or earlier — the
 # LiteRtDispatchApi struct has breaking ABI changes after it.
-LITERTLM_REF="${LITERTLM_REF:-e9fd8c53ff968071774206163027dd84bedfe925}"   # v0.17.0
+LITERTLM_REF="${LITERTLM_REF:-b2f686e2ed4718fb84ec398a61dd59ca0f0aff27}"   # v0.18.0
 LITERT_REF="${LITERT_REF:-}"
 if [ -z "$LITERT_REF" ]; then
   echo "Resolving LITERT_REF from LiteRT-LM $LITERTLM_REF WORKSPACE..."
@@ -87,7 +90,7 @@ echo "ANDROID_HOME:       $ANDROID_HOME"
 if [ -n "${LITERT_QAIRT_SDK:-}" ]; then
   echo "LITERT_QAIRT_SDK:   $LITERT_QAIRT_SDK (local)"
 else
-  echo "LITERT_QAIRT_SDK:   (Bazel will auto-download QAIRT 2.44.0.260225 ~500MB)"
+  echo "LITERT_QAIRT_SDK:   (Bazel will auto-download the QAIRT LiteRT pins in third_party/qairt/workspace.bzl, ~500MB)"
 fi
 
 # 1. Clone or update LiteRT
@@ -194,6 +197,9 @@ if [ ! -d "$QAIRT_DIR/lib/aarch64-android" ]; then
 fi
 echo ""
 echo "=== Staging QNN runtime from $QAIRT_DIR ==="
+# The SDK's own sdk.yaml, not a literal here: a hardcoded version in this
+# script claimed 2.44 for two releases after LiteRT had moved to 2.47 and 2.50.
+echo "QAIRT version: $(sed -n 's/^version: *//p' "$QAIRT_DIR/sdk.yaml" 2>/dev/null | head -1)"
 for f in libQnnSystem.so libQnnHtp.so \
          libQnnHtpV73Stub.so libQnnHtpV75Stub.so \
          libQnnHtpV79Stub.so libQnnHtpV81Stub.so; do

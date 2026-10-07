@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
@@ -157,52 +156,69 @@ void main() {
       );
     });
 
-    test(
-      'only a tokenizer namespaced by another installed model is foreign',
-      () {
-        const installed = ['whisper-base', 'moonshine-tiny'];
-        bool foreign(String tokenizer) =>
-            ActiveIdentityStore.sttTokenizerOfAnotherModel(
-              'whisper-base',
-              tokenizer,
-              installed,
-            );
-        expect(foreign('whisper-base__tokenizer.json'), isFalse);
-        expect(foreign('tokenizer.json'), isFalse);
-        expect(foreign('my__tokenizer.json'), isFalse);
-        expect(foreign('moonshine-tiny__tokenizer.json'), isTrue);
-      },
-    );
+    test('an STT model filename must be the one its stored source names', () {
+      bool matches(String? source) => ActiveIdentityStore.sttModelMatchesSource(
+        'whisper-base.tflite',
+        source,
+      );
+      expect(matches('network|https://x/whisper/whisper-base.tflite'), isTrue);
+      expect(matches('file|/models/whisper-base.tflite'), isTrue);
+      expect(matches('network|https://x/moonshine-tiny.tflite'), isFalse);
+      expect(matches('unreadable'), isFalse);
+      // No source: the identity had nothing older to be mixed with.
+      expect(matches(null), isTrue);
+    });
   });
 
   group('restore', () {
-    test('an STT identity mixed by an older release is not restored', () async {
-      // The reported crash shape: the process died between the separate
-      // writes, so the model filename is Whisper's and the rest moonshine's.
-      await installFile('whisper-base.tflite');
-      await installFile('moonshine-tiny__tokenizer.json');
-      await ServiceRegistry.instance.modelRepository.saveModel(
-        repo.ModelInfo(
-          id: 'moonshine-tiny.tflite',
-          source: ModelSource.network('https://x/moonshine-tiny.tflite'),
-          installedAt: DateTime(2026),
-          sizeBytes: 16,
-          type: repo.ModelType.stt,
-          hasLoraWeights: false,
-        ),
-      );
+    /// The per-field keys an older release left after writing [filename],
+    /// [tokenizer] and [type] of a newly activated model, with [source] still
+    /// naming whichever model it wrote last.
+    Future<void> seedOlderReleaseStt({
+      required String filename,
+      required String tokenizer,
+      required SttModelType type,
+      required String source,
+    }) async {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        PreferencesKeys.activeSttFilename,
-        'whisper-base.tflite',
-      );
+      await prefs.setString(PreferencesKeys.activeSttFilename, filename);
       await prefs.setString(
         PreferencesKeys.activeSttTokenizerFilename,
-        'moonshine-tiny__tokenizer.json',
+        tokenizer,
       );
-      await prefs.setString(
-        PreferencesKeys.activeSttModelType,
-        SttModelType.moonshine.name,
+      await prefs.setString(PreferencesKeys.activeSttModelType, type.name);
+      await prefs.setString(PreferencesKeys.activeSttSource, source);
+    }
+
+    test('an STT identity mixed by an older release is not restored', () async {
+      // The process died after the first write of a switch from moonshine to
+      // Whisper: the filename is Whisper's, the rest still moonshine's.
+      await installFile('whisper-base.tflite');
+      await installFile('moonshine-tiny__tokenizer.json');
+      await seedOlderReleaseStt(
+        filename: 'whisper-base.tflite',
+        tokenizer: 'moonshine-tiny__tokenizer.json',
+        type: SttModelType.moonshine,
+        source: 'network|https://x/moonshine-tiny.tflite',
+      );
+
+      final manager = MobileModelManager();
+      await manager.initialize();
+
+      expect(manager.activeSttModel, isNull);
+    });
+
+    test('a Whisper STT identity left with moonshine type is not '
+        'restored', () async {
+      // Died after the second write: Whisper's weights and tokenizer, still
+      // moonshine's type, which would run Whisper through the wrong pipeline.
+      await installFile('whisper-base.tflite');
+      await installFile('whisper-base__tokenizer.json');
+      await seedOlderReleaseStt(
+        filename: 'whisper-base.tflite',
+        tokenizer: 'whisper-base__tokenizer.json',
+        type: SttModelType.moonshine,
+        source: 'network|https://x/moonshine-tiny.tflite',
       );
 
       final manager = MobileModelManager();
@@ -214,18 +230,11 @@ void main() {
     test('a consistent STT identity from an older release restores', () async {
       await installFile('whisper-base.tflite');
       await installFile('whisper-base__tokenizer.json');
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        PreferencesKeys.activeSttFilename,
-        'whisper-base.tflite',
-      );
-      await prefs.setString(
-        PreferencesKeys.activeSttTokenizerFilename,
-        'whisper-base__tokenizer.json',
-      );
-      await prefs.setString(
-        PreferencesKeys.activeSttModelType,
-        SttModelType.whisper.name,
+      await seedOlderReleaseStt(
+        filename: 'whisper-base.tflite',
+        tokenizer: 'whisper-base__tokenizer.json',
+        type: SttModelType.whisper,
+        source: 'network|https://x/whisper/whisper-base.tflite',
       );
 
       final manager = MobileModelManager();

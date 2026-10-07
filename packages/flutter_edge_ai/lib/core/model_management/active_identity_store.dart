@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'package:flutter_edge_ai/core/domain/model_source.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -48,7 +50,7 @@ abstract final class ActiveIdentityStore {
   ///
   /// Prefers the one-key record. Without it, falls back to the per-field keys
   /// older releases wrote, so an upgrade keeps the active model; those can be
-  /// a mix, which the caller has to check (see [sttTokenizerOfAnotherModel]).
+  /// a mix, which the caller has to check (see [sttModelMatchesSource]).
   static Map<String, String>? read(
     SharedPreferences prefs,
     ActiveIdentityKind kind,
@@ -113,23 +115,20 @@ abstract final class ActiveIdentityStore {
     }
   }
 
-  /// Whether an STT tokenizer filename stored next to [modelBaseName] was
-  /// written for another model: it is namespaced (`<owner>__…`) by one of
-  /// [installedModelBaseNames] other than [modelBaseName]. Older releases
-  /// wrote the identity key by key, so a crash could leave exactly that pair.
-  /// A plain name, even one containing `__`, predates namespacing and is
-  /// kept, as restore migrates it.
-  static bool sttTokenizerOfAnotherModel(
-    String modelBaseName,
-    String tokenizerFilename,
-    Iterable<String> installedModelBaseNames,
-  ) =>
-      !tokenizerFilename.startsWith('${modelBaseName}__') &&
-      installedModelBaseNames.any(
-        (owner) =>
-            owner != modelBaseName &&
-            tokenizerFilename.startsWith('${owner}__'),
-      );
+  /// Whether the STT model source stored next to [modelFilename] names that
+  /// file. Older releases wrote the identity key by key — filename, tokenizer,
+  /// type, then the sources — so a process that died in between left the new
+  /// filename next to the previous model's source. Without a stored source
+  /// there was no earlier identity to mix with.
+  static bool sttModelMatchesSource(
+    String modelFilename,
+    String? encodedModelSource,
+  ) {
+    if (encodedModelSource == null) return true;
+    final source = ModelSource.tryDecode(encodedModelSource);
+    return source != null &&
+        SttModelFile.fromSource(source).filename == modelFilename;
+  }
 
   static Map<String, String>? _decode(String encoded) {
     try {

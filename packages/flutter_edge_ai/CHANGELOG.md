@@ -1,5 +1,5 @@
 ## Unreleased
-- The active inference, STT and TTS models are saved in one write; a crash no longer restores a mix.
+- The active inference, STT and TTS models are saved in one write; a crash during the save no longer leaves a mix.
 
 ## 2.1.0
 - **Breaking:** `isThinking` is `enableThinking`; `ModelRuntimeDefaults.isThinking` is `thinkingDeclared`.

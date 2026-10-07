@@ -378,19 +378,13 @@ class WebModelManager extends ModelFileManager
       return;
     }
     // Keys written one by one by an older release can come from two models.
-    final installedStt = [
-      for (final m
-          in await ServiceRegistry.instance.modelRepository.listInstalled())
-        if (m.type == repo.ModelType.stt) FileNameUtils.getBaseName(m.id),
-    ];
-    if (ActiveIdentityStore.sttTokenizerOfAnotherModel(
-      FileNameUtils.getBaseName(modelFilename),
-      tokenizerFilename,
-      installedStt,
+    if (!ActiveIdentityStore.sttModelMatchesSource(
+      modelFilename,
+      modelSourceEncoded,
     )) {
       edgeAiLog(
-        '[WebModelManager] active STT restore: tokenizer $tokenizerFilename '
-        'does not belong to $modelFilename — skipping',
+        '[WebModelManager] active STT restore: the stored source is not '
+        '$modelFilename — skipping',
       );
       return;
     }

@@ -126,6 +126,15 @@ void main() {
       );
     });
 
+    test('clear fails loudly when a removal does not happen', () async {
+      final prefs = _RemoveRefusedPrefs();
+      await prefs.setString(PreferencesKeys.activeSttIdentity, '{}');
+      await expectLater(
+        ActiveIdentityStore.clear(prefs, ActiveIdentityKind.stt),
+        throwsStateError,
+      );
+    });
+
     test(
       'only a tokenizer namespaced by another installed model is foreign',
       () {
@@ -325,6 +334,26 @@ class _RemoveFailsPrefs implements SharedPreferences {
   @override
   Future<bool> remove(String key) async =>
       throw StateError('platform remove failed');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Preferences whose `remove` reports failure without throwing.
+class _RemoveRefusedPrefs implements SharedPreferences {
+  final Map<String, String> _values = {};
+
+  @override
+  String? getString(String key) => _values[key];
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    _values[key] = value;
+    return true;
+  }
+
+  @override
+  Future<bool> remove(String key) async => false;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

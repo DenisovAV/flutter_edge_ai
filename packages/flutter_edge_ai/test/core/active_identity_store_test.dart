@@ -135,6 +135,28 @@ void main() {
       );
     });
 
+    test('a clear cut short leaves the record, not stale old keys', () async {
+      final prefs = _RemoveRefusedPrefs(
+        refused: PreferencesKeys.activeInferenceSource,
+      );
+      await prefs.setString(PreferencesKeys.activeInferenceFilename, 'old');
+      await prefs.setString(
+        PreferencesKeys.activeInferenceIdentity,
+        '{"${PreferencesKeys.activeInferenceFilename}":"new"}',
+      );
+      await expectLater(
+        ActiveIdentityStore.clear(prefs, ActiveIdentityKind.inference),
+        throwsStateError,
+      );
+      expect(
+        ActiveIdentityStore.read(
+          prefs,
+          ActiveIdentityKind.inference,
+        )?[PreferencesKeys.activeInferenceFilename],
+        'new',
+      );
+    });
+
     test(
       'only a tokenizer namespaced by another installed model is foreign',
       () {
@@ -339,8 +361,12 @@ class _RemoveFailsPrefs implements SharedPreferences {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// Preferences whose `remove` reports failure without throwing.
+/// Preferences whose `remove` reports failure without throwing: for
+/// [refused] only, or for every key when it is null.
 class _RemoveRefusedPrefs implements SharedPreferences {
+  _RemoveRefusedPrefs({this.refused});
+
+  final String? refused;
   final Map<String, String> _values = {};
 
   @override
@@ -353,7 +379,13 @@ class _RemoveRefusedPrefs implements SharedPreferences {
   }
 
   @override
-  Future<bool> remove(String key) async => false;
+  Future<bool> remove(String key) async {
+    if (refused != null && key != refused) {
+      _values.remove(key);
+      return true;
+    }
+    return false;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

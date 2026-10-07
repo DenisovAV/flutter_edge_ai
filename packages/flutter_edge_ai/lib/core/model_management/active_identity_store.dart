@@ -96,11 +96,15 @@ abstract final class ActiveIdentityStore {
   /// Removes the identity of [kind], in both forms. Throws [StateError] when
   /// a removal fails: whatever is left would restore the model on the next
   /// launch, the per-field keys included when there is no record.
+  ///
+  /// The per-field keys go first, while the record still masks them, and the
+  /// record last: a clear cut short then leaves the identity it was clearing,
+  /// never stale per-field keys from an older write in its place.
   static Future<void> clear(
     SharedPreferences prefs,
     ActiveIdentityKind kind,
   ) async {
-    for (final key in [kind.key, ...kind.fields]) {
+    for (final key in [...kind.fields, kind.key]) {
       if (!await prefs.remove(key)) {
         throw StateError(
           'Failed to clear the active ${kind.name} model identity ($key).',

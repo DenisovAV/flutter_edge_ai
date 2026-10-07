@@ -48,7 +48,7 @@ abstract final class ActiveIdentityStore {
   ///
   /// Prefers the one-key record. Without it, falls back to the per-field keys
   /// older releases wrote, so an upgrade keeps the active model; those can be
-  /// a mix, which the caller has to check (see [sttTokenizerBelongsToModel]).
+  /// a mix, which the caller has to check (see [sttTokenizerOfAnotherModel]).
   static Map<String, String>? read(
     SharedPreferences prefs,
     ActiveIdentityKind kind,
@@ -81,10 +81,15 @@ abstract final class ActiveIdentityStore {
         'Failed to persist the active ${kind.name} model identity.',
       );
     }
-    // The record above is authoritative from now on; a leftover per-field key
-    // is never read again, so removing them is cleanup, not part of the write.
+    // The record above is authoritative from now on and a leftover per-field
+    // key is never read again, so removing them is cleanup: a failure here
+    // must not report the committed identity as unwritten.
     for (final field in kind.fields) {
-      await prefs.remove(field);
+      try {
+        await prefs.remove(field);
+      } catch (e) {
+        edgeAiLog('[ActiveIdentityStore] old key $field not removed: $e');
+      }
     }
   }
 
@@ -99,16 +104,23 @@ abstract final class ActiveIdentityStore {
     }
   }
 
-  /// Whether an STT tokenizer filename can belong to the model it was stored
-  /// with. A namespaced tokenizer must carry the model's own base name; a
-  /// plain one predates namespacing and is accepted, as restore already
-  /// migrates it.
-  static bool sttTokenizerBelongsToModel(
+  /// Whether an STT tokenizer filename stored next to [modelBaseName] was
+  /// written for another model: it is namespaced (`<owner>__…`) by one of
+  /// [installedModelBaseNames] other than [modelBaseName]. Older releases
+  /// wrote the identity key by key, so a crash could leave exactly that pair.
+  /// A plain name, even one containing `__`, predates namespacing and is
+  /// kept, as restore migrates it.
+  static bool sttTokenizerOfAnotherModel(
     String modelBaseName,
     String tokenizerFilename,
+    Iterable<String> installedModelBaseNames,
   ) =>
-      !tokenizerFilename.contains('__') ||
-      tokenizerFilename.startsWith('${modelBaseName}__');
+      !tokenizerFilename.startsWith('${modelBaseName}__') &&
+      installedModelBaseNames.any(
+        (owner) =>
+            owner != modelBaseName &&
+            tokenizerFilename.startsWith('${owner}__'),
+      );
 
   static Map<String, String>? _decode(String encoded) {
     try {

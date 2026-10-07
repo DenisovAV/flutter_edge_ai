@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
@@ -111,29 +112,36 @@ void main() {
       expect(prefs.getKeys(), isEmpty);
     });
 
-    test('an STT tokenizer belongs to its model, or predates namespacing', () {
+    test('a failed cleanup of the old keys does not fail the write', () async {
+      final prefs = _RemoveFailsPrefs();
+      await ActiveIdentityStore.write(prefs, ActiveIdentityKind.tts, {
+        PreferencesKeys.activeTtsName: 'matcha',
+      });
       expect(
-        ActiveIdentityStore.sttTokenizerBelongsToModel(
-          'whisper-base',
-          'whisper-base__tokenizer.json',
-        ),
-        isTrue,
-      );
-      expect(
-        ActiveIdentityStore.sttTokenizerBelongsToModel(
-          'whisper-base',
-          'tokenizer.json',
-        ),
-        isTrue,
-      );
-      expect(
-        ActiveIdentityStore.sttTokenizerBelongsToModel(
-          'whisper-base',
-          'moonshine-tiny__tokenizer.json',
-        ),
-        isFalse,
+        ActiveIdentityStore.read(
+          prefs,
+          ActiveIdentityKind.tts,
+        )?[PreferencesKeys.activeTtsName],
+        'matcha',
       );
     });
+
+    test(
+      'only a tokenizer namespaced by another installed model is foreign',
+      () {
+        const installed = ['whisper-base', 'moonshine-tiny'];
+        bool foreign(String tokenizer) =>
+            ActiveIdentityStore.sttTokenizerOfAnotherModel(
+              'whisper-base',
+              tokenizer,
+              installed,
+            );
+        expect(foreign('whisper-base__tokenizer.json'), isFalse);
+        expect(foreign('tokenizer.json'), isFalse);
+        expect(foreign('my__tokenizer.json'), isFalse);
+        expect(foreign('moonshine-tiny__tokenizer.json'), isTrue);
+      },
+    );
   });
 
   group('restore', () {
@@ -142,6 +150,16 @@ void main() {
       // writes, so the model filename is Whisper's and the rest moonshine's.
       await installFile('whisper-base.tflite');
       await installFile('moonshine-tiny__tokenizer.json');
+      await ServiceRegistry.instance.modelRepository.saveModel(
+        repo.ModelInfo(
+          id: 'moonshine-tiny.tflite',
+          source: ModelSource.network('https://x/moonshine-tiny.tflite'),
+          installedAt: DateTime(2026),
+          sizeBytes: 16,
+          type: repo.ModelType.stt,
+          hasLoraWeights: false,
+        ),
+      );
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
         PreferencesKeys.activeSttFilename,
@@ -184,6 +202,30 @@ void main() {
 
       final active = manager.activeSttModel as SttModelSpec?;
       expect(active?.sttModelType, SttModelType.whisper);
+    });
+
+    test('a plain tokenizer name containing __ from an older release still '
+        'restores', () async {
+      await installFile('whisper-base.tflite');
+      await installFile('my__tokenizer.json');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        PreferencesKeys.activeSttFilename,
+        'whisper-base.tflite',
+      );
+      await prefs.setString(
+        PreferencesKeys.activeSttTokenizerFilename,
+        'my__tokenizer.json',
+      );
+      await prefs.setString(
+        PreferencesKeys.activeSttModelType,
+        SttModelType.whisper.name,
+      );
+
+      final manager = MobileModelManager();
+      await manager.initialize();
+
+      expect(manager.activeSttModel, isNotNull);
     });
 
     test('an activated STT model survives a restart as one record', () async {
@@ -265,4 +307,25 @@ class _FixedPathProviderPlatform extends PathProviderPlatform {
 
   @override
   Future<String?> getTemporaryPath() async => Directory.systemTemp.path;
+}
+
+/// Preferences whose `remove` always fails, as a platform write can.
+class _RemoveFailsPrefs implements SharedPreferences {
+  final Map<String, String> _values = {};
+
+  @override
+  String? getString(String key) => _values[key];
+
+  @override
+  Future<bool> setString(String key, String value) async {
+    _values[key] = value;
+    return true;
+  }
+
+  @override
+  Future<bool> remove(String key) async =>
+      throw StateError('platform remove failed');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

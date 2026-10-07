@@ -18,6 +18,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 
 import 'benchmark_peak_sampler.dart';
+import 'benchmark_token_stats.dart';
 import 'inference_test_helpers.dart';
 
 // --- Model configs ---
@@ -81,6 +82,9 @@ class BenchmarkResult {
   final DateTime timestamp;
   final BenchmarkMemory memory;
 
+  /// Null when the engine reports no token counters (MediaPipe).
+  final TokenStats? tokens;
+
   BenchmarkResult({
     required this.modelName,
     required this.testCategory,
@@ -91,6 +95,7 @@ class BenchmarkResult {
     required this.firstTokenMs,
     required this.timestamp,
     required this.memory,
+    this.tokens,
   });
 
   Map<String, dynamic> toJson() => {
@@ -111,6 +116,7 @@ class BenchmarkResult {
       'active': memory.activeBackend?.name,
     },
     'memory': memory.toJson(),
+    'tokens': tokens?.toJson(),
   };
 }
 
@@ -528,9 +534,13 @@ Future<BenchmarkResult> _runQuery({
   required Message message,
   required LoadMemory load,
 }) async {
-  final (answer, memory) = await _measuredPrompt(
+  final ((answer, metricsBefore, metricsAfter), memory) = await _measuredPrompt(
     load,
-    () => _streamAnswer(chat, message),
+    () async {
+      final before = chat.session.getSessionMetrics();
+      final answer = await _streamAnswer(chat, message);
+      return (answer, before, chat.session.getSessionMetrics());
+    },
   );
   final result = BenchmarkResult(
     modelName: modelName,
@@ -542,6 +552,12 @@ Future<BenchmarkResult> _runQuery({
     firstTokenMs: answer.firstTokenMs,
     timestamp: DateTime.now(),
     memory: memory,
+    tokens: tokenStatsBetween(
+      metricsBefore,
+      metricsAfter,
+      durationMs: answer.durationMs,
+      firstTokenMs: answer.firstTokenMs,
+    ),
   );
 
   print('[Benchmark] $modelName / $category / $testName');
@@ -549,6 +565,7 @@ Future<BenchmarkResult> _runQuery({
     '  First token: ${result.firstTokenMs}ms, Total: ${result.durationMs}ms',
   );
   print('  Memory: ${result.memory.describe()}');
+  print('  Tokens: ${result.tokens?.describe() ?? 'not reported'}');
   print(
     '  Response: "${result.response.length > 100 ? result.response.substring(0, 100) : result.response}..."',
   );

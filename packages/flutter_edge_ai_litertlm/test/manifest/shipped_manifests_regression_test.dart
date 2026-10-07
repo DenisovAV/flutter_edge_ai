@@ -9,9 +9,11 @@
 // made against.
 //
 // Offline by design: the fixtures are committed and the resolver's fetch seam
-// is fed from them, so nothing here touches the network. The opt-in live leg
-// (live_hugging_face_test.dart) is what checks the snapshot against Hugging
-// Face.
+// is fed from them, so nothing here touches the network. The snapshot does
+// not have to follow the catalog: the opt-in live leg
+// (live_hugging_face_test.dart) runs the same invariants (catalog_checks.dart)
+// over whatever Hugging Face serves today, and reports how that differs from
+// this snapshot without failing on it.
 @TestOn('vm')
 library;
 
@@ -26,55 +28,15 @@ import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart'
 import 'package:flutter_edge_ai_litertlm/src/manifest/litertlm_manifest_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _platforms = [
-  null,
-  'android',
-  'ios',
-  'macos',
-  'windows',
-  'linux',
-  'web',
-  'unknown',
-];
-// npu: no shipped variant is verified on it, so it exercises the hint-drop
-// lane (the resolver resolves without the hint) on every repo.
-const _hints = [
-  null,
-  PreferredBackend.cpu,
-  PreferredBackend.gpu,
-  PreferredBackend.npu,
-];
-
-String _wire(PreferredBackend b) => switch (b) {
-  PreferredBackend.cpu => 'cpu',
-  PreferredBackend.gpu => 'gpu',
-  PreferredBackend.npu => 'npu',
-};
+import 'catalog_checks.dart';
 
 /// Key of a row in fixtures/reference_goldens.json — same shape the
 /// regeneration dump in fixtures/README.md writes.
 String _goldenKey(String repo, String? platform, PreferredBackend? hint) =>
-    '$repo|${platform ?? "-"}|${hint == null ? "-" : _wire(hint)}';
+    '$repo|${platform ?? "-"}|${hint == null ? "-" : wireName(hint)}';
 
 void main() {
-  final dir = Directory('test/manifest/fixtures');
-  final fixtures =
-      dir
-          .listSync()
-          .whereType<File>()
-          .where(
-            (f) =>
-                f.path.endsWith('.json') &&
-                !f.path.endsWith('reference_goldens.json'),
-          )
-          .toList()
-        ..sort((a, b) => a.path.compareTo(b.path));
-
-  final byRepo = <String, Map<String, dynamic>>{};
-  for (final f in fixtures) {
-    final json = jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
-    byRepo[json['repo'] as String] = json;
-  }
+  final byRepo = loadSnapshot();
 
   Future<ResolvedHfModel> resolve(
     String repo, {
@@ -103,108 +65,13 @@ void main() {
   });
 
   test('invariants hold for every repo × platform × backend hint', () async {
+    // The invariants themselves live in catalog_checks.dart, shared with the
+    // live leg.
     var combinations = 0;
     for (final entry in byRepo.entries) {
-      final repo = entry.key;
-      final manifest = entry.value;
-      final model = manifest['model'] as Map<String, dynamic>;
-      final capabilities =
-          model['capabilities'] as Map<String, dynamic>? ?? const {};
-      final thinking =
-          capabilities['thinking'] as Map<String, dynamic>? ?? const {};
-      final variantsByFile = {
-        for (final v
-            in (manifest['variants'] as List).cast<Map<String, dynamic>>())
-          v['file'] as String: v,
-      };
-
-      for (final platform in _platforms) {
-        for (final hint in _hints) {
-          combinations++;
-          final r = await resolve(repo, platform: platform, hint: hint);
-          final where = '$repo p=$platform hint=$hint';
-
-          // The chosen file is one of the repo's variants, addressed at the
-          // repo's own /resolve/ path (encoded per segment, as core's
-          // fromHuggingFace does).
-          final variant = variantsByFile[r.file];
-          expect(variant, isNotNull, reason: where);
-          expect(
-            r.url,
-            'https://huggingface.co/$repo/resolve/main/'
-            '${r.file.split('/').map(Uri.encodeComponent).join('/')}',
-            reason: where,
-          );
-
-          // Identity comes from that same variant.
-          expect(r.sha256, variant!['sha256'], reason: where);
-          expect(r.sizeBytes, variant['size_bytes'], reason: where);
-
-          // The resolved backend is always in the variant's VERIFIED list
-          // (all shipped backends are cpu/gpu, so the enum mapping is never
-          // silently null).
-          expect(r.runtime.preferredBackend, isNotNull, reason: where);
-          expect(
-            (variant['backends'] as List).cast<String>(),
-            contains(_wire(r.runtime.preferredBackend!)),
-            reason: where,
-          );
-
-          // Spec resolution rule: a hint some variant is verified on is a
-          // FILTER — the result keeps exactly that backend. A hint nothing
-          // lists is dropped: the result must equal the same resolve with no
-          // hint (platform preserved), never a substitute for the request.
-          if (hint != null) {
-            final anyListsHint = variantsByFile.values.any(
-              (v) => (v['backends'] as List).contains(_wire(hint)),
-            );
-            if (anyListsHint) {
-              expect(r.runtime.preferredBackend, hint, reason: where);
-              expect(
-                r.notes.where((n) => n.contains('resolved without that hint')),
-                isEmpty,
-                reason: where,
-              );
-            } else {
-              final noHint = await resolve(repo, platform: platform);
-              expect(r.file, noHint.file, reason: where);
-              expect(
-                r.runtime.preferredBackend,
-                noHint.runtime.preferredBackend,
-                reason: where,
-              );
-              // The drop is on the record: the no-hint notes plus one line
-              // naming the dropped hint.
-              expect(r.notes, [
-                ...noHint.notes,
-                'No variant of "$repo" is verified on the requested '
-                    '${_wire(hint)} backend; resolved without that hint '
-                    '(${_wire(r.runtime.preferredBackend!)}).',
-              ], reason: where);
-            }
-          }
-
-          // Model-level fields land regardless of variant choice.
-          expect(r.runtime.maxTokens, model['context_length'], reason: where);
-          expect(
-            r.runtime.thinkingDeclared,
-            thinking['declared'] == true,
-            reason: where,
-          );
-          expect(
-            r.runtime.supportImage,
-            capabilities['vision'] == true,
-            reason: where,
-          );
-          expect(
-            r.runtime.supportAudio,
-            capabilities['audio'] == true,
-            reason: where,
-          );
-        }
-      }
+      combinations += await expectResolverInvariants(entry.key, entry.value);
     }
-    expect(combinations, 71 * _platforms.length * _hints.length);
+    expect(combinations, 71 * platformKeys.length * backendHints.length);
   });
 
   test('every combination matches the reference reader '
@@ -236,12 +103,12 @@ void main() {
           'reference_goldens.json does not name the reader revision that '
           'produced it — regenerate it per fixtures/README.md',
     );
-    expect(goldens.length, 71 * _platforms.length * _hints.length);
+    expect(goldens.length, 71 * platformKeys.length * backendHints.length);
 
     final mismatches = <String>[];
     for (final repo in byRepo.keys) {
-      for (final platform in _platforms) {
-        for (final hint in _hints) {
+      for (final platform in platformKeys) {
+        for (final hint in backendHints) {
           final key = _goldenKey(repo, platform, hint);
           final golden = goldens[key] as Map<String, dynamic>?;
           expect(
@@ -250,7 +117,7 @@ void main() {
             reason: 'no reference row for $key — regenerate the goldens',
           );
           final r = await resolve(repo, platform: platform, hint: hint);
-          final backend = _wire(r.runtime.preferredBackend!);
+          final backend = wireName(r.runtime.preferredBackend!);
           if (r.file != golden!['file'] || backend != golden['backend']) {
             mismatches.add(
               '$key: resolver=(${r.file}, $backend) '

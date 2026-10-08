@@ -294,7 +294,7 @@ DLL and silently fall back to CPU.
 
 End-users need nothing installed. Since `flutter_gemma_litertlm` 1.7.1
 `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.17.1`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0`, 16 of its 24 DLLs import none.
 
 The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus

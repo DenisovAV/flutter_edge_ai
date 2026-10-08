@@ -567,9 +567,10 @@ if dispatch_importers:
 # 4. Every page that states the split must state the measured one, and each of
 #    them must still state it — one page keeping the sentence would otherwise
 #    cover for three that dropped it.
+# The core README left this list when it became a landing page (4ed9da27): it
+# makes no runtime promise any more. If it ever does again, it goes back here.
 DOCS = ["website/content/docs/desktop.md",
         "packages/flutter_edge_ai/DESKTOP_SUPPORT.md",
-        "packages/flutter_edge_ai/README.md",
         "packages/flutter_edge_ai/skills/flutter-edge-ai-inference/references/platform-setup.md"]
 COUNT = re.compile(r"(\d+) of (?:the bundle's |its )?(\d+) DLLs")
 # Every mention of a redistributable must be a denial or a description of the

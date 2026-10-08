@@ -307,6 +307,32 @@ void main() {
     });
   });
 
+  test(
+    'the hook fetches the QNN runtime the bundled dispatch was built for',
+    () {
+      // The dispatch inside a native-v* archive is immutable, while
+      // qnnRuntimeVersion is a constant any plugin release can move. Moving
+      // either side alone pairs a dispatch with a runtime it negotiates another
+      // API version with — a failure that shows only on Snapdragon hardware.
+      // build_qualcomm_dispatch.sh refuses the mismatch when the dispatch is
+      // built; this holds the pair together afterwards.
+      const builtAgainst = {'0.18.0': '2.50.0'};
+      final hook = File('hook/build.dart').readAsStringSync();
+      final bundle = RegExp(
+        r"const _litertlmBundle = _NativeBundle\([\s\S]*?version: '([^']+)'",
+      ).firstMatch(hook)?.group(1);
+      expect(bundle, isNotNull, reason: 'could not read the bundle version');
+      expect(
+        builtAgainst,
+        contains(bundle),
+        reason:
+            'native-v$bundle: add the QAIRT release build_qualcomm_dispatch.sh '
+            'built its dispatch against',
+      );
+      expect(qnnRuntimeVersion, builtAgainst[bundle]);
+    },
+  );
+
   group('cache', () {
     late Directory root;
     late File aar;

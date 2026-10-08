@@ -161,6 +161,10 @@ class _NativeBundle {
 
 /// LiteRT-LM native library version and release info.
 ///
+/// 0.17.1 / 0.17.1-a — upstream v0.17.1 (`5e58e9a0`), provider from upstream
+/// main `4453b286` (the tag's was pre-ComputeMask); -a added libandroid.so to
+/// the two Android GPU accelerators' NEEDED (Mali crash, #545).
+///
 /// 0.17.0 — built from LiteRT-LM `e9fd8c53` (v0.17.0) with LiteRT `9fe5be45`.
 /// All 7 platforms rebuilt; the zlib mirror patch is gone (the v0.17.0
 /// WORKSPACE lists the mirrors itself).
@@ -197,7 +201,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 const _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.17.1-a',
+  version: '0.18.0',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -208,48 +212,42 @@ const _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
-  // 0.17.1 is upstream v0.17.1 (5e58e9a0), one commit over v0.17.0: tool-call
-  // arguments declared `"type": "integer"` reach the app as integers instead
-  // of 1000.0. Every platform is rebuilt from that source — Apple and Android
-  // locally, both Linux and Windows in CI — and the LiteRT pin is unchanged
-  // (9fe5be45), so the C API embeddings and speech bind to did not move.
+  // 0.18.0 is upstream v0.18.0 (b2f686e2) with LiteRT 26895c9f, QAIRT 2.50.0
+  // and OpenVINO 2026.3.1; Apple and Android built locally, Linux and Windows
+  // in CI. The tag's own prebuilt companions are used again — its constraint
+  // provider has the ComputeMask ABI; both build scripts and both workflows
+  // assert that before compiling.
   //
-  // libGemmaModelConstraintProvider still comes from upstream MAIN (4453b286),
-  // not from the tag: v0.17.1 ships the same pre-ComputeMask provider v0.17.0
-  // did, and against a runtime built from its own source every tool call
-  // segfaults in CompositeLogitMask::Apply. Both build scripts and both CI
-  // workflows assert the two sides agree before compiling anything.
+  // Android carries no QNN runtime any more: Qualcomm licenses it for
+  // redistribution inside an application only, so an app opts in with
+  // `qualcomm_npu: true` and this hook fetches it from Maven (see
+  // _registerQualcommNpu). The dispatch stays, built against the same QAIRT
+  // release the hook pins. Android also drops the three Dawn-dependent GPU
+  // libraries, which could never load (no libwebgpu_dawn.so on Android).
   //
-  // The Android bundle also carries the Qualcomm Skel blobs with p_align
-  // raised to 16 KB: the QAIRT SDK ships them at 0x1000, androidExtraLibs puts
-  // them in every consumer APK, and Google Play rejects the app for it (#529).
-  // build_qualcomm_dispatch.sh does the bump; verify_tarball_manifest.sh
-  // refuses to publish an Android archive that still has one below 16 KB.
+  // Apple ships upstream's Metal accelerator as LiteRtLmMetalAccelerator:
+  // flutter_litert embeds a framework under the upstream name, and an app
+  // bundle holds one per name (patch_c_api.sh §10).
   //
-  // 0.17.1-a changes two Android files and nothing else: upstream's OpenCL and
-  // GPU accelerators import AHardwareBuffer_* weakly without libandroid.so in
-  // DT_NEEDED, bionic binds them to NULL, and Mali GPUs crash at engine_create
-  // (#545). build_android.sh step 8c adds the NEEDED entry and step 8d refuses a
-  // library whose imports its own NEEDED chain cannot reach. The other six
-  // archives are byte-identical to native-v0.17.1.
-  // These sums must equal both the bytes GitHub
-  // serves and the `checksums_litertlm.txt` published on the release — a stale
-  // txt sent a user down the wrong path while debugging a mismatch (#316).
+  // verify_tarball_manifest.sh gates what must and must not ship. These sums
+  // must equal both the bytes GitHub serves and the `checksums_litertlm.txt`
+  // published on the release — a stale txt sent a user down the wrong path
+  // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        '3f7854efdd73c893d48bc43df66102fda5c1de63179295275a37acb9427a949e',
+        '172271be8562545ca226607bb399a7b873c7d64f990ff9eb0a19fa831573019c',
     'litertlm-linux_arm64.tar.gz':
-        'c2e784185840534aeb10e78b19b3771e1eab699e193ce72a6ec6dc67fc0eb47e',
+        '5cf715f17c53ae6e59bb2ba65c1f3649097f9c2f3d5dc0b7cda50058248ed465',
     'litertlm-windows_x86_64.tar.gz':
-        'e505e247b07313c05bbc957b7c33c82f6adb6c6c78eecae03a590319c7d049e2',
+        '4bdf9d262bf6a59e7be3d336e812a56cb701a87bd13e1e5d9c6ca8d04bae30ae',
     'litertlm-macos_arm64.tar.gz':
-        '37c64a2e7cd4d5c06ad150b866ee71f39cc84ccd159cf9e2db30792ef0e71d49',
+        'a1a10c711acb87708d763157650fd24eb9ee2f41c3ddb0bfc206b0dd617d5d9c',
     'litertlm-ios_arm64.tar.gz':
-        '8aaf35425790d527728dde4736579c660af08f9baddfd0161a868cfb302626de',
+        'fb2535fa2d7b717a24b8b8d452a7aca3298dd84628b94940de1297c1fdd1739e',
     'litertlm-ios_sim_arm64.tar.gz':
-        'a95766deae012c8441ef1e1d2e2501d3db3bbbde6b014cceccc5cde98bb94836',
+        '9ed9637fa5498873c999b00e1d0a966b96bce4f5aeda8fb8b5c951820dfb0f09',
     'litertlm-android_arm64.tar.gz':
-        '745b89b606eb712a78f06aed41daca1370eae79b00e0a36054c8e775c0251768',
+        'baabefaaea74217f3001f07809ba0ce077ddbd7993a8d4475692a4cf1eebe3b9',
   },
   companions: [
     'GemmaModelConstraintProvider',

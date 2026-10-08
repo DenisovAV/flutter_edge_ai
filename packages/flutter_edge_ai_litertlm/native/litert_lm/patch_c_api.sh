@@ -36,19 +36,19 @@ echo "Patching LiteRT-LM C API in $DIR..."
 # visible — the WebGPU accelerator plugin needs to resolve LiteRt* C API
 # via dlsym(RTLD_DEFAULT) during auto-registration.
 #
-# Requires building with --define=litert_runtime_link_mode=dynamic (plus
-# --define=resolve_symbols_in_exec=false) so that libLiteRtLm references
-# libLiteRt dynamically at runtime instead of statically linking the LiteRt
-# C API, which would put two copies of the runtime in the process alongside
-# the prebuilt accelerator.
+# Requires building with --define=litert_runtime_link_mode=dynamic so that
+# libLiteRtLm references libLiteRt dynamically at runtime instead of statically
+# linking the LiteRt C API, which would put two copies of the runtime in the
+# process alongside the prebuilt accelerator.
 #
 # NOT litert_link_capi_so=true. Upstream deleted that name; no config_setting
 # reads it, and Bazel accepts unknown --defines silently, so passing it links
 # statically while looking correct. That is what broke Windows GPU from
 # v0.14.0 (when Dawn was split into its own library) through v0.16.0 — and was
 # misreported upstream as LiteRT-LM #2957 before the cause turned out to be
-# ours. Both live names are documented in upstream's
-# docs/getting-started/build-and-run.md as required for GPU.
+# ours. The live name is documented in upstream's
+# docs/getting-started/build-and-run.md as required for GPU. Its old companion,
+# resolve_symbols_in_exec, was deleted in LiteRT fd031ae5 (the v0.18.0 pin).
 if ! grep -q '"libLiteRtLm.dylib"' "$DIR/c/BUILD"; then
   # Dynamic-list: make these symbols visible in the dynamic export table.
   cat > "$DIR/c/dynamic_list.lds" << 'LDSEOF'
@@ -284,6 +284,13 @@ fi
 #   `@executable_path/../Frameworks/<X>.framework/<X>` on macOS
 #   `@executable_path/Frameworks/<X>.framework/<X>` on iOS
 #
+# On Apple the framework is LiteRtLmMetalAccelerator, not upstream's
+# LiteRtMetalAccelerator: flutter_litert >= 3.4.0 ships a framework under the
+# upstream name for its own LiteRT, an app bundle holds only one of the two,
+# and Native Assets — embedded last — silently replaced flutter_litert's, whose
+# LiteRT then could not register a Metal accelerator built for another LiteRT.
+# build_ios.sh / build_macos.sh copy upstream's dylib under the new name.
+#
 # Verified empirically (2026-04-30) on a built macOS Runner.app: the
 # @executable_path-relative form resolves both from a binary in Contents/MacOS
 # and from a binary inside another framework's Versions/A — i.e. it works for
@@ -322,32 +329,38 @@ ws = os.environ['WORKSPACE_FILE']
 with open(ws, 'r') as f:
     content = f.read()
 
-# The existing third_party-rewrite line is the anchor. Use a stable substring
-# match (the file path is unique enough).
-anchor_substring = 'third_party/*/*",'
+# Anchor on the litert http_archive's own patch_cmds list, not on the text of a
+# command inside it: v0.18.0 rewrote that command (a shell loop replaced
+# `sed … third_party/*/*`) and the old anchor stopped matching.
 new_line_after_anchor = """
         # FLUTTER_GEMMA_GPU_REGISTRY_PATCH — App Store ITMS-90432 fix:
         # rewrite gpu_registry.cc dlopen path on Apple to a framework path so
         # dyld resolves the bundled .framework/<X> via @executable_path. iOS
         # bundle is flat (Frameworks/), macOS bundle has Contents/Frameworks/.
         "sed -i.bak 's|\\"libLiteRtMetalAccelerator\\" SO_EXT|FLUTTER_GEMMA_METAL_FW_PATH|g' litert/runtime/accelerators/gpu_registry.cc",
-        # Inject the macro definition AFTER the namespace opens (i.e. after
-        # the SO_EXT block has fully closed, since SO_EXT is defined before
-        # the namespace block). The TargetConditionals.h include must be
-        # wrapped in #if defined(__APPLE__) — that header is Apple-only,
-        # Android NDK doesn't ship it. Using awk to avoid sed nesting issues.
-        "awk 'BEGIN{p=0} /^namespace litert::internal/ && !p {print; print \\"\\"; print \\"#if defined(__APPLE__)\\"; print \\"#include <TargetConditionals.h>\\"; print \\"#if TARGET_OS_OSX\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/../Frameworks/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator\\\\\\"\\"; print \\"#elif TARGET_OS_IPHONE\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/Frameworks/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator\\\\\\"\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtMetalAccelerator.dylib\\\\\\"\\"; print \\"#endif\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtMetalAccelerator\\\\\\" SO_EXT\\"; print \\"#endif\\"; p=1; next} {print}' litert/runtime/accelerators/gpu_registry.cc > /tmp/gpu_registry.cc.new && mv /tmp/gpu_registry.cc.new litert/runtime/accelerators/gpu_registry.cc","""
+        # Inject the macro definition right after the namespace opens. Its
+        # non-Apple branch names SO_EXT, which LiteRT defines before the
+        # namespace in older revisions and inside it since the v0.18.0 pin;
+        # a macro expands where it is used, so either order works. The
+        # TargetConditionals.h include must be wrapped in #if defined(__APPLE__)
+        # — that header is Apple-only, Android NDK doesn't ship it. Using awk
+        # to avoid sed nesting issues.
+        "awk 'BEGIN{p=0} /^namespace litert::internal/ && !p {print; print \\"\\"; print \\"#if defined(__APPLE__)\\"; print \\"#include <TargetConditionals.h>\\"; print \\"#if TARGET_OS_OSX\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/../Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator\\\\\\"\\"; print \\"#elif TARGET_OS_IPHONE\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator\\\\\\"\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtLmMetalAccelerator.dylib\\\\\\"\\"; print \\"#endif\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtMetalAccelerator\\\\\\" SO_EXT\\"; print \\"#endif\\"; p=1; next} {print}' litert/runtime/accelerators/gpu_registry.cc > /tmp/gpu_registry.cc.new && mv /tmp/gpu_registry.cc.new litert/runtime/accelerators/gpu_registry.cc","""
 
-# Find the anchor line and insert our new lines right after it.
-idx = content.find(anchor_substring)
-if idx < 0:
-    print("  WARN: anchor line not found in WORKSPACE; skipping section 10b")
+# Insert our commands first in that list. They don't depend on upstream's own
+# patch_cmds, so their position in it doesn't matter.
+name_idx = content.find('name = "litert",')
+pc_idx = content.find('patch_cmds = [', name_idx) if name_idx >= 0 else -1
+end_idx = content.find('\n)', name_idx) if name_idx >= 0 else -1
+if pc_idx < 0 or (end_idx >= 0 and pc_idx > end_idx):
+    # Fatal, not a warning: without §10b the Apple builds dlopen the Metal
+    # accelerator by its bare upstream name, which no app bundle provides, and
+    # GPU silently falls back to CPU.
+    raise SystemExit("  ERROR: litert patch_cmds not found in WORKSPACE; section 10b "
+                     "cannot apply — re-anchor it for this LiteRT-LM revision")
 else:
-    # End-of-line for the anchor
-    eol = content.find('\n', idx)
-    if eol < 0:
-        eol = len(content)
-    content = content[:eol] + new_line_after_anchor + content[eol:]
+    at = pc_idx + len('patch_cmds = [')
+    content = content[:at] + new_line_after_anchor + content[at:]
     with open(ws, 'w') as f:
         f.write(content)
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
@@ -356,7 +369,8 @@ else
   if [ -f "$WORKSPACE_FILE" ]; then
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
-    echo "  WARN: $WORKSPACE_FILE not found"
+    echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2
+    exit 1
   fi
 fi
 

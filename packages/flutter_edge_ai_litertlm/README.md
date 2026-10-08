@@ -236,9 +236,55 @@ Native platforms need no web setup.
 > CPU/NPU were never affected.
 
 `PreferredBackend.npu` is attempted only on Windows and on Android devices with
-Qualcomm FastRPC (`libcdsprpc.so`); elsewhere it falls back to GPU, then CPU,
-and prints why. On Windows the check is per OS, so a PC without an Intel NPU can
-report `activeBackend == npu` while the model runs elsewhere.
+Qualcomm FastRPC (`libcdsprpc.so`) whose app opted in (below); elsewhere it
+falls back to GPU, then CPU, and prints why. On Windows the check is per OS, so
+a PC without an Intel NPU can report `activeBackend == npu` while the model runs
+elsewhere.
+
+### Qualcomm NPU on Android (opt-in)
+
+This package does not ship Qualcomm's QNN runtime: Qualcomm licenses it for
+redistribution inside an application only. To use `PreferredBackend.npu` on
+Snapdragon, opt in from your app's `pubspec.yaml`:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+```
+
+Put it in the pubspec of the app you build. If that app is a member of a pub
+workspace, put it in the workspace root's pubspec instead; pub ignores
+`user_defines` anywhere else.
+
+With the flag set, the build hook downloads `com.qualcomm.qti:qnn-runtime:2.50.0`
+from Maven Central once, checks its SHA-256, raises the Hexagon libraries'
+page alignment to the 16 KB Google Play requires, and bundles the ten QNN
+libraries into the Android app: about 22 MB more to download and 83 MB more
+installed (one blob per Hexagon generation, V73 to V81). The first NPU run
+copies them out of the APK once more, because the DSP loads them from files,
+so a phone that uses the NPU holds about 166 MB of them. Setting the
+flag means accepting Qualcomm's AI Stack License, the `LICENSE.pdf` the hook
+prints the path of. Its notices are in this package's `NOTICES`, so they reach
+your app's licence page.
+
+Behind a proxy, the hook honours `HTTPS_PROXY`. Without access to Maven Central,
+point it at a mirror or at the AAR itself:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+      qualcomm_npu_maven_url: https://maven.example.com/maven2
+      # or: qualcomm_npu_aar: third_party/qnn-runtime-2.50.0.aar
+```
+
+`qualcomm_npu_aar` is resolved against the pubspec that declares it and must be
+the same file as Maven's (same SHA-256). Without the flag, a request for
+`PreferredBackend.npu` on Android falls back to GPU, then CPU, and the log says
+how to enable it.
 
 The native library is fetched at build time by `hook/build.dart` (Native Assets)
 from a SHA256-verified GitHub release — no manual setup on native platforms.

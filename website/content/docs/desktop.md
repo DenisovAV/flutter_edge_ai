@@ -39,7 +39,7 @@ statement: **there is no MediaPipe engine on desktop.** See
 │   │  ───────────────────────────────────           │ │
 │   │  libLiteRtLm.{dylib,dll,so}                    │ │
 │   │  + libLiteRt.{dll,so} (Linux/Windows)          │ │
-│   │  + libLiteRtMetalAccelerator.dylib (macOS)     │ │
+│   │  + libLiteRtLmMetalAccelerator.dylib (macOS)   │ │
 │   │  + libLiteRtWebGpuAccelerator.{dll,so}         │ │
 │   │  + libwebgpu_dawn.{dll,so} (Linux/Windows GPU) │ │
 │   │  + dxil.dll + dxcompiler.dll (Windows GPU)     │ │
@@ -294,7 +294,7 @@ DLL and silently fall back to CPU.
 
 End-users need nothing installed. Since `flutter_gemma_litertlm` 1.7.1
 `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.17.1`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0`, 16 of its 24 DLLs import none.
 
 The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
@@ -409,7 +409,7 @@ encoder** runs on CPU by default (the GPU delegate can't prepare its ops);
 override per-encoder with `preferredVisionBackend:` / `preferredAudioBackend:`
 on `getActiveModel(...)`.
 
-- **Windows** — GPU. The plugin preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.17.1` exports its full C ABI (7 of 7 functions).
+- **Windows** — GPU. The plugin preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.18.0` exports its full C ABI (7 of 7 functions).
 - **macOS** — CPU. The bundle does not ship `libLiteRtTopKMetalSampler`: upstream opens it by bare file name, which cannot reach a library inside the app bundle, so the factory uses the CPU chain.
 - **Linux** — CPU. The sampler `.so` exports its full C ABI, but it holds a process-static `wgpu::Instance` that any second `engine_create` rejects. Since runtime model swap matters more than the few ms saved, the plugin doesn't preload it and lets the factory fall back to CPU.
 

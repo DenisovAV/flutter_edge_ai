@@ -8,15 +8,20 @@ import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_source.dart'
 import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart' show InferenceModel;
+import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
+    show InferenceModel;
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
     show InferenceModelSpec;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'ffi/backend_preference.dart';
 import 'ffi/ffi_inference_model.dart';
 import 'ffi/litert_lm_client.dart';
+import 'ffi/npu_stack_manifest.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 
 /// Minimum context window (`max_num_tokens`) for `.litertlm` models.
@@ -130,35 +135,60 @@ class LiteRtLmEngine
     RuntimeConfig config,
   ) async {
     final cacheDir = (await getApplicationSupportDirectory()).path;
+
+    // Android npu is opt-in per app. Ask the build before the hardware: an app
+    // that did not bundle the stack must not even dlopen a vendor library.
+    // When the manifest cannot say (no binding in a background isolate), core's
+    // prepareNpuDispatchDir checks the APK itself before anything is loaded.
+    bool? npuAvailable;
+    String? npuUnavailableBecause;
+    if (config.preferredBackend == PreferredBackend.npu && Platform.isAndroid) {
+      final stack = await checkQualcommNpuStack();
+      if (!stack.known) {
+        edgeAiLog(
+          '[LiteRtLmEngine] ${stack.reason}; trying npu, the platform side '
+          'checks the libraries',
+        );
+      } else if (!stack.bundled) {
+        npuAvailable = false;
+        npuUnavailableBecause = stack.reason;
+      }
+    }
+
     final ffiRuntime = await initializeFfiRuntime<LiteRtLmFfiClient>(
       preferredBackend: config.preferredBackend,
       logTag: '[LiteRtLmEngine]',
       createClient: LiteRtLmFfiClient.new,
-      initializeClient: (client, backend) async {
-        final args = encoderInitArgs(config, backend);
-        // Per ATTEMPT, not per request: a requested NPU falls back npu -> gpu
-        // -> cpu (`ffiBackendFallbackOrder`), and the floor this skips exists
-        // for the two it falls back to. Computing it once from the REQUESTED
-        // backend would hand an unclamped NPU-sized context to the CPU engine
-        // that follows, which is the #318 crash.
-        final maxTokens = clampLitertlmContextTokens(
-          config.maxTokens,
-          preferredBackend: backend,
-        );
-        await client.initialize(
-          modelPath: config.modelPath,
-          backend: args.backend,
-          maxTokens: maxTokens,
-          cacheDir: cacheDir,
-          enableVision: args.enableVision,
-          visionBackend: args.visionBackend,
-          maxNumImages: args.maxNumImages,
-          enableAudio: args.enableAudio,
-          audioBackend: args.audioBackend,
-          enableSpeculativeDecoding: config.enableSpeculativeDecoding,
-          activationDataType: args.activationDataType,
-        );
-      },
+      npuDispatchAvailable: npuAvailable,
+      npuUnavailableBecause: npuUnavailableBecause,
+      initializeClient: (client, backend) => _oneNpuInitAtATime(
+        backend,
+        () async {
+          final args = encoderInitArgs(config, backend);
+          // Per ATTEMPT, not per request: a requested NPU falls back npu -> gpu
+          // -> cpu (`ffiBackendFallbackOrder`), and the floor this skips exists
+          // for the two it falls back to. Computing it once from the REQUESTED
+          // backend would hand an unclamped NPU-sized context to the CPU engine
+          // that follows, which is the #318 crash.
+          final maxTokens = clampLitertlmContextTokens(
+            config.maxTokens,
+            preferredBackend: backend,
+          );
+          await client.initialize(
+            modelPath: config.modelPath,
+            backend: args.backend,
+            maxTokens: maxTokens,
+            cacheDir: cacheDir,
+            enableVision: args.enableVision,
+            visionBackend: args.visionBackend,
+            maxNumImages: args.maxNumImages,
+            enableAudio: args.enableAudio,
+            audioBackend: args.audioBackend,
+            enableSpeculativeDecoding: config.enableSpeculativeDecoding,
+            activationDataType: args.activationDataType,
+          );
+        },
+      ),
       shutdownClient: (client) => client.shutdown(),
     );
 
@@ -191,5 +221,22 @@ class LiteRtLmEngine
       maxConcurrentSessions: config.maxConcurrentSessions,
       onClose: () {}, // no-op: core resets its own state via addCloseListener
     );
+  }
+
+  static Future<void> _npuInitTail = Future.value();
+
+  /// Runs NPU engine creations one at a time. The Qualcomm dispatch sets
+  /// `ADSP_LIBRARY_PATH` with a process-wide `setenv` while it initialises, so
+  /// two NPU engines created concurrently race over it. Other backends are not
+  /// serialised.
+  static Future<void> _oneNpuInitAtATime(
+    PreferredBackend backend,
+    Future<void> Function() body,
+  ) {
+    if (backend != PreferredBackend.npu) return body();
+    final previous = _npuInitTail;
+    final done = Completer<void>();
+    _npuInitTail = done.future;
+    return previous.then((_) => body()).whenComplete(done.complete);
   }
 }

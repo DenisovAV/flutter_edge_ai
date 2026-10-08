@@ -15,9 +15,9 @@ on:
       litertlm_version:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
-        default: 'e9fd8c53ff968071774206163027dd84bedfe925'
+        default: 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27'
       prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (blank = 4453b286, the first refresh with the new Constraint ABI)'
+        description: 'Upstream ref to take prebuilt companion libs from (blank = b2f686e2, the v0.18.0 tag itself — its provider already has the new Constraint ABI)'
         required: false
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '4453b286c549d216584866ed49b6fed6d11fa3a7' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:
@@ -105,7 +105,6 @@ jobs:
             --features=static_link_msvcrt `
             --spawn_strategy=local `
             --define=litert_runtime_link_mode=dynamic `
-            --define=resolve_symbols_in_exec=false `
             '//c:libLiteRtLm.dylib'
 
       - name: Build Intel NPU dispatch
@@ -122,7 +121,6 @@ jobs:
             --features=archive_param_file `
             --spawn_strategy=local `
             --define=litert_runtime_link_mode=dynamic `
-            --define=resolve_symbols_in_exec=false `
             '@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch'
           if ($LASTEXITCODE -ne 0) {
             # Retry once: a cleanup-only failure leaves the action cache warm,
@@ -137,7 +135,6 @@ jobs:
               --features=archive_param_file `
               --spawn_strategy=local `
               --define=litert_runtime_link_mode=dynamic `
-              --define=resolve_symbols_in_exec=false `
               '@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch'
             if ($LASTEXITCODE -ne 0) {
               # Do not lean on PowerShell's implicit $LASTEXITCODE trailer: one
@@ -327,10 +324,32 @@ jobs:
           # satisfy -notcontains while being exactly the mismatch this checks
           # for. Today's openvino.dll embeds precisely one, so requiring one is
           # not a tightening in practice, only in principle.
-          if ($embedded.Count -ne 1 -or $embedded[0] -ne $sdkBuild) {
+          #
+          # Compare the release (version + build number), not the whole string.
+          # Intel's own 2026.3.1 archive — the v0.18.0 pin — disagrees with
+          # itself: runtime\version.txt says 2026.3.1-22476-56d9685302d while
+          # openvino.dll embeds 2026.3.1-22476-759c5a6ab8c (checked on the
+          # official zip). The commit hash is not stable across Intel's
+          # packaging; version and build number identify the release.
+          $releaseOf = { param($s) if ($s -match '^(\d+\.\d+\.\d+-\d+)-') { $Matches[1] } else { $null } }
+          $sdkRelease = & $releaseOf $sdkBuild
+          $dllRelease = if ($embedded.Count -eq 1) { & $releaseOf $embedded[0] } else { $null }
+          if (-not $sdkRelease -or $dllRelease -ne $sdkRelease) {
             throw "shipped openvino.dll reports '$($embedded -join ', ')' but the dispatch was built against '$sdkBuild'"
           }
-          Write-Host "OpenVino build verified: $sdkBuild"
+          # The property all of this protects is "every shipped OpenVino/TBB DLL
+          # is the file from the SDK the dispatch linked against". Assert that
+          # directly, byte for byte, so it does not hinge on Intel's strings.
+          # Two SDK files sharing a basename (the Debug\ trap above) fail here
+          # too: only one of them can match the copy that won.
+          foreach ($d in $ovDlls) {
+            $shippedHash = (Get-FileHash "artifacts\$($d.Name)" -Algorithm SHA256).Hash
+            $sdkHash = (Get-FileHash $d.FullName -Algorithm SHA256).Hash
+            if ($shippedHash -ne $sdkHash) {
+              throw "artifacts\$($d.Name) is not the SDK's $($d.FullName) (sha256 $shippedHash vs $sdkHash)"
+            }
+          }
+          Write-Host "OpenVino release verified: $sdkRelease (version.txt '$sdkBuild', openvino.dll '$($embedded[0])'); $($ovDlls.Count) DLLs byte-identical to the SDK"
           Write-Host "NPU stack: LiteRtDispatch + $($ovDlls.Count) OpenVino/TBB DLLs"
           Get-ChildItem artifacts\
           # Every DLL we build ourselves, at the END of this step so that all

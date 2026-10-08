@@ -25,7 +25,7 @@ app uses.
 - **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
 - **Multimodal:** image and audio input with Gemma 4, Gemma 3n and other vision models.
 - **Function calling** and **thinking mode** on the models that support them.
-- **CPU, GPU and NPU** backends — Qualcomm NPU on Android, Intel NPU on Windows.
+- **CPU, GPU and NPU** backends — Qualcomm NPU on Android (opt-in), Intel NPU on Windows.
 - **Embeddings and on-device RAG** with Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.
@@ -69,8 +69,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.1.0
-  flutter_edge_ai_litertlm: ^1.9.0   # or any other engine from the table
+  flutter_edge_ai: ^2.1.1
+  flutter_edge_ai_litertlm: ^1.10.0   # or any other engine from the table
 ```
 
 Then complete the platform setup below.

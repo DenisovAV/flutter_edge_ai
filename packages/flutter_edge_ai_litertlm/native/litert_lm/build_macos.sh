@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./build_macos.sh [ref]
-#   ./build_macos.sh e9fd8c53       # v0.17.0 (the default)
+#   ./build_macos.sh b2f686e2       # v0.18.0 (the default)
 #   ./build_macos.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
 #                                   # are ABI-incompatible with libLiteRtLm
 #                                   # rebuilt from v0.11.0 source — crashes
@@ -22,8 +22,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/macos_arm64"
 LITERT_LM_DIR="/tmp/LiteRT-LM"
-DEFAULT_REF="e9fd8c53ff968071774206163027dd84bedfe925"   # v0.17.0
+DEFAULT_REF="b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"   # v0.18.0
 VERSION="${1:-}"
+
+# Since v0.18.0 the WORKSPACE registers the Android NDK toolchain whenever
+# ANDROID_NDK_HOME is set, even for an Apple build — and a value pointing at an
+# NDK that is no longer installed fails analysis ("can't readdir(), not a
+# directory"). This build needs no NDK.
+unset ANDROID_NDK_HOME
 
 echo "=== Building libLiteRtLm.dylib for macOS arm64 ==="
 
@@ -76,7 +82,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-4453b286c549d216584866ed49b6fed6d11fa3a7}"
+PREBUILT_REF="${PREBUILT_REF:-b2f686e2ed4718fb84ec398a61dd59ca0f0aff27}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/macos_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the
@@ -129,13 +135,44 @@ chmod +w "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -id @rpath/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -add_rpath '@loader_path/../../..' "$PREBUILT_DIR/libLiteRtLm.dylib" 2>/dev/null || true
 
-# Copy companion libs from prebuilt
+# Copy companion libs from prebuilt.
+# We ship upstream's libLiteRtMetalAccelerator.dylib as
+# libLiteRtLmMetalAccelerator.dylib, so its framework is
+# LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
+# embeds a LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle
+# holds one framework per name, and ours silently replaced theirs. The id moves
+# with the name (+8 bytes of load commands; upstream's simulator build has 48
+# bytes of slack), and patch_c_api.sh §10 points gpu_registry at the new path.
 for lib in libGemmaModelConstraintProvider.dylib libLiteRtMetalAccelerator.dylib; do
-  if [ -f "prebuilt/macos_arm64/$lib" ]; then
-    cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$lib"
-    echo "Copied $lib"
-  fi
+  out="${lib/libLiteRtMetalAccelerator/libLiteRtLmMetalAccelerator}"
+  # Missing is fatal: without the accelerator the GPU falls back to CPU
+  # silently, and without the provider every tool call fails.
+  [ -f "prebuilt/macos_arm64/$lib" ] || { echo "ERROR: upstream prebuilt missing: prebuilt/macos_arm64/$lib" >&2; exit 1; }
+  cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$out"
+  echo "Copied $lib as $out"
 done
+# Sets a dylib's install name and proves it took: install_name_tool refuses
+# when the new id does not fit the header slack, and a dylib that keeps the old
+# id still loads, so nothing downstream would notice.
+set_dylib_id() {
+  local lib="$1" id="$2" out
+  out="$(install_name_tool -id "$id" "$lib" 2>&1)" || {
+    echo "ERROR: install_name_tool -id $id $(basename "$lib"): $out" >&2
+    exit 1
+  }
+  [ "$(otool -D "$lib" | tail -1)" = "$id" ] || {
+    echo "ERROR: $(basename "$lib") id is '$(otool -D "$lib" | tail -1)', want $id" >&2
+    exit 1
+  }
+}
+rm -f "$PREBUILT_DIR/libLiteRtMetalAccelerator.dylib"
+if [ -f "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib" ]; then
+  chmod +w "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib"
+  set_dylib_id "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib" @rpath/libLiteRtLmMetalAccelerator.dylib
+  # The macOS stager re-signs what it stages, but a bundle consumer that loads
+  # the dylib straight from the cache needs a valid signature too.
+  codesign --force --sign - "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib"
+fi
 
 # 7. Build stream proxy
 echo "Building stream proxy..."
@@ -154,6 +191,24 @@ clang -shared -o "$PREBUILT_DIR/libStreamProxy.dylib" \
 # 8. Verify
 echo ""
 echo "=== Verification ==="
+# Every framework libLiteRtLm dlopens by path must be in the bundle. The Metal
+# accelerator is loaded by dlopen, not linked, so nothing else checks it — and
+# without it the GPU falls back to CPU with no error at all.
+check_dlopened_frameworks() {
+  local dir="$1" fw missing=0
+  for fw in $(strings "$dir/libLiteRtLm.dylib" \
+                | grep -oE '@executable_path/(\.\./)?Frameworks/[A-Za-z0-9_]+\.framework/' \
+                | sed -E 's|.*Frameworks/([A-Za-z0-9_]+)\.framework/|\1|' | sort -u); do
+    if [ -f "$dir/lib$fw.dylib" ]; then
+      echo "  dlopen target $fw.framework: lib$fw.dylib present"
+    else
+      echo "ERROR: libLiteRtLm dlopens $fw.framework but $dir/lib$fw.dylib is missing" >&2
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || exit 1
+}
+check_dlopened_frameworks "$PREBUILT_DIR"
 echo "Symbols:"
 nm -gU "$PREBUILT_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -2
 echo ""

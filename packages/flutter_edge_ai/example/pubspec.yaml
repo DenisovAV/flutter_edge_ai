@@ -125,6 +125,16 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^3.0.0
 
+# Opt in to the Qualcomm NPU stack on Android: the litertlm build hook fetches
+# com.qualcomm.qti:qnn-runtime from Maven Central and bundles it into this app.
+# Qualcomm's licence lets an application ship it, not a package, so it is never
+# in flutter_edge_ai_litertlm itself. This pubspec is the root that declares
+# hooks: user_defines because the example is not a workspace member.
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

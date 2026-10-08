@@ -76,6 +76,51 @@ void main() {
     expect(r.stderr, contains('libGemmaModelConstraintProvider.dylib'));
   });
 
+  test('fails the build when the dlopened Metal accelerator is missing', () {
+    // LiteRtLm loads the accelerator by dlopen, not through a load command,
+    // so the load-command post-condition cannot see it — and at runtime a
+    // missing accelerator is not an error either: the GPU runs on CPU.
+    final f = _Fixture.create(companionRef: _Ref.rpathDylib);
+    addTearDown(f.dispose);
+    File('${f.sourceDir}/libLiteRtLmMetalAccelerator.dylib').deleteSync();
+
+    final r = f.runStagingScript(script);
+
+    expect(r.exitCode, isNot(0), reason: f.describe());
+    expect(r.stderr, contains('LiteRtLmMetalAccelerator.framework'));
+  });
+
+  test('removes our old LiteRtMetalAccelerator.framework, never another', () {
+    final ours = _Fixture.create(
+      companionRef: _Ref.rpathDylib,
+      oldMetalBundleId:
+          'dev.flutterberlin.flutter_gemma.LiteRtMetalAccelerator',
+    );
+    addTearDown(ours.dispose);
+    expect(ours.runStagingScript(script).exitCode, 0);
+    expect(
+      Directory(
+        '${ours.frameworks}/LiteRtMetalAccelerator.framework',
+      ).existsSync(),
+      isFalse,
+      reason: 'the copy an older stager left behind should be gone',
+    );
+
+    final theirs = _Fixture.create(
+      companionRef: _Ref.rpathDylib,
+      oldMetalBundleId: 'com.example.flutter_litert.LiteRtMetalAccelerator',
+    );
+    addTearDown(theirs.dispose);
+    expect(theirs.runStagingScript(script).exitCode, 0);
+    expect(
+      Directory(
+        '${theirs.frameworks}/LiteRtMetalAccelerator.framework',
+      ).existsSync(),
+      isTrue,
+      reason: "flutter_litert's framework under the same name must stay",
+    );
+  });
+
   test('resolves the companion when LiteRtLm names it by @executable_path', () {
     // The shape reported in #457: something relocated LiteRtLm before the
     // staging step, so the dependency is already
@@ -122,14 +167,17 @@ class _Fixture {
 
   static const _companions = [
     'GemmaModelConstraintProvider',
-    'LiteRtMetalAccelerator',
+    'LiteRtLmMetalAccelerator',
     'LiteRtTopKMetalSampler',
   ];
 
   String get frameworks => '$appDir/Contents/Frameworks';
   String get liteRtLm => '$frameworks/LiteRtLm.framework/Versions/A/LiteRtLm';
 
-  static _Fixture create({required _Ref companionRef}) {
+  static _Fixture create({
+    required _Ref companionRef,
+    String? oldMetalBundleId,
+  }) {
     final root = Directory.systemTemp.createTempSync('fg457_');
     final src = Directory('${root.path}/src')..createSync(recursive: true);
     final app = '${root.path}/Example.app';
@@ -140,6 +188,26 @@ class _Fixture {
 
     final stub = File('${root.path}/stub.c')
       ..writeAsStringSync('int flutter_edge_ai_stub(void) { return 0; }\n');
+    // The real LiteRtLm carries the patched gpu_registry path as a string and
+    // dlopens it; the stager reads it back to know the accelerator is needed.
+    final lmStub = File('${root.path}/lm_stub.c')
+      ..writeAsStringSync(
+        'const char *flutter_edge_ai_metal_path = '
+        '"@executable_path/../Frameworks/LiteRtLmMetalAccelerator.framework/'
+        'LiteRtLmMetalAccelerator";\n'
+        'int flutter_edge_ai_stub(void) { return 0; }\n',
+      );
+    if (oldMetalBundleId != null) {
+      // What an older stager left in an incrementally rebuilt app — or, with a
+      // foreign id, flutter_litert's own framework under upstream's name.
+      final res = Directory(
+        '$app/Contents/Frameworks/LiteRtMetalAccelerator.framework/Versions/A/Resources',
+      )..createSync(recursive: true);
+      File('${res.path}/Info.plist').writeAsStringSync(
+        '<plist><dict><key>CFBundleIdentifier</key>'
+        '<string>$oldMetalBundleId</string></dict></plist>\n',
+      );
+    }
 
     // The companions, as the Native Assets cache holds them.
     for (final base in _companions) {
@@ -172,7 +240,7 @@ class _Fixture {
       // `@executable_path/../Frameworks`) would let these tests pass through a
       // mechanism production does not have.
       '-Wl,-rpath,@loader_path/../../..',
-      stub.path,
+      lmStub.path,
       '${src.path}/libGemmaModelConstraintProvider.dylib',
     ]);
 

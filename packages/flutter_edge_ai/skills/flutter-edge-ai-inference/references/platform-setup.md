@@ -36,6 +36,23 @@ builds, so without this line the release build cannot download:
 Only `arm64-v8a` is shipped for `.litertlm`. The OpenCL manifest entries the GPU
 backend needs are merged in by the plugin; nothing to add.
 
+`PreferredBackend.npu` on Snapdragon is opt-in (`flutter_edge_ai_litertlm`
+1.10.0+): Qualcomm licenses its QNN runtime for redistribution inside an app
+only, so the app's own `pubspec.yaml` asks for it — the workspace root's, if
+the app is a pub workspace member:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+```
+
+The build hook then fetches `com.qualcomm.qti:qnn-runtime` from Maven Central
+and bundles it (about 83 MB installed). Without the flag, `npu` falls back to
+GPU, then CPU, and the log names the flag; an NPU-only `.litertlm` bundle then
+fails on every backend, which reads like a broken model file but is not.
+
 ## iOS
 
 Minimum iOS 15.0 — 16.0 if the app includes `flutter_edge_ai_mediapipe`.
@@ -196,7 +213,10 @@ shader compiler and NPU runtime — are bundled at build time.
 
 - Windows: `x64` only — no Windows on Arm build. End users need no VC++
   redistributable installed. (In the legacy `flutter_gemma_litertlm` package
-  this arrived in 1.7.1.)
+  this arrived in 1.7.1.) Measured on `native-v0.18.0`:
+  16 of the bundle's 24 DLLs import no C++ runtime; the other eight, the Intel
+  NPU stack, import only `msvcp140`, `vcruntime140` and `vcruntime140_1`,
+  which every Flutter Windows app already resolves.
 - Linux: `x64` and `arm64`. Building needs
   `clang cmake ninja-build libgtk-3-dev lld`. GPU needs the vendor Vulkan
   driver; Mesa's `llvmpipe` software fallback cannot run Gemma 4.

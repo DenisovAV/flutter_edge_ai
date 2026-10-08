@@ -11,7 +11,7 @@
 #
 # Usage:
 #   ./build_android.sh [ref]
-#   ./build_android.sh e9fd8c53       # v0.17.0 (the default)
+#   ./build_android.sh b2f686e2       # v0.18.0 (the default)
 #   ./build_android.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
 #                                     # are ABI-incompatible with libLiteRtLm
 #                                     # rebuilt from v0.11.0 source. Use 032334d
@@ -23,7 +23,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/android_arm64"
 LITERT_LM_DIR="/tmp/LiteRT-LM"
-DEFAULT_REF="e9fd8c53ff968071774206163027dd84bedfe925"   # v0.17.0
+DEFAULT_REF="b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"   # v0.18.0
 VERSION="${1:-}"
 
 # Resolve Android NDK — prefer ANDROID_NDK_HOME env, else newest under
@@ -96,7 +96,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-4453b286c549d216584866ed49b6fed6d11fa3a7}"
+PREBUILT_REF="${PREBUILT_REF:-b2f686e2ed4718fb84ec398a61dd59ca0f0aff27}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/android_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the
@@ -191,39 +191,61 @@ echo "  libStreamProxy.so → $PREBUILT_DIR/"
 
 # 8. Copy companion libs from upstream prebuilt (we don't rebuild these
 #    — they're Google's GPU accelerator + sampler binaries).
+#
+#    Android GPU is OpenCL only. upstream's prebuilt/android_arm64/ also carries
+#    libLiteRtGpuAccelerator.so, libLiteRtWebGpuAccelerator.so and
+#    libLiteRtTopKWebGpuSampler.so, and all three list libwebgpu_dawn.so in
+#    NEEDED. We never shipped Dawn on Android, so from native-v0.14.0 (when Dawn
+#    was split out) through v0.17.x those three sat in every APK (~18 MB) and
+#    could not be dlopen'ed; gpu_registry silently moved on to the OpenCL
+#    accelerator. Google's own Android SDKs ship no Dawn either: the
+#    litertlm-android AAR is a single liblitertlm_jni.so with ML Drift OpenCL
+#    linked in, and litert-gpu ships only libLiteRtClGlAccelerator.so. Adding
+#    Dawn instead would put a different accelerator first in gpu_registry's
+#    order on every Android device — a path nobody ships.
 echo ""
 echo "=== Copying companion libs from upstream prebuilt ==="
 for lib in libGemmaModelConstraintProvider.so \
-           libLiteRtGpuAccelerator.so \
            libLiteRtOpenClAccelerator.so \
-           libLiteRtTopKOpenClSampler.so \
-           libLiteRtTopKWebGpuSampler.so \
-           libLiteRtWebGpuAccelerator.so; do
+           libLiteRtTopKOpenClSampler.so; do
   if [ -f "prebuilt/android_arm64/$lib" ]; then
     cp "prebuilt/android_arm64/$lib" "$PREBUILT_DIR/$lib"
     echo "  $lib"
   else
-    echo "  WARN: prebuilt/android_arm64/$lib not found in upstream"
+    echo "ERROR: prebuilt/android_arm64/$lib not found in upstream" >&2
+    exit 1
+  fi
+done
+# PREBUILT_DIR outlives builds: drop copies a ≤0.17 build left there, or they
+# get packed into the tarball again.
+for lib in libLiteRtGpuAccelerator.so \
+           libLiteRtWebGpuAccelerator.so \
+           libLiteRtTopKWebGpuSampler.so; do
+  if [ -f "$PREBUILT_DIR/$lib" ]; then
+    rm -f "$PREBUILT_DIR/$lib"
+    echo "  removed stale $lib (needs Dawn, not shipped on Android)"
   fi
 done
 
-# Qualcomm NPU dispatch libs (not in LiteRT-LM upstream prebuilts — sourced
-# from Google AI Edge Gallery APKs, stored in our repo's prebuilt dir).
-for lib in libLiteRtDispatch_Qualcomm.so \
-           libQnnHtp.so \
-           libQnnSystem.so \
-           libQnnHtpV73Stub.so \
-           libQnnHtpV75Stub.so \
-           libQnnHtpV79Stub.so \
-           libQnnHtpV81Stub.so; do
-  if [ -f "$SCRIPT_DIR/prebuilt/android_arm64/$lib" ]; then
-    # Skip if source and dest are the same file (PREBUILT_DIR == SCRIPT_DIR/prebuilt/android_arm64)
-    if [ "$SCRIPT_DIR/prebuilt/android_arm64/$lib" != "$PREBUILT_DIR/$lib" ]; then
-      cp "$SCRIPT_DIR/prebuilt/android_arm64/$lib" "$PREBUILT_DIR/$lib"
-    fi
-    echo "  $lib (Qualcomm NPU)"
-  else
-    echo "  WARN: $lib not found in $SCRIPT_DIR/prebuilt/android_arm64/"
+# Qualcomm NPU: only OUR dispatch ships in this bundle (built from the LiteRT
+# pin by build_qualcomm_dispatch.sh, Apache 2.0). Qualcomm's QNN runtime is
+# not ours to redistribute standalone: since native-v0.18.0 an app that sets
+# `qualcomm_npu: true` gets it from Qualcomm's Maven artifact through the
+# build hook. PREBUILT_DIR outlives builds, so delete QNN copies an older run
+# staged here — otherwise they get packed into the release again.
+if [ -f "$PREBUILT_DIR/libLiteRtDispatch_Qualcomm.so" ]; then
+  echo "  libLiteRtDispatch_Qualcomm.so (Qualcomm NPU dispatch)"
+else
+  echo "  WARN: libLiteRtDispatch_Qualcomm.so not staged yet — run build_qualcomm_dispatch.sh"
+fi
+for lib in libQnnHtp.so libQnnSystem.so \
+           libQnnHtpV73Stub.so libQnnHtpV73Skel.so \
+           libQnnHtpV75Stub.so libQnnHtpV75Skel.so \
+           libQnnHtpV79Stub.so libQnnHtpV79Skel.so \
+           libQnnHtpV81Stub.so libQnnHtpV81Skel.so; do
+  if [ -f "$PREBUILT_DIR/$lib" ]; then
+    rm -f "$PREBUILT_DIR/$lib"
+    echo "  removed stale $lib (QNN comes from Qualcomm's Maven artifact)"
   fi
 done
 
@@ -246,7 +268,7 @@ if ! command -v patchelf >/dev/null 2>&1; then
 else
   echo ""
   echo "=== Patching sampler DT_NEEDED (#270) ==="
-  for lib in libLiteRtTopKOpenClSampler.so libLiteRtTopKWebGpuSampler.so; do
+  for lib in libLiteRtTopKOpenClSampler.so; do
     if [ -f "$PREBUILT_DIR/$lib" ]; then
       # Idempotent: only add if not already present.
       if ! patchelf --print-needed "$PREBUILT_DIR/$lib" | grep -q '^libLiteRtLm\.so$'; then
@@ -274,10 +296,12 @@ fi
 #     prebuilts already carry libandroid.so, so this becomes a no-op once
 #     PREBUILT_REF moves past that change. libandroid.so pulls in
 #     libnativewindow.so. Verified on Galaxy A34 (Mali-G68 MC4).
+#     The v0.18.0 prebuilts already list libandroid.so, so this prints
+#     "already in NEEDED"; kept as a guard against a regression upstream.
 #     patchelf is guaranteed here: step 8b exits without it.
 echo ""
 echo "=== Patching GPU accelerator DT_NEEDED (Mali AHardwareBuffer) ==="
-for lib in libLiteRtOpenClAccelerator.so libLiteRtGpuAccelerator.so; do
+for lib in libLiteRtOpenClAccelerator.so; do
   if [ -f "$PREBUILT_DIR/$lib" ]; then
     # Idempotent: only add if not already present.
     if ! patchelf --print-needed "$PREBUILT_DIR/$lib" | grep -q '^libandroid\.so$'; then

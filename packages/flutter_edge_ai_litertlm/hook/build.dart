@@ -3,7 +3,11 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:hooks/hooks.dart';
+
+import 'src/download.dart';
+import 'src/qnn_runtime.dart';
 
 const _packageName = 'flutter_edge_ai_litertlm';
 
@@ -56,6 +60,12 @@ class _NativeBundle {
   /// (qdrant has none). LiteRT has Metal/OpenCL/WebGPU accelerators etc.
   final List<String> companions;
 
+  /// Names this bundle shipped in an older release and no longer registers.
+  /// Deleted with the owned files on a version change — so the flat cache does
+  /// not keep them forever — and never registered, which [companions] would
+  /// do with any file it finds.
+  final List<String> legacyFileNames;
+
   /// Companions to skip on a specific OS. LiteRT skips Apple companion
   /// dylibs on macOS because of a Native Assets install_name_tool slack
   /// issue (#247) — the Podfile post_install handles them instead.
@@ -66,9 +76,10 @@ class _NativeBundle {
   /// dispatch. qdrant: none.
   final List<String> windowsExtraLibs;
 
-  /// Additional libraries to register on Android only (no `lib` prefix,
-  /// `.so` suffix added automatically). LiteRT: Qualcomm NPU dispatch +
-  /// QNN runtime stack (HTP + System + per-SoC Stub libs).
+  /// Android-only libraries this bundle owns (no `lib` prefix, `.so` suffix
+  /// added automatically). LiteRT: the Qualcomm NPU stack. Registered by the
+  /// opt-in flag, never by presence (see _registerQualcommNpu); the list
+  /// itself also drives the flat-cache cleanup.
   final List<String> androidExtraLibs;
 
   /// When `true`, per-platform subdirectories live directly under
@@ -90,6 +101,7 @@ class _NativeBundle {
     required this.mainLibName,
     required this.markerFileName,
     this.companions = const [],
+    this.legacyFileNames = const [],
     this.skipCompanionsOn = const {},
     this.windowsExtraLibs = const [],
     this.androidExtraLibs = const [],
@@ -131,6 +143,9 @@ class _NativeBundle {
     for (final c in companions) {
       yield _dylibFileName(os, c);
     }
+    for (final l in legacyFileNames) {
+      yield _dylibFileName(os, l);
+    }
     if (os == OS.windows) {
       for (final w in windowsExtraLibs) {
         yield _dylibFileName(os, w);
@@ -145,6 +160,10 @@ class _NativeBundle {
 }
 
 /// LiteRT-LM native library version and release info.
+///
+/// 0.17.1 / 0.17.1-a — upstream v0.17.1 (`5e58e9a0`), provider from upstream
+/// main `4453b286` (the tag's was pre-ComputeMask); -a added libandroid.so to
+/// the two Android GPU accelerators' NEEDED (Mali crash, #545).
 ///
 /// 0.17.0 — built from LiteRT-LM `e9fd8c53` (v0.17.0) with LiteRT `9fe5be45`.
 /// All 7 platforms rebuilt; the zlib mirror patch is gone (the v0.17.0
@@ -182,7 +201,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 const _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.17.1-a',
+  version: '0.18.0',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -193,65 +212,70 @@ const _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
-  // 0.17.1 is upstream v0.17.1 (5e58e9a0), one commit over v0.17.0: tool-call
-  // arguments declared `"type": "integer"` reach the app as integers instead
-  // of 1000.0. Every platform is rebuilt from that source — Apple and Android
-  // locally, both Linux and Windows in CI — and the LiteRT pin is unchanged
-  // (9fe5be45), so the C API embeddings and speech bind to did not move.
+  // 0.18.0 is upstream v0.18.0 (b2f686e2) with LiteRT 26895c9f, QAIRT 2.50.0
+  // and OpenVINO 2026.3.1; Apple and Android built locally, Linux and Windows
+  // in CI. The tag's own prebuilt companions are used again — its constraint
+  // provider has the ComputeMask ABI; both build scripts and both workflows
+  // assert that before compiling.
   //
-  // libGemmaModelConstraintProvider still comes from upstream MAIN (4453b286),
-  // not from the tag: v0.17.1 ships the same pre-ComputeMask provider v0.17.0
-  // did, and against a runtime built from its own source every tool call
-  // segfaults in CompositeLogitMask::Apply. Both build scripts and both CI
-  // workflows assert the two sides agree before compiling anything.
+  // Android carries no QNN runtime any more: Qualcomm licenses it for
+  // redistribution inside an application only, so an app opts in with
+  // `qualcomm_npu: true` and this hook fetches it from Maven (see
+  // _registerQualcommNpu). The dispatch stays, built against the same QAIRT
+  // release the hook pins. Android also drops the three Dawn-dependent GPU
+  // libraries, which could never load (no libwebgpu_dawn.so on Android).
   //
-  // The Android bundle also carries the Qualcomm Skel blobs with p_align
-  // raised to 16 KB: the QAIRT SDK ships them at 0x1000, androidExtraLibs puts
-  // them in every consumer APK, and Google Play rejects the app for it (#529).
-  // build_qualcomm_dispatch.sh does the bump; verify_tarball_manifest.sh
-  // refuses to publish an Android archive that still has one below 16 KB.
+  // Apple ships upstream's Metal accelerator as LiteRtLmMetalAccelerator:
+  // flutter_litert embeds a framework under the upstream name, and an app
+  // bundle holds one per name (patch_c_api.sh §10).
   //
-  // 0.17.1-a changes two Android files and nothing else: upstream's OpenCL and
-  // GPU accelerators import AHardwareBuffer_* weakly without libandroid.so in
-  // DT_NEEDED, bionic binds them to NULL, and Mali GPUs crash at engine_create
-  // (#545). build_android.sh step 8c adds the NEEDED entry and step 8d refuses a
-  // library whose imports its own NEEDED chain cannot reach. The other six
-  // archives are byte-identical to native-v0.17.1.
-  // These sums must equal both the bytes GitHub
-  // serves and the `checksums_litertlm.txt` published on the release — a stale
-  // txt sent a user down the wrong path while debugging a mismatch (#316).
+  // verify_tarball_manifest.sh gates what must and must not ship. These sums
+  // must equal both the bytes GitHub serves and the `checksums_litertlm.txt`
+  // published on the release — a stale txt sent a user down the wrong path
+  // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        '3f7854efdd73c893d48bc43df66102fda5c1de63179295275a37acb9427a949e',
+        '172271be8562545ca226607bb399a7b873c7d64f990ff9eb0a19fa831573019c',
     'litertlm-linux_arm64.tar.gz':
-        'c2e784185840534aeb10e78b19b3771e1eab699e193ce72a6ec6dc67fc0eb47e',
+        '5cf715f17c53ae6e59bb2ba65c1f3649097f9c2f3d5dc0b7cda50058248ed465',
     'litertlm-windows_x86_64.tar.gz':
-        'e505e247b07313c05bbc957b7c33c82f6adb6c6c78eecae03a590319c7d049e2',
+        '4bdf9d262bf6a59e7be3d336e812a56cb701a87bd13e1e5d9c6ca8d04bae30ae',
     'litertlm-macos_arm64.tar.gz':
-        '37c64a2e7cd4d5c06ad150b866ee71f39cc84ccd159cf9e2db30792ef0e71d49',
+        'a1a10c711acb87708d763157650fd24eb9ee2f41c3ddb0bfc206b0dd617d5d9c',
     'litertlm-ios_arm64.tar.gz':
-        '8aaf35425790d527728dde4736579c660af08f9baddfd0161a868cfb302626de',
+        'fb2535fa2d7b717a24b8b8d452a7aca3298dd84628b94940de1297c1fdd1739e',
     'litertlm-ios_sim_arm64.tar.gz':
-        'a95766deae012c8441ef1e1d2e2501d3db3bbbde6b014cceccc5cde98bb94836',
+        '9ed9637fa5498873c999b00e1d0a966b96bce4f5aeda8fb8b5c951820dfb0f09',
     'litertlm-android_arm64.tar.gz':
-        '745b89b606eb712a78f06aed41daca1370eae79b00e0a36054c8e775c0251768',
+        'baabefaaea74217f3001f07809ba0ce077ddbd7993a8d4475692a4cf1eebe3b9',
   },
   companions: [
     'GemmaModelConstraintProvider',
-    'LiteRtMetalAccelerator', // macOS + iOS GPU (Metal)
+    // macOS + iOS GPU (Metal). Upstream's libLiteRtMetalAccelerator, renamed:
+    // flutter_litert ships a framework under the upstream name, and an app
+    // bundle holds only one (see patch_c_api.sh §10).
+    'LiteRtLmMetalAccelerator',
     'LiteRtTopKMetalSampler', // macOS + iOS device GPU sampler (Metal)
-    'LiteRtGpuAccelerator', // Android GPU
-    'LiteRtOpenClAccelerator', // Android OpenCL
+    'LiteRtOpenClAccelerator', // Android GPU (OpenCL)
     'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
     'LiteRtTopKOpenClSampler', // Android OpenCL GPU sampler — honors seed
     'LiteRtTopKWebGpuSampler', // Linux/Windows GPU sampler
     'LiteRt', // Linux/Windows core runtime
     'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
   ],
+  legacyFileNames: [
+    // Not shipped on any platform since native-v0.18.0: on Android it needs
+    // Dawn, which no bundle carries.
+    'LiteRtGpuAccelerator',
+    // Upstream's name for the Metal accelerator, shipped renamed since
+    // native-v0.18.0 (flutter_litert's framework uses the upstream name).
+    'LiteRtMetalAccelerator',
+  ],
   // On macOS, skip the upstream Apple companion dylibs from Native Assets
   // bundling (#247). The companion dylibs Google ships in
   // `prebuilt/macos_arm64/` (`libGemmaModelConstraintProvider.dylib`,
-  // `libLiteRtMetalAccelerator.dylib`; the Metal sampler is not shipped at
+  // `libLiteRtMetalAccelerator.dylib`, shipped as `libLiteRtLmMetalAccelerator`;
+  // the Metal sampler is not shipped at
   // all) were linked without `-Wl,-headerpad_max_install_names`, leaving only
   // 32 bytes of slack in the load-commands area. Dart Native Assets'
   // JIT path (`dart run`, `dart build_runner`, `flutter test` on a pure
@@ -310,12 +334,11 @@ const _litertlmBundle = _NativeBundle(
   ],
   // Android NPU: Qualcomm dispatch bridge + QNN HTP runtime + per-SoC Stubs.
   //
-  // No longer extracted from Google AI Edge Gallery APKs — that is what let
-  // them drift. `build_qualcomm_dispatch.sh` builds the dispatch from the
-  // LiteRT ref derived from the pin, and refreshes all ten QNN runtime libs
-  // from the same QAIRT the dispatch was compiled against (2.44.0.260225).
-  // The extracted set had QNN System API 1.8.0 against a dispatch requiring
-  // 1.11.0, which fails engine_create with an opaque null on real hardware.
+  // Registered only for apps that set `qualcomm_npu: true` (see
+  // _registerQualcommNpu): the dispatch from this bundle, the QNN runtime from
+  // Qualcomm's own Maven artifact. Since native-v0.18.0 the tarball carries
+  // the dispatch only. The ten QNN names stay in this list so the flat-cache
+  // cleanup still removes copies an older tarball left behind.
   //
   // sm8550=V73, sm8650=V75, sm8750=V79, sm8850=V81.
   // Stub libs are the CPU-side bridge; Skel libs run on Hexagon DSP via FastRPC.
@@ -915,22 +938,14 @@ Future<void> _processBundle({
     }
   }
 
-  // Android-only extras (Qualcomm NPU dispatch + QNN runtime stack).
-  if (os == OS.android) {
-    for (final name in bundle.androidExtraLibs) {
-      final fileName = _dylibFileName(os, name);
-      final fileUri = prebuiltDir.resolve(fileName);
-      if (File.fromUri(fileUri).existsSync()) {
-        output.assets.code.add(
-          CodeAsset(
-            package: _packageName,
-            name: 'src/native/$name',
-            linkMode: DynamicLoadingBundled(),
-            file: stage(fileUri),
-          ),
-        );
-      }
-    }
+  // Android-only: the Qualcomm NPU stack, for apps that opted in.
+  if (os == OS.android && bundle.androidExtraLibs.isNotEmpty) {
+    await _registerQualcommNpu(
+      input: input,
+      output: output,
+      prebuiltDir: prebuiltDir,
+      stage: stage,
+    );
   }
 
   // A bundle that skips its companions on this OS (see [skipCompanionsOn])
@@ -965,6 +980,152 @@ Future<void> _processBundle({
   );
   if (localDir.uri != prebuiltDir) {
     output.dependencies.add(_watchableAncestor(localDir).uri);
+  }
+}
+
+// ============================================================================
+// Opt-in Qualcomm NPU stack (Android)
+// ============================================================================
+
+/// Registers the Android Qualcomm NPU stack when the app set `qualcomm_npu`.
+///
+/// Registration follows the flag, never file presence. An older flat cache or
+/// a maintainer's prebuilt can still hold these files, and registering them
+/// on presence would put Qualcomm's libraries into an app that did not ask
+/// for them — and make NativeAssetsManifest.json, which the runtime gate
+/// reads, claim a stack the developer never enabled.
+Future<void> _registerQualcommNpu({
+  required BuildInput input,
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) async {
+  final enabled = readBoolUserDefine(
+    input.userDefines[qualcommNpuUserDefine],
+    qualcommNpuUserDefine,
+  );
+  if (!enabled) return;
+
+  void register(String name, Uri file) => output.assets.code.add(
+    CodeAsset(
+      package: _packageName,
+      name: 'src/native/$name',
+      linkMode: DynamicLoadingBundled(),
+      file: stage(file),
+    ),
+  );
+
+  // Ours, from the native bundle. Enabled and missing is a broken bundle, not
+  // a reason to ship the QNN runtime without the library that loads it.
+  final dispatch = prebuiltDir.resolve(
+    _dylibFileName(OS.android, qualcommDispatchLib),
+  );
+  if (!File.fromUri(dispatch).existsSync()) {
+    throw StateError(
+      '[$_packageName] qualcomm_npu is set, but '
+      '${dispatch.toFilePath()} is missing from the native bundle.',
+    );
+  }
+  register(qualcommDispatchLib, dispatch);
+
+  // Qualcomm's, from Qualcomm's Maven artifact via the cache.
+  final qnnDir = await _ensureQnnRuntime(input, output);
+  for (final name in qnnRuntimeLibs) {
+    register(name, qnnDir.uri.resolve(_dylibFileName(OS.android, name)));
+  }
+  // Said once per hook run (the hook is cached, so not on every build):
+  // the libraries are Qualcomm's, and their notices travel with them.
+  stderr.writeln(
+    '[$_packageName] qualcomm_npu: bundling Qualcomm QNN runtime '
+    '$qnnRuntimeVersion (Qualcomm licence; LICENSE.pdf and NOTICE.txt in '
+    '${qnnDir.path}).',
+  );
+}
+
+/// Returns the cache directory holding the prepared QNN runtime, fetching and
+/// preparing it first if needed.
+Future<Directory> _ensureQnnRuntime(
+  BuildInput input,
+  BuildOutputBuilder output,
+) async {
+  final root = _qnnCacheRoot(input);
+  final entry = Directory('${root.path}/${qnnCacheEntryName()}');
+  if (isCompleteQnnCache(entry)) return entry;
+
+  final localAar = input.userDefines.path(qualcommNpuAarUserDefine);
+  if (localAar != null) {
+    // The app points at an AAR it has (offline builds, mirrors that need
+    // credentials). Same checksum as Maven's: this is a source, not a version.
+    output.dependencies.add(localAar);
+    final aar = File.fromUri(localAar);
+    if (!aar.existsSync()) {
+      throw StateError(
+        '[$_packageName] $qualcommNpuAarUserDefine points at '
+        '${aar.path}, which does not exist.',
+      );
+    }
+    final actual = (await sha256.bind(aar.openRead()).first).toString();
+    if (actual != qnnRuntimeSha256) {
+      throw StateError(
+        '[$_packageName] ${aar.path} is not qnn-runtime-$qnnRuntimeVersion.aar '
+        '(sha256 $actual, expected $qnnRuntimeSha256).',
+      );
+    }
+    return promoteQnnCache(root, aar);
+  }
+
+  final mirror = input.userDefines[qualcommNpuMavenUrlUserDefine];
+  if (mirror != null && mirror is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$qualcommNpuMavenUrlUserDefine must '
+      'be a URL string',
+    );
+  }
+  final url = qnnRuntimeAarUrl((mirror as String?) ?? qnnDefaultMavenBase);
+  root.createSync(recursive: true);
+  // A fresh directory per download, not a pid-named file: two CI containers
+  // sharing a mounted cache can have the same pid, and would write one file.
+  final download = root.createTempSync(qnnDownloadTempPrefix);
+  try {
+    final aar = File('${download.path}/qnn-runtime-$qnnRuntimeVersion.aar');
+    try {
+      await downloadVerified(url, aar, qnnRuntimeSha256);
+    } on Object catch (e) {
+      throw StateError(
+        '[$_packageName] qualcomm_npu is set, but the QNN runtime could not be '
+        'fetched: ${redactUserInfoIn('$e', url)}\nWithout network access, '
+        'download ${redactUserInfo(url)} yourself and set '
+        'hooks.user_defines.$_packageName.$qualcommNpuAarUserDefine to its path.',
+      );
+    }
+    return promoteQnnCache(root, aar);
+  } finally {
+    // Only the prepared libraries are kept; the 71 MB archive is not.
+    download.deleteSync(recursive: true);
+  }
+}
+
+/// Where the prepared QNN runtime is cached: beside the native bundles, or —
+/// when that is not writable (a container with no HOME, a read-only home) —
+/// in the hook's shared output directory for this project.
+Directory _qnnCacheRoot(BuildInput input) {
+  final preferred = Directory(
+    '${_cacheBaseDir().path}${Platform.pathSeparator}qnn'
+    '${Platform.pathSeparator}android_arm64',
+  );
+  try {
+    preferred.createSync(recursive: true);
+    final probe = File(
+      '${preferred.path}${Platform.pathSeparator}.write-probe-$pid',
+    );
+    probe
+      ..writeAsStringSync('')
+      ..deleteSync();
+    return preferred;
+  } on FileSystemException {
+    return Directory.fromUri(
+      input.outputDirectoryShared.resolve('qnn/android_arm64/'),
+    );
   }
 }
 

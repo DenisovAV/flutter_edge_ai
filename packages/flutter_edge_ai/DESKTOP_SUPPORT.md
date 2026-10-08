@@ -34,7 +34,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 │   │  ───────────────────────────────────           │ │
 │   │  libLiteRtLm.{dylib,dll,so}                    │ │
 │   │  + libLiteRt.{dll,so} (Linux/Windows)          │ │
-│   │  + libLiteRtMetalAccelerator.dylib (macOS)     │ │
+│   │  + libLiteRtLmMetalAccelerator.dylib (macOS)   │ │
 │   │  + libLiteRtWebGpuAccelerator.{dll,so}         │ │
 │   │  + libwebgpu_dawn.{dll,so} (Linux/Windows GPU) │ │
 │   │  + dxil.dll + dxcompiler.dll (Windows GPU)     │ │
@@ -43,7 +43,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.17.1-a`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.18.0`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
@@ -211,7 +211,7 @@ DLL and silently fall back to CPU. (Mirrors the Linux `RTLD_GLOBAL` pattern.)
 
 Your end-users need nothing installed. Since `flutter_gemma_litertlm` 1.7.1
 `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.17.1`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0`, 16 of its 24 DLLs import none.
 
 The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
@@ -329,7 +329,7 @@ decode) runs on the GPU accelerator (Metal, DX12, Vulkan). Where the
 CPU it costs roughly 1–5 ms per token, small next to the forward pass.
 
 - **Windows** — GPU. The plugin preloads `libLiteRtTopKWebGpuSampler.dll`,
-  which in `native-v0.17.1` exports its full C ABI (7 of 7 functions; the
+  which in `native-v0.18.0` exports its full C ABI (7 of 7 functions; the
   3-of-7 prebuilt of [#2073](https://github.com/google-ai-edge/LiteRT-LM/issues/2073)
   is gone).
 - **macOS** — CPU. The bundle does not ship `libLiteRtTopKMetalSampler`:

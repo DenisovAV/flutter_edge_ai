@@ -134,6 +134,16 @@ jobs:
         working-directory: packages/flutter_edge_ai/example
         run: flutter pub get
 
+      # The example sets qualcomm_npu, so the litertlm hook fetches
+      # com.qualcomm.qti:qnn-runtime (71 MB) from Maven Central. Cache entries
+      # are immutable (version, sha256 and format are in the name), so the file
+      # that pins them is the whole key.
+      - name: Cache Qualcomm QNN runtime
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/flutter_gemma/native/qnn
+          key: qnn-runtime-${{ hashFiles('packages/flutter_edge_ai_litertlm/hook/src/qnn_runtime.dart') }}
+
       - name: Build example APK
         working-directory: packages/flutter_edge_ai/example
         run: flutter build apk --release

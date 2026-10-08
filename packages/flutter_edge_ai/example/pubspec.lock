@@ -241,7 +241,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "2.1.0"
+    version: "2.1.1"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
@@ -262,7 +262,7 @@ packages:
       path: "../../flutter_edge_ai_diagnostics"
       relative: true
     source: path
-    version: "0.2.0"
+    version: "0.2.1"
   flutter_edge_ai_embeddings:
     dependency: "direct main"
     description:
@@ -276,14 +276,14 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.9.0"
+    version: "1.10.0"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_mediapipe"
       relative: true
     source: path
-    version: "1.1.0"
+    version: "1.1.1"
   flutter_edge_ai_onnx:
     dependency: "direct main"
     description:

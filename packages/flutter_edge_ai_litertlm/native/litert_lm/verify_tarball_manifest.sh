@@ -39,6 +39,33 @@ INTENTIONAL_DROPS=(
   "windows_x86_64:tbbbind_2_5_debug.dll"
   "windows_x86_64:tbbmalloc_debug.dll"
   "windows_x86_64:tbbmalloc_proxy_debug.dll"
+  # native-v0.18.0: all three list libwebgpu_dawn.so in NEEDED, and Dawn was
+  # never in the Android bundle, so none of them could load (~18 MB per APK).
+  # Android GPU is OpenCL only, as in Google's own Android SDKs.
+  "android_arm64:libLiteRtGpuAccelerator.so"
+  "android_arm64:libLiteRtWebGpuAccelerator.so"
+  "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # native-v0.18.0: the QNN runtime left the bundle. Qualcomm licenses it for
+  # redistribution only inside an application, so an app opts in with
+  # `qualcomm_npu: true` and its build hook fetches com.qualcomm.qti:qnn-runtime
+  # from Maven. The dispatch stays — it is LiteRT's, built from source.
+  "android_arm64:libQnnHtp.so"
+  "android_arm64:libQnnSystem.so"
+  "android_arm64:libQnnHtpV73Stub.so"
+  "android_arm64:libQnnHtpV75Stub.so"
+  "android_arm64:libQnnHtpV79Stub.so"
+  "android_arm64:libQnnHtpV81Stub.so"
+  "android_arm64:libQnnHtpV73Skel.so"
+  "android_arm64:libQnnHtpV75Skel.so"
+  "android_arm64:libQnnHtpV79Skel.so"
+  "android_arm64:libQnnHtpV81Skel.so"
+  # native-v0.18.0: upstream's Metal accelerator ships renamed to
+  # libLiteRtLmMetalAccelerator.dylib. flutter_litert embeds a
+  # LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle holds
+  # one framework per name, and ours silently replaced theirs.
+  "ios_arm64:libLiteRtMetalAccelerator.dylib"
+  "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
+  "macos_arm64:libLiteRtMetalAccelerator.dylib"
 )
 
 _is_intentional() {
@@ -216,6 +243,63 @@ while IFS= read -r asset; do
 done <<< "$prev_assets"
 [[ $missing_plat -eq 1 ]] && fail=1
 
+# What must, and must not, be inside each NEW tarball — whatever the previous
+# tag held. The drop check above only sees files that disappeared, so a file
+# that should have gone but was left behind in prebuilt/ passes it silently;
+# and INTENTIONAL_DROPS lets an old name vanish without proving its replacement
+# arrived. For these files that is a licence or a correctness problem.
+FORBIDDEN=(
+  # Qualcomm licenses the QNN runtime for redistribution inside an application
+  # only; since native-v0.18.0 apps fetch it through `qualcomm_npu`.
+  "android_arm64:libQnn*"
+  # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
+  "android_arm64:libLiteRtGpuAccelerator.so"
+  "android_arm64:libLiteRtWebGpuAccelerator.so"
+  "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # Upstream's name, which flutter_litert's framework also uses (native-v0.18.0).
+  "ios_arm64:libLiteRtMetalAccelerator.dylib"
+  "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
+  "macos_arm64:libLiteRtMetalAccelerator.dylib"
+)
+REQUIRED=(
+  "android_arm64:libLiteRtDispatch_Qualcomm.so"
+  "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
+  "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
+  "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
+)
+echo
+echo "==> Checking files that must, and must not, ship"
+content_fail=0
+for new in "$DIST_DIR"/litertlm-*.tar.gz; do
+  [[ -e "$new" ]] || continue
+  base="$(basename "$new")"; plat="${base#litertlm-}"; plat="${plat%.tar.gz}"
+  files="$(tar -tzf "$new" | sed 's|^\./||' | grep -vE '/$' | grep -vE '^\.?$' | sort -u)"
+  for rule in "${FORBIDDEN[@]}"; do
+    [[ "${rule%%:*}" == "$plat" ]] || continue
+    pat="${rule#*:}"
+    while IFS= read -r f; do
+      [[ -n "$f" ]] || continue
+      # $pat unquoted on purpose: it is a glob.
+      if [[ "$(basename "$f")" == $pat ]]; then
+        echo "  [FAIL] $plat — must not ship: $f"
+        content_fail=1
+      fi
+    done <<< "$files"
+  done
+  for rule in "${REQUIRED[@]}"; do
+    [[ "${rule%%:*}" == "$plat" ]] || continue
+    if ! printf '%s\n' "$files" | grep -qxF "${rule#*:}"; then
+      echo "  [FAIL] $plat — required file missing: ${rule#*:}"
+      content_fail=1
+    fi
+  done
+done
+if [[ $content_fail -eq 1 ]]; then
+  fail=1
+else
+  echo "  [ok]   no forbidden file shipped, every required file present"
+fi
+
 # Page alignment. The manifest check above answers "is every file still here";
 # it cannot see that a file arrived misaligned. Google Play rejects an APK in
 # which any .so has a PT_LOAD p_align below 16 KB, and the Qualcomm Skel blobs
@@ -290,8 +374,8 @@ done
 if [[ $align_fail -eq 1 ]]; then
   echo
   echo "❌ ALIGNMENT CHECK FAILED — Google Play will reject any app shipping this."
-  echo "   Rebuild with build_qualcomm_dispatch.sh, which raises p_align on the"
-  echo "   Qualcomm blobs, or take an aligned build from the SDK."
+  echo "   Relink the offending library with -Wl,-z,max-page-size=16384. (The"
+  echo "   Qualcomm Skels no longer ship here: the hook raises their p_align.)"
   exit 1
 fi
 
@@ -483,9 +567,10 @@ if dispatch_importers:
 # 4. Every page that states the split must state the measured one, and each of
 #    them must still state it — one page keeping the sentence would otherwise
 #    cover for three that dropped it.
+# The core README left this list when it became a landing page (4ed9da27): it
+# makes no runtime promise any more. If it ever does again, it goes back here.
 DOCS = ["website/content/docs/desktop.md",
         "packages/flutter_edge_ai/DESKTOP_SUPPORT.md",
-        "packages/flutter_edge_ai/README.md",
         "packages/flutter_edge_ai/skills/flutter-edge-ai-inference/references/platform-setup.md"]
 COUNT = re.compile(r"(\d+) of (?:the bundle's |its )?(\d+) DLLs")
 # Every mention of a redistributable must be a denial or a description of the

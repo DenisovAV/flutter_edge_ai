@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./build_ios.sh [ref]
-#   ./build_ios.sh e9fd8c53       # v0.17.0 (the default)
+#   ./build_ios.sh b2f686e2       # v0.18.0 (the default)
 #   ./build_ios.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
 #                                 # are ABI-incompatible with libLiteRtLm
 #                                 # rebuilt from v0.11.0 source — crashes
@@ -27,6 +27,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LITERT_LM_DIR="${LITERT_LM_DIR:-/tmp/LiteRT-LM}"
 VERSION="${1:-}"
 
+# Since v0.18.0 the WORKSPACE registers the Android NDK toolchain whenever
+# ANDROID_NDK_HOME is set, even for an Apple build — and a value pointing at an
+# NDK that is no longer installed fails analysis ("can't readdir(), not a
+# directory"). This build needs no NDK.
+unset ANDROID_NDK_HOME
+
 echo "=== Building libLiteRtLm.dylib for iOS ==="
 
 # 1. Clone or update LiteRT-LM
@@ -43,11 +49,11 @@ else
 fi
 
 # 2. Checkout version
-# v0.17.0. Build from a release tag: its source and its prebuilt accelerator
+# v0.18.0. Build from a release tag: its source and its prebuilt accelerator
 # dylibs come from one tree, which is the invariant that matters — mixing
 # them is what crashed in libLiteRtMetalAccelerator (see the build-native
 # skill). v0.11.0 itself is broken — see the WARNING above.
-DEFAULT_REF="e9fd8c53ff968071774206163027dd84bedfe925"
+DEFAULT_REF="b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"
 TARGET_REF="${VERSION:-$DEFAULT_REF}"
 echo "Checking out $TARGET_REF..."
 git checkout -f "$TARGET_REF"
@@ -86,7 +92,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-4453b286c549d216584866ed49b6fed6d11fa3a7}"
+PREBUILT_REF="${PREBUILT_REF:-b2f686e2ed4718fb84ec398a61dd59ca0f0aff27}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/ios_arm64/*,prebuilt/ios_sim_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the
@@ -220,9 +226,48 @@ echo "=== Copying companion libs ==="
 # libLiteRtTopKMetalSampler.dylib is unreachable while sampler_factory.cc keeps
 # its basename dlopen (patch_c_api.sh, 10a). Upstream #2072 — those two shipped
 # as x86_64 binaries — was closed in May 2026 and is no longer a reason.
+#
+# We ship upstream's libLiteRtMetalAccelerator.dylib as
+# libLiteRtLmMetalAccelerator.dylib, so its framework is
+# LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
+# embeds a LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle
+# holds one framework per name, and ours silently replaced theirs. The id moves
+# with the name (+8 bytes of load commands; upstream's simulator build has 48
+# bytes of slack), and patch_c_api.sh §10 points gpu_registry at the new path.
 for lib in libGemmaModelConstraintProvider.dylib libLiteRtMetalAccelerator.dylib; do
-  [ -f "prebuilt/ios_arm64/$lib" ] && cp "prebuilt/ios_arm64/$lib" "$DEVICE_DIR/$lib" && echo "  $lib → device"
-  [ -f "prebuilt/ios_sim_arm64/$lib" ] && cp "prebuilt/ios_sim_arm64/$lib" "$SIM_DIR/$lib" && echo "  $lib → simulator"
+  out="${lib/libLiteRtMetalAccelerator/libLiteRtLmMetalAccelerator}"
+  for pair in "ios_arm64:$DEVICE_DIR" "ios_sim_arm64:$SIM_DIR"; do
+    src="prebuilt/${pair%%:*}/$lib"
+    # Missing is fatal: without the accelerator the GPU falls back to CPU
+    # silently, and without the provider every tool call fails.
+    [ -f "$src" ] || { echo "ERROR: upstream prebuilt missing: $src" >&2; exit 1; }
+    cp "$src" "${pair##*:}/$out"
+    echo "  $lib → ${pair%%:*}/$out"
+  done
+done
+# Sets a dylib's install name and proves it took: install_name_tool refuses
+# when the new id does not fit the header slack, and a dylib that keeps the old
+# id still loads, so nothing downstream would notice.
+set_dylib_id() {
+  local lib="$1" id="$2" out
+  out="$(install_name_tool -id "$id" "$lib" 2>&1)" || {
+    echo "ERROR: install_name_tool -id $id $(basename "$lib"): $out" >&2
+    exit 1
+  }
+  [ "$(otool -D "$lib" | tail -1)" = "$id" ] || {
+    echo "ERROR: $(basename "$lib") id is '$(otool -D "$lib" | tail -1)', want $id" >&2
+    exit 1
+  }
+}
+for dir in "$DEVICE_DIR" "$SIM_DIR"; do
+  # A copy under the upstream name from an older build would ship beside the
+  # renamed one and bring the collision back.
+  rm -f "$dir/libLiteRtMetalAccelerator.dylib"
+  if [ -f "$dir/libLiteRtLmMetalAccelerator.dylib" ]; then
+    chmod +w "$dir/libLiteRtLmMetalAccelerator.dylib"
+    # Invalidates the signature; step 8b's vtool re-signs it.
+    set_dylib_id "$dir/libLiteRtLmMetalAccelerator.dylib" @rpath/libLiteRtLmMetalAccelerator.dylib
+  fi
 done
 
 # 8b. Normalize iOS minos of all 4 companion dylibs to 13.0 — this matches
@@ -283,7 +328,7 @@ normalize_apple_minos() {
 for arch_dir_pair in "ios:$DEVICE_DIR" "iossim:$SIM_DIR"; do
   platform="${arch_dir_pair%%:*}"
   dir="${arch_dir_pair##*:}"
-  for libname in libGemmaModelConstraintProvider libLiteRtLm libLiteRtMetalAccelerator libStreamProxy; do
+  for libname in libGemmaModelConstraintProvider libLiteRtLm libLiteRtLmMetalAccelerator libStreamProxy; do
     d="$dir/${libname}.dylib"
     if [ -f "$d" ]; then
       normalize_apple_minos "$d" "$platform"
@@ -293,12 +338,31 @@ for arch_dir_pair in "ios:$DEVICE_DIR" "iossim:$SIM_DIR"; do
   done
 done
 
+# Every framework libLiteRtLm dlopens by path must be in the bundle. The Metal
+# accelerator is loaded by dlopen, not linked, so nothing else checks it — and
+# without it the GPU falls back to CPU with no error at all.
+check_dlopened_frameworks() {
+  local dir="$1" fw missing=0
+  for fw in $(strings "$dir/libLiteRtLm.dylib" \
+                | grep -oE '@executable_path/(\.\./)?Frameworks/[A-Za-z0-9_]+\.framework/' \
+                | sed -E 's|.*Frameworks/([A-Za-z0-9_]+)\.framework/|\1|' | sort -u); do
+    if [ -f "$dir/lib$fw.dylib" ]; then
+      echo "  dlopen target $fw.framework: lib$fw.dylib present"
+    else
+      echo "ERROR: libLiteRtLm dlopens $fw.framework but $dir/lib$fw.dylib is missing" >&2
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || exit 1
+}
+
 # 9. Verify
 echo ""
 echo "=== Verification ==="
 echo "Device (ios_arm64):"
 ls -lh "$DEVICE_DIR/"
 nm -gU "$DEVICE_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -1
+check_dlopened_frameworks "$DEVICE_DIR"
 for dylib in "$DEVICE_DIR"/*.dylib; do
   verify_flutter_ios_strip "$dylib"
 done
@@ -306,6 +370,7 @@ echo ""
 echo "Simulator (ios_sim_arm64):"
 ls -lh "$SIM_DIR/"
 nm -gU "$SIM_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -1
+check_dlopened_frameworks "$SIM_DIR"
 for dylib in "$SIM_DIR"/*.dylib; do
   verify_flutter_ios_strip "$dylib"
 done

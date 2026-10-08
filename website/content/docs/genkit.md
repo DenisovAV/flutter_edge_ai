@@ -182,6 +182,10 @@ final response = await ai.generate(
 final Recipe? recipe = response.output;
 ```
 
+A reply that does not match the schema still finishes with
+`FinishReason.stop`: `response.output` is then null and `response.error` says
+why.
+
 ### Context-window trimming
 
 On-device models run with a fixed, small context window (`maxTokens` — 1024 for
@@ -346,14 +350,16 @@ genkit 1.0 a failed generation comes back as a result with
 `finishReason: FinishReason.failed`, the error in `error` and the original
 exception in `cause`; `ai.generateStream` ends normally with that result in
 `onResult`. A cancel or a `maxTurns` overrun ends the same way with
-`FinishReason.aborted`, the overrun with no `cause`. Check it wherever you show
-errors:
+`FinishReason.aborted`, often with no `cause`; `error` is set in both cases.
+Check it wherever you show errors:
 
 ```dart
 await for (final chunk in stream) { /* ... */ }
 final result = await stream.onResult;
-if (result.finishReason == FinishReason.failed) {
-  throw result.cause ?? StateError(result.error?.message ?? 'failed');
+if (result.finishReason == FinishReason.failed ||
+    result.finishReason == FinishReason.aborted) {
+  throw result.cause ??
+      StateError(result.error?.message ?? '${result.finishReason}');
 }
 ```
 

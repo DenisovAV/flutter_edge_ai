@@ -253,11 +253,15 @@ class CloudAIService implements AIService {
     await for (final chunk in stream) {
       if (chunk.text.isNotEmpty) yield chunk.text;
     }
-    // genkit 1.0 ends the stream normally when the model fails and
-    // reports the failure in the result, so rethrow it for the caller.
+    // genkit 1.0 ends the stream normally when the model fails or the
+    // reply is blocked, and reports it in the result, so rethrow it for the caller.
     final result = await stream.onResult;
-    if (result.finishReason == FinishReason.failed) {
-      throw result.cause ?? StateError(result.error?.message ?? 'failed');
+    final reason = result.finishReason;
+    if (reason != FinishReason.stop &&
+        reason != FinishReason.length &&
+        reason != FinishReason.unknown) {
+      throw result.cause ??
+          StateError(result.finishMessage ?? 'The model stopped: $reason');
     }
   }
 
@@ -269,9 +273,11 @@ class CloudAIService implements AIService {
 ```
 
 The check after the loop matters: in genkit 1.0 a model error does not throw
-out of `generateStream`. The stream ends normally and the failure arrives in
-`onResult` with `finishReason: FinishReason.failed`. Rethrowing its `cause` is
-what lets the chat screen show the error instead of an empty reply.
+out of `generateStream`. The stream ends normally and the outcome arrives in
+`onResult`: `FinishReason.failed` for an error, `blocked` when Gemini's safety
+filters stop the reply. Treating anything but `stop`, `length` or `unknown` as
+an error, and rethrowing its `cause` or its `finishMessage`, is what lets the
+chat screen show it instead of an empty reply.
 
 ### Wire it up in chat_screen.dart
 
@@ -615,11 +621,15 @@ class LocalAIService implements AIService {
     await for (final chunk in stream) {
       if (chunk.text.isNotEmpty) yield chunk.text;
     }
-    // genkit 1.0 ends the stream normally when the model fails and
-    // reports the failure in the result, so rethrow it for the caller.
+    // genkit 1.0 ends the stream normally when the model fails or the
+    // reply is blocked, and reports it in the result, so rethrow it for the caller.
     final result = await stream.onResult;
-    if (result.finishReason == FinishReason.failed) {
-      throw result.cause ?? StateError(result.error?.message ?? 'failed');
+    final reason = result.finishReason;
+    if (reason != FinishReason.stop &&
+        reason != FinishReason.length &&
+        reason != FinishReason.unknown) {
+      throw result.cause ??
+          StateError(result.finishMessage ?? 'The model stopped: $reason');
     }
   }
 
@@ -1243,11 +1253,15 @@ await for (final chunk in stream) {
   buffer.write(chunk.text);
   // ... the throttled setState loop, unchanged from Step 2/3
 }
-// genkit 1.0 ends the stream normally when the model fails and
-// reports the failure in the result, so surface it as an error here.
+// genkit 1.0 ends the stream normally when the model fails or the
+// reply is blocked, and reports it in the result, so surface it as an error here.
 final result = await stream.onResult;
-if (result.finishReason == FinishReason.failed) {
-  throw result.cause ?? StateError(result.error?.message ?? 'failed');
+final reason = result.finishReason;
+if (reason != FinishReason.stop &&
+    reason != FinishReason.length &&
+    reason != FinishReason.unknown) {
+  throw result.cause ??
+      StateError(result.finishMessage ?? 'The model stopped: $reason');
 }
 // ...
 // Best-effort demo counter for CostStrategy: genkit_hybrid exposes no

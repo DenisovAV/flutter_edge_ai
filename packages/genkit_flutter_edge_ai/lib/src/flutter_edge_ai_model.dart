@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit/plugin.dart';
@@ -75,7 +76,19 @@ Model createFlutterEdgeAiModel({
       if (cancel == null) {
         await prev;
       } else {
-        await Future.any([prev, cancel.whenCancelled]);
+        // onCancel, not whenCancelled: a token reused for a whole chat would
+        // keep one listener per call on a future that can never be detached.
+        final turn = Completer<void>();
+        final detachWait = cancel.onCancel(() {
+          if (!turn.isCompleted) turn.complete();
+        });
+        unawaited(
+          prev.then((_) {
+            if (!turn.isCompleted) turn.complete();
+          }),
+        );
+        await turn.future;
+        detachWait();
         if (cancel.isCancelled) {
           unawaited(prev.whenComplete(completer.complete));
           cancel.throwIfCancelled();
@@ -320,22 +333,30 @@ Future<ModelResponse> _executeGeneration({
   final cancel = context.cancel;
   cancel?.throwIfCancelled();
   // Completes once a requested stop has landed, with its error if it failed.
-  // The handler is attached at once, so a failing stop is never an unhandled
-  // async error.
+  // Future.sync and an immediate handler: a failing stop, synchronous or not,
+  // is never an unhandled error.
   Future<(Object, StackTrace)?>? stopped;
-  final detach = cancel?.onCancel(() {
-    stopped = chat.stopGeneration().then<(Object, StackTrace)?>(
+  void stop() {
+    stopped ??= Future.sync(chat.stopGeneration).then<(Object, StackTrace)?>(
       (_) => null,
       onError: (Object error, StackTrace stack) => (error, stack),
     );
-  });
+  }
+
+  final detach = cancel?.onCancel(stop);
   ModelResponse? response;
   Object? failure;
   StackTrace? failureStack;
   try {
     final stopwatch = Stopwatch()..start();
     response = context.streamingRequested
-        ? await _generateStreaming(chat, context.sendChunk, stopwatch)
+        ? await _generateStreaming(
+            chat,
+            context.sendChunk,
+            stopwatch,
+            cancel: cancel,
+            onSendChunkFailure: stop,
+          )
         : await _generateBlocking(chat, stopwatch);
   } catch (error, stack) {
     failure = error;
@@ -347,7 +368,14 @@ Future<ModelResponse> _executeGeneration({
   detach?.call();
   final stopFailure = await stopped;
   if (failure != null) {
-    // The generation's own error is the one reported.
+    // The generation's own error is the one reported; a stop that failed as
+    // well is logged rather than lost.
+    if (stopFailure case (final error, _)) {
+      developer.log(
+        'stopGeneration failed after the generation failed: $error',
+        name: 'genkit_flutter_edge_ai',
+      );
+    }
     Error.throwWithStackTrace(failure, failureStack!);
   }
   if (stopFailure case (final error, final stack)) {
@@ -390,17 +418,30 @@ Future<ModelResponse> _generateBlocking(
 }
 
 /// Generates a streaming response, sending chunks via [sendChunk].
+///
+/// A cancel stops forwarding at once: leaving the loop also cancels the stream,
+/// which stops native decoding on the engines that observe it. If [sendChunk]
+/// itself throws, [onSendChunkFailure] stops the generation first, since an
+/// engine such as MediaPipe keeps decoding after its stream is cancelled.
 Future<ModelResponse> _generateStreaming(
   gemma.InferenceChat chat,
   void Function(ModelResponseChunk) sendChunk,
-  Stopwatch stopwatch,
-) async {
+  Stopwatch stopwatch, {
+  required CancellationToken? cancel,
+  required void Function() onSendChunkFailure,
+}) async {
   final fullText = StringBuffer();
   final reasoningText = StringBuffer();
   final functionCalls = <gemma.FunctionCallResponse>[];
 
   await for (final chunk in chat.generateChatResponseAsync()) {
-    sendChunk(convertStreamChunk(chunk));
+    if (cancel?.isCancelled ?? false) break;
+    try {
+      sendChunk(convertStreamChunk(chunk));
+    } catch (_) {
+      onSendChunkFailure();
+      rethrow;
+    }
 
     switch (chunk) {
       case gemma.TextResponse(:final token):

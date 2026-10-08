@@ -195,19 +195,32 @@ class FakeInferenceChat extends gemma.InferenceChat {
     return blockingResponse;
   }
 
+  /// When true, [stopGeneration] throws before returning its future.
+  bool stopThrowsSynchronously = false;
+
   @override
-  Future<void> stopGeneration() async {
+  Future<void> stopGeneration() {
     stopGenerationCallCount++;
     final gate = generationGate;
     if (gate != null && !gate.isCompleted) gate.complete();
+    if (stopThrowsSynchronously) {
+      throw StateError('stop failed synchronously');
+    }
+    return _landStop();
+  }
+
+  Future<void> _landStop() async {
     await stopLanding?.future;
     if (stopError case final error?) throw error;
   }
 
   @override
   Stream<gemma.ModelResponse> generateChatResponseAsync() async* {
-    for (final response in streamingResponses) {
+    for (final (index, response) in streamingResponses.indexed) {
       yield response;
+      // With a gate, the stream pauses after its first chunk until the gate
+      // opens, so a test can cancel mid-stream.
+      if (index == 0) await generationGate?.future;
     }
   }
 

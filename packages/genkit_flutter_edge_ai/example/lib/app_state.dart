@@ -91,8 +91,8 @@ class AppState extends ChangeNotifier {
 
   /// genkit 1.0 reports a failed or aborted generation (a model error, a
   /// cancel, or a `maxTurns` overrun in agent mode) in the result instead of
-  /// throwing; turn it back into an error so the caller's catch shows it. An
-  /// overrun carries no `cause`, only `error`.
+  /// throwing; turn it back into an error so the caller's catch shows it. A
+  /// cancel or an overrun often has no `cause`, but always an `error`.
   void _throwIfFailed(GenerateResult<dynamic> result) {
     if (result.finishReason == FinishReason.failed ||
         result.finishReason == FinishReason.aborted) {

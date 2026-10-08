@@ -964,6 +964,7 @@ void main() {
           ? action()
           : scheduleMicrotask(() => after(hops - 1, action));
 
+      final stopDepths = <int>[];
       for (var depth = 0; depth < 16; depth++) {
         final chat = FakeInferenceChat()
           ..generationError = StateError('boom')
@@ -991,6 +992,7 @@ void main() {
           await Future<void>.delayed(Duration.zero);
         }
         if (chat.stopGenerationCallCount > 0) {
+          stopDepths.add(depth);
           expect(
             chat.addQueryChunkCallCount,
             1,
@@ -1004,7 +1006,93 @@ void main() {
         await firstOutcome;
         await second;
       }
+      // Otherwise every depth could skip the check above and still pass.
+      expect(stopDepths, isNotEmpty);
     });
+
+    test('a generation error outranks the cancel that raced it', () async {
+      fakeChat
+        ..generationGate = Completer<void>()
+        ..generationError = StateError('boom');
+      final controller = CancellationController();
+      final model = buildModel();
+
+      final call = model(simpleRequest(), cancel: controller.token);
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+
+      await expectLater(
+        call,
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'boom')),
+      );
+    });
+
+    test('a cancel mid-stream forwards no further chunks', () async {
+      fakeChat
+        ..generationGate = Completer<void>()
+        ..streamingResponses = const [
+          gemma.TextResponse('a'),
+          gemma.TextResponse('b'),
+          gemma.TextResponse('c'),
+        ];
+      final controller = CancellationController();
+      final received = <String>[];
+      final model = buildModel();
+
+      final call = model(
+        simpleRequest(),
+        cancel: controller.token,
+        onChunk: (chunk) => received.add(chunk.content.first.text ?? ''),
+      );
+      while (received.isEmpty) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+
+      await expectLater(call, throwsA(isA<CancelledException>()));
+      expect(received, ['a']);
+      expect(fakeChat.stopGenerationCallCount, 1);
+    });
+
+    test('a failing chunk callback stops the generation first', () async {
+      final model = buildModel();
+
+      await expectLater(
+        model(simpleRequest(), onChunk: (_) => throw StateError('ui')),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'ui')),
+      );
+      expect(fakeChat.stopGenerationCallCount, 1);
+    });
+
+    test(
+      'a stop that throws synchronously is reported, not unhandled',
+      () async {
+        fakeChat
+          ..generationGate = Completer<void>()
+          ..stopThrowsSynchronously = true;
+        final controller = CancellationController();
+        final model = buildModel();
+
+        final call = model(simpleRequest(), cancel: controller.token);
+        while (fakeChat.addQueryChunkCallCount == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        controller.cancel();
+
+        await expectLater(
+          call,
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'stop failed synchronously',
+            ),
+          ),
+        );
+      },
+    );
 
     test('a stop that fails is reported to the caller', () async {
       fakeChat.generationGate = Completer<void>();

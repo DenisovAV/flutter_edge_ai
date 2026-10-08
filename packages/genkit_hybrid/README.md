@@ -133,7 +133,8 @@ surfaced that way will be re-attempted on the next branch.
 An error that propagates does not leave `ai.generate` as an exception: genkit 1.0 returns it as a
 result with `finishReason: FinishReason.failed`, the error in `error` and the original exception in
 `cause` (for `generateStream`, in `onResult`); a cancel or a `maxTurns` overrun ends with
-`FinishReason.aborted`. Check `finishReason` wherever you show errors.
+`FinishReason.aborted`, often with no `cause` but always with `error`. Check `finishReason`
+wherever you show errors.
 
 ## Not in v1
 

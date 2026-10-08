@@ -199,6 +199,10 @@ final response = await ai.generate(
 final Recipe? recipe = response.output;
 ```
 
+A reply that does not match the schema still finishes with
+`FinishReason.stop`: `response.output` is then null and `response.error` says
+why.
+
 ## Context-Window Trimming
 
 On-device models run with a fixed, small context window (`maxTokens` — 1024 for

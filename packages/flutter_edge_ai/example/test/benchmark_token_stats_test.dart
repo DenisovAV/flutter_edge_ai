@@ -15,6 +15,7 @@ void main() {
     final stats = tokenStatsBetween(
       _m(120, 80, tps: 11.0), // after earlier turns of the same chat
       _m(150, 140, tps: 14.5),
+      sameSession: true,
       durationMs: 5000,
       firstTokenMs: 1000,
     )!;
@@ -32,6 +33,7 @@ void main() {
       tokenStatsBetween(
         SessionMetrics(),
         SessionMetrics(),
+        sameSession: true,
         durationMs: 5000,
         firstTokenMs: 800,
       ),
@@ -43,6 +45,7 @@ void main() {
     final stats = tokenStatsBetween(
       _m(200, 300),
       _m(10, 20),
+      sameSession: true,
       durationMs: 5000,
       firstTokenMs: 800,
     )!;
@@ -56,6 +59,7 @@ void main() {
     final noFirst = tokenStatsBetween(
       _m(0, 0),
       _m(10, 50, tps: 9.0),
+      sameSession: true,
       durationMs: 5000,
       firstTokenMs: -1,
     )!;
@@ -65,6 +69,7 @@ void main() {
     final one = tokenStatsBetween(
       _m(0, 0),
       _m(10, 1, tps: 9.0),
+      sameSession: true,
       durationMs: 900,
       firstTokenMs: 900,
     )!;
@@ -75,6 +80,7 @@ void main() {
     final stats = tokenStatsBetween(
       _m(10, 40, tps: 12.0),
       _m(25, 40, tps: 12.0), // prefill only: the rate is the previous turn's
+      sameSession: true,
       durationMs: 2000,
       firstTokenMs: -1,
     )!;
@@ -82,6 +88,23 @@ void main() {
     expect(stats.outputTokens, 0);
     expect(stats.nativeTokensPerSecond, isNull);
   });
+
+  test(
+    'a recreated session is an error, even when its counters are higher',
+    () {
+      final stats = tokenStatsBetween(
+        _m(10, 20, tps: 5.0),
+        _m(500, 900, tps: 8.0), // the new session's counters, unrelated
+        sameSession: false,
+        durationMs: 5000,
+        firstTokenMs: 800,
+      )!;
+
+      expect(stats.readError, contains('recreated'));
+      expect(stats.outputTokens, isNull);
+      expect(stats.decodeTokensPerSecond, isNull);
+    },
+  );
 
   test('describe says why there is no number', () {
     expect(

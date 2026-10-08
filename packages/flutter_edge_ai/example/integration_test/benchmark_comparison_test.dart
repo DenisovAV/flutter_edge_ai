@@ -534,14 +534,22 @@ Future<BenchmarkResult> _runQuery({
   required Message message,
   required LoadMemory load,
 }) async {
-  final ((answer, metricsBefore, metricsAfter), memory) = await _measuredPrompt(
-    load,
-    () async {
-      final before = chat.session.getSessionMetrics();
-      final answer = await _streamAnswer(chat, message);
-      return (answer, before, chat.session.getSessionMetrics());
-    },
-  );
+  final (
+    (answer, metricsBefore, metricsAfter, sameSession),
+    memory,
+  ) = await _measuredPrompt(load, () async {
+    // Keep the session the "before" reading came from: the chat may
+    // recreate it, and counters of two sessions cannot be subtracted.
+    final session = chat.session;
+    final before = session.getSessionMetrics();
+    final answer = await _streamAnswer(chat, message);
+    return (
+      answer,
+      before,
+      chat.session.getSessionMetrics(),
+      identical(chat.session, session),
+    );
+  });
   final result = BenchmarkResult(
     modelName: modelName,
     testCategory: category,
@@ -555,6 +563,7 @@ Future<BenchmarkResult> _runQuery({
     tokens: tokenStatsBetween(
       metricsBefore,
       metricsAfter,
+      sameSession: sameSession,
       durationMs: answer.durationMs,
       firstTokenMs: answer.firstTokenMs,
     ),

@@ -49,12 +49,23 @@ class TokenStats {
 /// the engine reports no counters at all (MediaPipe returns an empty
 /// [SessionMetrics]). Null is "this engine does not say", not zero tokens.
 /// [firstTokenMs] is -1 when no token arrived.
+///
+/// [sameSession] says the chat still held the session the [before] reading came
+/// from. A chat can recreate its session mid-prompt; the new one's counters are
+/// unrelated to the old one's, so their difference would be a wrong number that
+/// looks right. That gives a `readError` instead, checked before anything else.
 TokenStats? tokenStatsBetween(
   SessionMetrics before,
   SessionMetrics after, {
+  required bool sameSession,
   required int durationMs,
   required int firstTokenMs,
 }) {
+  if (!sameSession) {
+    return const TokenStats(
+      readError: 'the chat recreated its session during the prompt',
+    );
+  }
   if (after.totalTokens == 0 && after.tokensPerSecond == null) return null;
 
   final input = after.inputTokens - before.inputTokens;

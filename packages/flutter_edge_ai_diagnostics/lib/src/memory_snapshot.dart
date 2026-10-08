@@ -15,6 +15,7 @@ final class MemorySnapshot {
     required this.anonymousBytes,
     required this.availableBytes,
     required this.takenAt,
+    this.fileBackedBytes,
   });
 
   /// Memory the OS charges to this process and cannot reclaim by dropping
@@ -54,6 +55,23 @@ final class MemorySnapshot {
   /// and the two cannot be told apart. On Android it is never null.
   final int? availableBytes;
 
+  /// Resident memory backed by a file that the OS can drop and read back: the
+  /// counterpart of [anonymousBytes]. A model file that is mmapped shows up
+  /// here as it is paged in, and does not show up in [anonymousBytes].
+  ///
+  /// - **Android:** `Private_Clean + Shared_Clean` from
+  ///   `/proc/self/smaps_rollup`. It includes the app's own shared libraries
+  ///   (about 130 MiB on a Gemma 4 app before any model is loaded), and shared
+  ///   pages count in full, not proportionally. Dirty file pages are in
+  ///   [anonymousBytes] (`Private_Dirty`), not here. It is not a kill
+  ///   threshold: the OS drops these pages before it kills anything, and a
+  ///   model's pages come back, with a read, the next time they are touched.
+  /// - **iOS:** null. `phys_footprint` has no file-backed part to report.
+  ///
+  /// Null on iOS, and on Android kernels older than 4.14, which have no
+  /// `smaps_rollup`.
+  final int? fileBackedBytes;
+
   /// When this snapshot was taken.
   final DateTime takenAt;
 
@@ -62,13 +80,16 @@ final class MemorySnapshot {
       other is MemorySnapshot &&
       other.anonymousBytes == anonymousBytes &&
       other.availableBytes == availableBytes &&
+      other.fileBackedBytes == fileBackedBytes &&
       other.takenAt == takenAt;
 
   @override
-  int get hashCode => Object.hash(anonymousBytes, availableBytes, takenAt);
+  int get hashCode =>
+      Object.hash(anonymousBytes, availableBytes, fileBackedBytes, takenAt);
 
   @override
   String toString() =>
       'MemorySnapshot(anonymousBytes: $anonymousBytes, '
-      'availableBytes: $availableBytes, takenAt: $takenAt)';
+      'availableBytes: $availableBytes, '
+      'fileBackedBytes: $fileBackedBytes, takenAt: $takenAt)';
 }

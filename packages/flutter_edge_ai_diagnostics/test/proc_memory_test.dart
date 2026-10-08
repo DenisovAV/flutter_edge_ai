@@ -1,9 +1,11 @@
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart'
     show MemoryReadException;
 import 'package:flutter_edge_ai_diagnostics/src/android/proc_memory.dart';
+import 'package:ffi/ffi.dart' show malloc;
 import 'package:flutter_test/flutter_test.dart';
 
 // Trimmed from a real /proc/self/smaps_rollup (Linux 7.0). The first line is
@@ -14,6 +16,8 @@ Rss:                7416 kB
 Pss:                2911 kB
 Pss_Anon:           1880 kB
 Pss_File:            999 kB
+Shared_Clean:       3000 kB
+Private_Clean:       500 kB
 Private_Dirty:      1880 kB
 Anonymous:          1880 kB
 Swap:                 64 kB
@@ -44,7 +48,7 @@ void main() {
 
     test('skips the smaps_rollup header line', () {
       final fields = parseProcKbFields(_smapsRollup);
-      expect(fields.length, 8);
+      expect(fields.length, 10);
       expect(fields['Rss'], 7416 * 1024);
     });
   });
@@ -52,6 +56,18 @@ void main() {
   group('anonymousBytesFromSmapsRollup', () {
     test('is Private_Dirty + SwapPss', () {
       expect(anonymousBytesFromSmapsRollup(_smapsRollup), (1880 + 32) * 1024);
+    });
+
+    test('file-backed is Private_Clean + Shared_Clean', () {
+      expect(fileBackedBytesFromSmapsRollup(_smapsRollup), (3000 + 500) * 1024);
+    });
+
+    test('file-backed is null when either clean field is missing', () {
+      for (final field in ['Shared_Clean', 'Private_Clean']) {
+        final text = _smapsRollup.replaceAll(RegExp('$field:.*\\n'), '');
+        expect(fileBackedBytesFromSmapsRollup(text), isNull, reason: field);
+      }
+      expect(fileBackedBytesFromSmapsRollup(''), isNull);
     });
 
     test('is null when SwapPss is missing, not Private_Dirty alone', () {
@@ -96,6 +112,7 @@ void main() {
       );
 
       expect(snapshot.anonymousBytes, (1880 + 32) * 1024);
+      expect(snapshot.fileBackedBytes, (3000 + 500) * 1024);
       expect(snapshot.availableBytes, 9126572 * 1024);
     });
 
@@ -140,6 +157,26 @@ void main() {
             (e) => e.message,
             'message',
             contains('Private_Dirty and SwapPss'),
+          ),
+        ),
+      );
+    });
+
+    test('smaps_rollup without the clean fields is a failed read', () async {
+      final rollup = File('${dir.path}/smaps_rollup')
+        ..writeAsStringSync(
+          _smapsRollup.replaceAll(RegExp(r'Shared_Clean:.*\n'), ''),
+        );
+      await expectLater(
+        readProcMemorySnapshot(
+          smapsRollupPath: rollup.path,
+          meminfoPath: meminfoFixture().path,
+        ),
+        throwsA(
+          isA<MemoryReadException>().having(
+            (e) => e.message,
+            'message',
+            contains('Private_Clean and Shared_Clean'),
           ),
         ),
       );
@@ -236,8 +273,84 @@ void main() {
       final snapshot = await readProcMemorySnapshot();
       expect(snapshot.anonymousBytes, isNotNull);
       expect(snapshot.anonymousBytes, greaterThan(0));
+      expect(snapshot.fileBackedBytes, isNotNull);
+      expect(snapshot.fileBackedBytes, greaterThan(0));
       expect(snapshot.availableBytes, isNotNull);
       expect(snapshot.availableBytes, greaterThan(0));
+    });
+
+    test('fileBackedBytes rises when a file is mapped and read, '
+        'and anonymousBytes does not', () async {
+      const size = 64 * 1024 * 1024;
+      // Written in small chunks so no 64 MiB list is left for the GC to free
+      // in the middle of a later test's measurement.
+      final file = File('${Directory.systemTemp.path}/diag_mmap_${pid}_$size');
+      final out = file.openSync(mode: FileMode.write);
+      final chunk = Uint8List(1024 * 1024)..fillRange(0, 1024 * 1024, 7);
+      for (var i = 0; i < size ~/ chunk.length; i++) {
+        out.writeFromSync(chunk);
+      }
+      out.closeSync();
+      // Pages just written are dirty in the page cache and would be counted as
+      // Shared_Dirty; flushing them to disk makes them the clean file pages
+      // an mmapped model is.
+      expect(Process.runSync('sync', [file.path]).exitCode, 0);
+      final libc = DynamicLibrary.process();
+      final open = libc
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, Int32),
+            int Function(Pointer<Uint8>, int)
+          >('open');
+      final mmap = libc
+          .lookupFunction<
+            Pointer<Uint8> Function(
+              Pointer<Void>,
+              IntPtr,
+              Int32,
+              Int32,
+              Int32,
+              Int64,
+            ),
+            Pointer<Uint8> Function(Pointer<Void>, int, int, int, int, int)
+          >('mmap');
+      final munmap = libc
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, IntPtr),
+            int Function(Pointer<Uint8>, int)
+          >('munmap');
+      final close = libc
+          .lookupFunction<Int32 Function(Int32), int Function(int)>('close');
+      final path = '${file.path}\u0000'.codeUnits;
+      final cPath = malloc<Uint8>(path.length);
+      cPath.asTypedList(path.length).setAll(0, path);
+      final fd = open(cPath, 0); // O_RDONLY
+      malloc.free(cPath);
+      expect(fd, greaterThanOrEqualTo(0));
+      Pointer<Uint8>? map;
+      try {
+        final before = await readProcMemorySnapshot();
+        map = mmap(nullptr, size, 1, 2, fd, 0); // PROT_READ, MAP_PRIVATE
+        var sum = 0;
+        for (var i = 0; i < size; i += 4096) {
+          sum += map[i]; // touch every page so it is resident
+        }
+        final after = await readProcMemorySnapshot();
+
+        expect(sum, isPositive);
+        expect(
+          after.fileBackedBytes! - before.fileBackedBytes!,
+          greaterThanOrEqualTo(size * 3 ~/ 4),
+        );
+        expect(
+          after.anonymousBytes! - before.anonymousBytes!,
+          lessThan(size ~/ 4),
+          reason: 'a read-only file mapping is not anonymous memory',
+        );
+      } finally {
+        if (map != null) munmap(map, size);
+        close(fd);
+        file.deleteSync();
+      }
     });
 
     test(

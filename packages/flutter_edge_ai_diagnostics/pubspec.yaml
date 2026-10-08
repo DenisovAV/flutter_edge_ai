@@ -1,6 +1,6 @@
 name: flutter_edge_ai_diagnostics
 description: "Opt-in memory diagnostics for flutter_edge_ai apps: the memory the OS cannot reclaim and the memory still available, read from the OS on Android and iOS."
-version: 0.2.1
+version: 0.3.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_diagnostics
 topics: [memory, diagnostics, gemma, on-device]

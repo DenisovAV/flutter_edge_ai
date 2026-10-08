@@ -17,7 +17,7 @@ The first "memory used" number people reach for is usually **RSS**, the *residen
 
 In RSS the two look the same. A model mapped from its file can show a large RSS and be cheap; the same weights copied into memory show a similar RSS and are expensive. On iOS the difference decides the outcome: jetsam kills the app on its anonymous footprint, not on RSS.
 
-So this package does not report RSS. It reports `anonymousBytes`, the memory the OS cannot take back, and `availableBytes`, how much is still available before the OS acts. To know what a model costs, take `anonymousBytes` before and after loading it and subtract.
+So this package does not report RSS. It reports `anonymousBytes`, the memory the OS cannot take back, `fileBackedBytes` (Android), the file pages it can, and `availableBytes`, how much is still available before the OS acts. To know what a model costs, take `anonymousBytes` before and after loading it and subtract; `fileBackedBytes` shows how much of a mapped model file is currently paged in.
 
 ## Usage
 
@@ -47,6 +47,7 @@ Take a snapshot before loading a model, after loading it, and during generation.
 | Field | iOS | Android |
 |---|---|---|
 | `anonymousBytes` | `phys_footprint` from `task_info(TASK_VM_INFO)`: the value jetsam enforces, including IOKit/GPU (Metal) allocations and compressed memory | `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`. GPU memory (KGSL, Mali, dmabuf) is mostly outside it |
+| `fileBackedBytes` | null: `phys_footprint` has no file-backed part | `Private_Clean + Shared_Clean` from `/proc/self/smaps_rollup`: resident clean file pages, such as a mapped model. Includes the app's own shared libraries (~130 MiB before a model loads, on the vivo) and counts shared pages in full |
 | `availableBytes` | `os_proc_available_memory()`: headroom before **this app** hits its limit | `MemAvailable` from `/proc/meminfo`: available on **the whole device**, an optimistic upper bound |
 
 The platforms enforce memory differently, and the numbers reflect it:
@@ -58,6 +59,7 @@ The platforms enforce memory differently, and the numbers reflect it:
 
 - **A null field** means the value does not exist on this platform or OS version:
   - `anonymousBytes` on an Android kernel without `/proc/self/smaps_rollup` (mainline Linux added it in 4.14);
+  - `fileBackedBytes` on iOS, and on an Android kernel without `smaps_rollup`;
   - `availableBytes` on iOS when the call returns 0. Apple returns 0 both when no limit applies (the simulator) and when the limit is already exceeded, and the two cannot be told apart.
 - **`MemoryReadException`** means the value should exist and the read failed: a kernel error, a permission or I/O error, or a file that lacks a field it always carries.
 - **`UnsupportedError`** is thrown by `memorySnapshot()` off Android and iOS, rather than returning empty values.
@@ -66,7 +68,7 @@ The platforms enforce memory differently, and the numbers reflect it:
 
 Android and iOS. Everything is read through `dart:io` and `dart:ffi`, so the package has no Kotlin, Swift, Gradle or podspec, and no dependency on `flutter_edge_ai` itself: it measures the process, whichever engine runs in it.
 
-Verified by writing 256 MiB and checking that `anonymousBytes` moves by that amount:
+Verified by writing 256 MiB and checking that `anonymousBytes` moves by that amount, and by mapping and reading a 64 MiB file and checking that `fileBackedBytes` moves by it and `anonymousBytes` does not (host test). On the vivo 1933, loading Gemma 4 E2B raised `fileBackedBytes` from about 115 to 1080 MiB on CPU and from 135 to 1081 MiB on GPU, and closing the model returned it to about 130 MiB. Devices for the anonymous check:
 
 - Android: vivo 1933 (Android 11), Pixel 8a (Android 15) and Galaxy A34 (Android 16);
 - iOS: iPhone 17 Pro simulator (iOS 26.5).
@@ -81,4 +83,4 @@ Installs the agent skills `flutter_edge_ai` bundles — this package does not de
 
 ## Roadmap
 
-Planned in follow-up releases: `anonymousPeakBytes` (iOS), `anonymousBytes` on macOS, `fileBackedBytes` (Android), and an experimental `gpuBytes`.
+Planned in follow-up releases: `anonymousPeakBytes` (iOS), `anonymousBytes` on macOS, and an experimental `gpuBytes`.

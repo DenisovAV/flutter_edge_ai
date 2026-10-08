@@ -31,6 +31,21 @@ int? anonymousBytesFromSmapsRollup(String text) {
   return privateDirty + swapPss;
 }
 
+/// `Private_Clean + Shared_Clean` from the text of `/proc/self/smaps_rollup`:
+/// the resident clean pages, which the OS can drop and read back from their
+/// file. A model file that is mmapped shows up here as it is paged in.
+///
+/// Null unless both fields are present, for the same reason as
+/// [anonymousBytesFromSmapsRollup]. `Pss_File` would be the proportional
+/// figure, but kernels before 5.x do not have it.
+int? fileBackedBytesFromSmapsRollup(String text) {
+  final fields = parseProcKbFields(text);
+  final privateClean = fields['Private_Clean'];
+  final sharedClean = fields['Shared_Clean'];
+  if (privateClean == null || sharedClean == null) return null;
+  return privateClean + sharedClean;
+}
+
 /// `MemAvailable` from the text of `/proc/meminfo`, or null if absent.
 int? availableBytesFromMeminfo(String text) =>
     parseProcKbFields(text)['MemAvailable'];
@@ -66,6 +81,13 @@ Future<MemorySnapshot> readProcMemorySnapshot({
             anonymousBytesFromSmapsRollup(rollup),
             smapsRollupPath,
             'Private_Dirty and SwapPss',
+          ),
+    fileBackedBytes: rollup == null
+        ? null
+        : _require(
+            fileBackedBytesFromSmapsRollup(rollup),
+            smapsRollupPath,
+            'Private_Clean and Shared_Clean',
           ),
     availableBytes: _require(
       availableBytesFromMeminfo(meminfo),

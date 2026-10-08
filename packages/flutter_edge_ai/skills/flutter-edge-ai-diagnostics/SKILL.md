@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-diagnostics
-description: Use when measuring how much memory an on-device model costs with flutter_edge_ai_diagnostics — MemorySnapshot, anonymousBytes, availableBytes — on Android or iOS, when an app is killed for memory (iOS jetsam, Android lmkd) while loading or running a model, when choosing between model sizes for a device, or when RSS numbers do not add up. Also use when FlutterEdgeAiDiagnostics.memorySnapshot() throws MemoryReadException or UnsupportedError, or a snapshot field is null. For running the model itself, use flutter-edge-ai-inference.
+description: Use when measuring how much memory an on-device model costs with flutter_edge_ai_diagnostics — MemorySnapshot, anonymousBytes, fileBackedBytes, availableBytes — on Android or iOS, when an app is killed for memory (iOS jetsam, Android lmkd) while loading or running a model, when choosing between model sizes for a device, or when RSS numbers do not add up. Also use when FlutterEdgeAiDiagnostics.memorySnapshot() throws MemoryReadException or UnsupportedError, or a snapshot field is null. For running the model itself, use flutter-edge-ai-inference.
 ---
 
 # Memory diagnostics
@@ -12,7 +12,7 @@ description: Use when measuring how much memory an on-device model costs with fl
 3. `null` and an exception mean different things. A null field is a value this platform does not have; `MemoryReadException` is a read that should have worked and failed. Do not catch the exception and carry on with zeros.
 4. The two fields answer different questions per platform. On iOS `anonymousBytes` is `phys_footprint`, the number jetsam kills on, and `availableBytes` is this app's headroom before that limit. On Android there is no per-app limit: `availableBytes` is MemAvailable for the whole device, an optimistic upper bound, and lmkd kills well before it reaches zero. Never use it as an Android kill threshold.
 5. On Android, GPU memory (KGSL, Mali, dmabuf) is mostly outside `anonymousBytes`. A model running on the GPU backend looks cheaper there than it is.
-6. Weights read from an mmapped model file are clean file pages and are not counted; the same weights copied into the heap are. On iOS that difference, not RSS, is what decides whether the app survives.
+6. Weights read from an mmapped model file are clean file pages and are not in `anonymousBytes`; the same weights copied into the heap are. On iOS that difference, not RSS, is what decides whether the app survives. On Android `fileBackedBytes` (`Private_Clean + Shared_Clean`) shows the mapped pages that are currently resident: it rises as a model is paged in (about +1 GiB for Gemma 4 E2B on the vivo) and falls when the model closes. It includes the app's own libraries (~130 MiB before any model) and is null on iOS. The OS drops these pages before it kills anything, so a large `fileBackedBytes` is not a kill risk.
 7. A snapshot walks kernel state: on Android the `/proc` reads are asynchronous (they do not block the isolate) but cost about 150 ms on a low-end device, and before Linux 5.10 they stall the process's mmap calls; on iOS they are microsecond Mach calls. Take one at a few points — before loading, after loading, during generation — and never faster than about once a second, not on every frame or token.
 8. A pubspec section strips nothing from a release build. Put the package under `dev_dependencies` only when nothing in `lib/` imports it.
 
@@ -87,7 +87,7 @@ Future<void> report() async {
 
 A field is null in exactly two cases:
 
-- `anonymousBytes` on an Android kernel without `/proc/self/smaps_rollup` (mainline Linux added it in 4.14);
+- `anonymousBytes` and `fileBackedBytes` on an Android kernel without `/proc/self/smaps_rollup` (mainline Linux added it in 4.14), and `fileBackedBytes` always on iOS;
 - `availableBytes` on iOS when `os_proc_available_memory()` returns 0. Apple returns 0 both on the simulator, where no limit applies, and when the limit is already exceeded; the two cannot be told apart.
 
 ## Choosing a model for the device

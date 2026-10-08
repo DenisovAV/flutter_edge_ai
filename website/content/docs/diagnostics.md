@@ -44,6 +44,7 @@ So this package does not report RSS. It reports:
 
 - **`anonymousBytes`** — the memory the OS cannot take back, the part that
   matters;
+- **`fileBackedBytes`** (Android) — the file pages the OS can take back, such as a mapped model. Null on iOS.
 - **`availableBytes`** — how much is still available before the OS acts.
 
 To know what a model costs, take `anonymousBytes` before and after loading it
@@ -75,6 +76,7 @@ if (FlutterEdgeAiDiagnostics.isSupported) {
 | Field | iOS | Android |
 |---|---|---|
 | `anonymousBytes` | `phys_footprint` from `task_info(TASK_VM_INFO)`: the value jetsam enforces, including IOKit/GPU (Metal) allocations and compressed memory | `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`. GPU memory (KGSL, Mali, dmabuf) is mostly outside it |
+| `fileBackedBytes` | null: `phys_footprint` has no file-backed part | `Private_Clean + Shared_Clean` from `/proc/self/smaps_rollup`: resident clean file pages. Includes the app's own libraries (~130 MiB before a model) and counts shared pages in full |
 | `availableBytes` | `os_proc_available_memory()`: headroom before **this app** hits its limit | `MemAvailable` from `/proc/meminfo`: available on **the whole device**, an optimistic upper bound |
 
 The platforms enforce memory differently, and the numbers reflect it:
@@ -134,7 +136,7 @@ you support and treat `availableBytes` as a best case.
 ## Null versus an exception
 
 - **A null field** means the value does not exist on this platform or OS version:
-  - `anonymousBytes` on an Android kernel without `/proc/self/smaps_rollup`
+  - `fileBackedBytes` on iOS, and `anonymousBytes` and `fileBackedBytes` on an Android kernel without `/proc/self/smaps_rollup`
     (mainline Linux added it in 4.14);
   - `availableBytes` on iOS when the call returns 0. Apple returns 0 both when
     no limit applies (the simulator) and when the limit is already exceeded, and
@@ -153,10 +155,13 @@ package has no Kotlin, Swift, Gradle or podspec.
 
 Verified by writing 256 MiB and checking that `anonymousBytes` moves by that
 amount: vivo 1933 (Android 11), Pixel 8a (Android 15), Galaxy A34 (Android 16)
-and the iPhone 17 Pro simulator (iOS 26.5).
+and the iPhone 17 Pro simulator (iOS 26.5). `fileBackedBytes` is verified by
+mapping and reading a 64 MiB file on a Linux host, and by loading Gemma 4 E2B on
+the vivo 1933: it rose from about 115 to 1080 MiB (CPU) and from 135 to 1081 MiB
+(GPU), and fell back to about 130 MiB when the model closed.
 
-Planned: `anonymousPeakBytes` on iOS, `anonymousBytes` on macOS,
-`fileBackedBytes` on Android, and an experimental `gpuBytes`.
+Planned: `anonymousPeakBytes` on iOS, `anonymousBytes` on macOS, and an
+experimental `gpuBytes`.
 
 ## Teach your AI assistant
 

@@ -26,6 +26,14 @@ void main() {
 
     expect(snapshot.anonymousBytes, isNotNull);
     expect(snapshot.anonymousBytes, greaterThan(0));
+    // fileBackedBytes exists on Android only: the app's own libraries are
+    // always resident clean file pages. On iOS it is null by design.
+    if (Platform.isAndroid) {
+      expect(snapshot.fileBackedBytes, isNotNull);
+      expect(snapshot.fileBackedBytes, greaterThan(0));
+    } else {
+      expect(snapshot.fileBackedBytes, isNull);
+    }
     // availableBytes is legitimately null on the iOS simulator (no jetsam
     // limit), so only a real device is held to it.
     if (Platform.isAndroid || !_isIosSimulator) {

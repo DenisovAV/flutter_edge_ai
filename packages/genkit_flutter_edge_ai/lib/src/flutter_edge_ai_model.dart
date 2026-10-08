@@ -68,7 +68,19 @@ Model createFlutterEdgeAiModel({
       final completer = Completer<void>();
       lock = completer.future;
 
-      await prev;
+      // A request cancelled while queued returns at once, but its place in the
+      // chain is held until the turn ahead of it ends, so nothing queued
+      // behind it overtakes the generation in progress.
+      final cancel = context.cancel;
+      if (cancel == null) {
+        await prev;
+      } else {
+        await Future.any([prev, cancel.whenCancelled]);
+        if (cancel.isCancelled) {
+          unawaited(prev.whenComplete(completer.complete));
+          cancel.throwIfCancelled();
+        }
+      }
 
       try {
         return await _executeGeneration(

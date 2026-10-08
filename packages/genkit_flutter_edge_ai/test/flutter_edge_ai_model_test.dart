@@ -879,15 +879,55 @@ void main() {
         while (fakeChat.addQueryChunkCallCount == 0) {
           await Future<void>.delayed(Duration.zero);
         }
-        final second = model(simpleRequest('second'), cancel: controller.token);
+        final second = expectLater(
+          model(simpleRequest('second'), cancel: controller.token),
+          throwsA(isA<CancelledException>()),
+        );
         controller.cancel();
         fakeChat.generationGate!.complete();
 
         await first;
-        await expectLater(second, throwsA(isA<CancelledException>()));
+        await second;
         expect(fakeModel.createChatCallCount, 1);
       },
     );
+
+    test('a request cancelled in the queue returns at once and keeps its '
+        'place', () async {
+      fakeChat.generationGate = Completer<void>();
+      final controller = CancellationController();
+      final model = buildModel();
+
+      final first = model(simpleRequest('first'));
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      var secondSettled = false;
+      final second = model(simpleRequest('second'), cancel: controller.token)
+          .then<void>(
+            (_) {},
+            onError: (Object e) {
+              expect(e, isA<CancelledException>());
+              secondSettled = true;
+            },
+          );
+      final third = model(simpleRequest('third'));
+      controller.cancel();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(secondSettled, isTrue, reason: 'it waited for the turn ahead');
+      expect(
+        fakeChat.addQueryChunkCallCount,
+        1,
+        reason: 'the request behind it overtook the running generation',
+      );
+
+      fakeChat.generationGate!.complete();
+      await Future.wait([first, second, third]);
+      expect(fakeChat.addQueryChunkCallCount, 2);
+    });
 
     test('the next request starts only after the stop has landed', () async {
       fakeChat.generationGate = Completer<void>();

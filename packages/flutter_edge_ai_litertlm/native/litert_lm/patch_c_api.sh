@@ -361,17 +361,64 @@ if pc_idx < 0 or (end_idx >= 0 and pc_idx > end_idx):
 else:
     at = pc_idx + len('patch_cmds = [')
     content = content[:at] + new_line_after_anchor + content[at:]
+    # The Apple accelerator order and the RTLD_DEFAULT fallback are a real diff
+    # (patches/litert_gpu_registry_apple.patch, copied next to WORKSPACE by the
+    # shell below). Bazel applies `patches` BEFORE `patch_cmds`, and fails the
+    # fetch when a hunk does not apply — the loud failure a moved upstream
+    # line has to produce. The macro it uses is defined by the awk above.
+    content = content.replace(
+        '    name = "litert",\n',
+        '    name = "litert",\n'
+        '    patches = ["//:flutter_gemma_litert_gpu_registry.patch"],\n'
+        '    patch_args = ["-p1"],\n', 1)
+    if 'flutter_gemma_litert_gpu_registry.patch' not in content:
+        raise SystemExit("  ERROR: could not add the gpu_registry patch to the litert archive")
     with open(ws, 'w') as f:
         f.write(content)
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
+    print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
 PYEOF
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
+    "$DIR/flutter_gemma_litert_gpu_registry.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
+    # A tree patched by an older patch_c_api.sh has the sed but not the diff:
+    # its Apple build still tries libLiteRtGpuAccelerator first and falls back
+    # to RTLD_DEFAULT, which in an app with flutter_litert is that runtime's
+    # accelerator (the litertlm 1.10.0 iOS crash). Refuse it rather than skip.
+    if ! grep -q "flutter_gemma_litert_gpu_registry.patch" "$WORKSPACE_FILE"; then
+      echo "  ERROR: $WORKSPACE_FILE was patched by an older patch_c_api.sh" \
+        "(no gpu_registry diff); start from a fresh LiteRT-LM tree" >&2
+      exit 1
+    fi
+    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
+      "$DIR/flutter_gemma_litert_gpu_registry.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2
     exit 1
   fi
+fi
+
+# ── 11. Qualcomm NPU options on Linux (HTP burst) ──
+#
+# CreateLiteRtNpuOptions (runtime/executor/npu/) sets the Qualcomm options —
+# HTP burst mode, log level — under `#if defined(__ANDROID__)` only (upstream
+# "Bug: 498622107"). On a Linux Qualcomm board (QCS8275) the dispatch then logs
+# "Null Qualcomm options" and runs HTP in its default mode: Gemma 4 E2B decoded
+# at 16.6 tok/s against the model card's 31.7. The vision executor already sets
+# burst on every OS. A real diff, not a sed: when upstream moves this code the
+# patch stops applying and the build fails here, instead of shipping unpatched.
+NPU_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/npu_qualcomm_options_linux.patch"
+if git -C "$DIR" apply --check "$NPU_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$NPU_PATCH"
+  echo "  OK: Qualcomm NPU options apply on Linux too (HTP burst)"
+elif git -C "$DIR" apply --reverse --check "$NPU_PATCH" 2>/dev/null; then
+  echo "  SKIP: Qualcomm NPU options patch already applied"
+else
+  echo "  ERROR: $NPU_PATCH does not apply to this LiteRT-LM revision —" >&2
+  echo "         CreateLiteRtNpuOptions moved; re-create the patch against it." >&2
+  exit 1
 fi
 
 echo "Patch complete."

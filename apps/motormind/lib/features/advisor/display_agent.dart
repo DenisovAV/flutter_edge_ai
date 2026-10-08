@@ -268,7 +268,13 @@ class DisplayController extends Notifier<DisplayDecision> {
     ref.onDispose(() => _debounce?.cancel());
     final s = _screen();
     final rules = RulesDisplayAgent.apply(s);
-    if (ref.read(displayAgentModeProvider) == 'model' && !s.busy) _askModel(s, rules);
+    // The model agent runs only once the conversation has started and is
+    // idle: on the FFI engine a session switch replays the other session's
+    // history, and running it before the first turn made that turn twice as
+    // slow on the emulator (experiment log, 2026-10-08).
+    if (ref.read(displayAgentModeProvider) == 'model' && !s.busy && s.lastUserText.isNotEmpty) {
+      _askModel(s, rules);
+    }
     return rules;
   }
 

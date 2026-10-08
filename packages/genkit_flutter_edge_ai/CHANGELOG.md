@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.0
 - **Breaking:** require `genkit` ^1.0.0 and `schemantic` ^1.0.0.
 
 ## 0.7.1

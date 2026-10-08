@@ -1,6 +1,6 @@
 ---
 name: upgrade-genkit
-description: Realign the genkit_flutter_edge_ai / genkit_hybrid packages when flutter_edge_ai's core API changes — discover changes, fix compilation, support new features, update fakes/tests, bump version. Monorepo-aware.
+description: Realign the genkit_flutter_edge_ai / genkit_hybrid packages when flutter_edge_ai's core API changes or when `genkit` itself publishes a breaking version — discover changes, fix compilation, support new features, update fakes/tests, the codelab and the site, bump version. Monorepo-aware.
 user_invocable: true
 ---
 
@@ -86,3 +86,38 @@ Based on Phase 1, decide with the user which new APIs to support. Typical integr
 3. **Update `PKG_DIR/README.md`** (options table, known limitations, quick-start if usage changed).
 4. Verify: `dart analyze && flutter test && dart pub publish --dry-run` (all clean).
 5. The release itself goes through the **`release` skill** (genkit packages release in lockstep with the monorepo) — do not publish standalone.
+
+## When `genkit` itself releases a breaking version
+
+The phases above assume the change came from flutter_edge_ai. Genkit 1.0.0
+(2026-10-07) was the other trigger: it shipped with every Genkit Dart plugin
+(`genkit_google_genai`, `genkit_vertexai`, `genkit_firebase_ai`, …) requiring
+`genkit ^1.0.0`, so our packages could not be installed next to any current
+cloud plugin until they moved too.
+
+1. Read the upstream CHANGELOG back to the version we pin:
+   `dart pub cache add genkit --version <new>`, then
+   `~/.pub-cache/hosted/pub.dev/genkit-<new>/CHANGELOG.md`.
+2. Bump `genkit` in both packages and in `genkit_flutter_edge_ai/example`.
+   `schemantic` and `schemantic_builder` move with it (genkit 1.0 needs
+   schemantic ^1.0.0).
+3. Regenerate `lib/src/flutter_edge_ai_options.g.dart` with
+   `dart run build_runner build --delete-conflicting-outputs` and diff it: the
+   option list must not change, only the generated shape.
+4. `flutter analyze`, fix, `flutter test` in both packages. Do not run
+   `dart format` over a whole package: many files predate the current
+   formatter and would be restyled. Format only the files you edited, and only
+   if they were formatted before.
+5. Update what the analyzer never sees, because it sits outside the workspace:
+   - the codelab `codelabs/hybrid-ai-flutter-genkit/`: every step's pubspec
+     (`step_00_starter` carries the pins as comments), the step READMEs, and
+     `lib/services/ai_engine.dart`, which wraps a model the way genkit_hybrid
+     calls a branch. `genkit_google_genai` moves with genkit, so bump it there.
+     Check each step with a temporary `pubspec_overrides.yaml` copied from
+     `tool/check_codelabs.sh` and delete it afterwards. Codelab CI runs
+     `flutter analyze` with infos fatal and checks formatting.
+   - the codelab page `website/codelabs/hybrid-ai-flutter-genkit/index.md`,
+     which repeats the step code, and `website/content/docs/genkit.md`.
+6. Ship it as one PR with the version bumps, the site and the codelab (release
+   skill rule), and publish right after the merge: the site deploys on merge
+   and its pins name the new versions.

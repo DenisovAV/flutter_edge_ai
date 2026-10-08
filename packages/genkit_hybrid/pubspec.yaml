@@ -1,6 +1,6 @@
 name: genkit_hybrid
 description: Provider-agnostic hybrid routing for Genkit — combine on-device and cloud models behind one routing policy.
-version: 0.2.2
+version: 0.3.0
 homepage: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/genkit_hybrid
 repository: https://github.com/DenisovAV/flutter_edge_ai
 issue_tracker: https://github.com/DenisovAV/flutter_edge_ai/issues

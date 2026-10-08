@@ -40,13 +40,13 @@ flutter run \
 ## Key Dependencies
 
 ```yaml
-genkit: ^0.16.0
-genkit_google_genai: ^0.3.1
-genkit_flutter_edge_ai: ^0.7.0
+genkit: ^1.0.0
+genkit_google_genai: ^1.0.0
+genkit_flutter_edge_ai: ^0.8.0
 flutter_edge_ai: ^2.0.0
 flutter_edge_ai_litertlm: ^1.8.7   # LiteRT-LM engine (flutter_edge_ai ships none by default)
 flutter_edge_ai_embeddings: ^2.2.2
-genkit_hybrid: ^0.2.2
+genkit_hybrid: ^0.3.0
 ```
 
 ## Architecture

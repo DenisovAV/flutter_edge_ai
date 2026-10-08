@@ -48,7 +48,7 @@ OPENVINO_ZIP = (
     "openvino_toolkit_windows_2026.3.1.22476.56d9685302d_x86_64.zip"
 )
 OPENVINO_ROOT = "openvino_toolkit_windows_2026.3.1.22476.56d9685302d_x86_64/"
-# Android opt-in: what the hook fetches (hook/src/qnn_runtime.dart).
+# Android opt-in: what the hook fetches (lib/src/hook/qnn_runtime.dart).
 QNN_AAR = (
     "https://repo1.maven.org/maven2/com/qualcomm/qti/qnn-runtime/2.50.0/"
     "qnn-runtime-2.50.0.aar"

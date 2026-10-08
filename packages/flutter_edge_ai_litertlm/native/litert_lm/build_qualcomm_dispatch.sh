@@ -201,12 +201,12 @@ echo "QAIRT version: $QAIRT_VERSION"
 # Since native-v0.18.0 the QNN runtime is not staged here: Qualcomm's licence
 # allows it only inside an application, so the build hook of an app that sets
 # `qualcomm_npu: true` fetches com.qualcomm.qti:qnn-runtime from Maven Central
-# (hook/src/qnn_runtime.dart pins version and sha256). What stays this
+# (lib/src/hook/qnn_runtime.dart pins version and sha256). What stays this
 # script's job is keeping the two halves matched: the dispatch built here must
 # negotiate with that pinned runtime, so refuse to build against any other
 # QAIRT release.
 HOOK_QNN="$(sed -n "s/^const qnnRuntimeVersion = '\\(.*\\)';/\\1/p" \
-  "$SCRIPT_DIR/../../hook/src/qnn_runtime.dart")"
+  "$SCRIPT_DIR/../../lib/src/hook/qnn_runtime.dart")"
 if [ -z "$QAIRT_VERSION" ] || [ -z "$HOOK_QNN" ]; then
   echo "ERROR: could not read the QAIRT version ('$QAIRT_VERSION') or the hook's" >&2
   echo "       qnnRuntimeVersion ('$HOOK_QNN') — cannot prove the pair matches" >&2
@@ -215,7 +215,7 @@ fi
 if [ "$QAIRT_VERSION" != "$HOOK_QNN" ]; then
   echo "ERROR: LiteRT builds the dispatch against QAIRT $QAIRT_VERSION, but the hook" >&2
   echo "       fetches qnn-runtime $HOOK_QNN. Bump qnnRuntimeVersion and" >&2
-  echo "       qnnRuntimeSha256 in hook/src/qnn_runtime.dart to the matching" >&2
+  echo "       qnnRuntimeSha256 in lib/src/hook/qnn_runtime.dart to the matching" >&2
   echo "       com.qualcomm.qti:qnn-runtime release first." >&2
   exit 1
 fi
@@ -226,7 +226,7 @@ echo "  matches the hook's qnn-runtime $HOOK_QNN"
 # max-page-size=16384 above, so this is a check, not a patch: a failure means
 # the link flag stopped reaching the linker. (The 4 KB Hexagon Skels that used
 # to be raised here are raised by the hook now — prepareQnnLibrary in
-# hook/src/qnn_runtime.dart.)
+# lib/src/hook/qnn_runtime.dart.)
 echo ""
 echo "=== Checking 16 KB page alignment ==="
 python3 - "$STAGE" <<'PYALIGN'

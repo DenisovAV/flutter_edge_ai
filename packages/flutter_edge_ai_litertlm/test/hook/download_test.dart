@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../hook/src/download.dart';
+import 'package:flutter_edge_ai_litertlm/src/hook/download.dart';
 
 void main() {
   test('redactUserInfoIn masks credentials where a URL carries them', () {

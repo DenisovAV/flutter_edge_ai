@@ -14,6 +14,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 
 /// The QNN runtime release fetched for `qualcomm_npu: true`.
@@ -34,8 +36,9 @@ const qnnRuntimeSha256 =
 const qnnDefaultMavenBase = 'https://repo1.maven.org/maven2';
 
 /// Bumped whenever what this file writes into the cache changes for the same
-/// AAR (the extraction set, the patch), so an older cache is not reused.
-const qnnCacheFormat = 1;
+/// AAR (the extraction set, the patch, the marker), so an older cache is not
+/// reused. 2: the marker records each library's SHA-256, not only its size.
+const qnnCacheFormat = 2;
 
 /// URL of the QNN runtime AAR under the Maven repository [mavenBase].
 Uri qnnRuntimeAarUrl(String mavenBase) {
@@ -376,7 +379,8 @@ Uint8List prepareQnnLibrary(String fileName, Uint8List bytes) {
 // Cache
 // ---------------------------------------------------------------------------
 
-/// The marker written last into a complete cache directory: file name → size.
+/// The marker written last into a complete cache directory: file name →
+/// {size, sha256}.
 const qnnCacheMarker = '.complete';
 
 /// Prefix of the per-download directory the hook fetches the AAR into.
@@ -409,7 +413,13 @@ List<String> get qnnLibFileNames => [
 ];
 
 /// Whether [dir] holds a complete, intact cache entry: the marker lists every
-/// library and each file has the recorded size.
+/// library, and each file has the recorded size and SHA-256.
+///
+/// The hash, not only the size: these are executables the app ships, reused
+/// for every later build, and a same-length change — a flipped byte, a cache
+/// restored from somewhere else — would otherwise pass forever without ever
+/// meeting the AAR's checksum again. Hashing the ~83 MB costs a fraction of a
+/// second, and only on the builds where the hook runs at all.
 bool isCompleteQnnCache(Directory dir) {
   final marker = File('${dir.path}/$qnnCacheMarker');
   if (!marker.existsSync()) return false;
@@ -421,11 +431,13 @@ bool isCompleteQnnCache(Directory dir) {
     return false;
   }
   for (final name in qnnLibFileNames) {
-    final size = recorded[name];
+    final entry = recorded[name];
+    if (entry is! Map) return false;
+    final size = entry['size'], hash = entry['sha256'];
     final f = File('${dir.path}/$name');
-    if (size is! int || !f.existsSync() || f.lengthSync() != size) {
-      return false;
-    }
+    if (size is! int || hash is! String) return false;
+    if (!f.existsSync() || f.lengthSync() != size) return false;
+    if (sha256.convert(f.readAsBytesSync()).toString() != hash) return false;
   }
   return true;
 }
@@ -452,7 +464,7 @@ Directory promoteQnnCache(Directory cacheRoot, File aar) {
     });
     final tmp = cacheRoot.createTempSync(qnnPrepareTempPrefix);
     try {
-      final sizes = <String, int>{};
+      final recorded = <String, Map<String, Object>>{};
       for (final f in qnnLibFileNames) {
         final bytes = prepareQnnLibrary(f, entries['jni/arm64-v8a/$f']!);
         final out = File('${tmp.path}/$f').openSync(mode: FileMode.write);
@@ -464,7 +476,10 @@ Directory promoteQnnCache(Directory cacheRoot, File aar) {
           out.closeSync();
         }
         File('${tmp.path}/$f').setLastModifiedSync(qnnCacheFileTime);
-        sizes[f] = bytes.length;
+        recorded[f] = {
+          'size': bytes.length,
+          'sha256': sha256.convert(bytes).toString(),
+        };
       }
       // Qualcomm's own LICENSE.pdf and NOTICE.txt travel with the libraries.
       final notices = extractZipEntriesFromFile(aar, {
@@ -476,7 +491,7 @@ Directory promoteQnnCache(Directory cacheRoot, File aar) {
       }
       File(
         '${tmp.path}/$qnnCacheMarker',
-      ).writeAsStringSync(jsonEncode(sizes), flush: true);
+      ).writeAsStringSync(jsonEncode(recorded), flush: true);
 
       if (target.existsSync()) {
         // Not complete (checked above, under the lock): a crash mid-write of an

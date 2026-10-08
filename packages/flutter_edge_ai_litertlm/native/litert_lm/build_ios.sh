@@ -227,16 +227,23 @@ echo "=== Copying companion libs ==="
 # its basename dlopen (patch_c_api.sh, 10a). Upstream #2072 — those two shipped
 # as x86_64 binaries — was closed in May 2026 and is no longer a reason.
 #
-# Upstream's Metal accelerator ships as libLiteRtLmMetalAccelerator.dylib, so
-# its framework is LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
+# We ship upstream's libLiteRtMetalAccelerator.dylib as
+# libLiteRtLmMetalAccelerator.dylib, so its framework is
+# LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
 # embeds a LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle
 # holds one framework per name, and ours silently replaced theirs. The id moves
 # with the name (+8 bytes of load commands; upstream's simulator build has 48
 # bytes of slack), and patch_c_api.sh §10 points gpu_registry at the new path.
 for lib in libGemmaModelConstraintProvider.dylib libLiteRtMetalAccelerator.dylib; do
   out="${lib/libLiteRtMetalAccelerator/libLiteRtLmMetalAccelerator}"
-  [ -f "prebuilt/ios_arm64/$lib" ] && cp "prebuilt/ios_arm64/$lib" "$DEVICE_DIR/$out" && echo "  $lib → device/$out"
-  [ -f "prebuilt/ios_sim_arm64/$lib" ] && cp "prebuilt/ios_sim_arm64/$lib" "$SIM_DIR/$out" && echo "  $lib → simulator/$out"
+  for pair in "ios_arm64:$DEVICE_DIR" "ios_sim_arm64:$SIM_DIR"; do
+    src="prebuilt/${pair%%:*}/$lib"
+    # Missing is fatal: without the accelerator the GPU falls back to CPU
+    # silently, and without the provider every tool call fails.
+    [ -f "$src" ] || { echo "ERROR: upstream prebuilt missing: $src" >&2; exit 1; }
+    cp "$src" "${pair##*:}/$out"
+    echo "  $lib → ${pair%%:*}/$out"
+  done
 done
 # Sets a dylib's install name and proves it took: install_name_tool refuses
 # when the new id does not fit the header slack, and a dylib that keeps the old
@@ -331,12 +338,31 @@ for arch_dir_pair in "ios:$DEVICE_DIR" "iossim:$SIM_DIR"; do
   done
 done
 
+# Every framework libLiteRtLm dlopens by path must be in the bundle. The Metal
+# accelerator is loaded by dlopen, not linked, so nothing else checks it — and
+# without it the GPU falls back to CPU with no error at all.
+check_dlopened_frameworks() {
+  local dir="$1" fw missing=0
+  for fw in $(strings "$dir/libLiteRtLm.dylib" \
+                | grep -oE '@executable_path/(\.\./)?Frameworks/[A-Za-z0-9_]+\.framework/' \
+                | sed -E 's|.*Frameworks/([A-Za-z0-9_]+)\.framework/|\1|' | sort -u); do
+    if [ -f "$dir/lib$fw.dylib" ]; then
+      echo "  dlopen target $fw.framework: lib$fw.dylib present"
+    else
+      echo "ERROR: libLiteRtLm dlopens $fw.framework but $dir/lib$fw.dylib is missing" >&2
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || exit 1
+}
+
 # 9. Verify
 echo ""
 echo "=== Verification ==="
 echo "Device (ios_arm64):"
 ls -lh "$DEVICE_DIR/"
 nm -gU "$DEVICE_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -1
+check_dlopened_frameworks "$DEVICE_DIR"
 for dylib in "$DEVICE_DIR"/*.dylib; do
   verify_flutter_ios_strip "$dylib"
 done
@@ -344,6 +370,7 @@ echo ""
 echo "Simulator (ios_sim_arm64):"
 ls -lh "$SIM_DIR/"
 nm -gU "$SIM_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -1
+check_dlopened_frameworks "$SIM_DIR"
 for dylib in "$SIM_DIR"/*.dylib; do
   verify_flutter_ios_strip "$dylib"
 done

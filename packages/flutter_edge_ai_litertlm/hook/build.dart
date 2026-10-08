@@ -60,6 +60,12 @@ class _NativeBundle {
   /// (qdrant has none). LiteRT has Metal/OpenCL/WebGPU accelerators etc.
   final List<String> companions;
 
+  /// Names this bundle shipped in an older release and no longer registers.
+  /// Deleted with the owned files on a version change — so the flat cache does
+  /// not keep them forever — and never registered, which [companions] would
+  /// do with any file it finds.
+  final List<String> legacyFileNames;
+
   /// Companions to skip on a specific OS. LiteRT skips Apple companion
   /// dylibs on macOS because of a Native Assets install_name_tool slack
   /// issue (#247) — the Podfile post_install handles them instead.
@@ -95,6 +101,7 @@ class _NativeBundle {
     required this.mainLibName,
     required this.markerFileName,
     this.companions = const [],
+    this.legacyFileNames = const [],
     this.skipCompanionsOn = const {},
     this.windowsExtraLibs = const [],
     this.androidExtraLibs = const [],
@@ -135,6 +142,9 @@ class _NativeBundle {
     yield _dylibFileName(os, 'StreamProxy');
     for (final c in companions) {
       yield _dylibFileName(os, c);
+    }
+    for (final l in legacyFileNames) {
+      yield _dylibFileName(os, l);
     }
     if (os == OS.windows) {
       for (final w in windowsExtraLibs) {
@@ -248,16 +258,20 @@ const _litertlmBundle = _NativeBundle(
     // bundle holds only one (see patch_c_api.sh §10).
     'LiteRtLmMetalAccelerator',
     'LiteRtTopKMetalSampler', // macOS + iOS device GPU sampler (Metal)
-    // Not shipped on any platform since native-v0.18.0 (on Android it needs
-    // Dawn, which no bundle carries); kept so flat-layout cleanup still
-    // removes a copy an older bundle left behind.
-    'LiteRtGpuAccelerator',
     'LiteRtOpenClAccelerator', // Android GPU (OpenCL)
     'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
     'LiteRtTopKOpenClSampler', // Android OpenCL GPU sampler — honors seed
     'LiteRtTopKWebGpuSampler', // Linux/Windows GPU sampler
     'LiteRt', // Linux/Windows core runtime
     'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
+  ],
+  legacyFileNames: [
+    // Not shipped on any platform since native-v0.18.0: on Android it needs
+    // Dawn, which no bundle carries.
+    'LiteRtGpuAccelerator',
+    // Upstream's name for the Metal accelerator, shipped renamed since
+    // native-v0.18.0 (flutter_litert's framework uses the upstream name).
+    'LiteRtMetalAccelerator',
   ],
   // On macOS, skip the upstream Apple companion dylibs from Native Assets
   // bundling (#247). The companion dylibs Google ships in

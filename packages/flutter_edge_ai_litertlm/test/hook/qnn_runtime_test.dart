@@ -366,6 +366,28 @@ void main() {
       expect(isCompleteQnnCache(entry), isTrue);
     });
 
+    test('a same-length change invalidates the entry', () {
+      final entry = promoteQnnCache(Directory('${root.path}/cache'), aar);
+      final f = File('${entry.path}/libQnnHtp.so');
+      final bytes = f.readAsBytesSync();
+      bytes[bytes.length - 1] ^= 0xff;
+      f.writeAsBytesSync(bytes);
+      expect(f.lengthSync(), bytes.length);
+      expect(isCompleteQnnCache(entry), isFalse);
+    });
+
+    test('an entry from the previous cache format is not reused', () {
+      // p1 markers recorded sizes only; their shape must read as incomplete.
+      final entry = promoteQnnCache(Directory('${root.path}/cache'), aar);
+      File('${entry.path}/$qnnCacheMarker').writeAsStringSync(
+        jsonEncode({
+          for (final n in qnnLibFileNames)
+            n: File('${entry.path}/$n').lengthSync(),
+        }),
+      );
+      expect(isCompleteQnnCache(entry), isFalse);
+    });
+
     test('a truncated file invalidates the entry', () {
       final entry = promoteQnnCache(Directory('${root.path}/cache'), aar);
       File('${entry.path}/libQnnSystem.so').writeAsBytesSync([0]);

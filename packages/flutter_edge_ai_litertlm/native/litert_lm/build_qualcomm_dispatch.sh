@@ -194,7 +194,9 @@ echo ""
 echo "=== Checking QAIRT $QAIRT_DIR against the hook ==="
 # The SDK's own sdk.yaml, not a literal here: a hardcoded version in this
 # script claimed 2.44 for two releases after LiteRT had moved to 2.47 and 2.50.
-QAIRT_VERSION="$(sed -n 's/^version: *//p' "$QAIRT_DIR/sdk.yaml" 2>/dev/null | head -1)"
+# `|| true`: a missing sdk.yaml must reach the error below, not abort here
+# under pipefail with nothing said.
+QAIRT_VERSION="$(sed -n 's/^version: *//p' "$QAIRT_DIR/sdk.yaml" 2>/dev/null | head -1 || true)"
 echo "QAIRT version: $QAIRT_VERSION"
 # Since native-v0.18.0 the QNN runtime is not staged here: Qualcomm's licence
 # allows it only inside an application, so the build hook of an app that sets
@@ -265,6 +267,15 @@ if [ "$staged" -ne 1 ]; then
   exit 1
 fi
 mkdir -p "$PREBUILT_DIR"
+# QNN runtime libraries an older version of this script promoted must not stay
+# behind: Step 4 of the release packs the whole directory, so a leftover would
+# ship Qualcomm's runtime standalone again (verify_tarball_manifest.sh fails on
+# them too, but the order these scripts run in should not matter).
+for f in libQnnHtp.so libQnnSystem.so \
+         libQnnHtpV73Stub.so libQnnHtpV75Stub.so libQnnHtpV79Stub.so libQnnHtpV81Stub.so \
+         libQnnHtpV73Skel.so libQnnHtpV75Skel.so libQnnHtpV79Skel.so libQnnHtpV81Skel.so; do
+  rm -f "$PREBUILT_DIR/$f"
+done
 for f in "$STAGE"/*.so; do
   cp -f "$f" "$PREBUILT_DIR/$(basename "$f")"
   chmod +w "$PREBUILT_DIR/$(basename "$f")"

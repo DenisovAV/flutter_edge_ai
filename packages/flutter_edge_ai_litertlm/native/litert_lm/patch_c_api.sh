@@ -353,7 +353,11 @@ name_idx = content.find('name = "litert",')
 pc_idx = content.find('patch_cmds = [', name_idx) if name_idx >= 0 else -1
 end_idx = content.find('\n)', name_idx) if name_idx >= 0 else -1
 if pc_idx < 0 or (end_idx >= 0 and pc_idx > end_idx):
-    print("  WARN: litert patch_cmds not found in WORKSPACE; skipping section 10b")
+    # Fatal, not a warning: without §10b the Apple builds dlopen the Metal
+    # accelerator by its bare upstream name, which no app bundle provides, and
+    # GPU silently falls back to CPU.
+    raise SystemExit("  ERROR: litert patch_cmds not found in WORKSPACE; section 10b "
+                     "cannot apply — re-anchor it for this LiteRT-LM revision")
 else:
     at = pc_idx + len('patch_cmds = [')
     content = content[:at] + new_line_after_anchor + content[at:]
@@ -365,7 +369,8 @@ else
   if [ -f "$WORKSPACE_FILE" ]; then
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
-    echo "  WARN: $WORKSPACE_FILE not found"
+    echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2
+    exit 1
   fi
 fi
 

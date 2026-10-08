@@ -136,18 +136,20 @@ install_name_tool -id @rpath/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -add_rpath '@loader_path/../../..' "$PREBUILT_DIR/libLiteRtLm.dylib" 2>/dev/null || true
 
 # Copy companion libs from prebuilt.
-# Upstream's Metal accelerator ships as libLiteRtLmMetalAccelerator.dylib, so
-# its framework is LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
+# We ship upstream's libLiteRtMetalAccelerator.dylib as
+# libLiteRtLmMetalAccelerator.dylib, so its framework is
+# LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
 # embeds a LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle
 # holds one framework per name, and ours silently replaced theirs. The id moves
 # with the name (+8 bytes of load commands; upstream's simulator build has 48
 # bytes of slack), and patch_c_api.sh §10 points gpu_registry at the new path.
 for lib in libGemmaModelConstraintProvider.dylib libLiteRtMetalAccelerator.dylib; do
   out="${lib/libLiteRtMetalAccelerator/libLiteRtLmMetalAccelerator}"
-  if [ -f "prebuilt/macos_arm64/$lib" ]; then
-    cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$out"
-    echo "Copied $lib as $out"
-  fi
+  # Missing is fatal: without the accelerator the GPU falls back to CPU
+  # silently, and without the provider every tool call fails.
+  [ -f "prebuilt/macos_arm64/$lib" ] || { echo "ERROR: upstream prebuilt missing: prebuilt/macos_arm64/$lib" >&2; exit 1; }
+  cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$out"
+  echo "Copied $lib as $out"
 done
 # Sets a dylib's install name and proves it took: install_name_tool refuses
 # when the new id does not fit the header slack, and a dylib that keeps the old
@@ -189,6 +191,24 @@ clang -shared -o "$PREBUILT_DIR/libStreamProxy.dylib" \
 # 8. Verify
 echo ""
 echo "=== Verification ==="
+# Every framework libLiteRtLm dlopens by path must be in the bundle. The Metal
+# accelerator is loaded by dlopen, not linked, so nothing else checks it — and
+# without it the GPU falls back to CPU with no error at all.
+check_dlopened_frameworks() {
+  local dir="$1" fw missing=0
+  for fw in $(strings "$dir/libLiteRtLm.dylib" \
+                | grep -oE '@executable_path/(\.\./)?Frameworks/[A-Za-z0-9_]+\.framework/' \
+                | sed -E 's|.*Frameworks/([A-Za-z0-9_]+)\.framework/|\1|' | sort -u); do
+    if [ -f "$dir/lib$fw.dylib" ]; then
+      echo "  dlopen target $fw.framework: lib$fw.dylib present"
+    else
+      echo "ERROR: libLiteRtLm dlopens $fw.framework but $dir/lib$fw.dylib is missing" >&2
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || exit 1
+}
+check_dlopened_frameworks "$PREBUILT_DIR"
 echo "Symbols:"
 nm -gU "$PREBUILT_DIR/libLiteRtLm.dylib" | grep "litert_lm_engine_create" | head -2
 echo ""

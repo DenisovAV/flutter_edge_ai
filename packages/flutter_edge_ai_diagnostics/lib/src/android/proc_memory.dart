@@ -43,12 +43,22 @@ int? availableBytesFromMeminfo(String text) =>
 /// permission or I/O error, a missing `meminfo`, or a file that exists but
 /// lacks the field it always carries. The paths are parameters only so tests
 /// can point at fixtures.
-MemorySnapshot readProcMemorySnapshot({
+///
+/// The files are read asynchronously and one after the other, so a caller on
+/// the UI isolate is not blocked while the kernel walks the page tables. That
+/// moves the wait off the isolate; the kernel's own cost is unchanged.
+Future<MemorySnapshot> readProcMemorySnapshot({
   String smapsRollupPath = '/proc/self/smaps_rollup',
   String meminfoPath = '/proc/meminfo',
-}) {
-  final rollup = _readProcFile(smapsRollupPath, absentMeansUnavailable: true);
-  final meminfo = _readProcFile(meminfoPath, absentMeansUnavailable: false)!;
+}) async {
+  final rollup = await _readProcFile(
+    smapsRollupPath,
+    absentMeansUnavailable: true,
+  );
+  final meminfo = (await _readProcFile(
+    meminfoPath,
+    absentMeansUnavailable: false,
+  ))!;
   return MemorySnapshot(
     anonymousBytes: rollup == null
         ? null
@@ -67,9 +77,16 @@ MemorySnapshot readProcMemorySnapshot({
 }
 
 /// The file's text; null only when it is absent and that is a documented gap.
-String? _readProcFile(String path, {required bool absentMeansUnavailable}) {
+///
+/// The `await` sits inside the `try`: returning the future un-awaited would let
+/// the error escape the handlers below and a missing file would stop mapping to
+/// null.
+Future<String?> _readProcFile(
+  String path, {
+  required bool absentMeansUnavailable,
+}) async {
   try {
-    return File(path).readAsStringSync();
+    return await File(path).readAsString();
   } on PathNotFoundException catch (e) {
     if (absentMeansUnavailable) return null;
     throw MemoryReadException('$path does not exist', cause: e);

@@ -1,4 +1,5 @@
 ## Unreleased
+- A crash while saving the active inference, STT or TTS model no longer leaves a mix.
 - Android: Qualcomm NPU finds its libraries in Play (AAB) installs; prepared off the main thread.
 
 ## 2.1.0

@@ -12,19 +12,25 @@ offline, so the resolver is tested against the real published data rather
 than synthetic shapes — and pinned to the reference selection on every
 combination, not a hand-picked few.
 
-`../live_hugging_face_test.dart` is the opt-in live leg: it checks this
-snapshot against Hugging Face (drift, `sha256`/`size_bytes` against the repos'
-LFS metadata, every resolvable URL, and a new repo shipping a manifest). When
-it reports that the catalog moved, regenerate the snapshot from this
-directory:
+`../live_hugging_face_test.dart` is the opt-in live leg. It no longer fails
+when Hugging Face differs from this snapshot: it runs the sweep's invariants
+(`../catalog_checks.dart`) over every manifest the two orgs serve today, and
+checks `sha256`/`size_bytes` against the repos' LFS metadata and every
+resolvable URL. How the catalog differs from this snapshot goes to the job
+summary instead — so the snapshot does not have to follow every upload.
+Regenerate it when the sweep's pinned expectations should cover newer repos,
+or when the manifest format moves, from this directory:
 
 ```sh
 # 1. Every repo that ships a manifest, in the orgs the converter ships to.
 repos=$(for author in litert-community mlboydaisuke; do
   curl -sL "https://huggingface.co/api/models?author=$author&limit=1000&full=true" |
     python3 -c 'import json, sys
-for m in json.load(sys.stdin):
-    if any(s.get("rfilename") == "litertlm_manifest.json" for s in m.get("siblings") or []):
+models = json.load(sys.stdin)
+# An empty page, a full one, or entries without file names is not the whole org.
+assert 0 < len(models) < 1000 and all("siblings" in m for m in models), "listing cut off"
+for m in models:
+    if any(s["rfilename"] == "litertlm_manifest.json" for s in m["siblings"]):
         print(m["id"])'
 done | sort)
 

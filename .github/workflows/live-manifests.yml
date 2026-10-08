@@ -1,13 +1,19 @@
-# Checks the committed litertlm_manifest.json snapshot
-# (packages/flutter_edge_ai_litertlm/test/manifest/fixtures) against the live
-# Hugging Face catalog: drift, a new repo shipping a manifest, every variant's
-# sha256/size_bytes against the repo's LFS metadata, every resolvable URL, and
-# the engine-carried resolver end to end.
+# Checks every litertlm_manifest.json the hf-to-litertlm orgs serve on Hugging
+# Face today: the resolver's invariants on every platform × backend hint,
+# every variant's sha256/size_bytes against the repo's LFS metadata, every
+# resolvable URL, and the engine-carried resolver end to end.
 #
 # This is the one suite in the repo that reaches the network, so it runs on a
-# schedule and by hand — never on pull requests. A red run here means "the
-# catalog moved" (or Hugging Face is down or rate-limiting), not "this PR
-# broke something"; the fix is to regenerate the fixtures per their README.
+# schedule and by hand — never on pull requests. A red run here means one of:
+# a model listing that came back empty, cut off or without file names; a
+# listed manifest that is not served, or that the resolver cannot handle; one
+# that disagrees with its repo's files; a resolved URL that does not answer
+# 200; the end-to-end resolve failing; or Hugging Face being down or
+# rate-limiting. It does not mean "this PR broke something", and it does not
+# mean "a model was uploaded": how the catalog differs from the committed
+# snapshot (packages/flutter_edge_ai_litertlm/test/manifest/fixtures) is
+# written to the run's summary, and does not fail it. The same goes for a
+# gated repo this run has no access to — named in the summary, not checked.
 # The default `flutter test` (tool/test_all.sh, test.yml) skips the same file
 # because FLUTTER_GEMMA_LIVE_HF is unset there.
 name: Live manifest check (Hugging Face)
@@ -37,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Check the fixture snapshot against Hugging Face
+      - name: Check the manifests Hugging Face serves
         working-directory: packages/flutter_edge_ai_litertlm
         env:
           FLUTTER_GEMMA_LIVE_HF: '1'

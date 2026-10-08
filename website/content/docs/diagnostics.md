@@ -115,9 +115,12 @@ Future<InferenceModel> loadAndMeasure() async {
 }
 ```
 
-A snapshot reads OS files or makes a kernel call on the calling isolate, so
-sample every so many chunks during generation rather than on each one, and never
-on every frame.
+On Android a snapshot walks the process's page tables: the reads are
+asynchronous, so they do not block the isolate, but one costs about 150 ms on a
+low-end device (and before Linux 5.10 it stalls the process's mmap calls). On iOS
+it is a microsecond Mach call. Either way, sample during generation on a timer
+(at most once a second) rather than every so many chunks, and never on every
+frame.
 
 On iOS, compare what a model needs with `availableBytes` before loading it: if
 it needs more than the headroom, jetsam kills the app during load. The

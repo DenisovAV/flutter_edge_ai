@@ -13,7 +13,7 @@ description: Use when measuring how much memory an on-device model costs with fl
 4. The two fields answer different questions per platform. On iOS `anonymousBytes` is `phys_footprint`, the number jetsam kills on, and `availableBytes` is this app's headroom before that limit. On Android there is no per-app limit: `availableBytes` is MemAvailable for the whole device, an optimistic upper bound, and lmkd kills well before it reaches zero. Never use it as an Android kill threshold.
 5. On Android, GPU memory (KGSL, Mali, dmabuf) is mostly outside `anonymousBytes`. A model running on the GPU backend looks cheaper there than it is.
 6. Weights read from an mmapped model file are clean file pages and are not counted; the same weights copied into the heap are. On iOS that difference, not RSS, is what decides whether the app survives.
-7. A snapshot reads OS files or makes a kernel call on the calling isolate. Take one at a few points — before loading, after loading, during generation — not on every frame or token.
+7. A snapshot walks kernel state: on Android the `/proc` reads are asynchronous (they do not block the isolate) but cost about 150 ms on a low-end device, and before Linux 5.10 they stall the process's mmap calls; on iOS they are microsecond Mach calls. Take one at a few points — before loading, after loading, during generation — and never faster than about once a second, not on every frame or token.
 8. A pubspec section strips nothing from a release build. Put the package under `dev_dependencies` only when nothing in `lib/` imports it.
 
 ## Measure what a model costs
@@ -48,16 +48,18 @@ Future<InferenceModel> loadAndMeasure() async {
 }
 ```
 
-Sample during generation every so many chunks, not on each one:
+Sample during generation at most once a second, not on each chunk:
 
 ```dart
 Future<String> answerAndMeasure(InferenceModelSession session) async {
   final reply = StringBuffer();
-  var chunks = 0;
+  final sinceLast = Stopwatch()..start();
   MemorySnapshot? peak;
   await for (final chunk in session.getResponseAsync()) {
     reply.write(chunk);
-    if (++chunks % 32 == 0 && FlutterEdgeAiDiagnostics.isSupported) {
+    if (sinceLast.elapsed >= const Duration(seconds: 1) &&
+        FlutterEdgeAiDiagnostics.isSupported) {
+      sinceLast.reset();
       final now = await FlutterEdgeAiDiagnostics.memorySnapshot();
       if ((now.anonymousBytes ?? 0) > (peak?.anonymousBytes ?? 0)) peak = now;
     }

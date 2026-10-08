@@ -2,7 +2,7 @@
 
 ## 0.3.0
 
-- **Breaking:** require `genkit` ^1.0.0; each branch now runs in its own trace span.
+- **Breaking:** require `genkit` ^1.0.0; each branch runs in its own trace span and honours cancellation.
 
 ## 0.2.2
 

@@ -157,4 +157,35 @@ void main() {
     expect(resp.text, 'A');
     expect(received, ['A']); // exactly one chunk = the final response
   });
+
+  test("a branch gets the caller's context and cancellation token", () async {
+    Map<String, dynamic>? seenContext;
+    CancellationToken? seenCancel;
+    final m = cascadeModel(
+      branches: {
+        'a': Model(
+          name: 'a',
+          fn: (request, context) async {
+            seenContext = context.context;
+            seenCancel = context.cancel;
+            return ModelResponse(
+              finishReason: FinishReason.stop,
+              message: Message(
+                role: Role.model,
+                content: [TextPart(text: 'A')],
+              ),
+            );
+          },
+        ),
+      },
+      order: ['a'],
+      accept: (r) => true,
+    );
+    final controller = CancellationController();
+
+    await m(_req(), context: {'user': 'u1'}, cancel: controller.token);
+
+    expect(seenContext?['user'], 'u1');
+    expect(seenCancel, same(controller.token));
+  });
 }

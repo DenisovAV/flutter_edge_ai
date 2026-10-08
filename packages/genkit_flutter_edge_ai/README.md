@@ -20,7 +20,7 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Multimodal input (images, audio) — supports `data:` URIs, `file://` paths, and `http(s)://` URLs
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
 - Parallel tool calls — multiple function calls in a single model response
-- Structured JSON output — pass an `outputSchema`, read the parsed object from `response.output`
+- Structured JSON output — pass an `outputSchema` with `use: [simulateConstrainedGeneration()]`, read the parsed object from `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
 - Thinking mode (Gemma 4, DeepSeek, Qwen3)
 - Generation latency tracking via `latencyMs` in responses
@@ -56,6 +56,7 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 ```yaml
 # pubspec.yaml (your app)
 dependencies:
+  genkit: ^1.0.0
   genkit_flutter_edge_ai: ^0.8.0
   flutter_edge_ai: ^2.1.0
   flutter_edge_ai_litertlm: ^1.9.0   # only the engines/backends you actually use
@@ -181,16 +182,18 @@ final response = await ai.generate(
 ## Structured Output
 
 The plugin advertises `output: ['text', 'json']`. On-device Gemma has no native
-schema-constrained decoder, so Genkit's instruction-injection fallback drives
-JSON output: the plugin returns raw model text and Genkit's `extractJson`
-populates `response.output`. Pass an `outputSchema` (a `schemantic` type) and
-read the parsed object:
+schema-constrained decoder, and Genkit does not put the schema into the prompt
+on its own: pass an `outputSchema` (a `schemantic` type) together with the
+`simulateConstrainedGeneration()` middleware, which writes the schema into the
+prompt as instructions. The plugin returns the raw model text and Genkit's
+`extractJson` populates `response.output`:
 
 ```dart
 final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
+  use: [simulateConstrainedGeneration()], // the schema reaches the model
 );
 
 final Recipe? recipe = response.output;

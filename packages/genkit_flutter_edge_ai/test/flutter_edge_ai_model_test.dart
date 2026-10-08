@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/plugin.dart';
@@ -461,6 +463,41 @@ void main() {
       );
     });
 
+    // The generated getters cast lazily; read outside the parse try, a wrong
+    // type escaped as a TypeError, which a hybrid router treats as transient.
+    for (final (field, value) in [
+      ('temperature', '0.7'),
+      ('maxTokens', 'big'),
+      ('supportImage', 'yes'),
+      ('toolChoice', 1),
+      ('preferredAudioBackend', 2),
+    ]) {
+      test('a wrong type for $field is INVALID_ARGUMENT', () async {
+        final model = buildModel();
+
+        await expectLater(
+          model(
+            ModelRequest(
+              messages: [
+                Message(
+                  role: Role.user,
+                  content: [TextPart(text: 'Hi')],
+                ),
+              ],
+              config: {field: value},
+            ),
+          ),
+          throwsA(
+            isA<GenkitException>().having(
+              (e) => e.status,
+              'status',
+              StatusCode.invalidArgument,
+            ),
+          ),
+        );
+      });
+    }
+
     test('recreates model when preferredVisionBackend changes', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
@@ -757,6 +794,47 @@ void main() {
           ),
           throwsA(isA<GenkitException>()),
         );
+      },
+    );
+  });
+
+  group('cancellation', () {
+    test(
+      'cancelling mid-generation stops decoding and aborts the turn',
+      () async {
+        fakeChat.generationGate = Completer<void>();
+        final controller = CancellationController();
+        final model = buildModel();
+
+        final call = model(simpleRequest(), cancel: controller.token);
+        while (fakeChat.addQueryChunkCallCount == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        controller.cancel();
+
+        await expectLater(call, throwsA(isA<CancelledException>()));
+        expect(fakeChat.stopGenerationCallCount, 1);
+      },
+    );
+
+    test(
+      'a request cancelled while waiting for the lock opens no chat',
+      () async {
+        fakeChat.generationGate = Completer<void>();
+        final controller = CancellationController();
+        final model = buildModel();
+
+        final first = model(simpleRequest('first'));
+        while (fakeChat.addQueryChunkCallCount == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        final second = model(simpleRequest('second'), cancel: controller.token);
+        controller.cancel();
+        fakeChat.generationGate!.complete();
+
+        await first;
+        await expectLater(second, throwsA(isA<CancelledException>()));
+        expect(fakeModel.createChatCallCount, 1);
       },
     );
   });

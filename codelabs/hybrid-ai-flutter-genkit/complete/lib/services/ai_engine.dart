@@ -260,16 +260,15 @@ class AiEngine {
   /// context window big enough for the RAG prompt. genkit_flutter_edge_ai reads
   /// `maxTokens` ONLY from the per-request `request.config` (defaulting to
   /// 1024) — registration-time [FlutterEdgeAiModelConfig] has no options field
-  /// — so the budget has to ride along with each request. genkit_hybrid runs
-  /// a branch as an action, so forwarding the caller's streaming callback,
-  /// context and cancellation leaves streaming and fallback untouched. Only
-  /// the on-device branch is wrapped: Gemini's config has no `maxTokens` key.
-  /// An explicit
-  /// request `maxTokens` wins. The request is COPIED, never mutated — cascade
-  /// hands the very same object to the cloud branch next. [inner]'s metadata
-  /// is forwarded as a COPY too: genkit's `Model` constructor writes into the
-  /// map it is handed, so passing `inner.metadata` itself would rewrite the
-  /// wrapped model's own metadata.
+  /// — so the budget has to ride along with each request. genkit_hybrid runs a
+  /// branch as an action, so forwarding the caller's streaming callback,
+  /// context and cancellation leaves streaming and fallback untouched. Only the
+  /// on-device branch is wrapped: Gemini's config has no `maxTokens` key. An
+  /// explicit request `maxTokens` wins. The request is COPIED, never mutated —
+  /// cascade hands the very same object to the cloud branch next. [inner]'s
+  /// metadata is forwarded as a COPY too: genkit's `Model` constructor writes
+  /// into the map it is handed, so passing `inner.metadata` itself would
+  /// rewrite the wrapped model's own metadata.
   Model _withContextBudget(Model inner) => Model(
     name: '${inner.name}/ctx',
     metadata: {...inner.metadata},

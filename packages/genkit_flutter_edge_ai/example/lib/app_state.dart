@@ -89,6 +89,14 @@ class AppState extends ChangeNotifier {
   static const _modelName = 'gemma-3-1b-it';
   static const _embedderName = 'embedding-gemma-300m';
 
+  /// genkit 1.0 reports a failed generation in the result instead of
+  /// throwing; turn it back into an error so the caller's catch shows it.
+  void _throwIfFailed(GenerateResult<dynamic> result) {
+    if (result.finishReason == FinishReason.failed) {
+      throw result.cause ?? StateError(result.error?.message ?? 'failed');
+    }
+  }
+
   void _logError(String context, Object e, [StackTrace? stack]) {
     debugPrint('[$context] $e');
     if (stack != null) debugPrint('$stack');
@@ -239,6 +247,7 @@ class AppState extends ChangeNotifier {
             notifyListeners();
           }
         }
+        _throwIfFailed(await stream.onResult);
 
         chatMessages.add(ChatMessage(text: currentStreamText, isUser: false));
       } else {
@@ -247,6 +256,7 @@ class AppState extends ChangeNotifier {
           messages: messages,
           config: FlutterEdgeAiModelOptions(maxTokens: maxTokens),
         );
+        _throwIfFailed(response);
 
         chatMessages.add(ChatMessage(text: response.text, isUser: false));
       }
@@ -329,6 +339,7 @@ class AppState extends ChangeNotifier {
         returnToolRequests: !_agentMode,
         maxTurns: _agentMode ? 5 : null,
       );
+      _throwIfFailed(response);
 
       final parts = response.message?.content ?? [];
       final buffer = StringBuffer();

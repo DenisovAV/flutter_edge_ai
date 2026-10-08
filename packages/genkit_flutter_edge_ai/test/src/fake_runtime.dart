@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_runtime.dart';
 
@@ -164,9 +166,23 @@ class FakeInferenceChat extends gemma.InferenceChat {
     receivedMessages.add(message);
   }
 
+  /// When set, [generateChatResponse] waits on it, so a test can cancel in
+  /// the middle of a generation; [stopGeneration] completes it.
+  Completer<void>? generationGate;
+
+  int stopGenerationCallCount = 0;
+
   @override
   Future<gemma.ModelResponse> generateChatResponse() async {
+    await generationGate?.future;
     return blockingResponse;
+  }
+
+  @override
+  Future<void> stopGeneration() async {
+    stopGenerationCallCount++;
+    final gate = generationGate;
+    if (gate != null && !gate.isCompleted) gate.complete();
   }
 
   @override

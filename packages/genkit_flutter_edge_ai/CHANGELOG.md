@@ -1,5 +1,6 @@
 ## 0.8.0
 - **Breaking:** require `genkit` ^1.0.0 and `schemantic` ^1.0.0.
+- Cancelling a generation (`cancel:`) stops the on-device model.
 
 ## 0.7.1
 - **Breaking:** the `isThinking` option is `enableThinking`; require `flutter_edge_ai` ^2.1.0.

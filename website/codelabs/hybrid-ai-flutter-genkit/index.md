@@ -253,6 +253,12 @@ class CloudAIService implements AIService {
     await for (final chunk in stream) {
       if (chunk.text.isNotEmpty) yield chunk.text;
     }
+    // genkit 1.0 ends the stream normally when the model fails and
+    // reports the failure in the result, so rethrow it for the caller.
+    final result = await stream.onResult;
+    if (result.finishReason == FinishReason.failed) {
+      throw result.cause ?? StateError(result.error?.message ?? 'failed');
+    }
   }
 
   @override
@@ -261,6 +267,11 @@ class CloudAIService implements AIService {
   }
 }
 ```
+
+The check after the loop matters: in genkit 1.0 a model error does not throw
+out of `generateStream`. The stream ends normally and the failure arrives in
+`onResult` with `finishReason: FinishReason.failed`. Rethrowing its `cause` is
+what lets the chat screen show the error instead of an empty reply.
 
 ### Wire it up in chat_screen.dart
 
@@ -603,6 +614,12 @@ class LocalAIService implements AIService {
 
     await for (final chunk in stream) {
       if (chunk.text.isNotEmpty) yield chunk.text;
+    }
+    // genkit 1.0 ends the stream normally when the model fails and
+    // reports the failure in the result, so rethrow it for the caller.
+    final result = await stream.onResult;
+    if (result.finishReason == FinishReason.failed) {
+      throw result.cause ?? StateError(result.error?.message ?? 'failed');
     }
   }
 
@@ -1226,6 +1243,12 @@ await for (final chunk in stream) {
   buffer.write(chunk.text);
   // ... the throttled setState loop, unchanged from Step 2/3
 }
+// genkit 1.0 ends the stream normally when the model fails and
+// reports the failure in the result, so surface it as an error here.
+final result = await stream.onResult;
+if (result.finishReason == FinishReason.failed) {
+  throw result.cause ?? StateError(result.error?.message ?? 'failed');
+}
 // ...
 // Best-effort demo counter for CostStrategy: genkit_hybrid exposes no
 // "which branch ran" signal, so a Budget call that transiently fell
@@ -1756,18 +1779,17 @@ _local = _withContextBudget(
 
 /// Wraps the on-device [inner] model so every request reaching it carries a
 /// context window big enough for the RAG prompt. genkit_flutter_edge_ai reads
-/// `maxTokens` ONLY from the per-request `request.config` (defaulting to
-/// 1024) — registration-time [FlutterEdgeAiModelConfig] has no options field
-/// — so the budget has to ride along with each request. genkit_hybrid runs
-/// a branch as an action, so forwarding the caller's streaming callback,
-/// context and cancellation leaves streaming and fallback untouched. Only
-/// the on-device branch is wrapped: Gemini's config has no `maxTokens` key.
-/// An explicit
+/// `maxTokens` ONLY from the per-request `request.config` (defaulting to 1024)
+/// — registration-time [FlutterEdgeAiModelConfig] has no options field — so the
+/// budget has to ride along with each request. genkit_hybrid runs a branch as
+/// an action, so forwarding the caller's streaming callback, context and
+/// cancellation leaves streaming and fallback untouched. Only the on-device
+/// branch is wrapped: Gemini's config has no `maxTokens` key. An explicit
 /// request `maxTokens` wins. The request is COPIED, never mutated — cascade
-/// hands the very same object to the cloud branch next. [inner]'s metadata
-/// is forwarded as a COPY too: genkit's `Model` constructor writes into the
-/// map it is handed, so passing `inner.metadata` itself would rewrite the
-/// wrapped model's own metadata.
+/// hands the very same object to the cloud branch next. [inner]'s metadata is
+/// forwarded as a COPY too: genkit's `Model` constructor writes into the map it
+/// is handed, so passing `inner.metadata` itself would rewrite the wrapped
+/// model's own metadata.
 Model _withContextBudget(Model inner) => Model(
   name: '${inner.name}/ctx',
   metadata: {...inner.metadata},

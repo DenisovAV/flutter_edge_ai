@@ -15,9 +15,10 @@ import 'tool_choice_parse.dart';
 /// plugin's `list()` metadata AND the resolved [Model]'s `metadata` so the two
 /// never drift (the resolved action previously carried no metadata, leaving its
 /// supports empty at generate time). `constrained: false` — on-device Gemma has
-/// no native schema-constrained decoder, so Genkit's instruction-injection
-/// fallback drives JSON output (`output: ['text', 'json']`); we return the raw
-/// model text and the framework's `extractJson` populates `response.output`.
+/// no native schema-constrained decoder. Genkit never adds the schema to the
+/// prompt by itself; the caller opts in with
+/// `use: [simulateConstrainedGeneration()]`. We return the raw model text and
+/// the framework's `extractJson` populates `response.output`.
 const Map<String, dynamic> kFlutterEdgeAiModelSupports = {
   'multiturn': true,
   'media': true,
@@ -137,13 +138,49 @@ Future<ModelResponse> _executeGeneration({
   )
   onModelCached,
 }) async {
-  // Parse config from the untyped Map.
+  // The request may have waited on the previous generation's lock; a caller
+  // that gave up meanwhile should not pay for loading a model.
+  context.cancel?.throwIfCancelled();
+
+  // Parse config from the untyped Map. Every option is read inside the try:
+  // the generated getters cast lazily, so a value of the wrong type ('0.7' for
+  // temperature) throws here. Read later, it escaped as a TypeError, which a
+  // hybrid router treats as transient and quietly hands to the next branch.
   final configMap = request.config;
-  final FlutterEdgeAiModelOptions? config;
+  final int maxTokens;
+  final double temperature;
+  final int topK;
+  final double? topP;
+  final int randomSeed;
+  final bool supportImage;
+  final bool supportAudio;
+  final bool enableThinking;
+  final bool? enableSpeculativeDecoding;
+  final String? configToolChoice;
+  final String? configSystemInstruction;
+  final int? maxFunctionBufferLength;
+  final String? configPreferredBackend;
+  final String? configPreferredVisionBackend;
+  final String? configPreferredAudioBackend;
   try {
-    config = configMap != null
+    final config = configMap != null
         ? FlutterEdgeAiModelOptions.fromJson(configMap)
         : null;
+    maxTokens = config?.maxTokens ?? 1024;
+    temperature = config?.temperature ?? 0.8;
+    topK = config?.topK ?? 1;
+    topP = config?.topP;
+    randomSeed = config?.randomSeed ?? 1;
+    supportImage = config?.supportImage ?? false;
+    supportAudio = config?.supportAudio ?? false;
+    enableThinking = config?.enableThinking ?? false;
+    enableSpeculativeDecoding = config?.enableSpeculativeDecoding;
+    configToolChoice = config?.toolChoice;
+    configSystemInstruction = config?.systemInstruction;
+    maxFunctionBufferLength = config?.maxFunctionBufferLength;
+    configPreferredBackend = config?.preferredBackend;
+    configPreferredVisionBackend = config?.preferredVisionBackend;
+    configPreferredAudioBackend = config?.preferredAudioBackend;
   } catch (e) {
     throw GenkitException(
       'Invalid model config: $e',
@@ -151,35 +188,25 @@ Future<ModelResponse> _executeGeneration({
     );
   }
 
-  final maxTokens = config?.maxTokens ?? 1024;
-  final temperature = config?.temperature ?? 0.8;
-  final topK = config?.topK ?? 1;
-  final topP = config?.topP;
-  final randomSeed = config?.randomSeed ?? 1;
-  final supportImage = config?.supportImage ?? false;
-  final supportAudio = config?.supportAudio ?? false;
-  final enableThinking = config?.enableThinking ?? false;
-  final enableSpeculativeDecoding = config?.enableSpeculativeDecoding;
-  // Prefer the native top-level request.toolChoice (Genkit 0.15's standard
+  // Prefer the native top-level request.toolChoice (Genkit's standard
   // field) over the legacy config.toolChoice custom option. Fails loud on an
   // unrecognized value (see parseToolChoice) rather than silently defaulting
   // to auto — a 'none' typo must not quietly re-enable tools.
   final gemmaToolChoice = parseToolChoice(
-    request.toolChoice?.value ?? config?.toolChoice,
+    request.toolChoice?.value ?? configToolChoice,
   );
   final systemInstruction =
-      config?.systemInstruction ?? extractSystemInstruction(request.messages);
-  final maxFunctionBufferLength = config?.maxFunctionBufferLength;
+      configSystemInstruction ?? extractSystemInstruction(request.messages);
   final preferredBackend = parsePreferredBackend(
-    config?.preferredBackend,
+    configPreferredBackend,
     field: 'preferredBackend',
   );
   final preferredVisionBackend = parsePreferredBackend(
-    config?.preferredVisionBackend,
+    configPreferredVisionBackend,
     field: 'preferredVisionBackend',
   );
   final preferredAudioBackend = parsePreferredBackend(
-    config?.preferredAudioBackend,
+    configPreferredAudioBackend,
     field: 'preferredAudioBackend',
   );
 
@@ -253,12 +280,21 @@ Future<ModelResponse> _executeGeneration({
     await chat.addQueryChunk(msg);
   }
 
-  // Generate response.
-  final stopwatch = Stopwatch()..start();
-  if (context.streamingRequested) {
-    return _generateStreaming(chat, context.sendChunk, stopwatch);
-  } else {
-    return _generateBlocking(chat, stopwatch);
+  // Generate response. Cancelling the caller's token stops native decoding,
+  // and the turn then ends as a CancelledException, which genkit reports as an
+  // aborted response instead of a complete-looking truncated answer.
+  final cancel = context.cancel;
+  cancel?.throwIfCancelled();
+  final detach = cancel?.onCancel(() => unawaited(chat.stopGeneration()));
+  try {
+    final stopwatch = Stopwatch()..start();
+    final response = context.streamingRequested
+        ? await _generateStreaming(chat, context.sendChunk, stopwatch)
+        : await _generateBlocking(chat, stopwatch);
+    cancel?.throwIfCancelled();
+    return response;
+  } finally {
+    detach?.call();
   }
 }
 

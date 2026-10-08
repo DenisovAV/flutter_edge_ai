@@ -152,8 +152,8 @@ final response = await ai.generate(
 Prefer Genkit's standard top-level parameter — `ai.generate(toolChoice: ToolChoice.none)`
 — which takes **precedence** over the `toolChoice` config field above (kept as a
 legacy fallback). Either way: `'auto'` lets the model decide, `'required'` forces
-a tool call, `'none'` forbids one. An unrecognized value throws
-`INVALID_ARGUMENT` rather than quietly falling back to `'auto'`.
+a tool call, `'none'` forbids one. An unrecognized value is an
+`INVALID_ARGUMENT` error rather than a quiet fallback to `'auto'`.
 
 <Info>
 
@@ -166,15 +166,17 @@ embeddings) before using the plugin. See [Getting Started](/docs/getting-started
 ### Structured (JSON) output
 
 The plugin advertises `output: ['text', 'json']`. On-device Gemma has no native
-schema-constrained decoder, so Genkit's instruction-injection fallback drives
-JSON output — the plugin returns raw model text and Genkit's `extractJson`
-populates `response.output`. Pass an `outputSchema` and read the parsed object:
+schema-constrained decoder, and Genkit does not put the schema into the prompt
+on its own: add the `simulateConstrainedGeneration()` middleware, which writes
+it into the prompt as instructions. The plugin returns the raw model text and
+Genkit's `extractJson` populates `response.output`:
 
 ```dart
 final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
+  use: [simulateConstrainedGeneration()], // the schema reaches the model
 );
 
 final Recipe? recipe = response.output;
@@ -338,6 +340,20 @@ Permanent errors — `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`,
 `FAILED_PRECONDITION`, `NOT_FOUND` — propagate immediately, since they would
 fail the same way on every branch. A `GenkitException` thrown without an
 explicit status defaults to `INTERNAL`, so it *is* retried.
+
+The error that propagates does not leave `ai.generate` as an exception. In
+genkit 1.0 a failed generation comes back as a result with
+`finishReason: FinishReason.failed`, the error in `error` and the original
+exception in `cause`; `ai.generateStream` ends normally with that result in
+`onResult`. Check it wherever you show errors:
+
+```dart
+await for (final chunk in stream) { /* ... */ }
+final result = await stream.onResult;
+if (result.finishReason == FinishReason.failed) {
+  throw result.cause ?? StateError(result.error?.message ?? 'failed');
+}
+```
 
 During **streaming** the same policy applies plus a hard cut-off: fallback is
 possible only before the first token. Once a branch has emitted a chunk, any

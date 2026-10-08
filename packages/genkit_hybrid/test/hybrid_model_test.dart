@@ -217,4 +217,34 @@ void main() {
       expect(b.name, 'router-A');
     },
   );
+
+  test("a branch gets the caller's context and cancellation token", () async {
+    Map<String, dynamic>? seenContext;
+    CancellationToken? seenCancel;
+    final model = hybridModel(
+      branches: {
+        'a': Model(
+          name: 'a',
+          fn: (request, context) async {
+            seenContext = context.context;
+            seenCancel = context.cancel;
+            return ModelResponse(
+              finishReason: FinishReason.stop,
+              message: Message(
+                role: Role.model,
+                content: [TextPart(text: 'ok')],
+              ),
+            );
+          },
+        ),
+      },
+      strategy: _Pick(['a']),
+    );
+    final controller = CancellationController();
+
+    await model(_req(), context: {'user': 'u1'}, cancel: controller.token);
+
+    expect(seenContext?['user'], 'u1');
+    expect(seenCancel, same(controller.token));
+  });
 }

@@ -33,6 +33,12 @@ class CloudAIService implements AIService {
     await for (final chunk in stream) {
       if (chunk.text.isNotEmpty) yield chunk.text;
     }
+    // genkit 1.0 ends the stream normally when the model fails and
+    // reports the failure in the result, so rethrow it for the caller.
+    final result = await stream.onResult;
+    if (result.finishReason == FinishReason.failed) {
+      throw result.cause ?? StateError(result.error?.message ?? 'failed');
+    }
   }
 
   @override

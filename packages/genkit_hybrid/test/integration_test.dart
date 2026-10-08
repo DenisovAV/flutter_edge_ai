@@ -1,8 +1,8 @@
 // Integration tests: prove that hybridModel plugs into a real Genkit pipeline
-// driven by ai.generate — not just raw .fn() calls with hand-built context.
+// driven by ai.generate — not just direct model calls with hand-built context.
 //
 // How we read the API:
-//   final text:   GenerateResponseHelper.text  (delegates to ModelResponse.text)
+//   final text:   GenerateResult.text  (delegates to ModelResponse.text)
 //   chunk text:   GenerateResponseChunk.text   (joins all TextPart.text values in chunk.content)
 import 'package:genkit/genkit.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
@@ -96,6 +96,26 @@ void main() {
       final res = await ai.generate(model: smart, prompt: 'hi');
 
       expect(res.text, equals('RECOVERED'));
+
+      await ai.shutdown();
+    });
+
+    test('every branch fails -> ai.generate returns a failed result', () async {
+      // genkit 1.0 does not throw out of ai.generate: the error comes back in
+      // the result, which is what the README tells apps to check.
+      final ai = Genkit(isDevEnv: false);
+
+      final smart = hybridModelOnDeviceCloud(
+        onDevice: _realModel(name: 'device-x', throwImmediately: true),
+        cloud: _realModel(name: 'cloud-x', throwImmediately: true),
+        strategy: FallbackStrategy([kOnDevice, kCloud]),
+      );
+      ai.registry.register(smart);
+
+      final res = await ai.generate(model: smart, prompt: 'hi');
+
+      expect(res.finishReason, FinishReason.failed);
+      expect(res.cause.toString(), contains('cloud-x is unavailable'));
 
       await ai.shutdown();
     });

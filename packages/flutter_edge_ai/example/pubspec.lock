@@ -276,7 +276,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.10.0"
+    version: "1.10.1"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:

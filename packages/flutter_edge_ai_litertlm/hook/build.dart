@@ -202,7 +202,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 const _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-a',
+  version: '0.18.0-b',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -213,6 +213,15 @@ const _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.18.0-b rebuilds libLiteRtLm.dylib in the three Apple archives and nothing
+  // else: in an app with flutter_litert, LiteRT's gpu_registry tried the
+  // generic libLiteRtGpuAccelerator first and, when that dlopen failed, bound
+  // flutter_litert's accelerator through RTLD_DEFAULT — a crash in
+  // LiteRtCreateCompiledModel. Apple now tries only our framework and never
+  // the default lookup (patches/litert_gpu_registry_apple.patch). Exports,
+  // dependencies and minos match 0.18.0-a; the other four archives are
+  // byte-identical to it.
+  //
   // 0.18.0-a rebuilds the two Linux libLiteRtLm.so and nothing else: upstream
   // sets the Qualcomm NPU options (HTP burst) on Android only, so a Linux
   // Qualcomm board ran HTP in its default mode (patch_c_api.sh §11). Exports,
@@ -248,11 +257,11 @@ const _litertlmBundle = _NativeBundle(
     'litertlm-windows_x86_64.tar.gz':
         '4bdf9d262bf6a59e7be3d336e812a56cb701a87bd13e1e5d9c6ca8d04bae30ae',
     'litertlm-macos_arm64.tar.gz':
-        'a1a10c711acb87708d763157650fd24eb9ee2f41c3ddb0bfc206b0dd617d5d9c',
+        'e1a53ba0526caed3825c0d1c3b47f30171632daf2bbb5eaaf37f8d75e67bb8fe',
     'litertlm-ios_arm64.tar.gz':
-        'fb2535fa2d7b717a24b8b8d452a7aca3298dd84628b94940de1297c1fdd1739e',
+        'da21ca8aff5b75da45cff31855ed155add0828761f84b17108a25c49e1e1b198',
     'litertlm-ios_sim_arm64.tar.gz':
-        '9ed9637fa5498873c999b00e1d0a966b96bce4f5aeda8fb8b5c951820dfb0f09',
+        '4d0295a703646db586b19894a1f58691df7039360493a8a6f22fe6f91795c879',
     'litertlm-android_arm64.tar.gz':
         'baabefaaea74217f3001f07809ba0ce077ddbd7993a8d4475692a4cf1eebe3b9',
   },

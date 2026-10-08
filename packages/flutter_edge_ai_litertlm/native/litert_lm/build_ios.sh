@@ -353,6 +353,18 @@ check_dlopened_frameworks() {
       missing=1
     fi
   done
+  # Our framework must be the only GPU accelerator named. A name that fails to
+  # dlopen sends gpu_registry to RTLD_DEFAULT, which in an app with
+  # flutter_litert binds that runtime's accelerator and crashes
+  # (patches/litert_gpu_registry_apple.patch). No `grep -q`: under pipefail its
+  # early exit SIGPIPEs strings and reads as "not found".
+  local foreign
+  foreign="$(strings "$dir/libLiteRtLm.dylib" \
+    | grep -E 'libLiteRtGpuAccelerator|^(lib)?LiteRtMetalAccelerator(\.dylib)?$' || true)"
+  if [ -n "$foreign" ]; then
+    echo "ERROR: libLiteRtLm still names another GPU accelerator: $foreign" >&2
+    missing=1
+  fi
   [ "$missing" -eq 0 ] || exit 1
 }
 

@@ -361,12 +361,38 @@ if pc_idx < 0 or (end_idx >= 0 and pc_idx > end_idx):
 else:
     at = pc_idx + len('patch_cmds = [')
     content = content[:at] + new_line_after_anchor + content[at:]
+    # The Apple accelerator order and the RTLD_DEFAULT fallback are a real diff
+    # (patches/litert_gpu_registry_apple.patch, copied next to WORKSPACE by the
+    # shell below). Bazel applies `patches` BEFORE `patch_cmds`, and fails the
+    # fetch when a hunk does not apply — the loud failure a moved upstream
+    # line has to produce. The macro it uses is defined by the awk above.
+    content = content.replace(
+        '    name = "litert",\n',
+        '    name = "litert",\n'
+        '    patches = ["//:flutter_gemma_litert_gpu_registry.patch"],\n'
+        '    patch_args = ["-p1"],\n', 1)
+    if 'flutter_gemma_litert_gpu_registry.patch' not in content:
+        raise SystemExit("  ERROR: could not add the gpu_registry patch to the litert archive")
     with open(ws, 'w') as f:
         f.write(content)
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
+    print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
 PYEOF
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
+    "$DIR/flutter_gemma_litert_gpu_registry.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
+    # A tree patched by an older patch_c_api.sh has the sed but not the diff:
+    # its Apple build still tries libLiteRtGpuAccelerator first and falls back
+    # to RTLD_DEFAULT, which in an app with flutter_litert is that runtime's
+    # accelerator (the litertlm 1.10.0 iOS crash). Refuse it rather than skip.
+    if ! grep -q "flutter_gemma_litert_gpu_registry.patch" "$WORKSPACE_FILE"; then
+      echo "  ERROR: $WORKSPACE_FILE was patched by an older patch_c_api.sh" \
+        "(no gpu_registry diff); start from a fresh LiteRT-LM tree" >&2
+      exit 1
+    fi
+    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
+      "$DIR/flutter_gemma_litert_gpu_registry.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2

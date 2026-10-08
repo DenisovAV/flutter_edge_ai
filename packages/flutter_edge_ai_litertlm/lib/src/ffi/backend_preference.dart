@@ -8,9 +8,11 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart';
 
 /// Whether this host ships an NPU dispatch stack at all.
 ///
-/// Exactly two do: Android carries the Qualcomm QNN stack and Windows carries
-/// Intel's (`LiteRtDispatch.dll` + OpenVino + TBB), each in its own native
-/// tarball. Nothing ships for macOS, Linux or iOS.
+/// Exactly two can: Android carries the Qualcomm QNN stack and Windows carries
+/// Intel's (`LiteRtDispatch.dll` + OpenVino + TBB). Nothing ships for macOS,
+/// Linux or iOS. On Android the stack is opt-in per app (`qualcomm_npu`), so
+/// `LiteRtLmEngine.createModel` first asks NativeAssetsManifest.json whether
+/// this build bundled it and only then lets this probe decide.
 ///
 /// This gate exists because `backend: "npu"` is a string the native runtime
 /// accepts WITHOUT complaint on a host that cannot honour it. Since
@@ -227,6 +229,9 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // before the next one allocates an engine.
   required FutureOr<void> Function(T client) shutdownClient,
   bool? npuDispatchAvailable,
+  // Why npu is off when the caller decided so from something this file cannot
+  // see — on Android, the build not bundling the opt-in Qualcomm stack.
+  String? npuUnavailableBecause,
 }) async {
   final attempts = <BackendInitAttemptFailure>[];
   final backends = ffiBackendFallbackOrder(
@@ -250,17 +255,20 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // `_warn` in litert_default_scope.dart.
   if (preferredBackend == PreferredBackend.npu &&
       !backends.contains(PreferredBackend.npu)) {
-    final reason = npuUnavailableReason(
-      Platform.operatingSystem,
-      fastRpcError: _fastRpcProbeError,
-    );
+    final reason =
+        npuUnavailableBecause ??
+        npuUnavailableReason(
+          Platform.operatingSystem,
+          fastRpcError: _fastRpcProbeError,
+        );
     // ignore: avoid_print
     print(
       '[flutter_edge_ai] WARNING: $logTag npu was requested, but $reason — '
       'trying ${backends.map(ffiBackendWireName).join(" -> ")} instead. NPU '
-      'runs on Qualcomm Snapdragon Android and on Windows (Intel '
-      'LunarLake/PantherLake). InferenceModel.activeBackend names what '
-      'actually ran.',
+      'runs on Qualcomm Snapdragon Android (in apps built with '
+      'hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu: true) and '
+      'on Windows (Intel LunarLake/PantherLake). '
+      'InferenceModel.activeBackend names what actually ran.',
     );
   }
 

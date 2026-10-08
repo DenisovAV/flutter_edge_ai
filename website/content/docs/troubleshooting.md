@@ -221,6 +221,16 @@ pass the `cache_length` it was built for. If the NPU fails to initialize the
 engine falls back to GPU and then CPU, and the floor applies to those attempts,
 so the fallback is clamped rather than crashed.
 
+**`PreferredBackend.npu` on Android falls back to GPU after an upgrade.** From
+`flutter_edge_ai_litertlm` 1.10.0 the Qualcomm QNN runtime is not part of the
+package; the app opts in with `qualcomm_npu: true` under `hooks: user_defines:
+flutter_edge_ai_litertlm:` in its pubspec — see [LiteRT-LM](/docs/litertlm). The
+log names the reason. If it says the stack is not enabled although the flag is
+set, the flag is in the wrong pubspec: in a pub workspace only the workspace
+root's `user_defines` count. If the build fails fetching `qnn-runtime`, the
+machine cannot reach Maven Central; set `qualcomm_npu_maven_url` to a mirror or
+`qualcomm_npu_aar` to a local copy of the same AAR.
+
 **`PreferredBackend.npu` is unavailable on a recent Snapdragon.** SoC coverage is
 the runtime's, not ours: Snapdragon 8 Gen 5 (**SM8845** — OnePlus 15R, iQOO 15R
 and the like) is not covered upstream, and a context compiled for SM8850 is

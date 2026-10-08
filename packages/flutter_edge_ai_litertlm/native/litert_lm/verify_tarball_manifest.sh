@@ -45,6 +45,20 @@ INTENTIONAL_DROPS=(
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
   "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # native-v0.18.0: the QNN runtime left the bundle. Qualcomm licenses it for
+  # redistribution only inside an application, so an app opts in with
+  # `qualcomm_npu: true` and its build hook fetches com.qualcomm.qti:qnn-runtime
+  # from Maven. The dispatch stays — it is LiteRT's, built from source.
+  "android_arm64:libQnnHtp.so"
+  "android_arm64:libQnnSystem.so"
+  "android_arm64:libQnnHtpV73Stub.so"
+  "android_arm64:libQnnHtpV75Stub.so"
+  "android_arm64:libQnnHtpV79Stub.so"
+  "android_arm64:libQnnHtpV81Stub.so"
+  "android_arm64:libQnnHtpV73Skel.so"
+  "android_arm64:libQnnHtpV75Skel.so"
+  "android_arm64:libQnnHtpV79Skel.so"
+  "android_arm64:libQnnHtpV81Skel.so"
 )
 
 _is_intentional() {

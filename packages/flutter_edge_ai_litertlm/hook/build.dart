@@ -3,7 +3,11 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:hooks/hooks.dart';
+
+import 'src/download.dart';
+import 'src/qnn_runtime.dart';
 
 const _packageName = 'flutter_edge_ai_litertlm';
 
@@ -66,9 +70,10 @@ class _NativeBundle {
   /// dispatch. qdrant: none.
   final List<String> windowsExtraLibs;
 
-  /// Additional libraries to register on Android only (no `lib` prefix,
-  /// `.so` suffix added automatically). LiteRT: Qualcomm NPU dispatch +
-  /// QNN runtime stack (HTP + System + per-SoC Stub libs).
+  /// Android-only libraries this bundle owns (no `lib` prefix, `.so` suffix
+  /// added automatically). LiteRT: the Qualcomm NPU stack. Registered by the
+  /// opt-in flag, never by presence (see _registerQualcommNpu); the list
+  /// itself also drives the flat-cache cleanup.
   final List<String> androidExtraLibs;
 
   /// When `true`, per-platform subdirectories live directly under
@@ -313,12 +318,11 @@ const _litertlmBundle = _NativeBundle(
   ],
   // Android NPU: Qualcomm dispatch bridge + QNN HTP runtime + per-SoC Stubs.
   //
-  // No longer extracted from Google AI Edge Gallery APKs — that is what let
-  // them drift. `build_qualcomm_dispatch.sh` builds the dispatch from the
-  // LiteRT ref derived from the pin, and refreshes all ten QNN runtime libs
-  // from the same QAIRT the dispatch was compiled against (2.44.0.260225).
-  // The extracted set had QNN System API 1.8.0 against a dispatch requiring
-  // 1.11.0, which fails engine_create with an opaque null on real hardware.
+  // Registered only for apps that set `qualcomm_npu: true` (see
+  // _registerQualcommNpu): the dispatch from this bundle, the QNN runtime from
+  // Qualcomm's own Maven artifact. Since native-v0.18.0 the tarball carries
+  // the dispatch only. The ten QNN names stay in this list so the flat-cache
+  // cleanup still removes copies an older tarball left behind.
   //
   // sm8550=V73, sm8650=V75, sm8750=V79, sm8850=V81.
   // Stub libs are the CPU-side bridge; Skel libs run on Hexagon DSP via FastRPC.
@@ -918,22 +922,14 @@ Future<void> _processBundle({
     }
   }
 
-  // Android-only extras (Qualcomm NPU dispatch + QNN runtime stack).
-  if (os == OS.android) {
-    for (final name in bundle.androidExtraLibs) {
-      final fileName = _dylibFileName(os, name);
-      final fileUri = prebuiltDir.resolve(fileName);
-      if (File.fromUri(fileUri).existsSync()) {
-        output.assets.code.add(
-          CodeAsset(
-            package: _packageName,
-            name: 'src/native/$name',
-            linkMode: DynamicLoadingBundled(),
-            file: stage(fileUri),
-          ),
-        );
-      }
-    }
+  // Android-only: the Qualcomm NPU stack, for apps that opted in.
+  if (os == OS.android && bundle.androidExtraLibs.isNotEmpty) {
+    await _registerQualcommNpu(
+      input: input,
+      output: output,
+      prebuiltDir: prebuiltDir,
+      stage: stage,
+    );
   }
 
   // A bundle that skips its companions on this OS (see [skipCompanionsOn])
@@ -968,6 +964,152 @@ Future<void> _processBundle({
   );
   if (localDir.uri != prebuiltDir) {
     output.dependencies.add(_watchableAncestor(localDir).uri);
+  }
+}
+
+// ============================================================================
+// Opt-in Qualcomm NPU stack (Android)
+// ============================================================================
+
+/// Registers the Android Qualcomm NPU stack when the app set `qualcomm_npu`.
+///
+/// Registration follows the flag, never file presence. An older flat cache or
+/// a maintainer's prebuilt can still hold these files, and registering them
+/// on presence would put Qualcomm's libraries into an app that did not ask
+/// for them — and make NativeAssetsManifest.json, which the runtime gate
+/// reads, claim a stack the developer never enabled.
+Future<void> _registerQualcommNpu({
+  required BuildInput input,
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) async {
+  final enabled = readBoolUserDefine(
+    input.userDefines[qualcommNpuUserDefine],
+    qualcommNpuUserDefine,
+  );
+  if (!enabled) return;
+
+  void register(String name, Uri file) => output.assets.code.add(
+    CodeAsset(
+      package: _packageName,
+      name: 'src/native/$name',
+      linkMode: DynamicLoadingBundled(),
+      file: stage(file),
+    ),
+  );
+
+  // Ours, from the native bundle. Enabled and missing is a broken bundle, not
+  // a reason to ship the QNN runtime without the library that loads it.
+  final dispatch = prebuiltDir.resolve(
+    _dylibFileName(OS.android, qualcommDispatchLib),
+  );
+  if (!File.fromUri(dispatch).existsSync()) {
+    throw StateError(
+      '[$_packageName] qualcomm_npu is set, but '
+      '${dispatch.toFilePath()} is missing from the native bundle.',
+    );
+  }
+  register(qualcommDispatchLib, dispatch);
+
+  // Qualcomm's, from Qualcomm's Maven artifact via the cache.
+  final qnnDir = await _ensureQnnRuntime(input, output);
+  for (final name in qnnRuntimeLibs) {
+    register(name, qnnDir.uri.resolve(_dylibFileName(OS.android, name)));
+  }
+  // Said once per hook run (the hook is cached, so not on every build):
+  // the libraries are Qualcomm's, and their notices travel with them.
+  stderr.writeln(
+    '[$_packageName] qualcomm_npu: bundling Qualcomm QNN runtime '
+    '$qnnRuntimeVersion (Qualcomm licence; LICENSE.pdf and NOTICE.txt in '
+    '${qnnDir.path}).',
+  );
+}
+
+/// Returns the cache directory holding the prepared QNN runtime, fetching and
+/// preparing it first if needed.
+Future<Directory> _ensureQnnRuntime(
+  BuildInput input,
+  BuildOutputBuilder output,
+) async {
+  final root = _qnnCacheRoot(input);
+  final entry = Directory('${root.path}/${qnnCacheEntryName()}');
+  if (isCompleteQnnCache(entry)) return entry;
+
+  final localAar = input.userDefines.path(qualcommNpuAarUserDefine);
+  if (localAar != null) {
+    // The app points at an AAR it has (offline builds, mirrors that need
+    // credentials). Same checksum as Maven's: this is a source, not a version.
+    output.dependencies.add(localAar);
+    final aar = File.fromUri(localAar);
+    if (!aar.existsSync()) {
+      throw StateError(
+        '[$_packageName] $qualcommNpuAarUserDefine points at '
+        '${aar.path}, which does not exist.',
+      );
+    }
+    final actual = (await sha256.bind(aar.openRead()).first).toString();
+    if (actual != qnnRuntimeSha256) {
+      throw StateError(
+        '[$_packageName] ${aar.path} is not qnn-runtime-$qnnRuntimeVersion.aar '
+        '(sha256 $actual, expected $qnnRuntimeSha256).',
+      );
+    }
+    return promoteQnnCache(root, aar);
+  }
+
+  final mirror = input.userDefines[qualcommNpuMavenUrlUserDefine];
+  if (mirror != null && mirror is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$qualcommNpuMavenUrlUserDefine must '
+      'be a URL string',
+    );
+  }
+  final url = qnnRuntimeAarUrl((mirror as String?) ?? qnnDefaultMavenBase);
+  root.createSync(recursive: true);
+  // A fresh directory per download, not a pid-named file: two CI containers
+  // sharing a mounted cache can have the same pid, and would write one file.
+  final download = root.createTempSync(qnnDownloadTempPrefix);
+  try {
+    final aar = File('${download.path}/qnn-runtime-$qnnRuntimeVersion.aar');
+    try {
+      await downloadVerified(url, aar, qnnRuntimeSha256);
+    } on Object catch (e) {
+      throw StateError(
+        '[$_packageName] qualcomm_npu is set, but the QNN runtime could not be '
+        'fetched: ${redactUserInfoIn('$e', url)}\nWithout network access, '
+        'download ${redactUserInfo(url)} yourself and set '
+        'hooks.user_defines.$_packageName.$qualcommNpuAarUserDefine to its path.',
+      );
+    }
+    return promoteQnnCache(root, aar);
+  } finally {
+    // Only the prepared libraries are kept; the 71 MB archive is not.
+    download.deleteSync(recursive: true);
+  }
+}
+
+/// Where the prepared QNN runtime is cached: beside the native bundles, or —
+/// when that is not writable (a container with no HOME, a read-only home) —
+/// in the hook's shared output directory for this project.
+Directory _qnnCacheRoot(BuildInput input) {
+  final preferred = Directory(
+    '${_cacheBaseDir().path}${Platform.pathSeparator}qnn'
+    '${Platform.pathSeparator}android_arm64',
+  );
+  try {
+    preferred.createSync(recursive: true);
+    final probe = File(
+      '${preferred.path}${Platform.pathSeparator}.write-probe-$pid',
+    );
+    probe
+      ..writeAsStringSync('')
+      ..deleteSync();
+    return preferred;
+  } on FileSystemException {
+    return Directory.fromUri(
+      input.outputDirectoryShared.resolve('qnn/android_arm64/'),
+    );
   }
 }
 

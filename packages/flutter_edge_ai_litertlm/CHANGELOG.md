@@ -1,3 +1,6 @@
+## Unreleased
+- **Breaking:** Android Qualcomm NPU is opt-in: set `qualcomm_npu: true` in `hooks: user_defines`.
+
 ## 1.9.0
 - **Breaking:** `createChat(isThinking:)` is `enableThinking`.
 - Send `enable_thinking` both ways, on web under the key templates read; Qwen3.5 and later resolve to `qwen35`.

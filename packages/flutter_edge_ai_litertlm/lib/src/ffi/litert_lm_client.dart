@@ -15,6 +15,7 @@ import 'package:mutex/mutex.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
 import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
 
+import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import '../thinking_context.dart';
@@ -25,25 +26,28 @@ String thinkingExtraContext(bool enableThinking) =>
     jsonEncode(thinkingContext(enableThinking));
 
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
-typedef _StreamCallbackNative = Void Function(
-  Pointer<Void> callbackData,
-  Pointer<Char> chunk,
-  Uint8 isFinal,
-  Pointer<Char> errorMsg,
-);
+typedef _StreamCallbackNative =
+    Void Function(
+      Pointer<Void> callbackData,
+      Pointer<Char> chunk,
+      Uint8 isFinal,
+      Pointer<Char> errorMsg,
+    );
 
 /// stream_proxy_create: creates a proxy that strdup's strings before
 /// forwarding to the Dart callback (prevents use-after-free).
-typedef _ProxyCreateNative = Pointer<Void> Function(
-  Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
-  Pointer<Void> dartData,
-  Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
-);
-typedef _ProxyCreateDart = Pointer<Void> Function(
-  Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
-  Pointer<Void> dartData,
-  Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
-);
+typedef _ProxyCreateNative =
+    Pointer<Void> Function(
+      Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
+      Pointer<Void> dartData,
+      Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
+    );
+typedef _ProxyCreateDart =
+    Pointer<Void> Function(
+      Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
+      Pointer<Void> dartData,
+      Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
+    );
 
 /// Free a strdup'd string from the proxy callback.
 typedef _ProxyFreeStringNative = Void Function(Pointer<Char> str);
@@ -485,8 +489,9 @@ class LiteRtLmFfiClient {
     try {
       final f = File(p);
       if (!f.existsSync()) return null;
-      final match = RegExp(r'section_backend_constraint:\s*(\w+)')
-          .firstMatch(f.readAsStringSync());
+      final match = RegExp(
+        r'section_backend_constraint:\s*(\w+)',
+      ).firstMatch(f.readAsStringSync());
       return match?.group(1);
     } catch (_) {
       return null;
@@ -736,6 +741,12 @@ class LiteRtLmFfiClient {
     final audioBackendPtr = enableAudio ? audioBackend.toNativeUtf8() : nullptr;
 
     try {
+      // Asked before the settings exist: a missing NPU stack is an expected
+      // fallback, and throwing after settings_create would leak the settings.
+      final npuDispatchDir = Platform.isAndroid && backend == 'npu'
+          ? await _prepareAndroidNpuDispatchDir()
+          : null;
+
       final settingsCreateStart = initSw.elapsedMilliseconds;
       final settings = b.litert_lm_engine_settings_create(
         modelPathPtr.cast(),
@@ -819,29 +830,16 @@ class LiteRtLmFfiClient {
         );
       }
 
-      // Android NPU: point LiteRT at the app's nativeLibraryDir so it can
-      // dlopen libLiteRtDispatch_Qualcomm.so from there. On Android, Native
-      // Assets unpacks all bundled .so files into nativeLibraryDir at install
-      // time; without this setting LiteRT searches system paths and fails.
-      if (Platform.isAndroid && backend == 'npu') {
-        const bundledChannel = MethodChannel('flutter_gemma_bundled');
-        final nativeLibDir = await bundledChannel.invokeMethod<String>(
-          'getNativeLibraryDir',
-        );
-        if (nativeLibDir == null) {
-          throw StateError(
-            '[LiteRtLmFfi] NPU Android: getNativeLibraryDir returned null — '
-            'plugin channel not registered; cannot locate '
-            'libLiteRtDispatch_Qualcomm.so.',
-          );
-        }
-        final dirPtr = nativeLibDir.toNativeUtf8();
+      if (npuDispatchDir != null) {
+        final dirPtr = npuDispatchDir.toNativeUtf8();
         b.litert_lm_engine_settings_set_litert_dispatch_lib_dir(
           settings,
           dirPtr.cast(),
         );
         calloc.free(dirPtr);
-        edgeAiLog('[LiteRtLmFfi] NPU Android: dispatch_lib_dir=$nativeLibDir');
+        edgeAiLog(
+          '[LiteRtLmFfi] NPU Android: dispatch_lib_dir=$npuDispatchDir',
+        );
       }
 
       // #364: on Android, flush the OpenCL command queue every N ops during a
@@ -2075,3 +2073,49 @@ String _activationName(int value) => switch (value) {
   3 => 'int8',
   _ => 'type $value',
 };
+
+/// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Android.
+///
+/// LiteRT opendir()-scans it for libLiteRtDispatch_*.so and the QNN libraries,
+/// so they must exist as files. The core plugin returns a directory holding
+/// exactly the stack this build bundled — nativeLibraryDir when the installer
+/// extracted them, else a copy taken from the base APK or its config split (a
+/// Play install). The list comes from here because the build decides it.
+Future<String> _prepareAndroidNpuDispatchDir() async {
+  const bundledChannel = MethodChannel('flutter_gemma_bundled');
+  final String? dir;
+  try {
+    dir = await bundledChannel.invokeMethod<String>('prepareNpuDispatchDir', {
+      'libs': [for (final n in qualcommNpuLibs) androidLibFileName(n)],
+    });
+  } on MissingPluginException {
+    throw const NpuDispatchUnavailableException(
+      'the installed flutter_edge_ai has no prepareNpuDispatchDir; '
+      'update flutter_edge_ai to the version flutter_edge_ai_litertlm '
+      'requires',
+    );
+  } on PlatformException catch (e) {
+    throw NpuDispatchUnavailableException(
+      'the Qualcomm NPU libraries could not be prepared '
+      '(${e.code}: ${e.message})',
+    );
+  }
+  if (dir == null) {
+    throw const NpuDispatchUnavailableException(
+      'prepareNpuDispatchDir returned no directory',
+    );
+  }
+  return dir;
+}
+
+/// The Android NPU attempt cannot start because the dispatch directory could
+/// not be prepared. An [Exception], not an [Error], so `initializeFfiRuntime`
+/// records it and falls back to gpu/cpu with the reason attached.
+class NpuDispatchUnavailableException implements Exception {
+  const NpuDispatchUnavailableException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'NpuDispatchUnavailableException: $message';
+}

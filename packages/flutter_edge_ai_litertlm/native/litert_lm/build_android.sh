@@ -227,23 +227,25 @@ for lib in libLiteRtGpuAccelerator.so \
   fi
 done
 
-# Qualcomm NPU dispatch libs (not in LiteRT-LM upstream prebuilts — sourced
-# from Google AI Edge Gallery APKs, stored in our repo's prebuilt dir).
-for lib in libLiteRtDispatch_Qualcomm.so \
-           libQnnHtp.so \
-           libQnnSystem.so \
-           libQnnHtpV73Stub.so \
-           libQnnHtpV75Stub.so \
-           libQnnHtpV79Stub.so \
-           libQnnHtpV81Stub.so; do
-  if [ -f "$SCRIPT_DIR/prebuilt/android_arm64/$lib" ]; then
-    # Skip if source and dest are the same file (PREBUILT_DIR == SCRIPT_DIR/prebuilt/android_arm64)
-    if [ "$SCRIPT_DIR/prebuilt/android_arm64/$lib" != "$PREBUILT_DIR/$lib" ]; then
-      cp "$SCRIPT_DIR/prebuilt/android_arm64/$lib" "$PREBUILT_DIR/$lib"
-    fi
-    echo "  $lib (Qualcomm NPU)"
-  else
-    echo "  WARN: $lib not found in $SCRIPT_DIR/prebuilt/android_arm64/"
+# Qualcomm NPU: only OUR dispatch ships in this bundle (built from the LiteRT
+# pin by build_qualcomm_dispatch.sh, Apache 2.0). Qualcomm's QNN runtime is
+# not ours to redistribute standalone: since native-v0.18.0 an app that sets
+# `qualcomm_npu: true` gets it from Qualcomm's Maven artifact through the
+# build hook. PREBUILT_DIR outlives builds, so delete QNN copies an older run
+# staged here — otherwise they get packed into the release again.
+if [ -f "$PREBUILT_DIR/libLiteRtDispatch_Qualcomm.so" ]; then
+  echo "  libLiteRtDispatch_Qualcomm.so (Qualcomm NPU dispatch)"
+else
+  echo "  WARN: libLiteRtDispatch_Qualcomm.so not staged yet — run build_qualcomm_dispatch.sh"
+fi
+for lib in libQnnHtp.so libQnnSystem.so \
+           libQnnHtpV73Stub.so libQnnHtpV73Skel.so \
+           libQnnHtpV75Stub.so libQnnHtpV75Skel.so \
+           libQnnHtpV79Stub.so libQnnHtpV79Skel.so \
+           libQnnHtpV81Stub.so libQnnHtpV81Skel.so; do
+  if [ -f "$PREBUILT_DIR/$lib" ]; then
+    rm -f "$PREBUILT_DIR/$lib"
+    echo "  removed stale $lib (QNN comes from Qualcomm's Maven artifact)"
   fi
 done
 

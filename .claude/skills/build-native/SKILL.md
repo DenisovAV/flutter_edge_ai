@@ -215,7 +215,7 @@ Both dispatch libraries build from the same pin as the runtime:
 | Bundle | Target | Notes |
 |---|---|---|
 | `windows_x86_64` | `@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch` | Bazel fetches the OpenVino SDK itself (`configurable_repo`) — no preinstalled toolkit on the runner. Built in CI. |
-| `android_arm64` | `//litert/vendors/qualcomm/dispatch:dispatch_api_so` | From the **LiteRT** repo at the derived `LITERT_REF`, not LiteRT-LM. Bazel auto-downloads the QAIRT that LiteRT's `third_party/qairt/workspace.bzl` pins (~500 MB) — 2.44 at v0.16.0, 2.47 at v0.17.x, **2.50.0.260828 at v0.18.0** — or point `LITERT_QAIRT_SDK` at a local copy of that same version. The script prints the version it staged from the SDK's `sdk.yaml`. Built locally by `build_qualcomm_dispatch.sh`. |
+| `android_arm64` | `//litert/vendors/qualcomm/dispatch:dispatch_api_so` | From the **LiteRT** repo at the derived `LITERT_REF`, not LiteRT-LM. Bazel auto-downloads the QAIRT that LiteRT's `third_party/qairt/workspace.bzl` pins (~500 MB) — 2.44 at v0.16.0, 2.47 at v0.17.x, **2.50.0.260828 at v0.18.0** — or point `LITERT_QAIRT_SDK` at a local copy of that same version. The script fails unless the SDK's `sdk.yaml` version equals the hook's `qnnRuntimeVersion` (see below). Built locally by `build_qualcomm_dispatch.sh`. |
 
 Why the old rule was believable and still wrong: a fresh LiteRT-LM build genuinely emits neither library, because neither lives in the LiteRT-LM tree — they are LiteRT vendor targets. "Absent from the output" was read as "unbuildable" instead of "wrong target".
 
@@ -236,9 +236,9 @@ Be precise about what that does and does not buy, because the first version of t
 
 **Put it in both workflows.** `build-litertlm-native-windows.yml` is fast iteration and ends at `upload-artifact`; `build-litertlm-native.yml` carries the `publish-release` job that creates the `native-v*` tag users fetch. A check added only to the first protects nothing that ships — which is exactly the mistake this paragraph originally shipped with.
 
-**Android has no equivalent, and cannot have one.** The QNN `.so`s are `cp`'d straight out of the Bazel-fetched QAIRT SDK, so there is nothing to pair them against — no second copy, no version string to compare. `build_qualcomm_dispatch.sh` asserts each one is **present** (`[ -f "$src" ] || exit 1`, a real gate) and then only **prints** its size with `printf`; that print is not a comparison and must not be counted as one. The actual coverage for Android is the on-device run (check #9).
+**Android: since native-v0.18.0 the QNN runtime is NOT in the tarball.** Qualcomm licenses the QNN libraries for redistribution only inside an application, so the `android_arm64` bundle carries the dispatch alone. An app opts in with `hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true` (in the app's root pubspec, or the workspace root for a workspace member), and the litertlm hook fetches `com.qualcomm.qti:qnn-runtime` from Maven Central — version and sha256 pinned in `hook/src/qnn_runtime.dart`, Skels raised to 16 KB there (`prepareQnnLibrary`), promoted into `<cacheBase>/qnn/android_arm64/<version>-<sha8>-p<format>/`. `build_android.sh` deletes any QNN `.so` left in `prebuilt/android_arm64/` and `verify_tarball_manifest.sh` lists the ten as `INTENTIONAL_DROPS`. Do not put them back in the tarball.
 
-**The QNN runtime `.so`s must be refreshed with the dispatch, not carried forward.** They are not compiled from source — they come out of the QAIRT SDK — which makes "just keep the old ones" look safe. It is not: the dispatch you build negotiates an **API version** with them, and ours drifted into
+**The QNN runtime and the dispatch are still one matched pair.** The dispatch negotiates an **API version** with the runtime it finds, and a stale runtime does not fail politely — ours once drifted into
 
 ```
 E/litert: [qnn_manager.cc:349] Qnn System library version 1.8.0 is mismatched.
@@ -247,20 +247,11 @@ E/litert: [dispatch_api.cc:139] Failed to set up QNN manager
 E/litert: [dispatch_delegate.cc:131] No usable Dispatch runtime found
 ```
 
-Bazel already downloaded the matching SDK while building the dispatch. Take them from there so both halves come from one QAIRT:
+So bumping the LiteRT pin is a two-file change whenever its `third_party/qairt/workspace.bzl` moves: `build_qualcomm_dispatch.sh` reads the Bazel-fetched SDK's `sdk.yaml` version (`2.50.0` at v0.18.0) and **refuses to build** unless it equals `qnnRuntimeVersion` in `hook/src/qnn_runtime.dart`. Bump that constant and `qnnRuntimeSha256` to the matching Maven release first (`curl -fsSL https://repo1.maven.org/maven2/com/qualcomm/qti/qnn-runtime/<v>/qnn-runtime-<v>.aar | shasum -a 256`, and compare its `.sha1` with Maven's own). The release number is the only pairing that holds: QNN carries two independent numberings, and `libQnnSystem.so` — the file that broke — has no version string at all, so never try to pair them by `strings | grep`.
 
-```bash
-Q=$(find "$(bazel info output_base)/external/qairt" -maxdepth 0 2>/dev/null)
-D=packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/android_arm64
-for f in libQnnSystem.so libQnnHtp.so libQnnHtpV{73,75,79,81}Stub.so; do cp -f "$Q/lib/aarch64-android/$f" "$D/"; done
-for v in 73 75 79 81; do cp -f "$Q/lib/hexagon-v$v/unsigned/libQnnHtpV${v}Skel.so" "$D/"; done
-```
+`libQnnHtpV79Skel.so` must stay in the hook's list: it is **absent from `/vendor/dsp/cdsp/` even on Qualcomm reference firmware**, so shipping it is required, not a workaround for unusual devices.
 
-`libQnnHtpV79Skel.so` in particular must be bundled: it is **absent from `/vendor/dsp/cdsp/` even on Qualcomm reference firmware**, so shipping it is required, not a workaround for unusual devices.
-
-**Do not verify this by version string.** QNN carries two independent numberings — the SDK marketing version (`2.44.0.260225143659`, present in `libQnnHtp*.so`) and the per-component API version (`1.8.0` vs the required `1.11.0`) that actually gates loading. Matching the first says nothing about the second, and `libQnnSystem.so` — the exact file that broke — carries **no version string at all**, so a `strings | grep` check on it silently reports "no data" in a way that reads as "fine". Compare **file sizes against the SDK** instead; every one of our ten stale libs was visibly smaller than its QAIRT 2.44 counterpart.
-
-Whatever the origin, assert the NPU file count per bundle before packing. Shipping without them fails no build and no CPU/GPU smoke test — only a user on `PreferredBackend.npu` finds out.
+Assert the dispatch per bundle before packing — `build_qualcomm_dispatch.sh` promotes exactly one file. Shipping without it fails no build and no CPU/GPU smoke test — only a user on `PreferredBackend.npu` finds out. The on-device run (check #10) is still the only coverage of the pair working together.
 
 #### Windows CI specifics
 

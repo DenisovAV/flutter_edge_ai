@@ -1,5 +1,33 @@
 # Migration guide
 
+## flutter_edge_ai_litertlm 1.10.0: Android NPU is opt-in
+
+Only apps that use `PreferredBackend.npu` on Android need to act. Qualcomm
+licenses its QNN runtime for redistribution inside an application only, so the
+package no longer ships it and every other Android app is about 83 MB smaller
+on the device. An app that wants the Qualcomm NPU asks for it:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+```
+
+- Put it in the pubspec of the app you build, or in the workspace root's
+  pubspec if the app is a pub workspace member; pub reads `user_defines` from
+  nowhere else, and the runtime log then says the stack is not enabled.
+- The build hook downloads `com.qualcomm.qti:qnn-runtime` from Maven Central
+  once per machine and caches it. Offline builds and CI without Maven access set
+  `qualcomm_npu_maven_url` to a mirror or `qualcomm_npu_aar` to the AAR itself.
+- Setting the flag accepts Qualcomm's AI Stack License. Qualcomm's notices are
+  in the package's `NOTICES` and reach your app's licence page on their own.
+- Requires the `flutter_edge_ai` release beside it: core prepares the libraries
+  the NPU dispatch loads, now from split APKs as well and off the main thread.
+
+Without the flag nothing fails: `npu` falls back to GPU, then CPU, as on any
+device without an NPU.
+
 ## Flutter Edge AI 1.x → 2.0: RAG leaves core
 
 Flutter Edge AI 2.0 keeps inference, embeddings, speech, installation, and

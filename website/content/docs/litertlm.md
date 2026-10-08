@@ -117,8 +117,29 @@ applies it (it arrived in `flutter_gemma_litertlm` 1.8.3; older versions ignore 
 GPU](/docs/troubleshooting#wrong-numbers-on-gpu).
 
 Windows NPU ships the Intel dispatch stack — `LiteRtDispatch.dll` + the OpenVino
-runtime + TBB — inside the Windows native archive. Android bundles the Qualcomm
-QNN dispatch stack. No extra downloads for either NPU path.
+runtime + TBB — inside the Windows native archive.
+
+**Android NPU is opt-in.** Qualcomm licenses its QNN runtime for redistribution
+inside an application only, so the package carries just LiteRT's dispatch
+library and your app asks for the rest in its `pubspec.yaml` (the workspace
+root's, if the app is a pub workspace member):
+
+```
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+```
+
+The build hook then fetches `com.qualcomm.qti:qnn-runtime:2.50.0` from Maven
+Central once, verifies its SHA-256, raises the Hexagon libraries to the 16 KB
+page alignment Google Play requires, and bundles them: about 22 MB more to
+download and 83 MB more installed, plus a copy of the same size made on the
+first NPU run, because the DSP loads them from files. Setting the flag accepts Qualcomm's AI
+Stack License; the hook prints where its `LICENSE.pdf` is. Offline or behind a
+mirror, add `qualcomm_npu_maven_url: <maven base URL>` or
+`qualcomm_npu_aar: <path to the same AAR>`. Without the flag, `npu` on Android
+falls back to GPU, then CPU, and the log says how to enable it.
 
 <Warning>
 

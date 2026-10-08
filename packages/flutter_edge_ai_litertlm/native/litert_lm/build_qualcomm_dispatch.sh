@@ -145,14 +145,9 @@ bazelisk build \
   --linkopt=-Wl,-z,max-page-size=16384 \
   //litert/vendors/qualcomm/dispatch:dispatch_api_so
 
-# 3. Stage the whole set, promote only when every piece is in hand.
-#
-# The dispatch and the QNN runtime are one matched pair. Writing the dispatch
-# straight into $PREBUILT_DIR and refreshing QNN afterwards means any abort in
-# between leaves exactly the mismatched pair this script exists to prevent —
-# new dispatch, old runtime — and the next `tar czf` ships it. Nothing in the
-# bundle records which half is stale, so the failure is unrecoverable by
-# inspection; it shows up only on device.
+# 3. Stage the dispatch; promote it only once every check below has passed, so
+# an abort never leaves an unchecked dispatch in $PREBUILT_DIR for the next
+# `tar czf` to ship.
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
@@ -165,21 +160,21 @@ if [ ! -f "$OUTPUT" ]; then
 fi
 cp "$OUTPUT" "$STAGE/libLiteRtDispatch_Qualcomm.so"
 
-# 4. Refresh the QNN runtime from the SAME QAIRT the dispatch was built against.
-#
-# These are not compiled from source — they come out of the QAIRT SDK — which
-# makes "keep the old ones" look safe. It is not: the dispatch negotiates an
-# API version with them. Ours drifted to
+# 4. The dispatch and the QNN runtime are one matched pair: the dispatch
+# negotiates an API version with the runtime it finds. A stale runtime does not
+# fail politely — ours once drifted to
 #   qnn_manager.cc:349 Qnn System library version 1.8.0 is mismatched.
 #                      The minimum supported version is 1.11.0.
 #   dispatch_api.cc:139 Failed to set up QNN manager
 #   dispatch_delegate.cc:131 No usable Dispatch runtime found
-# and engine_create then fails on backend=npu in ~60ms with nothing but an
+# and engine_create then failed on backend=npu in ~60ms with nothing but an
 # opaque null, which the Dart layer reports as "model may be invalid".
 #
-# Do NOT try to catch this by version string: QNN has two independent
-# numberings, and libQnnSystem.so — the file that actually broke — carries no
-# version string at all. Compare sizes against the SDK instead.
+# The runtime half now comes from Maven through the hook (see below), so the
+# pair is held together by release number: the QAIRT SDK's own sdk.yaml here
+# against the hook's pin. Not by a version string inside the libraries — QNN
+# has two independent numberings, and libQnnSystem.so, the file that broke,
+# carries none.
 if ! OUTPUT_BASE="$(bazelisk info output_base)"; then
   echo "ERROR: 'bazelisk info output_base' failed (see its stderr above)" >&2
   exit 1
@@ -191,94 +186,68 @@ fi
 QAIRT_DIR="$OUTPUT_BASE/external/qairt"
 if [ ! -d "$QAIRT_DIR/lib/aarch64-android" ]; then
   echo "ERROR: QAIRT SDK not found at $QAIRT_DIR" >&2
-  echo "       The QNN runtime cannot be refreshed. Shipping a runtime older" >&2
-  echo "       than the dispatch fails only on real hardware, at engine_create." >&2
+  echo "       Its version cannot be checked against the hook's qnn-runtime pin." >&2
+  echo "       A mismatched pair fails only on real hardware, at engine_create." >&2
   exit 1
 fi
 echo ""
-echo "=== Staging QNN runtime from $QAIRT_DIR ==="
+echo "=== Checking QAIRT $QAIRT_DIR against the hook ==="
 # The SDK's own sdk.yaml, not a literal here: a hardcoded version in this
 # script claimed 2.44 for two releases after LiteRT had moved to 2.47 and 2.50.
-echo "QAIRT version: $(sed -n 's/^version: *//p' "$QAIRT_DIR/sdk.yaml" 2>/dev/null | head -1)"
-for f in libQnnSystem.so libQnnHtp.so \
-         libQnnHtpV73Stub.so libQnnHtpV75Stub.so \
-         libQnnHtpV79Stub.so libQnnHtpV81Stub.so; do
-  src="$QAIRT_DIR/lib/aarch64-android/$f"
-  [ -f "$src" ] || { echo "ERROR: missing in SDK: $src" >&2; exit 1; }
-  cp -f "$src" "$STAGE/$f"
-  printf "  %-26s %s bytes\n" "$f" "$(wc -c < "$STAGE/$f" | tr -d ' ')"
-done
-# Skel libs live per-Hexagon-version, outside lib/aarch64-android. V79 is the
-# HTP of SM8750 (Snapdragon 8 Elite) and is absent from /vendor/dsp/cdsp/ even
-# on Qualcomm reference firmware, so bundling it is required, not a workaround.
-for v in 73 75 79 81; do
-  src="$QAIRT_DIR/lib/hexagon-v$v/unsigned/libQnnHtpV${v}Skel.so"
-  [ -f "$src" ] || { echo "ERROR: missing in SDK: $src" >&2; exit 1; }
-  cp -f "$src" "$STAGE/libQnnHtpV${v}Skel.so"
-  printf "  %-26s %s bytes\n" "libQnnHtpV${v}Skel.so" "$(wc -c < "$STAGE/libQnnHtpV${v}Skel.so" | tr -d ' ')"
-done
+QAIRT_VERSION="$(sed -n 's/^version: *//p' "$QAIRT_DIR/sdk.yaml" 2>/dev/null | head -1)"
+echo "QAIRT version: $QAIRT_VERSION"
+# Since native-v0.18.0 the QNN runtime is not staged here: Qualcomm's licence
+# allows it only inside an application, so the build hook of an app that sets
+# `qualcomm_npu: true` fetches com.qualcomm.qti:qnn-runtime from Maven Central
+# (hook/src/qnn_runtime.dart pins version and sha256). What stays this
+# script's job is keeping the two halves matched: the dispatch built here must
+# negotiate with that pinned runtime, so refuse to build against any other
+# QAIRT release.
+HOOK_QNN="$(sed -n "s/^const qnnRuntimeVersion = '\\(.*\\)';/\\1/p" \
+  "$SCRIPT_DIR/../../hook/src/qnn_runtime.dart")"
+if [ -z "$QAIRT_VERSION" ] || [ -z "$HOOK_QNN" ]; then
+  echo "ERROR: could not read the QAIRT version ('$QAIRT_VERSION') or the hook's" >&2
+  echo "       qnnRuntimeVersion ('$HOOK_QNN') — cannot prove the pair matches" >&2
+  exit 1
+fi
+if [ "$QAIRT_VERSION" != "$HOOK_QNN" ]; then
+  echo "ERROR: LiteRT builds the dispatch against QAIRT $QAIRT_VERSION, but the hook" >&2
+  echo "       fetches qnn-runtime $HOOK_QNN. Bump qnnRuntimeVersion and" >&2
+  echo "       qnnRuntimeSha256 in hook/src/qnn_runtime.dart to the matching" >&2
+  echo "       com.qualcomm.qti:qnn-runtime release first." >&2
+  exit 1
+fi
+echo "  matches the hook's qnn-runtime $HOOK_QNN"
 
-# 5. Raise p_align to 16 KB where Qualcomm shipped 4 KB.
-#
-# Google Play rejects an APK in which any .so has a PT_LOAD p_align below
-# 16 KB ("Your app does not support 16 KB memory page sizes"). The Skel blobs
-# arrive from the QAIRT SDK at 0x1000, and since androidExtraLibs puts them in
-# every consumer APK, that rejection reaches every app shipping this package —
-# not only the ones that use the NPU. The blobs are Hexagon DSP images parsed
-# by the DSP's own loader through FastRPC and never mapped by the kernel, so
-# the bump is metadata and nothing else moves.
-#
-# It is sound exactly when every PT_LOAD keeps p_vaddr == p_offset (mod 16K):
-# the loader derives the mapping from that congruence, and a blob that breaks
-# it would stop loading rather than fail the check. So refuse loudly there —
-# a future SDK must not be able to turn this into an unloadable binary quietly.
+# 5. Check 16 KB page alignment. Google Play rejects an APK in which any .so
+# has a PT_LOAD p_align below 16 KB. The dispatch is linked with
+# max-page-size=16384 above, so this is a check, not a patch: a failure means
+# the link flag stopped reaching the linker. (The 4 KB Hexagon Skels that used
+# to be raised here are raised by the hook now — prepareQnnLibrary in
+# hook/src/qnn_runtime.dart.)
 echo ""
 echo "=== Checking 16 KB page alignment ==="
 python3 - "$STAGE" <<'PYALIGN'
 import glob, os, struct, sys
 
 ALIGN = 0x4000
-raised, checked = [], 0
+checked = 0
 for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.so"))):
-    data = bytearray(open(path, "rb").read())
-    if data[:4] != b"\x7fELF":
-        sys.exit(f"ERROR: not an ELF: {path}")
-    if data[4] == 2:  # ELF64
-        phoff = struct.unpack_from("<Q", data, 0x20)[0]
-        phentsize, phnum = struct.unpack_from("<HH", data, 0x36)
-        o_off, o_va, o_al, word = 0x08, 0x10, 0x30, "<Q"
-    else:             # ELF32 — the Hexagon Skel blobs
-        phoff = struct.unpack_from("<I", data, 0x1C)[0]
-        phentsize, phnum = struct.unpack_from("<HH", data, 0x2A)
-        o_off, o_va, o_al, word = 0x04, 0x08, 0x1C, "<I"
-    loads = []
-    for i in range(phnum):
-        o = phoff + i * phentsize
-        if struct.unpack_from("<I", data, o)[0] != 1:  # PT_LOAD
-            continue
-        loads.append((o,
-                      struct.unpack_from(word, data, o + o_off)[0],
-                      struct.unpack_from(word, data, o + o_va)[0],
-                      struct.unpack_from(word, data, o + o_al)[0]))
-    if not loads:
+    data = open(path, "rb").read()
+    if data[:4] != b"\x7fELF" or data[4] != 2:
+        sys.exit(f"ERROR: not an ELF64: {path}")
+    phoff = struct.unpack_from("<Q", data, 0x20)[0]
+    phentsize, phnum = struct.unpack_from("<HH", data, 0x36)
+    aligns = [struct.unpack_from("<Q", data, phoff + i * phentsize + 0x30)[0]
+              for i in range(phnum)
+              if struct.unpack_from("<I", data, phoff + i * phentsize)[0] == 1]
+    if not aligns:
         sys.exit(f"ERROR: no PT_LOAD segment in {os.path.basename(path)}")
+    if min(aligns) < ALIGN:
+        sys.exit(f"ERROR: {os.path.basename(path)} has PT_LOAD p_align "
+                 f"{hex(min(aligns))} < 16 KB")
     checked += 1
-    if all(al >= ALIGN for _, _, _, al in loads):
-        continue
-    broken = [(hex(off), hex(va)) for _, off, va, _ in loads if (va - off) % ALIGN]
-    if broken:
-        sys.exit(
-            f"ERROR: {os.path.basename(path)} cannot be 16 KB-aligned in place: "
-            f"p_vaddr and p_offset are not congruent mod 16K for {broken}. "
-            f"Take an aligned build from the SDK instead of patching."
-        )
-    for o, _, _, al in loads:
-        if al < ALIGN:
-            struct.pack_into(word, data, o + o_al, ALIGN)
-    open(path, "wb").write(data)
-    raised.append(os.path.basename(path))
-print(f"  {checked} .so checked, {len(raised)} raised to 16 KB"
-      + (": " + ", ".join(raised) if raised else ""))
+print(f"  {checked} .so checked, all PT_LOAD at >= 16 KB")
 PYALIGN
 
 # 6. Verify the staged dispatch before it can reach the bundle. This is the one
@@ -289,11 +258,10 @@ if ! nm -D "$STAGE/libLiteRtDispatch_Qualcomm.so" 2>/dev/null \
   exit 1
 fi
 
-# 7. Promote. All 11 files are present and the dispatch is sane, so the bundle
-# moves from one consistent state to another.
+# 7. Promote the dispatch — the one Qualcomm-NPU file this bundle carries.
 staged=$(find "$STAGE" -maxdepth 1 -type f -name '*.so' | wc -l | tr -d ' ')
-if [ "$staged" -ne 11 ]; then
-  echo "ERROR: staged $staged files, expected 11 (dispatch + 10 QNN)" >&2
+if [ "$staged" -ne 1 ]; then
+  echo "ERROR: staged $staged files, expected 1 (the dispatch)" >&2
   exit 1
 fi
 mkdir -p "$PREBUILT_DIR"
@@ -304,5 +272,5 @@ done
 
 echo ""
 echo "=== Done ==="
-echo "  libLiteRtDispatch_Qualcomm.so + 10 QNN runtime libs → $PREBUILT_DIR/"
+echo "  libLiteRtDispatch_Qualcomm.so → $PREBUILT_DIR/ (QNN runtime: from Maven via the hook)"
 ls -lh "$PREBUILT_DIR/libLiteRtDispatch_Qualcomm.so"

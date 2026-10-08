@@ -916,6 +916,56 @@ void main() {
       expect(fakeChat.addQueryChunkCallCount, 2);
     });
 
+    test('a stop requested while a failed turn unwinds lands first', () async {
+      // The cancel arrives at every microtask depth while the failed
+      // generation unwinds, so it also hits the window between the failure
+      // and the release of the lock.
+      void after(int hops, void Function() action) => hops == 0
+          ? action()
+          : scheduleMicrotask(() => after(hops - 1, action));
+
+      for (var depth = 0; depth < 16; depth++) {
+        final chat = FakeInferenceChat()
+          ..generationError = StateError('boom')
+          ..stopLanding = Completer<void>();
+        final controller = CancellationController();
+        chat.onGenerate = () {
+          if (chat.generationError != null) after(depth, controller.cancel);
+        };
+        final model = createFlutterEdgeAiModel(
+          name: 'flutter-edge-ai/test-model',
+          modelType: gemma.ModelType.gemmaIt,
+          fileType: gemma.ModelFileType.task,
+          runtime: FakeRuntime(
+            model: FakeInferenceModel()..chatToReturn = chat,
+          ),
+        );
+
+        // Listen at once: the failed turn may finish while the loop below runs.
+        final firstOutcome = expectLater(
+          model(simpleRequest('first'), cancel: controller.token),
+          throwsA(anything),
+        );
+        final second = model(simpleRequest('second'));
+        for (var i = 0; i < 40; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        if (chat.stopGenerationCallCount > 0) {
+          expect(
+            chat.addQueryChunkCallCount,
+            1,
+            reason:
+                'depth $depth: the next request started while a stop '
+                'was still in flight',
+          );
+        }
+
+        chat.stopLanding!.complete();
+        await firstOutcome;
+        await second;
+      }
+    });
+
     test('a stop that fails is reported to the caller', () async {
       fakeChat.generationGate = Completer<void>();
       fakeChat.stopError = StateError('stop failed');

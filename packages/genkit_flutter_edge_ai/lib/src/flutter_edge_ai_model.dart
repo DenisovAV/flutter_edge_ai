@@ -317,26 +317,32 @@ Future<ModelResponse> _executeGeneration({
       onError: (Object error, StackTrace stack) => (error, stack),
     );
   });
+  ModelResponse? response;
+  Object? failure;
+  StackTrace? failureStack;
   try {
     final stopwatch = Stopwatch()..start();
-    final response = context.streamingRequested
+    response = context.streamingRequested
         ? await _generateStreaming(chat, context.sendChunk, stopwatch)
         : await _generateBlocking(chat, stopwatch);
-    // A stop still in flight must land before the caller releases the lock:
-    // otherwise it reaches the shared native model during the next request.
-    if (await stopped case (final error, final stack)) {
-      Error.throwWithStackTrace(error, stack);
-    }
-    cancel?.throwIfCancelled();
-    return response;
-  } catch (_) {
-    // The same wait on the failure path; the generation's own error is the
-    // one reported.
-    await stopped;
-    rethrow;
-  } finally {
-    detach?.call();
+  } catch (error, stack) {
+    failure = error;
+    failureStack = stack;
   }
+  // Detach before the first await below: from here on no stop can start, so
+  // the one awaited next is the last. It must land before the caller releases
+  // the lock, or it reaches the shared native model during the next request.
+  detach?.call();
+  final stopFailure = await stopped;
+  if (failure != null) {
+    // The generation's own error is the one reported.
+    Error.throwWithStackTrace(failure, failureStack!);
+  }
+  if (stopFailure case (final error, final stack)) {
+    Error.throwWithStackTrace(error, stack);
+  }
+  cancel?.throwIfCancelled();
+  return response!;
 }
 
 /// Generates a blocking (non-streaming) response.

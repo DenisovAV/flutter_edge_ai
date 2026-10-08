@@ -178,9 +178,20 @@ class FakeInferenceChat extends gemma.InferenceChat {
   /// When set, [stopGeneration] fails with it.
   Object? stopError;
 
+  /// When set, the next [generateChatResponse] fails with it (once).
+  Object? generationError;
+
+  /// Called as [generateChatResponse] starts.
+  void Function()? onGenerate;
+
   @override
   Future<gemma.ModelResponse> generateChatResponse() async {
+    onGenerate?.call();
     await generationGate?.future;
+    if (generationError case final error?) {
+      generationError = null;
+      throw error;
+    }
     return blockingResponse;
   }
 

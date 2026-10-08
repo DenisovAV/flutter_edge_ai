@@ -3,11 +3,12 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
+// The hook's helpers live in lib/src/hook/, not hook/src/: pub.dev accepts
+// only hook/build.dart under hook/ ("Hook files are experimental").
+import 'package:flutter_edge_ai_litertlm/src/hook/download.dart';
+import 'package:flutter_edge_ai_litertlm/src/hook/qnn_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:hooks/hooks.dart';
-
-import 'src/download.dart';
-import 'src/qnn_runtime.dart';
 
 const _packageName = 'flutter_edge_ai_litertlm';
 

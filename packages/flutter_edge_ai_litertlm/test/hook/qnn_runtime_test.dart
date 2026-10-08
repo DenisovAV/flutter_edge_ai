@@ -316,7 +316,7 @@ void main() {
       // API version with — a failure that shows only on Snapdragon hardware.
       // build_qualcomm_dispatch.sh refuses the mismatch when the dispatch is
       // built; this holds the pair together afterwards.
-      const builtAgainst = {'0.18.0': '2.50.0'};
+      const builtAgainst = {'0.18.0': '2.50.0', '0.18.0-a': '2.50.0'};
       final hook = File('hook/build.dart').readAsStringSync();
       final bundle = RegExp(
         r"const _litertlmBundle = _NativeBundle\([\s\S]*?version: '([^']+)'",

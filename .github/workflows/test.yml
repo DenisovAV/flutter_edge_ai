@@ -142,7 +142,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/flutter_gemma/native/qnn
-          key: qnn-runtime-${{ hashFiles('packages/flutter_edge_ai_litertlm/hook/src/qnn_runtime.dart') }}
+          key: qnn-runtime-${{ hashFiles('packages/flutter_edge_ai_litertlm/lib/src/hook/qnn_runtime.dart') }}
 
       - name: Build example APK
         working-directory: packages/flutter_edge_ai/example

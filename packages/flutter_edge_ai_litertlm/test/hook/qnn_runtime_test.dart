@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../hook/src/qnn_runtime.dart';
+import 'package:flutter_edge_ai_litertlm/src/hook/qnn_runtime.dart';
 
 /// A minimal zip writer, just enough to feed the reader: each entry stored or
 /// raw-deflated, CRCs left zero (the reader trusts the archive-wide SHA256).

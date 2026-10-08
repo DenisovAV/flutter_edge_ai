@@ -1,3 +1,6 @@
+## Unreleased
+- A crash while saving the active inference, STT or TTS model no longer leaves a mix.
+
 ## 2.1.0
 - **Breaking:** `isThinking` is `enableThinking`; `ModelRuntimeDefaults.isThinking` is `thinkingDeclared`.
 - Add `ModelType.qwen35`; thought-channel reasoning is a `ThinkingResponse` for every type; no `/no_think` on audio.

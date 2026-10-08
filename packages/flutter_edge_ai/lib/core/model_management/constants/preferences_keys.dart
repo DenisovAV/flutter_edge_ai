@@ -138,6 +138,23 @@ class PreferencesKeys {
   static const String activeTtsModelType = 'active_tts_model_type';
 
   // ============================================================================
+  // One-key active identities. Each holds the per-field keys above as one JSON
+  // object, written in one call, so a crash mid-write can no longer leave one
+  // model's filename next to another model's type (see ActiveIdentityStore).
+  // The per-field keys stay as the field names, and are read only from
+  // installs made before these existed.
+  // ============================================================================
+
+  /// The active inference model's identity, as one JSON object.
+  static const String activeInferenceIdentity = 'active_inference_identity';
+
+  /// The active STT model's identity, as one JSON object.
+  static const String activeSttIdentity = 'active_stt_identity';
+
+  /// The active TTS model's identity, as one JSON object.
+  static const String activeTtsIdentity = 'active_tts_identity';
+
+  // ============================================================================
   // Path mappings (dynamic keys with filename)
   // ============================================================================
 

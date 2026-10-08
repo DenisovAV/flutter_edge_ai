@@ -18,6 +18,7 @@ import '../core/di/service_registry.dart';
 import '../core/services/model_repository.dart' as repo;
 import '../core/model_management/constants/preferences_keys.dart';
 import '../core/model_management/active_embedding_identity.dart';
+import '../core/model_management/active_identity_store.dart';
 import '../core/model_management/model_activation.dart';
 import '../core/model_management/utils/download_temp_reclaim.dart';
 import '../core/utils/file_name_utils.dart';

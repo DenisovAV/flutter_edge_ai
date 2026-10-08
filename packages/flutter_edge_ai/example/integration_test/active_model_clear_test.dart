@@ -16,6 +16,8 @@ import 'dart:io';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
+import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
+import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
@@ -23,13 +25,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
 
 const _modelName = 'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
-
-const _inferenceKeys = <String>[
-  'active_inference_model_type',
-  'active_inference_file_type',
-  'active_inference_filename',
-  'active_inference_source',
-];
 
 Future<String> _docsPath(String name) async {
   final docs = await getApplicationDocumentsDirectory();
@@ -60,7 +55,10 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 200));
       final stored = await SharedPreferences.getInstance();
       expect(
-        stored.getString('active_inference_filename'),
+        ActiveIdentityStore.read(
+          stored,
+          ActiveIdentityKind.inference,
+        )?[PreferencesKeys.activeInferenceFilename],
         _modelName,
         reason: 'precondition: identity persisted before clear',
       );
@@ -75,31 +73,31 @@ void main() {
         reason: 'hasActiveModel() must be false right after clear',
       );
 
-      // Persisted prefs cleared — all four identity keys gone.
+      // Persisted prefs cleared: the record and every per-field key of older
+      // releases are gone.
       final after = await SharedPreferences.getInstance();
-      for (final k in _inferenceKeys) {
+      const kind = ActiveIdentityKind.inference;
+      for (final k in [kind.key, ...kind.fields]) {
         expect(after.getString(k), isNull, reason: 'pref "$k" must be removed');
       }
     },
     timeout: const Timeout(Duration(minutes: 5)),
   );
 
-  testWidgets(
-    'second initialize() does NOT rehydrate a cleared model',
-    (_) async {
-      // Simulate "app relaunched" after a clear: fresh ServiceRegistry +
-      // initialize(). With the persisted identity gone, there is nothing to
-      // restore — hasActiveModel() must stay false.
-      ServiceRegistry.reset();
-      await registerTestEngines();
+  testWidgets('second initialize() does NOT rehydrate a cleared model', (
+    _,
+  ) async {
+    // Simulate "app relaunched" after a clear: fresh ServiceRegistry +
+    // initialize(). With the persisted identity gone, there is nothing to
+    // restore — hasActiveModel() must stay false.
+    ServiceRegistry.reset();
+    await registerTestEngines();
 
-      expect(
-        FlutterEdgeAi.hasActiveModel(),
-        isFalse,
-        reason:
-            'a cleared identity must not be auto-restored on second initialize()',
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 2)),
-  );
+    expect(
+      FlutterEdgeAi.hasActiveModel(),
+      isFalse,
+      reason:
+          'a cleared identity must not be auto-restored on second initialize()',
+    );
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

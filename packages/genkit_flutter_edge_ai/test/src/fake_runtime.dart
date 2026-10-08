@@ -172,6 +172,12 @@ class FakeInferenceChat extends gemma.InferenceChat {
 
   int stopGenerationCallCount = 0;
 
+  /// When set, [stopGeneration] stays in flight until it completes.
+  Completer<void>? stopLanding;
+
+  /// When set, [stopGeneration] fails with it.
+  Object? stopError;
+
   @override
   Future<gemma.ModelResponse> generateChatResponse() async {
     await generationGate?.future;
@@ -183,6 +189,8 @@ class FakeInferenceChat extends gemma.InferenceChat {
     stopGenerationCallCount++;
     final gate = generationGate;
     if (gate != null && !gate.isCompleted) gate.complete();
+    await stopLanding?.future;
+    if (stopError case final error?) throw error;
   }
 
   @override

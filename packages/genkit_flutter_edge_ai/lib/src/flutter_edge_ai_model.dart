@@ -285,14 +285,33 @@ Future<ModelResponse> _executeGeneration({
   // aborted response instead of a complete-looking truncated answer.
   final cancel = context.cancel;
   cancel?.throwIfCancelled();
-  final detach = cancel?.onCancel(() => unawaited(chat.stopGeneration()));
+  // Completes once a requested stop has landed, with its error if it failed.
+  // The handler is attached at once, so a failing stop is never an unhandled
+  // async error.
+  Future<(Object, StackTrace)?>? stopped;
+  final detach = cancel?.onCancel(() {
+    stopped = chat.stopGeneration().then<(Object, StackTrace)?>(
+      (_) => null,
+      onError: (Object error, StackTrace stack) => (error, stack),
+    );
+  });
   try {
     final stopwatch = Stopwatch()..start();
     final response = context.streamingRequested
         ? await _generateStreaming(chat, context.sendChunk, stopwatch)
         : await _generateBlocking(chat, stopwatch);
+    // A stop still in flight must land before the caller releases the lock:
+    // otherwise it reaches the shared native model during the next request.
+    if (await stopped case (final error, final stack)) {
+      Error.throwWithStackTrace(error, stack);
+    }
     cancel?.throwIfCancelled();
     return response;
+  } catch (_) {
+    // The same wait on the failure path; the generation's own error is the
+    // one reported.
+    await stopped;
+    rethrow;
   } finally {
     detach?.call();
   }

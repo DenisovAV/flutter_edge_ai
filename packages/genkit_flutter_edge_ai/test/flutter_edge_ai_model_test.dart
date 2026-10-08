@@ -837,5 +837,47 @@ void main() {
         expect(fakeModel.createChatCallCount, 1);
       },
     );
+
+    test('the next request starts only after the stop has landed', () async {
+      fakeChat.generationGate = Completer<void>();
+      fakeChat.stopLanding = Completer<void>();
+      final controller = CancellationController();
+      final model = buildModel();
+
+      final first = model(simpleRequest('first'), cancel: controller.token);
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final second = model(simpleRequest('second'));
+      controller.cancel();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(
+        fakeChat.addQueryChunkCallCount,
+        1,
+        reason: 'a stop still in flight could cut the next request short',
+      );
+
+      fakeChat.stopLanding!.complete();
+      await expectLater(first, throwsA(isA<CancelledException>()));
+      await second;
+      expect(fakeChat.addQueryChunkCallCount, 2);
+    });
+
+    test('a stop that fails is reported to the caller', () async {
+      fakeChat.generationGate = Completer<void>();
+      fakeChat.stopError = StateError('stop failed');
+      final controller = CancellationController();
+      final model = buildModel();
+
+      final call = model(simpleRequest(), cancel: controller.token);
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+
+      await expectLater(call, throwsA(isA<StateError>()));
+    });
   });
 }

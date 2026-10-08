@@ -89,11 +89,15 @@ class AppState extends ChangeNotifier {
   static const _modelName = 'gemma-3-1b-it';
   static const _embedderName = 'embedding-gemma-300m';
 
-  /// genkit 1.0 reports a failed generation in the result instead of
-  /// throwing; turn it back into an error so the caller's catch shows it.
+  /// genkit 1.0 reports a failed or aborted generation (a model error, a
+  /// cancel, or a `maxTurns` overrun in agent mode) in the result instead of
+  /// throwing; turn it back into an error so the caller's catch shows it. An
+  /// overrun carries no `cause`, only `error`.
   void _throwIfFailed(GenerateResult<dynamic> result) {
-    if (result.finishReason == FinishReason.failed) {
-      throw result.cause ?? StateError(result.error?.message ?? 'failed');
+    if (result.finishReason == FinishReason.failed ||
+        result.finishReason == FinishReason.aborted) {
+      throw result.cause ??
+          StateError(result.error?.message ?? '${result.finishReason}');
     }
   }
 

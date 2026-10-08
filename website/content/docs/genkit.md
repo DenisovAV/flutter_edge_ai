@@ -345,7 +345,9 @@ The error that propagates does not leave `ai.generate` as an exception. In
 genkit 1.0 a failed generation comes back as a result with
 `finishReason: FinishReason.failed`, the error in `error` and the original
 exception in `cause`; `ai.generateStream` ends normally with that result in
-`onResult`. Check it wherever you show errors:
+`onResult`. A cancel or a `maxTurns` overrun ends the same way with
+`FinishReason.aborted`, the overrun with no `cause`. Check it wherever you show
+errors:
 
 ```dart
 await for (final chunk in stream) { /* ... */ }

@@ -498,6 +498,57 @@ void main() {
       });
     }
 
+    for (final field in [
+      'maxTokens',
+      'topK',
+      'randomSeed',
+      'maxFunctionBufferLength',
+    ]) {
+      test('a fractional $field is INVALID_ARGUMENT', () async {
+        final model = buildModel();
+
+        await expectLater(
+          model(
+            ModelRequest(
+              messages: [
+                Message(
+                  role: Role.user,
+                  content: [TextPart(text: 'Hi')],
+                ),
+              ],
+              config: {field: 0.9},
+            ),
+          ),
+          throwsA(
+            isA<GenkitException>().having(
+              (e) => e.status,
+              'status',
+              StatusCode.invalidArgument,
+            ),
+          ),
+        );
+      });
+    }
+
+    test('an integral double such as 2048.0 is accepted', () async {
+      fakeChat.blockingResponse = const gemma.TextResponse('ok');
+      final model = buildModel();
+
+      await model(
+        ModelRequest(
+          messages: [
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Hi')],
+            ),
+          ],
+          config: {'maxFunctionBufferLength': 2048.0},
+        ),
+      );
+
+      expect(fakeModel.lastMaxFunctionBufferLength, 2048);
+    });
+
     test('recreates model when preferredVisionBackend changes', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();

@@ -112,6 +112,27 @@ Model createFlutterEdgeAiModel({
   );
 }
 
+/// The options the schema declares as integers. Their generated getters read
+/// any JSON number and truncate it (`(json as num?)?.toInt()`), so
+/// `maxTokens: 0.9` would reach the runtime as 0.
+final Set<String> _integerOptions = {
+  for (final MapEntry(:key, :value)
+      in ((FlutterEdgeAiModelOptions.$schema.jsonSchema()['properties']
+                  as Map<String, Object?>?) ??
+              const <String, Object?>{})
+          .entries)
+    if (value case {'type': 'integer'}) key,
+};
+
+/// Rejects a non-integral number for an integer option; `1024.0` passes.
+void _rejectFractionalIntegers(Map<String, dynamic> config) {
+  for (final key in _integerOptions) {
+    if (config[key] case final num value when value != value.roundToDouble()) {
+      throw FormatException('$key must be an integer, got $value');
+    }
+  }
+}
+
 /// Executes the generation logic, extracted for readability.
 Future<ModelResponse> _executeGeneration({
   required ModelRequest request,
@@ -163,6 +184,7 @@ Future<ModelResponse> _executeGeneration({
   final String? configPreferredVisionBackend;
   final String? configPreferredAudioBackend;
   try {
+    if (configMap != null) _rejectFractionalIntegers(configMap);
     final config = configMap != null
         ? FlutterEdgeAiModelOptions.fromJson(configMap)
         : null;

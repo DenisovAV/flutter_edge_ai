@@ -374,4 +374,25 @@ else
   fi
 fi
 
+# ── 11. Qualcomm NPU options on Linux (HTP burst) ──
+#
+# CreateLiteRtNpuOptions (runtime/executor/npu/) sets the Qualcomm options —
+# HTP burst mode, log level — under `#if defined(__ANDROID__)` only (upstream
+# "Bug: 498622107"). On a Linux Qualcomm board (QCS8275) the dispatch then logs
+# "Null Qualcomm options" and runs HTP in its default mode: Gemma 4 E2B decoded
+# at 16.6 tok/s against the model card's 31.7. The vision executor already sets
+# burst on every OS. A real diff, not a sed: when upstream moves this code the
+# patch stops applying and the build fails here, instead of shipping unpatched.
+NPU_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/npu_qualcomm_options_linux.patch"
+if git -C "$DIR" apply --check "$NPU_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$NPU_PATCH"
+  echo "  OK: Qualcomm NPU options apply on Linux too (HTP burst)"
+elif git -C "$DIR" apply --reverse --check "$NPU_PATCH" 2>/dev/null; then
+  echo "  SKIP: Qualcomm NPU options patch already applied"
+else
+  echo "  ERROR: $NPU_PATCH does not apply to this LiteRT-LM revision —" >&2
+  echo "         CreateLiteRtNpuOptions moved; re-create the patch against it." >&2
+  exit 1
+fi
+
 echo "Patch complete."

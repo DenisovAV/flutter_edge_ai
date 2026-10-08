@@ -202,7 +202,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 const _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0',
+  version: '0.18.0-a',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -213,6 +213,12 @@ const _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.18.0-a rebuilds the two Linux libLiteRtLm.so and nothing else: upstream
+  // sets the Qualcomm NPU options (HTP burst) on Android only, so a Linux
+  // Qualcomm board ran HTP in its default mode (patch_c_api.sh §11). Exports,
+  // NEEDED and GLIBC versions match 0.18.0; the other five archives are
+  // byte-identical to it.
+  //
   // 0.18.0 is upstream v0.18.0 (b2f686e2) with LiteRT 26895c9f, QAIRT 2.50.0
   // and OpenVINO 2026.3.1; Apple and Android built locally, Linux and Windows
   // in CI. The tag's own prebuilt companions are used again — its constraint
@@ -236,9 +242,9 @@ const _litertlmBundle = _NativeBundle(
   // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        '172271be8562545ca226607bb399a7b873c7d64f990ff9eb0a19fa831573019c',
+        '6317826a74350212b161eb9b15a496f705da761d5089eb4071f0a35f7fe68764',
     'litertlm-linux_arm64.tar.gz':
-        '5cf715f17c53ae6e59bb2ba65c1f3649097f9c2f3d5dc0b7cda50058248ed465',
+        'cc635fa311a7719432fd34739ec100160e0d6f334b011730a57eba6dab1b8931',
     'litertlm-windows_x86_64.tar.gz':
         '4bdf9d262bf6a59e7be3d336e812a56cb701a87bd13e1e5d9c6ca8d04bae30ae',
     'litertlm-macos_arm64.tar.gz':

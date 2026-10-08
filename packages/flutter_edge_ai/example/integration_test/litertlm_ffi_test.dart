@@ -103,6 +103,11 @@ Future<InferenceModel> _ensureModel(
     maxNumImages: 1,
     supportAudio: true,
   );
+  // A backend that cannot start falls back silently, and the tests in these
+  // groups pass on any backend — so say which one actually ran.
+  print(
+    '[ensureModel] requested=$backend active=${_sharedModel!.activeBackend}',
+  );
   return _sharedModel!;
 }
 
@@ -633,9 +638,12 @@ void main() {
         // dir. sm8750 = Snapdragon 8 Elite (QNN HTP V79). Get it from
         // litert-community/gemma-4-E2B-it-litert-lm →
         // gemma-4-E2B-it_qualcomm_sm8750.litertlm. The model is device-specific:
-        // engine_create rejects it on a non-matching SoC.
+        // engine_create rejects it on a non-matching SoC. sm8850 = Snapdragon
+        // 8 Elite Gen 5 (HTP V81): not on HF, stage a bundle under this name.
         if (Platform.isAndroid)
           '$_androidDir/gemma-4-E2B-it_qualcomm_sm8750.litertlm',
+        if (Platform.isAndroid)
+          '$_androidDir/gemma-4-E2B-it_qualcomm_sm8850.litertlm',
         // Windows (Intel NPU): LunarLake/PantherLake-compiled model.
         if (Platform.isWindows)
           '${Platform.environment['USERPROFILE']}\\dev-gemma4-2b-lnl\\gemma4_2b_lnl.litertlm',
@@ -826,7 +834,8 @@ void main() {
       expect(
         resolved.contains('flutter_gemma'),
         isTrue,
-        reason: 'Path should stay namespaced under flutter_gemma/ (kept across the rename)',
+        reason:
+            'Path should stay namespaced under flutter_gemma/ (kept across the rename)',
       );
 
       // It should NOT land directly under Documents (where 0.15.0 and

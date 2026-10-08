@@ -402,15 +402,15 @@ install_name_tool -id @rpath/this_is_a_long_test_path_pad_to_native_assets_targe
 
 Run this for **every** dylib in `prebuilt/<dir>/`, not just the one you rebuilt. Native Assets rewrites all of them.
 
-**One known, accepted failure: `ios_sim_arm64/libLiteRtMetalAccelerator.dylib`.** It is an upstream prebuilt with only **48 bytes** of header slack, so the 91-character test path above does not fit. The name the iOS build actually writes, `@rpath/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator` (62 characters), does fit — test that one for this file. The published native-v0.17.1-a carried a file with the same slack, so this is not a regression; it surfaced at the v0.18.0 bump. The device slice (`ios_arm64`) passes the long path. If a future upstream refresh shrinks the slack further, the framework name stops fitting too, and then it is a blocker: relink or report upstream (see "When upstream is broken").
+**One known, accepted failure: `ios_sim_arm64/libLiteRtLmMetalAccelerator.dylib`.** It is upstream's prebuilt `libLiteRtMetalAccelerator.dylib`, shipped renamed since native-v0.18.0 (flutter_litert embeds a `LiteRtMetalAccelerator.framework` of its own, and an app bundle holds one framework per name — see `patch_c_api.sh` §10). It has only **48 bytes** of header slack, so the 91-character test path above does not fit. The name the iOS build actually writes, `@rpath/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator` (66 characters, +32 bytes of load commands), does fit — test that one for this file. The published native-v0.17.1-a carried a file with the same slack, so this is not a regression; it surfaced at the v0.18.0 bump. The device slice (`ios_arm64`) passes the long path. If a future upstream refresh shrinks the slack further, the framework name stops fitting too, and then it is a blocker: relink or report upstream (see "When upstream is broken").
 
 ### 5. Phase 8 patch markers (iOS / macOS only)
 
 ```bash
-strings packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep '@executable_path.*LiteRtMetalAccelerator'
+strings packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep '@executable_path.*LiteRtLmMetalAccelerator'
 ```
 
-Expected: 1 hit (path to `LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator`). If 0 hits, `patch_c_api.sh` §10b didn't apply — your build was against a tree where `WORKSPACE.patch_cmds` didn't run. Run `bazelisk clean --expunge` and rebuild.
+Expected: 1 hit (path to `LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator`; before native-v0.18.0 it was the upstream `LiteRtMetalAccelerator`). If 0 hits, `patch_c_api.sh` §10b didn't apply — your build was against a tree where `WORKSPACE.patch_cmds` didn't run. Run `bazelisk clean --expunge` and rebuild.
 
 ```bash
 strings packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib | grep -c '^libLiteRtMetalAccelerator.dylib$'
@@ -493,7 +493,7 @@ After `flutter build ipa --release` or archive:
 ```bash
 R=build/ios/iphoneos/Runner.app
 ls "$R/Frameworks" | wc -l                                    # must be NON-ZERO
-ls "$R/Frameworks" | grep -E 'LiteRtLm|LiteRtMetalAccelerator|GemmaModelConstraintProvider|StreamProxy'
+ls "$R/Frameworks" | grep -E 'LiteRtLm|LiteRtLmMetalAccelerator|GemmaModelConstraintProvider|StreamProxy'
 find "$R/Frameworks" -maxdepth 1 -type l                      # must be empty
 find "$R/Frameworks" -maxdepth 1 -name "*.dylib" -type f      # must be empty
 ```
@@ -640,6 +640,7 @@ The NPU group **skips** (and counts as passed) when its model file is absent, so
 | v0.15.2 | — | ✅ 18/18, Lunar Lake 258V, 2026-05-15 |
 | v0.16.0 | ✅ 23/23, Snapdragon 8 Elite, 2026-08-15 | ⚠️ not recorded |
 | v0.17.0 | ⏳ pending | ⏳ pending — Tiber gateway unreachable since 2026-09-18 |
+| v0.18.0 | ✅ 24/24, Snapdragon 8 Elite Gen 5 (SM8850, HTP V81, QDC), 2026-10-08 — AAB split install, QNN 2.50.0 from Maven via `qualcomm_npu`, `engine_create` 429 ms, greedy run1 == run2 | ⏳ pending — Tiber gateway unreachable |
 
 Both are slow, awkward, and easy to skip. Skipping them is what shipped the two frozen dispatch libraries described above.
 
@@ -669,7 +670,9 @@ adb shell 'mkdir -p /data/local/tmp/flutter_gemma_test && cd /data/local/tmp/flu
   https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_qualcomm_sm8750.litertlm'
 ```
 
-Check first, before spending minutes: `getprop ro.soc.model` must say `SM8750` (platform `sun`). `/vendor/dsp/cdsp/` carries **no** `libQnnHtpV79Skel.so` even on Qualcomm's own reference image — that is why the bundle ships the Skel libraries itself.
+A bundle that is not on HF has to go through the tunnel, at ~2–3 MB/s. A single `adb push` of 2.6 GB died mid-way on 2026-10-08 when the tunnel dropped (and adb deletes the partial file). What worked: re-spawn the ssh in a `while true` loop, `adb kill-server` before each respawn's first use (a dropped tunnel lets the next adb call start a LOCAL server on 5037, and ssh then cannot bind), split the file into 128 MB chunks, push each with retries until the device holds it at full size, `cat` them together on the device and compare `sha256sum` with the local file. The SM8850 (8 Elite Gen 5, V81) Gemma 4 bundle is not on HF; the test looks for it as `gemma-4-E2B-it_qualcomm_sm8850.litertlm`. The CPU/GPU `gemma-4-E2B-it.litertlm` downloads on the device itself in ~2 minutes.
+
+Check first, before spending minutes: `getprop ro.soc.model` must say `SM8750` (platform `sun`) or `SM8850` (platform `canoe`) — whichever SoC the staged bundle was compiled for. `/vendor/dsp/cdsp/` carries **no** `libQnnHtpV79Skel.so` even on Qualcomm's own reference image — that is why the bundle ships the Skel libraries itself.
 
 Build **both** APKs with the test as the target, install both, and run the instrumentation (the app id and runner are in `example/android/app/build.gradle.kts`):
 

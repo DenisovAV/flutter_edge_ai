@@ -43,7 +43,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.17.1-a`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.18.0`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
@@ -329,7 +329,7 @@ decode) runs on the GPU accelerator (Metal, DX12, Vulkan). Where the
 CPU it costs roughly 1–5 ms per token, small next to the forward pass.
 
 - **Windows** — GPU. The plugin preloads `libLiteRtTopKWebGpuSampler.dll`,
-  which in `native-v0.17.1` exports its full C ABI (7 of 7 functions; the
+  which in `native-v0.18.0` exports its full C ABI (7 of 7 functions; the
   3-of-7 prebuilt of [#2073](https://github.com/google-ai-edge/LiteRT-LM/issues/2073)
   is gone).
 - **macOS** — CPU. The bundle does not ship `libLiteRtTopKMetalSampler`:

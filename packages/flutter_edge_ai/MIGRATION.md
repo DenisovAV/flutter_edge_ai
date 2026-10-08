@@ -22,8 +22,8 @@ hooks:
   `qualcomm_npu_maven_url` to a mirror or `qualcomm_npu_aar` to the AAR itself.
 - Setting the flag accepts Qualcomm's AI Stack License. Qualcomm's notices are
   in the package's `NOTICES` and reach your app's licence page on their own.
-- Requires the `flutter_edge_ai` release beside it: core prepares the libraries
-  the NPU dispatch loads, now from split APKs as well and off the main thread.
+- Requires `flutter_edge_ai` 2.1.1: core prepares the libraries the NPU
+  dispatch loads, now from split APKs as well and off the main thread.
 
 Without the flag nothing fails: `npu` falls back to GPU, then CPU, as on any
 device without an NPU.

@@ -1,6 +1,8 @@
-## Unreleased
+## 1.10.0
 - **Breaking:** Android Qualcomm NPU is opt-in: set `qualcomm_npu: true` in `hooks: user_defines`.
 - iOS/macOS: Metal accelerator is `LiteRtLmMetalAccelerator`, so `flutter_litert`'s GPU keeps working beside it.
+- LiteRT-LM v0.18.0 (`native-v0.18.0`).
+- Require `flutter_edge_ai` ^2.1.1.
 
 ## 1.9.0
 - **Breaking:** `createChat(isThinking:)` is `enableThinking`.

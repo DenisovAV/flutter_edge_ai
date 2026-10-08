@@ -409,7 +409,7 @@ encoder** runs on CPU by default (the GPU delegate can't prepare its ops);
 override per-encoder with `preferredVisionBackend:` / `preferredAudioBackend:`
 on `getActiveModel(...)`.
 
-- **Windows** — GPU. The plugin preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.17.1` exports its full C ABI (7 of 7 functions).
+- **Windows** — GPU. The plugin preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.18.0` exports its full C ABI (7 of 7 functions).
 - **macOS** — CPU. The bundle does not ship `libLiteRtTopKMetalSampler`: upstream opens it by bare file name, which cannot reach a library inside the app bundle, so the factory uses the CPU chain.
 - **Linux** — CPU. The sampler `.so` exports its full C ABI, but it holds a process-static `wgpu::Instance` that any second `engine_create` rejects. Since runtime model swap matters more than the few ms saved, the plugin doesn't preload it and lets the factory fall back to CPU.
 

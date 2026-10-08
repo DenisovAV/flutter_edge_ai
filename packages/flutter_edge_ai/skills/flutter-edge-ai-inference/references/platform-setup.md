@@ -36,6 +36,23 @@ builds, so without this line the release build cannot download:
 Only `arm64-v8a` is shipped for `.litertlm`. The OpenCL manifest entries the GPU
 backend needs are merged in by the plugin; nothing to add.
 
+`PreferredBackend.npu` on Snapdragon is opt-in (`flutter_edge_ai_litertlm`
+1.10.0+): Qualcomm licenses its QNN runtime for redistribution inside an app
+only, so the app's own `pubspec.yaml` asks for it — the workspace root's, if
+the app is a pub workspace member:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+```
+
+The build hook then fetches `com.qualcomm.qti:qnn-runtime` from Maven Central
+and bundles it (about 83 MB installed). Without the flag, `npu` falls back to
+GPU, then CPU, and the log names the flag; an NPU-only `.litertlm` bundle then
+fails on every backend, which reads like a broken model file but is not.
+
 ## iOS
 
 Minimum iOS 15.0 — 16.0 if the app includes `flutter_edge_ai_mediapipe`.

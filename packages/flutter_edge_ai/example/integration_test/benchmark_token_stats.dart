@@ -7,8 +7,11 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' show SessionMetrics;
 /// questions on one chat), so one prompt is the difference between the readings
 /// taken before and after it. [nativeTokensPerSecond] is the engine's figure for
 /// its last decode turn, which is this prompt's. [decodeTokensPerSecond] is ours:
-/// the tokens after the first one over the time after the first token, so it
-/// leaves out the prefill that [firstTokenMs] already measures. Null where the
+/// the tokens after the first one over the time from the first token to the
+/// last one, so it leaves out the prefill that [firstTokenMs] already measures
+/// and the bookkeeping the chat does after the last token (counting the reply's
+/// tokens, updating its history), which is part of `duration_ms` but not of
+/// decoding. Null where the
 /// value does not exist for this prompt; [readError] says when the counters
 /// could not be trusted.
 class TokenStats {
@@ -48,7 +51,8 @@ class TokenStats {
 /// The stats of the prompt that ran between [before] and [after], or null when
 /// the engine reports no counters at all (MediaPipe returns an empty
 /// [SessionMetrics]). Null is "this engine does not say", not zero tokens.
-/// [firstTokenMs] is -1 when no token arrived.
+/// [firstTokenMs] and [lastTokenMs] are when the first and the last token
+/// arrived, in milliseconds from the start of the prompt, or -1 when none did.
 ///
 /// [sameSession] says the chat still held the session the [before] reading came
 /// from. A chat can recreate its session mid-prompt; the new one's counters are
@@ -58,8 +62,8 @@ TokenStats? tokenStatsBetween(
   SessionMetrics before,
   SessionMetrics after, {
   required bool sameSession,
-  required int durationMs,
   required int firstTokenMs,
+  required int lastTokenMs,
 }) {
   if (!sameSession) {
     return const TokenStats(
@@ -76,7 +80,7 @@ TokenStats? tokenStatsBetween(
     );
   }
 
-  final decodeMs = durationMs - firstTokenMs;
+  final decodeMs = lastTokenMs - firstTokenMs;
   final decodeRate = firstTokenMs >= 0 && output > 1 && decodeMs > 0
       ? (output - 1) / (decodeMs / 1000)
       : null;

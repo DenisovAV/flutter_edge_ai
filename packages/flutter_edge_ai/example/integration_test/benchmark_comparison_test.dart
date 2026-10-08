@@ -381,16 +381,23 @@ Future<(T, BenchmarkMemory)> _measuredPrompt<T>(
 }
 
 /// One streamed answer and its timing.
-typedef _Answer = ({String text, int firstTokenMs, int durationMs});
+typedef _Answer = ({
+  String text,
+  int firstTokenMs,
+  int lastTokenMs,
+  int durationMs,
+});
 
 Future<_Answer> _streamAnswer(InferenceChat chat, Message message) async {
   final sw = Stopwatch()..start();
   var firstTokenMs = -1;
+  var lastTokenMs = -1;
   await chat.addQueryChunk(message);
   final buffer = StringBuffer();
   await for (final response in chat.generateChatResponseAsync()) {
     if (response is TextResponse) {
       if (firstTokenMs < 0) firstTokenMs = sw.elapsedMilliseconds;
+      lastTokenMs = sw.elapsedMilliseconds;
       buffer.write(response.token);
     }
   }
@@ -398,6 +405,7 @@ Future<_Answer> _streamAnswer(InferenceChat chat, Message message) async {
   return (
     text: buffer.toString(),
     firstTokenMs: firstTokenMs,
+    lastTokenMs: lastTokenMs,
     durationMs: sw.elapsedMilliseconds,
   );
 }
@@ -564,8 +572,8 @@ Future<BenchmarkResult> _runQuery({
       metricsBefore,
       metricsAfter,
       sameSession: sameSession,
-      durationMs: answer.durationMs,
       firstTokenMs: answer.firstTokenMs,
+      lastTokenMs: answer.lastTokenMs,
     ),
   );
 

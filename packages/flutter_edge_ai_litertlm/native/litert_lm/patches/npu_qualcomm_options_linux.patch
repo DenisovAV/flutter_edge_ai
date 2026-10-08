@@ -1,0 +1,24 @@
+--- a/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc
++++ b/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc
+@@ -420,13 +420,20 @@
+   options.SetHardwareAccelerators(litert::HwAccelerators::kNpu |
+                                   litert::HwAccelerators::kCpu);
+   // TODO: saliltambe - Bug: 498622107
+-#if defined(__ANDROID__)
++  // flutter_edge_ai: the Qualcomm options also on Linux (Qualcomm IoT boards
++  // such as QCS8275). Upstream sets them on Android only, so a Linux NPU ran
++  // HTP in its default mode: the dispatch logs "Null Qualcomm options" and
++  // decode is about half the published rate. The vision executor already sets
++  // burst on every OS. Google Tensor stays Android-only.
++#if defined(__ANDROID__) || defined(__linux__)
+   LITERT_ASSIGN_OR_RETURN(
+       ::litert::qualcomm::QualcommOptions & qnn_opts,
+       options.GetOptions<::litert::qualcomm::QualcommOptions>());
+   qnn_opts.SetLogLevel(::litert::qualcomm::QualcommOptions::LogLevel::kOff);
+   qnn_opts.SetHtpPerformanceMode(
+       ::litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
++#endif
++#if defined(__ANDROID__)
+   // Dynamic models embed fine-grained EdgetpuMemoryPowerState directives
+   // directly in the graph bytecode. Setting PerformanceMode here causes
+   // SouthBound to reject execution due to mutual exclusivity (Cannot mix

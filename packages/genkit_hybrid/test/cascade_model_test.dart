@@ -20,15 +20,6 @@ Model _model(String name, {String text = 'ok', bool throwFirst = false}) =>
       },
     );
 
-// A minimal non-streaming Genkit context record (matches Model.fn's context).
-final _blockingCtx = (
-  streamingRequested: false,
-  sendChunk: (ModelResponseChunk _) {},
-  context: <String, dynamic>{},
-  inputStream: null,
-  init: null,
-);
-
 ModelRequest _req() => ModelRequest(messages: []);
 
 void main() {
@@ -41,7 +32,7 @@ void main() {
       order: ['a', 'b'],
       accept: (r) => true,
     );
-    final resp = await m.fn(_req(), _blockingCtx);
+    final resp = await m(_req());
     expect(resp.text, 'A');
   });
 
@@ -54,7 +45,7 @@ void main() {
       order: ['a', 'b'],
       accept: (r) => r.text == 'B',
     );
-    final resp = await m.fn(_req(), _blockingCtx);
+    final resp = await m(_req());
     expect(resp.text, 'B');
   });
 
@@ -67,7 +58,7 @@ void main() {
       order: ['a', 'b'],
       accept: (r) => false,
     );
-    final resp = await m.fn(_req(), _blockingCtx);
+    final resp = await m(_req());
     expect(resp.text, 'B');
   });
 
@@ -80,7 +71,7 @@ void main() {
       order: ['a', 'b'],
       accept: (r) => true,
     );
-    final resp = await m.fn(_req(), _blockingCtx);
+    final resp = await m(_req());
     expect(resp.text, 'B');
   });
 
@@ -96,7 +87,7 @@ void main() {
         return r.text == 'B';
       },
     );
-    final resp = await m.fn(_req(), _blockingCtx);
+    final resp = await m(_req());
     expect(resp.text, 'B');
   });
 
@@ -147,27 +138,22 @@ void main() {
         order: ['a', 'b'],
         accept: (r) => throw StateError('judge bug'),
       );
-      await expectLater(m.fn(_req(), _blockingCtx), throwsA(isA<StateError>()));
+      await expectLater(m(_req()), throwsA(isA<StateError>()));
       expect(bCalls, 0); // did NOT silently escalate to b
     },
   );
 
   test('streaming caller gets one final chunk (non-streaming v1)', () async {
     final received = <String>[];
-    final streamingCtx = (
-      streamingRequested: true,
-      sendChunk: (ModelResponseChunk c) =>
-          received.add(c.content.first.text ?? ''),
-      context: <String, dynamic>{},
-      inputStream: null,
-      init: null,
-    );
     final m = cascadeModel(
       branches: {'a': _model('a', text: 'A')},
       order: ['a'],
       accept: (r) => true,
     );
-    final resp = await m.fn(_req(), streamingCtx);
+    final resp = await m(
+      _req(),
+      onChunk: (c) => received.add(c.content.first.text ?? ''),
+    );
     expect(resp.text, 'A');
     expect(received, ['A']); // exactly one chunk = the final response
   });

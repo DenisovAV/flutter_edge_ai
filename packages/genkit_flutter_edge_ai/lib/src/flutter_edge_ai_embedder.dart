@@ -18,13 +18,6 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
   return Embedder<FlutterEdgeAiEmbedConfig>(
     name: name,
     fn: (request, _) async {
-      if (request == null) {
-        throw GenkitException(
-          'Embedder request cannot be null.',
-          status: StatusCodes.INVALID_ARGUMENT,
-        );
-      }
-
       // Parse optional backend preference.
       FlutterEdgeAiEmbedConfig? config;
       if (request.options != null) {
@@ -33,7 +26,7 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
         } catch (e) {
           throw GenkitException(
             'Invalid embed options: $e',
-            status: StatusCodes.INVALID_ARGUMENT,
+            status: StatusCode.invalidArgument,
           );
         }
       }

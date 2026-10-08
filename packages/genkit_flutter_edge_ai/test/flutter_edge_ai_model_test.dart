@@ -210,7 +210,7 @@ void main() {
               content: [TextPart(text: 'Hi')],
             ),
           ],
-          toolChoice: 'required', // top-level native field, not config
+          toolChoice: ToolChoice.required, // top-level native field, not config
         ),
       );
 
@@ -229,7 +229,7 @@ void main() {
               content: [TextPart(text: 'Hi')],
             ),
           ],
-          toolChoice: 'none',
+          toolChoice: ToolChoice.none,
           config: {'toolChoice': 'required'},
         ),
       );
@@ -455,7 +455,7 @@ void main() {
           isA<GenkitException>().having(
             (e) => e.status,
             'status',
-            StatusCodes.INVALID_ARGUMENT,
+            StatusCode.invalidArgument,
           ),
         ),
       );

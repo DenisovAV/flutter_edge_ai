@@ -40,7 +40,7 @@ Model hybridModel({
       if (order.isEmpty) {
         throw GenkitException(
           'RoutingStrategy returned no branch to route to.',
-          status: StatusCodes.FAILED_PRECONDITION,
+          status: StatusCode.failedPrecondition,
         );
       }
       for (final key in order) {
@@ -48,7 +48,7 @@ Model hybridModel({
           throw GenkitException(
             'RoutingStrategy returned unknown branch key "$key". '
             'Available: ${frozenBranches.keys.join(', ')}.',
-            status: StatusCodes.FAILED_PRECONDITION,
+            status: StatusCode.failedPrecondition,
           );
         }
       }
@@ -63,20 +63,18 @@ Model hybridModel({
         final key = order[i];
         final isLast = i == order.length - 1;
         var firstTokenSent = false;
-        final wrappedContext = (
-          streamingRequested: true,
+        final wrappedContext = context.copyWith(
           sendChunk: (ModelResponseChunk chunk) {
             firstTokenSent = true;
             context.sendChunk(chunk);
           },
-          context: context.context,
-          inputStream: context.inputStream,
-          // Safe because Model fixes Init = void; revisit if hybridModel is
-          // ever generalized to a non-void Init.
-          init: null,
         );
         try {
-          return await frozenBranches[key]!.fn(request, wrappedContext);
+          return await callBranch(
+            frozenBranches[key]!,
+            request,
+            wrappedContext,
+          );
         } catch (e) {
           // Once a token is out, we cannot re-route — propagate.
           // Before the first token, fall back on transient failures only.

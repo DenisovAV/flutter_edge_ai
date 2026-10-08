@@ -12,13 +12,7 @@ Message _msg(Role role, String text) => Message(
 );
 
 /// A minimal model-call context; the trimmer ignores it and forwards to `next`.
-ActionFnArg<ModelResponseChunk, ModelRequest, void> _ctx() => (
-  streamingRequested: false,
-  sendChunk: (ModelResponseChunk _) {},
-  context: null,
-  inputStream: null,
-  init: null,
-);
+ActionFnArg<ModelResponseChunk, ModelRequest, void> _ctx() => ActionFnArg();
 
 void main() {
   group('ContextWindowMiddleware.model', () {
@@ -230,7 +224,7 @@ void main() {
           isA<GenkitException>().having(
             (e) => e.status,
             'status',
-            StatusCodes.INVALID_ARGUMENT,
+            StatusCode.invalidArgument,
           ),
         ),
       );

@@ -63,13 +63,6 @@ Model createFlutterEdgeAiModel({
       'model': {'supports': kFlutterEdgeAiModelSupports},
     },
     fn: (request, context) async {
-      if (request == null) {
-        throw GenkitException(
-          'Model request cannot be null.',
-          status: StatusCodes.INVALID_ARGUMENT,
-        );
-      }
-
       final prev = lock;
       final completer = Completer<void>();
       lock = completer.future;
@@ -154,7 +147,7 @@ Future<ModelResponse> _executeGeneration({
   } catch (e) {
     throw GenkitException(
       'Invalid model config: $e',
-      status: StatusCodes.INVALID_ARGUMENT,
+      status: StatusCode.invalidArgument,
     );
   }
 
@@ -172,7 +165,7 @@ Future<ModelResponse> _executeGeneration({
   // unrecognized value (see parseToolChoice) rather than silently defaulting
   // to auto — a 'none' typo must not quietly re-enable tools.
   final gemmaToolChoice = parseToolChoice(
-    request.toolChoice ?? config?.toolChoice,
+    request.toolChoice?.value ?? config?.toolChoice,
   );
   final systemInstruction =
       config?.systemInstruction ?? extractSystemInstruction(request.messages);
@@ -253,7 +246,7 @@ Future<ModelResponse> _executeGeneration({
     throw GenkitException(
       'No convertible messages in request. System messages alone are not '
       'sufficient — at least one user or model message is required.',
-      status: StatusCodes.INVALID_ARGUMENT,
+      status: StatusCode.invalidArgument,
     );
   }
   for (final msg in gemmaMessages) {

@@ -11,8 +11,8 @@ Future<Uint8List> readFileBytes(String path) async {
     return await File(path).readAsBytes();
   } on FileSystemException catch (e) {
     final status = e.osError?.errorCode == 2 // ENOENT
-        ? StatusCodes.NOT_FOUND
-        : StatusCodes.INTERNAL;
+        ? StatusCode.notFound
+        : StatusCode.internal;
     throw GenkitException(
       'Failed to read media file $path: $e',
       status: status,

@@ -17,9 +17,7 @@ environment:
 resolution: workspace
 
 dependencies:
-  # genkit_hybrid uses only Model/generate/ModelRequest — stable across the
-  # 0.15→0.16 tool-API/ActionType redesign — so it works on both lines.
-  genkit: '>=0.15.1 <0.17.0'
+  genkit: ^1.0.0
 
 dev_dependencies:
   test: ^1.25.0

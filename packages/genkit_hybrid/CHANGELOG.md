@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking:** require `genkit` ^1.0.0; each branch now runs in its own trace span.
+
 ## 0.2.2
 
 - Update package documentation for the Flutter Edge AI rename.

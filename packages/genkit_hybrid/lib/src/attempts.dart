@@ -10,10 +10,10 @@ import 'package:genkit/genkit.dart';
 bool isTransient(Object error) {
   if (error is! GenkitException) return true;
   switch (error.status) {
-    case StatusCodes.UNAVAILABLE:
-    case StatusCodes.DEADLINE_EXCEEDED:
-    case StatusCodes.RESOURCE_EXHAUSTED:
-    case StatusCodes.INTERNAL:
+    case StatusCode.unavailable:
+    case StatusCode.deadlineExceeded:
+    case StatusCode.resourceExhausted:
+    case StatusCode.internal:
       return true;
     default:
       return false;
@@ -30,7 +30,7 @@ bool isTransient(Object error) {
 Future<ModelResponse> runInOrder(
   List<String> order,
   Map<String, Model> branches,
-  ModelRequest? request,
+  ModelRequest request,
   ActionFnArg<ModelResponseChunk, ModelRequest, void> context, {
   FutureOr<bool> Function(ModelResponse)? accept,
 }) async {
@@ -38,7 +38,7 @@ Future<ModelResponse> runInOrder(
     final isLast = i == order.length - 1;
     ModelResponse resp;
     try {
-      resp = await branches[order[i]]!.fn(request, context);
+      resp = await callBranch(branches[order[i]]!, request, context);
     } catch (e) {
       if (isLast || !isTransient(e)) rethrow;
       continue; // transient failure, not the last branch -> try the next one
@@ -51,3 +51,18 @@ Future<ModelResponse> runInOrder(
   }
   throw StateError('unreachable'); // loop always returns or rethrows.
 }
+
+/// Runs [model] for [request] the way any caller runs a model, carrying
+/// [context]'s streaming, request context and cancellation. Genkit 1.0 no
+/// longer exposes an action's function, so a branch is called as an action and
+/// gets its own trace span.
+Future<ModelResponse> callBranch(
+  Model model,
+  ModelRequest request,
+  ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
+) => model(
+  request,
+  onChunk: context.streamingRequested ? context.sendChunk : null,
+  context: context.context,
+  cancel: context.cancel,
+);

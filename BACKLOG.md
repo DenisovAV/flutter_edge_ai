@@ -256,6 +256,13 @@ The concept, principles and numbered requirements (`DD-R#`) live in the working 
 
 ### VA-11.2 Layout allocation, control and situation (P1)
 
+- **VA-11.2.8** As a buyer, I want the listings as compact, attributed, tappable cards that
+  come forward when a search finds something, so that the stage is the result, not the
+  website. **done** (ADR 0008; images wait on verified recipes)
+- **VA-11.2.9** As a developer, I want a display agent (rules table now, a second model
+  session switchable) that decides filters, notes, stage and split from screen state, with
+  every decision logged, so that layout decisions move from design time to runtime.
+  **done, unmeasured** (ADR 0008; measure on the Fold 4)
 - **VA-11.2.0** As a buyer, I want the split between content and conversation to follow what
   is being shown and asked, the keyboard, and the screen's shape, so that nothing I am
   deciding about is hidden. AC: allocator with keyboard rule and decision rule (DD-R6–R8);

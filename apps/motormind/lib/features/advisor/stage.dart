@@ -5,9 +5,18 @@ import '../chat/chat_service.dart';
 enum StageMode { web, cards }
 
 class StageState {
-  const StageState({this.mode = StageMode.web, this.cards = const [], this.focus = 0});
+  const StageState({
+    this.mode = StageMode.web,
+    this.cards = const [],
+    this.focus = 0,
+    this.userSet = false,
+  });
 
   final StageMode mode;
+
+  /// True when the person flipped Web/Cards by hand; the display decision
+  /// respects it until the next search changes the cards (DD-R13).
+  final bool userSet;
 
   /// Presented cards, newest first. Only [focus] is shown large; the rest are
   /// chips (TQ62: no stacking).
@@ -16,8 +25,13 @@ class StageState {
 
   ShownComponent? get focused => cards.isEmpty ? null : cards[focus.clamp(0, cards.length - 1)];
 
-  StageState copyWith({StageMode? mode, List<ShownComponent>? cards, int? focus}) =>
-      StageState(mode: mode ?? this.mode, cards: cards ?? this.cards, focus: focus ?? this.focus);
+  StageState copyWith({StageMode? mode, List<ShownComponent>? cards, int? focus, bool? userSet}) =>
+      StageState(
+        mode: mode ?? this.mode,
+        cards: cards ?? this.cards,
+        focus: focus ?? this.focus,
+        userSet: userSet ?? this.userSet,
+      );
 }
 
 final stageProvider = NotifierProvider<StageNotifier, StageState>(StageNotifier.new);
@@ -39,6 +53,7 @@ class StageNotifier extends Notifier<StageState> {
       mode: bringForward ? StageMode.cards : state.mode,
       cards: [c, ...kept],
       focus: 0,
+      userSet: false,
     );
   }
 
@@ -47,9 +62,19 @@ class StageNotifier extends Notifier<StageState> {
 
   void focusCard(int i) => state = state.copyWith(focus: i, mode: StageMode.cards);
 
-  void showWeb() => state = state.copyWith(mode: StageMode.web);
+  /// The page needs to be seen (a read in progress, a human check, an
+  /// "open on site" tap): this holds until the next presented card.
+  void showWeb() => state = state.copyWith(mode: StageMode.web, userSet: true);
 
-  void setMode(StageMode m) => state = state.copyWith(mode: m);
+  /// From the person's own Web/Cards control.
+  void setMode(StageMode m) => state = state.copyWith(mode: m, userSet: true);
+
+  /// From the display decision; never overrides a manual flip.
+  void applyDecision(StageMode m) {
+    if (!state.userSet && state.mode != m && (m == StageMode.web || state.cards.isNotEmpty)) {
+      state = state.copyWith(mode: m);
+    }
+  }
 
   void markAnswered(ShownComponent c) => state = state.copyWith(
     cards: [

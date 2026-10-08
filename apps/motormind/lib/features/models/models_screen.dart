@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/advisor_model_service.dart';
 import '../../services/token_store.dart';
+import '../advisor/display_agent.dart';
 import 'model_catalog.dart';
 
 /// The model picker (VA-1.2.1) and download manager (VA-1.3.1, VA-1.3.2).
@@ -41,6 +42,23 @@ class ModelsScreen extends ConsumerWidget {
               ),
             ),
             for (final m in ModelCatalog.all) _ModelCard(spec: m, status: state.statusOf(m)),
+            const SizedBox(height: 16),
+            // DD-R33 / TQ59: one model, two sessions. The second session gets
+            // the screen state and returns a few layout decisions; the rules
+            // table is its fallback and its benchmark. Off by default until
+            // the replay cost is measured on a phone.
+            SwitchListTile(
+              key: const Key('display-agent-switch'),
+              title: const Text('Let a second session arrange the screen'),
+              subtitle: const Text(
+                'Experimental. The loaded model gets a one-line screen state and decides what '
+                'to show; the rules decide otherwise. Each decision costs a short prefill, and '
+                'on this engine a session switch replays the conversation.',
+              ),
+              value: ref.watch(displayAgentModeProvider) == 'model',
+              onChanged: (v) =>
+                  ref.read(displayAgentModeProvider.notifier).set(v ? 'model' : 'rules'),
+            ),
           ],
         ),
       ),

@@ -170,7 +170,12 @@ class SearchService extends Notifier<SearchState> {
     // so clear the previous search card first.
     final stage = ref.read(stageProvider.notifier);
     stage.removeWhere((s) => s.result?.tool == AdvisorTools.findVehicles);
-    stage.show(ShownComponent(request: v.request!, result: result), bringForward: false);
+    // Q62: cards come forward as soon as a search finds something; the page
+    // stays one tap away. The display decision may still choose the web.
+    stage.show(
+      ShownComponent(request: v.request!, result: result),
+      bringForward: results.isNotEmpty,
+    );
   }
 
   /// What the model sees after update_search / find_vehicles.

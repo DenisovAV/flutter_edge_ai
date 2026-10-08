@@ -3,8 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../advisor/advisor_surface.dart';
-import '../advisor/display_rules.dart';
+import '../advisor/display_agent.dart';
 import '../search/search_service.dart';
 import 'chat_service.dart';
 import 'result_card.dart';
@@ -121,13 +120,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                         MessageEntry(:final message)
                             when message.role == 'system' &&
                                 message.text.startsWith('Looking for') &&
-                                !DisplayRules.showSearchNotes(
-                                  DisplayContext(
-                                    surface: ref.watch(surfaceProvider),
-                                    filtersSet: !ref.watch(searchProvider).query.isEmpty,
-                                    keyboardOpen: MediaQuery.viewInsetsOf(context).bottom > 0,
-                                  ),
-                                ) =>
+                                !ref.watch(displayProvider).notes =>
                           const SizedBox.shrink(),
                         MessageEntry(:final message) => _Bubble(message: message),
                         ComponentEntry(:final shown) => Padding(

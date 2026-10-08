@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:motormind/app/app.dart';
 import 'package:motormind/app/prefs.dart';
+import 'package:motormind/features/advisor/display_agent.dart';
+import 'package:motormind/features/advisor/stage.dart';
 import 'package:motormind/features/advisor/stage_view.dart';
+import 'package:motormind/features/listings/listing_signals.dart';
 import 'package:motormind/features/browser/browser_service.dart';
 import 'package:motormind/features/chat/chat_service.dart';
 import 'package:motormind/features/search/search_service.dart';
@@ -401,6 +404,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(searchProvider).userExpanded, isNull);
     expect(find.byKey(const Key('filters-summary')), findsOneWidget);
+  });
+  testWidgets('a search brings the Cards stage forward with attributed, tappable tiles', (
+    tester,
+  ) async {
+    final driver = ScriptedDriver();
+    await _openFullscreenAdvisor(tester, driver);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byKey(const Key('chat-input'))),
+    );
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(const Key('choice-mode-browsing')));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
+    // The display indicator sits in the panel header; rules are in charge.
+    expect(find.byKey(const Key('display-indicator')), findsOneWidget);
+    expect(container.read(displayProvider).by, 'rules');
+    // A filter tap reads the (fake) page; the Cards stage comes forward (Q62)
+    // and, docked, gets two thirds of the screen (TQ66).
+    await tester.tap(find.byKey(const Key('body-suv')));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(container.read(stageProvider).mode, StageMode.cards);
+    expect(container.read(displayProvider).split, StageSplit.twoThirds);
+    await tester.tap(find.byKey(const Key('surface-toggle'))); // fullscreen -> collapsed
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('surface-bubble'))); // -> docked
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('browser-pane')), findsNothing);
+    // Every tile names its source and its age (DD-R25).
+    expect(find.textContaining('EchoPark · '), findsNWidgets(2));
+    // Tapping a tile opens its detail in place and marks it viewed (DD-R28).
+    final crv = find.byKey(const Key('listing-2021 Honda CR-V EX|27995.0'));
+    expect(crv, findsOneWidget);
+    await tester.tap(crv);
+    await tester.pumpAndSettle();
+    expect(find.text('Open on EchoPark'), findsOneWidget);
+    expect(container.read(listingSignalsProvider).viewed, hasLength(1));
+    await tester.tap(find.byKey(const Key('like-2021 Honda CR-V EX|27995.0')));
+    await tester.pumpAndSettle();
+    expect(container.read(listingSignalsProvider).liked, hasLength(1));
+    // The person's flip to Web wins over the decision (DD-R13).
+    await tester.tap(find.text('Web'));
+    await tester.pumpAndSettle();
+    expect(container.read(stageProvider).mode, StageMode.web);
+    expect(find.byKey(const Key('browser-pane')), findsOneWidget);
   });
 }
 

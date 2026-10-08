@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../browser/browser_pane.dart';
 import '../chat/chat_service.dart';
 import '../chat/result_card.dart';
+import '../listings/listing_cards.dart';
 import 'stage.dart';
 
 /// The web pane is injectable so widget tests do not need a platform webview.
@@ -62,12 +63,26 @@ class StageView extends ConsumerWidget {
   }
 }
 
-class _Cards extends ConsumerWidget {
+class _Cards extends ConsumerStatefulWidget {
   const _Cards({required this.stage});
   final StageState stage;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_Cards> createState() => _CardsState();
+}
+
+class _CardsState extends ConsumerState<_Cards> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stage = widget.stage;
     final focused = stage.focused!;
     return Column(
       key: const Key('stage'),
@@ -94,12 +109,16 @@ class _Cards extends ConsumerWidget {
             ),
           ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-            child: ResultCard(
-              shown: focused,
-              onChoice: (id, label) =>
-                  ref.read(chatServiceProvider.notifier).choose(id, label, source: focused),
+          child: ScrollCut(
+            controller: _scroll,
+            child: SingleChildScrollView(
+              controller: _scroll,
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: ResultCard(
+                shown: focused,
+                onChoice: (id, label) =>
+                    ref.read(chatServiceProvider.notifier).choose(id, label, source: focused),
+              ),
             ),
           ),
         ),

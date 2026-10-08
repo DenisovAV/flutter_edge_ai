@@ -2,7 +2,7 @@ import 'package:advisor_core/advisor_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../advisor/advisor_surface.dart';
+import '../advisor/display_agent.dart';
 import '../advisor/display_rules.dart';
 import 'search_service.dart';
 
@@ -18,16 +18,10 @@ class SearchFiltersCard extends ConsumerWidget {
     final q = search.query;
     final svc = ref.read(searchProvider.notifier);
     final theme = Theme.of(context);
-    final mode = DisplayRules.filtersCard(
-      DisplayContext(
-        surface: ref.watch(surfaceProvider),
-        filtersSet: !q.isEmpty,
-        keyboardOpen: MediaQuery.viewInsetsOf(context).bottom > 0,
-        userExpandedFilters: search.userExpanded,
-      ),
-    );
-    if (mode == FiltersCardMode.hidden)
+    final mode = ref.watch(displayProvider).filters;
+    if (mode == FiltersCardMode.hidden) {
       return const SizedBox.shrink(key: Key('card-search_filters'));
+    }
     if (mode == FiltersCardMode.summary) {
       return Card(
         key: const Key('card-search_filters'),

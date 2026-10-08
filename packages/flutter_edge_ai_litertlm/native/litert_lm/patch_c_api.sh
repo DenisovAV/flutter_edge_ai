@@ -284,6 +284,13 @@ fi
 #   `@executable_path/../Frameworks/<X>.framework/<X>` on macOS
 #   `@executable_path/Frameworks/<X>.framework/<X>` on iOS
 #
+# On Apple the framework is LiteRtLmMetalAccelerator, not upstream's
+# LiteRtMetalAccelerator: flutter_litert >= 3.4.0 ships a framework under the
+# upstream name for its own LiteRT, an app bundle holds only one of the two,
+# and Native Assets — embedded last — silently replaced flutter_litert's, whose
+# LiteRT then could not register a Metal accelerator built for another LiteRT.
+# build_ios.sh / build_macos.sh copy upstream's dylib under the new name.
+#
 # Verified empirically (2026-04-30) on a built macOS Runner.app: the
 # @executable_path-relative form resolves both from a binary in Contents/MacOS
 # and from a binary inside another framework's Versions/A — i.e. it works for
@@ -338,7 +345,7 @@ new_line_after_anchor = """
         # TargetConditionals.h include must be wrapped in #if defined(__APPLE__)
         # — that header is Apple-only, Android NDK doesn't ship it. Using awk
         # to avoid sed nesting issues.
-        "awk 'BEGIN{p=0} /^namespace litert::internal/ && !p {print; print \\"\\"; print \\"#if defined(__APPLE__)\\"; print \\"#include <TargetConditionals.h>\\"; print \\"#if TARGET_OS_OSX\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/../Frameworks/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator\\\\\\"\\"; print \\"#elif TARGET_OS_IPHONE\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/Frameworks/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator\\\\\\"\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtMetalAccelerator.dylib\\\\\\"\\"; print \\"#endif\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtMetalAccelerator\\\\\\" SO_EXT\\"; print \\"#endif\\"; p=1; next} {print}' litert/runtime/accelerators/gpu_registry.cc > /tmp/gpu_registry.cc.new && mv /tmp/gpu_registry.cc.new litert/runtime/accelerators/gpu_registry.cc","""
+        "awk 'BEGIN{p=0} /^namespace litert::internal/ && !p {print; print \\"\\"; print \\"#if defined(__APPLE__)\\"; print \\"#include <TargetConditionals.h>\\"; print \\"#if TARGET_OS_OSX\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/../Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator\\\\\\"\\"; print \\"#elif TARGET_OS_IPHONE\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"@executable_path/Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator\\\\\\"\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtLmMetalAccelerator.dylib\\\\\\"\\"; print \\"#endif\\"; print \\"#else\\"; print \\"#define FLUTTER_GEMMA_METAL_FW_PATH \\\\\\"libLiteRtMetalAccelerator\\\\\\" SO_EXT\\"; print \\"#endif\\"; p=1; next} {print}' litert/runtime/accelerators/gpu_registry.cc > /tmp/gpu_registry.cc.new && mv /tmp/gpu_registry.cc.new litert/runtime/accelerators/gpu_registry.cc","""
 
 # Insert our commands first in that list. They don't depend on upstream's own
 # patch_cmds, so their position in it doesn't matter.

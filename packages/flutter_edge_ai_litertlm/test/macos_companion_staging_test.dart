@@ -122,7 +122,7 @@ class _Fixture {
 
   static const _companions = [
     'GemmaModelConstraintProvider',
-    'LiteRtMetalAccelerator',
+    'LiteRtLmMetalAccelerator',
     'LiteRtTopKMetalSampler',
   ];
 

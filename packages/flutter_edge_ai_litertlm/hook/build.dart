@@ -243,7 +243,10 @@ const _litertlmBundle = _NativeBundle(
   },
   companions: [
     'GemmaModelConstraintProvider',
-    'LiteRtMetalAccelerator', // macOS + iOS GPU (Metal)
+    // macOS + iOS GPU (Metal). Upstream's libLiteRtMetalAccelerator, renamed:
+    // flutter_litert ships a framework under the upstream name, and an app
+    // bundle holds only one (see patch_c_api.sh §10).
+    'LiteRtLmMetalAccelerator',
     'LiteRtTopKMetalSampler', // macOS + iOS device GPU sampler (Metal)
     // Not shipped on any platform since native-v0.18.0 (on Android it needs
     // Dawn, which no bundle carries); kept so flat-layout cleanup still
@@ -259,7 +262,8 @@ const _litertlmBundle = _NativeBundle(
   // On macOS, skip the upstream Apple companion dylibs from Native Assets
   // bundling (#247). The companion dylibs Google ships in
   // `prebuilt/macos_arm64/` (`libGemmaModelConstraintProvider.dylib`,
-  // `libLiteRtMetalAccelerator.dylib`; the Metal sampler is not shipped at
+  // `libLiteRtMetalAccelerator.dylib`, shipped as `libLiteRtLmMetalAccelerator`;
+  // the Metal sampler is not shipped at
   // all) were linked without `-Wl,-headerpad_max_install_names`, leaving only
   // 32 bytes of slack in the load-commands area. Dart Native Assets'
   // JIT path (`dart run`, `dart build_runner`, `flutter test` on a pure

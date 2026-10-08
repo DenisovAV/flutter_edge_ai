@@ -59,6 +59,13 @@ INTENTIONAL_DROPS=(
   "android_arm64:libQnnHtpV75Skel.so"
   "android_arm64:libQnnHtpV79Skel.so"
   "android_arm64:libQnnHtpV81Skel.so"
+  # native-v0.18.0: upstream's Metal accelerator ships renamed to
+  # libLiteRtLmMetalAccelerator.dylib. flutter_litert embeds a
+  # LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle holds
+  # one framework per name, and ours silently replaced theirs.
+  "ios_arm64:libLiteRtMetalAccelerator.dylib"
+  "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
+  "macos_arm64:libLiteRtMetalAccelerator.dylib"
 )
 
 _is_intentional() {

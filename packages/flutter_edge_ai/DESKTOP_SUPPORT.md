@@ -34,7 +34,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 │   │  ───────────────────────────────────           │ │
 │   │  libLiteRtLm.{dylib,dll,so}                    │ │
 │   │  + libLiteRt.{dll,so} (Linux/Windows)          │ │
-│   │  + libLiteRtMetalAccelerator.dylib (macOS)     │ │
+│   │  + libLiteRtLmMetalAccelerator.dylib (macOS)   │ │
 │   │  + libLiteRtWebGpuAccelerator.{dll,so}         │ │
 │   │  + libwebgpu_dawn.{dll,so} (Linux/Windows GPU) │ │
 │   │  + dxil.dll + dxcompiler.dll (Windows GPU)     │ │

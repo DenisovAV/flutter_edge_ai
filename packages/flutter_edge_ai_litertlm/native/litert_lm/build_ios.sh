@@ -226,9 +226,41 @@ echo "=== Copying companion libs ==="
 # libLiteRtTopKMetalSampler.dylib is unreachable while sampler_factory.cc keeps
 # its basename dlopen (patch_c_api.sh, 10a). Upstream #2072 — those two shipped
 # as x86_64 binaries — was closed in May 2026 and is no longer a reason.
+#
+# Upstream's Metal accelerator ships as libLiteRtLmMetalAccelerator.dylib, so
+# its framework is LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
+# embeds a LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle
+# holds one framework per name, and ours silently replaced theirs. The id moves
+# with the name (+8 bytes of load commands; upstream's simulator build has 48
+# bytes of slack), and patch_c_api.sh §10 points gpu_registry at the new path.
 for lib in libGemmaModelConstraintProvider.dylib libLiteRtMetalAccelerator.dylib; do
-  [ -f "prebuilt/ios_arm64/$lib" ] && cp "prebuilt/ios_arm64/$lib" "$DEVICE_DIR/$lib" && echo "  $lib → device"
-  [ -f "prebuilt/ios_sim_arm64/$lib" ] && cp "prebuilt/ios_sim_arm64/$lib" "$SIM_DIR/$lib" && echo "  $lib → simulator"
+  out="${lib/libLiteRtMetalAccelerator/libLiteRtLmMetalAccelerator}"
+  [ -f "prebuilt/ios_arm64/$lib" ] && cp "prebuilt/ios_arm64/$lib" "$DEVICE_DIR/$out" && echo "  $lib → device/$out"
+  [ -f "prebuilt/ios_sim_arm64/$lib" ] && cp "prebuilt/ios_sim_arm64/$lib" "$SIM_DIR/$out" && echo "  $lib → simulator/$out"
+done
+# Sets a dylib's install name and proves it took: install_name_tool refuses
+# when the new id does not fit the header slack, and a dylib that keeps the old
+# id still loads, so nothing downstream would notice.
+set_dylib_id() {
+  local lib="$1" id="$2" out
+  out="$(install_name_tool -id "$id" "$lib" 2>&1)" || {
+    echo "ERROR: install_name_tool -id $id $(basename "$lib"): $out" >&2
+    exit 1
+  }
+  [ "$(otool -D "$lib" | tail -1)" = "$id" ] || {
+    echo "ERROR: $(basename "$lib") id is '$(otool -D "$lib" | tail -1)', want $id" >&2
+    exit 1
+  }
+}
+for dir in "$DEVICE_DIR" "$SIM_DIR"; do
+  # A copy under the upstream name from an older build would ship beside the
+  # renamed one and bring the collision back.
+  rm -f "$dir/libLiteRtMetalAccelerator.dylib"
+  if [ -f "$dir/libLiteRtLmMetalAccelerator.dylib" ]; then
+    chmod +w "$dir/libLiteRtLmMetalAccelerator.dylib"
+    # Invalidates the signature; step 8b's vtool re-signs it.
+    set_dylib_id "$dir/libLiteRtLmMetalAccelerator.dylib" @rpath/libLiteRtLmMetalAccelerator.dylib
+  fi
 done
 
 # 8b. Normalize iOS minos of all 4 companion dylibs to 13.0 — this matches
@@ -289,7 +321,7 @@ normalize_apple_minos() {
 for arch_dir_pair in "ios:$DEVICE_DIR" "iossim:$SIM_DIR"; do
   platform="${arch_dir_pair%%:*}"
   dir="${arch_dir_pair##*:}"
-  for libname in libGemmaModelConstraintProvider libLiteRtLm libLiteRtMetalAccelerator libStreamProxy; do
+  for libname in libGemmaModelConstraintProvider libLiteRtLm libLiteRtLmMetalAccelerator libStreamProxy; do
     d="$dir/${libname}.dylib"
     if [ -f "$d" ]; then
       normalize_apple_minos "$d" "$platform"

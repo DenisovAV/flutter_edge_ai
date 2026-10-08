@@ -4,7 +4,9 @@
 #
 # hook/build.dart deliberately skips these from Native Assets on macOS (#247):
 # the three dylibs Google ships (libGemmaModelConstraintProvider.dylib,
-# libLiteRtMetalAccelerator.dylib, libLiteRtTopKMetalSampler.dylib) were linked
+# libLiteRtMetalAccelerator.dylib — shipped renamed to
+# libLiteRtLmMetalAccelerator.dylib, see patch_c_api.sh §10 —
+# libLiteRtTopKMetalSampler.dylib) were linked
 # without -Wl,-headerpad_max_install_names, so Native Assets' JIT path aborts
 # rewriting their install_name to a long absolute path. Nothing else stages
 # them, so this script does — and patches LiteRtLm's own reference to match.
@@ -36,27 +38,30 @@ if [ ! -d "${FRAMEWORKS}" ]; then
   exit 0
 fi
 
-COMPANIONS="GemmaModelConstraintProvider LiteRtMetalAccelerator LiteRtTopKMetalSampler"
+COMPANIONS="GemmaModelConstraintProvider LiteRtLmMetalAccelerator LiteRtTopKMetalSampler"
 
 # Sweep any leftover lib*.dylib symlinks from older flutter_edge_ai versions.
 for base in ${COMPANIONS}; do
   rm -f "${FRAMEWORKS}/lib${base}.dylib"
 done
 
-# Resolve the dylib source directory in this order:
-# 1. Native Assets cache — where hook/build.dart fetches them on
-#    `flutter pub get`. This is the ONLY source an installed app ever sees:
-#    prebuilt/ is .gitignored and excluded from the pub package.
-# 2. This repo's own prebuilt/, for working on the plugin itself with a
-#    freshly built bundle and a cold cache. It never exists for an app
-#    installed from pub.dev, but it DOES exist in a source checkout where a
-#    maintainer ran native/litert_lm/build_macos.sh.
+# Resolve the dylib source directory in the order hook/build.dart resolves
+# libLiteRtLm itself (_resolveLibDir), so the companions come from the same
+# build as the runtime that loads them:
+# 1. This repo's own prebuilt/, in a source checkout where a maintainer ran
+#    native/litert_lm/build_macos.sh. It never exists for an app installed
+#    from pub.dev (prebuilt/ is .gitignored and not in the pub package).
+#    Checked first because the hook prefers it too: with the cache first, a
+#    checkout whose cache still held an older release staged that release's
+#    Metal accelerator beside a freshly built libLiteRtLm.
+# 2. Native Assets cache — where hook/build.dart fetches them on
+#    `flutter pub get`, and the only source an installed app ever sees.
 if [ -n "${SOURCE_DIR}" ]; then
   PLUGIN_PREBUILT="${SOURCE_DIR}"
 else
   for candidate in \
-      "${HOME}/Library/Caches/flutter_gemma/native/macos_arm64" \
-      "${SRCROOT}/../../../flutter_edge_ai_litertlm/native/litert_lm/prebuilt/macos_arm64"; do
+      "${SRCROOT}/../../../flutter_edge_ai_litertlm/native/litert_lm/prebuilt/macos_arm64" \
+      "${HOME}/Library/Caches/flutter_gemma/native/macos_arm64"; do
     if [ -f "${candidate}/libGemmaModelConstraintProvider.dylib" ]; then
       PLUGIN_PREBUILT="${candidate}"
       break
@@ -66,8 +71,8 @@ fi
 
 if [ -z "${PLUGIN_PREBUILT:-}" ] || [ ! -d "${PLUGIN_PREBUILT}" ]; then
   echo "[flutter_edge_ai] ERROR: Could not find macOS companion dylibs in either of:"
-  echo "  - \$HOME/Library/Caches/flutter_gemma/native/macos_arm64/"
   echo "  - \$SRCROOT/../../../flutter_edge_ai_litertlm/native/litert_lm/prebuilt/macos_arm64/"
+  echo "  - \$HOME/Library/Caches/flutter_gemma/native/macos_arm64/"
   echo "  Run 'flutter clean && flutter pub get' to repopulate the Native Assets cache."
   exit 1
 fi
@@ -145,7 +150,7 @@ if [ -f "${LITERTLM}" ]; then
   # Fail the build rather than ship a bundle that cannot launch: any remaining
   # plain-dylib reference to a companion is the #457 signature.
   stale=$(otool -L "${LITERTLM}" | awk '{print $1}' \
-            | grep -E "/lib(GemmaModelConstraintProvider|LiteRtMetalAccelerator|LiteRtTopKMetalSampler)\.dylib\$" \
+            | grep -E "/lib(GemmaModelConstraintProvider|LiteRtLmMetalAccelerator|LiteRtTopKMetalSampler)\.dylib\$" \
             || true)
   if [ -n "${stale}" ]; then
     echo "[flutter_edge_ai] ERROR: LiteRtLm still loads companion dylibs that are" >&2

@@ -39,7 +39,7 @@ statement: **there is no MediaPipe engine on desktop.** See
 │   │  ───────────────────────────────────           │ │
 │   │  libLiteRtLm.{dylib,dll,so}                    │ │
 │   │  + libLiteRt.{dll,so} (Linux/Windows)          │ │
-│   │  + libLiteRtMetalAccelerator.dylib (macOS)     │ │
+│   │  + libLiteRtLmMetalAccelerator.dylib (macOS)   │ │
 │   │  + libLiteRtWebGpuAccelerator.{dll,so}         │ │
 │   │  + libwebgpu_dawn.{dll,so} (Linux/Windows GPU) │ │
 │   │  + dxil.dll + dxcompiler.dll (Windows GPU)     │ │

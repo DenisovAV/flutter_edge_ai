@@ -135,13 +135,42 @@ chmod +w "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -id @rpath/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.dylib"
 install_name_tool -add_rpath '@loader_path/../../..' "$PREBUILT_DIR/libLiteRtLm.dylib" 2>/dev/null || true
 
-# Copy companion libs from prebuilt
+# Copy companion libs from prebuilt.
+# Upstream's Metal accelerator ships as libLiteRtLmMetalAccelerator.dylib, so
+# its framework is LiteRtLmMetalAccelerator.framework: flutter_litert >= 3.4.0
+# embeds a LiteRtMetalAccelerator.framework for its own LiteRT, an app bundle
+# holds one framework per name, and ours silently replaced theirs. The id moves
+# with the name (+8 bytes of load commands; upstream's simulator build has 48
+# bytes of slack), and patch_c_api.sh §10 points gpu_registry at the new path.
 for lib in libGemmaModelConstraintProvider.dylib libLiteRtMetalAccelerator.dylib; do
+  out="${lib/libLiteRtMetalAccelerator/libLiteRtLmMetalAccelerator}"
   if [ -f "prebuilt/macos_arm64/$lib" ]; then
-    cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$lib"
-    echo "Copied $lib"
+    cp "prebuilt/macos_arm64/$lib" "$PREBUILT_DIR/$out"
+    echo "Copied $lib as $out"
   fi
 done
+# Sets a dylib's install name and proves it took: install_name_tool refuses
+# when the new id does not fit the header slack, and a dylib that keeps the old
+# id still loads, so nothing downstream would notice.
+set_dylib_id() {
+  local lib="$1" id="$2" out
+  out="$(install_name_tool -id "$id" "$lib" 2>&1)" || {
+    echo "ERROR: install_name_tool -id $id $(basename "$lib"): $out" >&2
+    exit 1
+  }
+  [ "$(otool -D "$lib" | tail -1)" = "$id" ] || {
+    echo "ERROR: $(basename "$lib") id is '$(otool -D "$lib" | tail -1)', want $id" >&2
+    exit 1
+  }
+}
+rm -f "$PREBUILT_DIR/libLiteRtMetalAccelerator.dylib"
+if [ -f "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib" ]; then
+  chmod +w "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib"
+  set_dylib_id "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib" @rpath/libLiteRtLmMetalAccelerator.dylib
+  # The macOS stager re-signs what it stages, but a bundle consumer that loads
+  # the dylib straight from the cache needs a valid signature too.
+  codesign --force --sign - "$PREBUILT_DIR/libLiteRtLmMetalAccelerator.dylib"
+fi
 
 # 7. Build stream proxy
 echo "Building stream proxy..."

@@ -1,0 +1,57 @@
+--- a/litert/runtime/accelerators/gpu_registry.cc
++++ b/litert/runtime/accelerators/gpu_registry.cc
+@@ -45,7 +45,16 @@
+ LiteRtStatus RegisterGpuAccelerator(LiteRtEnvironment environment) {
+ #if !defined(LITERT_DISABLE_GPU)
+   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
++#if defined(__APPLE__)
++      // flutter_edge_ai: our own Metal accelerator, by its framework path, and
++      // first. flutter_litert >= 3.4 puts another LiteRT's accelerator in the
++      // same app; a name that does not resolve to ours (the generic
++      // libLiteRtGpuAccelerator, or the bare framework name) must never be
++      // tried, or that one gets registered into this environment and crashes.
++      FLUTTER_GEMMA_METAL_FW_PATH,
++#else
+       "libLiteRtGpuAccelerator" SO_EXT,
++#endif
+ #ifdef __ANDROID__
+ #if LITERT_HAS_OPENCL_SUPPORT
+       "libLiteRtClGlAccelerator" SO_EXT,   "libLiteRtOpenClAccelerator" SO_EXT,
+@@ -55,13 +64,6 @@
+ #endif  // LITERT_HAS_WEBGPU_SUPPORT
+ 
+ #elif TARGET_OS_IPHONE
+-#if LITERT_HAS_METAL_SUPPORT
+-      "libLiteRtMetalAccelerator" SO_EXT,
+-      // Inside an Apple framework bundle the executable is named after the
+-      // bundle, so the accelerator ships as
+-      // LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator.
+-      "LiteRtMetalAccelerator",
+-#endif  // LITERT_HAS_METAL_SUPPORT
+ #if LITERT_HAS_WEBGPU_SUPPORT
+       "libLiteRtWebGpuAccelerator" SO_EXT,
+ #endif  // LITERT_HAS_WEBGPU_SUPPORT
+@@ -73,7 +75,7 @@
+ #if LITERT_HAS_OPENCL_SUPPORT
+       "libLiteRtOpenClAccelerator" SO_EXT,
+ #endif  // LITERT_HAS_OPENCL_SUPPORT
+-#if LITERT_HAS_METAL_SUPPORT
++#if LITERT_HAS_METAL_SUPPORT && !defined(__APPLE__)
+       "libLiteRtMetalAccelerator" SO_EXT,
+ #endif  // LITERT_HAS_METAL_SUPPORT
+ #endif  // !__ANDROID__ && !TARGET_OS_IPHONE
+@@ -141,7 +143,14 @@
+       registration = RegisterSharedObjectAcceleratorViaFunctionPointer(
+           *environment, full_plugin_path.string(),
+           "LiteRtRegisterGpuAccelerator",
++#if defined(__APPLE__)
++          // flutter_edge_ai: on a failed dlopen the default lookup takes the
++          // first LiteRtRegisterGpuAccelerator in the process, which in an app
++          // with flutter_litert is that runtime's accelerator, not ours.
++          /*try_default_on_failure=*/false);
++#else
+           /*try_default_on_failure=*/true);
++#endif
+       if (registration.HasValue()) {
+         LITERT_LOG(LITERT_INFO,
+                    "Dynamically loaded GPU accelerator(%s) registered.",

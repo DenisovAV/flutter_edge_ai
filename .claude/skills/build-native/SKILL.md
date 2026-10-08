@@ -149,7 +149,7 @@ Anything at or near the current macOS release means the flag was dropped. Rebuil
 1. `cc_binary(linkshared=True)` target + Linux dynamic-list + Windows .def
 4b. `set_use_hw_masking_for_npu` (Intel LunarLake/PantherLake — default `true` crashes their NPU)
 4c. GPU smooth-UI knobs — `gpu_context_low_priority` + `kernel_batch_size` (#364)
-10b. **App Store ITMS-90432 fix** — rewrite `gpu_registry.cc` dlopen to `@executable_path/...framework/<X>` on Apple. **iOS-critical.**
+10b. **App Store ITMS-90432 fix** — rewrite `gpu_registry.cc` dlopen to `@executable_path/...framework/<X>` on Apple. **iOS-critical.** Plus `patches/litert_gpu_registry_apple.patch` (since native-v0.18.0-b), added to the `litert` archive as `patches=`: on Apple our framework is the ONLY GPU accelerator tried, and the `RTLD_DEFAULT` fallback is off — see "coexisting LiteRT runtimes" below.
 11. minizip/zlib mirrored off the flaky zlib.net
 
 §10a (sampler_factory.cc) is **deliberately NOT patched** — `libLiteRtTopKMetalSampler.dylib` has 3-of-7 broken exports on Apple (#2073). Patching it surfaces a NULL-vtable crash. Leave the basename dlopen so `sampler_factory.cc` falls back to CPU sampler. Revisit when Google fixes #2073.
@@ -178,6 +178,29 @@ grep -q FLUTTER_GEMMA_GPU_REGISTRY_PATCH /tmp/LiteRT-LM/WORKSPACE \
 ```
 
 That proves the patch is queued, not that it compiled in — post-build check #5 (the `@executable_path` string inside the dylib) is what proves that. At v0.18.0 the WARN fired for real: upstream rewrote the `litert` `patch_cmds` entry our anchor matched, and the script exited 0. §10b now anchors on the `patch_cmds = [` list of the `litert` archive itself.
+
+**Coexisting LiteRT runtimes (litertlm 1.10.0 → native-v0.18.0-b).** An app can
+hold a second LiteRT: `flutter_litert` ≥ 3.4 embeds its own `LiteRt.framework`
+and `LiteRtMetalAccelerator.framework` (LiteRT 2.1.5 at 3.9.3). Upstream
+`gpu_registry.cc` tries the generic `libLiteRtGpuAccelerator` first, and when a
+`dlopen` fails it calls `dlsym(RTLD_DEFAULT, "LiteRtRegisterGpuAccelerator")` —
+the first such symbol in load order. flutter_litert's accelerator is linked at
+launch, ours is `dlopen`ed later, so the fallback registered **their**
+accelerator into **our** environment and the app crashed in
+`LiteRtCreateCompiledModel`. The rename to `LiteRtLmMetalAccelerator` (§10)
+fixed the framework-name collision and is what exposed this: 1.10.0 shipped
+it, crashed on the first iPhone that also ran a flutter_litert GPU model, and
+the rename was never run in that app before publishing. The patch is a real
+diff, not one more sed: Bazel applies `patches` before `patch_cmds` and fails
+the fetch when a hunk does not apply, which is the loud failure a moved
+upstream line has to produce. `patch_c_api.sh` refuses a tree an older
+patcher already touched (sed without the diff), and `build_{ios,macos}.sh`
+refuse a `libLiteRtLm.dylib` that still names `libLiteRtGpuAccelerator` or the
+bare `LiteRtMetalAccelerator`. The one test that proves it is the app with
+flutter_litert on a real iPhone (litert_hackathon `--selftest`: detector GPU,
+Gemma GPU, detector again) — the console must show
+`Dynamically loaded GPU accelerator(@executable_path/Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator) registered`
+as the FIRST attempt.
 
 On Windows/git-bash, `python3` resolves to the Microsoft Store stub, which prints "Python was not found" **and still exits 0** — so sections 10b and 11 silently no-op. Shim it first:
 `printf '#!/bin/sh\nexec "<path>/python.exe" "$@"\n' > /somewhere/python3 && chmod +x` and prepend that dir to `PATH`.
@@ -417,6 +440,19 @@ strings packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLit
 ```
 
 Expected: 0. If non-zero, the basename dlopen string is still in the binary — patch failed.
+
+```bash
+strings packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLiteRtLm.dylib \
+  | /usr/bin/grep -E 'libLiteRtGpuAccelerator|^(lib)?LiteRtMetalAccelerator(\.dylib)?$'
+```
+
+Expected: nothing (since native-v0.18.0-b; `build_{ios,macos}.sh` fail on any
+hit). `libLiteRtGpuAccelerator.dylib` or a bare `LiteRtMetalAccelerator` here
+means `patches/litert_gpu_registry_apple.patch` did not apply, and in an app
+with flutter_litert the GPU registers that runtime's accelerator and crashes.
+Every native-v0.18.0 / -a Apple binary prints `libLiteRtGpuAccelerator.dylib`.
+Strings cannot show the `RTLD_DEFAULT` fallback being off — the device run in
+"Coexisting LiteRT runtimes" above is what does.
 
 ### 6. Required exports
 
@@ -746,6 +782,7 @@ Put a worktree of the branch on each VM instead of switching its checkout, drop 
 | 16 | Windows-only `LiteRtLayoutMsvc` mirror kept after LiteRT `d84656955` unified the layout — every host-memory tensor buffer got a shape 4 bytes off: `CreateTensorBufferFromHostMemory` `status=3` in embeddings and STT | Check #10 on Windows; struct diff at both `LITERT_REF`s | **native-v0.16.0 → fixed in `67b9857f`**; seen on Tiber 2026-08-10 and misread as a bad box cache |
 | 17 | Upstream companion imports a symbol its NEEDED cannot reach: sampler without `libLiteRtLm.so` (#270, silent CPU fallback); v0.17.0 accelerators without `libandroid.so` (#545, SIGSEGV on Mali only) | Check #9c (`check_android_needed.py`); Android GPU on Adreno **and** Mali | #270: 0.14.x; **#545: native-v0.17.0 → v0.17.1**, upstream #3575 open six days before our first release |
 | 18 | Three Android companions NEED `libwebgpu_dawn.so`, which the bundle never carried — `dlopen` fails, `gpu_registry` silently moves on to OpenCL, ~18 MB of unloadable code in every APK | Check #9c (now also asserts every NEEDED is loadable); compare against what Google's own AARs ship | **native-v0.14.0 → v0.17.x**, found by a Codex review at the v0.18.0 bump; fixed by dropping the three, not by adding Dawn |
+| 19 | Apple `gpu_registry` tried the generic `libLiteRtGpuAccelerator` first and, on the failed `dlopen`, `dlsym(RTLD_DEFAULT)` bound flutter_litert's accelerator (another LiteRT) — crash in `LiteRtCreateCompiledModel` | Check #5 (generic names absent) + the app with flutter_litert on a real iPhone | **litertlm 1.10.0 / native-v0.18.0-a**, reported from an app on the day of release; fixed in native-v0.18.0-b |
 
 Every one of those would have been caught by checks 1-10 before commit. **Run them all every time.**
 

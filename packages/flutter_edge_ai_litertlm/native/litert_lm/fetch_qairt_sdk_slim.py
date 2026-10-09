@@ -19,8 +19,15 @@ Usage: fetch_qairt_sdk_slim.py <out-dir> [--host aarch64-oe-linux-gcc11.2]
 The URL, build and archive size are LiteRT's pin at the v0.18.0 LiteRT commit
 (third_party/qairt/workspace.bzl) and the hook's (lib/src/hook/qairt_linux.dart).
 A different total size in a range answer means a different file, and stops.
+
+Integrity: the dispatch we ship is compiled from these headers, so a tampered
+header would reach every app. Size, CRC32 and the archive length catch a wrong
+file, not a forged one, so the whole slice is pinned: SLICE_SHA256 is the
+SHA-256 of its sorted `sha256sum` listing (`<hash>  <path>` per file). The
+slice is checked in memory and nothing is written unless it matches.
 """
 
+import hashlib
 import os
 import re
 import struct
@@ -33,6 +40,10 @@ URL = ("https://softwarecenter.qualcomm.com/api/download/software/sdks/"
        f"Qualcomm_AI_Runtime_Community/All/{BUILD}/v{BUILD}.zip")
 LENGTH = 2601473189
 ROOT = f"qairt/{BUILD}/"
+# 216 headers + sdk.yaml + LICENSE.pdf + the two host libraries; the libraries
+# are the same bytes the hook pins (lib/src/hook/qairt_linux.dart).
+SLICE_FILES = 220
+SLICE_SHA256 = "1f77a3a5012fe27802dec528f97903f85fad838a47895c5445814eef9cf90617"
 
 
 def ranged(url, start, end):
@@ -105,6 +116,7 @@ def main():
         clusters.append(cur)
 
     total = 0
+    files = {}
     for cluster in clusters:
         lo = cluster[0][5]
         last = cluster[-1]
@@ -125,10 +137,19 @@ def main():
             data = zlib.decompress(raw, -15) if method == 8 else raw
             if len(data) != usize or (zlib.crc32(data) & 0xFFFFFFFF) != crc:
                 sys.exit(f"ERROR: {name} failed its size/CRC check")
-            dest = os.path.join(out, name[len(ROOT):])
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            with open(dest, "wb") as f:
-                f.write(data)
+            files[name[len(ROOT):]] = data
+    listing = "".join(f"{hashlib.sha256(files[rel]).hexdigest()}  {rel}\n"
+                      for rel in sorted(files))
+    digest = hashlib.sha256(listing.encode()).hexdigest()
+    if len(files) != SLICE_FILES or digest != SLICE_SHA256:
+        sys.exit(f"ERROR: the QAIRT slice is {len(files)} files with digest "
+                 f"{digest}; pinned {SLICE_FILES} files, {SLICE_SHA256}. "
+                 "Nothing was written.")
+    for rel, data in files.items():
+        dest = os.path.join(out, rel)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(data)
     headers = sum(1 for n in names if "/include/QNN/" in n)
     print(f"QAIRT {BUILD}: {len(entries)} files ({headers} headers), "
           f"{len(clusters)} ranges, {total / 1e6:.1f} MB read -> {out}")

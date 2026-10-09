@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Wraps a scrollable so a soft edge appears at the bottom while there is
 /// more below: the visible "cut" that tells a person the content continues
-/// (TQ69). Whether to nudge the scroll as well is a display decision.
+///. Whether to nudge the scroll as well is a display decision.
 class ScrollCut extends StatefulWidget {
   const ScrollCut({super.key, required this.child, required this.controller});
 

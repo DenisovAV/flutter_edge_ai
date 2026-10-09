@@ -55,6 +55,6 @@ abstract final class DisplayRules {
   }
 
   /// Transcript notes ("Looking for … 8 matched") only when there is room
-  /// to read them (Q65).
+  /// to read them.
   static bool showSearchNotes(DisplayContext c) => c.surface == SurfaceState.fullscreen;
 }

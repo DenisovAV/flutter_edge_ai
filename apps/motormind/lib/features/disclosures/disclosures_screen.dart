@@ -1,7 +1,7 @@
 import 'package:advisor_core/advisor_core.dart';
 import 'package:flutter/material.dart';
 
-/// The permanent long-form disclosures (Q18), reachable from every screen.
+/// The permanent long-form disclosures, reachable from every screen.
 class DisclosuresScreen extends StatelessWidget {
   const DisclosuresScreen({super.key});
 

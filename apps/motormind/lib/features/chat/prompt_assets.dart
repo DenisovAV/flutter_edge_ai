@@ -3,7 +3,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// The system prompt's parts, kept as Markdown assets so wording changes are
-/// reviewable diffs and not code (TQ46): the persona, the policy, and one
+/// reviewable diffs and not code: the persona, the policy, and one
 /// section per shopping mode.
 final promptAssetsProvider = FutureProvider<SystemPromptBuilder>((ref) async {
   final persona = await rootBundle.loadString('assets/prompts/persona.md');

@@ -7,7 +7,7 @@ import '../../services/log.dart';
 import '../models/model_catalog.dart';
 
 /// The real [ChatDriver]: one `InferenceChat` over the loaded model, with the
-/// advisor's tools declared and the system prompt installed.
+/// tools declared and the system prompt installed.
 class EdgeAiChatDriver implements ChatDriver {
   EdgeAiChatDriver._(this._chat);
 

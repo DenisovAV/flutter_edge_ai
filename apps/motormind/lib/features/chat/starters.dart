@@ -3,7 +3,7 @@ import 'package:advisor_core/advisor_core.dart';
 import 'chat_state.dart';
 
 /// The prompts the app itself places in the conversation, so the screen
-/// responds before the model has said a word (Q43, DD principle 3). Each is
+/// responds before the model has said a word. Each is
 /// validated through the same [PresentRequest] path the model uses, so a
 /// starter can never show something the registry would refuse.
 abstract final class Starters {
@@ -17,7 +17,7 @@ abstract final class Starters {
   };
 
   /// Told once per session, after the first cards, so the person learns the
-  /// screen is negotiable without being reminded (Q64).
+  /// screen is negotiable without being reminded.
   static const negotiableNote = 'You can ask Motormind to show, hide or change anything here.';
 
   /// Option id prefix for the dream-car kinds; the suffix is a body style.
@@ -39,12 +39,12 @@ abstract final class Starters {
     },
   })!;
 
-  /// The app-owned live filters card (DD-R2b, R17b).
+  /// The app-owned live filters card.
   static ShownComponent filtersCard() => _validated({'component': 'search_filters'})!;
 
   /// What joins the conversation under the filters card for each mode.
   /// Dreaming clears the price ceiling and says so with a choice; practical
-  /// and buying get the numbers form; browsing gets nothing extra (Q64, Q66).
+  /// and buying get the numbers form; browsing gets nothing extra.
   static ShownComponent? forMode(ShoppingMode mode) => switch (mode) {
     ShoppingMode.dreaming => _validated({
       'component': 'choice',

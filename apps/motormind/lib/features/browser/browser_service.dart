@@ -25,8 +25,8 @@ class BrowserState {
 
 final browserProvider = NotifierProvider<BrowserService, BrowserState>(BrowserService.new);
 
-/// Every listing read this session, from any site. Session-scoped on purpose
-/// (Q31): nothing is cached beyond the app's lifetime.
+/// Every listing read this session, from any site. Session-scoped on
+/// purpose: nothing is cached beyond the app's lifetime.
 final listingStoreProvider = Provider<ListingStore>((ref) => ListingStore());
 
 /// Thrown when the page is a human-verification step. That step is the
@@ -51,7 +51,7 @@ typedef _PageSnapshot = ({String url, String title, String? image, String text, 
 /// Owns the one in-app webview (VA-6.1): navigation, load tracking and page
 /// reading. The pane registers its controller here; tools call [readPage].
 ///
-/// Reading is user- or Motormind-initiated, one page at a time (Q31). Nothing
+/// Reading is user- or Motormind-initiated, one page at a time. Nothing
 /// is fetched in bulk and no page is loaded without a person behind it.
 class BrowserService extends Notifier<BrowserState> {
   /// How long to wait for a navigation to finish before reading anyway.

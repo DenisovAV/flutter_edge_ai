@@ -11,7 +11,7 @@ this project.
 | [MODELS.md](MODELS.md) | On-device model candidates, trade-offs, OTA delivery, switching | ready |
 | [DELOITTE_MAPPING.md](DELOITTE_MAPPING.md) | The project mapped to the AI Dossier pillars and trust principles | ready |
 | [UPSTREAM.md](UPSTREAM.md) | Fork relationship and what was trimmed | ready |
-| [adr/](adr/) | Architecture decision records 0001–0006 | see each |
+| [adr/](adr/) | Architecture decision records 0001–0008 | see each |
 | `MEASUREMENTS.md` | Per-model, per-device cold start, time to first token, throughput, memory, extraction score | planned (VA-1.4) |
 | `PRIVACY.md` | What is stored, where, what leaves the device, what analytics collect | planned (VA-7) |
 | `POLICY.md` | Non-salesperson policy, advertising rules, no transaction compensation | planned (VA-8) |

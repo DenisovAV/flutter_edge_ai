@@ -199,7 +199,7 @@ class SearchService extends Notifier<SearchState> {
     final stage = ref.read(stageProvider.notifier);
     // One listings card at a time: the newest search replaces the last.
     stage.removeWhere((s) => s.result?.tool == AdvisorTools.findVehicles);
-    // Cards come forward as soon as a search finds something (Q62); the page
+    // Cards come forward as soon as a search finds something; the page
     // stays one tap away, and the display decision may still choose it.
     stage.show(
       ShownComponent(request: request, result: result),

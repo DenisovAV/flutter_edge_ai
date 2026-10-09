@@ -58,9 +58,9 @@ class ChoiceCard extends StatelessWidget {
 }
 
 /// A short form (one to six fields) for numbers the model needs before a
-/// calculation. The fields stay editable until submitted (Q60); the filled
+/// calculation. The fields stay editable until submitted; the filled
 /// values are sent as one labeled sentence so the model reads them as the
-/// person's own inputs (DD-R18b).
+/// person's own inputs.
 class FormCard extends StatefulWidget {
   const FormCard({super.key, required this.shown, required this.onSubmit});
 

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 /// The frame every finance card shares: a title, the rows, the assumptions
 /// the calculation leaned on (collapsed), and the estimates-only line that no
-/// card may drop (DD-R19).
+/// card may drop.
 class CardShell extends StatelessWidget {
   const CardShell({
     super.key,

@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/app.dart';
 import '../../app/router.dart';
 import 'disclosures_notifier.dart';
 
-/// The short-form gate (Q18): one sentence per disclosure, a link to the full
+/// The short-form gate: one sentence per disclosure, a link to the full
 /// text, and an acknowledgement. Wording comes only from `Disclosures`.
 class DisclosureGateScreen extends ConsumerWidget {
   const DisclosureGateScreen({super.key});
@@ -22,7 +23,7 @@ class DisclosureGateScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 24),
-              Text('Motormind AI', style: theme.textTheme.headlineMedium),
+              Text(appName, style: theme.textTheme.headlineMedium),
               const SizedBox(height: 8),
               Text(
                 'A tool for understanding what a vehicle would cost you. Before you start:',

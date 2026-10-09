@@ -290,7 +290,7 @@ class ChatService extends Notifier<ChatState> {
 
   /// Cancels the generation in flight and waits for the turn to wind down;
   /// whatever was produced so far stays (cards, partial text). The person
-  /// can type a new prompt at once (Q58).
+  /// can type a new prompt at once.
   Future<void> interrupt() async {
     await _driver?.cancel();
     await _turn;
@@ -300,7 +300,7 @@ class ChatService extends Notifier<ChatState> {
   void clearPolicyFlags() => state = state.copyWith(policyFlags: const []);
 
   /// Answers a choice prompt or a form. [supplement] is text the person typed
-  /// alongside the selection (Q60): it is sent with the selection. Opening-mode
+  /// alongside the selection: it is sent with the selection. Opening-mode
   /// choices set the mode locally and add the filters card and a starter to
   /// the conversation before the model answers. [source] is the card
   /// answered; it collapses to its question but stays in the transcript.
@@ -340,7 +340,7 @@ class ChatService extends Notifier<ChatState> {
           timeline: [
             ...state.timeline,
             ComponentEntry(Starters.filtersCard()),
-            // Mode starters (Q64, Q66): the app says what it did and asks,
+            // Mode starters: the app says what it did and asks,
             // so the person can correct it instead of living with a default.
             if (Starters.forMode(mode) case final starter?) ComponentEntry(starter),
             const MessageEntry(

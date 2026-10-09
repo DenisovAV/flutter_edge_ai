@@ -38,7 +38,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
     if (text.trim().isEmpty) return;
     _input.clear();
     final svc = ref.read(chatServiceProvider.notifier);
-    // A new prompt during a turn restarts with it (Q58): interrupt, wait for
+    // A new prompt during a turn restarts with it: interrupt, wait for
     // the turn to wind down, then send.
     if (ref.read(chatServiceProvider).busy) await svc.interrupt();
     await svc.send(text);
@@ -123,7 +123,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                           child: ResultCard(
                             shown: shown,
                             onChoice: (id, label) {
-                              // A selection sends with whatever was typed (Q60).
+                              // A selection sends with whatever was typed.
                               final extra = _input.text;
                               _input.clear();
                               unawaited(
@@ -290,7 +290,7 @@ class _Bubble extends StatelessWidget {
 }
 
 /// Small models emit Markdown and escape dollars; bubbles are plain text for
-/// now (TQ56), so the common markers are stripped rather than shown raw.
+/// now, so the common markers are stripped rather than shown raw.
 String plainText(String text) => text
     .replaceAll(r'\$', r'$')
     .replaceAll('**', '')

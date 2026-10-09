@@ -230,6 +230,14 @@ VA-10, then VA-8 and VA-12.
 
 ---
 
+## Epic VA-13 — Code quality (2026-10-09)
+
+- **VA-13.1** As the owner, I want the codebase to demonstrate best practice for
+  AI-assisted work: a lint baseline (doc comments enforced in the pure packages), one file
+  per concern, comments that say why, one logger, one home for strings and constants,
+  enums over strings, a test for every fixed bug. **done** (twelve commits ending at the
+  docs commit; see `learnings/ai-assisted-code-quality.md` outside the repo)
+
 ## Epic VA-11 — Dynamic design (the core idea, ADR 0006)
 
 The concept, principles and numbered requirements (`DD-R#`) live in the working document

@@ -188,4 +188,50 @@ void main() {
     expect(seenContext?['user'], 'u1');
     expect(seenCancel, same(controller.token));
   });
+
+  test('a branch that fails after a cancel reports its own error and never '
+      'falls back', () async {
+    final started = Completer<void>();
+    var fallbackCalls = 0;
+    final m = cascadeModel(
+      branches: {
+        'a': Model(
+          name: 'a',
+          fn: (request, context) async {
+            started.complete();
+            await context.cancel!.whenCancelled;
+            throw StateError('stop failed');
+          },
+        ),
+        'b': Model(
+          name: 'b',
+          fn: (request, context) async {
+            fallbackCalls++;
+            return ModelResponse(
+              finishReason: FinishReason.stop,
+              message: Message(
+                role: Role.model,
+                content: [TextPart(text: 'B')],
+              ),
+            );
+          },
+        ),
+      },
+      order: ['a', 'b'],
+      accept: (r) => true,
+    );
+    final controller = CancellationController();
+
+    final outcome = expectLater(
+      m(_req(), cancel: controller.token),
+      throwsA(
+        isA<StateError>().having((e) => e.message, 'message', 'stop failed'),
+      ),
+    );
+    await started.future;
+    controller.cancel();
+    await outcome;
+
+    expect(fallbackCalls, 0);
+  });
 }

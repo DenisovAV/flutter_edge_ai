@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:genkit/genkit.dart';
 import 'package:genkit/plugin.dart';
 import 'package:genkit_hybrid/src/hybrid_model.dart';
@@ -247,4 +249,48 @@ void main() {
     expect(seenContext?['user'], 'u1');
     expect(seenCancel, same(controller.token));
   });
+
+  for (final streaming in [false, true]) {
+    test('a branch that fails after a cancel reports its own error and never '
+        'falls back (streaming: $streaming)', () async {
+      final started = Completer<void>();
+      Map<String, dynamic>? seenContext;
+      var fallbackCalls = 0;
+      final model = hybridModel(
+        branches: {
+          'a': Model(
+            name: 'a',
+            fn: (request, context) async {
+              seenContext = context.context;
+              started.complete();
+              await context.cancel!.whenCancelled;
+              throw StateError('stop failed');
+            },
+          ),
+          'b': fakeModel(name: 'b', onCall: () => fallbackCalls++),
+        },
+        strategy: _Pick(['a', 'b']),
+      );
+      final controller = CancellationController();
+
+      final result = model(
+        _req(),
+        onChunk: streaming ? _streamingCtx().onChunk : null,
+        context: {'user': 'u1'},
+        cancel: controller.token,
+      );
+      final outcome = expectLater(
+        result,
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'stop failed'),
+        ),
+      );
+      await started.future;
+      controller.cancel();
+      await outcome;
+
+      expect(seenContext?['user'], 'u1');
+      expect(fallbackCalls, 0);
+    });
+  }
 }

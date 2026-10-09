@@ -65,7 +65,7 @@ Based on Phase 1, decide with the user which new APIs to support. Typical integr
 - Add override in `FakeInferenceChat` / `FakeInferenceModel` in `test/src/fake_runtime.dart`
 
 ### Changed model capabilities
-- Update `supports` map in `lib/src/flutter_edge_ai_plugin.dart` (`list()` method)
+- Update `kFlutterEdgeAiModelSupports` in `lib/src/flutter_edge_ai_model.dart`; `list()` in `flutter_edge_ai_plugin.dart` only references it
 
 ### Changed message handling
 - Update converters in `lib/src/converters/`; update `extractSystemInstruction()` if system-message handling changed
@@ -100,11 +100,17 @@ cloud plugin until they moved too.
    `~/.pub-cache/hosted/pub.dev/genkit-<new>/CHANGELOG.md`. Split it into
    compile breaks, which the analyzer finds, and behaviour changes, which it
    does not. Check every behaviour change against our code, the apps and the
-   docs. Two that 1.0 brought: a model error no longer throws out of
+   docs. The one 1.0 brought: a model error no longer throws out of
    `ai.generate` / `generateStream` but comes back with
-   `finishReason: FinishReason.failed` (0.17, #413), and schema instructions
-   for `outputSchema` are the opt-in `simulateConstrainedGeneration()`
-   middleware (#519).
+   `finishReason: FinishReason.failed` (0.17, #413). It also turns tests
+   with negative assertions (`isNot(contains(...))`, `lessThan(n)`) into
+   tests that pass on a failed generation, so make them assert
+   `FinishReason.stop` first. Schema instructions never reached the prompt by
+   default, not under 0.16 either; 1.0 adds the opt-in
+   `simulateConstrainedGeneration()` middleware (#519). New exports can
+   collide with `flutter_edge_ai`'s: 1.0's `ToolChoice` makes
+   `ToolChoice.none` an `ambiguous_import` in any file importing both, so
+   compile every snippet on the site against both imports.
 2. Bump `genkit` in both packages and in `genkit_flutter_edge_ai/example`.
    `schemantic` and `schemantic_builder` move with it (genkit 1.0 needs
    schemantic ^1.0.0).

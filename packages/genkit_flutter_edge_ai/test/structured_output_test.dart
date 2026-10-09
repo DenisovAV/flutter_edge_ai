@@ -50,12 +50,16 @@ void main() {
   });
 
   test('without it the model never sees the schema', () async {
-    await ai.generate(
+    final response = await ai.generate(
       model: flutterEdgeAi.model('m'),
       prompt: 'Pick a backend.',
       outputSchema: FlutterEdgeAiEmbedConfig.$schema,
     );
 
+    // A failed generation leaves the prompt empty, which would pass the last
+    // check on its own.
+    expect(response.finishReason, FinishReason.stop);
+    expect(prompt(), contains('Pick a backend.'));
     expect(prompt(), isNot(contains('conform to the following schema')));
   });
 }

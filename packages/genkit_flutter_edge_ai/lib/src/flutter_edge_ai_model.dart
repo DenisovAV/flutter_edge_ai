@@ -370,10 +370,12 @@ Future<ModelResponse> _executeGeneration({
   if (failure != null) {
     // The generation's own error is the one reported; a stop that failed as
     // well is logged rather than lost.
-    if (stopFailure case (final error, _)) {
+    if (stopFailure case (final error, final stack)) {
       developer.log(
-        'stopGeneration failed after the generation failed: $error',
+        'stopGeneration failed after the generation failed',
         name: 'genkit_flutter_edge_ai',
+        error: error,
+        stackTrace: stack,
       );
     }
     Error.throwWithStackTrace(failure, failureStack!);

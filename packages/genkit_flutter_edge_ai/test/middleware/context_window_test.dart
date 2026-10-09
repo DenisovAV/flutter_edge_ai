@@ -326,12 +326,16 @@ void main() {
     test(
       'explicit maxInputTokens actually trims the forwarded history',
       () async {
-        await ai.generate(
+        final response = await ai.generate(
           model: flutterEdgeAi.model('m'),
           messages: longHistory(),
           use: [trimContext(maxInputTokens: 20)], // tiny → must drop most turns
         );
 
+        // A failed generation returns a result rather than throwing, and sends
+        // the chat nothing, which would satisfy the bound below on its own.
+        expect(response.finishReason, FinishReason.stop);
+        expect(fakeChat.receivedMessages, isNotEmpty);
         // With the config-drop bug the budget silently derives from the default
         // 1024 window, so all 9 turns reach the chat untrimmed. The tiny explicit
         // budget must leave only the most recent turn(s).

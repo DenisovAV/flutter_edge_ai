@@ -9,7 +9,7 @@ class RoutingContext {
   });
 
   /// The incoming generate request. Genkit 1.0 never hands a model a null
-  /// request, so the hybrid models always set it; it stays nullable for a
+  /// request, so `hybridModel` always sets it; it stays nullable for a
   /// [RoutingContext] built by hand.
   final ModelRequest? request;
 

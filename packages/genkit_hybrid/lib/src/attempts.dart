@@ -20,6 +20,13 @@ bool isTransient(Object error) {
   }
 }
 
+/// Whether a branch that failed with [error] may hand the request to the next
+/// one. Never after a cancel: the next branch would only throw a
+/// `CancelledException` on entry, replacing [error], which says what went
+/// wrong.
+bool canFallBack(Object error, CancellationToken? cancel) =>
+    !(cancel?.isCancelled ?? false) && isTransient(error);
+
 /// Runs [order] against [branches] with [request]/[context], NON-STREAMING.
 ///
 /// Falls to the next branch on a transient error (permanent errors rethrow).
@@ -40,7 +47,7 @@ Future<ModelResponse> runInOrder(
     try {
       resp = await callBranch(branches[order[i]]!, request, context);
     } catch (e) {
-      if (isLast || !isTransient(e)) rethrow;
+      if (isLast || !canFallBack(e, context.cancel)) rethrow;
       continue; // transient failure, not the last branch -> try the next one
     }
     // accept is evaluated OUTSIDE the branch-error catch: a throwing predicate

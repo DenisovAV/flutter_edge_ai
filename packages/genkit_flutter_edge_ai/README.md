@@ -73,8 +73,9 @@ await FlutterEdgeAi.initialize(
 );
 ```
 
-> If you skip registration, the first `getActiveModel` throws a `StateError`
-> telling you to add the engine package.
+> If you skip registration, `getActiveModel` throws a `StateError` naming the
+> engine package to add. Through Genkit that error comes back in the result of
+> `ai.generate`, not as an exception — see the check in the Quick Start.
 
 ## Quick Start
 
@@ -117,8 +118,21 @@ final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Hello!',
 );
+final reason = response.finishReason;
+if (reason != FinishReason.stop &&
+    reason != FinishReason.length &&
+    reason != FinishReason.unknown) {
+  throw response.cause ??
+      StateError(response.finishMessage ?? 'The model stopped: $reason');
+}
 print(response.text);
 ```
+
+In genkit 1.0 `ai.generate` does not throw when the generation fails. It returns
+a result whose `finishReason` is `failed` (or `aborted` for a cancel), with the
+error in `error` and the original exception in `cause`. A missing engine, an
+invalid option and a cancel all arrive this way, so check the result before you
+show its text: without the check a failure prints an empty line.
 
 ## Configuration
 
@@ -167,6 +181,8 @@ final reply = StringBuffer();
 await for (final chunk in stream) {
   reply.write(chunk.text); // update your UI with reply.toString()
 }
+// A failure ends the stream normally; the result says what happened.
+final result = await stream.onResult; // check finishReason as in Quick Start
 ```
 
 ## Tool Use
@@ -178,6 +194,11 @@ final response = await ai.generate(
   tools: [weatherTool],
 );
 ```
+
+Genkit's top-level `toolChoice:` takes precedence over the `toolChoice` option.
+Write it as `toolChoice: .none`: genkit 1.0 and `flutter_edge_ai` both export a
+`ToolChoice`, so in a file that imports both without a prefix,
+`ToolChoice.none` is an `ambiguous_import` error.
 
 ## Structured Output
 
@@ -199,9 +220,23 @@ final response = await ai.generate(
 final Recipe? recipe = response.output;
 ```
 
-A reply that does not match the schema still finishes with
-`FinishReason.stop`: `response.output` is then null and `response.error` says
-why.
+Genkit does not check the reply against the schema, so validate
+`response.output` yourself. What you get depends on the reply:
+
+- **No JSON at all** (or an object cut off mid-way): the result still finishes
+  with `FinishReason.stop`, `response.output` is null and `response.error` says
+  why.
+- **A JSON object with the wrong fields**: `response.output` is not null and
+  `response.error` is null. A missing field reads as null, and reading a field
+  of the wrong type throws.
+- **A bare number, string or array** — prose such as "Serves 4 people" is
+  enough, because the `4` is extracted: `ai.generate` throws a `TypeError`
+  instead of returning a result.
+
+The middleware appends the schema to the first system message, or to the last
+user message when there is none. The plugin uses the `systemInstruction` option
+in place of system messages, so when you set it together with a `system:` prompt
+the schema never reaches the model; put the instruction in `system:` instead.
 
 ## Context-Window Trimming
 

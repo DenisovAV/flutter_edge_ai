@@ -78,7 +78,9 @@ Model hybridModel({
         } catch (e) {
           // Once a token is out, we cannot re-route — propagate.
           // Before the first token, fall back on transient failures only.
-          if (firstTokenSent || isLast || !isTransient(e)) rethrow;
+          if (firstTokenSent || isLast || !canFallBack(e, context.cancel)) {
+            rethrow;
+          }
         }
       }
       throw StateError('unreachable'); // loop always returns or rethrows.

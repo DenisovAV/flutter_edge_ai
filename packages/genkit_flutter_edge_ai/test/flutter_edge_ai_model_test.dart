@@ -200,7 +200,7 @@ void main() {
       expect(fakeModel.lastToolChoice, gemma.ToolChoice.none);
     });
 
-    test('native request.toolChoice reaches createChat (0.15)', () async {
+    test('native request.toolChoice reaches createChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -1056,14 +1056,30 @@ void main() {
       expect(fakeChat.stopGenerationCallCount, 1);
     });
 
-    test('a failing chunk callback stops the generation first', () async {
+    test('a failing chunk callback stops the generation before the next '
+        'request starts', () async {
+      fakeChat.stopLanding = Completer<void>();
       final model = buildModel();
 
-      await expectLater(
-        model(simpleRequest(), onChunk: (_) => throw StateError('ui')),
+      final first = expectLater(
+        model(simpleRequest('first'), onChunk: (_) => throw StateError('ui')),
         throwsA(isA<StateError>().having((e) => e.message, 'message', 'ui')),
       );
+      final second = model(simpleRequest('second'));
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
       expect(fakeChat.stopGenerationCallCount, 1);
+      expect(
+        fakeChat.addQueryChunkCallCount,
+        1,
+        reason: 'a stop still in flight could cut the next request short',
+      );
+
+      fakeChat.stopLanding!.complete();
+      await first;
+      await second;
+      expect(fakeChat.addQueryChunkCallCount, 2);
     });
 
     test(

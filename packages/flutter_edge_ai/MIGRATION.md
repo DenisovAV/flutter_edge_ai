@@ -1,5 +1,20 @@
 # Migration guide
 
+## flutter_edge_ai 2.1.0: `isThinking` is `enableThinking`
+
+A rename with no `dart fix` rule, so the compiler finds every call site:
+
+- `createSession`, `openSession`, `createChat` and `openChat` take
+  `enableThinking:` instead of `isThinking:`.
+- `ModelRuntimeDefaults.isThinking` is `thinkingDeclared` — what the model's
+  manifest declares, which you pass on as
+  `enableThinking: r.runtime.thinkingDeclared ?? false`.
+- `genkit_flutter_edge_ai` 0.7: the `isThinking` model option is
+  `enableThinking`.
+
+Requires `flutter_edge_ai_litertlm` 1.9.0 or later, which sends the flag to the
+runtime under the key chat templates read.
+
 ## flutter_edge_ai_litertlm 1.10.0: Android NPU is opt-in
 
 Only apps that use `PreferredBackend.npu` on Android need to act. Qualcomm
@@ -28,6 +43,13 @@ hooks:
 Without the flag nothing fails: `npu` falls back to GPU, then CPU, as on any
 device without an NPU.
 
+**Linux arm64 (`flutter_edge_ai_litertlm` 1.11.0).** The same flag also bundles
+the Qualcomm NPU stack into Linux arm64 builds — Qualcomm Linux boards such as
+the QCS6490, QCS8275 or QCS9075. The hook reads the QNN runtime out of
+Qualcomm's public QAIRT SDK zip (about 32 MB of it, by range request);
+`qualcomm_npu_qairt_zip` points it at a local copy. On the board the user must
+be in group `fastrpc`. A Linux x64 build ignores the flag.
+
 ## Flutter Edge AI 1.x → 2.0: RAG leaves core
 
 Flutter Edge AI 2.0 keeps inference, embeddings, speech, installation, and
@@ -40,7 +62,7 @@ Update dependencies:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.0.0
+  flutter_edge_ai: ^2.1.1
   flutter_edge_ai_rag: ^1.0.0
   flutter_edge_ai_sqlite: ^2.0.0 # or flutter_edge_ai_qdrant: ^2.0.0
 ```
@@ -247,9 +269,9 @@ dependencies:
 **Current equivalents (2.0):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.0.0                 # core — always required
-  flutter_edge_ai_litertlm: ^1.8.7        # .litertlm + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.0.9       # .task / .bin
+  flutter_edge_ai: ^2.1.1                 # core — always required
+  flutter_edge_ai_litertlm: ^1.10.1       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.1.1       # .task / .bin
   flutter_edge_ai_embeddings: ^2.2.2      # tokenizer providers
   flutter_edge_ai_rag: ^1.0.0             # RAG orchestration + contracts
   flutter_edge_ai_qdrant: ^2.0.0          # native qdrant provider
@@ -273,11 +295,13 @@ Pick by what you actually used in 0.16.x:
 
 > **New opt-in packages since 1.2/1.3** (not migration targets from the 0.16.x
 > monolith — they add new capabilities): `flutter_edge_ai_agent` (on-device agent
-> skills — SKILL.md + tool-calling loop) and `flutter_edge_ai_builtin_ai` (OS
+> skills — SKILL.md + tool-calling loop), `flutter_edge_ai_builtin_ai` (OS
 > system models — Gemini Nano on Android and Web, Apple Foundation Models on
 > iOS/macOS, Windows AI Foundry on Windows; a thin adapter over
-> `flutter_local_ai`, which owns the native layer).
-> Add either only if you want that feature — see the README **Features** list.
+> `flutter_local_ai`, which owns the native layer), `flutter_edge_ai_onnx` (ONNX
+> Runtime generation and embeddings) and `flutter_edge_ai_diagnostics` (memory
+> a model costs, read from the OS).
+> Add any of them only if you want that feature — see the README **Features** list.
 
 ## 2. main.dart — the one new call
 
@@ -320,7 +344,9 @@ Only list the AI runtimes you ship. RAG storage is registered independently on
 
 ## 3. Everything else is unchanged
 
-These keep the exact same API — no edits needed:
+These kept the same API through the 1.0 split — no edits needed for it (later
+breaking changes, such as `isThinking` → `enableThinking` in 2.1.0 and RAG
+moving to `flutter_edge_ai_rag` in 2.0, are covered above):
 
 ```dart
 // install + run a model
@@ -346,7 +372,7 @@ await FlutterEdgeAi.installEmbedder()
 - Calling `getActiveModel()` with no matching `inferenceEngines` registered throws
   a `StateError` naming the model's `ModelFileType` and the engines that are
   registered — add the engine package for that file type.
-- `createEmbeddingModel()` with no `embeddingBackends` throws
+- `FlutterEdgeAi.getActiveEmbedder()` with no `embeddingBackends` throws
   a clear "add an embedding backend package" error (e.g. `flutter_edge_ai_litertlm`'s
   `LiteRtEmbeddingBackend`).
 - `FlutterEdgeAiRag.open()` with no matching provider throws and reports the

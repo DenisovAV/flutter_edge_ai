@@ -18,7 +18,8 @@ Vision is supported by **Gemma 4 E2B/E4B**, **Gemma3n E2B/E4B**, **FastVLM 0.5B*
 four platforms (Android, iOS, Web, Desktop); **Gemma3n** vision runs on Android,
 iOS, and Desktop only — its web build is `.litertlm`, which is text-only. On the
 `.litertlm` engine the
-text decoder runs on your chosen backend (Metal / Vulkan / DX12 on GPU), while
+text decoder runs on your chosen backend (on GPU: OpenCL on Android, Metal on
+Apple, Vulkan/WebGPU on Linux, DX12/WebGPU on Windows), while
 the **vision encoder always runs on CPU by default** — the Metal/WebGPU delegates
 can't prepare its ops — so image input works on a GPU text backend with no extra
 config.
@@ -74,7 +75,7 @@ if (message.hasImage) {
 
 <Info>
 
-The plugin automatically handles common image formats (JPEG, PNG, etc.) when
+flutter_edge_ai automatically handles common image formats (JPEG, PNG, etc.) when
 using `Message.withImages()` or `Message.withImage()`. The GPU backend speeds up
 text decoding; image encoding still runs on CPU (audio encoding can be moved to
 GPU — see below).

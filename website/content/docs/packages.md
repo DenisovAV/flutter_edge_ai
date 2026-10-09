@@ -15,11 +15,11 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 
 | Package | What it does | Platforms |
 |---|---|---|
-| **`flutter_edge_ai`** | Core — registry, contracts, model management, sessions, chat. No engine on its own. **Always required.** | All |
+| **`flutter_edge_ai`** | Core — registry, contracts, model management, sessions, chat. No engine on its own. **Required by every package except `flutter_edge_ai_diagnostics`.** | All |
 | **`flutter_edge_ai_litertlm`** | `.litertlm` inference via `dart:ffi` (LiteRT-LM C API). Owns the shared native library. | Mobile + Desktop + Web |
 | **`flutter_edge_ai_mediapipe`** | `.task` / `.bin` inference via MediaPipe. | Mobile + Web |
-| **`flutter_edge_ai_builtin_ai`** | System OS models — Gemini Nano (Android / AICore), Apple Foundation Models (iOS 26+/macOS), Windows AI Foundry (Phi Silica), and Gemini Nano via the Chrome Prompt API (Web). No model file to bundle or download. A thin adapter over [`flutter_local_ai`](https://pub.dev/packages/flutter_local_ai), which owns the native layer — not a plugin itself. | Android + iOS + macOS + Windows + Web |
-| **`flutter_edge_ai_onnx`** | Text generation (`OnnxEngine`) + embeddings (`OnnxEmbeddingBackend`) — ORT-GenAI/ORT via `dart:ffi` on native, Transformers.js/onnxruntime-web on Web. | macOS, Linux, Windows, Android, iOS (arm64) + Web |
+| **`flutter_edge_ai_builtin_ai`** | System OS models — Gemini Nano (Android / AICore), Apple Foundation Models (iOS 26+/macOS 26+), Windows AI Foundry (Phi Silica), and Gemini Nano via the Chrome Prompt API (Web). No model file to bundle or download. A thin adapter over [`flutter_local_ai`](https://pub.dev/packages/flutter_local_ai), which owns the native layer — not a plugin itself. | Android + iOS + macOS + Windows + Web |
+| **`flutter_edge_ai_onnx`** | Text generation (`OnnxEngine`) + embeddings (`OnnxEmbeddingBackend`) — ORT-GenAI/ORT via `dart:ffi` on native, Transformers.js/onnxruntime-web on Web. | macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64 + Web |
 | **`flutter_edge_ai_embeddings`** | Embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via `embeddingTokenizers:`. Needs a backend — `LiteRtEmbeddingBackend` (`flutter_edge_ai_litertlm`) or `OnnxEmbeddingBackend` (`flutter_edge_ai_onnx`). | All |
 | **`flutter_edge_ai_rag`** | Instance-scoped RAG orchestration, `RagIndex`, stable embedding profiles, filters, and vector-store provider contracts. | All |
 | **`flutter_edge_ai_qdrant`** | qdrant-edge provider for `flutter_edge_ai_rag`, via the official qdrant_edge UniFFI SDK. Fastest on native. | Native (no Web) |
@@ -71,7 +71,7 @@ is on the [Capabilities](/docs/capabilities) page.
 
 Desktop is served **primarily** by [`flutter_edge_ai_litertlm`](/docs/litertlm)
 (`.litertlm`) — the default engine. [`flutter_edge_ai_onnx`](/docs/onnx) also runs
-on all three desktop OSes (macOS/Windows/Linux), and the OS built-in model is
+on macOS arm64, Windows x64 and Linux x64, and the OS built-in model is
 available via [`flutter_edge_ai_builtin_ai`](/docs/builtin-ai) on **macOS** (Apple
 Foundation Models) and on **Windows** (AI Foundry — nothing to configure to
 build: `flutter_local_ai` resolves the Windows App SDK projection itself; running

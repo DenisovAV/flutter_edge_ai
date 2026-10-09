@@ -283,7 +283,7 @@ await model.close();
 
 - **`maxTokens` is the context window**, not the reply length: prompt, history
   and answer together. `.litertlm` needs at least 1024. Cap the reply with
-  `createChat(maxOutputTokens: …)`.
+  `createChat(maxOutputTokens: …)` (`.litertlm`; MediaPipe ignores it).
 - **`Message.isUser` defaults to `false`.** A user message without
   `isUser: true` gets an empty answer.
 - **`fileType` picks the engine**, not the file name. `installModel` defaults

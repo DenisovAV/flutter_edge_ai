@@ -77,9 +77,9 @@ inside `sentencepiece.js`.
 
 | Platform | Support |
 |----------|---------|
-| Android / iOS | ✅ (via flutter_edge_ai_litertlm's FFI backend) |
-| macOS / Linux / Windows | ✅ (via flutter_edge_ai_litertlm's FFI backend) |
-| Web | ✅ (via flutter_edge_ai_litertlm's LiteRT.js backend, CDN) |
+| Android / iOS | ✅ (via flutter_edge_ai_litertlm's `LiteRtEmbeddingBackend` or flutter_edge_ai_onnx's `OnnxEmbeddingBackend`) |
+| macOS / Linux / Windows | ✅ (same two backends, FFI) |
+| Web | ✅ (via flutter_edge_ai_litertlm's LiteRT.js backend, or flutter_edge_ai_onnx with WordPiece models) |
 
 This package itself is pure Dart with no native/FFI code — the concrete
 backend (and its native library) is owned by whichever engine package you add.

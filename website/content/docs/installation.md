@@ -6,9 +6,9 @@ meta:
     content: https://flutteredge.ai/images/og-image.png
 ---
 
-Since **1.0** (then `flutter_gemma`), the plugin is split into a small **core** package plus
-**opt-in** packages for each engine / backend, so your app only pulls the native
-weight it actually uses. Add the core package, then the packages for the model
+Flutter Edge AI is a small **core** package plus **opt-in** packages for each
+engine / backend (split since 1.0, then `flutter_gemma`), so your app only pulls
+the native weight it actually uses. Add the core package, then the packages for the model
 formats and features you need.
 
 ## 1. Add packages to `pubspec.yaml`
@@ -20,7 +20,7 @@ dependencies:
   # Inference engines — add at least one:
   flutter_edge_ai_litertlm: latest_version     # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: latest_version    # .task / .bin models (MediaPipe; mobile + web)
-  flutter_edge_ai_builtin_ai: latest_version   # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS) / Windows AI Foundry / Chrome Prompt API (Web)
+  flutter_edge_ai_builtin_ai: latest_version   # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
   flutter_edge_ai_onnx: latest_version         # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
 
   # Optional — text-embedding tokenizer implementations:
@@ -133,7 +133,7 @@ void main() async {
 |---|---|---|
 | `inferenceEngines: [LiteRtLmEngine()]` | `flutter_edge_ai_litertlm` | `.litertlm` (mobile + desktop + web) |
 | `inferenceEngines: [MediaPipeEngine()]` | `flutter_edge_ai_mediapipe` | `.task` / `.bin` (mobile + web) |
-| `inferenceEngines: [OnnxEngine()]` | `flutter_edge_ai_onnx` | ONNX models — ORT-GenAI (FFI, macOS/Linux/Windows/Android/iOS arm64) or Transformers.js (Web) |
+| `inferenceEngines: [OnnxEngine()]` | `flutter_edge_ai_onnx` | ONNX models — ORT-GenAI (FFI: macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64) or Transformers.js (Web) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | text embeddings |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by BOTH embedding backends above |
@@ -148,7 +148,7 @@ model to the engine that handles its file type. For RAG, register
 
 **Common settings:**
 
-- `huggingFaceToken`: authentication token for gated models (Gemma3n, EmbeddingGemma).
+- `huggingFaceToken`: authentication token for gated models (Gemma3n, Gemma 3 1B / 270M, EmbeddingGemma).
 - `maxDownloadRetries`: number of retry attempts for failed downloads (default: 10).
 - `webStorageMode` **(Web only)**: storage strategy for model files (default: `cacheApi`).
   - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB).
@@ -167,14 +167,14 @@ Use `WebStorageMode.streaming` when shipping `.litertlm` web models — the
 
 <Warning>
 
-Complete platform-specific setup before using the plugin.
+Complete platform-specific setup before running a model.
 
 </Warning>
 
 ### iOS
 
-Required by any engine package: `flutter_edge_ai_litertlm`, `flutter_edge_ai_mediapipe`
-and/or `flutter_edge_ai_builtin_ai`.
+Required by any engine package: `flutter_edge_ai_litertlm`, `flutter_edge_ai_mediapipe`,
+`flutter_edge_ai_onnx`, `flutter_edge_ai_builtin_ai` and/or `flutter_edge_ai_speech`.
 
 **Set the minimum iOS version to 15.0** — or **16.0** if your app depends on
 `flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI. Core, `flutter_edge_ai_litertlm`
@@ -270,8 +270,9 @@ host fails with `Could not find method kotlin()`. Add KGP to the host's root
 `buildscript`/`plugins {}`. A normal `flutter build` app needs nothing — Flutter's own
 Gradle plugin carries KGP.
 
-**GPU (any engine): nothing to add.** `flutter_edge_ai`'s own manifest declares the
-OpenCL namespace entries and the manifest merger folds them into your app. These
+**GPU and NPU (any engine): nothing to add to the manifest.** `flutter_edge_ai`'s
+own manifest declares the OpenCL and FastRPC namespace entries and the manifest
+merger folds them into your app. These
 are what your merged manifest must contain if you pin or audit it — note
 `libvndksupport.so`: without it the OpenCL ICD load is denied on Android 12+, the
 engine falls back to WebGPU, and some Mali drivers hard-freeze (#324).
@@ -281,7 +282,24 @@ engine falls back to WebGPU, and some Mali drivers hard-freeze (#324).
 <uses-native-library android:name="libOpenCL.so" android:required="false"/>
 <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
 <uses-native-library android:name="libOpenCL-pixel.so" android:required="false"/>
+<uses-native-library android:name="libcdsprpc.so" android:required="false"/>
 ```
+
+**Qualcomm NPU (opt-in).** `PreferredBackend.npu` needs Qualcomm's QNN runtime,
+which Qualcomm licenses for redistribution only inside an application, so the
+app asks for it in its `pubspec.yaml` (the workspace root's, if the app is a pub
+workspace member):
+
+```
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+```
+
+The build hook then fetches the runtime — from Maven Central for Android, from
+Qualcomm's QAIRT SDK for Linux arm64 boards. Without the flag `npu` falls back
+to GPU, then CPU. See [LiteRT-LM](/docs/litertlm).
 
 **ProGuard/R8 (only if you use `flutter_edge_ai_mediapipe`):** the package ships
 its own consumer ProGuard rules; from 1.0.6 a release build needs no rules in
@@ -496,12 +514,11 @@ first model load fails.
 
 See [Desktop Support](/docs/desktop) for the full per-platform reference (macOS
 `Podfile` `post_install`, entitlements, Windows DLL loading — no VC++
-redistributable needed since `flutter_gemma_litertlm` 1.7.1 — Linux Vulkan
-driver, and known limitations).
+redistributable needed — Linux Vulkan driver, and known limitations).
 
 ## Platform & architecture support
 
-The plugin ships native prebuilts only for the architectures below. Other ABIs
+The native packages ship prebuilts only for the architectures below. Other ABIs
 fail at native load with a typed error.
 
 | Platform | Supported architecture | Not supported |
@@ -557,6 +574,7 @@ void main() async {
 
   await FlutterEdgeAi.initialize(
     huggingFaceToken: token.isNotEmpty ? token : null,
+    // plus inferenceEngines / embeddingBackends from step 2
   );
 
   runApp(MyApp());
@@ -575,7 +593,7 @@ To use a gated repo: visit the model page → "Request Access" button.
 
 ## Logging
 
-The plugin's internal logs are **silent in release builds** — model output,
+Flutter Edge AI's internal logs are **silent in release builds** — model output,
 prompts, and conversation history are never written to logcat / syslog. In debug
 builds they're shown according to `FlutterEdgeAi.logLevel`:
 
@@ -591,7 +609,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 // See the model's generated tokens and prompts while debugging:
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.verbose;
 
-// Or silence the plugin entirely:
+// Or silence logging entirely:
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.none;
 ```
 

@@ -51,16 +51,18 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 |---|---|---|
 | `flutter_edge_ai_litertlm` | `LiteRtLmEngine()`, `LiteRtEmbeddingBackend()` | `.litertlm` models (Gemma 4, desktop) and/or text embeddings (EmbeddingGemma) |
 | `flutter_edge_ai_mediapipe` | `MediaPipeEngine()` | `.task` / `.bin` models (Gemma 3, mobile/web) |
+| `flutter_edge_ai_onnx` | `OnnxEngine()`, `OnnxEmbeddingBackend()` | ONNX models and embeddings |
+| `flutter_edge_ai_builtin_ai` | `BuiltInAiEngine()` | the OS's own model (Gemini Nano, Apple Foundation Models, Phi Silica) |
 | `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | text embeddings — required beside any embedding backend |
 
 ```yaml
 # pubspec.yaml (your app)
 dependencies:
   genkit_flutter_edge_ai: ^0.7.1
-  flutter_edge_ai: ^2.1.0
-  flutter_edge_ai_litertlm: ^1.9.0   # only the engines/backends you actually use
+  flutter_edge_ai: ^2.1.1
+  flutter_edge_ai_litertlm: ^1.10.1  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.2.2  # the tokenizers an embedding backend needs
-  flutter_edge_ai_mediapipe: ^1.1.0
+  flutter_edge_ai_mediapipe: ^1.1.1
 ```
 
 ```dart
@@ -101,7 +103,7 @@ final ai = Genkit(plugins: [
   GenkitFlutterEdgeAiPlugin(
     models: [
       FlutterEdgeAiModelConfig(
-        name: 'gemma-3-nano',
+        name: 'gemma-3-1b',
         modelType: ModelType.gemmaIt,
       ),
     ],
@@ -113,7 +115,7 @@ final ai = Genkit(plugins: [
 
 // Generate
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Hello!',
 );
 print(response.text);
@@ -125,7 +127,7 @@ Pass `FlutterEdgeAiModelOptions` to customize inference:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,
@@ -158,7 +160,7 @@ final response = await ai.generate(
 
 ```dart
 final stream = ai.generateStream(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Write a story.',
 );
 
@@ -172,7 +174,7 @@ await for (final chunk in stream) {
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'What is the weather in Paris?',
   tools: [weatherTool],
 );
@@ -188,7 +190,7 @@ read the parsed object:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
 );
@@ -206,7 +208,7 @@ call, always keeping every system message and the most recent message:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-nano'),
+  model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Continue our conversation…',
   messages: longHistory,
   use: [trimContext(maxInputTokens: 800)],

@@ -62,7 +62,9 @@ final r = await FlutterEdgeAi.resolveHuggingFace(
     'litert-community/Qwen3-4B-Thinking-2507',
     fileType: ModelFileType.litertlm);
 await FlutterEdgeAi.installModel(
-      modelType: r.modelType ?? ModelType.general,
+      // The manifest types 2507 as qwen3; ModelType.qwen is right for it.
+      // For other repos, r.modelType ?? ModelType.general.
+      modelType: ModelType.qwen,
       fileType: r.fileType,
     )
     .fromNetwork(r.url) // authoritative: carries the resolver's revision pin
@@ -224,24 +226,20 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL, NPU via `.litertlm` on Qualcomm) |
+| Android  | ✅ FFI (GPU via OpenCL, NPU on Qualcomm — opt-in, below) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
-| macOS / Linux | ✅ FFI (GPU via Metal / Vulkan) |
+| macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
 | Web      | ✅ via `@litert-lm/core` (CDN, early preview) |
 
-> **Fixed in 1.4.0:** Windows **discrete GPUs** crashed on
-> `PreferredBackend.gpu` in 1.2.0–1.3.1. Upgrade to 1.4.0; on the affected
-> versions use `PreferredBackend.cpu` or `.npu`. macOS/Linux GPU and Windows
-> CPU/NPU were never affected.
-
-`PreferredBackend.npu` is attempted only on Windows and on Android devices with
-Qualcomm FastRPC (`libcdsprpc.so`) whose app opted in (below); elsewhere it
-falls back to GPU, then CPU, and prints why. On Windows the check is per OS, so
+`PreferredBackend.npu` is attempted only on Windows, on Android devices with
+Qualcomm FastRPC (`libcdsprpc.so`) and on Qualcomm Linux arm64 boards, the last
+two when the app opted in (below); elsewhere it falls back to GPU, then CPU, and
+prints why. On Windows the check is per OS, so
 a PC without an Intel NPU can report `activeBackend == npu` while the model runs
 elsewhere.
 
-### Qualcomm NPU on Android (opt-in)
+### Qualcomm NPU on Android and Linux arm64 (opt-in)
 
 This package does not ship Qualcomm's QNN runtime: Qualcomm licenses it for
 redistribution inside an application only. To use `PreferredBackend.npu` on
@@ -286,6 +284,30 @@ the same file as Maven's (same SHA-256). Without the flag, a request for
 `PreferredBackend.npu` on Android falls back to GPU, then CPU, and the log says
 how to enable it.
 
+**Linux arm64.** The same flag bundles the stack into Linux arm64 builds, for
+Qualcomm Linux boards with a Hexagon V68–V81 compute DSP (QCS6490, QCS8275,
+QCS9075, …). Qualcomm publishes no Maven artifact for Linux, so the hook reads
+the fourteen libraries it needs (libQnnHtp, libQnnSystem and a Stub/Skel pair
+per Hexagon version) out of Qualcomm's public QAIRT 2.50 SDK zip with HTTP range
+requests — about 32 MB of a 2.6 GB archive — checks each against a pinned
+SHA-256, and caches them; about 90 MB more installed. Offline, download
+`v2.50.0.260828.zip` yourself and point the hook at it:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+      qualcomm_npu_qairt_zip: third_party/v2.50.0.260828.zip
+```
+
+On the board, Qualcomm's FastRPC library must be installed (`qcom-fastrpc1` on
+Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
+(`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing,
+`npu` falls back to GPU, then CPU, and the log names what to fix. Use the model
+compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
+x64 build ignores the flag.
+
 The native library is fetched at build time by `hook/build.dart` (Native Assets)
 from a SHA256-verified GitHub release — no manual setup on native platforms.
 
@@ -319,20 +341,22 @@ conversation that replays the chat's history, including whatever the stopped
 reply had produced. That history is replayed as text: images and audio sent in
 earlier turns are not, so after a stop the model can no longer see them.
 
-### Google Play rejects the app over 16 KB page sizes (fixed in 1.8.0)
+### Google Play rejects the app over 16 KB page sizes (fixed in `flutter_gemma_litertlm` 1.8.0)
 
 Symptom: Play Console refuses the release with *"Your app does not support
 16 KB memory page sizes"*, on any app that depends on this package. Nothing
 fails at build or run time — the rejection happens at submission.
 
-Cause: the Qualcomm Hexagon DSP blobs this package bundles for the NPU path
-(`libQnnHtpV{73,75,79,81}Skel.so`) arrive from the QAIRT SDK with a 4 KB
-`p_align`, and they ship in every APK because the NPU libraries are bundled
-unconditionally. Play scans `lib/**/*.so` and does not care that a Hexagon
-image is loaded by the DSP rather than mapped by the kernel.
+Cause: the Qualcomm Hexagon DSP blobs of the NPU path
+(`libQnnHtpV{73,75,79,81}Skel.so`) arrive from Qualcomm with a 4 KB `p_align`.
+Before 1.10.0 this package bundled them into every APK; Play scans
+`lib/**/*.so` and does not care that a Hexagon image is loaded by the DSP
+rather than mapped by the kernel.
 
-Fix: upgrade to 1.8.0. Check your own build with Google's
-`check_elf_alignment.sh` against the APK, not against this package.
+Fix: every `flutter_edge_ai_litertlm` release has it. Since 1.10.0 the Skels
+ship only when the app sets `qualcomm_npu: true`, and the hook raises them to
+16 KB. Check your own build with Google's `check_elf_alignment.sh` against the
+APK, not against this package.
 
 ### Android GPU crashes at engine_create on Mali (fixed in 1.8.2)
 

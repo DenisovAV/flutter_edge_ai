@@ -57,8 +57,8 @@ Either arm can be registered on its own — they don't depend on each other.
 | Web | N/A — Transformers.js + onnxruntime-web, no native archive | ✅ both arms |
 
 `OnnxEngine.canHandle`/`OnnxEmbeddingBackend.createModel` are gated to
-macOS arm64, Linux x64, Windows x64, Android arm64, and iOS arm64
-(`OnnxEngine._isSupportedHost`) — device-verified end-to-end (generation +
+macOS arm64, Linux x64, Windows x64, Android arm64, and iOS arm64 —
+device-verified end-to-end (generation +
 embeddings) on macOS (~54 tok/s, M4 Pro), Linux (~5.3-5.8 tok/s), Windows
 (~3.3 tok/s), and Android (FTL Pixel 8 Pro, ~10.4 tok/s, ~3.74 GB RSS for a
 3.8B int4 model). On iOS the framework-embedding/dlopen path builds, signs,
@@ -79,7 +79,7 @@ platform gate lives in `createModel` instead, as a loud `StateError`.
 Android needs **`minSdk 24`** — both the ORT and ORT-GenAI AARs declare
 `minSdkVersion=24`; raise your app's `android/app/build.gradle(.kts)`
 `minSdk` to 24 or higher if it's lower today. The device-verified Android
-model (Phi-3.5-mini 3.8B int4) peaks at ~3.74 GB RSS — plan for 8 GB+ RAM
+model (Phi-3.5-mini 3.8B int4) peaks at ~3.74 GB RSS — plan for 6 GB+ RAM
 devices; smaller models scale down.
 
 ### Which output the embedding path reads

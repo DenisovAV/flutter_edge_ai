@@ -128,7 +128,7 @@ LoRA, no sampling parameters yet. Prompts use the model's own chat template
 `chat_template` on Web) — the engine never builds turn markers itself.
 On native, `preferredBackend` is not applied at all: neither ORT client appends an
 execution provider. For inference, ORT-GenAI picks the provider from the model
-directory's `genai_config.json`, which the plugin never reads, so the inference
+directory's `genai_config.json`, which `flutter_edge_ai_onnx` never reads, so the inference
 model's `activeBackend` is `null` rather than a guess. Embeddings run on plain
 ORT with no provider appended, which is CPU, and the embedder reports `cpu`.
 
@@ -137,9 +137,10 @@ falls back to WASM.
 
 ## Embeddings — `OnnxEmbeddingBackend`
 
-A plain ONNX Runtime forward pass over an `.onnx`/`.ort` embedding model. One
-factory handles both tokenizer families, and the **output dimension is
-model-dependent** (not a fixed 768):
+A plain ONNX Runtime forward pass over an `.onnx`/`.ort` embedding model. The
+tokenizer provider you register (`GemmaEmbeddingTokenizers` from
+`flutter_edge_ai_embeddings`) handles both tokenizer families, and the **output
+dimension is model-dependent** (not a fixed 768):
 
 - **WordPiece / BERT-style** models (e.g. all-MiniLM-L6-v2, 384-dim) —
   mean-pooled + normalized client-side.
@@ -148,9 +149,9 @@ model-dependent** (not a fixed 768):
   WordPiece/BERT-style only in this release (a pure-Dart SentencePiece parser is
   pending).
 
-A SigLIP 2 `tokenizer.json` is a third convention the factory does **not**
+A SigLIP 2 `tokenizer.json` is a third convention the provider does **not**
 select yet, and it is BPE — so it would otherwise be read as Gemma and return a
-plausible but wrong vector. The loader refuses it instead, with a message
+plausible but wrong vector. The provider refuses it instead, with a message
 pointing at `loadSiglipSentencePieceEmbeddingTokenizer`, which you can wire into
 a `ForwardPassDescriptor` yourself — see
 [SigLIP 2 text tower](/docs/models#siglip-2-text-tower-onnx-manual-wiring) for

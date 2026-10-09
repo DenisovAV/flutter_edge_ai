@@ -15,10 +15,10 @@ audio clip (no microphone needed).
 
 - **STT** — Moonshine Tiny (`.tflite`, public download)
 - **LLM** — Gemma 4 E2B (`.litertlm`) — loaded from a device-local staged file
-  when present, else downloaded from HuggingFace with the token you enter (the
-  Gemma repo is gated). Pinned to CPU: the voice path loads Matcha (Metal)
-  alongside the LLM, and a concurrent Metal GPU load is flaky on desktop.
-- **TTS** — Matcha-TTS (public download)
+  when present, else downloaded from HuggingFace with the token you enter.
+  Pinned to CPU: the voice path loads Inflect (Metal) alongside the LLM, and a
+  concurrent Metal GPU load is flaky on desktop.
+- **TTS** — Inflect-Nano-v2 (public download)
 
 ## Run
 

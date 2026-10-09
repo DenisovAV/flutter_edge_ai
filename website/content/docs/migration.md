@@ -1,10 +1,53 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to Flutter Edge AI 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai 2.1.0: `isThinking` is `enableThinking`
+
+A rename with no `dart fix` rule, so the compiler finds every call site:
+
+- `createSession`, `openSession`, `createChat` and `openChat` take
+  `enableThinking:` instead of `isThinking:`.
+- `ModelRuntimeDefaults.isThinking` is `thinkingDeclared` — what the model's
+  manifest declares, which you pass on as
+  `enableThinking: r.runtime.thinkingDeclared ?? false`.
+- `genkit_flutter_edge_ai` 0.7: the `isThinking` model option is
+  `enableThinking`.
+
+Requires `flutter_edge_ai_litertlm` 1.9.0 or later, which sends the flag to the
+runtime under the key chat templates read.
+
+## flutter_edge_ai_litertlm 1.10.0: Android NPU is opt-in
+
+Only apps that use `PreferredBackend.npu` on Android need to act. Qualcomm
+licenses its QNN runtime for redistribution inside an application only, so the
+package no longer ships it and every other Android app is about 83 MB smaller
+on the device. An app that wants the Qualcomm NPU asks for it in its
+`pubspec.yaml` (the workspace root's, if the app is a pub workspace member):
+
+```
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      qualcomm_npu: true
+```
+
+The build hook downloads `com.qualcomm.qti:qnn-runtime` from Maven Central once
+per machine and caches it; offline builds set `qualcomm_npu_maven_url` to a
+mirror or `qualcomm_npu_aar` to the AAR itself. Setting the flag accepts
+Qualcomm's AI Stack License. It needs `flutter_edge_ai` 2.1.1. Without the flag
+nothing fails: `npu` falls back to GPU, then CPU. See [LiteRT-LM](/docs/litertlm).
+
+**Linux arm64 (`flutter_edge_ai_litertlm` 1.11.0).** The same flag also bundles
+the Qualcomm NPU stack into Linux arm64 builds — Qualcomm Linux boards such as
+the QCS6490, QCS8275 or QCS9075. The hook reads the QNN runtime out of
+Qualcomm's public QAIRT SDK zip (about 32 MB of it, by range request);
+`qualcomm_npu_qairt_zip` points it at a local copy. On the board the user must
+be in group `fastrpc`. A Linux x64 build ignores the flag.
 
 ## Flutter Edge AI 1.x → 2.0: RAG leaves core
 
@@ -213,7 +256,7 @@ Pick by what you actually used in 0.16.x:
 
 <Info>
 
-Not sure which format your models are? Desktop is always `.litertlm`
+Not sure which format your models are? In 0.16.x desktop was always `.litertlm`
 (`flutter_edge_ai_litertlm`). On mobile/web check the file extension you install.
 You can add **both** engine packages and let the registry route each model by its
 file type.
@@ -224,7 +267,9 @@ file type.
 > monolith — they add new capabilities): `flutter_edge_ai_agent` (on-device agent
 > skills — SKILL.md + tool-calling loop), `flutter_edge_ai_builtin_ai` (OS
 > system models — Gemini Nano on Android and Web, Apple Foundation Models on
-> iOS/macOS, Windows AI Foundry on Windows),
+> iOS/macOS, Windows AI Foundry on Windows), `flutter_edge_ai_speech` (STT, TTS
+> and a voice loop), `flutter_edge_ai_diagnostics` (memory a model costs, read
+> from the OS),
 > and `flutter_edge_ai_onnx` (ONNX Runtime — ORT-GenAI text generation +
 > plain-ORT embeddings via `dart:ffi` on native, + Web via Transformers.js /
 > onnxruntime-web). Add any of them only if you want that feature. See
@@ -236,7 +281,7 @@ file type.
 
 `flutter_gemma_embeddings` **2.0.0** is a breaking change, independent of the
 0.16.x → 1.0 migration above. As of `flutter_gemma_litertlm` **1.5.0**,
-`flutter_edge_ai_embeddings` no longer ships a concrete embedding backend —
+`flutter_gemma_embeddings` no longer ships a concrete embedding backend —
 `LiteRtEmbeddingBackend` moved to `flutter_edge_ai_litertlm`. Since 2.2.0 the
 package holds only the embedding tokenizer implementations; the pipeline,
 pooling and isolate worker live in core.
@@ -577,8 +622,7 @@ inference engine. See the full [Installation guide](/docs/installation).
 
 ## Troubleshooting
 
-**`dlopen` "library not found" after removing a package:** if you had both
-`flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` and removed one, run
+**`dlopen` "library not found" after upgrading from `flutter_gemma_*`:** run
 `flutter clean` and delete `~/Library/Caches/flutter_gemma/native` (Linux:
 `~/.cache/flutter_gemma/native`, Windows: `%LOCALAPPDATA%\flutter_gemma\native`),
 then `flutter pub get`.

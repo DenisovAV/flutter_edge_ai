@@ -152,7 +152,7 @@ embedding space, create a different location.
 
 ## Upgrading the older shard layout
 
-**The current package cannot read a store written by 1.2 or earlier.** The shard format changed with the
+**The current package cannot read a store written by 1.2 or earlier (as `flutter_gemma_rag_qdrant`).** The shard format changed with the
 move to crate 0.8.0, and this release keeps its data in an owned
 `qdrant_edge_v1/` subdirectory rather than directly at the path you pass as
 `location`.

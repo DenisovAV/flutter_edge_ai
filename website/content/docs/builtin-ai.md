@@ -143,11 +143,14 @@ if (builtInReady) {
     fileType: ModelFileType.builtIn,
   ).fromBundled(spec.name).install();
 } else {
-  // Fallback: install an open model (Gemma / Qwen / Phi …).
+  // Fallback: install an open model (Gemma / Qwen / Phi …). Gemma 4 from
+  // litert-community is public — no token needed.
   await FlutterEdgeAi.installModel(
-    modelType: ModelType.gemmaIt,
+    modelType: ModelType.gemma4,
     fileType: ModelFileType.litertlm,
-  ).fromNetwork('https://…/gemma3-1b-it.litertlm').install();
+  ).fromNetwork(
+    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+  ).install();
 }
 
 // From here the code is identical regardless of which engine backs the model:

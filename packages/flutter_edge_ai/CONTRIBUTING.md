@@ -2,7 +2,7 @@
 
 First off, **thank you** for considering contributing to `flutter_edge_ai`! 🎉
 
-This project brings on-device LLM capabilities (Gemma, DeepSeek, Qwen, Phi, etc.) to Flutter applications across mobile, web, and desktop platforms. Your contributions help make AI more accessible and privacy-preserving for everyone.
+This project brings on-device AI to Flutter on Android, iOS, Web, macOS, Windows and Linux — LLM inference (Gemma, Qwen, Phi, DeepSeek, …) through pluggable engines (LiteRT-LM, MediaPipe, ONNX Runtime, the OS's own models), plus embeddings, RAG, speech and agent skills. Your contributions help make AI more accessible and privacy-preserving for everyone.
 
 ---
 
@@ -38,7 +38,7 @@ If you experience or witness unacceptable behavior, please open an issue or cont
 - Dart **3.12.0** or higher
 - Platform-specific toolchains:
   - **Android**: Android Studio / Android SDK
-  - **iOS**: Xcode 14+, CocoaPods 1.11+
+  - **iOS**: current Xcode, CocoaPods 1.11+
   - **Web**: Modern browser (Chrome/Firefox recommended)
   - **Desktop**:
     - **macOS**: Xcode, CocoaPods (Apple Silicon only)
@@ -46,7 +46,7 @@ If you experience or witness unacceptable behavior, please open an issue or cont
     - **Linux**: GCC 9+ or Clang 10+, CMake 3.14+
 
 **Optional but Recommended:**
-- Hugging Face account + token (for testing gated models like Gemma 3 Nano, EmbeddingGemma)
+- Hugging Face account + token (for testing gated models like Gemma 3n, EmbeddingGemma)
 - Good internet connection (models can be 300MB - 3GB+)
 
 ### Setup Steps
@@ -64,11 +64,12 @@ If you experience or witness unacceptable behavior, please open an issue or cont
    flutter pub get
    
    # Run on your preferred platform:
+   flutter devices             # device ids for Android and iOS
    flutter run -d chrome       # Web
-   flutter run -d android      # Android
-   flutter run -d ios          # iOS
+   flutter run -d <device-id>  # Android / iOS
    flutter run -d windows      # Windows
    flutter run -d macos        # macOS
+   flutter run -d linux        # Linux
    ```
 
 3. **Follow platform-specific setup:**
@@ -237,7 +238,7 @@ If you're working on desktop support:
    - Native libs are downloaded by `flutter_edge_ai_litertlm/hook/build.dart` (the sole hook) at build time from the `native-v0.18.0-b` GitHub release; SHA256-verified and bundled by Native Assets
 
 3. **Test your changes:**
-   - Test on macOS (Apple Silicon) and/or Windows x64 / Linux x86_64
+   - Test on macOS (Apple Silicon) and/or Windows x64 / Linux x86_64 / Linux arm64
    - Run `flutter test integration_test/regression_bugs_test.dart -d <device> --plain-name stochastic` to validate sampler params honoring on GPU
    - Check that engine init succeeds and inference works on both `PreferredBackend.cpu` and `PreferredBackend.gpu`
 
@@ -247,7 +248,7 @@ If you're working on web support:
 
 1. **Understand web limitations:**
    - MediaPipe and LiteRT-LM run on the GPU (WebGPU); ONNX also runs on CPU (WASM)
-   - Models stored in IndexedDB/Cache API
+   - Models stored in the Cache API (default) or OPFS (`WebStorageMode.streaming`)
    - No local file system access
 
 2. **Test considerations:**

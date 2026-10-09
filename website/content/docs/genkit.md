@@ -165,8 +165,8 @@ embeddings) before using the plugin. See [Getting Started](/docs/getting-started
 
 ### Structured (JSON) output
 
-The plugin advertises `output: ['text', 'json']`. On-device Gemma has no native
-schema-constrained decoder, so Genkit's instruction-injection fallback drives
+The plugin advertises `output: ['text', 'json']`. The on-device engines expose no
+schema-constrained decoder to the plugin, so Genkit's instruction-injection fallback drives
 JSON output — the plugin returns raw model text and Genkit's `extractJson`
 populates `response.output`. Pass an `outputSchema` and read the parsed object:
 

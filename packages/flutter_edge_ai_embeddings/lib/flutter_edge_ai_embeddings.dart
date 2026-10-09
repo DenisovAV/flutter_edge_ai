@@ -19,11 +19,9 @@
 /// );
 /// ```
 ///
-/// See the embedder decoupling design (docs/superpowers/specs/
-/// 2026-08-17-flutter-gemma-onnx-engine-design.md §2, §11 D3/D4) for why the
-/// seam exists: it lets `flutter_edge_ai_litertlm` and (later)
-/// `flutter_edge_ai_onnx` share one tokenizer/worker/pooling implementation
-/// instead of each reimplementing the isolate facade.
+/// The seam exists so `flutter_edge_ai_litertlm` and `flutter_edge_ai_onnx`
+/// share one tokenizer/worker/pooling implementation instead of each
+/// reimplementing the isolate facade.
 library;
 
 // The runtime-agnostic `ForwardPass` seam (design doc §2, §11 D3/D4): pure

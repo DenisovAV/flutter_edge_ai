@@ -60,9 +60,8 @@ If you want to test local models like `Gemma 3 1B IT (Local)`:
 
 1. Download the model file from HuggingFace
 2. Place it in the appropriate location:
-   - **Android:** `android/app/src/main/assets/models/gemma3-1b-it-int4.task`
-   - **iOS:** Add to Xcode project under Resources
-   - **Web:** `web/assets/models/gemma3-1b-it-int4.task` (production builds only)
+   - `assets/models/gemma3-1b-it-int4.task` in the example app — one Flutter
+     asset for Android, iOS and Web (on Web, production builds only)
 3. Ensure the file is listed in `pubspec.yaml` under `flutter: assets:`
 
 ```yaml

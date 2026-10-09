@@ -105,7 +105,7 @@
 |-------|---------|-----|-----|---------|
 | `cpu` | ✅ | ✅ | ✅ ONNX/WASM | ✅ |
 | `gpu` | ✅ | ✅ | ✅ MediaPipe/LiteRT-LM | ✅ |
-| `npu` | ✅ (.litertlm, app opts in with `qualcomm_npu: true`) | ❌ | ❌ | ✅ Windows (Intel LunarLake/PantherLake) |
+| `npu` | ✅ (.litertlm, app opts in with `qualcomm_npu: true`) | ❌ | ❌ | ✅ Windows (Intel LunarLake/PantherLake); Linux arm64 (Qualcomm, same `qualcomm_npu` opt-in) |
 
 ## SDK Gotchas (Non-Obvious)
 

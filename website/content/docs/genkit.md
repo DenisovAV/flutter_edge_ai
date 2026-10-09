@@ -22,8 +22,8 @@ with the on-device model exactly as it would with any cloud provider.
 
 ```
 dependencies:
-  genkit: ^0.16.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.7.1
+  genkit: ^1.0.0                  # the framework itself — every snippet below uses it
+  genkit_flutter_edge_ai: ^0.8.0
   flutter_edge_ai: ^2.1.1
   # Add the inference engine(s) you need:
   flutter_edge_ai_litertlm: ^1.10.1   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
@@ -88,8 +88,22 @@ final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Hello!',
 );
+final reason = response.finishReason;
+if (reason != FinishReason.stop &&
+    reason != FinishReason.length &&
+    reason != FinishReason.unknown) {
+  throw response.cause ??
+      StateError(response.finishMessage ?? 'The model stopped: $reason');
+}
 print(response.text);
 ```
+
+In genkit 1.0 `ai.generate` does not throw when the generation fails. It
+returns a result whose `finishReason` is `failed` (or `aborted` for a cancel),
+with the error in `error` and the original exception in `cause`. An engine you
+forgot to register, an invalid option and a cancel all arrive this way, so check
+the result before you show its text: without the check a failure prints an
+empty line.
 
 ### Stream text
 
@@ -102,6 +116,8 @@ final stream = ai.generateStream(
 await for (final chunk in stream) {
   stdout.write(chunk.text);
 }
+// A failure ends the stream normally; the result says what happened.
+final result = await stream.onResult; // check finishReason as above
 ```
 
 ### Embeddings
@@ -149,11 +165,13 @@ final response = await ai.generate(
 );
 ```
 
-Prefer Genkit's standard top-level parameter — `ai.generate(toolChoice: 'none')`
+Prefer Genkit's standard top-level parameter — `ai.generate(toolChoice: .none)`
 — which takes **precedence** over the `toolChoice` config field above (kept as a
-legacy fallback). Either way: `'auto'` lets the model decide, `'required'` forces
-a tool call, `'none'` forbids one. An unrecognized value throws
-`INVALID_ARGUMENT` rather than quietly falling back to `'auto'`.
+legacy fallback). Write `.none`, not `ToolChoice.none`: genkit 1.0 and
+`flutter_edge_ai` both export a `ToolChoice`, so with both imported unprefixed
+the full name is an `ambiguous_import` error. Either way: `'auto'` lets the model decide, `'required'` forces
+a tool call, `'none'` forbids one. An unrecognized value is an
+`INVALID_ARGUMENT` error rather than a quiet fallback to `'auto'`.
 
 <Info>
 
@@ -166,19 +184,40 @@ embeddings) before using the plugin. See [Getting Started](/docs/getting-started
 ### Structured (JSON) output
 
 The plugin advertises `output: ['text', 'json']`. On-device Gemma has no native
-schema-constrained decoder, so Genkit's instruction-injection fallback drives
-JSON output — the plugin returns raw model text and Genkit's `extractJson`
-populates `response.output`. Pass an `outputSchema` and read the parsed object:
+schema-constrained decoder, and Genkit does not put the schema into the prompt
+on its own: add the `simulateConstrainedGeneration()` middleware, which writes
+it into the prompt as instructions. The plugin returns the raw model text and
+Genkit's `extractJson` populates `response.output`:
 
 ```dart
 final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
+  use: [simulateConstrainedGeneration()], // the schema reaches the model
 );
 
 final Recipe? recipe = response.output;
 ```
+
+Genkit does not check the reply against the schema, so validate
+`response.output` yourself. What you get depends on the reply:
+
+- **No JSON at all** (or an object cut off mid-way): the result still finishes
+  with `FinishReason.stop`, `response.output` is null and `response.error` says
+  why.
+- **A JSON object with the wrong fields**: `response.output` is not null and
+  `response.error` is null. A missing field reads as null, and reading a field
+  of the wrong type throws.
+- **A bare number, string or array** — prose such as "Serves 4 people" is
+  enough, because the `4` is extracted: `ai.generate` throws a `TypeError`
+  instead of returning a result.
+
+The middleware appends the schema to the first system message, or to the last
+user message when there is none. The plugin uses
+`FlutterEdgeAiModelOptions.systemInstruction` in place of system messages, so
+when you set it together with a `system:` prompt the schema never reaches the
+model; put the instruction in `system:` instead.
 
 ### Context-window trimming
 
@@ -213,8 +252,8 @@ flutter_edge_ai and works with **any** pair of Genkit models.
 
 ```
 dependencies:
-  genkit_hybrid: ^0.2.2
-  genkit: ^0.16.0
+  genkit_hybrid: ^0.3.0
+  genkit: ^1.0.0
 ```
 
 ### Basic usage
@@ -337,7 +376,32 @@ with `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `INTERNAL`.
 Permanent errors — `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`,
 `FAILED_PRECONDITION`, `NOT_FOUND` — propagate immediately, since they would
 fail the same way on every branch. A `GenkitException` thrown without an
-explicit status defaults to `INTERNAL`, so it *is* retried.
+explicit status defaults to `INTERNAL`, so it *is* retried. After a cancel no
+other branch is tried: the error of the branch that was running is the one
+reported.
+
+The error that propagates does not leave `ai.generate` as an exception. In
+genkit 1.0 a failed generation comes back as a result with
+`finishReason: FinishReason.failed`, the error in `error` and the original
+exception in `cause`; `ai.generateStream` ends normally with that result in
+`onResult`. A cancel or a `maxTurns` overrun ends the same way with
+`FinishReason.aborted`, often with no `cause`; `error` is set in both cases.
+A cloud branch can also stop on its own terms without any error:
+`genkit_google_genai` reports a safety block as `FinishReason.blocked` and a
+reason it does not know as `FinishReason.other`. Treat every finish other than
+`stop`, `length` and `unknown` as a failure:
+
+```dart
+await for (final chunk in stream) { /* ... */ }
+final result = await stream.onResult;
+final reason = result.finishReason;
+if (reason != FinishReason.stop &&
+    reason != FinishReason.length &&
+    reason != FinishReason.unknown) {
+  throw result.cause ??
+      StateError(result.finishMessage ?? 'The model stopped: $reason');
+}
+```
 
 During **streaming** the same policy applies plus a hard cut-off: fallback is
 possible only before the first token. Once a branch has emitted a chunk, any

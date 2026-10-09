@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/plugin.dart';
@@ -198,7 +200,7 @@ void main() {
       expect(fakeModel.lastToolChoice, gemma.ToolChoice.none);
     });
 
-    test('native request.toolChoice reaches createChat (0.15)', () async {
+    test('native request.toolChoice reaches createChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -210,7 +212,7 @@ void main() {
               content: [TextPart(text: 'Hi')],
             ),
           ],
-          toolChoice: 'required', // top-level native field, not config
+          toolChoice: ToolChoice.required, // top-level native field, not config
         ),
       );
 
@@ -229,7 +231,7 @@ void main() {
               content: [TextPart(text: 'Hi')],
             ),
           ],
-          toolChoice: 'none',
+          toolChoice: ToolChoice.none,
           config: {'toolChoice': 'required'},
         ),
       );
@@ -455,10 +457,96 @@ void main() {
           isA<GenkitException>().having(
             (e) => e.status,
             'status',
-            StatusCodes.INVALID_ARGUMENT,
+            StatusCode.invalidArgument,
           ),
         ),
       );
+    });
+
+    // The generated getters cast lazily; read outside the parse try, a wrong
+    // type escaped as a TypeError, which a hybrid router treats as transient.
+    for (final (field, value) in [
+      ('temperature', '0.7'),
+      ('maxTokens', 'big'),
+      ('supportImage', 'yes'),
+      ('toolChoice', 1),
+      ('preferredAudioBackend', 2),
+    ]) {
+      test('a wrong type for $field is INVALID_ARGUMENT', () async {
+        final model = buildModel();
+
+        await expectLater(
+          model(
+            ModelRequest(
+              messages: [
+                Message(
+                  role: Role.user,
+                  content: [TextPart(text: 'Hi')],
+                ),
+              ],
+              config: {field: value},
+            ),
+          ),
+          throwsA(
+            isA<GenkitException>().having(
+              (e) => e.status,
+              'status',
+              StatusCode.invalidArgument,
+            ),
+          ),
+        );
+      });
+    }
+
+    for (final field in [
+      'maxTokens',
+      'topK',
+      'randomSeed',
+      'maxFunctionBufferLength',
+    ]) {
+      test('a fractional $field is INVALID_ARGUMENT', () async {
+        final model = buildModel();
+
+        await expectLater(
+          model(
+            ModelRequest(
+              messages: [
+                Message(
+                  role: Role.user,
+                  content: [TextPart(text: 'Hi')],
+                ),
+              ],
+              config: {field: 0.9},
+            ),
+          ),
+          throwsA(
+            isA<GenkitException>().having(
+              (e) => e.status,
+              'status',
+              StatusCode.invalidArgument,
+            ),
+          ),
+        );
+      });
+    }
+
+    test('an integral double such as 2048.0 is accepted', () async {
+      fakeChat.blockingResponse = const gemma.TextResponse('ok');
+      final model = buildModel();
+
+      await model(
+        ModelRequest(
+          messages: [
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Hi')],
+            ),
+          ],
+          config: {'maxFunctionBufferLength': 2048.0},
+        ),
+      );
+
+      expect(fakeModel.lastMaxFunctionBufferLength, 2048);
     });
 
     test('recreates model when preferredVisionBackend changes', () async {
@@ -759,5 +847,282 @@ void main() {
         );
       },
     );
+  });
+
+  group('cancellation', () {
+    test(
+      'cancelling mid-generation stops decoding and aborts the turn',
+      () async {
+        fakeChat.generationGate = Completer<void>();
+        final controller = CancellationController();
+        final model = buildModel();
+
+        final call = model(simpleRequest(), cancel: controller.token);
+        while (fakeChat.addQueryChunkCallCount == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        controller.cancel();
+
+        await expectLater(call, throwsA(isA<CancelledException>()));
+        expect(fakeChat.stopGenerationCallCount, 1);
+      },
+    );
+
+    test(
+      'a request cancelled while waiting for the lock opens no chat',
+      () async {
+        fakeChat.generationGate = Completer<void>();
+        final controller = CancellationController();
+        final model = buildModel();
+
+        final first = model(simpleRequest('first'));
+        while (fakeChat.addQueryChunkCallCount == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        final second = expectLater(
+          model(simpleRequest('second'), cancel: controller.token),
+          throwsA(isA<CancelledException>()),
+        );
+        controller.cancel();
+        fakeChat.generationGate!.complete();
+
+        await first;
+        await second;
+        expect(fakeModel.createChatCallCount, 1);
+      },
+    );
+
+    test('a request cancelled in the queue returns at once and keeps its '
+        'place', () async {
+      fakeChat.generationGate = Completer<void>();
+      final controller = CancellationController();
+      final model = buildModel();
+
+      final first = model(simpleRequest('first'));
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      var secondSettled = false;
+      final second = model(simpleRequest('second'), cancel: controller.token)
+          .then<void>(
+            (_) {},
+            onError: (Object e) {
+              expect(e, isA<CancelledException>());
+              secondSettled = true;
+            },
+          );
+      final third = model(simpleRequest('third'));
+      controller.cancel();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(secondSettled, isTrue, reason: 'it waited for the turn ahead');
+      expect(
+        fakeChat.addQueryChunkCallCount,
+        1,
+        reason: 'the request behind it overtook the running generation',
+      );
+
+      fakeChat.generationGate!.complete();
+      await Future.wait([first, second, third]);
+      expect(fakeChat.addQueryChunkCallCount, 2);
+    });
+
+    test('the next request starts only after the stop has landed', () async {
+      fakeChat.generationGate = Completer<void>();
+      fakeChat.stopLanding = Completer<void>();
+      final controller = CancellationController();
+      final model = buildModel();
+
+      final first = model(simpleRequest('first'), cancel: controller.token);
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final second = model(simpleRequest('second'));
+      controller.cancel();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(
+        fakeChat.addQueryChunkCallCount,
+        1,
+        reason: 'a stop still in flight could cut the next request short',
+      );
+
+      fakeChat.stopLanding!.complete();
+      await expectLater(first, throwsA(isA<CancelledException>()));
+      await second;
+      expect(fakeChat.addQueryChunkCallCount, 2);
+    });
+
+    test('a stop requested while a failed turn unwinds lands first', () async {
+      // The cancel arrives at every microtask depth while the failed
+      // generation unwinds, so it also hits the window between the failure
+      // and the release of the lock.
+      void after(int hops, void Function() action) => hops == 0
+          ? action()
+          : scheduleMicrotask(() => after(hops - 1, action));
+
+      final stopDepths = <int>[];
+      for (var depth = 0; depth < 16; depth++) {
+        final chat = FakeInferenceChat()
+          ..generationError = StateError('boom')
+          ..stopLanding = Completer<void>();
+        final controller = CancellationController();
+        chat.onGenerate = () {
+          if (chat.generationError != null) after(depth, controller.cancel);
+        };
+        final model = createFlutterEdgeAiModel(
+          name: 'flutter-edge-ai/test-model',
+          modelType: gemma.ModelType.gemmaIt,
+          fileType: gemma.ModelFileType.task,
+          runtime: FakeRuntime(
+            model: FakeInferenceModel()..chatToReturn = chat,
+          ),
+        );
+
+        // Listen at once: the failed turn may finish while the loop below runs.
+        final firstOutcome = expectLater(
+          model(simpleRequest('first'), cancel: controller.token),
+          throwsA(anything),
+        );
+        final second = model(simpleRequest('second'));
+        for (var i = 0; i < 40; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        if (chat.stopGenerationCallCount > 0) {
+          stopDepths.add(depth);
+          expect(
+            chat.addQueryChunkCallCount,
+            1,
+            reason:
+                'depth $depth: the next request started while a stop '
+                'was still in flight',
+          );
+        }
+
+        chat.stopLanding!.complete();
+        await firstOutcome;
+        await second;
+      }
+      // Otherwise every depth could skip the check above and still pass.
+      expect(stopDepths, isNotEmpty);
+    });
+
+    test('a generation error outranks the cancel that raced it', () async {
+      fakeChat
+        ..generationGate = Completer<void>()
+        ..generationError = StateError('boom');
+      final controller = CancellationController();
+      final model = buildModel();
+
+      final call = model(simpleRequest(), cancel: controller.token);
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+
+      await expectLater(
+        call,
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'boom')),
+      );
+    });
+
+    test('a cancel mid-stream forwards no further chunks', () async {
+      fakeChat
+        ..generationGate = Completer<void>()
+        ..streamingResponses = const [
+          gemma.TextResponse('a'),
+          gemma.TextResponse('b'),
+          gemma.TextResponse('c'),
+        ];
+      final controller = CancellationController();
+      final received = <String>[];
+      final model = buildModel();
+
+      final call = model(
+        simpleRequest(),
+        cancel: controller.token,
+        onChunk: (chunk) => received.add(chunk.content.first.text ?? ''),
+      );
+      while (received.isEmpty) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+
+      await expectLater(call, throwsA(isA<CancelledException>()));
+      expect(received, ['a']);
+      expect(fakeChat.stopGenerationCallCount, 1);
+    });
+
+    test('a failing chunk callback stops the generation before the next '
+        'request starts', () async {
+      fakeChat.stopLanding = Completer<void>();
+      final model = buildModel();
+
+      final first = expectLater(
+        model(simpleRequest('first'), onChunk: (_) => throw StateError('ui')),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'ui')),
+      );
+      final second = model(simpleRequest('second'));
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(fakeChat.stopGenerationCallCount, 1);
+      expect(
+        fakeChat.addQueryChunkCallCount,
+        1,
+        reason: 'a stop still in flight could cut the next request short',
+      );
+
+      fakeChat.stopLanding!.complete();
+      await first;
+      await second;
+      expect(fakeChat.addQueryChunkCallCount, 2);
+    });
+
+    test(
+      'a stop that throws synchronously is reported, not unhandled',
+      () async {
+        fakeChat
+          ..generationGate = Completer<void>()
+          ..stopThrowsSynchronously = true;
+        final controller = CancellationController();
+        final model = buildModel();
+
+        final call = model(simpleRequest(), cancel: controller.token);
+        while (fakeChat.addQueryChunkCallCount == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        controller.cancel();
+
+        await expectLater(
+          call,
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'stop failed synchronously',
+            ),
+          ),
+        );
+      },
+    );
+
+    test('a stop that fails is reported to the caller', () async {
+      fakeChat.generationGate = Completer<void>();
+      fakeChat.stopError = StateError('stop failed');
+      final controller = CancellationController();
+      final model = buildModel();
+
+      final call = model(simpleRequest(), cancel: controller.token);
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+
+      await expectLater(call, throwsA(isA<StateError>()));
+    });
   });
 }

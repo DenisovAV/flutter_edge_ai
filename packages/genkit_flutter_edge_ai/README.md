@@ -20,7 +20,7 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Multimodal input (images, audio) — supports `data:` URIs, `file://` paths, and `http(s)://` URLs
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
 - Parallel tool calls — multiple function calls in a single model response
-- Structured JSON output — pass an `outputSchema`, read the parsed object from `response.output`
+- Structured JSON output — pass an `outputSchema` with `use: [simulateConstrainedGeneration()]`, read the parsed object from `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
 - Thinking mode (Gemma 4, DeepSeek, Qwen3)
 - Generation latency tracking via `latencyMs` in responses
@@ -56,7 +56,8 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 ```yaml
 # pubspec.yaml (your app)
 dependencies:
-  genkit_flutter_edge_ai: ^0.7.1
+  genkit: ^1.0.0
+  genkit_flutter_edge_ai: ^0.8.0
   flutter_edge_ai: ^2.1.0
   flutter_edge_ai_litertlm: ^1.9.0   # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.2.2  # the tokenizers an embedding backend needs
@@ -72,8 +73,9 @@ await FlutterEdgeAi.initialize(
 );
 ```
 
-> If you skip registration, the first `getActiveModel` throws a `StateError`
-> telling you to add the engine package.
+> If you skip registration, `getActiveModel` throws a `StateError` naming the
+> engine package to add. Through Genkit that error comes back in the result of
+> `ai.generate`, not as an exception — see the check in the Quick Start.
 
 ## Quick Start
 
@@ -116,8 +118,21 @@ final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Hello!',
 );
+final reason = response.finishReason;
+if (reason != FinishReason.stop &&
+    reason != FinishReason.length &&
+    reason != FinishReason.unknown) {
+  throw response.cause ??
+      StateError(response.finishMessage ?? 'The model stopped: $reason');
+}
 print(response.text);
 ```
+
+In genkit 1.0 `ai.generate` does not throw when the generation fails. It returns
+a result whose `finishReason` is `failed` (or `aborted` for a cancel), with the
+error in `error` and the original exception in `cause`. A missing engine, an
+invalid option and a cancel all arrive this way, so check the result before you
+show its text: without the check a failure prints an empty line.
 
 ## Configuration
 
@@ -166,6 +181,8 @@ final reply = StringBuffer();
 await for (final chunk in stream) {
   reply.write(chunk.text); // update your UI with reply.toString()
 }
+// A failure ends the stream normally; the result says what happened.
+final result = await stream.onResult; // check finishReason as in Quick Start
 ```
 
 ## Tool Use
@@ -178,23 +195,48 @@ final response = await ai.generate(
 );
 ```
 
+Genkit's top-level `toolChoice:` takes precedence over the `toolChoice` option.
+Write it as `toolChoice: .none`: genkit 1.0 and `flutter_edge_ai` both export a
+`ToolChoice`, so in a file that imports both without a prefix,
+`ToolChoice.none` is an `ambiguous_import` error.
+
 ## Structured Output
 
 The plugin advertises `output: ['text', 'json']`. On-device Gemma has no native
-schema-constrained decoder, so Genkit's instruction-injection fallback drives
-JSON output: the plugin returns raw model text and Genkit's `extractJson`
-populates `response.output`. Pass an `outputSchema` (a `schemantic` type) and
-read the parsed object:
+schema-constrained decoder, and Genkit does not put the schema into the prompt
+on its own: pass an `outputSchema` (a `schemantic` type) together with the
+`simulateConstrainedGeneration()` middleware, which writes the schema into the
+prompt as instructions. The plugin returns the raw model text and Genkit's
+`extractJson` populates `response.output`:
 
 ```dart
 final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-nano'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
+  use: [simulateConstrainedGeneration()], // the schema reaches the model
 );
 
 final Recipe? recipe = response.output;
 ```
+
+Genkit does not check the reply against the schema, so validate
+`response.output` yourself. What you get depends on the reply:
+
+- **No JSON at all** (or an object cut off mid-way): the result still finishes
+  with `FinishReason.stop`, `response.output` is null and `response.error` says
+  why.
+- **A JSON object with the wrong fields**: `response.output` is not null and
+  `response.error` is null. A missing field reads as null, and reading a field
+  of the wrong type throws.
+- **A bare number, string or array** — prose such as "Serves 4 people" is
+  enough, because the `4` is extracted: `ai.generate` throws a `TypeError`
+  instead of returning a result.
+
+The middleware appends the schema to the first system message, or to the last
+user message when there is none. The plugin uses the `systemInstruction` option
+in place of system messages, so when you set it together with a `system:` prompt
+the schema never reaches the model; put the instruction in `system:` instead.
 
 ## Context-Window Trimming
 

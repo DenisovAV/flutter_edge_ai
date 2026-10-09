@@ -8,6 +8,6 @@ import 'package:genkit/plugin.dart';
 Future<Uint8List> readFileBytes(String path) async {
   throw GenkitException(
     'File-based media is not supported on this platform: $path',
-    status: StatusCodes.UNIMPLEMENTED,
+    status: StatusCode.unimplemented,
   );
 }

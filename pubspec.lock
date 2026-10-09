@@ -269,10 +269,10 @@ packages:
     dependency: transitive
     description:
       name: dotprompt
-      sha256: "69872a007fa115dee4c35241b85c46b477a638fc81e5c6a7f55d5c13023b045c"
+      sha256: d588959f509a67062874c4378085f982a7ed4d10ae521c9504cd9c3331f13304
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.1"
+    version: "2.0.0"
   email_validator:
     dependency: transitive
     description:
@@ -468,10 +468,10 @@ packages:
     dependency: transitive
     description:
       name: genkit
-      sha256: c97f77d2336b8e06eed6325a1f109d89a5f27f404f2cbe002be64d756f11a319
+      sha256: "478f914efde52c6c1c0f2177b5a1632c2e5dc39e88cab29b48930d80137c1a2a"
       url: "https://pub.dev"
     source: hosted
-    version: "0.16.1"
+    version: "1.0.0"
   glob:
     dependency: transitive
     description:
@@ -712,14 +712,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.4.1"
-  opentelemetry:
-    dependency: transitive
-    description:
-      name: opentelemetry
-      sha256: "92d63a2e0731d34a7548add82420b8f3819ccda569f9bdfdcc4b25e00fe88da4"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.18.11"
   package_config:
     dependency: transitive
     description:
@@ -840,14 +832,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.0"
-  protobuf:
-    dependency: transitive
-    description:
-      name: protobuf
-      sha256: "75ec242d22e950bdcc79ee38dd520ce4ee0bc491d7fadc4ea47694604d22bf06"
-      url: "https://pub.dev"
-    source: hosted
-    version: "6.0.0"
   pub_semver:
     dependency: transitive
     description:
@@ -880,14 +864,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.8.0-dev.4"
-  quiver:
-    dependency: transitive
-    description:
-      name: quiver
-      sha256: ea0b925899e64ecdfbf9c7becb60d5b50e706ade44a85b2363be2a22d88117d2
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.2.2"
   rational:
     dependency: transitive
     description:
@@ -908,18 +884,18 @@ packages:
     dependency: transitive
     description:
       name: schemantic
-      sha256: "1252e78063c2d124831337bf8e9d146cbd6d9cf575f5346a9c85c5911c430239"
+      sha256: f56f27cfc1db2466f3102b4d2814e184128df43aee92e093a880273dd1bccb75
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.3"
+    version: "1.0.0"
   schemantic_builder:
     dependency: transitive
     description:
       name: schemantic_builder
-      sha256: "504f126f496f88a0173100330305948d0970df44c2ef359a90832dda79358f76"
+      sha256: eadffc3ffff887ec96fcc86593c813e2e94ea5fdad6a6864a90d9429f1f14f43
       url: "https://pub.dev"
     source: hosted
-    version: "0.1.3"
+    version: "1.0.0"
   shared_preferences:
     dependency: transitive
     description:

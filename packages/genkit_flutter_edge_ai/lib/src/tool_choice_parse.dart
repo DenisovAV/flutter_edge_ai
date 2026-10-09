@@ -20,7 +20,7 @@ gemma.ToolChoice parseToolChoice(String? value) {
     default:
       throw GenkitException(
         'Unknown toolChoice: "$value". Supported values: auto, required, none.',
-        status: StatusCodes.INVALID_ARGUMENT,
+        status: StatusCode.invalidArgument,
       );
   }
 }

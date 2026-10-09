@@ -4,6 +4,12 @@ Provider-agnostic hybrid routing for [Genkit](https://pub.dev/packages/genkit). 
 existing Genkit models (on-device, cloud, anything) behind one routing policy. The result
 is an ordinary `Model` — your app still calls a single `ai.generate`.
 
+```yaml
+dependencies:
+  genkit: ^1.0.0
+  genkit_hybrid: ^0.3.0
+```
+
 ```dart
 import 'package:genkit/genkit.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
@@ -122,7 +128,27 @@ errors (`INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PREC
 `NOT_FOUND`) propagate immediately — they would fail the same way on every branch. Note: a branch
 that throws a `GenkitException` without setting `status` (it defaults to `INTERNAL`) — or any
 non-`GenkitException` error — is treated as transient and retried, so a truly permanent failure
-surfaced that way will be re-attempted on the next branch.
+surfaced that way will be re-attempted on the next branch. After a cancel no other branch is tried:
+the error of the branch that was running is the one reported.
+
+An error that propagates does not leave `ai.generate` as an exception: genkit 1.0 returns it as a
+result with `finishReason: FinishReason.failed`, the error in `error` and the original exception in
+`cause` (for `generateStream`, in `onResult`); a cancel or a `maxTurns` overrun ends with
+`FinishReason.aborted`, often with no `cause` but always with `error`. A cloud branch can also stop
+on its own terms with no error at all: `genkit_google_genai` reports a safety block as
+`FinishReason.blocked` and a reason it does not know as `FinishReason.other`. Treat every finish
+other than `stop`, `length` and `unknown` as a failure:
+
+```dart
+final result = await ai.generate(model: smart, prompt: 'Hi');
+final reason = result.finishReason;
+if (reason != FinishReason.stop &&
+    reason != FinishReason.length &&
+    reason != FinishReason.unknown) {
+  throw result.cause ??
+      StateError(result.finishMessage ?? 'The model stopped: $reason');
+}
+```
 
 ## Not in v1
 

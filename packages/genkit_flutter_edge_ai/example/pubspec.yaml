@@ -17,7 +17,7 @@ dependencies:
   # arrives through nobody else.
   flutter_edge_ai_embeddings: ^2.2.2
   flutter_edge_ai_mediapipe: ^1.0.9
-  genkit: ^0.16.0
+  genkit: ^1.0.0
   genkit_flutter_edge_ai:
     path: ../
 

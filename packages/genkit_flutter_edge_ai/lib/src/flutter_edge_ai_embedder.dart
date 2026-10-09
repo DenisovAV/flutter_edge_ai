@@ -18,28 +18,25 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
   return Embedder<FlutterEdgeAiEmbedConfig>(
     name: name,
     fn: (request, _) async {
-      if (request == null) {
-        throw GenkitException(
-          'Embedder request cannot be null.',
-          status: StatusCodes.INVALID_ARGUMENT,
-        );
-      }
-
-      // Parse optional backend preference.
-      FlutterEdgeAiEmbedConfig? config;
+      // Parse optional backend preference. The getter is read inside the try:
+      // it casts lazily, so a non-string value must fail as INVALID_ARGUMENT
+      // here rather than as a TypeError later.
+      String? configPreferredBackend;
       if (request.options != null) {
         try {
-          config = FlutterEdgeAiEmbedConfig.fromJson(request.options!);
+          configPreferredBackend = FlutterEdgeAiEmbedConfig.fromJson(
+            request.options!,
+          ).preferredBackend;
         } catch (e) {
           throw GenkitException(
             'Invalid embed options: $e',
-            status: StatusCodes.INVALID_ARGUMENT,
+            status: StatusCode.invalidArgument,
           );
         }
       }
 
       // Parse preferredBackend string to enum.
-      final backend = parsePreferredBackend(config?.preferredBackend);
+      final backend = parsePreferredBackend(configPreferredBackend);
 
       // Get or create embedding model (invalidate on backend change).
       if (cachedEmbedder == null || cachedBackend != backend) {

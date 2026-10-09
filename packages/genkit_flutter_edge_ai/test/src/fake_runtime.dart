@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_runtime.dart';
 
@@ -164,15 +166,61 @@ class FakeInferenceChat extends gemma.InferenceChat {
     receivedMessages.add(message);
   }
 
+  /// When set, [generateChatResponse] waits on it, so a test can cancel in
+  /// the middle of a generation; [stopGeneration] completes it.
+  Completer<void>? generationGate;
+
+  int stopGenerationCallCount = 0;
+
+  /// When set, [stopGeneration] stays in flight until it completes.
+  Completer<void>? stopLanding;
+
+  /// When set, [stopGeneration] fails with it.
+  Object? stopError;
+
+  /// When set, the next [generateChatResponse] fails with it (once).
+  Object? generationError;
+
+  /// Called as [generateChatResponse] starts.
+  void Function()? onGenerate;
+
   @override
   Future<gemma.ModelResponse> generateChatResponse() async {
+    onGenerate?.call();
+    await generationGate?.future;
+    if (generationError case final error?) {
+      generationError = null;
+      throw error;
+    }
     return blockingResponse;
+  }
+
+  /// When true, [stopGeneration] throws before returning its future.
+  bool stopThrowsSynchronously = false;
+
+  @override
+  Future<void> stopGeneration() {
+    stopGenerationCallCount++;
+    final gate = generationGate;
+    if (gate != null && !gate.isCompleted) gate.complete();
+    if (stopThrowsSynchronously) {
+      throw StateError('stop failed synchronously');
+    }
+    return _landStop();
+  }
+
+  Future<void> _landStop() async {
+    await stopLanding?.future;
+    if (stopError case final error?) throw error;
   }
 
   @override
   Stream<gemma.ModelResponse> generateChatResponseAsync() async* {
-    for (final response in streamingResponses) {
+    for (final (index, response) in streamingResponses.indexed) {
       yield response;
+      // With a gate, the stream pauses after its first chunk until the gate
+      // opens, so a test can cancel mid-stream.
+      if (index == 0) await generationGate?.future;
     }
   }
 

@@ -119,8 +119,13 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       if (!mounted) return;
+      final responseText = buffer.toString();
       setState(() {
-        _messages.last = ChatMessage(text: buffer.toString(), isUser: false);
+        // An empty but successful reply is shown, not removed below.
+        _messages.last = ChatMessage(
+          text: responseText.isEmpty ? '(no response)' : responseText,
+          isUser: false,
+        );
       });
       _scrollToBottom();
     } catch (e) {

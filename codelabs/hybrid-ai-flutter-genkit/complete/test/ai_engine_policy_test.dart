@@ -238,8 +238,8 @@ void main() {
 
     // The one that actually holds the wrapper's copy-don't-mutate shape in
     // place. Cascade drives BOTH branches over the very same ModelRequest
-    // object (genkit_hybrid's runInOrder: `branches[order[i]]!.fn(request,
-    // context)`), on-device first. A wrapper that merged with
+    // object (genkit_hybrid's runInOrder passes one `request` to every
+    // branch), on-device first. A wrapper that merged with
     // `request.config = ...` instead of copying would pass every other test
     // here and still hand Gemini a Gemma-only maxTokens on each escalation.
     test('cascade escalation does not leak maxTokens to cloud', () async {

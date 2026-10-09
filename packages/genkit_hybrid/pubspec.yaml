@@ -1,6 +1,6 @@
 name: genkit_hybrid
 description: Provider-agnostic hybrid routing for Genkit — combine on-device and cloud models behind one routing policy.
-version: 0.2.2
+version: 0.3.0
 homepage: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/genkit_hybrid
 repository: https://github.com/DenisovAV/flutter_edge_ai
 issue_tracker: https://github.com/DenisovAV/flutter_edge_ai/issues
@@ -17,9 +17,7 @@ environment:
 resolution: workspace
 
 dependencies:
-  # genkit_hybrid uses only Model/generate/ModelRequest — stable across the
-  # 0.15→0.16 tool-API/ActionType redesign — so it works on both lines.
-  genkit: '>=0.15.1 <0.17.0'
+  genkit: ^1.0.0
 
 dev_dependencies:
   test: ^1.25.0

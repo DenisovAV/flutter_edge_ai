@@ -61,7 +61,7 @@ base class FlutterEdgeAiModelOptions {
 
   /// Maximum number of tokens to generate. Defaults to 1024.
   int? get maxTokens {
-    return _json['maxTokens'] as int?;
+    return (_json['maxTokens'] as num?)?.toInt();
   }
 
   /// Maximum number of tokens to generate. Defaults to 1024.
@@ -89,7 +89,7 @@ base class FlutterEdgeAiModelOptions {
 
   /// Top-K sampling parameter. Defaults to 1.
   int? get topK {
-    return _json['topK'] as int?;
+    return (_json['topK'] as num?)?.toInt();
   }
 
   /// Top-K sampling parameter. Defaults to 1.
@@ -163,7 +163,7 @@ base class FlutterEdgeAiModelOptions {
 
   /// Random seed for deterministic output. Defaults to 1.
   int? get randomSeed {
-    return _json['randomSeed'] as int?;
+    return (_json['randomSeed'] as num?)?.toInt();
   }
 
   /// Random seed for deterministic output. Defaults to 1.
@@ -211,7 +211,7 @@ base class FlutterEdgeAiModelOptions {
   /// arguments before parsing. Increase when models emit long function-call
   /// argument payloads. When null, flutter_edge_ai uses its built-in default.
   int? get maxFunctionBufferLength {
-    return _json['maxFunctionBufferLength'] as int?;
+    return (_json['maxFunctionBufferLength'] as num?)?.toInt();
   }
 
   /// Maximum buffer size (in tokens) for accumulating streamed function-call
@@ -312,28 +312,27 @@ base class _FlutterEdgeAiModelOptionsTypeFactory
   @override
   JsonSchemaMetadata get schemaMetadata => JsonSchemaMetadata(
     name: 'FlutterEdgeAiModelOptions',
-    definition: $Schema
-        .object(
-          properties: {
-            'maxTokens': $Schema.integer(),
-            'temperature': $Schema.number(),
-            'topK': $Schema.integer(),
-            'topP': $Schema.number(),
-            'supportImage': $Schema.boolean(),
-            'supportAudio': $Schema.boolean(),
-            'enableThinking': $Schema.boolean(),
-            'randomSeed': $Schema.integer(),
-            'toolChoice': $Schema.string(),
-            'systemInstruction': $Schema.string(),
-            'maxFunctionBufferLength': $Schema.integer(),
-            'enableSpeculativeDecoding': $Schema.boolean(),
-            'preferredBackend': $Schema.string(),
-            'preferredVisionBackend': $Schema.string(),
-            'preferredAudioBackend': $Schema.string(),
-          },
-          description: 'Configuration options for flutter_edge_ai inference',
-        )
-        .value,
+    definition: <String, Object?>{
+      'type': 'object',
+      'description': 'Configuration options for flutter_edge_ai inference',
+      'properties': <String, Object?>{
+        'maxTokens': <String, Object?>{'type': 'integer'},
+        'temperature': <String, Object?>{'type': 'number'},
+        'topK': <String, Object?>{'type': 'integer'},
+        'topP': <String, Object?>{'type': 'number'},
+        'supportImage': <String, Object?>{'type': 'boolean'},
+        'supportAudio': <String, Object?>{'type': 'boolean'},
+        'enableThinking': <String, Object?>{'type': 'boolean'},
+        'randomSeed': <String, Object?>{'type': 'integer'},
+        'toolChoice': <String, Object?>{'type': 'string'},
+        'systemInstruction': <String, Object?>{'type': 'string'},
+        'maxFunctionBufferLength': <String, Object?>{'type': 'integer'},
+        'enableSpeculativeDecoding': <String, Object?>{'type': 'boolean'},
+        'preferredBackend': <String, Object?>{'type': 'string'},
+        'preferredVisionBackend': <String, Object?>{'type': 'string'},
+        'preferredAudioBackend': <String, Object?>{'type': 'string'},
+      },
+    },
     dependencies: [],
   );
 }
@@ -393,12 +392,13 @@ base class _FlutterEdgeAiEmbedConfigTypeFactory
   @override
   JsonSchemaMetadata get schemaMetadata => JsonSchemaMetadata(
     name: 'FlutterEdgeAiEmbedConfig',
-    definition: $Schema
-        .object(
-          properties: {'preferredBackend': $Schema.string()},
-          description: 'Configuration options for flutter_edge_ai embeddings',
-        )
-        .value,
+    definition: <String, Object?>{
+      'type': 'object',
+      'description': 'Configuration options for flutter_edge_ai embeddings',
+      'properties': <String, Object?>{
+        'preferredBackend': <String, Object?>{'type': 'string'},
+      },
+    },
     dependencies: [],
   );
 }

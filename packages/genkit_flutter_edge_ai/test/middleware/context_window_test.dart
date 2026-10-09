@@ -12,13 +12,7 @@ Message _msg(Role role, String text) => Message(
 );
 
 /// A minimal model-call context; the trimmer ignores it and forwards to `next`.
-ActionFnArg<ModelResponseChunk, ModelRequest, void> _ctx() => (
-  streamingRequested: false,
-  sendChunk: (ModelResponseChunk _) {},
-  context: null,
-  inputStream: null,
-  init: null,
-);
+ActionFnArg<ModelResponseChunk, ModelRequest, void> _ctx() => ActionFnArg();
 
 void main() {
   group('ContextWindowMiddleware.model', () {
@@ -230,7 +224,7 @@ void main() {
           isA<GenkitException>().having(
             (e) => e.status,
             'status',
-            StatusCodes.INVALID_ARGUMENT,
+            StatusCode.invalidArgument,
           ),
         ),
       );
@@ -332,12 +326,16 @@ void main() {
     test(
       'explicit maxInputTokens actually trims the forwarded history',
       () async {
-        await ai.generate(
+        final response = await ai.generate(
           model: flutterEdgeAi.model('m'),
           messages: longHistory(),
           use: [trimContext(maxInputTokens: 20)], // tiny → must drop most turns
         );
 
+        // A failed generation returns a result rather than throwing, and sends
+        // the chat nothing, which would satisfy the bound below on its own.
+        expect(response.finishReason, FinishReason.stop);
+        expect(fakeChat.receivedMessages, isNotEmpty);
         // With the config-drop bug the budget silently derives from the default
         // 1024 window, so all 9 turns reach the chat untrimmed. The tiny explicit
         // budget must leave only the most recent turn(s).

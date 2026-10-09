@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit/plugin.dart';
@@ -15,9 +16,10 @@ import 'tool_choice_parse.dart';
 /// plugin's `list()` metadata AND the resolved [Model]'s `metadata` so the two
 /// never drift (the resolved action previously carried no metadata, leaving its
 /// supports empty at generate time). `constrained: false` — on-device Gemma has
-/// no native schema-constrained decoder, so Genkit's instruction-injection
-/// fallback drives JSON output (`output: ['text', 'json']`); we return the raw
-/// model text and the framework's `extractJson` populates `response.output`.
+/// no native schema-constrained decoder. Genkit never adds the schema to the
+/// prompt by itself; the caller opts in with
+/// `use: [simulateConstrainedGeneration()]`. We return the raw model text and
+/// the framework's `extractJson` populates `response.output`.
 const Map<String, dynamic> kFlutterEdgeAiModelSupports = {
   'multiturn': true,
   'media': true,
@@ -63,18 +65,35 @@ Model createFlutterEdgeAiModel({
       'model': {'supports': kFlutterEdgeAiModelSupports},
     },
     fn: (request, context) async {
-      if (request == null) {
-        throw GenkitException(
-          'Model request cannot be null.',
-          status: StatusCodes.INVALID_ARGUMENT,
-        );
-      }
-
       final prev = lock;
       final completer = Completer<void>();
       lock = completer.future;
 
-      await prev;
+      // A request cancelled while queued returns at once, but its place in the
+      // chain is held until the turn ahead of it ends, so nothing queued
+      // behind it overtakes the generation in progress.
+      final cancel = context.cancel;
+      if (cancel == null) {
+        await prev;
+      } else {
+        // onCancel, not whenCancelled: a token reused for a whole chat would
+        // keep one listener per call on a future that can never be detached.
+        final turn = Completer<void>();
+        final detachWait = cancel.onCancel(() {
+          if (!turn.isCompleted) turn.complete();
+        });
+        unawaited(
+          prev.then((_) {
+            if (!turn.isCompleted) turn.complete();
+          }),
+        );
+        await turn.future;
+        detachWait();
+        if (cancel.isCancelled) {
+          unawaited(prev.whenComplete(completer.complete));
+          cancel.throwIfCancelled();
+        }
+      }
 
       try {
         return await _executeGeneration(
@@ -118,6 +137,27 @@ Model createFlutterEdgeAiModel({
   );
 }
 
+/// The options the schema declares as integers. Their generated getters read
+/// any JSON number and truncate it (`(json as num?)?.toInt()`), so
+/// `maxTokens: 0.9` would reach the runtime as 0.
+final Set<String> _integerOptions = {
+  for (final MapEntry(:key, :value)
+      in ((FlutterEdgeAiModelOptions.$schema.jsonSchema()['properties']
+                  as Map<String, Object?>?) ??
+              const <String, Object?>{})
+          .entries)
+    if (value case {'type': 'integer'}) key,
+};
+
+/// Rejects a non-integral number for an integer option; `1024.0` passes.
+void _rejectFractionalIntegers(Map<String, dynamic> config) {
+  for (final key in _integerOptions) {
+    if (config[key] case final num value when value != value.roundToDouble()) {
+      throw FormatException('$key must be an integer, got $value');
+    }
+  }
+}
+
 /// Executes the generation logic, extracted for readability.
 Future<ModelResponse> _executeGeneration({
   required ModelRequest request,
@@ -144,49 +184,76 @@ Future<ModelResponse> _executeGeneration({
   )
   onModelCached,
 }) async {
-  // Parse config from the untyped Map.
+  // The request may have waited on the previous generation's lock; a caller
+  // that gave up meanwhile should not pay for loading a model.
+  context.cancel?.throwIfCancelled();
+
+  // Parse config from the untyped Map. Every option is read inside the try:
+  // the generated getters cast lazily, so a value of the wrong type ('0.7' for
+  // temperature) throws here. Read later, it escaped as a TypeError, which a
+  // hybrid router treats as transient and quietly hands to the next branch.
   final configMap = request.config;
-  final FlutterEdgeAiModelOptions? config;
+  final int maxTokens;
+  final double temperature;
+  final int topK;
+  final double? topP;
+  final int randomSeed;
+  final bool supportImage;
+  final bool supportAudio;
+  final bool enableThinking;
+  final bool? enableSpeculativeDecoding;
+  final String? configToolChoice;
+  final String? configSystemInstruction;
+  final int? maxFunctionBufferLength;
+  final String? configPreferredBackend;
+  final String? configPreferredVisionBackend;
+  final String? configPreferredAudioBackend;
   try {
-    config = configMap != null
+    if (configMap != null) _rejectFractionalIntegers(configMap);
+    final config = configMap != null
         ? FlutterEdgeAiModelOptions.fromJson(configMap)
         : null;
+    maxTokens = config?.maxTokens ?? 1024;
+    temperature = config?.temperature ?? 0.8;
+    topK = config?.topK ?? 1;
+    topP = config?.topP;
+    randomSeed = config?.randomSeed ?? 1;
+    supportImage = config?.supportImage ?? false;
+    supportAudio = config?.supportAudio ?? false;
+    enableThinking = config?.enableThinking ?? false;
+    enableSpeculativeDecoding = config?.enableSpeculativeDecoding;
+    configToolChoice = config?.toolChoice;
+    configSystemInstruction = config?.systemInstruction;
+    maxFunctionBufferLength = config?.maxFunctionBufferLength;
+    configPreferredBackend = config?.preferredBackend;
+    configPreferredVisionBackend = config?.preferredVisionBackend;
+    configPreferredAudioBackend = config?.preferredAudioBackend;
   } catch (e) {
     throw GenkitException(
       'Invalid model config: $e',
-      status: StatusCodes.INVALID_ARGUMENT,
+      status: StatusCode.invalidArgument,
     );
   }
 
-  final maxTokens = config?.maxTokens ?? 1024;
-  final temperature = config?.temperature ?? 0.8;
-  final topK = config?.topK ?? 1;
-  final topP = config?.topP;
-  final randomSeed = config?.randomSeed ?? 1;
-  final supportImage = config?.supportImage ?? false;
-  final supportAudio = config?.supportAudio ?? false;
-  final enableThinking = config?.enableThinking ?? false;
-  final enableSpeculativeDecoding = config?.enableSpeculativeDecoding;
-  // Prefer the native top-level request.toolChoice (Genkit 0.15's standard
+  // Prefer the native top-level request.toolChoice (Genkit's standard
   // field) over the legacy config.toolChoice custom option. Fails loud on an
   // unrecognized value (see parseToolChoice) rather than silently defaulting
   // to auto — a 'none' typo must not quietly re-enable tools.
   final gemmaToolChoice = parseToolChoice(
-    request.toolChoice ?? config?.toolChoice,
+    request.toolChoice?.value ?? configToolChoice,
   );
   final systemInstruction =
-      config?.systemInstruction ?? extractSystemInstruction(request.messages);
-  final maxFunctionBufferLength = config?.maxFunctionBufferLength;
+      configSystemInstruction ?? extractSystemInstruction(request.messages);
   final preferredBackend = parsePreferredBackend(
-    config?.preferredBackend,
+    configPreferredBackend,
     field: 'preferredBackend',
   );
   final preferredVisionBackend = parsePreferredBackend(
-    config?.preferredVisionBackend,
+    configPreferredVisionBackend,
     field: 'preferredVisionBackend',
   );
   final preferredAudioBackend = parsePreferredBackend(
-    config?.preferredAudioBackend,
+    configPreferredAudioBackend,
     field: 'preferredAudioBackend',
   );
 
@@ -253,20 +320,71 @@ Future<ModelResponse> _executeGeneration({
     throw GenkitException(
       'No convertible messages in request. System messages alone are not '
       'sufficient — at least one user or model message is required.',
-      status: StatusCodes.INVALID_ARGUMENT,
+      status: StatusCode.invalidArgument,
     );
   }
   for (final msg in gemmaMessages) {
     await chat.addQueryChunk(msg);
   }
 
-  // Generate response.
-  final stopwatch = Stopwatch()..start();
-  if (context.streamingRequested) {
-    return _generateStreaming(chat, context.sendChunk, stopwatch);
-  } else {
-    return _generateBlocking(chat, stopwatch);
+  // Generate response. Cancelling the caller's token stops native decoding,
+  // and the turn then ends as a CancelledException, which genkit reports as an
+  // aborted response instead of a complete-looking truncated answer.
+  final cancel = context.cancel;
+  cancel?.throwIfCancelled();
+  // Completes once a requested stop has landed, with its error if it failed.
+  // Future.sync and an immediate handler: a failing stop, synchronous or not,
+  // is never an unhandled error.
+  Future<(Object, StackTrace)?>? stopped;
+  void stop() {
+    stopped ??= Future.sync(chat.stopGeneration).then<(Object, StackTrace)?>(
+      (_) => null,
+      onError: (Object error, StackTrace stack) => (error, stack),
+    );
   }
+
+  final detach = cancel?.onCancel(stop);
+  ModelResponse? response;
+  Object? failure;
+  StackTrace? failureStack;
+  try {
+    final stopwatch = Stopwatch()..start();
+    response = context.streamingRequested
+        ? await _generateStreaming(
+            chat,
+            context.sendChunk,
+            stopwatch,
+            cancel: cancel,
+            onSendChunkFailure: stop,
+          )
+        : await _generateBlocking(chat, stopwatch);
+  } catch (error, stack) {
+    failure = error;
+    failureStack = stack;
+  }
+  // Detach before the first await below: from here on no stop can start, so
+  // the one awaited next is the last. It must land before the caller releases
+  // the lock, or it reaches the shared native model during the next request.
+  detach?.call();
+  final stopFailure = await stopped;
+  if (failure != null) {
+    // The generation's own error is the one reported; a stop that failed as
+    // well is logged rather than lost.
+    if (stopFailure case (final error, final stack)) {
+      developer.log(
+        'stopGeneration failed after the generation failed',
+        name: 'genkit_flutter_edge_ai',
+        error: error,
+        stackTrace: stack,
+      );
+    }
+    Error.throwWithStackTrace(failure, failureStack!);
+  }
+  if (stopFailure case (final error, final stack)) {
+    Error.throwWithStackTrace(error, stack);
+  }
+  cancel?.throwIfCancelled();
+  return response!;
 }
 
 /// Generates a blocking (non-streaming) response.
@@ -302,17 +420,30 @@ Future<ModelResponse> _generateBlocking(
 }
 
 /// Generates a streaming response, sending chunks via [sendChunk].
+///
+/// A cancel stops forwarding at once: leaving the loop also cancels the stream,
+/// which stops native decoding on the engines that observe it. If [sendChunk]
+/// itself throws, [onSendChunkFailure] stops the generation first, since an
+/// engine such as MediaPipe keeps decoding after its stream is cancelled.
 Future<ModelResponse> _generateStreaming(
   gemma.InferenceChat chat,
   void Function(ModelResponseChunk) sendChunk,
-  Stopwatch stopwatch,
-) async {
+  Stopwatch stopwatch, {
+  required CancellationToken? cancel,
+  required void Function() onSendChunkFailure,
+}) async {
   final fullText = StringBuffer();
   final reasoningText = StringBuffer();
   final functionCalls = <gemma.FunctionCallResponse>[];
 
   await for (final chunk in chat.generateChatResponseAsync()) {
-    sendChunk(convertStreamChunk(chunk));
+    if (cancel?.isCancelled ?? false) break;
+    try {
+      sendChunk(convertStreamChunk(chunk));
+    } catch (_) {
+      onSendChunkFailure();
+      rethrow;
+    }
 
     switch (chunk) {
       case gemma.TextResponse(:final token):

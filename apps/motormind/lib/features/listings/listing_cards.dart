@@ -142,7 +142,6 @@ class _ListingTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(6),

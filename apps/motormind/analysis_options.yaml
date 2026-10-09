@@ -1,11 +1,32 @@
+# Lint baseline for the app. Starts from flutter_lints and adds the rules that
+# catch the mistakes this codebase is most likely to make: unawaited futures
+# in Riverpod notifiers, dynamic calls on tool-result maps, and drift in
+# import order and doc comments.
 include: package:flutter_lints/flutter.yaml
+
 linter:
   rules:
     - prefer_single_quotes
+    - avoid_dynamic_calls
+    - unawaited_futures
+    - directives_ordering
+    - prefer_final_locals
+    - prefer_final_in_for_each
+    - avoid_print
+    - comment_references
+    - use_super_parameters
+    - always_declare_return_types
+    - avoid_redundant_argument_values
+    - unnecessary_lambdas
+    - prefer_asserts_with_message
+    - cancel_subscriptions
+
 formatter:
   page_width: 100
+
 analyzer:
   exclude:
     - build/**
     - android/**
     - ios/**
+    - lib/firebase_options.dart

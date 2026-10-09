@@ -134,7 +134,7 @@ class SearchService extends Notifier<SearchState> {
       final extract = await ref.read(pageReaderProvider)(url);
       if (gen != _generation) return; // superseded
       final store = ref.read(listingStoreProvider)..addAll(extract.listings); // idempotent
-      final results = store.searchQuery(q, limit: 8);
+      final results = store.searchQuery(q);
       state = state.copyWith(applying: false, lastCount: results.length);
       _showResults(results, extract.url, q);
       onApplied?.call(state);

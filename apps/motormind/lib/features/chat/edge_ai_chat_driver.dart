@@ -30,7 +30,6 @@ class EdgeAiChatDriver implements ChatDriver {
           Tool(name: t.name, description: t.description, parameters: t.parameters),
       ],
       supportsFunctionCalls: spec.supportsTools,
-      isThinking: false,
       modelType: spec.modelType,
       systemInstruction: systemInstruction,
       maxOutputTokens: 400,

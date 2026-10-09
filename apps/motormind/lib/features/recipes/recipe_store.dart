@@ -68,7 +68,7 @@ class RecipeStore extends AsyncNotifier<Map<String, ReadingRecipe>> {
     if (check.ok) {
       _failures[siteId] = 0;
       if (r.status != 'verified') {
-        state = AsyncData({...recipes, siteId: r.copyWith(status: 'verified', note: null)});
+        state = AsyncData({...recipes, siteId: r.copyWith(status: 'verified')});
       }
       return;
     }

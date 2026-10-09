@@ -145,7 +145,6 @@ class RulesDisplayAgent implements DisplayAgent {
           : (s.listingCount > 0 && stage == StageMode.cards
                 ? StageSplit.twoThirds
                 : StageSplit.half),
-      by: 'rules',
     );
   }
 
@@ -181,7 +180,6 @@ class ModelDisplayAgent implements DisplayAgent {
     try {
       session = await model.openSession(
         temperature: 0.1,
-        topK: 1,
         systemInstruction: systemInstruction,
         maxOutputTokens: 80,
       );

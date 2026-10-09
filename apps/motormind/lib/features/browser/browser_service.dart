@@ -1,12 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:advisor_core/advisor_core.dart';
 import 'package:flutter/foundation.dart';
-
-import 'dart:convert';
-
-import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import '../recipes/recipe_store.dart';
 
@@ -184,13 +182,7 @@ class BrowserService extends Notifier<BrowserState> {
       // The site is asking the person to prove they are human. That is theirs
       // to answer in the pane; the advisor only reports it and reads again
       // afterwards. Nothing here tries to get around it.
-      final extract = PageExtract(
-        url: pageUrl,
-        title: title,
-        text: '',
-        listings: const [],
-        imageUrl: null,
-      );
+      final extract = PageExtract(url: pageUrl, title: title, text: '', listings: const []);
       state = state.copyWith(lastExtract: extract, url: pageUrl, title: title);
       throw const PageChallengeException();
     }

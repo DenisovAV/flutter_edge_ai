@@ -28,7 +28,7 @@ class _BrowserPaneState extends ConsumerState<BrowserPane> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (url) => service.onLoadStart(url),
+          onPageStarted: service.onLoadStart,
           onPageFinished: (url) async => service.onLoadStop(url, await _controller.getTitle()),
           // Read-only browsing policy (VA-6.1.1): web pages only; no external
           // schemes, no downloads.

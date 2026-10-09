@@ -1,3 +1,6 @@
+## 1.11.0
+- Linux arm64: Qualcomm NPU behind the same `qualcomm_npu` flag (`native-v0.18.0-c`).
+
 ## 1.10.1
 - iOS/macOS: GPU no longer crashes in apps that also use `flutter_litert` (`native-v0.18.0-b`).
 

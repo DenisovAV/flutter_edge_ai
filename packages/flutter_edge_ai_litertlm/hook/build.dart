@@ -216,7 +216,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 const _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-b',
+  version: '0.18.0-c',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -227,6 +227,13 @@ const _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.18.0-c adds two files to the linux_arm64 archive and changes nothing
+  // else: our Qualcomm dispatch (built in CI from the LiteRT pin against the
+  // QAIRT 2.50 headers) and the libcdsprpc.so shim the QNN Stubs need, for
+  // Linux arm64 NPU behind `qualcomm_npu` (_registerQualcommNpuLinux). The
+  // seven files already there and the other six archives are byte-identical
+  // to 0.18.0-b.
+  //
   // 0.18.0-b rebuilds libLiteRtLm.dylib in the three Apple archives and nothing
   // else: in an app with flutter_litert, LiteRT's gpu_registry tried the
   // generic libLiteRtGpuAccelerator first and, when that dlopen failed, bound
@@ -267,7 +274,7 @@ const _litertlmBundle = _NativeBundle(
     'litertlm-linux_x86_64.tar.gz':
         '6317826a74350212b161eb9b15a496f705da761d5089eb4071f0a35f7fe68764',
     'litertlm-linux_arm64.tar.gz':
-        'cc635fa311a7719432fd34739ec100160e0d6f334b011730a57eba6dab1b8931',
+        '2e0bba4dd5de9b583f0db63c50949bad1099f10be6651897831d39eb9791fa3d',
     'litertlm-windows_x86_64.tar.gz':
         '4bdf9d262bf6a59e7be3d336e812a56cb701a87bd13e1e5d9c6ca8d04bae30ae',
     'litertlm-macos_arm64.tar.gz':

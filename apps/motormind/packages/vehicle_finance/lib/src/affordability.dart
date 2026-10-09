@@ -64,12 +64,12 @@ class AffordabilityInputs {
 
   /// Serializes the inputs for the result's input record.
   Map<String, Object?> toJson() => {
-        'monthlyGrossIncome': monthlyGrossIncome,
-        'proposedPayment': proposedPayment,
-        'termMonths': termMonths,
-        'monthlyDebtPayments': monthlyDebtPayments,
-        'paymentCeiling': paymentCeiling,
-      };
+    'monthlyGrossIncome': monthlyGrossIncome,
+    'proposedPayment': proposedPayment,
+    'termMonths': termMonths,
+    'monthlyDebtPayments': monthlyDebtPayments,
+    'paymentCeiling': paymentCeiling,
+  };
 }
 
 /// One guideline the proposed payment exceeds.
@@ -122,12 +122,12 @@ class AffordabilityResult extends CalcResult {
 
   @override
   Map<String, Object?> outputsToJson() => {
-        'paymentToIncome': paymentToIncome,
-        'debtToIncomeAfter': debtToIncomeAfter,
-        'suggestedMaxPayment': suggestedMaxPayment,
-        'withinGuidelines': withinGuidelines,
-        'warnings': [for (final w in warnings) w.toJson()],
-      };
+    'paymentToIncome': paymentToIncome,
+    'debtToIncomeAfter': debtToIncomeAfter,
+    'suggestedMaxPayment': suggestedMaxPayment,
+    'withinGuidelines': withinGuidelines,
+    'warnings': [for (final w in warnings) w.toJson()],
+  };
 }
 
 /// Compares [input] against [policy] and reports the ratios, the suggested
@@ -149,8 +149,11 @@ AffordabilityResult assessAffordability(
 
   final policyCeiling = roundCents(income * policy.maxPaymentToIncome);
   final dtiCeiling = roundCents(income * policy.maxDebtToIncome - input.monthlyDebtPayments);
-  var suggested = [policyCeiling, dtiCeiling, if (input.paymentCeiling != null) input.paymentCeiling!]
-      .reduce((a, b) => a < b ? a : b);
+  var suggested = [
+    policyCeiling,
+    dtiCeiling,
+    if (input.paymentCeiling != null) input.paymentCeiling!,
+  ].reduce((a, b) => a < b ? a : b);
   if (suggested < 0) suggested = 0;
 
   final warnings = <AffordabilityWarning>[
@@ -200,5 +203,8 @@ AffordabilityResult assessAffordability(
 
 /// Convenience: the most expensive vehicle a payment ceiling supports at a
 /// given APR and term, before tax, fees and trade.
-double maxPriceForPayment({required double payment, required double apr, required int termMonths}) =>
-    maxPrincipal(payment: payment, apr: apr, termMonths: termMonths);
+double maxPriceForPayment({
+  required double payment,
+  required double apr,
+  required int termMonths,
+}) => maxPrincipal(payment: payment, apr: apr, termMonths: termMonths);

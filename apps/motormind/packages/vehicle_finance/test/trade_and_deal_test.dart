@@ -53,7 +53,10 @@ void main() {
       expect(e.cashDueAtSigning, 1000);
       expect(e.monthlyPayment, monthlyPayment(principal: 22700, apr: 0.06, termMonths: 60));
       expect(e.totalCost, closeTo(e.cashDueAtSigning + e.totalOfPayments, 0.01));
-      expect(e.assumptions.map((a) => a.key), containsAll(['apr.test', 'tax.rate', 'fees.total', 'trade.value']));
+      expect(
+        e.assumptions.map((a) => a.key),
+        containsAll(['apr.test', 'tax.rate', 'fees.total', 'trade.value']),
+      );
     });
 
     test('pays negative equity in cash when not rolled', () {
@@ -96,19 +99,22 @@ void main() {
   });
 
   group('whatIfVariants', () {
-    test('produces three single-change alternatives with lower or equal payments where expected', () {
-      const base = DealInputs(price: 25000, apr: 0.06, termMonths: 60, downPayment: 2000);
-      final baseEstimate = estimateDeal(base, aprAssumption: apr);
-      final v = whatIfVariants(base, aprAssumption: apr);
-      expect(v, hasLength(3));
-      expect(v[0].changed, {'termMonths': 48});
-      expect(v[0].estimate.monthlyPayment, greaterThan(baseEstimate.monthlyPayment));
-      expect(v[0].estimate.financeCharge, lessThan(baseEstimate.financeCharge));
-      expect(v[1].changed, {'downPayment': 3000});
-      expect(v[1].estimate.monthlyPayment, lessThan(baseEstimate.monthlyPayment));
-      expect(v[2].changed, {'price': 22500});
-      expect(v[2].estimate.monthlyPayment, lessThan(baseEstimate.monthlyPayment));
-    });
+    test(
+      'produces three single-change alternatives with lower or equal payments where expected',
+      () {
+        const base = DealInputs(price: 25000, apr: 0.06, termMonths: 60, downPayment: 2000);
+        final baseEstimate = estimateDeal(base, aprAssumption: apr);
+        final v = whatIfVariants(base, aprAssumption: apr);
+        expect(v, hasLength(3));
+        expect(v[0].changed, {'termMonths': 48});
+        expect(v[0].estimate.monthlyPayment, greaterThan(baseEstimate.monthlyPayment));
+        expect(v[0].estimate.financeCharge, lessThan(baseEstimate.financeCharge));
+        expect(v[1].changed, {'downPayment': 3000});
+        expect(v[1].estimate.monthlyPayment, lessThan(baseEstimate.monthlyPayment));
+        expect(v[2].changed, {'price': 22500});
+        expect(v[2].estimate.monthlyPayment, lessThan(baseEstimate.monthlyPayment));
+      },
+    );
 
     test('omits the shorter term when it would drop below 12 months', () {
       const base = DealInputs(price: 10000, apr: 0.06, termMonths: 12);

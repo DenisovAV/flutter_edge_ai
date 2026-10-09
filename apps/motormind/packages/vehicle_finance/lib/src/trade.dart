@@ -8,11 +8,8 @@ import 'money.dart';
 class TradeEquity extends CalcResult {
   /// Creates the result from the two user-supplied figures; [tradeEquity]
   /// validates them first and is the usual way to get one.
-  TradeEquity({
-    required this.estimatedValue,
-    required this.payoff,
-    required super.assumptions,
-  }) : super(inputs: {'estimatedValue': estimatedValue, 'payoff': payoff});
+  TradeEquity({required this.estimatedValue, required this.payoff, required super.assumptions})
+    : super(inputs: {'estimatedValue': estimatedValue, 'payoff': payoff});
 
   /// What the current vehicle is expected to fetch in trade, in dollars.
   final double estimatedValue;
@@ -33,10 +30,10 @@ class TradeEquity extends CalcResult {
 
   @override
   Map<String, Object?> outputsToJson() => {
-        'equity': equity,
-        'isNegative': isNegative,
-        'shortfall': shortfall,
-      };
+    'equity': equity,
+    'isNegative': isNegative,
+    'shortfall': shortfall,
+  };
 }
 
 /// Computes trade-in equity from an estimated value and a loan payoff, both in

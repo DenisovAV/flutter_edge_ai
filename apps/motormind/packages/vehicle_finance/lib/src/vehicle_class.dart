@@ -21,7 +21,7 @@ enum VehicleClass {
   ///
   /// Throws an [ArgumentError] for anything that is not one of [values].
   static VehicleClass parse(String value) => VehicleClass.values.firstWhere(
-        (v) => v.name == value.toLowerCase().trim(),
-        orElse: () => throw ArgumentError.value(value, 'value', 'unknown vehicle class'),
-      );
+    (v) => v.name == value.toLowerCase().trim(),
+    orElse: () => throw ArgumentError.value(value, 'value', 'unknown vehicle class'),
+  );
 }

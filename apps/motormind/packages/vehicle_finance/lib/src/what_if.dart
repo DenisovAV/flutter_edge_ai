@@ -20,10 +20,10 @@ class WhatIfVariant {
   /// Serializes the variant with its estimate nested in full, so every number
   /// in it can be verified.
   Map<String, Object?> toJson() => {
-        'label': label,
-        'changed': changed,
-        'estimate': estimate.toJson(),
-      };
+    'label': label,
+    'changed': changed,
+    'estimate': estimate.toJson(),
+  };
 }
 
 /// Three one-variable alternatives: a shorter term, more money down, a lower
@@ -43,26 +43,32 @@ List<WhatIfVariant> whatIfVariants(
 
   if (base.termMonths - termStep >= 12) {
     final term = base.termMonths - termStep;
-    variants.add(WhatIfVariant(
-      label: '$term-month term',
-      changed: {'termMonths': term},
-      estimate: estimateDeal(base.copyWith(termMonths: term), aprAssumption: aprAssumption),
-    ));
+    variants.add(
+      WhatIfVariant(
+        label: '$term-month term',
+        changed: {'termMonths': term},
+        estimate: estimateDeal(base.copyWith(termMonths: term), aprAssumption: aprAssumption),
+      ),
+    );
   }
 
   final down = roundCents(base.downPayment + extraDown);
-  variants.add(WhatIfVariant(
-    label: '${extraDown.toStringAsFixed(0)} more down',
-    changed: {'downPayment': down},
-    estimate: estimateDeal(base.copyWith(downPayment: down), aprAssumption: aprAssumption),
-  ));
+  variants.add(
+    WhatIfVariant(
+      label: '${extraDown.toStringAsFixed(0)} more down',
+      changed: {'downPayment': down},
+      estimate: estimateDeal(base.copyWith(downPayment: down), aprAssumption: aprAssumption),
+    ),
+  );
 
   final price = roundCents(base.price * (1 - priceCut));
-  variants.add(WhatIfVariant(
-    label: '${(priceCut * 100).toStringAsFixed(0)}% lower price',
-    changed: {'price': price},
-    estimate: estimateDeal(base.copyWith(price: price), aprAssumption: aprAssumption),
-  ));
+  variants.add(
+    WhatIfVariant(
+      label: '${(priceCut * 100).toStringAsFixed(0)}% lower price',
+      changed: {'price': price},
+      estimate: estimateDeal(base.copyWith(price: price), aprAssumption: aprAssumption),
+    ),
+  );
 
   return variants;
 }

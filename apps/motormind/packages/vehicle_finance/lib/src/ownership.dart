@@ -89,19 +89,19 @@ class OwnershipInputs {
 
   /// Serializes the inputs for the result's input record; enums by name.
   Map<String, Object?> toJson() => {
-        'vehicleClass': vehicleClass.name,
-        'purchasePrice': purchasePrice,
-        'milesPerYear': milesPerYear,
-        'fuelType': fuelType.name,
-        'efficiency': efficiency,
-        'years': years,
-        'vehicleAgeYears': vehicleAgeYears,
-        'fuelPricePerGallon': fuelPricePerGallon,
-        'electricityPerKwh': electricityPerKwh,
-        'insuranceBand': insuranceBand.name,
-        'salesTaxRate': salesTaxRate,
-        'annualRegistration': annualRegistration,
-      };
+    'vehicleClass': vehicleClass.name,
+    'purchasePrice': purchasePrice,
+    'milesPerYear': milesPerYear,
+    'fuelType': fuelType.name,
+    'efficiency': efficiency,
+    'years': years,
+    'vehicleAgeYears': vehicleAgeYears,
+    'fuelPricePerGallon': fuelPricePerGallon,
+    'electricityPerKwh': electricityPerKwh,
+    'insuranceBand': insuranceBand.name,
+    'salesTaxRate': salesTaxRate,
+    'annualRegistration': annualRegistration,
+  };
 }
 
 /// Rough tables behind the ownership estimate.
@@ -121,10 +121,32 @@ class OwnershipTables {
 
   /// Fraction of the *original* value lost by the end of each ownership year,
   /// cumulative, for a vehicle bought new. Used vehicles start partway along.
-  static const List<double> cumulativeDepreciation = [0.20, 0.31, 0.40, 0.48, 0.55, 0.60, 0.65, 0.69, 0.72, 0.75];
+  static const List<double> cumulativeDepreciation = [
+    0.20,
+    0.31,
+    0.40,
+    0.48,
+    0.55,
+    0.60,
+    0.65,
+    0.69,
+    0.72,
+    0.75,
+  ];
 
   /// Annual maintenance and repairs by vehicle age in years.
-  static const List<double> maintenanceByAge = [400, 500, 650, 850, 1050, 1250, 1450, 1650, 1850, 2000];
+  static const List<double> maintenanceByAge = [
+    400,
+    500,
+    650,
+    850,
+    1050,
+    1250,
+    1450,
+    1650,
+    1850,
+    2000,
+  ];
 
   /// Annual premium in dollars by [InsuranceBand].
   static const Map<InsuranceBand, double> annualInsurance = {
@@ -176,7 +198,8 @@ class OwnershipEstimate extends CalcResult {
   final double taxesAndFees;
 
   /// Sum of every category, in dollars.
-  double get total => roundCents(depreciation + fuelOrEnergy + insurance + maintenance + taxesAndFees);
+  double get total =>
+      roundCents(depreciation + fuelOrEnergy + insurance + maintenance + taxesAndFees);
 
   /// Spreads [total] evenly over [years] of ownership, in dollars per month;
   /// pass the same number of years the inputs used.
@@ -184,13 +207,13 @@ class OwnershipEstimate extends CalcResult {
 
   @override
   Map<String, Object?> outputsToJson() => {
-        'depreciation': depreciation,
-        'fuelOrEnergy': fuelOrEnergy,
-        'insurance': insurance,
-        'maintenance': maintenance,
-        'taxesAndFees': taxesAndFees,
-        'total': total,
-      };
+    'depreciation': depreciation,
+    'fuelOrEnergy': fuelOrEnergy,
+    'insurance': insurance,
+    'maintenance': maintenance,
+    'taxesAndFees': taxesAndFees,
+    'total': total,
+  };
 }
 
 /// Estimates the cost of owning the vehicle described by [input] over its
@@ -204,7 +227,8 @@ class OwnershipEstimate extends CalcResult {
 /// efficiency.
 OwnershipEstimate estimateOwnership(OwnershipInputs input) {
   if (input.years <= 0) throw ArgumentError.value(input.years, 'years', 'must be positive');
-  if (input.efficiency <= 0) throw ArgumentError.value(input.efficiency, 'efficiency', 'must be positive');
+  if (input.efficiency <= 0)
+    throw ArgumentError.value(input.efficiency, 'efficiency', 'must be positive');
 
   // Depreciation: the share of today's price lost over the ownership window,
   // reading the cumulative curve from the vehicle's current age.
@@ -219,7 +243,8 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
   final totalMiles = input.milesPerYear * input.years;
   final fuel = switch (input.fuelType) {
     FuelType.electric => totalMiles / input.efficiency * input.electricityPerKwh,
-    FuelType.gasoline || FuelType.hybrid => totalMiles / input.efficiency * input.fuelPricePerGallon,
+    FuelType.gasoline ||
+    FuelType.hybrid => totalMiles / input.efficiency * input.fuelPricePerGallon,
   };
 
   final insurance = OwnershipTables.annualInsurance[input.insuranceBand]! * input.years;
@@ -228,7 +253,9 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
   final mult = OwnershipTables.classMaintenanceMultiplier[input.vehicleClass] ?? 1.0;
   for (var y = 0; y < input.years; y++) {
     final age = input.vehicleAgeYears + y;
-    maintenance += OwnershipTables.maintenanceByAge[_index(age, OwnershipTables.maintenanceByAge.length)] * mult;
+    maintenance +=
+        OwnershipTables.maintenanceByAge[_index(age, OwnershipTables.maintenanceByAge.length)] *
+        mult;
   }
 
   final taxes = input.purchasePrice * input.salesTaxRate + input.annualRegistration * input.years;
@@ -243,14 +270,16 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
     assumptions: [
       Assumption(
         key: 'tco.depreciation_curve',
-        description: 'Class-independent depreciation curve; real curves vary widely by model and market.',
+        description:
+            'Class-independent depreciation curve; real curves vary widely by model and market.',
         value: 'cumulative ${OwnershipTables.cumulativeDepreciation.join(', ')}',
         source: OwnershipTables.source,
         asOf: OwnershipTables.asOf,
       ),
       Assumption(
         key: 'tco.insurance',
-        description: 'National-average annual premium for the ${input.insuranceBand.name} band; your quote will differ.',
+        description:
+            'National-average annual premium for the ${input.insuranceBand.name} band; your quote will differ.',
         value: OwnershipTables.annualInsurance[input.insuranceBand]!.toStringAsFixed(0),
         source: OwnershipTables.source,
         asOf: OwnershipTables.asOf,
@@ -258,7 +287,8 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
       Assumption(
         key: 'tco.maintenance',
         description: 'Average maintenance and repair cost by vehicle age, scaled by class.',
-        value: 'by age ${OwnershipTables.maintenanceByAge.map((v) => v.toStringAsFixed(0)).join(', ')}',
+        value:
+            'by age ${OwnershipTables.maintenanceByAge.map((v) => v.toStringAsFixed(0)).join(', ')}',
         source: OwnershipTables.source,
         asOf: OwnershipTables.asOf,
       ),

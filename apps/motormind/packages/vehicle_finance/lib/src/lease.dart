@@ -45,13 +45,13 @@ class LeaseInputs {
 
   /// Serializes the inputs for the result's input record.
   Map<String, Object?> toJson() => {
-        'capitalizedCost': capitalizedCost,
-        'residualValue': residualValue,
-        'moneyFactor': moneyFactor,
-        'termMonths': termMonths,
-        'capReduction': capReduction,
-        'salesTaxRate': salesTaxRate,
-      };
+    'capitalizedCost': capitalizedCost,
+    'residualValue': residualValue,
+    'moneyFactor': moneyFactor,
+    'termMonths': termMonths,
+    'capReduction': capReduction,
+    'salesTaxRate': salesTaxRate,
+  };
 }
 
 /// A lease payment broken into the parts an offer sheet shows: depreciation,
@@ -105,15 +105,15 @@ class LeaseEstimate extends CalcResult {
 
   @override
   Map<String, Object?> outputsToJson() => {
-        'adjustedCapCost': adjustedCapCost,
-        'depreciationCharge': depreciationCharge,
-        'rentCharge': rentCharge,
-        'basePayment': basePayment,
-        'monthlyTax': monthlyTax,
-        'monthlyPayment': monthlyPayment,
-        'totalOfPayments': totalOfPayments,
-        'aprEquivalent': aprEquivalent,
-      };
+    'adjustedCapCost': adjustedCapCost,
+    'depreciationCharge': depreciationCharge,
+    'rentCharge': rentCharge,
+    'basePayment': basePayment,
+    'monthlyTax': monthlyTax,
+    'monthlyPayment': monthlyPayment,
+    'totalOfPayments': totalOfPayments,
+    'aprEquivalent': aprEquivalent,
+  };
 }
 
 /// Computes the standard closed-end lease payment: straight-line depreciation
@@ -130,7 +130,11 @@ LeaseEstimate estimateLease(LeaseInputs lease, {required Assumption moneyFactorA
     throw ArgumentError.value(lease.termMonths, 'termMonths', 'must be positive');
   }
   if (lease.moneyFactor < 0 || lease.moneyFactor > 0.05) {
-    throw ArgumentError.value(lease.moneyFactor, 'moneyFactor', 'expected a money factor like 0.0025');
+    throw ArgumentError.value(
+      lease.moneyFactor,
+      'moneyFactor',
+      'expected a money factor like 0.0025',
+    );
   }
   final adjusted = lease.capitalizedCost - lease.capReduction;
   final depreciation = roundCents((adjusted - lease.residualValue) / lease.termMonths);
@@ -152,7 +156,8 @@ LeaseEstimate estimateLease(LeaseInputs lease, {required Assumption moneyFactorA
       moneyFactorAssumption,
       Assumption(
         key: 'lease.residual',
-        description: 'Residual value set by the lessor; it is not negotiable and drives most of the payment.',
+        description:
+            'Residual value set by the lessor; it is not negotiable and drives most of the payment.',
         value: lease.residualValue.toStringAsFixed(2),
         source: 'user or lease offer',
         asOf: '2026-10-04',

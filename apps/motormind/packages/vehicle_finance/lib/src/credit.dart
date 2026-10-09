@@ -36,9 +36,9 @@ enum CreditBand {
   ///
   /// Throws an [ArgumentError] for anything that is not one of [values].
   static CreditBand parse(String value) => CreditBand.values.firstWhere(
-        (b) => b.name == value.toLowerCase().trim(),
-        orElse: () => throw ArgumentError.value(value, 'value', 'unknown credit band'),
-      );
+    (b) => b.name == value.toLowerCase().trim(),
+    orElse: () => throw ArgumentError.value(value, 'value', 'unknown credit band'),
+  );
 }
 
 /// Maps a numeric score to a band. Scores outside 300–850 are clamped.
@@ -66,9 +66,9 @@ class AprRates {
 
   /// Reads a rate pair back from the layout [toJson] writes.
   factory AprRates.fromJson(Map<String, Object?> json) => AprRates(
-        newVehicle: (json['new'] as num).toDouble(),
-        usedVehicle: (json['used'] as num).toDouble(),
-      );
+    newVehicle: (json['new'] as num).toDouble(),
+    usedVehicle: (json['used'] as num).toDouble(),
+  );
 }
 
 /// A dated, sourced table of illustrative APRs by credit band.
@@ -127,11 +127,11 @@ class AprTable {
 
   /// Serializes the table in the bundled JSON layout, keyed by band name.
   Map<String, Object?> toJson() => {
-        'source': source,
-        'asOf': asOf,
-        'illustrative': illustrative,
-        'rates': {for (final e in rates.entries) e.key.name: e.value.toJson()},
-      };
+    'source': source,
+    'asOf': asOf,
+    'illustrative': illustrative,
+    'rates': {for (final e in rates.entries) e.key.name: e.value.toJson()},
+  };
 
   /// Reads a table from the layout [toJson] writes; `illustrative` defaults to
   /// true when the file omits it.

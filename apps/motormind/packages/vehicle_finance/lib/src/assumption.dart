@@ -36,13 +36,13 @@ class Assumption {
 
   /// Serializes the assumption for tool results and logs, one key per field.
   Map<String, Object?> toJson() => {
-        'key': key,
-        'description': description,
-        'value': value,
-        'source': source,
-        'asOf': asOf,
-        'illustrative': illustrative,
-      };
+    'key': key,
+    'description': description,
+    'value': value,
+    'source': source,
+    'asOf': asOf,
+    'illustrative': illustrative,
+  };
 }
 
 /// Base type for every computed result.
@@ -67,8 +67,8 @@ abstract class CalcResult {
   /// Serializes the whole result as `inputs`, `outputs` and `assumptions`, the
   /// shape both the narration guard and the UI read.
   Map<String, Object?> toJson() => {
-        'inputs': inputs,
-        'outputs': outputsToJson(),
-        'assumptions': [for (final a in assumptions) a.toJson()],
-      };
+    'inputs': inputs,
+    'outputs': outputsToJson(),
+    'assumptions': [for (final a in assumptions) a.toJson()],
+  };
 }

@@ -53,17 +53,17 @@ class DealInputs {
   /// Serializes the inputs as flat JSON; the trade is reduced to its value and
   /// payoff so the result's inputs stay one level deep.
   Map<String, Object?> toJson() => {
-        'price': price,
-        'apr': apr,
-        'termMonths': termMonths,
-        'salesTaxRate': salesTaxRate,
-        'fees': fees,
-        'downPayment': downPayment,
-        'tradeEstimatedValue': trade?.estimatedValue,
-        'tradePayoff': trade?.payoff,
-        'rollNegativeEquity': rollNegativeEquity,
-        'taxCreditForTrade': taxCreditForTrade,
-      };
+    'price': price,
+    'apr': apr,
+    'termMonths': termMonths,
+    'salesTaxRate': salesTaxRate,
+    'fees': fees,
+    'downPayment': downPayment,
+    'tradeEstimatedValue': trade?.estimatedValue,
+    'tradePayoff': trade?.payoff,
+    'rollNegativeEquity': rollNegativeEquity,
+    'taxCreditForTrade': taxCreditForTrade,
+  };
 
   /// Returns a copy with the given fields replaced, which is how one-variable
   /// alternatives to a deal are built. Passing null for [trade] keeps the
@@ -78,18 +78,17 @@ class DealInputs {
     TradeEquity? trade,
     bool? rollNegativeEquity,
     bool? taxCreditForTrade,
-  }) =>
-      DealInputs(
-        price: price ?? this.price,
-        apr: apr ?? this.apr,
-        termMonths: termMonths ?? this.termMonths,
-        salesTaxRate: salesTaxRate ?? this.salesTaxRate,
-        fees: fees ?? this.fees,
-        downPayment: downPayment ?? this.downPayment,
-        trade: trade ?? this.trade,
-        rollNegativeEquity: rollNegativeEquity ?? this.rollNegativeEquity,
-        taxCreditForTrade: taxCreditForTrade ?? this.taxCreditForTrade,
-      );
+  }) => DealInputs(
+    price: price ?? this.price,
+    apr: apr ?? this.apr,
+    termMonths: termMonths ?? this.termMonths,
+    salesTaxRate: salesTaxRate ?? this.salesTaxRate,
+    fees: fees ?? this.fees,
+    downPayment: downPayment ?? this.downPayment,
+    trade: trade ?? this.trade,
+    rollNegativeEquity: rollNegativeEquity ?? this.rollNegativeEquity,
+    taxCreditForTrade: taxCreditForTrade ?? this.taxCreditForTrade,
+  );
 }
 
 /// A complete purchase estimate in the consumer layout: what you pay at
@@ -145,16 +144,16 @@ class DealEstimate extends CalcResult {
 
   @override
   Map<String, Object?> outputsToJson() => {
-        'salesTax': salesTax,
-        'tradeEquityApplied': tradeEquityApplied,
-        'negativeEquityFinanced': negativeEquityFinanced,
-        'cashDueAtSigning': cashDueAtSigning,
-        'amountFinanced': amountFinanced,
-        'monthlyPayment': monthlyPayment,
-        'totalOfPayments': totalOfPayments,
-        'financeCharge': financeCharge,
-        'totalCost': totalCost,
-      };
+    'salesTax': salesTax,
+    'tradeEquityApplied': tradeEquityApplied,
+    'negativeEquityFinanced': negativeEquityFinanced,
+    'cashDueAtSigning': cashDueAtSigning,
+    'amountFinanced': amountFinanced,
+    'monthlyPayment': monthlyPayment,
+    'totalOfPayments': totalOfPayments,
+    'financeCharge': financeCharge,
+    'totalCost': totalCost,
+  };
 }
 
 /// Estimates a financed purchase from [deal], applying tax, fees, down payment
@@ -183,7 +182,8 @@ DealEstimate estimateDeal(DealInputs deal, {required Assumption aprAssumption}) 
   final negativeFinanced = deal.rollNegativeEquity ? shortfall : 0.0;
   final negativeInCash = deal.rollNegativeEquity ? 0.0 : shortfall;
 
-  var financed = deal.price + salesTax + deal.fees - deal.downPayment - positiveEquity + negativeFinanced;
+  var financed =
+      deal.price + salesTax + deal.fees - deal.downPayment - positiveEquity + negativeFinanced;
   var cashAtSigning = deal.downPayment + negativeInCash;
   if (financed < 0) {
     // More cash and equity than the deal needs: nothing is financed and the
@@ -195,14 +195,19 @@ DealEstimate estimateDeal(DealInputs deal, {required Assumption aprAssumption}) 
   cashAtSigning = roundCents(cashAtSigning);
 
   final payment = monthlyPayment(principal: financed, apr: deal.apr, termMonths: deal.termMonths);
-  final schedule = amortizationSchedule(principal: financed, apr: deal.apr, termMonths: deal.termMonths);
+  final schedule = amortizationSchedule(
+    principal: financed,
+    apr: deal.apr,
+    termMonths: deal.termMonths,
+  );
   final total = roundCents(schedule.fold<double>(0, (sum, row) => sum + row.payment));
 
   final assumptions = <Assumption>[
     aprAssumption,
     Assumption(
       key: 'tax.rate',
-      description: 'Sales tax rate applied to the ${deal.taxCreditForTrade ? 'price minus trade value' : 'full price'}.',
+      description:
+          'Sales tax rate applied to the ${deal.taxCreditForTrade ? 'price minus trade value' : 'full price'}.',
       value: '${(deal.salesTaxRate * 100).toStringAsFixed(2)}%',
       source: 'user or state table',
       asOf: '2026-10-04',

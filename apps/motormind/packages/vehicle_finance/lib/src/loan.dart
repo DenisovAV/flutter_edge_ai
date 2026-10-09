@@ -9,11 +9,7 @@ import 'money.dart';
 /// with `r` the nominal [apr] divided by 12 and `n` the term in months, which
 /// assumes monthly compounding and no fees in the rate. [apr] is a fraction:
 /// `0.065` for 6.5%. A zero APR is a straight division.
-double monthlyPayment({
-  required double principal,
-  required double apr,
-  required int termMonths,
-}) {
+double monthlyPayment({required double principal, required double apr, required int termMonths}) {
   _checkLoanArgs(principal: principal, apr: apr, termMonths: termMonths);
   if (principal == 0) return 0;
   final r = apr / 12;
@@ -26,11 +22,7 @@ double monthlyPayment({
 ///
 /// Inverse of [monthlyPayment]. Rounds down to the cent so the payment on the
 /// returned principal never exceeds [payment].
-double maxPrincipal({
-  required double payment,
-  required double apr,
-  required int termMonths,
-}) {
+double maxPrincipal({required double payment, required double apr, required int termMonths}) {
   _checkLoanArgs(principal: payment, apr: apr, termMonths: termMonths);
   if (payment == 0) return 0;
   final r = apr / 12;
@@ -68,12 +60,12 @@ class AmortizationRow {
 
   /// Serializes the row for tool results and logs.
   Map<String, Object?> toJson() => {
-        'period': period,
-        'payment': payment,
-        'interest': interest,
-        'principal': principal,
-        'balance': balance,
-      };
+    'period': period,
+    'payment': payment,
+    'interest': interest,
+    'principal': principal,
+    'balance': balance,
+  };
 }
 
 /// Full amortization schedule. The final row absorbs rounding so the balance
@@ -97,13 +89,15 @@ List<AmortizationRow> amortizationSchedule({
       thisPayment = roundCents(principalPart + interest);
     }
     balance = roundCents(balance - principalPart);
-    rows.add(AmortizationRow(
-      period: period,
-      payment: thisPayment,
-      interest: interest,
-      principal: principalPart,
-      balance: balance < 0 ? 0 : balance,
-    ));
+    rows.add(
+      AmortizationRow(
+        period: period,
+        payment: thisPayment,
+        interest: interest,
+        principal: principalPart,
+        balance: balance < 0 ? 0 : balance,
+      ),
+    );
     if (balance <= 0) break;
   }
   return rows;
@@ -125,11 +119,7 @@ class LoanSummary extends CalcResult {
     required this.financeCharge,
     required this.schedule,
     required super.assumptions,
-  }) : super(inputs: {
-          'principal': principal,
-          'apr': apr,
-          'termMonths': termMonths,
-        });
+  }) : super(inputs: {'principal': principal, 'apr': apr, 'termMonths': termMonths});
 
   /// Amount borrowed, in dollars.
   final double principal;
@@ -155,11 +145,11 @@ class LoanSummary extends CalcResult {
 
   @override
   Map<String, Object?> outputsToJson() => {
-        'monthlyPayment': monthlyPayment,
-        'totalOfPayments': totalOfPayments,
-        'financeCharge': financeCharge,
-        'scheduleLength': schedule.length,
-      };
+    'monthlyPayment': monthlyPayment,
+    'totalOfPayments': totalOfPayments,
+    'financeCharge': financeCharge,
+    'scheduleLength': schedule.length,
+  };
 }
 
 /// Builds a [LoanSummary] for [principal] at [apr] over [termMonths].

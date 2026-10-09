@@ -1,38 +1,52 @@
 import 'listing.dart';
+import 'listing_parse.dart';
 
 /// Pulls vehicle listings out of a page's visible text with patterns, not
 /// per-site scraping. Two shapes are recognized:
 ///
-/// - A: "2021 Honda CR-V EX-L" on one line, with a price and optional mileage
-///   within a few lines below (common results pages).
-/// - B: a bare year line, then mileage ("35K mi") and stock lines, a title line
-///   ("Toyota RAV4 XLE"), then a "Price" label and the price (EchoPark-style
-///   cards).
+/// - title first: "2021 Honda CR-V EX-L" on one line, with a price and an
+///   optional mileage within a few lines below (common results pages);
+/// - year first: a bare year line, then mileage ("35K mi") and stock lines,
+///   a title line ("Toyota RAV4 XLE"), then a "Price" label and the price
+///   (EchoPark-style cards).
 ///
 /// Deliberately generic (Q31: user-initiated, one page at a time). A curated
-/// site may later add a recipe that does better; this is the floor every page
-/// gets.
+/// site may add a recipe that does better; this is the floor every page gets.
 class ListingExtractor {
   /// Creates an extractor that stops after [maxListings] listings.
-  const ListingExtractor({this.maxListings = 25});
+  const ListingExtractor({this.maxListings = defaultMaxListings});
 
   /// Upper bound on listings returned from one page.
   final int maxListings;
 
-  static final _yearMakeModel = RegExp(
-    r'^(?:(?:New|Used|Certified|CPO)\s+)?((?:19|20)\d{2})\s+([A-Z][A-Za-z\-]+)\s+([A-Za-z0-9][^\n]{1,40})$',
+  /// A bare year line, optionally led by a condition word: "2023",
+  /// "Used 2020". Not "2023 BMW X3", which is a title line.
+  static final _yearOnly = RegExp(
+    r'^(?:(?:New|Used|Certified|CPO|Pre-Owned)\s+)?((?:19|20)\d{2})$',
   );
-  static final _yearOnly = RegExp(r'^(?:(?:New|Used|Certified|CPO)\s+)?((?:19|20)\d{2})$');
+
+  /// A yearless title line of two to eight words, the first capitalized:
+  /// "BMW 5 Series 530i xDrive", "Honda CR-V Hybrid EX-L". Not "|", not
+  /// "Stock #: PPWY18150", not "$34,997".
   static final _titleLine = RegExp(
     r'^[A-Z][A-Za-z0-9\-]+(?:\s+[A-Za-z0-9][A-Za-z0-9\-\./&]*){1,7}$',
   );
-  static final _price = RegExp(r'\$\s?(\d{1,3}(?:,\d{3})+|\d{4,6})(?!\s*/\s*mo)');
-  static final _mileage = RegExp(
-    r'(\d{1,3}(?:,\d{3})+|\d{3,6}|\d{1,3}(?:\.\d)?[kK])\s*(?:mi\b|miles)',
-    caseSensitive: false,
-  );
-  static final _monthly = RegExp(r'\$\s?\d{2,4}\s*/\s*mo', caseSensitive: false);
-  static const _labels = {
+
+  /// Lines below a title line searched for its price and mileage: a results
+  /// row keeps its facts right under the heading, so a longer look would
+  /// read the next row's price into this one.
+  static const _factsWindow = 8;
+
+  /// Lines below a bare year line that may hold one EchoPark-style card's
+  /// mileage, stock number, title, "Price" label and price. Longer than
+  /// [_factsWindow] because the card carries more chrome than a results row.
+  static const _cardWindow = 12;
+
+  /// Card chrome seen on EchoPark that would otherwise pass for a title line
+  /// (compared lower-cased, by prefix). A growing list: each entry is a line
+  /// that once became a listing title on a real page. Lines that look like a
+  /// price or a stock number are excluded separately.
+  static const _nonTitleLabels = {
     'price',
     'favorite icon',
     'pickup at',
@@ -45,115 +59,160 @@ class ListingExtractor {
     'filters',
   };
 
-  /// Parses an odometer figure such as `35,000` or `35K` into miles; throws
-  /// [FormatException] for anything else.
-  static int parseMiles(String raw) {
-    final v = raw.toLowerCase();
-    if (v.endsWith('k')) return (double.parse(v.substring(0, v.length - 1)) * 1000).round();
-    return int.parse(v.replaceAll(',', ''));
-  }
-
   /// Reads listings from the visible [text] of the page at [sourceUrl];
   /// [now] is recorded as each listing's read time. Listings without a
-  /// price are skipped.
+  /// price are skipped, and a card read twice (a page repeats its cards in
+  /// a sticky header or a "recently viewed" strip) is kept once.
   List<VehicleListing> extract(String text, {required String sourceUrl, required DateTime now}) {
     final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
     final out = <VehicleListing>[];
     final seen = <String>{};
-
-    void add(int year, String make, String model, double? price, int? mileage) {
-      if (price == null || out.length >= maxListings) return;
-      final title = '$year $make $model'.trim();
-      if (!seen.add('$title|$price|$mileage')) return;
-      out.add(
-        VehicleListing(
-          id: 'v${out.length + 1}',
-          title: title,
-          sourceUrl: sourceUrl,
-          readAt: now,
-          price: price,
-          mileage: mileage,
-          year: year,
-          make: make,
-          model: model,
-        ),
-      );
-    }
-
     for (var i = 0; i < lines.length && out.length < maxListings; i++) {
-      final m = _yearMakeModel.firstMatch(lines[i]);
-      if (m != null) {
-        double? price;
-        int? mileage;
-        for (var j = i + 1; j < lines.length && j <= i + 8; j++) {
-          final line = lines[j];
-          if (_yearMakeModel.hasMatch(line) || _yearOnly.hasMatch(line)) break;
-          if (price == null && !_monthly.hasMatch(line)) {
-            final p = _price.firstMatch(line);
-            if (p != null) price = double.parse(p.group(1)!.replaceAll(',', ''));
-          }
-          if (mileage == null) {
-            final mi = _mileage.firstMatch(line);
-            if (mi != null) mileage = parseMiles(mi.group(1)!);
-          }
-          if (price != null && mileage != null) break;
-        }
-        add(int.parse(m.group(1)!), m.group(2)!, m.group(3)!.trim(), price, mileage);
-        continue;
-      }
-      final y = _yearOnly.firstMatch(lines[i]);
-      if (y == null) continue;
-      int? mileage;
-      String? title;
-      double? price;
-      for (var j = i + 1; j < lines.length && j <= i + 12; j++) {
-        final line = lines[j];
-        if (_yearOnly.hasMatch(line)) break;
-        final lower = line.toLowerCase();
-        if (mileage == null) {
-          final mi = _mileage.firstMatch(line);
-          if (mi != null) {
-            mileage = parseMiles(mi.group(1)!);
-            continue;
-          }
-        }
-        if (title == null) {
-          if (line == '|' ||
-              lower.startsWith('stock') ||
-              _labels.any(lower.startsWith) ||
-              _price.hasMatch(line)) {
-            continue;
-          }
-          if (_titleLine.hasMatch(line)) title = line;
-        } else if (price == null && !_monthly.hasMatch(line)) {
-          final p = _price.firstMatch(line);
-          if (p != null) {
-            price = double.parse(p.group(1)!.replaceAll(',', ''));
-            break;
-          }
-        }
-      }
-      if (title != null) {
-        final parts = title.split(RegExp(r'\s+'));
-        add(int.parse(y.group(1)!), parts.first, parts.skip(1).join(' '), price, mileage);
-      }
+      final found = _extractTitleFirst(lines, i) ?? _extractYearFirst(lines, i);
+      if (found == null || found.price == null) continue;
+      final listing = VehicleListing(
+        id: 'v${out.length + 1}',
+        title: found.title,
+        sourceUrl: sourceUrl,
+        readAt: now,
+        price: found.price,
+        mileage: found.mileage,
+        year: found.year,
+        make: found.make,
+        model: found.model,
+      );
+      if (seen.add(listing.dedupeKey)) out.add(listing);
     }
     return out;
   }
+
+  /// Reads a card whose heading at [lines][start] carries the year, make
+  /// and model, with the price and mileage in the lines below it.
+  _Card? _extractTitleFirst(List<String> lines, int start) {
+    final heading = parseTitle(lines[start]);
+    if (heading == null) return null;
+    double? price;
+    int? mileage;
+    for (var j = start + 1; j < lines.length && j <= start + _factsWindow; j++) {
+      final line = lines[j];
+      if (parseTitle(line) != null || _yearOnly.hasMatch(line)) break;
+      price ??= tryParsePrice(line);
+      mileage ??= tryParseMiles(line, requireUnit: true);
+      if (price != null && mileage != null) break;
+    }
+    return (
+      title: heading.title,
+      year: heading.year,
+      make: heading.make,
+      model: heading.model,
+      price: price,
+      mileage: mileage,
+    );
+  }
+
+  /// Reads an EchoPark-style card: a bare year at [lines][start], then the
+  /// mileage, the stock number, a yearless title line and, after the "Price"
+  /// label, the price. The price must follow the title: the mileage and the
+  /// fees above it carry figures of their own.
+  _Card? _extractYearFirst(List<String> lines, int start) {
+    final y = _yearOnly.firstMatch(lines[start]);
+    if (y == null) return null;
+    int? mileage;
+    String? title;
+    double? price;
+    for (var j = start + 1; j < lines.length && j <= start + _cardWindow; j++) {
+      final line = lines[j];
+      if (_yearOnly.hasMatch(line)) break;
+      if (mileage == null) {
+        mileage = tryParseMiles(line, requireUnit: true);
+        if (mileage != null) continue;
+      }
+      if (title == null) {
+        final lower = line.toLowerCase();
+        final chrome =
+            line == '|' ||
+            lower.startsWith('stock') ||
+            _nonTitleLabels.any(lower.startsWith) ||
+            tryParsePrice(line) != null;
+        if (!chrome && _titleLine.hasMatch(line)) title = line;
+      } else {
+        price = tryParsePrice(line);
+        if (price != null) break;
+      }
+    }
+    if (title == null) return null;
+    final year = int.parse(y.group(1)!);
+    final parts = splitMakeModel(title);
+    return (
+      title: '$year $title',
+      year: year,
+      make: parts.make,
+      model: parts.model,
+      price: price,
+      mileage: mileage,
+    );
+  }
 }
 
-/// Finds price, mileage and year facts in free text (a single listing page).
-Map<String, Object?> extractFacts(String text) {
-  final facts = <String, Object?>{};
-  final p = ListingExtractor._price
-      .allMatches(text)
-      .map((m) => double.parse(m.group(1)!.replaceAll(',', '')))
-      .where((v) => v >= 1000 && v <= 500000)
-      .toList();
-  if (p.isNotEmpty) facts['prices'] = p.take(5).toList();
-  final mi = ListingExtractor._mileage.firstMatch(text);
-  if (mi != null) facts['mileage'] = ListingExtractor.parseMiles(mi.group(1)!);
-  final y = RegExp(r'\b(20[0-2]\d|19[89]\d)\b').firstMatch(text);
-  if (y != null) facts['year'] = int.parse(y.group(1)!);
-  return facts;
+/// What one card yielded before it becomes a [VehicleListing].
+typedef _Card = ({String title, int year, String make, String model, double? price, int? mileage});
+
+/// Price, mileage and year facts found in the free text of one listing page
+/// by [extractListingFacts].
+class PageFacts {
+  /// Creates facts; every field is optional because a page may show none.
+  const PageFacts({this.prices = const [], this.mileage, this.year});
+
+  /// Distinct dollar figures in reading order, at most [maxPrices], each
+  /// within [minPrice] and [maxPrice]. The asking price is usually first and
+  /// a crossed-out "was" price follows it.
+  final List<double> prices;
+
+  /// The first odometer figure on the page, in miles.
+  final int? mileage;
+
+  /// The first model year on the page.
+  final int? year;
+
+  /// Prices kept from one page: the first few figures of a listing page are
+  /// the asking price and its history; past that they are fees, payment
+  /// examples and other cars.
+  static const maxPrices = 5;
+
+  /// Figures below this are fees and monthly payments, not a vehicle price.
+  static const minPrice = 1000.0;
+
+  /// Figures above this are not a used-vehicle price on the sites Motormind
+  /// reads; a VIN fragment or a phone number can look like one.
+  static const maxPrice = 500000.0;
+
+  /// True when the page yielded nothing.
+  bool get isEmpty => prices.isEmpty && mileage == null && year == null;
+
+  /// The model/UI hand-off form; absent facts are left out.
+  Map<String, Object?> toJson() => {
+    if (prices.isNotEmpty) 'prices': prices,
+    if (mileage != null) 'mileage': mileage,
+    if (year != null) 'year': year,
+  };
+}
+
+/// A model year on a listing page: "2019", "1998". Not "1950" or "2040".
+final _modelYear = RegExp(r'\b(20[0-3]\d|19[89]\d)\b');
+
+/// Finds price, mileage and year facts in the free [text] of a single
+/// listing page; see [PageFacts] for what is kept.
+PageFacts extractListingFacts(String text) {
+  final prices = <double>{};
+  for (final p in parseAllPrices(text)) {
+    if (p < PageFacts.minPrice || p > PageFacts.maxPrice) continue;
+    prices.add(p);
+    if (prices.length == PageFacts.maxPrices) break;
+  }
+  final year = _modelYear.firstMatch(text);
+  return PageFacts(
+    prices: prices.toList(),
+    mileage: tryParseMiles(text, requireUnit: true),
+    year: year == null ? null : int.parse(year.group(1)!),
+  );
 }

@@ -54,6 +54,11 @@ class VehicleListing {
   /// URL of the listing's own page, when a recipe reads one.
   final String? detailUrl;
 
+  /// What makes two reads of the same card the same listing: the heading,
+  /// the price and the odometer. The id, the URL and the read time differ
+  /// between reads, so they are left out.
+  String get dedupeKey => '$title|$price|$mileage';
+
   /// Full form for the UI and the store; see [toModelJson] for the model's
   /// view.
   Map<String, Object?> toJson() => {

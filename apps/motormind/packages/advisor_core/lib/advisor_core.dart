@@ -1,6 +1,13 @@
-/// The model-agnostic core of Motormind: tool specs, the turn pipeline, the
-/// number guards, policy and disclosures, the buyer profile, the system
-/// prompt builder, the UI component registry and vehicle search and reading.
+/// Motormind's model-agnostic conversation core: tool specs, the turn
+/// pipeline, the number guards, policy and disclosures, the buyer profile,
+/// the system prompt builder, the UI component registry and vehicle search
+/// and reading.
+///
+/// Two conventions hold throughout. `toJson` is the hand-off form for the
+/// model and the UI, not a storage format: only `ReadingRecipe`, `FieldRule`,
+/// `SelfCheckRules` and `SelfCheck` round-trip through their `fromJson`,
+/// because recipes and captures are kept on disk. And nothing under `src/`
+/// imports Flutter, so every type here runs in a plain `dart test`.
 library;
 
 export 'src/guard/input_guard.dart';

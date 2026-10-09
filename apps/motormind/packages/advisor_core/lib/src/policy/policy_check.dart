@@ -1,10 +1,34 @@
-enum PolicyCategory { urgency, guarantee, pressure, advice, compensation }
+/// Kinds of sales language the [PolicyCheck] looks for.
+enum PolicyCategory {
+  /// Pressure to act quickly ("act now", "today only").
+  urgency,
 
+  /// Promised outcomes ("guaranteed approval", "no risk").
+  guarantee,
+
+  /// Telling the person what to do ("you need to buy", "best deal").
+  pressure,
+
+  /// A recommendation to buy, lease or finance, which the app never gives.
+  advice,
+
+  /// Wording that implies a partner, referral or commission relationship.
+  compensation,
+}
+
+/// One match of a policy rule in a reply.
 class PolicyFlag {
+  /// Creates a flag for [category] with the matched [excerpt] and the
+  /// [pattern] that matched it.
   const PolicyFlag({required this.category, required this.excerpt, required this.pattern});
 
+  /// Which kind of sales language matched.
   final PolicyCategory category;
+
+  /// The matched text with up to 20 characters of context on each side.
   final String excerpt;
+
+  /// Source of the regular expression that matched, for diagnostics.
   final String pattern;
 
   @override
@@ -15,6 +39,7 @@ class PolicyFlag {
 /// surfaced as a banner, not used to block the reply; the system prompt and
 /// the disclosures carry the policy, this is the smoke detector.
 class PolicyCheck {
+  /// Creates a check with the built-in rules.
   const PolicyCheck();
 
   static final List<(PolicyCategory, RegExp)> _rules = [
@@ -55,6 +80,8 @@ class PolicyCheck {
     ),
   ];
 
+  /// Returns every rule match in [narration], grouped by category in rule
+  /// order; empty when the text is clean.
   List<PolicyFlag> check(String narration) {
     final flags = <PolicyFlag>[];
     for (final (category, rule) in _rules) {

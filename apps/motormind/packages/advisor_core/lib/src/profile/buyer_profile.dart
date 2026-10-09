@@ -1,9 +1,19 @@
 import 'package:vehicle_finance/vehicle_finance.dart';
 
-enum ItemKind { need, want, unlabeled }
+/// How the person labeled something they are looking for.
+enum ItemKind {
+  /// A requirement; the person said they need it.
+  need,
 
-/// How the user is shopping right now. Not a tone setting: the advisor infers
-/// it from what the user says and updates it when intent shifts ("just
+  /// A preference; the person said they want it.
+  want,
+
+  /// Mentioned, but the person has not said which.
+  unlabeled,
+}
+
+/// How the person is shopping right now. Not a tone setting: the model infers
+/// it from what the person says and updates it when intent shifts ("just
 /// looking" → "ok, maybe I do want this"). Tone follows mode.
 enum ShoppingMode {
   /// Just looking; no commitment, light touch.
@@ -19,20 +29,29 @@ enum ShoppingMode {
   buying,
 }
 
-/// Something the user said they are looking for. The user labels it; the
-/// advisor only proposes a label and asks.
+/// Something the person said they are looking for. The person labels it; the
+/// model only proposes a label and asks.
 class ProfileItem {
+  /// Creates an item; [kind] defaults to unlabeled and [source] to the person.
   const ProfileItem({required this.label, this.kind = ItemKind.unlabeled, this.source = 'user'});
 
+  /// The item in the person's words ("third row", "good mileage").
   final String label;
+
+  /// Whether the person called it a need, a want, or neither.
   final ItemKind kind;
+
+  /// Who added the item: `user` unless a tool argument says otherwise.
   final String source;
 
+  /// Returns a copy with [kind] replaced.
   ProfileItem copyWith({ItemKind? kind}) =>
       ProfileItem(label: label, kind: kind ?? this.kind, source: source);
 
+  /// Serializes for on-device storage; see [ProfileItem.fromJson].
   Map<String, Object?> toJson() => {'label': label, 'kind': kind.name, 'source': source};
 
+  /// Restores an item written by [toJson]; missing fields take their defaults.
   factory ProfileItem.fromJson(Map<String, Object?> json) => ProfileItem(
     label: json['label'] as String,
     kind: ItemKind.values.byName(json['kind'] as String? ?? 'unlabeled'),
@@ -40,9 +59,10 @@ class ProfileItem {
   );
 }
 
-/// What the advisor knows about the buyer. Everything is optional; the
-/// advisor asks for what it needs when it needs it.
+/// What Motormind knows about the buyer. Everything is optional; the model
+/// asks for what it needs when it needs it.
 class BuyerProfile {
+  /// Creates a profile; every field starts unknown.
   const BuyerProfile({
     this.items = const [],
     this.paymentCeiling,
@@ -56,25 +76,52 @@ class BuyerProfile {
     this.preferNew,
   });
 
+  /// Everything the person said they are looking for, labeled or not.
   final List<ProfileItem> items;
+
+  /// The most the person will pay per month, in dollars.
   final double? paymentCeiling;
+
+  /// Cash the person will put down, in dollars.
   final double? downPayment;
+
+  /// The person's credit band, stated directly or derived from a score.
   final CreditBand? creditBand;
+
+  /// Gross monthly income in dollars, used only by affordability checks.
   final double? monthlyGrossIncome;
+
+  /// Existing monthly debt payments in dollars.
   final double? monthlyDebtPayments;
+
+  /// Estimated value of the current vehicle, in dollars.
   final double? tradeValue;
+
+  /// Remaining loan balance on the current vehicle, in dollars.
   final double? tradePayoff;
+
+  /// How the person is shopping; null until the model infers it.
   final ShoppingMode? mode;
+
+  /// Whether the person prefers a new vehicle; null when unstated.
   final bool? preferNew;
 
+  /// Items the person labeled as needs.
   List<ProfileItem> get needs => items.where((i) => i.kind == ItemKind.need).toList();
+
+  /// Items the person labeled as wants.
   List<ProfileItem> get wants => items.where((i) => i.kind == ItemKind.want).toList();
+
+  /// Items the person mentioned without labeling.
   List<ProfileItem> get unlabeled => items.where((i) => i.kind == ItemKind.unlabeled).toList();
 
+  /// True when anything is known about a trade-in.
   bool get hasTrade => tradeValue != null || tradePayoff != null;
 
   /// Applies the arguments of an `update_profile` tool call. Items with the
-  /// same label are replaced, so the user can relabel a want as a need.
+  /// same label are replaced, so the person can relabel a want as a need.
+  /// A `credit_score` argument overrides `credit_band`; unknown enum values
+  /// leave the current value in place.
   BuyerProfile applyUpdate(Map<String, Object?> args) {
     final newItems = <ProfileItem>[...items];
     final rawItems = args['items'];
@@ -156,6 +203,7 @@ class BuyerProfile {
     return parts.isEmpty ? 'nothing known yet' : parts.join('; ');
   }
 
+  /// Serializes for on-device storage; see [BuyerProfile.fromJson].
   Map<String, Object?> toJson() => {
     'items': [for (final i in items) i.toJson()],
     'paymentCeiling': paymentCeiling,
@@ -169,6 +217,7 @@ class BuyerProfile {
     'preferNew': preferNew,
   };
 
+  /// Restores a profile written by [toJson].
   factory BuyerProfile.fromJson(Map<String, Object?> json) => BuyerProfile(
     items: [
       for (final i in (json['items'] as List? ?? const []))

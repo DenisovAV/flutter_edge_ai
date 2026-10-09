@@ -13,8 +13,10 @@ import 'listing.dart';
 /// site may later add a recipe that does better; this is the floor every page
 /// gets.
 class ListingExtractor {
+  /// Creates an extractor that stops after [maxListings] listings.
   const ListingExtractor({this.maxListings = 25});
 
+  /// Upper bound on listings returned from one page.
   final int maxListings;
 
   static final _yearMakeModel = RegExp(
@@ -43,12 +45,17 @@ class ListingExtractor {
     'filters',
   };
 
+  /// Parses an odometer figure such as `35,000` or `35K` into miles; throws
+  /// [FormatException] for anything else.
   static int parseMiles(String raw) {
     final v = raw.toLowerCase();
     if (v.endsWith('k')) return (double.parse(v.substring(0, v.length - 1)) * 1000).round();
     return int.parse(v.replaceAll(',', ''));
   }
 
+  /// Reads listings from the visible [text] of the page at [sourceUrl];
+  /// [now] is recorded as each listing's read time. Listings without a
+  /// price are skipped.
   List<VehicleListing> extract(String text, {required String sourceUrl, required DateTime now}) {
     final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
     final out = <VehicleListing>[];

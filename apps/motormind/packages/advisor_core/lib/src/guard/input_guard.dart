@@ -1,13 +1,16 @@
 import 'narration_guard.dart';
 
-/// Where a tool argument's number came from, or that it came from nowhere.
+/// The outcome of an [InputProvenanceGuard.check]: which numeric tool
+/// arguments could not be traced to anything the person supplied.
 class InputProvenanceReport {
+  /// Creates a report listing the [unsupported] argument names.
   const InputProvenanceReport({required this.unsupported});
 
   /// Argument names whose numeric values match nothing the person said,
   /// nothing in the profile, and no earlier tool output.
   final List<String> unsupported;
 
+  /// True when every checked argument traced to a known source.
   bool get passed => unsupported.isEmpty;
 }
 
@@ -15,13 +18,15 @@ class InputProvenanceReport {
 ///
 /// The narration guard checks numbers the model *writes*. This checks numbers
 /// the model *passes to tools*: a model that invents an income to run an
-/// affordability check, or a price the user never mentioned, produces a
+/// affordability check, or a price the person never mentioned, produces a
 /// correct-looking card from a fabricated input. Numeric arguments to finance
-/// tools must trace to the user's own words, the profile, or an earlier tool
+/// tools must trace to the person's own words, the profile, or an earlier tool
 /// result. Non-numeric and enum arguments are not checked. Arguments listed in
 /// [derivedAllowed] (defaults the model may legitimately choose, such as a
 /// term or a tax rate of zero) are exempt.
 class InputProvenanceGuard {
+  /// Creates a guard; the defaults exempt the arguments a model may fill in
+  /// on its own and reuse the [NarrationGuard] number parser.
   const InputProvenanceGuard({
     this.derivedAllowed = const {
       'term_months',
@@ -35,9 +40,21 @@ class InputProvenanceGuard {
     this.extractor = const NarrationGuard(),
   });
 
+  /// Argument names that are never checked because the model may choose them
+  /// without the person having supplied a figure.
   final Set<String> derivedAllowed;
+
+  /// Supplies number parsing ([NarrationGuard.extract]) and source collection
+  /// ([NarrationGuard.allowedValues]); its matching tolerances are not used.
   final NarrationGuard extractor;
 
+  /// Checks the numeric values in [args] against every number reachable in
+  /// [sources] (user inputs, the profile as JSON, earlier tool results).
+  ///
+  /// A string argument counts as numeric only when it is a single number such
+  /// as `"22k"`. Zero is accepted without a source because "none" is a
+  /// statement, not a figure. Matching tolerates whole-dollar rounding, a 2%
+  /// relative difference, and a thousands scaling (`22k` against `22000`).
   InputProvenanceReport check({
     required Map<String, Object?> args,
     required Iterable<Object?> sources,

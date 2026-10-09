@@ -6,16 +6,26 @@ import 'money.dart';
 /// Negative equity is reported plainly; it is the single most important
 /// number for a buyer who still owes on their current vehicle.
 class TradeEquity extends CalcResult {
+  /// Creates the result from the two user-supplied figures; [tradeEquity]
+  /// validates them first and is the usual way to get one.
   TradeEquity({
     required this.estimatedValue,
     required this.payoff,
     required super.assumptions,
   }) : super(inputs: {'estimatedValue': estimatedValue, 'payoff': payoff});
 
+  /// What the current vehicle is expected to fetch in trade, in dollars.
   final double estimatedValue;
+
+  /// Remaining loan balance on the current vehicle, in dollars; zero when it is
+  /// owned outright.
   final double payoff;
 
+  /// [estimatedValue] minus [payoff], in dollars; negative when the vehicle is
+  /// underwater.
   double get equity => roundCents(estimatedValue - payoff);
+
+  /// True when more is owed on the vehicle than it is worth.
   bool get isNegative => equity < 0;
 
   /// Negative equity as a positive amount, zero when equity is positive.
@@ -29,6 +39,10 @@ class TradeEquity extends CalcResult {
       };
 }
 
+/// Computes trade-in equity from an estimated value and a loan payoff, both in
+/// dollars; [valueAssumption] records where the value estimate came from.
+///
+/// Throws an [ArgumentError] when either figure is negative.
 TradeEquity tradeEquity({
   required double estimatedValue,
   required double payoff,

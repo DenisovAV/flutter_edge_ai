@@ -1,21 +1,36 @@
-/// A number the model wrote, with where it appeared.
+/// A number found in text, with its original spelling and position.
 class NumberMention {
+  /// Creates a mention of [raw], parsed as [value], found at [offset].
   const NumberMention({required this.raw, required this.value, required this.offset});
 
+  /// The text as written, including any `$`, thousands separators, `%` or
+  /// `k` suffix.
   final String raw;
+
+  /// The parsed value. A percentage is stored as a fraction (`7%` is 0.07)
+  /// and a `k` suffix is expanded (`22k` is 22000).
   final double value;
+
+  /// Zero-based character offset of [raw] in the text it came from.
   final int offset;
 
   @override
   String toString() => '$raw@$offset';
 }
 
+/// The outcome of a [NarrationGuard.check]: every number in the reply and the
+/// subset that matched no tool result or user input.
 class GuardReport {
+  /// Creates a report from all [mentions] and the [unmatched] subset.
   const GuardReport({required this.mentions, required this.unmatched});
 
+  /// Every number found in the narration, in document order.
   final List<NumberMention> mentions;
+
+  /// The mentions that matched nothing in the sources; empty when [passed].
   final List<NumberMention> unmatched;
 
+  /// True when every number in the narration traced to a source.
   bool get passed => unmatched.isEmpty;
 }
 
@@ -27,6 +42,8 @@ class GuardReport {
 /// difference for spoken rounding ("about $480" for 483.32). Years and small
 /// counts are allowed through because they are not financial claims.
 class NarrationGuard {
+  /// Creates a guard; the defaults allow 2% spoken rounding, counts up to 12
+  /// and model years from 1980 to 2040 without a source.
   const NarrationGuard({
     this.relativeTolerance = 0.02,
     this.allowSmallIntegersUpTo = 12,
@@ -34,9 +51,18 @@ class NarrationGuard {
     this.allowYearsTo = 2040,
   });
 
+  /// Largest relative difference, as a fraction of the source value, between
+  /// a written number and a source value that still counts as a match.
   final double relativeTolerance;
+
+  /// Whole numbers from zero up to this value pass without a source, since
+  /// counts such as "3 options" are not financial claims.
   final int allowSmallIntegersUpTo;
+
+  /// First whole number treated as a model year and passed without a source.
   final int allowYearsFrom;
+
+  /// Last whole number treated as a model year and passed without a source.
   final int allowYearsTo;
 
   static final RegExp _numberPattern = RegExp(
@@ -103,6 +129,8 @@ class NarrationGuard {
     return false;
   }
 
+  /// Checks every number in [narration] against the values reachable in
+  /// [sources]; see [allowedValues] for what counts as a source.
   GuardReport check({required String narration, required Iterable<Object?> sources}) {
     final allowed = allowedValues(sources);
     final mentions = extract(narration);

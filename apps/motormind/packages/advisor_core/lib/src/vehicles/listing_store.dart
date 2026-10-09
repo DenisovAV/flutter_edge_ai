@@ -7,9 +7,14 @@ import 'search_query.dart';
 class ListingStore {
   final List<VehicleListing> _all = [];
 
+  /// Every listing read so far, in read order; unmodifiable.
   List<VehicleListing> get all => List.unmodifiable(_all);
+
+  /// True when nothing has been read yet.
   bool get isEmpty => _all.isEmpty;
 
+  /// Adds [listings], skipping any whose title, price and mileage all match
+  /// one already stored.
   void addAll(Iterable<VehicleListing> listings) {
     for (final l in listings) {
       final dup = _all.any(
@@ -21,10 +26,12 @@ class ListingStore {
     }
   }
 
+  /// Forgets every listing.
   void clear() => _all.clear();
 
-  /// Search with the live query; listings carry no body style yet, so that
-  /// filter is applied by the site, not here.
+  /// Searches with the live query, cheapest first, at most [limit] results.
+  /// Listings carry no body style yet, so that filter is applied by the
+  /// site, not here; unpriced listings never match a price bound.
   List<VehicleListing> searchQuery(SearchQuery q, {int limit = 8}) {
     final results = _all.where((l) {
       if (q.maxPrice != null && (l.price == null || l.price! > q.maxPrice!)) return false;
@@ -39,6 +46,9 @@ class ListingStore {
     return results.take(limit).toList();
   }
 
+  /// Searches with the loose `find_vehicles` arguments, cheapest first, at
+  /// most [limit] results. [maxPrice] is in dollars, [maxMileage] in miles;
+  /// any word of [keywords] may match the title.
   List<VehicleListing> search({
     double? maxPrice,
     String? bodyStyle,

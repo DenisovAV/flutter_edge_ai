@@ -4,14 +4,21 @@ import 'money.dart';
 
 /// A labeled alternative to a deal, changing one input.
 class WhatIfVariant {
+  /// Creates a variant from its label, the one changed input and the full
+  /// estimate with that change applied.
   const WhatIfVariant({required this.label, required this.changed, required this.estimate});
 
+  /// Short user-facing name for the change, e.g. `48-month term`.
   final String label;
 
   /// The input that changed and its new value, for the UI and the guard.
   final Map<String, Object?> changed;
+
+  /// The complete [DealEstimate] with the one change applied.
   final DealEstimate estimate;
 
+  /// Serializes the variant with its estimate nested in full, so every number
+  /// in it can be verified.
   Map<String, Object?> toJson() => {
         'label': label,
         'changed': changed,
@@ -21,6 +28,10 @@ class WhatIfVariant {
 
 /// Three one-variable alternatives: a shorter term, more money down, a lower
 /// price. Each is a real [DealEstimate], so its numbers are verifiable.
+///
+/// [termStep] is in months, [extraDown] in dollars and [priceCut] a fraction
+/// of the price. The shorter-term variant is omitted when it would drop the
+/// term below 12 months, so the list has two or three entries.
 List<WhatIfVariant> whatIfVariants(
   DealInputs base, {
   required Assumption aprAssumption,

@@ -3,9 +3,12 @@ import 'dart:math' as math;
 import 'assumption.dart';
 import 'money.dart';
 
-/// Standard amortized monthly payment.
+/// Standard amortized monthly payment, rounded to the cent.
 ///
-/// [apr] is a decimal: `0.065` for 6.5%. A zero APR is a straight division.
+/// Uses the level-payment amortization formula `P·r·(1+r)^n / ((1+r)^n − 1)`
+/// with `r` the nominal [apr] divided by 12 and `n` the term in months, which
+/// assumes monthly compounding and no fees in the rate. [apr] is a fraction:
+/// `0.065` for 6.5%. A zero APR is a straight division.
 double monthlyPayment({
   required double principal,
   required double apr,
@@ -38,6 +41,7 @@ double maxPrincipal({
 
 /// One period of an amortization schedule.
 class AmortizationRow {
+  /// Creates a row; every money value is in dollars, already rounded to the cent.
   const AmortizationRow({
     required this.period,
     required this.payment,
@@ -46,12 +50,23 @@ class AmortizationRow {
     required this.balance,
   });
 
+  /// One-based month number within the term.
   final int period;
+
+  /// Total paid this period, in dollars; the final row may differ from the
+  /// regular payment because it absorbs rounding.
   final double payment;
+
+  /// Share of [payment] that is interest on the opening balance, in dollars.
   final double interest;
+
+  /// Share of [payment] that reduces the balance, in dollars.
   final double principal;
+
+  /// Balance remaining after this payment, in dollars; zero on the final row.
   final double balance;
 
+  /// Serializes the row for tool results and logs.
   Map<String, Object?> toJson() => {
         'period': period,
         'payment': payment,
@@ -95,7 +110,12 @@ List<AmortizationRow> amortizationSchedule({
 }
 
 /// Payment, total of payments and finance charge for a loan.
+///
+/// The inputs carry [principal], [apr] and [termMonths]; the outputs report
+/// the money figures and the schedule length rather than every row.
 class LoanSummary extends CalcResult {
+  /// Creates a summary from already-computed figures; [summarizeLoan] is the
+  /// usual way to get one.
   LoanSummary({
     required this.principal,
     required this.apr,
@@ -111,12 +131,26 @@ class LoanSummary extends CalcResult {
           'termMonths': termMonths,
         });
 
+  /// Amount borrowed, in dollars.
   final double principal;
+
+  /// Nominal APR as a fraction (0.065 for 6.5%), compounded monthly.
   final double apr;
+
+  /// Length of the loan in months.
   final int termMonths;
+
+  /// Regular monthly payment in dollars, from the amortization formula.
   final double monthlyPayment;
+
+  /// Sum of every scheduled payment in dollars, including the adjusted final one.
   final double totalOfPayments;
+
+  /// Interest paid over the life of the loan: [totalOfPayments] minus
+  /// [principal], in dollars.
   final double financeCharge;
+
+  /// Month-by-month breakdown, one row per payment.
   final List<AmortizationRow> schedule;
 
   @override
@@ -128,7 +162,11 @@ class LoanSummary extends CalcResult {
       };
 }
 
-/// Summarize a loan. [aprAssumption] documents where the APR came from.
+/// Builds a [LoanSummary] for [principal] at [apr] over [termMonths].
+///
+/// The total of payments is summed from the schedule rather than multiplied
+/// from the payment, so it matches the rows to the cent. [aprAssumption]
+/// documents where the APR came from.
 LoanSummary summarizeLoan({
   required double principal,
   required double apr,

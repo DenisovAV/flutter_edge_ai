@@ -1,4 +1,6 @@
-/// Model-agnostic advisor logic for Motormind AI.
+/// The model-agnostic core of Motormind: tool specs, the turn pipeline, the
+/// number guards, policy and disclosures, the buyer profile, the system
+/// prompt builder, the UI component registry and vehicle search and reading.
 library;
 
 export 'src/guard/input_guard.dart';

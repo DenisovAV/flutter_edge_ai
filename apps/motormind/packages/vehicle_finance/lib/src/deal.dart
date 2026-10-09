@@ -4,7 +4,11 @@ import 'money.dart';
 import 'trade.dart';
 
 /// Everything needed to estimate a financed purchase.
+///
+/// Money fields are in dollars and rates are fractions. The defaults describe
+/// the simplest deal: no tax, no fees, nothing down and no trade-in.
 class DealInputs {
+  /// Creates the inputs; only [price], [apr] and [termMonths] are required.
   const DealInputs({
     required this.price,
     required this.apr,
@@ -17,10 +21,13 @@ class DealInputs {
     this.taxCreditForTrade = false,
   });
 
+  /// Agreed vehicle price before tax and fees, in dollars.
   final double price;
 
   /// Decimal APR, `0.065` for 6.5%.
   final double apr;
+
+  /// Length of the loan in months.
   final int termMonths;
 
   /// Decimal sales tax rate, `0.07` for 7%.
@@ -28,7 +35,11 @@ class DealInputs {
 
   /// Doc, title, registration and dealer fees, summed.
   final double fees;
+
+  /// Cash paid at signing toward the purchase, in dollars.
   final double downPayment;
+
+  /// Equity position of the current vehicle, or null when nothing is traded in.
   final TradeEquity? trade;
 
   /// When the trade is underwater, finance the shortfall (true) or pay it in
@@ -39,6 +50,8 @@ class DealInputs {
   /// by default; the app sets it from the state table when known.
   final bool taxCreditForTrade;
 
+  /// Serializes the inputs as flat JSON; the trade is reduced to its value and
+  /// payoff so the result's inputs stay one level deep.
   Map<String, Object?> toJson() => {
         'price': price,
         'apr': apr,
@@ -52,6 +65,9 @@ class DealInputs {
         'taxCreditForTrade': taxCreditForTrade,
       };
 
+  /// Returns a copy with the given fields replaced, which is how one-variable
+  /// alternatives to a deal are built. Passing null for [trade] keeps the
+  /// existing trade rather than clearing it.
   DealInputs copyWith({
     double? price,
     double? apr,
@@ -78,7 +94,11 @@ class DealInputs {
 
 /// A complete purchase estimate in the consumer layout: what you pay at
 /// signing, what you finance, what it costs per month, what it costs in total.
+///
+/// Every field is in dollars, rounded to the cent.
 class DealEstimate extends CalcResult {
+  /// Creates an estimate from already-computed figures; [estimateDeal] is the
+  /// usual way to get one. The [deal] inputs are serialized into [inputs].
   DealEstimate({
     required DealInputs deal,
     required this.salesTax,
@@ -93,6 +113,8 @@ class DealEstimate extends CalcResult {
     required super.assumptions,
   }) : super(inputs: deal.toJson());
 
+  /// Sales tax on the full price, or on price minus trade value when
+  /// [DealInputs.taxCreditForTrade] is set.
   final double salesTax;
 
   /// Positive equity credited toward the purchase (zero if none).
@@ -103,9 +125,19 @@ class DealEstimate extends CalcResult {
 
   /// Down payment plus any negative equity paid in cash.
   final double cashDueAtSigning;
+
+  /// Loan principal: price, tax and fees, less down payment and positive
+  /// equity, plus any financed negative equity. Never negative.
   final double amountFinanced;
+
+  /// Regular monthly payment on [amountFinanced], from the amortization formula.
   final double monthlyPayment;
+
+  /// Sum of every scheduled payment over the term.
   final double totalOfPayments;
+
+  /// Interest paid over the life of the loan: [totalOfPayments] minus
+  /// [amountFinanced].
   final double financeCharge;
 
   /// Cash at signing plus total of payments.
@@ -125,6 +157,16 @@ class DealEstimate extends CalcResult {
       };
 }
 
+/// Estimates a financed purchase from [deal], applying tax, fees, down payment
+/// and trade equity before amortizing the remainder over the term.
+///
+/// When cash and equity exceed what the deal needs, nothing is financed and
+/// the surplus down payment is simply not collected. The result carries
+/// [aprAssumption], the tax and fee inputs as non-illustrative assumptions,
+/// and any assumptions attached to the trade.
+///
+/// Throws an [ArgumentError] for a negative price or down payment; the loan
+/// arguments are validated by [monthlyPayment].
 DealEstimate estimateDeal(DealInputs deal, {required Assumption aprAssumption}) {
   if (deal.price < 0) throw ArgumentError.value(deal.price, 'price', 'must not be negative');
   if (deal.downPayment < 0) {

@@ -3,13 +3,21 @@ sealed class DriverChunk {
   const DriverChunk();
 }
 
+/// A piece of the reply text meant for the person.
 class DriverText extends DriverChunk {
+  /// Creates a text chunk carrying [token].
   const DriverText(this.token);
+
+  /// The text produced since the previous chunk; may be a partial word.
   final String token;
 }
 
+/// A piece of the model's reasoning, kept apart from the reply.
 class DriverThinking extends DriverChunk {
+  /// Creates a thinking chunk carrying [content].
   const DriverThinking(this.content);
+
+  /// The reasoning text produced since the previous chunk.
   final String content;
 }
 
@@ -35,5 +43,6 @@ abstract class ChatDriver {
   /// ends (possibly with the text produced so far). Best effort.
   Future<void> cancel();
 
+  /// Releases the underlying chat session; the driver is unusable afterwards.
   Future<void> close();
 }

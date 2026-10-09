@@ -1,5 +1,14 @@
-/// Where the advisor surface is.
-enum SurfaceState { collapsed, docked, fullscreen }
+/// Where Motormind's surface sits on screen.
+enum SurfaceState {
+  /// Hidden; nothing but the conversation is shown.
+  collapsed,
+
+  /// Sharing the screen with the conversation.
+  docked,
+
+  /// Covering the conversation.
+  fullscreen,
+}
 
 /// A component the model may ask the app to render. The registry is the
 /// whole vocabulary: anything not listed cannot be requested, which is what
@@ -13,6 +22,7 @@ enum SurfaceState { collapsed, docked, fullscreen }
 ///   component also renders an implicit "something else" escape that opens free
 ///   text, so the user is never trapped in the model's options.
 class UiComponent {
+  /// Creates a component; see the class comment for the two kinds.
   const UiComponent({
     required this.id,
     required this.description,
@@ -22,17 +32,24 @@ class UiComponent {
     this.appOwned = false,
   });
 
+  /// Registry id the model uses in `present(component)`.
   final String id;
+
+  /// What the component shows, in the words the prompt uses.
   final String description;
 
   /// Tool names whose results this component can render. Empty for
   /// interaction components.
   final Set<String> acceptsTools;
+
+  /// Where the component opens when the model does not say.
   final SurfaceState defaultSurface;
 
   /// Returns problems with `props`, or an empty list.
   final List<String> Function(Map<String, Object?> props)? validateProps;
 
+  /// True for interaction components, which render from props rather than
+  /// from a tool result.
   bool get isInteraction => acceptsTools.isEmpty;
 
   /// True for components the app shows on its own (bound to app state). They
@@ -87,58 +104,81 @@ List<String> _validateFields(Map<String, Object?> props) {
   return errors;
 }
 
+/// Every component the model, or the app on its own, may show; see
+/// [UiComponent] for the two kinds.
 abstract final class ComponentRegistry {
   // --- result components --------------------------------------------------
+  /// Payment, amount financed and cash at signing from `estimate_payment`.
   static const paymentSummary = UiComponent(
     id: 'payment_summary',
     description: 'Payment, amount financed, cash at signing.',
     acceptsTools: {'estimate_payment'},
   );
+
+  /// Full purchase breakdown from `estimate_payment`.
   static const paymentBreakdown = UiComponent(
     id: 'payment_breakdown',
     description: 'Full purchase breakdown.',
     acceptsTools: {'estimate_payment'},
     defaultSurface: SurfaceState.fullscreen,
   );
+
+  /// Principal against interest over the term, from `estimate_payment`.
   static const amortizationChart = UiComponent(
     id: 'amortization_chart',
     description: 'Principal vs interest over time.',
     acceptsTools: {'estimate_payment'},
     defaultSurface: SurfaceState.fullscreen,
   );
+
+  /// Ratios and warnings from `assess_affordability` or
+  /// `max_affordable_price`.
   static const affordabilityGauge = UiComponent(
     id: 'affordability_gauge',
     description: 'Affordability ratios and warnings.',
     acceptsTools: {'assess_affordability', 'max_affordable_price'},
   );
+
+  /// Value, payoff and equity from `trade_equity`.
   static const tradeEquityCard = UiComponent(
     id: 'trade_equity_card',
     description: 'Trade value, payoff, equity.',
     acceptsTools: {'trade_equity'},
   );
+
+  /// Lease and purchase side by side, from `estimate_lease` or
+  /// `estimate_payment`.
   static const leaseVsBuy = UiComponent(
     id: 'lease_vs_buy',
     description: 'Lease vs buy side by side.',
     acceptsTools: {'estimate_lease', 'estimate_payment'},
     defaultSurface: SurfaceState.fullscreen,
   );
+
+  /// Cost of ownership by category from `ownership_cost`.
   static const ownershipCost = UiComponent(
     id: 'ownership_cost',
     description: 'Cost of ownership by category.',
     acceptsTools: {'ownership_cost'},
     defaultSurface: SurfaceState.fullscreen,
   );
+
+  /// One listing from `find_vehicles` or `read_page`.
   static const vehicleCard = UiComponent(
     id: 'vehicle_card',
     description: 'One listing.',
     acceptsTools: {'find_vehicles', 'read_page'},
   );
+
+  /// Two or three listings compared, from `find_vehicles`.
   static const vehicleCompare = UiComponent(
     id: 'vehicle_compare',
     description: '2–3 listings compared.',
     acceptsTools: {'find_vehicles'},
     defaultSurface: SurfaceState.fullscreen,
   );
+
+  /// Facts read from a web page by `read_page`.
   static const pageExtract = UiComponent(
     id: 'page_extract',
     description: 'Facts read from a web page.',
@@ -146,6 +186,7 @@ abstract final class ComponentRegistry {
   );
 
   // --- interaction components ---------------------------------------------
+  /// A question with two to six tappable answers, one of which applies.
   static final choice = UiComponent(
     id: 'choice',
     description:
@@ -153,6 +194,8 @@ abstract final class ComponentRegistry {
     acceptsTools: const {},
     validateProps: (p) => _validateOptions(p, min: 2, max: 6),
   );
+
+  /// A question with two to eight answers, several of which may apply.
   static final multiChoice = UiComponent(
     id: 'multi_choice',
     description: 'Question with 2–8 answers where several may apply.',
@@ -169,6 +212,9 @@ abstract final class ComponentRegistry {
     validateProps: (_) => const [],
     appOwned: true,
   );
+
+  /// A form of one to six fields for collecting numbers before a finance
+  /// tool runs.
   static final inputForm = UiComponent(
     id: 'input_form',
     description: 'Short form (1–6 fields) to collect numbers before a finance tool.',
@@ -176,6 +222,7 @@ abstract final class ComponentRegistry {
     validateProps: _validateFields,
   );
 
+  /// Every component, result components first and app-owned ones last.
   static final List<UiComponent> all = [
     paymentSummary,
     paymentBreakdown,
@@ -193,6 +240,7 @@ abstract final class ComponentRegistry {
     searchFilters,
   ];
 
+  /// Looks up a component by registry id, or null when there is none.
   static UiComponent? byId(String id) => all.where((c) => c.id == id).firstOrNull;
 
   /// What the model may present.
@@ -212,12 +260,13 @@ abstract final class ComponentRegistry {
     _ => null,
   };
 
-  /// The list handed to the model in the system prompt.
+  /// One line per component in [all], for a prompt that lists the registry.
   static String describeForPrompt() => all.map((c) => '- ${c.id}: ${c.description}').join('\n');
 }
 
 /// A validated `present` tool call.
 class PresentRequest {
+  /// Creates a request directly; [validate] builds one from model arguments.
   const PresentRequest({
     required this.component,
     required this.surface,
@@ -227,11 +276,16 @@ class PresentRequest {
     this.props = const {},
   });
 
+  /// The component to show.
   final UiComponent component;
+
+  /// Where to show it; never [SurfaceState.collapsed].
   final SurfaceState surface;
 
   /// The tool result to render; null for interaction components.
   final String? resultId;
+
+  /// Optional title the model supplied for the card.
   final String? title;
 
   /// Field names in the result the conversation is about, for emphasis.

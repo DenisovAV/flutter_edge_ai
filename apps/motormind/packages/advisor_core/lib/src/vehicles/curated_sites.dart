@@ -1,10 +1,11 @@
 import 'search_query.dart';
 
 /// Sites the project tests page reading against (Q10, Q31). Each knows how
-/// to build a search URL from the advisor's query, so `find_vehicles` can open
-/// a results page when nothing has been read yet. User-initiated, one page at
-/// a time; nothing is fetched in bulk.
+/// to build a search URL from the live [SearchQuery], so `find_vehicles` can
+/// open a results page when nothing has been read yet. User-initiated, one
+/// page at a time; nothing is fetched in bulk.
 class CuratedSite {
+  /// Creates a site; [search] builds its results URL.
   const CuratedSite({
     required this.id,
     required this.name,
@@ -12,12 +13,17 @@ class CuratedSite {
     required this.search,
   });
 
+  /// Stable identifier; a `ReadingRecipe.siteId` refers to it.
   final String id;
+
+  /// Person-facing name, as shown in the site picker.
   final String name;
+
+  /// The site's front page.
   final String home;
 
-  /// Builds a results URL. [maxPrice] in dollars; [bodyStyle] one of
-  /// car/suv/pickup/van; [keywords] free text.
+  /// Builds a results URL. `maxPrice` in dollars; `bodyStyle` one of the
+  /// `SearchQuery.bodyStyles` values; `keywords` free text.
   final String Function({double? maxPrice, String? bodyStyle, String? keywords}) search;
 
   /// Results URL for a live [SearchQuery]. Make/model ride in the keyword
@@ -39,7 +45,9 @@ class CuratedSite {
 
 String _q(String s) => Uri.encodeQueryComponent(s);
 
+/// The sites Motormind reads, with their search URL builders.
 abstract final class CuratedSites {
+  /// EchoPark used-car inventory.
   static final echopark = CuratedSite(
     id: 'echopark',
     name: 'EchoPark',
@@ -54,6 +62,7 @@ abstract final class CuratedSites {
     },
   );
 
+  /// Cars.com shopping results.
   static final carsDotCom = CuratedSite(
     id: 'cars',
     name: 'Cars.com',
@@ -69,6 +78,7 @@ abstract final class CuratedSites {
     },
   );
 
+  /// Autotrader listings.
   static final autotrader = CuratedSite(
     id: 'autotrader',
     name: 'Autotrader',
@@ -83,8 +93,13 @@ abstract final class CuratedSites {
     },
   );
 
+  /// Every curated site, in picker order.
   static final List<CuratedSite> all = [echopark, carsDotCom, autotrader];
+
+  /// The site the app opens when the person has not picked one.
   static CuratedSite get defaultSite => echopark;
+
+  /// Looks up a site by [CuratedSite.id], or null when there is none.
   static CuratedSite? byId(String id) => all.where((s) => s.id == id).firstOrNull;
 
   static String _body(String b) => switch (b.toLowerCase()) {

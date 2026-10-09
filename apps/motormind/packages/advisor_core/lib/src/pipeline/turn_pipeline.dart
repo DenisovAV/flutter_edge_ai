@@ -14,42 +14,77 @@ sealed class TurnEvent {
   const TurnEvent();
 }
 
+/// A piece of reply text for the person.
 class TextDelta extends TurnEvent {
+  /// Creates a delta carrying [text].
   const TextDelta(this.text);
+
+  /// The text produced since the previous delta; may be a partial word.
   final String text;
 }
 
+/// A piece of the model's reasoning, kept apart from the reply.
 class ThinkingDelta extends TurnEvent {
+  /// Creates a delta carrying [text].
   const ThinkingDelta(this.text);
+
+  /// The reasoning text produced since the previous delta.
   final String text;
 }
 
 /// A finance tool was called with a number the person never supplied; the
 /// call was refused and the model told which argument to ask for.
 class InputRejected extends TurnEvent {
+  /// Creates an event for [tool] and the refused [arguments].
   const InputRejected(this.tool, this.arguments);
+
+  /// Name of the finance tool that was refused.
   final String tool;
+
+  /// Argument names with no traceable source; see
+  /// [InputProvenanceReport.unsupported].
   final List<String> arguments;
 }
 
+/// A tool call has been dispatched; its outcome follows as [ToolFinished],
+/// [InputRejected], [PresentRejected] or [ProfileUpdated].
 class ToolStarted extends TurnEvent {
+  /// Creates an event for the call to [name] with [args].
   const ToolStarted(this.name, this.args);
+
+  /// Tool name as the model called it.
   final String name;
+
+  /// Arguments exactly as the model supplied them.
   final Map<String, Object?> args;
 }
 
+/// A finance or external tool call completed, with or without an error
+/// (see [ToolResult.isError]).
 class ToolFinished extends TurnEvent {
+  /// Creates an event carrying [result].
   const ToolFinished(this.result);
+
+  /// The recorded result, also kept in [TurnPipeline.results].
   final ToolResult result;
 }
 
+/// The buyer profile changed through an `update_profile` call.
 class ProfileUpdated extends TurnEvent {
+  /// Creates an event carrying the new [profile].
   const ProfileUpdated(this.profile);
+
+  /// The profile after the update was applied.
   final BuyerProfile profile;
 }
 
+/// A component is to be shown, either because the model called `present` or
+/// because the app showed something on its own ([automatic]).
 class Presented extends TurnEvent {
+  /// Creates an event for [request], bound to [result] for result components.
   const Presented(this.request, {this.result, this.automatic = false});
+
+  /// The validated request naming the component, surface and props.
   final PresentRequest request;
 
   /// The result the component renders from; null for interaction components.
@@ -59,27 +94,49 @@ class Presented extends TurnEvent {
   final bool automatic;
 }
 
+/// A `present` call failed validation; the model was told the [errors].
 class PresentRejected extends TurnEvent {
+  /// Creates an event carrying the validation [errors].
   const PresentRejected(this.errors);
+
+  /// Problems found by [PresentRequest.validate], in the words sent to the
+  /// model.
   final List<String> errors;
 }
 
 /// The guard found numbers the model did not get from a tool. [replaced] is
 /// true when the templated fallback was used in place of the model's text.
 class GuardTripped extends TurnEvent {
+  /// Creates an event carrying [report]; [replaced] says whether the fallback
+  /// text was used.
   const GuardTripped(this.report, {required this.replaced});
+
+  /// The guard's findings for the reply that tripped it.
   final GuardReport report;
+
+  /// True when the templated fallback replaced the model's text.
   final bool replaced;
 }
 
+/// The policy check found sales language in the final narration.
 class PolicyFlagged extends TurnEvent {
+  /// Creates an event carrying [flags].
   const PolicyFlagged(this.flags);
+
+  /// Every match found by [PolicyCheck.check].
   final List<PolicyFlag> flags;
 }
 
+/// The turn is complete; always the last event of [TurnPipeline.run].
 class TurnDone extends TurnEvent {
+  /// Creates the final event with the [narration] shown and the [results]
+  /// produced.
   const TurnDone({required this.narration, required this.results});
+
+  /// The reply text after guard and inline-choice processing.
   final String narration;
+
+  /// Tool results produced during this turn, in call order.
   final List<ToolResult> results;
 }
 
@@ -91,6 +148,8 @@ typedef ExternalToolHandler =
 /// One conversation's turn logic: dispatch, profile, present validation,
 /// guard and policy. Pure Dart; the app supplies a [ChatDriver].
 class TurnPipeline {
+  /// Creates a pipeline over [driver]; omitted collaborators get their
+  /// defaults and an omitted [profile] starts empty.
   TurnPipeline({
     required this.driver,
     FinanceToolHandlers? finance,
@@ -103,14 +162,31 @@ class TurnPipeline {
   }) : finance = finance ?? FinanceToolHandlers(),
        profile = profile ?? const BuyerProfile();
 
+  /// The inference seam that owns the chat history.
   final ChatDriver driver;
+
+  /// Executes the finance tools; every number shown originates here.
   final FinanceToolHandlers finance;
+
+  /// Runs tools the pipeline does not own (search, page reading); null when
+  /// the build offers none, in which case such calls return an error.
   final ExternalToolHandler? external;
+
+  /// Checks numbers the model writes against tool results and user inputs.
   final NarrationGuard guard;
+
+  /// Checks numbers the model passes to finance tools against what the
+  /// person supplied.
   final InputProvenanceGuard inputGuard;
+
+  /// Flags sales language in the final narration.
   final PolicyCheck policy;
+
+  /// When true, a reply that trips [guard] is regenerated once with a
+  /// correction before the templated fallback is used.
   final bool regenerateOnGuardFailure;
 
+  /// The current buyer profile; replaced on every `update_profile` call.
   BuyerProfile profile;
 
   /// Every tool result of the conversation, by id, so `present` can refer to
@@ -120,6 +196,8 @@ class TurnPipeline {
   /// What the user typed or supplied through forms, for the guard.
   final List<Map<String, Object?>> userInputs = [];
 
+  /// Runs one turn for [userText] and streams its events in order; the
+  /// stream closes after [TurnDone].
   Stream<TurnEvent> run(String userText) {
     final controller = StreamController<TurnEvent>();
     _runInto(controller, userText).whenComplete(controller.close);
@@ -311,10 +389,21 @@ String stripLeakedToolCalls(String text) {
   return out.replaceAll(RegExp(r'[ \t]{2,}'), ' ').trim();
 }
 
+/// A prose option list found in a reply by [extractInlineChoice], split into
+/// the parts a `present(choice)` call needs.
 class InlineChoice {
+  /// Creates a choice from its [question], [options] and the [remainder].
   const InlineChoice({required this.question, required this.options, required this.remainder});
+
+  /// The question the options answer: the last question in the text before
+  /// the list, or a generic one when there is none.
   final String question;
+
+  /// Options as `{'id': ..., 'label': ...}` maps, ids numbered from `opt-1`,
+  /// in the shape [PresentRequest.validate] expects in `props.options`.
   final List<Map<String, String>> options;
+
+  /// The reply text with the list and its header line removed.
   final String remainder;
 }
 

@@ -4,6 +4,7 @@
 /// `update_search`, and the app infers obvious cases itself ("sports car"
 /// means a coupe) so the person is not asked what they already said.
 class SearchQuery {
+  /// Creates a query; a null field means no filter.
   const SearchQuery({
     this.bodyStyle,
     this.maxPrice,
@@ -17,14 +18,29 @@ class SearchQuery {
 
   /// One of [bodyStyles], or null for any.
   final String? bodyStyle;
+
+  /// Highest price in dollars, or null for no ceiling.
   final double? maxPrice;
+
+  /// Lowest price in dollars, or null for no floor.
   final double? minPrice;
+
+  /// Manufacturer as the person said it, or null for any.
   final String? make;
+
+  /// Model name, or null for any.
   final String? model;
+
+  /// Highest odometer reading in miles, or null for any.
   final int? maxMileage;
+
+  /// Oldest acceptable model year, or null for any.
   final int? minYear;
+
+  /// Free text for the site to search, or null for none.
   final String? keywords;
 
+  /// Accepted [bodyStyle] values, in the order the filter strip shows them.
   static const bodyStyles = [
     'suv',
     'sedan',
@@ -36,6 +52,7 @@ class SearchQuery {
     'wagon',
   ];
 
+  /// Person-facing label for each of [bodyStyles].
   static const bodyStyleLabels = {
     'suv': 'SUV',
     'sedan': 'Sedan',
@@ -47,6 +64,7 @@ class SearchQuery {
     'wagon': 'Wagon',
   };
 
+  /// True when no filter is set.
   bool get isEmpty =>
       bodyStyle == null &&
       maxPrice == null &&
@@ -57,6 +75,8 @@ class SearchQuery {
       minYear == null &&
       (keywords == null || keywords!.isEmpty);
 
+  /// Returns a copy with the given fields replaced. Passing null clears a
+  /// field; omitting it keeps the current value.
   SearchQuery copyWith({
     Object? bodyStyle = _unset,
     Object? maxPrice = _unset,
@@ -112,6 +132,8 @@ class SearchQuery {
     return q;
   }
 
+  /// Serializes in the snake_case shape `update_search` uses; nulls are kept
+  /// so a stored query round-trips through [applyArgs].
   Map<String, Object?> toJson() => {
     'body_style': bodyStyle,
     'max_price': maxPrice,
@@ -212,7 +234,7 @@ Map<String, Object?> inferSearchArgs(String text) {
     caseSensitive: false,
   ).firstMatch(t);
   if (price != null) {
-    var v = price.group(1)!.replaceAll(',', '').replaceAll(' ', '');
+    final v = price.group(1)!.replaceAll(',', '').replaceAll(' ', '');
     double p;
     if (v.endsWith('k')) {
       p = double.parse(v.substring(0, v.length - 1)) * 1000;

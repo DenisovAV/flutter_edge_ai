@@ -10,6 +10,7 @@ import 'listing_extractor.dart' show ListingExtractor;
 /// so a repaired recipe (from a person today, a help service later, DD-R27)
 /// is a drop-in. The on-device model never sees HTML.
 class ReadingRecipe {
+  /// Creates a recipe; see the fields for what each part means.
   const ReadingRecipe({
     required this.siteId,
     required this.version,
@@ -32,13 +33,19 @@ class ReadingRecipe {
   /// Field name → how to find it inside a card. Known names: title, price,
   /// mileage, year, image, link.
   final Map<String, FieldRule> fields;
+
+  /// How to tell whether a read of a real page worked.
   final SelfCheckRules selfCheck;
 
   /// `verified` (read a real page), `unverified` (written from documentation,
   /// not yet seen working), `broken` (failed its self-check on a real page).
   final String status;
+
+  /// Free text about the recipe's origin or its last repair.
   final String? note;
 
+  /// Restores a recipe from its JSON asset form; missing optional fields
+  /// take their defaults.
   factory ReadingRecipe.fromJson(Map<String, Object?> json) => ReadingRecipe(
     siteId: json['siteId'] as String,
     version: (json['version'] as num?)?.toInt() ?? 1,
@@ -54,6 +61,7 @@ class ReadingRecipe {
     note: json['note'] as String?,
   );
 
+  /// Serializes in the JSON asset form read by [ReadingRecipe.fromJson].
   Map<String, Object?> toJson() => {
     'siteId': siteId,
     'version': version,
@@ -64,6 +72,7 @@ class ReadingRecipe {
     if (note != null) 'note': note,
   };
 
+  /// Returns a copy with [status] or [note] replaced.
   ReadingRecipe copyWith({String? status, String? note}) => ReadingRecipe(
     siteId: siteId,
     version: version,
@@ -81,12 +90,21 @@ class ReadingRecipe {
 /// try in order (lazy-loaded images keep the real source in `data-src` or
 /// `srcset` until scrolled into view).
 class FieldRule {
+  /// Creates a rule; an empty [selector] reads the card element itself.
   const FieldRule({this.selector = '', this.attrs = const [], this.pattern});
 
+  /// CSS selector relative to the card; empty for the card itself.
   final String selector;
+
+  /// Attributes to try in order; empty to read the element's text.
   final List<String> attrs;
+
+  /// Case-insensitive regular expression applied to the raw value; the first
+  /// group is the value when the pattern has one.
   final String? pattern;
 
+  /// Restores a rule from JSON; a single `attr` key is accepted as well as
+  /// an `attrs` list.
   factory FieldRule.fromJson(Map<String, Object?> json) => FieldRule(
     selector: json['selector'] as String? ?? '',
     attrs: [
@@ -96,12 +114,16 @@ class FieldRule {
     pattern: json['pattern'] as String?,
   );
 
+  /// Serializes the rule for the JSON asset.
   Map<String, Object?> toJson() => {
     'selector': selector,
     if (attrs.isNotEmpty) 'attrs': attrs,
     if (pattern != null) 'pattern': pattern,
   };
 
+  /// Reads the field from [card]; null when the element, attribute or
+  /// pattern does not match. Whitespace is collapsed and a `srcset` value
+  /// is reduced to its first URL.
   String? read(Element card) {
     final el = selector.isEmpty ? card : card.querySelector(selector);
     if (el == null) return null;
@@ -130,6 +152,8 @@ class FieldRule {
 /// not these is worse than none (a site change that half-works), so the rules
 /// are about plausibility, not presence.
 class SelfCheckRules {
+  /// Creates rules; the defaults expect at least three cards, most of them
+  /// priced, and do not require images.
   const SelfCheckRules({
     this.minCards = 3,
     this.minPriceFraction = 0.8,
@@ -151,8 +175,12 @@ class SelfCheckRules {
   /// site's own total ("334 used cars at EchoPark"). When present, the cards
   /// read must not exceed that total.
   final String? totalPattern;
+
+  /// Largest acceptable ratio of cards read to the page's own total; a read
+  /// above it is implausible.
   final double maxTotalRatio;
 
+  /// Restores rules from JSON; missing fields take their defaults.
   factory SelfCheckRules.fromJson(Map<String, Object?> json) => SelfCheckRules(
     minCards: (json['minCards'] as num?)?.toInt() ?? 3,
     minPriceFraction: (json['minPriceFraction'] as num?)?.toDouble() ?? 0.8,
@@ -161,6 +189,7 @@ class SelfCheckRules {
     maxTotalRatio: (json['maxTotalRatio'] as num?)?.toDouble() ?? 1.0,
   );
 
+  /// Serializes the rules for the JSON asset.
   Map<String, Object?> toJson() => {
     'minCards': minCards,
     'minPriceFraction': minPriceFraction,
@@ -173,6 +202,7 @@ class SelfCheckRules {
 /// The outcome of a self-check: what was counted and why it failed, in words
 /// a person (or a repair service) can act on.
 class SelfCheck {
+  /// Creates an outcome; [ok] is false whenever [problems] is non-empty.
   const SelfCheck({
     required this.ok,
     required this.cardsFound,
@@ -182,13 +212,36 @@ class SelfCheck {
     this.problems = const [],
   });
 
+  /// True when the read passed every rule and found at least one listing.
   final bool ok;
+
+  /// Listings read, after duplicates were dropped.
   final int cardsFound;
+
+  /// How many of [cardsFound] carried a price.
   final int withPrice;
+
+  /// How many of [cardsFound] carried an image.
   final int withImage;
+
+  /// The page's own result count, when [SelfCheckRules.totalPattern] matched.
   final int? pageTotal;
+
+  /// Each failed rule in words; empty when [ok].
   final List<String> problems;
 
+  /// Serializes for logs and repair requests.
+  /// Restores a check from its [toJson] form (captures keep the verdict).
+  factory SelfCheck.fromJson(Map<String, Object?> json) => SelfCheck(
+    ok: json['ok'] == true,
+    cardsFound: (json['cardsFound'] as num?)?.toInt() ?? 0,
+    withPrice: (json['withPrice'] as num?)?.toInt() ?? 0,
+    withImage: (json['withImage'] as num?)?.toInt() ?? 0,
+    pageTotal: (json['pageTotal'] as num?)?.toInt(),
+    problems: ((json['problems'] as List?) ?? const []).cast<String>(),
+  );
+
+  /// Serializes the verdict so a capture can keep it.
   Map<String, Object?> toJson() => {
     'ok': ok,
     'cardsFound': cardsFound,
@@ -204,18 +257,29 @@ class SelfCheck {
       : 'failed: ${problems.join('; ')}';
 }
 
+/// What [RecipeReader.read] produces: the listings, the self-check and the
+/// recipe that was used.
 class RecipeResult {
+  /// Creates a result.
   const RecipeResult({required this.listings, required this.check, required this.recipe});
+
+  /// Listings read from the page, at most [RecipeReader.maxListings].
   final List<VehicleListing> listings;
+
+  /// Whether the read looked right, and if not, why.
   final SelfCheck check;
+
+  /// The recipe the read used, so its version and status can be reported.
   final ReadingRecipe recipe;
 }
 
 /// One generic reader for every recipe. Pure Dart over the page's HTML, so it
 /// runs the same in a widget test over a captured page as on the phone.
 class RecipeReader {
+  /// Creates a reader that stops after [maxListings] listings.
   const RecipeReader({this.maxListings = 40});
 
+  /// Upper bound on listings returned from one page.
   final int maxListings;
 
   static final _yearMakeModel = RegExp(
@@ -223,6 +287,10 @@ class RecipeReader {
   );
   static final _money = RegExp(r'\$?\s?(\d{1,3}(?:,\d{3})+|\d{4,6})');
 
+  /// Reads [html] with [recipe]. [sourceUrl] resolves relative image and
+  /// detail links and is recorded on each listing; [now] is the read time.
+  /// Year, make and model are parsed from the title when the recipe does not
+  /// read them separately.
   RecipeResult read(
     String html,
     ReadingRecipe recipe, {

@@ -1,7 +1,22 @@
+# Lint baseline for the pure-Dart packages (no Flutter): the recommended set
+# plus the rules that keep tool-result handling honest and the API documented.
 include: package:lints/recommended.yaml
+
 linter:
   rules:
     - prefer_single_quotes
     - avoid_dynamic_calls
+    - unawaited_futures
+    - directives_ordering
+    - prefer_final_locals
+    - prefer_final_in_for_each
+    - avoid_print
+    - comment_references
+    - always_declare_return_types
+    - avoid_redundant_argument_values
+    - unnecessary_lambdas
+    - prefer_asserts_with_message
+    - public_member_api_docs
+
 formatter:
   page_width: 100

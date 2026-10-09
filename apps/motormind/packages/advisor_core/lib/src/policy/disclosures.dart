@@ -1,5 +1,7 @@
 /// One disclosure, versioned so a change re-prompts the gate.
 class Disclosure {
+  /// Creates a disclosure; [version] is bumped whenever [short] or [long]
+  /// changes.
   const Disclosure({
     required this.key,
     required this.version,
@@ -7,7 +9,11 @@ class Disclosure {
     required this.long,
   });
 
+  /// Stable identifier used for lookup ([Disclosures.byKey]) and storage.
   final String key;
+
+  /// Wording version; summed into [Disclosures.gateVersion], so a change
+  /// re-prompts the gate.
   final int version;
 
   /// One sentence, shown inline and in the gate summary.
@@ -20,6 +26,7 @@ class Disclosure {
 /// The single source of disclosure wording. The gate screen, the settings
 /// screen, result cards and the hosted web page all read from here.
 abstract final class Disclosures {
+  /// The app shows estimates, not advice.
   static const notAdvice = Disclosure(
     key: 'not_advice',
     version: 1,
@@ -30,6 +37,7 @@ abstract final class Disclosures {
         'is not a substitute for a licensed advisor, a lender\'s disclosure, or your own judgment.',
   );
 
+  /// The app neither lends nor sells.
   static const notLenderOrDealer = Disclosure(
     key: 'not_lender_or_dealer',
     version: 1,
@@ -39,6 +47,7 @@ abstract final class Disclosures {
         'your information to any lender or dealer. Nothing here is an offer of credit.',
   );
 
+  /// No one pays the app for a purchase, lease or loan.
   static const noCompensation = Disclosure(
     key: 'no_compensation',
     version: 1,
@@ -49,6 +58,7 @@ abstract final class Disclosures {
         'labeled as such and does not affect results.',
   );
 
+  /// Every figure is an estimate.
   static const estimatesOnly = Disclosure(
     key: 'estimates_only',
     version: 1,
@@ -59,6 +69,7 @@ abstract final class Disclosures {
         'in your area, and your full credit file.',
   );
 
+  /// Rates come from a dated table, not from a lender.
   static const illustrativeRates = Disclosure(
     key: 'illustrative_rates',
     version: 1,
@@ -68,6 +79,7 @@ abstract final class Disclosures {
         'typical ranges, not an offer, and you can replace them with a rate you were quoted.',
   );
 
+  /// Financial information never leaves the phone.
   static const dataStaysOnDevice = Disclosure(
     key: 'data_on_device',
     version: 1,
@@ -78,6 +90,7 @@ abstract final class Disclosures {
         'statistics, if enabled, contain no personal or financial information.',
   );
 
+  /// Nothing is submitted to a website without the person's approval.
   static const browserActions = Disclosure(
     key: 'browser_actions',
     version: 1,
@@ -90,6 +103,8 @@ abstract final class Disclosures {
         'is not responsible for how a third-party site handles it.',
   );
 
+  /// Every disclosure, in the order the gate and the settings screen show
+  /// them.
   static const List<Disclosure> all = [
     notAdvice,
     notLenderOrDealer,
@@ -103,8 +118,11 @@ abstract final class Disclosures {
   /// Sum of versions; stored on acknowledgement so any change re-prompts.
   static int get gateVersion => all.fold(0, (sum, d) => sum + d.version);
 
+  /// Every [Disclosure.short] joined into one paragraph for the gate screen.
   static String get gateSummary => all.map((d) => d.short).join(' ');
 
+  /// Looks up a disclosure by [Disclosure.key]; throws [ArgumentError] when
+  /// there is none.
   static Disclosure byKey(String key) => all.firstWhere(
     (d) => d.key == key,
     orElse: () => throw ArgumentError.value(key, 'key', 'unknown disclosure'),

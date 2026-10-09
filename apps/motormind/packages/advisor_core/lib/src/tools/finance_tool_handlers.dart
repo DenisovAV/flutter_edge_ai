@@ -8,6 +8,7 @@ import 'tool_spec.dart';
 /// guard trusts. [error] is set instead of [result] when arguments were bad;
 /// the model is shown the error text and asked to correct the call.
 class ToolResult {
+  /// Creates a result; set [result] on success or [error] on refusal.
   const ToolResult({
     required this.id,
     required this.tool,
@@ -16,12 +17,23 @@ class ToolResult {
     this.error,
   });
 
+  /// Identifier the model uses in `present(result_id)`: `r` plus a counter
+  /// for finance tools, `x` plus a counter for external ones.
   final String id;
+
+  /// Name of the tool that was called.
   final String tool;
+
+  /// Arguments as the model supplied them.
   final Map<String, Object?> args;
+
+  /// The tool's full output, assumptions included, for the UI; null on error.
   final Map<String, Object?>? result;
+
+  /// Why the call was refused, in words the model is shown; null on success.
   final String? error;
 
+  /// True when the call was refused and [result] is null.
   bool get isError => error != null;
 
   /// What goes back to the model: the outputs, rounded, plus the inputs it
@@ -68,16 +80,21 @@ class ToolResult {
 /// Everything numeric the user will see originates here. The handlers are
 /// deliberately boring: parse, validate, call, serialize.
 class FinanceToolHandlers {
+  /// Creates handlers over [aprTable] (the package default when omitted);
+  /// [nextId] replaces the result-id counter, for tests.
   FinanceToolHandlers({AprTable? aprTable, String Function()? nextId})
     : aprTable = aprTable ?? defaultAprTable,
       _nextId = nextId ?? _counterId;
 
+  /// The rate table consulted when the person gave no APR.
   final AprTable aprTable;
+
   final String Function() _nextId;
 
   static int _counter = 0;
   static String _counterId() => 'r${++_counter}';
 
+  /// Names of the tools these handlers execute.
   static const Set<String> handled = {
     AdvisorTools.estimatePayment,
     AdvisorTools.maxAffordablePrice,
@@ -87,8 +104,11 @@ class FinanceToolHandlers {
     AdvisorTools.ownershipCost,
   };
 
+  /// True when [tool] is one of [handled].
   bool handles(String tool) => handled.contains(tool);
 
+  /// Executes [tool] with [args]. Bad or missing arguments produce an error
+  /// result rather than an exception, so the model can correct the call.
   ToolResult call(String tool, Map<String, Object?> args) {
     final id = _nextId();
     try {

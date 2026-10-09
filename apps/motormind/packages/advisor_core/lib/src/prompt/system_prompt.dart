@@ -4,6 +4,7 @@ import '../ui/ui_spec.dart';
 
 /// What the model is told about the canvas each turn (DD-R10).
 class ViewportDescriptor {
+  /// Creates a descriptor; sizes are in density-independent pixels.
   const ViewportDescriptor({
     required this.widthDp,
     required this.heightDp,
@@ -11,13 +12,19 @@ class ViewportDescriptor {
     this.posture = 'phone',
   });
 
+  /// Canvas width in density-independent pixels.
   final double widthDp;
+
+  /// Canvas height in density-independent pixels.
   final double heightDp;
+
+  /// True when the soft keyboard covers part of the canvas.
   final bool keyboardVisible;
 
   /// `phone`, `wide` (tablet or unfolded foldable), or `folded`.
   final String posture;
 
+  /// One line for the prompt, such as `390x844 dp, phone, keyboard down`.
   String describe() =>
       '${widthDp.round()}x${heightDp.round()} dp, $posture, keyboard ${keyboardVisible ? 'up' : 'down'}';
 }
@@ -26,13 +33,14 @@ class ViewportDescriptor {
 /// vocabulary (tools, components) and the live situation (profile, viewport).
 /// The text sections are data (Markdown assets in the app, TQ46), not code.
 class SystemPromptBuilder {
+  /// Creates a builder from the three editable text sections.
   const SystemPromptBuilder({
     required this.persona,
     required this.policy,
     required this.modeGuidance,
   });
 
-  /// Who the advisor is and how it behaves.
+  /// Who Motormind is and how it behaves.
   final String persona;
 
   /// The non-salesperson rules.
@@ -41,6 +49,11 @@ class SystemPromptBuilder {
   /// Tone and emphasis per shopping mode.
   final Map<ShoppingMode, String> modeGuidance;
 
+  /// Builds the prompt for the next turn: the text sections, the fixed
+  /// number and screen rules, the component vocabulary from
+  /// [ComponentRegistry.forModel], guidance for the current [ShoppingMode],
+  /// the profile summary and, when given, the [viewport]. The [tools] and
+  /// [components] parameters are accepted but not read.
   String build({
     required BuyerProfile profile,
     ViewportDescriptor? viewport,

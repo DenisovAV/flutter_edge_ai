@@ -4,6 +4,7 @@
 /// Every character here is paid on every turn in a 4k context window, so
 /// descriptions are terse and say WHEN to call, not what the app does.
 class ToolSpec {
+  /// Creates a spec; [parameters] is a JSON-schema object.
   const ToolSpec({
     required this.name,
     required this.description,
@@ -11,14 +12,20 @@ class ToolSpec {
     this.changesUi = false,
   });
 
+  /// Name the model calls, in snake_case.
   final String name;
+
+  /// When to call the tool, in as few words as possible.
   final String description;
+
+  /// JSON schema for the arguments, in the shape inference SDKs expect.
   final Map<String, Object?> parameters;
 
   /// True when the tool's purpose is to change what is on screen rather than
   /// to compute something.
   final bool changesUi;
 
+  /// Serializes to the `{name, description, parameters}` shape SDKs accept.
   Map<String, Object?> toJson() => {
     'name': name,
     'description': description,
@@ -28,7 +35,9 @@ class ToolSpec {
 
 const _bands = ['excellent', 'good', 'fair', 'poor', 'rebuilding'];
 
+/// Body styles the `update_search` tool accepts.
 abstract final class SearchQueryBodyStyles {
+  /// The accepted values; the tool schema adds `any` to clear the filter.
   static const values = [
     'suv',
     'sedan',
@@ -60,18 +69,40 @@ Map<String, Object?> _obj(Map<String, Object?> props, [List<String> required = c
 /// Every tool Motormind offers the model, in the order they are described in
 /// the system prompt.
 abstract final class AdvisorTools {
+  /// Monthly payment and purchase breakdown for a vehicle.
   static const String estimatePayment = 'estimate_payment';
+
+  /// Highest amount a monthly payment ceiling can finance.
   static const String maxAffordablePrice = 'max_affordable_price';
+
+  /// Trade-in equity from value and loan payoff.
   static const String tradeEquity = 'trade_equity';
+
+  /// Lease payment from the lease terms.
   static const String estimateLease = 'estimate_lease';
+
+  /// A payment checked against income and debt.
   static const String assessAffordability = 'assess_affordability';
+
+  /// Multi-year cost of ownership.
   static const String ownershipCost = 'ownership_cost';
+
+  /// Records facts the person shared.
   static const String updateProfile = 'update_profile';
+
+  /// Changes the live vehicle search filters.
   static const String updateSearch = 'update_search';
+
+  /// Finds listings, opening a results page when none have been read.
   static const String findVehicles = 'find_vehicles';
+
+  /// Reads the open web page or a URL.
   static const String readPage = 'read_page';
+
+  /// Shows a component on screen.
   static const String present = 'present';
 
+  /// Every spec, in prompt order.
   static final List<ToolSpec> all = [
     ToolSpec(
       name: estimatePayment,
@@ -261,6 +292,7 @@ abstract final class AdvisorTools {
     ),
   ];
 
+  /// Looks up a spec by name; throws [ArgumentError] when there is none.
   static ToolSpec byName(String name) => all.firstWhere(
     (t) => t.name == name,
     orElse: () => throw ArgumentError.value(name, 'name', 'unknown tool'),

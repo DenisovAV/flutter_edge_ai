@@ -5,6 +5,8 @@ import 'money.dart';
 /// Thresholds used to *warn*, never to block. Defaults are common
 /// rules of thumb, not lender policy.
 class AffordabilityPolicy {
+  /// Creates a policy; the defaults are 15% payment-to-income, 43%
+  /// debt-to-income and a 72-month term.
   const AffordabilityPolicy({
     this.maxPaymentToIncome = 0.15,
     this.maxDebtToIncome = 0.43,
@@ -19,12 +21,23 @@ class AffordabilityPolicy {
   /// All monthly debt including the vehicle payment, as a share of gross
   /// monthly income.
   final double maxDebtToIncome;
+
+  /// Longest loan term in months before a warning is raised.
   final int maxTermMonths;
+
+  /// Where the thresholds came from; surfaced on the policy assumption.
   final String source;
+
+  /// ISO-8601 date the thresholds were last reviewed.
   final String asOf;
 }
 
+/// The buyer's budget figures alongside the payment under consideration.
+///
+/// All money values are dollars per month.
 class AffordabilityInputs {
+  /// Creates the inputs; existing debt defaults to zero and the ceiling is
+  /// optional.
   const AffordabilityInputs({
     required this.monthlyGrossIncome,
     required this.proposedPayment,
@@ -33,8 +46,14 @@ class AffordabilityInputs {
     this.paymentCeiling,
   });
 
+  /// Gross (pre-tax) household income per month; must be positive.
   final double monthlyGrossIncome;
+
+  /// The vehicle payment being evaluated.
   final double proposedPayment;
+
+  /// Term of the proposed loan in months, checked against
+  /// [AffordabilityPolicy.maxTermMonths].
   final int termMonths;
 
   /// Rent or mortgage, cards, student loans, other vehicles.
@@ -43,6 +62,7 @@ class AffordabilityInputs {
   /// What the user said they can pay, if they said.
   final double? paymentCeiling;
 
+  /// Serializes the inputs for the result's input record.
   Map<String, Object?> toJson() => {
         'monthlyGrossIncome': monthlyGrossIncome,
         'proposedPayment': proposedPayment,
@@ -52,16 +72,28 @@ class AffordabilityInputs {
       };
 }
 
+/// One guideline the proposed payment exceeds.
+///
+/// Warnings inform; nothing in this package blocks a deal.
 class AffordabilityWarning {
+  /// Creates a warning from its machine code and user-facing message.
   const AffordabilityWarning({required this.code, required this.message});
 
+  /// Stable machine code the UI and tests key on, e.g. `payment_to_income`.
   final String code;
+
+  /// Plain-language explanation with the actual and guideline figures filled in.
   final String message;
 
+  /// Serializes the warning for tool results.
   Map<String, Object?> toJson() => {'code': code, 'message': message};
 }
 
+/// How a proposed payment compares with the policy ratios, plus the largest
+/// payment those ratios would allow.
 class AffordabilityResult extends CalcResult {
+  /// Creates a result from already-computed figures; [assessAffordability] is
+  /// the usual way to get one. The [input] is serialized into [inputs].
   AffordabilityResult({
     required AffordabilityInputs input,
     required this.paymentToIncome,
@@ -71,13 +103,21 @@ class AffordabilityResult extends CalcResult {
     required super.assumptions,
   }) : super(inputs: input.toJson());
 
+  /// Proposed payment divided by gross monthly income, as a fraction rounded
+  /// to four decimals.
   final double paymentToIncome;
+
+  /// All monthly debt including the proposed payment, divided by gross monthly
+  /// income, as a fraction rounded to four decimals.
   final double debtToIncomeAfter;
 
   /// The lower of the policy-derived ceiling and the user's own ceiling.
   final double suggestedMaxPayment;
+
+  /// Every guideline exceeded, in policy order; empty when [withinGuidelines].
   final List<AffordabilityWarning> warnings;
 
+  /// True when no guideline was exceeded.
   bool get withinGuidelines => warnings.isEmpty;
 
   @override
@@ -90,6 +130,12 @@ class AffordabilityResult extends CalcResult {
       };
 }
 
+/// Compares [input] against [policy] and reports the ratios, the suggested
+/// maximum payment and one warning per guideline exceeded.
+///
+/// The suggested maximum is the smallest of the payment-to-income ceiling, the
+/// debt-to-income ceiling after existing debt, and the user's own ceiling,
+/// floored at zero. Throws an [ArgumentError] when income is not positive.
 AffordabilityResult assessAffordability(
   AffordabilityInputs input, {
   AffordabilityPolicy policy = const AffordabilityPolicy(),

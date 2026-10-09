@@ -115,7 +115,11 @@ abstract final class Disclosures {
     browserActions,
   ];
 
-  /// Sum of versions; stored on acknowledgement so any change re-prompts.
+  /// Sum of every [Disclosure.version]; stored on acknowledgement so any
+  /// change re-prompts the gate. A sum is enough because disclosures are
+  /// never removed, only reworded with a bumped version: the total can only
+  /// grow, so a stored value below the current one always means something
+  /// changed since it was accepted.
   static int get gateVersion => all.fold(0, (sum, d) => sum + d.version);
 
   /// Every [Disclosure.short] joined into one paragraph for the gate screen.

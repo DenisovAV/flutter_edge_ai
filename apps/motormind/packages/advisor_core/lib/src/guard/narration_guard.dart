@@ -11,7 +11,9 @@ class NumberMention {
   /// and a `k` suffix is expanded (`22k` is 22000).
   final double value;
 
-  /// Zero-based character offset of [raw] in the text it came from.
+  /// Zero-based character offset of [raw] in the text it came from, so a
+  /// caller can highlight or splice the span in the original text. The
+  /// pipeline's correction message quotes [raw] and does not need it.
   final int offset;
 
   @override
@@ -36,11 +38,12 @@ class GuardReport {
 
 /// Enforces "numbers come from tools, not from the model."
 ///
-/// Every number in a reply must match a number in the turn's tool results or
-/// the user's own inputs. Matching is tolerant of formatting (`$1,234.50`
-/// vs `1234.5`), of rounding to whole dollars, and of a small relative
-/// difference for spoken rounding ("about $480" for 483.32). Years and small
-/// counts are allowed through because they are not financial claims.
+/// Every number in a reply must match a number in the conversation's tool
+/// results or the user's own inputs. Matching is tolerant of formatting
+/// (`$1,234.50` vs `1234.5`), of rounding to whole dollars, and of a small
+/// relative difference for spoken rounding ("about $480" for 483.32). Years
+/// and small counts are allowed through because they are not financial
+/// claims.
 class NarrationGuard {
   /// Creates a guard; the defaults allow 2% spoken rounding, counts up to 12
   /// and model years from 1980 to 2040 without a source.
@@ -55,8 +58,9 @@ class NarrationGuard {
   /// a written number and a source value that still counts as a match.
   final double relativeTolerance;
 
-  /// Whole numbers from zero up to this value pass without a source, since
-  /// counts such as "3 options" are not financial claims.
+  /// Whole numbers from zero up to this value pass without a source. Twelve
+  /// covers what a reply counts without making a claim: options offered,
+  /// months in a year, seats, cylinders. Anything larger reads as a figure.
   final int allowSmallIntegersUpTo;
 
   /// First whole number treated as a model year and passed without a source.
@@ -65,8 +69,13 @@ class NarrationGuard {
   /// Last whole number treated as a model year and passed without a source.
   final int allowYearsTo;
 
+  // `(?<!\w)` refuses a number glued to a letter on its left ("A4", "V6",
+  // "F150") and `(?!\w|\.\d)` one glued on its right ("2.0T", "3.5L"): those
+  // are names of things, not figures. The first alternative takes numbers
+  // with thousands separators so that "22,700" is one mention, not two.
   static final RegExp _numberPattern = RegExp(
-    r'(?<!\w)[\$]?\d{1,3}(?:,\d{3})+(?:\.\d+)?%?|(?<!\w)[\$]?\d+(?:\.\d+)?%?(?:\s?[kK](?!\w))?',
+    r'(?<!\w)[\$]?\d{1,3}(?:,\d{3})+(?:\.\d+)?%?(?!\w|\.\d)'
+    r'|(?<!\w)[\$]?\d+(?:\.\d+)?%?(?:\s?[kK](?!\w))?(?!\w|\.\d)',
   );
 
   /// Extracts numeric mentions from [text].
@@ -108,23 +117,32 @@ class NarrationGuard {
     }
 
     sources.forEach(walk);
-    // A percentage in results may be narrated as a decimal or vice versa.
+    // A rate stored as a fraction (0.06) may be narrated as "6" or "6.0".
+    // Only this direction is filled in: the reverse (7 → 0.07) would let any
+    // whole number up to 100 in a result stand in for a percentage the
+    // model made up, and finance tools store rates as fractions anyway. The
+    // cost is that a rate a person typed as a bare "7" cannot be narrated
+    // as "7%".
     for (final v in out.toList()) {
-      if (v > 0 && v < 1) out.add(v * 100);
-      if (v >= 1 && v <= 100) out.add(v / 100);
+      if (v > 0 && v <= 1) out.add(v * 100);
     }
     return out;
   }
 
-  bool _matches(double mention, Set<double> allowed) {
-    final asInt = mention.roundToDouble() == mention;
-    if (asInt && mention >= 0 && mention <= allowSmallIntegersUpTo) return true;
-    if (asInt && mention >= allowYearsFrom && mention <= allowYearsTo) return true;
+  /// True when [value] is accounted for: a count or a year that needs no
+  /// source, or within tolerance of a value in [allowed]. Whole-dollar
+  /// rounding applies only to magnitudes of at least one, so a written 0.03
+  /// never matches a source that merely rounds to zero, and a zero source
+  /// matches nothing but zero.
+  bool matches(double value, Set<double> allowed) {
+    final isWhole = value.roundToDouble() == value;
+    if (isWhole && value >= 0 && value <= allowSmallIntegersUpTo) return true;
+    if (isWhole && value >= allowYearsFrom && value <= allowYearsTo) return true;
     for (final a in allowed) {
-      if (a == mention) return true;
-      if (a.round() == mention.round()) return true;
-      final scale = a.abs() < 1 ? 1 : a.abs();
-      if ((a - mention).abs() / scale <= relativeTolerance) return true;
+      if (a == value) return true;
+      if (a.abs() >= 1 && value.abs() >= 1 && a.round() == value.round()) return true;
+      if (a == 0) continue;
+      if ((a - value).abs() / a.abs() <= relativeTolerance) return true;
     }
     return false;
   }
@@ -136,7 +154,7 @@ class NarrationGuard {
     final mentions = extract(narration);
     final unmatched = [
       for (final m in mentions)
-        if (!_matches(m.value, allowed)) m,
+        if (!matches(m.value, allowed)) m,
     ];
     return GuardReport(mentions: mentions, unmatched: unmatched);
   }

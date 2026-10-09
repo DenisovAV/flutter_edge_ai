@@ -1,5 +1,4 @@
 import '../profile/buyer_profile.dart';
-import '../tools/tool_spec.dart';
 import '../ui/ui_spec.dart';
 
 /// What the model is told about the canvas each turn (DD-R10).
@@ -29,9 +28,42 @@ class ViewportDescriptor {
       '${widthDp.round()}x${heightDp.round()} dp, $posture, keyboard ${keyboardVisible ? 'up' : 'down'}';
 }
 
-/// Assembles the system prompt from editable text sections plus the live
-/// vocabulary (tools, components) and the live situation (profile, viewport).
-/// The text sections are data (Markdown assets in the app, TQ46), not code.
+// The three sections below are fixed in code rather than loaded as assets:
+// they state the contract between the model and the pipeline (numbers come
+// from tools, options come through present, cards follow tool results). An
+// edit to the prompt assets must not be able to loosen what the guards
+// enforce, so these travel with the code that enforces them.
+
+/// The rule the narration guard and the input guard enforce.
+const String _numbersSection =
+    '# Numbers\n'
+    'Never compute or guess a dollar amount, rate, payment or percentage: call a tool and repeat '
+    'only what it returns. Missing an input? Ask with an input_form, do not assume.';
+
+/// How a reply is shaped; the prose-list rule is what `extractInlineChoice`
+/// repairs when it is broken.
+const String _replyingSection =
+    '# Replying\n'
+    'If a tool is needed, call it first; the card appears for the person while you work. '
+    'When the person names a budget, a body style or a model, call find_vehicles. '
+    'Then reply in under 80 words. Plain text, no Markdown. Never write options as a list in '
+    'prose: offer them with present(choice).';
+
+/// How results and questions reach the screen; the component list follows
+/// it from the registry.
+const String _screenSection =
+    '# Screen\n'
+    'After a tool returns, call present(component, result_id) so the numbers are shown as a card; '
+    'then one or two sentences at most. To ask something with a few possible answers, or to '
+    'collect numbers, call present with choice/multi_choice/input_form instead of asking in prose. '
+    'One structured prompt per turn.';
+
+/// Assembles the system prompt from editable text sections plus the fixed
+/// contract sections, the component vocabulary and the live situation
+/// (profile, viewport). The editable sections are data (Markdown assets in
+/// the app, TQ46), not code. Tools are not described here: they reach the
+/// model through the SDK's tool registration, so listing them again would
+/// only spend context.
 class SystemPromptBuilder {
   /// Creates a builder from the three editable text sections.
   const SystemPromptBuilder({
@@ -49,17 +81,11 @@ class SystemPromptBuilder {
   /// Tone and emphasis per shopping mode.
   final Map<ShoppingMode, String> modeGuidance;
 
-  /// Builds the prompt for the next turn: the text sections, the fixed
-  /// number and screen rules, the component vocabulary from
-  /// [ComponentRegistry.forModel], guidance for the current [ShoppingMode],
-  /// the profile summary and, when given, the [viewport]. The [tools] and
-  /// [components] parameters are accepted but not read.
-  String build({
-    required BuyerProfile profile,
-    ViewportDescriptor? viewport,
-    List<ToolSpec>? tools,
-    List<UiComponent>? components,
-  }) {
+  /// Builds the prompt for the next turn: the persona, the policy, the
+  /// fixed number, replying and screen sections, the component vocabulary
+  /// from [ComponentRegistry.describeForPrompt], guidance for the current
+  /// [ShoppingMode], the profile summary and, when given, the [viewport].
+  String build({required BuyerProfile profile, ViewportDescriptor? viewport}) {
     final mode = profile.mode;
     final buffer = StringBuffer()
       ..writeln(persona.trim())
@@ -67,36 +93,20 @@ class SystemPromptBuilder {
       ..writeln('# Rules')
       ..writeln(policy.trim())
       ..writeln()
-      ..writeln('# Numbers')
-      ..writeln(
-        'Never compute or guess a dollar amount, rate, payment or percentage: call a tool and repeat '
-        'only what it returns. Missing an input? Ask with an input_form, do not assume.',
-      )
+      ..writeln(_numbersSection)
       ..writeln()
-      ..writeln('# Replying')
-      ..writeln(
-        'If a tool is needed, call it first; the card appears for the person while you work. '
-        'When the person names a budget, a body style or a model, call find_vehicles. '
-        'Then reply in under 80 words. Plain text, no Markdown. Never write options as a list in '
-        'prose: offer them with present(choice).',
-      )
+      ..writeln(_replyingSection)
       ..writeln()
-      ..writeln('# Screen')
-      ..writeln(
-        'After a tool returns, call present(component, result_id) so the numbers are shown as a card; '
-        'then one or two sentences at most. To ask something with a few possible answers, or to '
-        'collect numbers, call present with choice/multi_choice/input_form instead of asking in prose. '
-        'One structured prompt per turn.',
-      )
-      ..writeln(
-        'Components: ${ComponentRegistry.forModel.map((c) => '${c.id} (${c.description})').join('; ')}',
-      )
+      ..writeln(_screenSection)
+      ..writeln('Components:')
+      ..writeln(ComponentRegistry.describeForPrompt())
       ..writeln();
 
-    if (mode != null && modeGuidance[mode] != null) {
+    final guidance = mode == null ? null : modeGuidance[mode];
+    if (mode != null && guidance != null) {
       buffer
         ..writeln('# Current shopping mode: ${mode.name}')
-        ..writeln(modeGuidance[mode]!.trim())
+        ..writeln(guidance.trim())
         ..writeln();
     } else {
       buffer

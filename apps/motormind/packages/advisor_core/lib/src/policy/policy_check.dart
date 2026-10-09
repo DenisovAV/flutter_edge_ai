@@ -9,7 +9,7 @@ enum PolicyCategory {
   /// Telling the person what to do ("you need to buy", "best deal").
   pressure,
 
-  /// A recommendation to buy, lease or finance, which the app never gives.
+  /// A recommendation to buy, lease or finance, which Motormind never gives.
   advice,
 
   /// Wording that implies a partner, referral or commission relationship.
@@ -18,18 +18,15 @@ enum PolicyCategory {
 
 /// One match of a policy rule in a reply.
 class PolicyFlag {
-  /// Creates a flag for [category] with the matched [excerpt] and the
-  /// [pattern] that matched it.
-  const PolicyFlag({required this.category, required this.excerpt, required this.pattern});
+  /// Creates a flag for [category] with the matched [excerpt].
+  const PolicyFlag({required this.category, required this.excerpt});
 
   /// Which kind of sales language matched.
   final PolicyCategory category;
 
-  /// The matched text with up to 20 characters of context on each side.
+  /// The matched text with up to [PolicyCheck.excerptContext] characters of
+  /// context on each side.
   final String excerpt;
-
-  /// Source of the regular expression that matched, for diagnostics.
-  final String pattern;
 
   @override
   String toString() => '${category.name}: "$excerpt"';
@@ -41,6 +38,10 @@ class PolicyFlag {
 class PolicyCheck {
   /// Creates a check with the built-in rules.
   const PolicyCheck();
+
+  /// Characters of surrounding text kept on each side of a match in
+  /// [PolicyFlag.excerpt]; enough to read the phrase in context on a banner.
+  static const int excerptContext = 20;
 
   static final List<(PolicyCategory, RegExp)> _rules = [
     (
@@ -58,9 +59,11 @@ class PolicyCheck {
       ),
     ),
     (
+      // "best deal of the three" compares results the person asked for;
+      // "the best deal" sells. The lookahead keeps the comparison.
       PolicyCategory.pressure,
       RegExp(
-        r'\b(you (?:should|need to|have to|must) (?:buy|lease|sign|finance)|great deal|best deal|steal|no[- ]brainer|once[- ]in[- ]a[- ]lifetime)\b',
+        r'\b(you (?:should|need to|have to|must) (?:buy|lease|sign|finance)|(?:great|best) deal\b(?! of )|steal|no[- ]brainer|once[- ]in[- ]a[- ]lifetime)\b',
         caseSensitive: false,
       ),
     ),
@@ -86,15 +89,9 @@ class PolicyCheck {
     final flags = <PolicyFlag>[];
     for (final (category, rule) in _rules) {
       for (final m in rule.allMatches(narration)) {
-        final start = m.start - 20 < 0 ? 0 : m.start - 20;
-        final end = m.end + 20 > narration.length ? narration.length : m.end + 20;
-        flags.add(
-          PolicyFlag(
-            category: category,
-            excerpt: narration.substring(start, end).trim(),
-            pattern: rule.pattern,
-          ),
-        );
+        final start = (m.start - excerptContext).clamp(0, narration.length);
+        final end = (m.end + excerptContext).clamp(0, narration.length);
+        flags.add(PolicyFlag(category: category, excerpt: narration.substring(start, end).trim()));
       }
     }
     return flags;

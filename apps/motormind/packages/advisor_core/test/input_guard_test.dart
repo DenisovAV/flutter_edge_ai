@@ -24,6 +24,14 @@ void main() {
     expect(r.passed, isTrue, reason: r.unsupported.toString());
   });
 
+  test('a string argument that is a single number is checked like a number', () {
+    expect(guard.check(args: {'price': '22k'}, sources: said).passed, isTrue);
+    expect(guard.check(args: {'price': r'$22,000'}, sources: said).passed, isTrue);
+    expect(guard.check(args: {'price': '31k'}, sources: said).unsupported, ['price']);
+    // A sentence is not a figure; only the finance handler will complain.
+    expect(guard.check(args: {'price': 'about 31k or so'}, sources: said).passed, isTrue);
+  });
+
   test('an invented income is rejected by name', () {
     final r = guard.check(
       args: {'monthly_gross_income': 6000, 'proposed_payment': 433.99, 'term_months': 60},
@@ -57,5 +65,10 @@ void main() {
       sources: said,
     );
     expect(r.passed, isTrue, reason: r.unsupported.toString());
+  });
+
+  test('shares the narration guard tolerance, so a 3% drift is rejected', () {
+    expect(guard.check(args: {'price': 22400}, sources: said).passed, isTrue);
+    expect(guard.check(args: {'price': 22700}, sources: said).unsupported, ['price']);
   });
 }

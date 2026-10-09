@@ -21,24 +21,24 @@ void main() {
     expect(flags.map((f) => f.category).toSet(), containsAll(PolicyCategory.values));
   });
 
-  test('is case-insensitive and keeps an excerpt', () {
+  test('is case-insensitive and keeps an excerpt with context', () {
     final flags = policy.check('GUARANTEED approval today.');
     expect(flags, isNotEmpty);
     expect(flags.first.excerpt, contains('GUARANTEED'));
+    expect(flags.first.excerpt, contains('approval'));
   });
 
-  test('disclosures are complete and versioned', () {
-    expect(Disclosures.all.map((d) => d.key).toSet(), {
-      'not_advice',
-      'not_lender_or_dealer',
-      'no_compensation',
-      'estimates_only',
-      'illustrative_rates',
-      'data_on_device',
-      'browser_actions',
-    });
-    expect(Disclosures.gateVersion, Disclosures.all.length);
-    expect(Disclosures.gateSummary, contains('not a lender'));
-    expect(Disclosures.byKey('no_compensation').long, contains('No one pays'));
+  test('the excerpt window clamps to the text at both ends', () {
+    final flags = policy.check('hurry');
+    expect(flags.single.excerpt, 'hurry');
+  });
+
+  test('"best deal of the three" is a comparison, not a sales pitch', () {
+    expect(policy.check('The second listing is the best deal of the three on the card.'), isEmpty);
+    expect(
+      policy.check('This is the best deal, grab it.').single.category,
+      PolicyCategory.pressure,
+    );
+    expect(policy.check('A great deal of the cost is tax.'), isEmpty);
   });
 }

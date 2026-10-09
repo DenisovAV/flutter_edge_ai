@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import '../guard/input_guard.dart';
 import '../guard/narration_guard.dart';
@@ -14,7 +15,7 @@ sealed class TurnEvent {
   const TurnEvent();
 }
 
-/// A piece of reply text for the person.
+/// A piece of reply text for the person, as the model streams it.
 class TextDelta extends TurnEvent {
   /// Creates a delta carrying [text].
   const TextDelta(this.text);
@@ -29,6 +30,18 @@ class ThinkingDelta extends TurnEvent {
   const ThinkingDelta(this.text);
 
   /// The reasoning text produced since the previous delta.
+  final String text;
+}
+
+/// The reply text shown so far is to be discarded and shown as [text]
+/// instead: a guarded regeneration passed, the templated fallback was used,
+/// or a prose option list was lifted out into a choice component. Arrives
+/// after the [TextDelta]s it supersedes and before [TurnDone].
+class NarrationReplaced extends TurnEvent {
+  /// Creates an event carrying the replacement [text].
+  const NarrationReplaced(this.text);
+
+  /// The complete reply text to show in place of what was streamed.
   final String text;
 }
 
@@ -90,7 +103,8 @@ class Presented extends TurnEvent {
   /// The result the component renders from; null for interaction components.
   final ToolResult? result;
 
-  /// True when the app presented a result the model computed but never showed.
+  /// True when the app presented a result the model computed but never
+  /// showed, or a choice it wrote as prose.
   final bool automatic;
 }
 
@@ -114,7 +128,8 @@ class GuardTripped extends TurnEvent {
   /// The guard's findings for the reply that tripped it.
   final GuardReport report;
 
-  /// True when the templated fallback replaced the model's text.
+  /// True when the templated fallback replaced the model's text; a
+  /// [NarrationReplaced] with that text follows.
   final bool replaced;
 }
 
@@ -127,7 +142,7 @@ class PolicyFlagged extends TurnEvent {
   final List<PolicyFlag> flags;
 }
 
-/// The turn is complete; always the last event of [TurnPipeline.run].
+/// The turn is complete; the last event of a turn that ran to the end.
 class TurnDone extends TurnEvent {
   /// Creates the final event with the [narration] shown and the [results]
   /// produced.
@@ -140,10 +155,28 @@ class TurnDone extends TurnEvent {
   final List<ToolResult> results;
 }
 
-/// Executes tools the pipeline does not own (search, browsing). Return a map
-/// for the model; throw to report an error.
-typedef ExternalToolHandler =
-    Future<Map<String, Object?>> Function(String name, Map<String, Object?> args);
+/// The turn stopped on an error from the driver or a collaborator. The
+/// error itself follows on the stream and the stream closes without a
+/// [TurnDone]; the UI shows [message] so the reply does not sit half-written.
+class TurnFailed extends TurnEvent {
+  /// Creates an event carrying the error's [message].
+  const TurnFailed(this.message);
+
+  /// The error as text, for a banner; not for the model.
+  final String message;
+}
+
+/// Smallest prose option list worth lifting into a choice: one option is a
+/// statement, not a choice.
+const int _minInlineOptions = 2;
+
+/// Largest prose option list lifted into a choice, matching the registry's
+/// `choice` component (2–6 answers); longer lists stay prose.
+const int _maxInlineOptions = 6;
+
+/// Longest option label lifted into a chip; longer lines are sentences
+/// that happen to be numbered.
+const int _maxInlineLabelLength = 60;
 
 /// One conversation's turn logic: dispatch, profile, present validation,
 /// guard and policy. Pure Dart; the app supplies a [ChatDriver].
@@ -165,12 +198,15 @@ class TurnPipeline {
   /// The inference seam that owns the chat history.
   final ChatDriver driver;
 
-  /// Executes the finance tools; every number shown originates here.
+  /// Executes the finance tools; every number shown originates here, and
+  /// its id sequence numbers every other result too.
   final FinanceToolHandlers finance;
 
-  /// Runs tools the pipeline does not own (search, page reading); null when
-  /// the build offers none, in which case such calls return an error.
-  final ExternalToolHandler? external;
+  /// Runs tools the pipeline does not own (search, page reading). Return the
+  /// map for the model; throw an [Exception] to report a failure, which
+  /// becomes an error result. Null when the build offers none, in which
+  /// case such calls return an error.
+  final ToolCallHandler? external;
 
   /// Checks numbers the model writes against tool results and user inputs.
   final NarrationGuard guard;
@@ -187,125 +223,195 @@ class TurnPipeline {
   final bool regenerateOnGuardFailure;
 
   /// The current buyer profile; replaced on every `update_profile` call.
+  /// Assignable because the app sets the shopping mode itself when the
+  /// person picks one from the opening choice, outside any turn.
   BuyerProfile profile;
 
-  /// Every tool result of the conversation, by id, so `present` can refer to
-  /// any of them.
-  final Map<String, ToolResult> results = {};
+  final Map<String, ToolResult> _results = {};
+  final List<Map<String, Object?>> _userInputs = [];
 
-  /// What the user typed or supplied through forms, for the guard.
-  final List<Map<String, Object?>> userInputs = [];
+  /// Every tool result of the conversation, by id, so `present` can refer
+  /// to any of them.
+  Map<String, ToolResult> get results => UnmodifiableMapView(_results);
 
-  /// Runs one turn for [userText] and streams its events in order; the
-  /// stream closes after [TurnDone].
+  /// What the user typed or supplied through forms, for the guards.
+  List<Map<String, Object?>> get userInputs => UnmodifiableListView(_userInputs);
+
+  /// Runs one turn for [userText] and streams its events in order. The
+  /// stream closes after [TurnDone], or after [TurnFailed] and the error
+  /// itself when the turn could not finish.
   Stream<TurnEvent> run(String userText) {
     final controller = StreamController<TurnEvent>();
-    _runInto(controller, userText).whenComplete(controller.close);
+    _runInto(controller, userText)
+        .catchError((Object e, StackTrace st) {
+          controller
+            ..add(TurnFailed(e.toString()))
+            ..addError(e, st);
+        })
+        .whenComplete(controller.close);
     return controller.stream;
   }
 
   Future<void> _runInto(StreamController<TurnEvent> out, String userText) async {
     final turnResults = <ToolResult>[];
-    userInputs.add({'user_text': userText});
+    _userInputs.add({'user_text': userText});
 
-    Future<Map<String, Object?>> onToolCall(String name, Map<String, Object?> args) async {
+    Future<Map<String, Object?>> onToolCall(String name, Map<String, Object?> args) {
       out.add(ToolStarted(name, args));
-      if (finance.handles(name)) {
-        final provenance = inputGuard.check(
-          args: args,
-          sources: [...userInputs, profile.toJson(), ...results.values.map((r) => r.result)],
-        );
-        if (!provenance.passed) {
-          out.add(InputRejected(name, provenance.unsupported));
-          return {
-            'error':
-                'The user did not provide ${provenance.unsupported.join(', ')}. Do not guess it: ask '
-                'for it (an input_form is best), then call the tool again.',
-          };
-        }
-        final r = finance.call(name, args);
-        results[r.id] = r;
-        turnResults.add(r);
-        out.add(ToolFinished(r));
-        // Show the number the moment it exists (DD-R18c): the model may still
-        // re-present it with a different component, which replaces this card.
-        final component = r.isError ? null : ComponentRegistry.defaultFor(name);
-        if (component != null) {
-          out.add(
-            Presented(
-              PresentRequest(
-                component: component,
-                surface: component.defaultSurface,
-                resultId: r.id,
-              ),
-              result: r,
-              automatic: true,
-            ),
-          );
-        }
-        return r.toModelJson();
-      }
-      switch (name) {
-        case AdvisorTools.updateProfile:
-          profile = profile.applyUpdate(args);
-          userInputs.add(args);
-          out.add(ProfileUpdated(profile));
-          return {'ok': true, 'profile': profile.toPromptSummary()};
-        case AdvisorTools.present:
-          final resultId = args['result_id']?.toString();
-          final target = resultId == null ? null : results[resultId];
-          final v = PresentRequest.validate(args, resultTool: target?.tool);
-          if (v.request == null) {
-            out.add(PresentRejected(v.errors));
-            return {'error': v.errors.join('; ')};
-          }
-          out.add(Presented(v.request!, result: target));
-          return {'ok': true, 'shown': v.request!.component.id};
-        default:
-          if (external != null) {
-            try {
-              final r = await external!(name, args);
-              final tr = ToolResult(
-                id: 'x${results.length + 1}',
-                tool: name,
-                args: args,
-                result: r,
-              );
-              results[tr.id] = tr;
-              turnResults.add(tr);
-              out.add(ToolFinished(tr));
-              return tr.toModelJson();
-            } catch (e) {
-              return {'error': e.toString()};
-            }
-          }
-          return {'error': 'tool "$name" is not available in this build'};
-      }
+      if (finance.handles(name)) return _runFinanceTool(out, turnResults, name, args);
+      return switch (name) {
+        AdvisorTools.updateProfile => _runProfileUpdate(out, args),
+        AdvisorTools.present => _runPresent(out, args),
+        _ => _runExternal(out, turnResults, name, args),
+      };
     }
 
+    final narration = await _narrate(out, userText, onToolCall, turnResults);
+    final flags = policy.check(narration);
+    if (flags.isNotEmpty) out.add(PolicyFlagged(flags));
+    out.add(TurnDone(narration: narration, results: turnResults));
+  }
+
+  // --- tool dispatch ------------------------------------------------------
+
+  Future<Map<String, Object?>> _runFinanceTool(
+    StreamController<TurnEvent> out,
+    List<ToolResult> turnResults,
+    String name,
+    Map<String, Object?> args,
+  ) async {
+    final provenance = inputGuard.check(args: args, sources: _guardSources());
+    if (!provenance.passed) {
+      out.add(InputRejected(name, provenance.unsupported));
+      return {
+        'error':
+            'The user did not provide ${provenance.unsupported.join(', ')}. Do not guess it: ask '
+            'for it (an input_form is best), then call the tool again.',
+      };
+    }
+    final r = finance.call(name, args);
+    _record(out, turnResults, r);
+    return r.toModelJson();
+  }
+
+  Future<Map<String, Object?>> _runProfileUpdate(
+    StreamController<TurnEvent> out,
+    Map<String, Object?> args,
+  ) async {
+    profile = profile.applyUpdate(args);
+    _userInputs.add(args);
+    out.add(ProfileUpdated(profile));
+    return {'ok': true, 'profile': profile.toPromptSummary()};
+  }
+
+  Future<Map<String, Object?>> _runPresent(
+    StreamController<TurnEvent> out,
+    Map<String, Object?> args,
+  ) async {
+    final resultId = args['result_id']?.toString();
+    final target = resultId == null ? null : _results[resultId];
+    final v = PresentRequest.validate(args, resultTool: target?.tool);
+    final request = v.request;
+    if (request == null) {
+      out.add(PresentRejected(v.errors));
+      return {'error': v.errors.join('; ')};
+    }
+    out.add(Presented(request, result: target));
+    return {'ok': true, 'shown': request.component.id};
+  }
+
+  Future<Map<String, Object?>> _runExternal(
+    StreamController<TurnEvent> out,
+    List<ToolResult> turnResults,
+    String name,
+    Map<String, Object?> args,
+  ) async {
+    final handler = external;
+    // A hallucinated tool name never reaches the app's handler: the model is
+    // told plainly, and the handler only ever sees names it was written for.
+    if (handler == null || !AdvisorTools.all.any((t) => t.name == name)) {
+      return {'error': 'tool "$name" is not available in this build'};
+    }
+    final id = finance.nextId();
+    ToolResult r;
+    try {
+      r = ToolResult(id: id, tool: name, args: args, result: await handler(name, args));
+    } on Exception catch (e) {
+      // Only Exceptions are failures the model can act on (a page that would
+      // not load, a site that refused). Errors are bugs and propagate.
+      r = ToolResult(id: id, tool: name, args: args, error: e.toString());
+    }
+    _record(out, turnResults, r);
+    return r.toModelJson();
+  }
+
+  /// Stores [r] for `present`, announces it, and shows its default card.
+  void _record(StreamController<TurnEvent> out, List<ToolResult> turnResults, ToolResult r) {
+    _results[r.id] = r;
+    turnResults.add(r);
+    out.add(ToolFinished(r));
+    _autoPresent(out, r);
+  }
+
+  /// Shows the number the moment it exists (DD-R18c): the model may still
+  /// re-present it with a different component, which replaces this card.
+  /// Nothing is shown for errors, for tools whose job is to change the
+  /// screen ([ToolSpec.changesUi]), or for an external result that reports
+  /// an `error` field instead of throwing.
+  void _autoPresent(StreamController<TurnEvent> out, ToolResult r) {
+    if (r.isError || r.result?['error'] != null) return;
+    if (AdvisorTools.changesUi(r.tool)) return;
+    final component = ComponentRegistry.defaultFor(r.tool);
+    if (component == null) return;
+    out.add(
+      Presented(
+        PresentRequest(component: component, surface: component.defaultSurface, resultId: r.id),
+        result: r,
+        automatic: true,
+      ),
+    );
+  }
+
+  /// Everything a number may legitimately come from: what the person typed
+  /// or entered, the profile, and every tool result of the conversation.
+  /// Both guards read the same list so a figure the person gave two turns
+  /// ago is as good as one given now.
+  List<Object?> _guardSources() => [
+    ..._userInputs,
+    profile.toJson(),
+    ..._results.values.map((r) => r.result),
+  ];
+
+  // --- narration ----------------------------------------------------------
+
+  /// Generates the reply, holds it to the guard (regenerating once when
+  /// allowed), and lifts a prose option list into a choice component.
+  Future<String> _narrate(
+    StreamController<TurnEvent> out,
+    String userText,
+    ToolCallHandler onToolCall,
+    List<ToolResult> turnResults,
+  ) async {
     var narration = stripLeakedToolCalls(await _generate(out, userText, onToolCall));
 
-    var report = guard.check(
-      narration: narration,
-      sources: [...turnResults.map((r) => r.result), ...userInputs],
-    );
+    var report = guard.check(narration: narration, sources: _guardSources());
     if (!report.passed && regenerateOnGuardFailure) {
       out.add(GuardTripped(report, replaced: false));
+      // The correction is sent as a user turn: the SDK offers no other way
+      // to speak to the model mid-conversation, so it enters the chat
+      // history as if the person had typed it. It does not join
+      // [userInputs], so its quoted numbers never become sources.
       final correction =
           'Your last reply contained numbers that did not come from a tool result: '
           '${report.unmatched.map((m) => m.raw).join(', ')}. Restate it using only numbers from '
           'the tool results, or no numbers at all. Do not call tools again.';
       narration = stripLeakedToolCalls(await _generate(out, correction, onToolCall, silent: true));
-      report = guard.check(
-        narration: narration,
-        sources: [...turnResults.map((r) => r.result), ...userInputs],
-      );
+      report = guard.check(narration: narration, sources: _guardSources());
       if (!report.passed) {
         narration = _templated(turnResults);
         out.add(GuardTripped(report, replaced: true));
-      } else {
-        out.add(TextDelta(narration));
       }
+      out.add(NarrationReplaced(narration));
     } else if (!report.passed) {
       out.add(GuardTripped(report, replaced: false));
     }
@@ -314,18 +420,19 @@ class TurnPipeline {
     // The app renders it as one (DD principle 3) and drops the prose list.
     final inline = extractInlineChoice(narration);
     if (inline != null) {
-      narration = inline.remainder;
       final v = PresentRequest.validate({
         'component': 'choice',
         'props': {'question': inline.question, 'options': inline.options},
       }, resultTool: null);
-      if (v.request != null) out.add(Presented(v.request!, automatic: true));
+      final request = v.request;
+      if (request != null) {
+        narration = inline.remainder;
+        out
+          ..add(Presented(request, automatic: true))
+          ..add(NarrationReplaced(narration));
+      }
     }
-
-    final flags = policy.check(narration);
-    if (flags.isNotEmpty) out.add(PolicyFlagged(flags));
-
-    out.add(TurnDone(narration: narration, results: turnResults));
+    return narration;
   }
 
   /// Streams one generation. When [silent], text deltas are buffered rather
@@ -339,11 +446,11 @@ class TurnPipeline {
     final buffer = StringBuffer();
     await for (final chunk in driver.send(text, onToolCall: onToolCall)) {
       switch (chunk) {
-        case DriverText(:final token):
-          buffer.write(token);
-          if (!silent) out.add(TextDelta(token));
-        case DriverThinking(:final content):
-          if (!silent) out.add(ThinkingDelta(content));
+        case DriverText(:final text):
+          buffer.write(text);
+          if (!silent) out.add(TextDelta(text));
+        case DriverThinking(:final text):
+          if (!silent) out.add(ThinkingDelta(text));
       }
     }
     return buffer.toString();
@@ -359,10 +466,11 @@ class TurnPipeline {
 /// Small models sometimes write a tool call as text after they have started a
 /// prose reply (seen with Gemma 4: an OpenAI-style `{"role":"assistant",
 /// "tool_calls":[...]}` object in the middle of a sentence). The SDK may still
-/// parse and run it; the text must not reach the person.
+/// parse and run it; the text must not reach the person. Only objects that
+/// carry `"tool_calls"`, or both `"name"` and `"arguments"`, are removed: a
+/// sentence that happens to contain braces and the word "name" is prose.
 String stripLeakedToolCalls(String text) {
   var out = text;
-  // Balanced-brace scan for JSON objects that mention tool_calls / function.
   var i = out.indexOf('{');
   while (i >= 0) {
     var depth = 0;
@@ -376,9 +484,7 @@ String stripLeakedToolCalls(String text) {
     }
     if (j >= out.length) break;
     final candidate = out.substring(i, j + 1);
-    if (candidate.contains('tool_calls') ||
-        candidate.contains('"function"') ||
-        candidate.contains('"name"')) {
+    if (_looksLikeToolCall(candidate)) {
       out = out.replaceRange(i, j + 1, ' ');
       i = out.indexOf('{', i);
     } else {
@@ -388,6 +494,9 @@ String stripLeakedToolCalls(String text) {
   out = out.replaceAll(RegExp(r'<\/?tool_call>|<\/?function_call>|```(?:json|tool_code)?'), ' ');
   return out.replaceAll(RegExp(r'[ \t]{2,}'), ' ').trim();
 }
+
+bool _looksLikeToolCall(String json) =>
+    json.contains('"tool_calls"') || (json.contains('"name"') && json.contains('"arguments"'));
 
 /// A prose option list found in a reply by [extractInlineChoice], split into
 /// the parts a `present(choice)` call needs.
@@ -410,7 +519,9 @@ class InlineChoice {
 /// Finds a prose-formatted option list such as
 /// `choice:\n option1: fuel economy\n option2: cargo space` or
 /// `1. fuel economy\n2. cargo space`, and returns it with the text that
-/// remains once the list is removed. Null when there is no such list.
+/// remains once the list is removed. Null when there is no such list, when
+/// it has fewer than two or more than six items, or when a label runs past
+/// sixty characters.
 InlineChoice? extractInlineChoice(String text) {
   final lines = text.split('\n');
   final optionLine = RegExp(
@@ -431,7 +542,11 @@ InlineChoice? extractInlineChoice(String text) {
       break;
     }
   }
-  if (opts.length < 2 || opts.length > 8 || opts.any((o) => o.length > 60)) return null;
+  if (opts.length < _minInlineOptions ||
+      opts.length > _maxInlineOptions ||
+      opts.any((o) => o.length > _maxInlineLabelLength)) {
+    return null;
+  }
   var before = lines.sublist(0, start);
   if (before.isNotEmpty && headerLine.hasMatch(before.last)) {
     before = before.sublist(0, before.length - 1);

@@ -1,5 +1,7 @@
 import 'package:vehicle_finance/vehicle_finance.dart';
 
+import '../parse.dart';
+
 /// How the person labeled something they are looking for.
 enum ItemKind {
   /// A requirement; the person said they need it.
@@ -29,8 +31,21 @@ enum ShoppingMode {
   buying,
 }
 
-/// Something the person said they are looking for. The person labels it; the
-/// model only proposes a label and asks.
+/// Looks [raw] up in [values] by name, ignoring case and whitespace; null
+/// for null, for an unknown name and for anything that is not a name. Tool
+/// arguments and stored JSON both go through here so a stray value never
+/// throws out of a profile update or a restore.
+T? _byName<T extends Enum>(List<T> values, Object? raw) {
+  if (raw == null) return null;
+  final name = raw.toString().toLowerCase().trim();
+  for (final v in values) {
+    if (v.name == name) return v;
+  }
+  return null;
+}
+
+/// Something the person said they are looking for. The person labels it;
+/// Motormind only proposes a label and asks.
 class ProfileItem {
   /// Creates an item; [kind] defaults to unlabeled and [source] to the person.
   const ProfileItem({required this.label, this.kind = ItemKind.unlabeled, this.source = 'user'});
@@ -44,18 +59,15 @@ class ProfileItem {
   /// Who added the item: `user` unless a tool argument says otherwise.
   final String source;
 
-  /// Returns a copy with [kind] replaced.
-  ProfileItem copyWith({ItemKind? kind}) =>
-      ProfileItem(label: label, kind: kind ?? this.kind, source: source);
-
   /// Serializes for on-device storage; see [ProfileItem.fromJson].
   Map<String, Object?> toJson() => {'label': label, 'kind': kind.name, 'source': source};
 
-  /// Restores an item written by [toJson]; missing fields take their defaults.
+  /// Restores an item written by [toJson]; missing or unknown fields take
+  /// their defaults.
   factory ProfileItem.fromJson(Map<String, Object?> json) => ProfileItem(
-    label: json['label'] as String,
-    kind: ItemKind.values.byName(json['kind'] as String? ?? 'unlabeled'),
-    source: json['source'] as String? ?? 'user',
+    label: json['label']?.toString() ?? '',
+    kind: _byName(ItemKind.values, json['kind']) ?? ItemKind.unlabeled,
+    source: json['source']?.toString() ?? 'user',
   );
 }
 
@@ -73,7 +85,6 @@ class BuyerProfile {
     this.tradeValue,
     this.tradePayoff,
     this.mode,
-    this.preferNew,
   });
 
   /// Everything the person said they are looking for, labeled or not.
@@ -103,9 +114,6 @@ class BuyerProfile {
   /// How the person is shopping; null until the model infers it.
   final ShoppingMode? mode;
 
-  /// Whether the person prefers a new vehicle; null when unstated.
-  final bool? preferNew;
-
   /// Items the person labeled as needs.
   List<ProfileItem> get needs => items.where((i) => i.kind == ItemKind.need).toList();
 
@@ -120,8 +128,9 @@ class BuyerProfile {
 
   /// Applies the arguments of an `update_profile` tool call. Items with the
   /// same label are replaced, so the person can relabel a want as a need.
-  /// A `credit_score` argument overrides `credit_band`; unknown enum values
-  /// leave the current value in place.
+  /// A `credit_score` argument overrides `credit_band`; an unknown enum
+  /// value (a band of "platinum", a mode of "serious") leaves the current
+  /// value in place rather than failing the whole update.
   BuyerProfile applyUpdate(Map<String, Object?> args) {
     final newItems = <ProfileItem>[...items];
     final rawItems = args['items'];
@@ -130,78 +139,53 @@ class BuyerProfile {
         if (raw is! Map) continue;
         final label = raw['label']?.toString().trim();
         if (label == null || label.isEmpty) continue;
-        final kindName = raw['kind']?.toString() ?? 'unlabeled';
-        final kind =
-            ItemKind.values.where((k) => k.name == kindName).firstOrNull ?? ItemKind.unlabeled;
+        final kind = _byName(ItemKind.values, raw['kind']) ?? ItemKind.unlabeled;
         newItems.removeWhere((i) => i.label.toLowerCase() == label.toLowerCase());
         newItems.add(
           ProfileItem(label: label, kind: kind, source: raw['source']?.toString() ?? 'user'),
         );
       }
     }
-    CreditBand? band = creditBand;
-    if (args['credit_band'] != null) {
-      band = CreditBand.parse(args['credit_band'].toString());
-    }
-    if (args['credit_score'] != null) {
-      final score = _toNum(args['credit_score']);
-      if (score != null) {
-        band = creditBandForScore(score.round());
-      }
-    }
-    ShoppingMode? newMode = mode;
-    if (args['shopping_mode'] != null) {
-      newMode =
-          ShoppingMode.values
-              .where((m) => m.name == args['shopping_mode'].toString())
-              .firstOrNull ??
-          mode;
-    }
+    var band = _byName(CreditBand.values, args['credit_band']) ?? creditBand;
+    final score = parseTolerantNumber(args['credit_score']);
+    if (score != null) band = creditBandForScore(score.round());
     return BuyerProfile(
       items: newItems,
-      paymentCeiling: _toNum(args['payment_ceiling']) ?? paymentCeiling,
-      downPayment: _toNum(args['down_payment']) ?? downPayment,
+      paymentCeiling: parseTolerantNumber(args['payment_ceiling']) ?? paymentCeiling,
+      downPayment: parseTolerantNumber(args['down_payment']) ?? downPayment,
       creditBand: band,
-      monthlyGrossIncome: _toNum(args['monthly_gross_income']) ?? monthlyGrossIncome,
-      monthlyDebtPayments: _toNum(args['monthly_debt_payments']) ?? monthlyDebtPayments,
-      tradeValue: _toNum(args['trade_value']) ?? tradeValue,
-      tradePayoff: _toNum(args['trade_payoff']) ?? tradePayoff,
-      mode: newMode,
-      preferNew: args['prefer_new'] is bool ? args['prefer_new'] as bool : preferNew,
+      monthlyGrossIncome: parseTolerantNumber(args['monthly_gross_income']) ?? monthlyGrossIncome,
+      monthlyDebtPayments:
+          parseTolerantNumber(args['monthly_debt_payments']) ?? monthlyDebtPayments,
+      tradeValue: parseTolerantNumber(args['trade_value']) ?? tradeValue,
+      tradePayoff: parseTolerantNumber(args['trade_payoff']) ?? tradePayoff,
+      mode: _byName(ShoppingMode.values, args['shopping_mode']) ?? mode,
     );
   }
 
   /// Short summary for the system prompt. No numbers are invented; absent
   /// fields are simply absent.
   String toPromptSummary() {
-    final parts = <String>[];
-    if (mode != null) {
-      parts.add('shopping mode: ${mode!.name}');
-    }
-    if (paymentCeiling != null) {
-      parts.add('payment ceiling: \$${paymentCeiling!.toStringAsFixed(0)}/mo');
-    }
-    if (downPayment != null) {
-      parts.add('down payment: \$${downPayment!.toStringAsFixed(0)}');
-    }
-    if (creditBand != null) parts.add('credit band: ${creditBand!.name}');
-    if (monthlyGrossIncome != null) {
-      parts.add('gross income: \$${monthlyGrossIncome!.toStringAsFixed(0)}/mo');
-    }
-    if (hasTrade) {
-      parts.add(
-        'trade-in value: ${tradeValue?.toStringAsFixed(0) ?? 'unknown'}, payoff: ${tradePayoff?.toStringAsFixed(0) ?? 'unknown'}',
-      );
-    }
-    if (needs.isNotEmpty) {
-      parts.add('needs: ${needs.map((i) => i.label).join(', ')}');
-    }
-    if (wants.isNotEmpty) parts.add('wants: ${wants.map((i) => i.label).join(', ')}');
-    if (unlabeled.isNotEmpty) {
-      parts.add('mentioned (unlabeled): ${unlabeled.map((i) => i.label).join(', ')}');
-    }
+    final parts = <String>[
+      if (mode != null) 'shopping mode: ${mode!.name}',
+      if (paymentCeiling != null) 'payment ceiling: ${_money(paymentCeiling)}/mo',
+      if (downPayment != null) 'down payment: ${_money(downPayment)}',
+      if (creditBand != null) 'credit band: ${creditBand!.name}',
+      if (monthlyGrossIncome != null) 'gross income: ${_money(monthlyGrossIncome)}/mo',
+      if (monthlyDebtPayments != null) 'debt payments: ${_money(monthlyDebtPayments)}/mo',
+      if (hasTrade) 'trade-in value: ${_money(tradeValue)}, payoff: ${_money(tradePayoff)}',
+      if (needs.isNotEmpty) 'needs: ${needs.map((i) => i.label).join(', ')}',
+      if (wants.isNotEmpty) 'wants: ${wants.map((i) => i.label).join(', ')}',
+      if (unlabeled.isNotEmpty)
+        'mentioned (unlabeled): ${unlabeled.map((i) => i.label).join(', ')}',
+    ];
     return parts.isEmpty ? 'nothing known yet' : parts.join('; ');
   }
+
+  /// Whole dollars with a `$`, or `unknown`, so every amount in the summary
+  /// reads the same way to the model.
+  static String _money(double? amount) =>
+      amount == null ? 'unknown' : '\$${amount.toStringAsFixed(0)}';
 
   /// Serializes for on-device storage; see [BuyerProfile.fromJson].
   Map<String, Object?> toJson() => {
@@ -214,30 +198,23 @@ class BuyerProfile {
     'tradeValue': tradeValue,
     'tradePayoff': tradePayoff,
     'mode': mode?.name,
-    'preferNew': preferNew,
   };
 
-  /// Restores a profile written by [toJson].
+  /// Restores a profile written by [toJson]. Tolerant of what an older build
+  /// or a hand-edited file may hold: unknown names become null and items
+  /// that are not maps are skipped.
   factory BuyerProfile.fromJson(Map<String, Object?> json) => BuyerProfile(
     items: [
       for (final i in (json['items'] as List? ?? const []))
-        ProfileItem.fromJson((i as Map).cast<String, Object?>()),
+        if (i is Map) ProfileItem.fromJson(i.cast<String, Object?>()),
     ],
-    paymentCeiling: _toNum(json['paymentCeiling']),
-    downPayment: _toNum(json['downPayment']),
-    creditBand: json['creditBand'] == null ? null : CreditBand.parse(json['creditBand'] as String),
-    monthlyGrossIncome: _toNum(json['monthlyGrossIncome']),
-    monthlyDebtPayments: _toNum(json['monthlyDebtPayments']),
-    tradeValue: _toNum(json['tradeValue']),
-    tradePayoff: _toNum(json['tradePayoff']),
-    mode: json['mode'] == null ? null : ShoppingMode.values.byName(json['mode'] as String),
-    preferNew: json['preferNew'] as bool?,
+    paymentCeiling: parseTolerantNumber(json['paymentCeiling']),
+    downPayment: parseTolerantNumber(json['downPayment']),
+    creditBand: _byName(CreditBand.values, json['creditBand']),
+    monthlyGrossIncome: parseTolerantNumber(json['monthlyGrossIncome']),
+    monthlyDebtPayments: parseTolerantNumber(json['monthlyDebtPayments']),
+    tradeValue: parseTolerantNumber(json['tradeValue']),
+    tradePayoff: parseTolerantNumber(json['tradePayoff']),
+    mode: _byName(ShoppingMode.values, json['mode']),
   );
-
-  static double? _toNum(Object? v) {
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    if (v is String) return double.tryParse(v.replaceAll(RegExp(r'[\$,\s]'), ''));
-    return null;
-  }
 }

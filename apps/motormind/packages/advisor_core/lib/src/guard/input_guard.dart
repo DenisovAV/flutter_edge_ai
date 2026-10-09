@@ -23,10 +23,12 @@ class InputProvenanceReport {
 /// tools must trace to the person's own words, the profile, or an earlier tool
 /// result. Non-numeric and enum arguments are not checked. Arguments listed in
 /// [derivedAllowed] (defaults the model may legitimately choose, such as a
-/// term or a tax rate of zero) are exempt.
+/// term or a tax rate of zero) are exempt, and so is a value of zero: "no
+/// down payment" or "nothing owed" is a statement the person can make
+/// without naming a figure, and a zero never inflates a result.
 class InputProvenanceGuard {
   /// Creates a guard; the defaults exempt the arguments a model may fill in
-  /// on its own and reuse the [NarrationGuard] number parser.
+  /// on its own and reuse the [NarrationGuard] number parser and matcher.
   const InputProvenanceGuard({
     this.derivedAllowed = const {
       'term_months',
@@ -37,55 +39,53 @@ class InputProvenanceGuard {
       'is_new',
       'roll_negative_equity',
     },
-    this.extractor = const NarrationGuard(),
+    this.narrationGuard = const NarrationGuard(),
   });
 
   /// Argument names that are never checked because the model may choose them
   /// without the person having supplied a figure.
   final Set<String> derivedAllowed;
 
-  /// Supplies number parsing ([NarrationGuard.extract]) and source collection
-  /// ([NarrationGuard.allowedValues]); its matching tolerances are not used.
-  final NarrationGuard extractor;
+  /// Supplies number parsing ([NarrationGuard.extract]), source collection
+  /// ([NarrationGuard.allowedValues]) and the tolerance matcher
+  /// ([NarrationGuard.matches]), so both guards agree on what "the same
+  /// number" means.
+  final NarrationGuard narrationGuard;
 
   /// Checks the numeric values in [args] against every number reachable in
   /// [sources] (user inputs, the profile as JSON, earlier tool results).
   ///
   /// A string argument counts as numeric only when it is a single number such
-  /// as `"22k"`. Zero is accepted without a source because "none" is a
-  /// statement, not a figure. Matching tolerates whole-dollar rounding, a 2%
-  /// relative difference, and a thousands scaling (`22k` against `22000`).
+  /// as `"22k"`. Matching tolerates whole-dollar rounding and the relative
+  /// difference the [narrationGuard] allows, plus a thousands scaling
+  /// (`22k` against `22000`) because people abbreviate prices that way.
   InputProvenanceReport check({
     required Map<String, Object?> args,
     required Iterable<Object?> sources,
   }) {
-    final allowed = extractor.allowedValues(sources);
+    final allowed = narrationGuard.allowedValues(sources);
     final unsupported = <String>[];
     for (final e in args.entries) {
       if (derivedAllowed.contains(e.key)) continue;
       final v = e.value;
       double? n;
-      if (v is num) n = v.toDouble();
-      if (v is String) {
-        final mentions = extractor.extract(v);
+      if (v is num) {
+        n = v.toDouble();
+      } else if (v is String) {
+        final mentions = narrationGuard.extract(v);
         if (mentions.length == 1 && mentions.single.raw.trim() == v.trim()) {
           n = mentions.single.value;
         }
       }
-      if (n == null) continue;
-      if (n == 0) continue; // "none" is a statement, not a figure
+      if (n == null || n == 0) continue;
       if (!_supported(n, allowed)) unsupported.add(e.key);
     }
     return InputProvenanceReport(unsupported: unsupported);
   }
 
   bool _supported(double n, Set<double> allowed) {
+    if (narrationGuard.matches(n, allowed)) return true;
     for (final a in allowed) {
-      if (a == n) return true;
-      if (a.round() == n.round() && n.abs() >= 1) return true;
-      final scale = a.abs() < 1 ? 1 : a.abs();
-      if ((a - n).abs() / scale <= 0.02) return true;
-      // "22k" vs 22000 and "1.5 million"-style scaling.
       if (a * 1000 == n || n * 1000 == a) return true;
     }
     return false;

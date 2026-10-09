@@ -8,7 +8,9 @@
 /// Run:
 ///   flutter test integration_test/litertlm_ffi_test.dart -d <device>
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
@@ -117,6 +119,63 @@ Future<void> _closeSharedModel() async {
     _sharedModel = null;
     _sharedBackend = null;
   }
+}
+
+/// A 256×256 solid red PNG — the image of the NPU media reference runs, so
+/// the answer ("Red") can be compared with them word for word.
+final _redPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAACv0lEQVR4nO3TMQ0A'
+  'MAzAsIIof2QDMxg9YskA8mTeLmTNeQEcMgBpBiDNAKQZgDQDkGYA0gxAmgFIMwBp'
+  'BiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZ'
+  'gDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA'
+  '0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFI'
+  'MwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDN'
+  'AKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQD'
+  'kGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxA'
+  'mgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBp'
+  'BiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZ'
+  'gDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA'
+  '0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFI'
+  'MwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDN'
+  'AKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQD'
+  'kGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxAmgFIMwBpBiDNAKQZgDQDkGYA0gxA'
+  'mgFIMwBpBiDNAKQZgDQDkGYA0j4CMg892PfiaQAAAABJRU5ErkJggg==',
+);
+
+/// A 1 s 440 Hz tone, 16 kHz mono 16-bit PCM WAV, amplitude 12000, samples
+/// truncated toward zero: byte-identical to the NPU media reference runs'
+/// `tone.wav` (32 044 bytes).
+Uint8List _tone440Wav() {
+  const rate = 16000;
+  final data = ByteData(44 + rate * 2);
+  void ascii(int at, String s) {
+    for (var i = 0; i < s.length; i++) {
+      data.setUint8(at + i, s.codeUnitAt(i));
+    }
+  }
+
+  ascii(0, 'RIFF');
+  data.setUint32(4, 36 + rate * 2, Endian.little);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  data
+    ..setUint32(16, 16, Endian.little)
+    ..setUint16(20, 1, Endian.little) // PCM
+    ..setUint16(22, 1, Endian.little) // mono
+    ..setUint32(24, rate, Endian.little)
+    ..setUint32(28, rate * 2, Endian.little)
+    ..setUint16(32, 2, Endian.little)
+    ..setUint16(34, 16, Endian.little);
+  ascii(36, 'data');
+  data.setUint32(40, rate * 2, Endian.little);
+  for (var n = 0; n < rate; n++) {
+    data.setInt16(
+      44 + n * 2,
+      (12000 * math.sin(2 * math.pi * 440 * n / rate)).truncate(),
+      Endian.little,
+    );
+  }
+  return data.buffer.asUint8List();
 }
 
 /// Helper: open a session on the shared model, send a single prompt, return
@@ -621,7 +680,8 @@ void main() {
   //   - Android on Qualcomm Snapdragon (QNN dispatch; verified on QDC sm8750).
   //     A phone without FastRPC (Pixel, Exynos, Dimensity) never reaches npu.
   //   - Windows with Intel dispatch DLLs (Lunar Lake / PantherLake).
-  // Other platforms (macOS/iOS/Linux/Web): skipped — no NPU dispatch.
+  //   - Linux arm64 Qualcomm boards (QNN dispatch; the SoC's bundle staged).
+  // Other platforms (macOS/iOS/Web): skipped — no NPU dispatch.
   group('Gemma4-E2B NPU', () {
     tearDownAll(_closeSharedModel);
 
@@ -647,10 +707,16 @@ void main() {
         // Windows (Intel NPU): LunarLake/PantherLake-compiled model.
         if (Platform.isWindows)
           '${Platform.environment['USERPROFILE']}\\dev-gemma4-2b-lnl\\gemma4_2b_lnl.litertlm',
-        // No macOS or Linux candidate. The header above says those hosts are
-        // skipped, and since the NPU candidate is gated on a host that ships a
-        // dispatch stack, a bundle staged there would run on GPU or CPU while
-        // both tests below reported NPU facts about it.
+        // Linux arm64 (Qualcomm QNN): the SoC's bundle staged in ~/models.
+        // qcs8275 = Dragonwing IQ8 (Arduino VENTUNO Q, HTP V75), from
+        // litert-community/gemma-4-E2B-it-litert-lm. Only a Qualcomm board
+        // offers npu, so on another arm64 machine the assert below fails —
+        // stage it on the board only.
+        if (Platform.isLinux)
+          '$_linuxDir/gemma-4-E2B-it_qualcomm_qcs8275.litertlm',
+        // No macOS candidate: no dispatch stack ships there, so a bundle
+        // staged on a Mac would run on GPU or CPU while both tests below
+        // reported NPU facts about it.
       ];
       for (final p in candidates) {
         if (File(p).existsSync()) return p;
@@ -761,6 +827,137 @@ void main() {
         equals(r2),
         reason: 'NPU should ignore seed and produce deterministic output',
       );
+    });
+
+    // ── Image and audio with the text model on the NPU ──
+    //
+    // NPU bundles that carry vision and audio towers run the text model on the
+    // Hexagon and the towers on the CPU (XNNPACK) — the encoders' default
+    // here. Google's QCS8275 and SM8750 bundles carry them; for SM8850 stage a
+    // bundle with towers grafted in under the name below. Inputs and context
+    // (1024) are those of the reference runs, whose answers on an SM8850 phone
+    // were "Red" and "The sound is a high-pitched, sustained tone that fades
+    // slowly."
+    String? findNpuMediaModel() {
+      final candidates = <String>[
+        if (Platform.isAndroid)
+          '$_androidDir/gemma-4-E2B-it_qualcomm_sm8750.litertlm',
+        if (Platform.isAndroid)
+          '$_androidDir/gemma-4-E2B-it_qualcomm_sm8850_towers.litertlm',
+        if (Platform.isLinux)
+          '$_linuxDir/gemma-4-E2B-it_qualcomm_qcs8275.litertlm',
+      ];
+      for (final p in candidates) {
+        if (File(p).existsSync()) return p;
+      }
+      return null;
+    }
+
+    Future<InferenceModel?> installAndGetNpuMedia() async {
+      final path = findNpuMediaModel();
+      if (path == null) {
+        markTestSkipped('no NPU bundle with vision/audio towers staged');
+        return null;
+      }
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemma4,
+        fileType: ModelFileType.litertlm,
+      ).fromFile(path).install();
+      await _closeSharedModel();
+      final model = await FlutterEdgeAi.getActiveModel(
+        maxTokens: 1024,
+        preferredBackend: PreferredBackend.npu,
+        supportImage: true,
+        supportAudio: true,
+      );
+      addTearDown(model.close);
+      expect(
+        model.activeBackend,
+        PreferredBackend.npu,
+        reason: 'the text model must run on the NPU for these to mean anything',
+      );
+      return model;
+    }
+
+    testWidgets('NPU vision (towers on CPU)', (t) async {
+      final model = await installAndGetNpuMedia();
+      if (model == null) return;
+      final session = await model.createSession(enableVisionModality: true);
+      await session.addQueryChunk(
+        Message(
+          text: 'What colour is this image? Answer in one word.',
+          isUser: true,
+          imageBytes: _redPng,
+        ),
+      );
+      final out = await session.getResponse();
+      print('[Gemma4 NPU vision] $out');
+      expect(out.toLowerCase(), contains('red'));
+      await session.close();
+    });
+
+    testWidgets('NPU audio (towers on CPU)', (t) async {
+      final model = await installAndGetNpuMedia();
+      if (model == null) return;
+      final session = await model.createSession(enableAudioModality: true);
+      await session.addQueryChunk(
+        Message(
+          text: 'Describe this sound in one sentence.',
+          isUser: true,
+          audioBytes: _tone440Wav(),
+        ),
+      );
+      final out = await session.getResponse();
+      print('[Gemma4 NPU audio] $out');
+      expect(out, isNotEmpty);
+      await session.close();
+    });
+
+    // A measurement, not a threshold: the decode rate is the one number that
+    // shows whether the HTP runs in burst (the Linux options patch in
+    // native-v0.18.0-a). On a QCS8275 Google's wheel decodes at 16.6 tok/s
+    // without it; Google's model card says 31.7 tok/s and 0.3 s to first token.
+    // Two readings: the runtime's own benchmark counters — the figure those
+    // numbers are — and wall-clock chunks/s as a cross-check.
+    testWidgets('NPU decode rate (printed)', (t) async {
+      final model = await _installAndGetNpu();
+      if (model == null) return;
+      final session = await model.createSession(maxOutputTokens: 128);
+      await session.addQueryChunk(
+        const Message(
+          text:
+              'Explain in detail how a neural processing unit speeds up '
+              'transformer inference.',
+          isUser: true,
+        ),
+      );
+      final sw = Stopwatch()..start();
+      Duration? first;
+      var chunks = 0;
+      await for (final _ in session.getResponseAsync()) {
+        first ??= sw.elapsed;
+        chunks++;
+      }
+      sw.stop();
+      final metrics = session.getSessionMetrics();
+      await session.close();
+      await model.close();
+      print(
+        '[Gemma4 NPU runtime] prefill ${metrics.inputTokens} tok, decode '
+        '${metrics.outputTokens} tok @ '
+        '${metrics.tokensPerSecond?.toStringAsFixed(1)} tok/s, first token '
+        '${metrics.timeToFirstTokenMs?.toStringAsFixed(0)} ms',
+      );
+      final decode = sw.elapsed - (first ?? Duration.zero);
+      final rate = chunks > 1
+          ? (chunks - 1) / (decode.inMicroseconds / 1e6)
+          : 0.0;
+      print(
+        '[Gemma4 NPU rate] $chunks chunks, first after '
+        '${first?.inMilliseconds} ms, decode ${rate.toStringAsFixed(1)} '
+        'chunks/s',
+      );
+      expect(chunks, greaterThan(1));
     });
   });
 

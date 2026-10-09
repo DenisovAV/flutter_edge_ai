@@ -1,7 +1,8 @@
 # Lint baseline for the app. Starts from flutter_lints and adds the rules that
 # catch the mistakes this codebase is most likely to make: unawaited futures
-# in Riverpod notifiers, dynamic calls on tool-result maps, and drift in
-# import order and doc comments.
+# in Riverpod notifiers, dynamic calls on tool-result maps, import order, and
+# doc comments that reference members which no longer exist. The pure-Dart
+# packages additionally require a doc comment on every public member.
 include: package:flutter_lints/flutter.yaml
 
 linter:
@@ -12,9 +13,7 @@ linter:
     - directives_ordering
     - prefer_final_locals
     - prefer_final_in_for_each
-    - avoid_print
     - comment_references
-    - use_super_parameters
     - always_declare_return_types
     - avoid_redundant_argument_values
     - unnecessary_lambdas

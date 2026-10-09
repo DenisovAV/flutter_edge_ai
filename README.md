@@ -1,8 +1,9 @@
 # Motormind AI
 
-> **Status:** first working loop, October 2026. On an Android emulator, Gemma 4 E2B takes a
-> typed sentence, calls the finance tools, and the app shows the computed payment and
-> trade-equity cards. Work happens on `develop`.
+> **Status:** working demo, October 2026. On an Android emulator, Gemma 4 E2B holds a
+> conversation, calls the finance tools, reads listing pages through the in-app browser,
+> and the app composes the screen from cards, a live filters card and a display decision
+> table. Work happens on `develop`.
 > Backlog: [BACKLOG.md](BACKLOG.md). Docs: [docs/](docs/README.md).
 
 An on-device AI companion for finding and financing a personal vehicle, built in Flutter.
@@ -37,13 +38,21 @@ at runtime from the conversation** rather than pre-designed screens
   site (EchoPark by default). It is the person's browser: they scroll, tap, and answer any
   verification a site shows. The assistant reads only the page they have open, pulls
   listings and figures out of it, and can open a site's filtered results page for a stated
-  budget and body style. Figures found on a page become labeled inputs. Form filling only on
-  sites the user approved, previewed and confirmed every time.
+  budget and body style. Figures found on a page become labeled inputs. Reading is a
+  per-site JSON recipe with a self-check; a captured page is how a broken recipe gets fixed
+  ([ADR 0007](docs/adr/0007-reading-recipes-as-data.md)).
+- **Decides the layout at runtime.** Which card is on the stage, whether the filters card
+  is open, how much of the screen the page gets: a rules table decides from screen state,
+  and a second session of the same model can take the rows over
+  ([ADR 0008](docs/adr/0008-display-agent-and-cards-stage.md)).
 - **Lets the user pick the model.** A short catalog of on-device models (Gemma 4 E2B
-  default, Qwen3 0.6B light, OS built-in where available), delivered over the air with
-  checksums, switchable at runtime. See [docs/MODELS.md](docs/MODELS.md).
+  default), downloaded from the public litert-community catalog, switchable at runtime.
+  See [docs/MODELS.md](docs/MODELS.md).
 - **Discloses before and during use.** A short disclaimer gate, long-form disclosures one
-  tap away and on the web, and assumptions beside every number.
+  tap away, and assumptions beside every number.
+
+Planned, not built: form filling on approved sites with a preview and a confirm every
+time; the disclosures on the web; a light model for older phones.
 
 ## What it does not do
 
@@ -61,7 +70,7 @@ results or ranking. The demo build has none.
 |---|---|
 | `apps/motormind/packages/vehicle_finance/` | Pure Dart finance engine with tests |
 | `apps/motormind/packages/advisor_core/` | Pure Dart tool specs, finance tool handlers, narration guard, policy check, disclosures, buyer profile, component registry; with tests |
-| `apps/motormind/` | The Flutter app (scaffold; Riverpod 3, go_router, workspace member) |
+| `apps/motormind/` | The Flutter app: conversation, stage and cards, live search and filters, web pane with reading recipes and captures, model catalog (Riverpod 3, go_router) |
 | `packages/` | Upstream `flutter_edge_ai` packages: inference engines, agent loop, speech, RAG, diagnostics |
 | `docs/` | Architecture, setup, models, decisions ([index](docs/README.md)) |
 | `BACKLOG.md` | Epics, features and user stories |
@@ -72,8 +81,8 @@ This repository is a trimmed fork of [DenisovAV/flutter_edge_ai](https://github.
 
 ## Building and running
 
-Toolchain install is in [docs/SETUP.md](docs/SETUP.md). Until the app scaffold exists, the
-runnable parts are the two Dart packages:
+Toolchain install is in [docs/SETUP.md](docs/SETUP.md). The two Dart packages run on the
+Dart VM alone; the app's widget tests need Flutter.
 
 ```bash
 cd apps/motormind/packages/vehicle_finance && dart pub get && dart test
@@ -82,6 +91,13 @@ cd apps/motormind/packages/vehicle_finance && dart pub get && dart test
 ```bash
 cd apps/motormind/packages/advisor_core && dart pub get && dart test
 ```
+
+```bash
+cd apps/motormind && flutter pub get && flutter analyze && flutter test
+```
+
+Running on a device or emulator, including the emulator GPU modes the web pane needs, is
+in [docs/SETUP.md](docs/SETUP.md).
 
 ## Attribution and license
 

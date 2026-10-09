@@ -1,8 +1,10 @@
 # Architecture
 
-**Status:** draft, revised 2026-10-04 after the second question round. The pure-Dart layer
-(sections 5 and 6) exists with passing tests; the Flutter app has its scaffold: Riverpod,
-go_router with the disclosure gate, disclosure screens, and the three-state surface. Open items are tagged `Q#` / `TQ#`.
+**Status:** revised 2026-10-09. The pure-Dart layer (sections 5 and 6) and the Flutter app
+exist with passing tests: the conversation and its cards, the stage, the live search and
+filters card, the web pane with reading recipes and captures, the model catalog, and the
+display decision table with an optional second model session (ADR 0008). Sections marked
+*plan* describe direction, not code. Open items are tagged `Q#` / `TQ#`.
 
 ## 1. The idea in one paragraph
 
@@ -21,7 +23,7 @@ comparison, or a live web page the assistant can read from.
 | `flutter_edge_ai` (core) | model install, sessions, `Message`/`Tool` types, `generateChatResponseWithTools` loop, engine registry |
 | `flutter_edge_ai_litertlm` | the `.litertlm` engine for Gemma 4, Qwen3, FunctionGemma on Android and iOS |
 | `flutter_edge_ai_builtin_ai` | OS models (Apple Foundation Models, Gemini Nano), documented option (TQ9) |
-| `flutter_edge_ai_diagnostics` | memory measurement for `docs/MEASUREMENTS.md` |
+| `flutter_edge_ai_diagnostics` | memory snapshot that sizes the context window at load |
 | `flutter_edge_ai_agent` | reference for a tool loop and a sandboxed webview; patterns borrowed, package not necessarily used |
 | `flutter_edge_ai_speech` | push-to-talk, stretch (Q12) |
 | `flutter_edge_ai_sqlite` + `_embeddings` | RAG over long pages, follow-on (TQ19) |
@@ -32,26 +34,29 @@ layer, the buyer profile, the component registry, the browser agent, the model c
 ## 3. Layout (ADR 0005)
 
 ```
-apps/motormind/                       Flutter app (pub workspace member; not created yet)
+apps/motormind/                       Flutter app (pub workspace member)
   lib/
-    app/                              bootstrap, router (go_router), theme, build flavors
+    app/                              bootstrap, router (go_router), theme, prefs seam, shared widgets
     features/
-      advisor/                        surface state machine, chat, tool status, question chips
-      content/                        content area host: vehicles | browser | compare
-      vehicles/                       list, detail, compare; inventory sources
-      browser/                        webview mode, page extraction, approved sites, form preview
-      finance/                        breakdown screens rendered from tool results
-      models/                         catalog, download (OTA manifest), switching, diagnostics
-      history/                        conversation list, new conversation
-      settings/                       disclosures, privacy, analytics opt-in, data wipe
-      ads/                            fixed ad slot; compiled in only in the store flavor
-    services/                         AdvisorModelService, storage (drift), reference APIs, analytics
-  integration_test/
+      advisor/                        surface state machine, stage, display rules and agent
+      chat/                           the turn (ChatService), state, starters, external tools, cards/
+      search/                         live search service and the filters card
+      listings/                       listing tiles and the viewed/liked/dismissed signals
+      browser/                        the web pane and BrowserService (reading, recipes, bot checks)
+      recipes/                        reading recipes: shipped assets plus on-device overrides
+      captures/                       Capture control and the Captures screen
+      models/                         catalog and the Models screen
+      disclosures/                    gate and long-form disclosures
+      home/                           the one screen that hosts the stage and the surface
+    services/                         AdvisorModelService, token store, analytics, log
   packages/
-    vehicle_finance/                  pure Dart: calculators, tables, assumptions   ← exists
-    advisor_core/                     pure Dart: tools, handlers, guard, policy,
-                                      disclosures, profile, component registry      ← exists
+    vehicle_finance/                  pure Dart: calculators, tables, assumptions
+    advisor_core/                     pure Dart: tools, pipeline, guards, policy, profile,
+                                      prompt, component registry, vehicles (search, recipes)
 ```
+
+Planned, not built: conversation history, settings beyond disclosures, the ads slot, drift
+storage, reference APIs, integration tests on a device.
 
 ## 4. The Motormind turn
 
@@ -183,8 +188,8 @@ Three states, one widget tree, a toggle control the user owns:
 
 ## 9. Content area and vehicle discovery (Q7, Q10, Q11, Q15)
 
-- Modes: **vehicles** (list, detail, compare rendered from `find_vehicles`), **browser**
-  (`flutter_inappwebview`, works on iOS and Android), **compare**.
+- Stage modes today: **Web** (the curated site in `webview_flutter`) and **Cards** (what
+  the model or the app presented, listings included). Compare is planned.
 - **No sample inventory** (Q41). Listings come from pages the user opens: a **curated site
   list** the project tests, each with an extraction recipe (closer to an HTML pre-rendering
   step than scraping); unknown sites fall back to generic extraction. `find_vehicles`
@@ -199,17 +204,20 @@ Three states, one widget tree, a toggle control the user owns:
 
 ## 10. Browser agent (VA-6, Q20, Q23, TQ18, TQ19, TQ36)
 
-**Built 2026-10-05, first cut.** `BrowserService` owns one `webview_flutter` WebView on the
-stage (curated-site chips: EchoPark, Cars.com, Autotrader). `read_page` waits for the load,
-injects JavaScript that removes scripts, navigation, header and footer and returns the
-visible text, title and og:image; `ListingExtractor` pulls listings by pattern (a
-year-make-model line followed by a price and optional mileage) into a session
-`ListingStore`; `find_vehicles` searches the store and, when it is empty, opens the default
-site's filtered results URL and reads it. A human-verification page is detected and
-reported to the person to complete; nothing tries to get around it. The stage flips to Web
-when a page is opened and to Cards when a card is presented; the person can flip it back.
+**As built.** `BrowserService` owns one `webview_flutter` WebView on the stage; the site is
+chosen on the filters card (EchoPark, Cars.com, Autotrader). `read_page` waits for the
+load, probes until the page's cards have rendered, scrolls once the way a person would when
+the app itself opened a results page, refuses a human-verification page (reported to the
+person; nothing tries to get around it), then reads with the site's **recipe** (a JSON
+asset naming the card and field selectors, with a self-check for plausibility; ADR 0007)
+and falls back to the generic text patterns when no recipe applies or the self-check fails.
+A recipe that fails on a real page is marked broken until a newer one passes. Listings go
+into a session `ListingStore`; the live search (`SearchService`) and the model's
+`find_vehicles`/`update_search` share one path through it. The **Capture** control saves
+the page as rendered, with the recipe's verdict, so real pages reach the tests without the
+app ever loading one on its own.
 
-Original plan, still the direction:
+Plan, still the direction:
 
 - Navigation policy: `http(s)` only, downloads and external schemes blocked, JavaScript on.
 - `read_page`: inject a Readability-style extraction, strip navigation, ads and headers at
@@ -224,28 +232,34 @@ Original plan, still the direction:
 
 ## 11. Models and delivery (TQ7, TQ10, TQ11)
 
-`docs/MODELS.md` covers candidates. The catalog is an OTA manifest (id, size, checksum,
-URL, minimum RAM, capabilities); sources are Hugging Face (token entered in-app) or a
-self-hosted mirror at `motormind.sirisdevelopment.com` (TQ31). An in-app diagnostics screen
-measures and exports JSON, with an optional upload to the same host.
+`docs/MODELS.md` covers candidates. The catalog is a Dart constant today (id, size, URL,
+minimum RAM, capabilities); the source is the public litert-community organization on
+Hugging Face, with an in-app token field for mirrors or gated entries. The context window
+is sized from a memory snapshot at load. *Plan:* an OTA manifest with checksums, a
+self-hosted mirror at `motormind.sirisdevelopment.com` (TQ31), a diagnostics screen.
 
 ## 12. Build flavors: demo and store (Q22)
 
 Advertising is a **build-time** decision. The `demo` flavor compiles no ad SDK and shows no
 slot; the `store` flavor includes a fixed, labeled AdMob banner **across the top** of every
 screen, which hides while the keyboard is up (AdMob policy forbids ads adjacent to the
-keyboard). Implemented as a `--dart-define=MOTORMIND_ADS=true` flag plus platform flavors so
-the ad SDK is absent from demo binaries. Ads never appear inside the chat or inside a result
+keyboard). *Plan:* a `--dart-define=MOTORMIND_ADS=true` flag plus platform flavors so the ad SDK is
+absent from demo binaries; nothing is built yet. Ads never appear inside the chat or inside a result
 component, and never affect ranking.
 
 ## 13. Privacy, storage, analytics (Q21, TQ21, TQ22)
 
-- drift (SQLite) for profile, conversations, allowlist, reference cache; secure storage for
-  the Hugging Face token; shared preferences for small flags.
+- Today: secure storage for the Hugging Face token, shared preferences for small flags,
+  plain files for captures and recipe overrides. *Plan:* drift (SQLite) for profile,
+  conversations and the reference cache.
 - Analytics: Firebase Analytics (Q33), anonymous event counts (screen views, tool names
   called, model id, surface transitions, component ids presented, download outcomes), no
-  free text, no financial values, opt-in, disclosed in the gate and the terms.
-- A debug network audit logs every outbound host; a test fails on an unexpected host.
+  free text, no financial values, opt-in, disclosed in the gate and the terms. The
+  Firebase SDK is linked in every build (Dart cannot depend conditionally) and inert unless
+  `--dart-define=MOTORMIND_ANALYTICS=true`; the generated Firebase config files identify the
+  project and are not secrets.
+- *Plan:* a debug network audit that logs every outbound host; a test fails on an
+  unexpected host.
 
 ## 14. Context budget (learned 2026-10-05)
 

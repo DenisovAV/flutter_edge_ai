@@ -1,5 +1,5 @@
 name: motormind
-description: "A new Flutter project."
+description: "Motormind AI: an on-device car-shopping assistant whose numbers come from code."
 publish_to: 'none'
 resolution: workspace
 version: 0.1.0+1
@@ -11,9 +11,10 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # On-device inference (local workspace packages, see docs/UPSTREAM.md)
+  # On-device inference (the upstream packages in ../../packages, see docs/UPSTREAM.md)
   flutter_edge_ai: ^1.11.4
   flutter_edge_ai_litertlm: ^1.8.6
+  flutter_edge_ai_diagnostics: ^0.1.0
 
   # Project logic (pure Dart, path deps; not workspace members by design, ADR 0005)
   vehicle_finance:
@@ -25,14 +26,17 @@ dependencies:
   flutter_riverpod: ^3.0.0
   go_router: ^16.0.0
 
-  # Storage
+  # Storage: small flags, the Hugging Face token, captures and recipe overrides
   shared_preferences: ^2.3.0
   flutter_secure_storage: ^11.2.0
+  path_provider: ^2.1.4
+
+  # The web pane (flutter_inappwebview does not build on AGP 9)
+  webview_flutter: ^4.14.1
+
+  # Analytics: linked in every build, inert unless MOTORMIND_ANALYTICS=true
   firebase_core: ^4.15.0
   firebase_analytics: ^12.6.0
-  webview_flutter: ^4.14.1
-  path_provider: ^2.1.4
-  flutter_edge_ai_diagnostics: ^0.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -23,6 +23,8 @@ dart test
 | `deal.dart` | amount financed and a full purchase estimate from price, tax, fees, down, trade |
 | `lease.dart` | lease payment from cap cost, residual, money factor; money factor to APR |
 | `credit.dart` | credit bands, score to band, illustrative APR table (JSON-loadable) |
-| `affordability.dart` | payment-to-income and debt-to-income warnings (never blocks) |
+| `affordability.dart` | payment-to-income and debt-to-income warnings (never blocks); use `maxPrincipal` in `loan.dart` to turn the suggested payment into a price |
 | `ownership.dart` | rough five-year cost of ownership from class-based tables |
 | `what_if.dart` | one-variable-at-a-time alternatives to a deal |
+| `money.dart` | `roundCents` and `roundTo`, the rounding every caller must share |
+| `assumption.dart` | `Assumption`, `CalcResult` and `assumptionsReviewedOn`, the date the bundled defaults were last reviewed |

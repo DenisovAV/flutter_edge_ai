@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'assumption.dart';
 
 /// Credit bands shown to the user. Score ranges follow the VantageScore tiers
@@ -35,16 +37,27 @@ enum CreditBand {
   /// case and surrounding whitespace.
   ///
   /// Throws an [ArgumentError] for anything that is not one of [values].
-  static CreditBand parse(String value) => CreditBand.values.firstWhere(
-    (b) => b.name == value.toLowerCase().trim(),
-    orElse: () => throw ArgumentError.value(value, 'value', 'unknown credit band'),
-  );
+  static CreditBand parse(String value) {
+    final name = value.trim().toLowerCase();
+    return values.firstWhere(
+      (band) => band.name == name,
+      orElse: () => throw ArgumentError.value(value, 'value', 'unknown credit band'),
+    );
+  }
 }
 
-/// Maps a numeric score to a band. Scores outside 300–850 are clamped.
+/// Maps a numeric score to a band.
+///
+/// Scores below the lowest band or above the highest are clamped into range,
+/// so any integer maps to a band; the bounds come from the bands themselves
+/// rather than a hard-coded 300–850 so they move if the tiers ever change.
 CreditBand creditBandForScore(int score) {
-  final s = score < 300 ? 300 : (score > 850 ? 850 : score);
-  return CreditBand.values.firstWhere((b) => s >= b.minScore && s <= b.maxScore);
+  final lowest = CreditBand.values.map((band) => band.minScore).reduce(math.min);
+  final highest = CreditBand.values.map((band) => band.maxScore).reduce(math.max);
+  final clamped = score.clamp(lowest, highest);
+  return CreditBand.values.firstWhere(
+    (band) => clamped >= band.minScore && clamped <= band.maxScore,
+  );
 }
 
 /// Illustrative APRs for one band, as decimals.
@@ -78,6 +91,9 @@ class AprRates {
 class AprTable {
   /// Creates a table; [illustrative] defaults to true because a table of
   /// averages is never a quote.
+  ///
+  /// [rates] should cover every [CreditBand]; [AprTable.fromJson] enforces
+  /// that, and [defaultAprTable] is complete by construction.
   const AprTable({
     required this.source,
     required this.asOf,
@@ -95,17 +111,19 @@ class AprTable {
   /// this user.
   final bool illustrative;
 
-  /// Rates by band; every band [creditBandForScore] can return should be
-  /// present, since [aprFor] throws on a missing one.
+  /// Rates by band. Complete for the bundled table and for anything loaded
+  /// through [AprTable.fromJson]; a hand-built table that skips a band makes
+  /// [aprFor] throw for it.
   final Map<CreditBand, AprRates> rates;
 
   /// Looks up the APR for [band] on a new or used vehicle, as a fraction.
   ///
-  /// Throws a [StateError] when the table has no entry for [band].
+  /// Throws a [StateError] when the table has no entry for [band], which only
+  /// a hand-built incomplete table can cause.
   double aprFor(CreditBand band, {required bool isNew}) {
-    final r = rates[band];
-    if (r == null) throw StateError('no rate for ${band.name}');
-    return r.forCondition(isNew: isNew);
+    final bandRates = rates[band];
+    if (bandRates == null) throw StateError('no rate for ${band.name}');
+    return bandRates.forCondition(isNew: isNew);
   }
 
   /// Builds the [Assumption] that documents the rate [aprFor] returns, so a
@@ -135,16 +153,27 @@ class AprTable {
 
   /// Reads a table from the layout [toJson] writes; `illustrative` defaults to
   /// true when the file omits it.
+  ///
+  /// Throws a [FormatException] naming the missing bands when the file does
+  /// not list every [CreditBand], so a bad bundled file fails at load time
+  /// rather than in the middle of a deal estimate.
   factory AprTable.fromJson(Map<String, Object?> json) {
     final raw = json['rates'] as Map<String, Object?>;
+    final rates = {
+      for (final e in raw.entries)
+        CreditBand.parse(e.key): AprRates.fromJson(e.value as Map<String, Object?>),
+    };
+    final missing = CreditBand.values.where((band) => !rates.containsKey(band));
+    if (missing.isNotEmpty) {
+      throw FormatException(
+        'APR table is missing rates for: ${missing.map((band) => band.name).join(', ')}',
+      );
+    }
     return AprTable(
       source: json['source'] as String,
       asOf: json['asOf'] as String,
       illustrative: json['illustrative'] as bool? ?? true,
-      rates: {
-        for (final e in raw.entries)
-          CreditBand.parse(e.key): AprRates.fromJson(e.value as Map<String, Object?>),
-      },
+      rates: rates,
     );
   }
 }
@@ -152,7 +181,7 @@ class AprTable {
 /// Average APRs by credit tier, new and used, from Experian's *State of the
 /// Automotive Finance Market*, Q2 2026, as transcribed by the project owner on
 /// 2026-10-04. Averages, not quotes: labeled illustrative in every result.
-const AprTable experianQ2_2026AprTable = AprTable(
+const AprTable _experianQ2y2026 = AprTable(
   source: 'Experian State of the Automotive Finance Market, Q2 2026 (averages by tier)',
   asOf: '2026-06-30',
   rates: {
@@ -165,4 +194,8 @@ const AprTable experianQ2_2026AprTable = AprTable(
 );
 
 /// The table the app uses unless a newer one is loaded via [AprTable.fromJson].
-const AprTable defaultAprTable = experianQ2_2026AprTable;
+///
+/// Currently the Experian Q2 2026 tier averages; the source and `asOf` on the
+/// table itself say which edition, so callers never need to know the name of
+/// the underlying constant.
+const AprTable defaultAprTable = _experianQ2y2026;

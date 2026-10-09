@@ -108,19 +108,20 @@ class OwnershipInputs {
 ///
 /// Every number is a placeholder in a plausible range and is labeled
 /// illustrative in the result; replace with sourced values before relying on
-/// them. All values are static; the class is a namespace.
-class OwnershipTables {
-  /// Creates an instance; the tables are static, so instances carry nothing.
-  const OwnershipTables();
-
+/// them. The class is a namespace: nothing here is an instance member.
+abstract final class OwnershipTables {
   /// Source label attached to every assumption derived from these tables.
   static const String source = 'PLACEHOLDER rough national averages; see TQ13';
 
   /// ISO-8601 date the tables were last reviewed.
-  static const String asOf = '2026-10-04';
+  static const String asOf = assumptionsReviewedOn;
 
   /// Fraction of the *original* value lost by the end of each ownership year,
-  /// cumulative, for a vehicle bought new. Used vehicles start partway along.
+  /// cumulative, for a vehicle bought new. Used vehicles start partway along,
+  /// and years past the end of the list reuse the last entry.
+  ///
+  /// Every entry must stay below 1.0: [estimateOwnership] divides by the
+  /// value still remaining at the start of the window.
   static const List<double> cumulativeDepreciation = [
     0.20,
     0.31,
@@ -134,7 +135,8 @@ class OwnershipTables {
     0.75,
   ];
 
-  /// Annual maintenance and repairs by vehicle age in years.
+  /// Annual maintenance and repairs by vehicle age in years; ages past the
+  /// end of the list reuse the last entry.
   static const List<double> maintenanceByAge = [
     400,
     500,
@@ -148,29 +150,37 @@ class OwnershipTables {
     2000,
   ];
 
-  /// Annual premium in dollars by [InsuranceBand].
-  static const Map<InsuranceBand, double> annualInsurance = {
-    InsuranceBand.low: 1200,
-    InsuranceBand.average: 1900,
-    InsuranceBand.high: 2800,
+  /// Annual premium in dollars for [band].
+  ///
+  /// A switch rather than a map so adding an [InsuranceBand] without a premium
+  /// is a compile error, not a null at runtime.
+  static double annualInsuranceFor(InsuranceBand band) => switch (band) {
+    InsuranceBand.low => 1200,
+    InsuranceBand.average => 1900,
+    InsuranceBand.high => 2800,
   };
 
-  /// Scale applied to [maintenanceByAge] by [VehicleClass]; cars are the
+  /// Scale applied to [maintenanceByAge] for [vehicleClass]; cars are the
   /// baseline.
-  static const Map<VehicleClass, double> classMaintenanceMultiplier = {
-    VehicleClass.car: 1.0,
-    VehicleClass.suv: 1.15,
-    VehicleClass.pickup: 1.2,
-    VehicleClass.van: 1.1,
+  ///
+  /// A switch rather than a map so adding a [VehicleClass] without a
+  /// multiplier is a compile error, not a silent fallback to 1.0.
+  static double maintenanceMultiplierFor(VehicleClass vehicleClass) => switch (vehicleClass) {
+    VehicleClass.car => 1.0,
+    VehicleClass.suv => 1.15,
+    VehicleClass.pickup => 1.2,
+    VehicleClass.van => 1.1,
   };
 }
 
 /// Cost of owning the vehicle over the input's window, split by category.
 ///
-/// Every field is a dollar total for the whole window, not per year.
+/// Every field is a dollar total for the whole window, not per year; see
+/// [perMonth] for the spread.
 class OwnershipEstimate extends CalcResult {
   /// Creates an estimate from already-computed figures; [estimateOwnership] is
-  /// the usual way to get one. The [input] is serialized into [inputs].
+  /// the usual way to get one. The [input] is serialized into [inputs] and
+  /// its window length is kept as [years].
   OwnershipEstimate({
     required OwnershipInputs input,
     required this.depreciation,
@@ -179,7 +189,11 @@ class OwnershipEstimate extends CalcResult {
     required this.maintenance,
     required this.taxesAndFees,
     required super.assumptions,
-  }) : super(inputs: input.toJson());
+  }) : years = input.years,
+       super(inputs: input.toJson());
+
+  /// Length of the ownership window the totals cover, from the inputs.
+  final int years;
 
   /// Value lost over the window, from the cumulative curve in
   /// [OwnershipTables.cumulativeDepreciation].
@@ -201,9 +215,9 @@ class OwnershipEstimate extends CalcResult {
   double get total =>
       roundCents(depreciation + fuelOrEnergy + insurance + maintenance + taxesAndFees);
 
-  /// Spreads [total] evenly over [years] of ownership, in dollars per month;
-  /// pass the same number of years the inputs used.
-  double perMonth(int years) => roundCents(total / (years * 12));
+  /// [total] spread evenly over the [years] of the window, in dollars per
+  /// month.
+  double get perMonth => roundCents(total / (years * 12));
 
   @override
   Map<String, Object?> outputsToJson() => {
@@ -223,12 +237,16 @@ class OwnershipEstimate extends CalcResult {
 /// scales the remaining drop to today's price, so a used vehicle loses less in
 /// absolute terms than the same price new. Fuel is miles divided by
 /// efficiency times the energy price; maintenance is summed year by year from
-/// the age table. Throws an [ArgumentError] for a non-positive window or
+/// the age table. Windows that run past the end of the tables reuse the last
+/// year's figures. Throws an [ArgumentError] for a non-positive window or
 /// efficiency.
 OwnershipEstimate estimateOwnership(OwnershipInputs input) {
-  if (input.years <= 0) throw ArgumentError.value(input.years, 'years', 'must be positive');
-  if (input.efficiency <= 0)
+  if (input.years <= 0) {
+    throw ArgumentError.value(input.years, 'years', 'must be positive');
+  }
+  if (input.efficiency <= 0) {
     throw ArgumentError.value(input.efficiency, 'efficiency', 'must be positive');
+  }
 
   // Depreciation: the share of today's price lost over the ownership window,
   // reading the cumulative curve from the vehicle's current age.
@@ -237,7 +255,8 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
   final startLost = lostAt(input.vehicleAgeYears);
   final endLost = lostAt(input.vehicleAgeYears + input.years);
   // Today's price already reflects startLost; scale the remaining drop to it.
-  final remainingShare = startLost >= 1 ? 0.0 : (endLost - startLost) / (1 - startLost);
+  // The curve tops out below 1.0, so the divisor is always positive.
+  final remainingShare = (endLost - startLost) / (1 - startLost);
   final depreciation = roundCents(input.purchasePrice * remainingShare);
 
   final totalMiles = input.milesPerYear * input.years;
@@ -247,15 +266,15 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
     FuelType.hybrid => totalMiles / input.efficiency * input.fuelPricePerGallon,
   };
 
-  final insurance = OwnershipTables.annualInsurance[input.insuranceBand]! * input.years;
+  final annualInsurance = OwnershipTables.annualInsuranceFor(input.insuranceBand);
+  final insurance = annualInsurance * input.years;
 
   var maintenance = 0.0;
-  final mult = OwnershipTables.classMaintenanceMultiplier[input.vehicleClass] ?? 1.0;
+  final multiplier = OwnershipTables.maintenanceMultiplierFor(input.vehicleClass);
+  final byAge = OwnershipTables.maintenanceByAge;
   for (var y = 0; y < input.years; y++) {
     final age = input.vehicleAgeYears + y;
-    maintenance +=
-        OwnershipTables.maintenanceByAge[_index(age, OwnershipTables.maintenanceByAge.length)] *
-        mult;
+    maintenance += byAge[_index(age, byAge.length)] * multiplier;
   }
 
   final taxes = input.purchasePrice * input.salesTaxRate + input.annualRegistration * input.years;
@@ -280,15 +299,14 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
         key: 'tco.insurance',
         description:
             'National-average annual premium for the ${input.insuranceBand.name} band; your quote will differ.',
-        value: OwnershipTables.annualInsurance[input.insuranceBand]!.toStringAsFixed(0),
+        value: annualInsurance.toStringAsFixed(0),
         source: OwnershipTables.source,
         asOf: OwnershipTables.asOf,
       ),
       Assumption(
         key: 'tco.maintenance',
         description: 'Average maintenance and repair cost by vehicle age, scaled by class.',
-        value:
-            'by age ${OwnershipTables.maintenanceByAge.map((v) => v.toStringAsFixed(0)).join(', ')}',
+        value: 'by age ${byAge.map((v) => v.toStringAsFixed(0)).join(', ')}',
         source: OwnershipTables.source,
         asOf: OwnershipTables.asOf,
       ),
@@ -307,5 +325,9 @@ OwnershipEstimate estimateOwnership(OwnershipInputs input) {
   );
 }
 
-/// Clamps [i] into `0..length-1` as an int (num.clamp returns num).
+/// Clamps a year index into `0..length-1`.
+///
+/// The tables cover ten years; an index past the end reuses the last year, so
+/// a long window or an old vehicle keeps paying the final year's figure rather
+/// than throwing. `num.clamp` returns `num`, hence the hand-rolled version.
 int _index(int i, int length) => i < 0 ? 0 : (i >= length ? length - 1 : i);

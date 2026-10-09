@@ -2,6 +2,13 @@ import 'assumption.dart';
 import 'deal.dart';
 import 'money.dart';
 
+/// Shortest term a what-if variant will propose.
+///
+/// Auto loans under a year are not a product lenders offer, so a shorter-term
+/// variant that lands below this would compare the deal with something the
+/// buyer cannot actually sign.
+const int _minTermMonths = 12;
+
 /// A labeled alternative to a deal, changing one input.
 class WhatIfVariant {
   /// Creates a variant from its label, the one changed input and the full
@@ -26,12 +33,22 @@ class WhatIfVariant {
   };
 }
 
-/// Three one-variable alternatives: a shorter term, more money down, a lower
-/// price. Each is a real [DealEstimate], so its numbers are verifiable.
+/// Up to three one-variable alternatives to [base]: a shorter term, more
+/// money down, a lower price. Each is a real [DealEstimate], so its numbers
+/// are verifiable.
 ///
-/// [termStep] is in months, [extraDown] in dollars and [priceCut] a fraction
-/// of the price. The shorter-term variant is omitted when it would drop the
-/// term below 12 months, so the list has two or three entries.
+/// The three knobs size the alternatives and leave everything else in [base]
+/// untouched:
+///
+/// * [termStep]: months taken off the term, 12 by default. The shorter-term
+///   variant is omitted when the result would be under 12 months, so the list
+///   has two or three entries.
+/// * [extraDown]: dollars added to the down payment, 1,000 by default.
+/// * [priceCut]: fraction taken off the price, 10% by default; the new price
+///   is rounded to the cent.
+///
+/// The variants come back in that order, each with a `changed` map naming the
+/// one input it moved.
 List<WhatIfVariant> whatIfVariants(
   DealInputs base, {
   required Assumption aprAssumption,
@@ -41,8 +58,8 @@ List<WhatIfVariant> whatIfVariants(
 }) {
   final variants = <WhatIfVariant>[];
 
-  if (base.termMonths - termStep >= 12) {
-    final term = base.termMonths - termStep;
+  final term = base.termMonths - termStep;
+  if (term >= _minTermMonths) {
     variants.add(
       WhatIfVariant(
         label: '$term-month term',
@@ -55,7 +72,7 @@ List<WhatIfVariant> whatIfVariants(
   final down = roundCents(base.downPayment + extraDown);
   variants.add(
     WhatIfVariant(
-      label: '${extraDown.toStringAsFixed(0)} more down',
+      label: '\$${extraDown.toStringAsFixed(0)} more down',
       changed: {'downPayment': down},
       estimate: estimateDeal(base.copyWith(downPayment: down), aprAssumption: aprAssumption),
     ),

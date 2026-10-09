@@ -10,7 +10,7 @@ import 'money.dart';
 /// assumes monthly compounding and no fees in the rate. [apr] is a fraction:
 /// `0.065` for 6.5%. A zero APR is a straight division.
 double monthlyPayment({required double principal, required double apr, required int termMonths}) {
-  _checkLoanArgs(principal: principal, apr: apr, termMonths: termMonths);
+  _checkLoanArgs(amount: principal, amountName: 'principal', apr: apr, termMonths: termMonths);
   if (principal == 0) return 0;
   final r = apr / 12;
   if (r == 0) return roundCents(principal / termMonths);
@@ -20,10 +20,12 @@ double monthlyPayment({required double principal, required double apr, required 
 
 /// The largest principal a [payment] can carry at [apr] over [termMonths].
 ///
-/// Inverse of [monthlyPayment]. Rounds down to the cent so the payment on the
-/// returned principal never exceeds [payment].
+/// Inverse of [monthlyPayment], rounded down to the cent so the payment on the
+/// returned principal never exceeds [payment]. Because [payment] is itself a
+/// rounded figure, inverting a payment that came from [monthlyPayment] lands
+/// within a few cents of the original principal, not exactly on it.
 double maxPrincipal({required double payment, required double apr, required int termMonths}) {
-  _checkLoanArgs(principal: payment, apr: apr, termMonths: termMonths);
+  _checkLoanArgs(amount: payment, amountName: 'payment', apr: apr, termMonths: termMonths);
   if (payment == 0) return 0;
   final r = apr / 12;
   if (r == 0) return (payment * termMonths * 100).floor() / 100;
@@ -68,15 +70,29 @@ class AmortizationRow {
   };
 }
 
-/// Full amortization schedule. The final row absorbs rounding so the balance
-/// ends at exactly zero and the sum of principal equals [principal].
+/// Full amortization schedule.
+///
+/// The final row absorbs rounding so the balance ends at exactly zero and the
+/// sum of principal equals [principal]. When the rounded payment overshoots,
+/// the balance reaches zero before [termMonths] and the schedule is shorter
+/// than the term.
 List<AmortizationRow> amortizationSchedule({
   required double principal,
   required double apr,
   required int termMonths,
 }) {
-  _checkLoanArgs(principal: principal, apr: apr, termMonths: termMonths);
   final payment = monthlyPayment(principal: principal, apr: apr, termMonths: termMonths);
+  return _amortize(principal: principal, apr: apr, termMonths: termMonths, payment: payment);
+}
+
+/// Walks the schedule for an already-computed [payment]; the loan arguments
+/// are assumed valid because [monthlyPayment] checked them.
+List<AmortizationRow> _amortize({
+  required double principal,
+  required double apr,
+  required int termMonths,
+  required double payment,
+}) {
   final r = apr / 12;
   final rows = <AmortizationRow>[];
   var balance = principal;
@@ -95,7 +111,7 @@ List<AmortizationRow> amortizationSchedule({
         payment: thisPayment,
         interest: interest,
         principal: principalPart,
-        balance: balance < 0 ? 0 : balance,
+        balance: math.max(0.0, balance),
       ),
     );
     if (balance <= 0) break;
@@ -163,13 +179,19 @@ LoanSummary summarizeLoan({
   required int termMonths,
   required Assumption aprAssumption,
 }) {
-  final schedule = amortizationSchedule(principal: principal, apr: apr, termMonths: termMonths);
+  final payment = monthlyPayment(principal: principal, apr: apr, termMonths: termMonths);
+  final schedule = _amortize(
+    principal: principal,
+    apr: apr,
+    termMonths: termMonths,
+    payment: payment,
+  );
   final total = roundCents(schedule.fold<double>(0, (sum, row) => sum + row.payment));
   return LoanSummary(
     principal: principal,
     apr: apr,
     termMonths: termMonths,
-    monthlyPayment: monthlyPayment(principal: principal, apr: apr, termMonths: termMonths),
+    monthlyPayment: payment,
     totalOfPayments: total,
     financeCharge: roundCents(total - principal),
     schedule: schedule,
@@ -177,12 +199,19 @@ LoanSummary summarizeLoan({
   );
 }
 
-void _checkLoanArgs({required double principal, required double apr, required int termMonths}) {
+/// Validates the shared loan arguments; [amountName] is the caller's name for
+/// [amount] (`principal` or `payment`) so the error points at the right one.
+void _checkLoanArgs({
+  required double amount,
+  required String amountName,
+  required double apr,
+  required int termMonths,
+}) {
   if (termMonths <= 0) {
     throw ArgumentError.value(termMonths, 'termMonths', 'must be positive');
   }
-  if (principal < 0) {
-    throw ArgumentError.value(principal, 'principal', 'must not be negative');
+  if (amount < 0) {
+    throw ArgumentError.value(amount, amountName, 'must not be negative');
   }
   if (apr < 0 || apr > 1) {
     throw ArgumentError.value(apr, 'apr', 'must be a decimal between 0 and 1 (0.065 for 6.5%)');

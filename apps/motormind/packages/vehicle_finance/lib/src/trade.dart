@@ -26,7 +26,7 @@ class TradeEquity extends CalcResult {
   bool get isNegative => equity < 0;
 
   /// Negative equity as a positive amount, zero when equity is positive.
-  double get shortfall => isNegative ? -equity : 0;
+  double get shortfall => isNegative ? -equity : 0.0;
 
   @override
   Map<String, Object?> outputsToJson() => {
@@ -48,7 +48,9 @@ TradeEquity tradeEquity({
   if (estimatedValue < 0) {
     throw ArgumentError.value(estimatedValue, 'estimatedValue', 'must not be negative');
   }
-  if (payoff < 0) throw ArgumentError.value(payoff, 'payoff', 'must not be negative');
+  if (payoff < 0) {
+    throw ArgumentError.value(payoff, 'payoff', 'must not be negative');
+  }
   return TradeEquity(
     estimatedValue: estimatedValue,
     payoff: payoff,

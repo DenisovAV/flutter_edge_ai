@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'assumption.dart';
 import 'loan.dart';
 import 'money.dart';
@@ -104,11 +106,13 @@ class DealEstimate extends CalcResult {
     required this.tradeEquityApplied,
     required this.negativeEquityFinanced,
     required this.cashDueAtSigning,
+    required this.cashBack,
     required this.amountFinanced,
     required this.monthlyPayment,
     required this.totalOfPayments,
     required this.financeCharge,
     required this.totalCost,
+    required this.schedule,
     required super.assumptions,
   }) : super(inputs: deal.toJson());
 
@@ -116,14 +120,22 @@ class DealEstimate extends CalcResult {
   /// [DealInputs.taxCreditForTrade] is set.
   final double salesTax;
 
-  /// Positive equity credited toward the purchase (zero if none).
+  /// Positive equity credited toward the purchase (zero if none). When the
+  /// equity is worth more than the deal needs, only the part that was needed
+  /// is here and the rest is [cashBack].
   final double tradeEquityApplied;
 
   /// Negative equity added to the loan (zero if paid in cash or none).
   final double negativeEquityFinanced;
 
-  /// Down payment plus any negative equity paid in cash.
+  /// Down payment plus any negative equity paid in cash. Never negative: a
+  /// down payment larger than the deal is simply not collected in full.
   final double cashDueAtSigning;
+
+  /// Positive trade equity left over after the whole deal is covered, which
+  /// the dealer owes the buyer (zero in the usual case). Reported separately
+  /// so it is never hidden inside a negative [cashDueAtSigning].
+  final double cashBack;
 
   /// Loan principal: price, tax and fees, less down payment and positive
   /// equity, plus any financed negative equity. Never negative.
@@ -139,8 +151,13 @@ class DealEstimate extends CalcResult {
   /// [amountFinanced].
   final double financeCharge;
 
-  /// Cash at signing plus total of payments.
+  /// Cash at signing plus total of payments; [cashBack] is not netted out.
   final double totalCost;
+
+  /// Month-by-month amortization of [amountFinanced], for the payoff chart.
+  /// Kept out of [outputsToJson] because the narration guard verifies the
+  /// headline figures, not sixty rows the model never repeats.
+  final List<AmortizationRow> schedule;
 
   @override
   Map<String, Object?> outputsToJson() => {
@@ -148,6 +165,7 @@ class DealEstimate extends CalcResult {
     'tradeEquityApplied': tradeEquityApplied,
     'negativeEquityFinanced': negativeEquityFinanced,
     'cashDueAtSigning': cashDueAtSigning,
+    'cashBack': cashBack,
     'amountFinanced': amountFinanced,
     'monthlyPayment': monthlyPayment,
     'totalOfPayments': totalOfPayments,
@@ -156,43 +174,30 @@ class DealEstimate extends CalcResult {
   };
 }
 
-/// Estimates a financed purchase from [deal], applying tax, fees, down payment
-/// and trade equity before amortizing the remainder over the term.
+/// Estimates a financed purchase from [deal]: sales tax on the taxable price,
+/// then fees, down payment and trade equity applied to reach the amount
+/// financed, which is amortized over the term for the payment, the total of
+/// payments and the schedule.
 ///
-/// When cash and equity exceed what the deal needs, nothing is financed and
-/// the surplus down payment is simply not collected. The result carries
-/// [aprAssumption], the tax and fee inputs as non-illustrative assumptions,
-/// and any assumptions attached to the trade.
+/// When cash and equity exceed what the deal needs, nothing is financed; the
+/// surplus comes first out of the down payment, which is not collected in
+/// full, and any equity still left over is reported as
+/// [DealEstimate.cashBack]. The result carries [aprAssumption], the tax and
+/// fee inputs as non-illustrative assumptions, and any assumptions attached
+/// to the trade.
 ///
 /// Throws an [ArgumentError] for a negative price or down payment; the loan
 /// arguments are validated by [monthlyPayment].
 DealEstimate estimateDeal(DealInputs deal, {required Assumption aprAssumption}) {
-  if (deal.price < 0) throw ArgumentError.value(deal.price, 'price', 'must not be negative');
+  if (deal.price < 0) {
+    throw ArgumentError.value(deal.price, 'price', 'must not be negative');
+  }
   if (deal.downPayment < 0) {
     throw ArgumentError.value(deal.downPayment, 'downPayment', 'must not be negative');
   }
-  final trade = deal.trade;
-  final taxable = deal.taxCreditForTrade && trade != null
-      ? (deal.price - trade.estimatedValue).clamp(0, double.infinity).toDouble()
-      : deal.price;
-  final salesTax = roundCents(taxable * deal.salesTaxRate);
-
-  final positiveEquity = trade != null && !trade.isNegative ? trade.equity : 0.0;
-  final shortfall = trade?.shortfall ?? 0.0;
-  final negativeFinanced = deal.rollNegativeEquity ? shortfall : 0.0;
-  final negativeInCash = deal.rollNegativeEquity ? 0.0 : shortfall;
-
-  var financed =
-      deal.price + salesTax + deal.fees - deal.downPayment - positiveEquity + negativeFinanced;
-  var cashAtSigning = deal.downPayment + negativeInCash;
-  if (financed < 0) {
-    // More cash and equity than the deal needs: nothing is financed and the
-    // excess down payment is not collected.
-    cashAtSigning = roundCents(cashAtSigning + financed);
-    financed = 0;
-  }
-  financed = roundCents(financed);
-  cashAtSigning = roundCents(cashAtSigning);
+  final salesTax = _salesTaxFor(deal);
+  final financing = _financing(deal, salesTax: salesTax);
+  final financed = financing.amountFinanced;
 
   final payment = monthlyPayment(principal: financed, apr: deal.apr, termMonths: deal.termMonths);
   final schedule = amortizationSchedule(
@@ -202,39 +207,93 @@ DealEstimate estimateDeal(DealInputs deal, {required Assumption aprAssumption}) 
   );
   final total = roundCents(schedule.fold<double>(0, (sum, row) => sum + row.payment));
 
-  final assumptions = <Assumption>[
-    aprAssumption,
-    Assumption(
-      key: 'tax.rate',
-      description:
-          'Sales tax rate applied to the ${deal.taxCreditForTrade ? 'price minus trade value' : 'full price'}.',
-      value: '${(deal.salesTaxRate * 100).toStringAsFixed(2)}%',
-      source: 'user or state table',
-      asOf: '2026-10-04',
-      illustrative: false,
-    ),
-    Assumption(
-      key: 'fees.total',
-      description: 'Dealer, documentation, title and registration fees as entered.',
-      value: deal.fees.toStringAsFixed(2),
-      source: 'user',
-      asOf: '2026-10-04',
-      illustrative: false,
-    ),
-    if (trade != null) ...trade.assumptions,
-  ];
-
   return DealEstimate(
     deal: deal,
     salesTax: salesTax,
-    tradeEquityApplied: roundCents(positiveEquity),
-    negativeEquityFinanced: roundCents(negativeFinanced),
-    cashDueAtSigning: cashAtSigning,
+    tradeEquityApplied: financing.equityApplied,
+    negativeEquityFinanced: financing.negativeEquityFinanced,
+    cashDueAtSigning: financing.cashDueAtSigning,
+    cashBack: financing.cashBack,
     amountFinanced: financed,
     monthlyPayment: payment,
     totalOfPayments: total,
     financeCharge: roundCents(total - financed),
-    totalCost: roundCents(cashAtSigning + total),
-    assumptions: assumptions,
+    totalCost: roundCents(financing.cashDueAtSigning + total),
+    schedule: schedule,
+    assumptions: _dealAssumptions(deal, aprAssumption: aprAssumption),
   );
 }
+
+/// Sales tax on the full price, or on the price less the trade value when the
+/// state credits the trade; the taxable base never goes below zero.
+double _salesTaxFor(DealInputs deal) {
+  final trade = deal.trade;
+  final taxable = deal.taxCreditForTrade && trade != null
+      ? math.max(0.0, deal.price - trade.estimatedValue)
+      : deal.price;
+  return roundCents(taxable * deal.salesTaxRate);
+}
+
+/// The money that changes hands at signing, split the way the estimate
+/// reports it. Every figure is rounded to the cent.
+typedef _Financing = ({
+  double amountFinanced,
+  double cashDueAtSigning,
+  double cashBack,
+  double equityApplied,
+  double negativeEquityFinanced,
+});
+
+/// Applies down payment and trade equity to price, tax and fees.
+///
+/// A positive remainder is financed. A negative one means the buyer brought
+/// more than the deal needs: the down payment is reduced first, since nobody
+/// hands over cash to get it straight back, and any equity still left over is
+/// cash back from the dealer.
+_Financing _financing(DealInputs deal, {required double salesTax}) {
+  final trade = deal.trade;
+  final positiveEquity = trade != null && !trade.isNegative ? trade.equity : 0.0;
+  final shortfall = trade?.shortfall ?? 0.0;
+  final negativeFinanced = deal.rollNegativeEquity ? shortfall : 0.0;
+  final negativeInCash = deal.rollNegativeEquity ? 0.0 : shortfall;
+
+  final remainder =
+      deal.price + salesTax + deal.fees - deal.downPayment - positiveEquity + negativeFinanced;
+  final surplus = math.max(0.0, -remainder);
+  final uncollectedDown = math.min(surplus, deal.downPayment);
+  final cashBack = surplus - uncollectedDown;
+
+  return (
+    amountFinanced: roundCents(math.max(0.0, remainder)),
+    cashDueAtSigning: roundCents(deal.downPayment - uncollectedDown + negativeInCash),
+    cashBack: roundCents(cashBack),
+    equityApplied: roundCents(positiveEquity - cashBack),
+    negativeEquityFinanced: roundCents(negativeFinanced),
+  );
+}
+
+/// The assumptions a deal estimate carries, in the order they are applied:
+/// the caller's APR assumption, the tax rate and fees echoed back as
+/// non-illustrative ones so the UI can show what the numbers were built on,
+/// then whatever the trade-in brought with it.
+List<Assumption> _dealAssumptions(DealInputs deal, {required Assumption aprAssumption}) => [
+  aprAssumption,
+  Assumption(
+    key: 'tax.rate',
+    description:
+        'Sales tax rate applied to the ${deal.taxCreditForTrade ? 'price minus trade value' : 'full price'}.',
+    value: '${(deal.salesTaxRate * 100).toStringAsFixed(2)}%',
+    source: 'user or state table',
+    asOf: assumptionsReviewedOn,
+    illustrative: false,
+  ),
+  Assumption(
+    key: 'fees.total',
+    description: 'Dealer, documentation, title and registration fees as entered.',
+    value: deal.fees.toStringAsFixed(2),
+    source: 'user',
+    asOf: assumptionsReviewedOn,
+    illustrative: false,
+  ),
+  ...?deal.trade?.assumptions,
+];

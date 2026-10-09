@@ -7,6 +7,13 @@ double moneyFactorToApr(double moneyFactor) => moneyFactor * 24;
 /// Decimal APR to money factor.
 double aprToMoneyFactor(double apr) => apr / 24;
 
+/// Largest money factor [estimateLease] accepts.
+///
+/// 0.05 is a 120% APR equivalent, far beyond any real lease; a value above it
+/// almost always means an APR (`0.06`) was passed where a money factor
+/// (`0.0025`) belonged, so rejecting it catches the mix-up at the boundary.
+const double _maxPlausibleMoneyFactor = 0.05;
+
 /// Terms of a closed-end lease as they appear on an offer sheet.
 ///
 /// Money fields are in dollars. [moneyFactor] is the lessor's rent-charge
@@ -121,7 +128,8 @@ class LeaseEstimate extends CalcResult {
 /// then tax on the total.
 ///
 /// [moneyFactorAssumption] documents where the money factor came from; the
-/// residual is recorded as a second, non-illustrative assumption.
+/// residual is recorded as a second, non-illustrative assumption, in that
+/// order.
 ///
 /// Throws an [ArgumentError] for a non-positive term or a money factor outside
 /// 0–0.05, which usually means an APR was passed by mistake.
@@ -129,7 +137,7 @@ LeaseEstimate estimateLease(LeaseInputs lease, {required Assumption moneyFactorA
   if (lease.termMonths <= 0) {
     throw ArgumentError.value(lease.termMonths, 'termMonths', 'must be positive');
   }
-  if (lease.moneyFactor < 0 || lease.moneyFactor > 0.05) {
+  if (lease.moneyFactor < 0 || lease.moneyFactor > _maxPlausibleMoneyFactor) {
     throw ArgumentError.value(
       lease.moneyFactor,
       'moneyFactor',
@@ -152,17 +160,26 @@ LeaseEstimate estimateLease(LeaseInputs lease, {required Assumption moneyFactorA
     monthlyPayment: payment,
     totalOfPayments: roundCents(payment * lease.termMonths),
     aprEquivalent: moneyFactorToApr(lease.moneyFactor),
-    assumptions: [
-      moneyFactorAssumption,
-      Assumption(
-        key: 'lease.residual',
-        description:
-            'Residual value set by the lessor; it is not negotiable and drives most of the payment.',
-        value: lease.residualValue.toStringAsFixed(2),
-        source: 'user or lease offer',
-        asOf: '2026-10-04',
-        illustrative: false,
-      ),
-    ],
+    assumptions: _leaseAssumptions(lease, moneyFactorAssumption: moneyFactorAssumption),
   );
 }
+
+/// The assumptions a lease estimate carries, in the order they are applied:
+/// the caller's money-factor assumption, then the residual echoed back as a
+/// non-illustrative one because the lessor fixes it and it drives most of the
+/// payment.
+List<Assumption> _leaseAssumptions(
+  LeaseInputs lease, {
+  required Assumption moneyFactorAssumption,
+}) => [
+  moneyFactorAssumption,
+  Assumption(
+    key: 'lease.residual',
+    description:
+        'Residual value set by the lessor; it is not negotiable and drives most of the payment.',
+    value: lease.residualValue.toStringAsFixed(2),
+    source: 'user or lease offer',
+    asOf: assumptionsReviewedOn,
+    illustrative: false,
+  ),
+];

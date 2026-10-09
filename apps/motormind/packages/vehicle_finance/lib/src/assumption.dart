@@ -1,3 +1,12 @@
+/// ISO-8601 date the bundled assumption text and the default rates in this
+/// package were last reviewed.
+///
+/// Every assumption the package builds for itself (tax and fee echoes, the
+/// lease residual, the ownership tables, the affordability policy) carries
+/// this date so the UI's "as of" labels move together. Bump it whenever a
+/// default value or a description is changed.
+const String assumptionsReviewedOn = '2026-10-04';
+
 /// A stated assumption behind a computed result.
 ///
 /// Assumptions are what let the UI say "this number assumes X" and what let the

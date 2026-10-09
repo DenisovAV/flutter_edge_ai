@@ -1,5 +1,6 @@
+import 'dart:math' as math;
+
 import 'assumption.dart';
-import 'loan.dart';
 import 'money.dart';
 
 /// Thresholds used to *warn*, never to block. Defaults are common
@@ -12,7 +13,7 @@ class AffordabilityPolicy {
     this.maxDebtToIncome = 0.43,
     this.maxTermMonths = 72,
     this.source = 'rule of thumb; not a lender guideline',
-    this.asOf = '2026-10-04',
+    this.asOf = assumptionsReviewedOn,
   });
 
   /// Vehicle payment as a share of gross monthly income.
@@ -79,7 +80,15 @@ class AffordabilityWarning {
   /// Creates a warning from its machine code and user-facing message.
   const AffordabilityWarning({required this.code, required this.message});
 
-  /// Stable machine code the UI and tests key on, e.g. `payment_to_income`.
+  /// Stable machine code the UI and tests key on. One of:
+  ///
+  /// * `payment_to_income`: the payment exceeds
+  ///   [AffordabilityPolicy.maxPaymentToIncome] of gross income.
+  /// * `debt_to_income`: all debt plus the payment exceeds
+  ///   [AffordabilityPolicy.maxDebtToIncome] of gross income.
+  /// * `long_term`: the term is longer than [AffordabilityPolicy.maxTermMonths].
+  /// * `over_ceiling`: the payment is above the user's own
+  ///   [AffordabilityInputs.paymentCeiling].
   final String code;
 
   /// Plain-language explanation with the actual and guideline figures filled in.
@@ -130,12 +139,19 @@ class AffordabilityResult extends CalcResult {
   };
 }
 
+/// Ratios are reported to four places so a percentage reads to a hundredth
+/// of a point without exposing floating-point noise.
+const int _ratioPlaces = 4;
+
 /// Compares [input] against [policy] and reports the ratios, the suggested
 /// maximum payment and one warning per guideline exceeded.
 ///
 /// The suggested maximum is the smallest of the payment-to-income ceiling, the
 /// debt-to-income ceiling after existing debt, and the user's own ceiling,
-/// floored at zero. Throws an [ArgumentError] when income is not positive.
+/// floored at zero. Throws an [ArgumentError] when income is not positive,
+/// since every ratio divides by it. To turn a payment ceiling into a price,
+/// pass [AffordabilityResult.suggestedMaxPayment] to `maxPrincipal` in
+/// `loan.dart`.
 AffordabilityResult assessAffordability(
   AffordabilityInputs input, {
   AffordabilityPolicy policy = const AffordabilityPolicy(),
@@ -149,12 +165,10 @@ AffordabilityResult assessAffordability(
 
   final policyCeiling = roundCents(income * policy.maxPaymentToIncome);
   final dtiCeiling = roundCents(income * policy.maxDebtToIncome - input.monthlyDebtPayments);
-  var suggested = [
-    policyCeiling,
-    dtiCeiling,
-    if (input.paymentCeiling != null) input.paymentCeiling!,
-  ].reduce((a, b) => a < b ? a : b);
-  if (suggested < 0) suggested = 0;
+  final suggested = math.max(
+    0.0,
+    [policyCeiling, dtiCeiling, ?input.paymentCeiling].reduce(math.min),
+  );
 
   final warnings = <AffordabilityWarning>[
     if (pti > policy.maxPaymentToIncome)
@@ -184,8 +198,8 @@ AffordabilityResult assessAffordability(
 
   return AffordabilityResult(
     input: input,
-    paymentToIncome: double.parse(pti.toStringAsFixed(4)),
-    debtToIncomeAfter: double.parse(dti.toStringAsFixed(4)),
+    paymentToIncome: roundTo(pti, _ratioPlaces),
+    debtToIncomeAfter: roundTo(dti, _ratioPlaces),
     suggestedMaxPayment: suggested,
     warnings: warnings,
     assumptions: [
@@ -200,11 +214,3 @@ AffordabilityResult assessAffordability(
     ],
   );
 }
-
-/// Convenience: the most expensive vehicle a payment ceiling supports at a
-/// given APR and term, before tax, fees and trade.
-double maxPriceForPayment({
-  required double payment,
-  required double apr,
-  required int termMonths,
-}) => maxPrincipal(payment: payment, apr: apr, termMonths: termMonths);

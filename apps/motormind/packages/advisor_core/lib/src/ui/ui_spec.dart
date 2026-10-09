@@ -227,7 +227,7 @@ abstract final class ComponentRegistry {
   );
 
   /// The live vehicle filters (type, price, miles, site). App-owned: it is
-  /// bound to the search state, so it needs no props and never retires.
+  /// bound to the search state, so it needs no props and is never answered or dismissed.
   static final searchFilters = UiComponent(
     id: 'search_filters',
     description: 'the live vehicle filters; the app keeps it current',

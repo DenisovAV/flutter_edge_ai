@@ -15,7 +15,7 @@ final captureDirProvider = FutureProvider<Directory>((ref) async {
 
 /// One saved page: the rendered HTML as the person saw it, plus what the
 /// recipe made of it. Captures are how real pages reach the test suite
-/// without any automated loading of the live sites (TQ70/71 round): the
+/// without any automated loading of the live sites: the
 /// person browses, taps Capture, and the file can be pulled off the device.
 class PageCapture {
   const PageCapture({
@@ -90,10 +90,12 @@ final captureStoreProvider = AsyncNotifierProvider<CaptureStore, List<PageCaptur
 /// The saved captures, newest first. A capture whose metadata cannot be read
 /// is skipped and logged rather than failing the whole list.
 class CaptureStore extends AsyncNotifier<List<PageCapture>> {
-  /// Characters of the ISO timestamp kept in the id: date and time to the
-  /// second, with the millisecond appended separately so two captures in one
-  /// second do not overwrite each other.
+  /// Punctuation stripped from the ISO timestamp to make a file stem.
   static final _idJunk = RegExp(r'[:.\-T]');
+
+  /// Digits of the stripped timestamp kept: date, time and milliseconds, so
+  /// two captures in one second do not overwrite each other.
+  static const _idDigits = 17;
 
   @override
   Future<List<PageCapture>> build() async {
@@ -131,7 +133,7 @@ class CaptureStore extends AsyncNotifier<List<PageCapture>> {
     final dir = await ref.read(captureDirProvider.future);
     await dir.create(recursive: true);
     final stamp = DateTime.now();
-    final id = '$siteId-${stamp.toIso8601String().replaceAll(_idJunk, '').substring(0, 17)}';
+    final id = '$siteId-${stamp.toIso8601String().replaceAll(_idJunk, '').substring(0, _idDigits)}';
     final htmlFile = File('${dir.path}/$id.html');
     await htmlFile.writeAsString(html);
     final capture = PageCapture(

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../services/log.dart';
+import '../chat/chat_strings.dart';
 import '../recipes/recipe_store.dart';
 
 /// The web pane's state: what is loaded and whether it is still loading.
@@ -36,9 +37,7 @@ class PageChallengeException implements Exception {
   const PageChallengeException();
 
   /// The sentence shown to the person and handed to the model.
-  String get message =>
-      'The site is asking you to confirm you are a person. Complete the check in the web '
-      'pane, then ask me to read the page again.';
+  String get message => ChatStrings.humanCheck;
 
   @override
   String toString() => 'PageChallengeException: $message';
@@ -48,7 +47,7 @@ class PageChallengeException implements Exception {
 /// title, the share image, the visible text and the rendered HTML.
 typedef _PageSnapshot = ({String url, String title, String? image, String text, String html});
 
-/// Owns the one in-app webview (VA-6.1): navigation, load tracking and page
+/// Owns the one in-app webview (the one window on the web): navigation, load tracking and page
 /// reading. The pane registers its controller here; tools call [readPage].
 ///
 /// Reading is user- or Motormind-initiated, one page at a time. Nothing
@@ -65,8 +64,18 @@ class BrowserService extends Notifier<BrowserState> {
   static const _maxProbes = 10;
 
   /// Probes before "stable" counts: the first two readings are often the
-  /// skeleton and the first batch of cards.
+  /// skeleton and the first batch of cards. One unchanged probe after that
+  /// is enough.
   static const _minProbesBeforeStable = 2;
+  static const _stableProbesNeeded = 1;
+
+  /// Caps on what the bridge carries back: 60k characters of text (~15k
+  /// tokens, more than any context window here) and 1.5 MB of HTML.
+  static const _maxTextChars = 60000;
+  static const _maxHtmlChars = 1500000;
+
+  /// A scroll step is most of a screen, so nothing between steps is missed.
+  static const _scrollScreenFraction = 0.9;
 
   /// The paced scroll after the app opens a results page: a screen at a time
   /// with a pause, so lazily rendered cards and images exist before the read.
@@ -203,7 +212,7 @@ class BrowserService extends Notifier<BrowserState> {
           .isNotEmpty;
       stable = page.text.length == lastLength ? stable + 1 : 0;
       lastLength = page.text.length;
-      if (hasListings || (stable >= 1 && i >= _minProbesBeforeStable)) break;
+      if (hasListings || (stable >= _stableProbesNeeded && i >= _minProbesBeforeStable)) break;
     }
     return page!;
   }
@@ -273,18 +282,18 @@ class BrowserService extends Notifier<BrowserState> {
     return decoded is Map ? decoded.cast<String, Object?>() : <String, Object?>{};
   }
 
-  /// Scrolls down one screen and reports whether the bottom was reached.
+  /// Scrolls down most of a screen and reports whether the bottom was reached
+  /// (within a few pixels, so a sub-pixel overshoot does not loop).
   static const _scrollStepJs =
-      '(function(){window.scrollBy({top: window.innerHeight * 0.9, behavior: "smooth"});'
+      '(function(){window.scrollBy({top: window.innerHeight * $_scrollScreenFraction, behavior: "smooth"});'
       'return (window.innerHeight + window.scrollY) >= document.body.scrollHeight - 10;})();';
 
   /// Visible text and rendered HTML in one call. The text comes from a clone
   /// of `body` with scripts, navigation, headers, footers and hidden elements
   /// removed; the clone is parked off-screen because `innerText` is empty for
-  /// a detached node. Caps keep the result well inside what the bridge and
-  /// the model can take: 60k characters of text (~15k tokens, more than any
-  /// context window here) and 1.5 MB of HTML.
-  static const _extractJs = r'''
+  /// a detached node. The caps are [_maxTextChars] and [_maxHtmlChars].
+  static final _extractJs =
+      '''
 (function () {
   function visibleText() {
     var clone = document.body.cloneNode(true);
@@ -301,10 +310,10 @@ class BrowserService extends Notifier<BrowserState> {
   var og = document.querySelector('meta[property="og:image"]');
   var text = '';
   try { text = visibleText(); } catch (e) { text = document.body.innerText || ''; }
-  if (text.length > 60000) { text = text.substring(0, 60000); }
+  if (text.length > $_maxTextChars) { text = text.substring(0, $_maxTextChars); }
   var html = '';
   try { html = document.documentElement.outerHTML || ''; } catch (e) { html = ''; }
-  if (html.length > 1500000) { html = html.substring(0, 1500000); }
+  if (html.length > $_maxHtmlChars) { html = html.substring(0, $_maxHtmlChars); }
   return JSON.stringify({ url: location.href, title: document.title, image: og ? og.getAttribute('content') : null, text: text, html: html });
 })();
 ''';

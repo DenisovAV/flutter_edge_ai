@@ -98,7 +98,7 @@ class EdgeAiChatDriver implements ChatDriver {
     _cancelled = true;
     try {
       await _chat.stopGeneration();
-    } catch (_) {
+    } on Exception catch (_) {
       // Best effort: nothing may be in flight.
     }
   }

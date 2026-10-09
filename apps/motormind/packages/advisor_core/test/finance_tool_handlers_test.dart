@@ -153,7 +153,7 @@ void main() {
         'credit_band': 'good',
       });
       expect(r.isError, isFalse, reason: r.error);
-      expect((r.result!['outputs'] as Map)['max_amount_financed'], greaterThan(0));
+      expect((r.result!['outputs'] as Map)['maxAmountFinanced'], greaterThan(0));
     });
 
     test('trade_equity', () {

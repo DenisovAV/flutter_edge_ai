@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../firebase_options.dart';
 import 'log.dart';
 
-/// Compile-time switch (VA-7.1.3). Demo builds pass nothing and ship the
+/// Compile-time switch (backlog VA-7.1.3). Demo builds pass nothing and ship the
 /// no-op; the store flavor passes `--dart-define=MOTORMIND_ANALYTICS=true`
 /// after `flutterfire configure` has generated the platform config.
 const bool kAnalyticsEnabled = bool.fromEnvironment('MOTORMIND_ANALYTICS');
@@ -52,8 +52,13 @@ class FirebaseAnalyticsService implements Analytics {
 
   @override
   Future<void> init() async {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    _fa = FirebaseAnalytics.instance;
+    try {
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      _fa = FirebaseAnalytics.instance;
+    } on Exception catch (e) {
+      // Analytics must never keep the app from starting.
+      logDev('analytics unavailable: $e');
+    }
   }
 
   @override

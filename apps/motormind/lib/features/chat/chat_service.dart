@@ -305,11 +305,10 @@ class ChatService extends Notifier<ChatState> {
   /// the conversation before the model answers. [source] is the card
   /// answered; it collapses to its question but stays in the transcript.
   Future<void> choose(String id, String label, {String? supplement, ShownComponent? source}) async {
-    // While a turn runs, a tap would be retired and then dropped by send();
-    // refusing it up front keeps the chips live for after the turn.
+    // While a turn runs, a tap would mark the card answered and then be
+    // dropped by send(); refusing it up front keeps the chips live.
     if (_pipeline == null || state.busy) return;
     if (source != null) {
-      ref.read(stageProvider.notifier).markAnswered(source);
       final t = [
         for (final e in state.timeline)
           if (e is ComponentEntry && e.shown.id == source.id)
@@ -366,7 +365,7 @@ class ChatService extends Notifier<ChatState> {
   static final _contextOverflow = RegExp(r'exceeds available state|context (window|length)');
 
   static String _friendly(Object e) {
-    if (e is TimeoutException) return e.message ?? ChatStrings.tooLong;
+    if (e is TimeoutException) return ChatStrings.tooLong;
     if (_contextOverflow.hasMatch(e.toString())) return ChatStrings.contextFull;
     return ChatStrings.somethingWrong;
   }

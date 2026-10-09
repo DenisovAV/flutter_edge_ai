@@ -204,7 +204,7 @@ class OutputsCard extends StatelessWidget {
   /// Output keys that hold dollar amounts. Everything else prints as is.
   static const _moneyKeys = {
     'suggestedMaxPayment',
-    'max_amount_financed',
+    'maxAmountFinanced',
     'depreciation',
     'fuelOrEnergy',
     'insurance',

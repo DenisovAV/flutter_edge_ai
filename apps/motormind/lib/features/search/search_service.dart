@@ -7,6 +7,7 @@ import '../../services/log.dart';
 import '../advisor/stage.dart';
 import '../browser/browser_service.dart';
 import '../chat/chat_state.dart';
+import '../chat/chat_strings.dart';
 
 /// The live search: the filters as they stand, where they apply, and what the
 /// last read found. A filter applies the moment it changes; there is no
@@ -82,13 +83,6 @@ final searchDebounceProvider = Provider<Duration>((ref) => const Duration(millis
 final searchProvider = NotifierProvider<SearchService, SearchState>(SearchService.new);
 
 class SearchService extends Notifier<SearchState> {
-  /// Matches shown on the stage from one read; the model gets fewer.
-  static const resultsLimit = 8;
-
-  /// Sentence shown when a page could not be read for a reason other than a
-  /// bot check (which has its own message).
-  static const _readFailedNote = 'The page could not be read. Try again or pick another site.';
-
   Timer? _debounce;
 
   /// Bumped per apply so a slower, older read cannot overwrite a newer one.
@@ -165,7 +159,9 @@ class SearchService extends Notifier<SearchState> {
       if (gen == _generation) state = state.copyWith(applying: false, note: e.message);
     } on Exception catch (e) {
       logDev('search apply failed: $e');
-      if (gen == _generation) state = state.copyWith(applying: false, note: _readFailedNote);
+      if (gen == _generation) {
+        state = state.copyWith(applying: false, note: ChatStrings.pageReadFailed);
+      }
     }
   }
 
@@ -182,10 +178,7 @@ class SearchService extends Notifier<SearchState> {
         'source': source,
         'query': q.describe(),
         'listings': [for (final l in results) l.toJson()],
-        if (results.isEmpty)
-          'note':
-              'No listings matched on the page that is open. Change a filter, or scroll the '
-              'site and ask me to read again.',
+        if (results.isEmpty) 'note': ChatStrings.noListingsOnPage,
       },
     );
     final v = PresentRequest.validate({

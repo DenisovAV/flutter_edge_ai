@@ -16,6 +16,14 @@ abstract final class ChatStrings {
   static const hereIsWhatIFound = 'Here is what I found. Tell me more when you are ready.';
   static const policyBanner =
       'Motormind does not sell or promise. This reply tripped the sales-language check';
+  static const pageReadFailed = 'The page could not be read. Try again or pick another site.';
+  static const noListingsOnPage =
+      'No listings matched on the page that is open. Change a filter, or scroll the site and '
+      'ask me to read again.';
+  static const humanCheck =
+      'The site is asking you to confirm you are a person. Complete the check in the web pane, '
+      'then ask me to read the page again.';
+  static const captureFailed = 'The page could not be captured.';
   static const askMotormind = 'Ask Motormind';
   static const starting = 'Starting…';
   static const showSoFar = 'Show what you have so far';

@@ -5,7 +5,7 @@ import '../vehicles/search_query.dart';
 /// A tool the model may call. Mirrors the shape inference SDKs expect
 /// (name, description, JSON-schema parameters) without depending on one.
 ///
-/// Every character here is paid on every turn in a 4k context window, so
+/// Every character here is paid on every turn in a small context window (4k to 8k tokens here), so
 /// descriptions are terse and say WHEN to call, not what the app does.
 class ToolSpec {
   /// Creates a spec; [parameters] is a JSON-schema object.

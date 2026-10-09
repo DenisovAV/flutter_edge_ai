@@ -151,7 +151,7 @@ final advisorModelServiceProvider = AsyncNotifierProvider<AdvisorModelService, M
 
 /// One instance owns the SDK lifecycle: downloads, the loaded model and the
 /// switch between models. No other code touches `FlutterEdgeAi` directly
-/// (VA-1.1.1).
+/// (backlog VA-1.1.1).
 class AdvisorModelService extends AsyncNotifier<ModelsState> {
   /// Sentences for the person; the engine's own text goes to the log.
   static const _downloadFailed = 'The download failed. Check the connection and retry.';
@@ -237,7 +237,7 @@ class AdvisorModelService extends AsyncNotifier<ModelsState> {
   }
 
   /// Loads [m] and makes it the model the chat uses. Switching closes the
-  /// previous model first (VA-1.2.1). Only an installed model can be
+  /// previous model first (backlog VA-1.2.1). Only an installed model can be
   /// activated.
   Future<void> activate(AdvisorModelSpec m) async {
     final current = state.value;

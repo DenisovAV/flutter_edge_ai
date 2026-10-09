@@ -28,7 +28,7 @@ class StageState {
   final bool userSet;
 
   /// Presented cards, newest first. Only [focus] is shown large; the rest are
-  /// chips (TQ62: no stacking).
+  /// chips (no stacking: one card large at a time).
   final List<ShownComponent> cards;
 
   /// Index into [cards] of the one shown large; clamped on read.
@@ -90,12 +90,4 @@ class StageNotifier extends Notifier<StageState> {
       state = state.copyWith(mode: m);
     }
   }
-
-  /// Collapses an answered prompt that was presented on the stage.
-  void markAnswered(ShownComponent c) => state = state.copyWith(
-    cards: [
-      for (final s in state.cards)
-        if (s.id == c.id) s.copyWith(answered: true) else s,
-    ],
-  );
 }

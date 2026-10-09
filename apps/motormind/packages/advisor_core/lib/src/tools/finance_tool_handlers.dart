@@ -87,6 +87,9 @@ class ToolResult {
 /// Everything numeric the user will see originates here. The handlers are
 /// deliberately boring: parse, validate, call, serialize.
 class FinanceToolHandlers {
+  /// Ownership window when the model names none; the schema says the same.
+  static const defaultOwnershipYears = 5;
+
   /// Creates handlers over [aprTable] (the package default when omitted).
   /// [nextId] replaces the per-instance result-id counter and [now] the
   /// clock that dates user-supplied assumptions; tests inject both.
@@ -186,7 +189,7 @@ class FinanceToolHandlers {
         'apr': apr,
         'credit_band': band.name,
       },
-      'outputs': {'max_amount_financed': principal},
+      'outputs': {'maxAmountFinanced': principal},
       'assumptions': [
         _aprAssumptionFor(a['apr'], apr, band, isNew: isNew).toJson(),
         // A definition, not a measurement: the date is when the wording was
@@ -249,7 +252,7 @@ class FinanceToolHandlers {
       milesPerYear: _requireInt(a['miles_per_year'], 'miles_per_year'),
       fuelType: _requireEnum(FuelType.values, a['fuel_type'], 'fuel_type'),
       efficiency: _requireNumber(a['efficiency'], 'efficiency'),
-      years: _optionalInt(a['years']) ?? 5,
+      years: _optionalInt(a['years']) ?? defaultOwnershipYears,
       vehicleAgeYears: _optionalInt(a['vehicle_age_years']) ?? 0,
       insuranceBand: a['insurance_band'] == null
           ? InsuranceBand.average

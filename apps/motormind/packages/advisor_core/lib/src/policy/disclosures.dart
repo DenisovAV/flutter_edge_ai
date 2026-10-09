@@ -122,9 +122,6 @@ abstract final class Disclosures {
   /// changed since it was accepted.
   static int get gateVersion => all.fold(0, (sum, d) => sum + d.version);
 
-  /// Every [Disclosure.short] joined into one paragraph for the gate screen.
-  static String get gateSummary => all.map((d) => d.short).join(' ');
-
   /// Looks up a disclosure by [Disclosure.key]; throws [ArgumentError] when
   /// there is none.
   static Disclosure byKey(String key) => all.firstWhere(

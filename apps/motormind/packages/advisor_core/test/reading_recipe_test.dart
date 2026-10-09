@@ -156,7 +156,7 @@ void main() {
       ]);
     });
 
-    test('minImageFraction', () {
+    test('a recipe that reads images fails its check when most cards have none', () {
       final r = read(_page([for (var i = 0; i < 4; i++) _card('2021 Honda Civic $i', img: null)]));
       expect(r.check.ok, isFalse);
       expect(r.check.problems.single, 'only 0 of 4 cards had an image');

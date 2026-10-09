@@ -3,7 +3,9 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../services/log.dart';
 import '../browser/browser_service.dart';
+import '../chat/chat_strings.dart';
 import '../recipes/recipe_store.dart';
 import 'capture_service.dart';
 
@@ -186,7 +188,8 @@ class CaptureButton extends ConsumerWidget {
       };
       messenger.showSnackBar(SnackBar(content: Text('Captured ${c.sizeLabel}$verdict')));
     } on Exception catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not capture: $e')));
+      logDev('capture failed: $e');
+      messenger.showSnackBar(const SnackBar(content: Text(ChatStrings.captureFailed)));
     }
   }
 

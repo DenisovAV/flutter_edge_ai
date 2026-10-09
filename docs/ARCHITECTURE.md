@@ -16,7 +16,7 @@ from the conversation, not designed in advance, but only from a registry of comp
 that render verified numbers. The content above the conversation is a vehicle list, a
 comparison, or a live web page the assistant can read from.
 
-## 2. What the fork gives us
+## 2. What the fork provides
 
 | Package (in `packages/`) | Role here |
 |---|---|
@@ -28,7 +28,7 @@ comparison, or a live web page the assistant can read from.
 | `flutter_edge_ai_speech` | push-to-talk, stretch (Q12) |
 | `flutter_edge_ai_sqlite` + `_embeddings` | RAG over long pages, follow-on (TQ19) |
 
-What it does not give us, and what the project is: the app, the finance engine, the policy
+What it does not provide, and what the project is: the app, the finance engine, the policy
 layer, the buyer profile, the component registry, the browser agent, the model catalog UX.
 
 ## 3. Layout (ADR 0005)
@@ -64,21 +64,21 @@ storage, reference APIs, integration tests on a device.
 "advice" (the product is informational). `advisor` survives in package and type names only.
 
 ```
-user text ──► AdvisorSession
+user text ──► EdgeAiChatDriver (ChatDriver)
                  system prompt = persona + tone + policy + tool catalog
                                + component registry + profile summary
                  ▼
             on-device model ──► FunctionCallResponse(name, args)
                  │                       │
                  │                       ▼
-                 │              ToolDispatcher (app)
+                 │              TurnPipeline.onToolCall
                  │                ├─ finance tools ──► InputProvenanceGuard: args must trace to
                  │                │     the user, the profile or a prior result, else refused
                  │                │                 ──► FinanceToolHandlers (advisor_core)
                  │                │                     └─► vehicle_finance ──► ToolResult(id, json)
                  │                ├─ update_profile ──► BuyerProfile.applyUpdate
-                 │                ├─ find_vehicles ───► InventorySource
-                 │                ├─ read_page ───────► BrowserFeature.extract
+                 │                ├─ find_vehicles ───► ExternalTools → SearchService / ListingStore
+                 │                ├─ read_page ───────► BrowserService.readPage
                  │                └─ present ─────────► PresentRequest.validate ──► SurfaceNotifier
                  │                       │
                  │   Message.toolResponse(result.toModelJson()) ◄──┘
@@ -116,7 +116,7 @@ toggle over the same `DealEstimate` (Q19, stretch).
 
 ## 6. Advisor core (`advisor_core`, exists)
 
-- `AdvisorTools.all`: the ten tool specifications with JSON schemas; descriptions say *when*
+- `AdvisorTools.all`: the eleven tool specifications with JSON schemas; descriptions say *when*
   to call.
 - `FinanceToolHandlers`: arguments → `vehicle_finance` → `ToolResult` with an id the model
   can reference in `present`. Bad arguments return an error the model can correct.
@@ -134,10 +134,11 @@ toggle over the same `DealEstimate` (Q19, stretch).
 ## 6b. The stage (DD principle 2, realized 2026-10-05)
 
 The content area above the conversation is the **stage**: components presented while the
-advisor is docked land there, newest first, and the chat below is commentary. A result
+Motormind is docked land there, newest first, and the chat below is commentary. A result
 re-presented with a richer component replaces its card. In fullscreen, cards sit inline.
-The app itself puts things on the stage without waiting for the model: a mode-specific
-starter the moment a shopping mode is chosen, and every finance result the instant its
+The app itself acts without waiting for the model: the filters card and a mode-specific
+starter join the conversation the moment a shopping mode is chosen, and every finance
+result goes on the stage the instant its
 tool returns. Interaction prompts (choice, form) stay in the conversation.
 
 ## 6c. Turn control
@@ -147,7 +148,7 @@ Stop button during a turn (`stopGeneration()` underneath). An idle watchdog canc
 that produces no event for 75 s. These numbers are emulator-era and become catalog fields
 once measured on a device (TQ60).
 
-## 7. The advisor surface (VA-2.1, Q8)
+## 7. The Motormind surface (VA-2.1, Q8)
 
 Three states, one widget tree, a toggle control the user owns:
 
@@ -155,7 +156,7 @@ Three states, one widget tree, a toggle control the user owns:
  collapsed (bubble)  ◄──────────────────────────────────────────┐
      │ tap bubble / new reply                                   │ "back" / collapse
      ▼                                                          │
- docked (bottom sheet, 30–60%)  ──── present(fullscreen) ────►  fullscreen (breakdowns)
+ docked (the split follows the display decision: 15, 33, 55 or 66 percent to the stage)  ──── present(fullscreen) ────►  fullscreen (breakdowns)
      ▲      drag up past threshold                              │
      └──────────────────────── drag down / back ────────────────┘
 ```
@@ -168,17 +169,17 @@ Three states, one widget tree, a toggle control the user owns:
 
 ## 8. Interaction model, shopping mode and conversation (Q9, Q16, Q17, Q28–Q30, Q34)
 
-- **Structured first.** When the answer is one of a few options or a number, the advisor
+- **Structured first.** When the answer is one of a few options or a number, Motormind
   presents a `choice`, `multi_choice` or `input_form` rather than asking in prose. Fewer
   tokens, faster turns, exact values. Every such prompt carries an implicit "something
   else" that opens free text; the global toggle lets the user expand or collapse the
-  advisor at any time. The person is never trapped in the model's options.
+  Motormind at any time. The person is never trapped in the model's options.
 - **Shopping mode, not tone.** `BuyerProfile.mode` is one of browsing (just looking),
   dreaming (dream car, for fun), practical, buying (buying now, detailed budgeting). The
-  advisor infers it from what the user says, may confirm it with a `choice` on the first
+  Motormind infers it from what the user says, may confirm it with a `choice` on the first
   turn, and updates it when intent shifts ("ok, maybe I do want this"). Tone follows mode
   and mirrors the user's register.
-- Needs versus wants: items are `unlabeled` unless the user framed them; the advisor may
+- Needs versus wants: items are `unlabeled` unless the user framed them; Motormind may
   ask with a `choice` and the user can ignore it.
 - **Conversation titles are dynamic.** A new conversation is titled by time ("Today at
   3:45 PM"); as a vehicle, class or theme surfaces, the title is regenerated from content
@@ -225,7 +226,7 @@ Plan, still the direction:
   pattern-found price, mileage, year. Long pages: RAG follow-on.
 - Presentation of third-party pages in a half screen is a known problem (Q23): options are
   auto-scroll to main content, a reader-mode rendering of the extracted content, or
-  fullscreen browser with the advisor collapsed. To be prototyped early.
+  fullscreen browser with Motormind collapsed. To be prototyped early.
 - Form filling: approved-sites allowlist, per-action preview, explicit confirm, never
   auto-submit, a hard exclusion list (SSN, account and card numbers), and the browser
   disclosure shown at first use.

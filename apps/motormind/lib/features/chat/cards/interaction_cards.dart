@@ -5,7 +5,7 @@ import '../chat_state.dart';
 /// A question with a few answers, from the model's `present(choice)` or from
 /// the app's own starters. Once answered it collapses to its question in
 /// italics, so the transcript keeps the context without the buttons. The
-/// escape is the conversation input, whose hint says so (principle 5).
+/// escape is the conversation input, whose hint says so.
 class ChoiceCard extends StatelessWidget {
   const ChoiceCard({super.key, required this.shown, required this.onChoice});
 

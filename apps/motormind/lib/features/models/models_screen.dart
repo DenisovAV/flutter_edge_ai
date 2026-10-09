@@ -8,7 +8,7 @@ import 'model_catalog.dart';
 
 /// Where the person picks, downloads and removes on-device models, enters a
 /// Hugging Face token for gated hosts, and switches on the display-agent
-/// experiment (VA-1.2.1, VA-1.3.1, VA-1.3.2).
+/// experiment (backlog VA-1.2.1, VA-1.3.1, VA-1.3.2).
 class ModelsScreen extends ConsumerWidget {
   const ModelsScreen({super.key});
 

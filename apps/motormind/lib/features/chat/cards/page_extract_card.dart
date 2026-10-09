@@ -14,6 +14,10 @@ class PageExtractCard extends StatelessWidget {
   /// How much page text to show before an ellipsis.
   static const _textPreviewLength = 400;
 
+  /// Chips and lines are a glance, not a list: the first prices and listings.
+  static const _maxPriceChips = 3;
+  static const _maxListingLines = 5;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -47,7 +51,7 @@ class PageExtractCard extends StatelessWidget {
                 spacing: 6,
                 runSpacing: 4,
                 children: [
-                  for (final p in prices.take(3))
+                  for (final p in prices.take(_maxPriceChips))
                     Chip(label: Text(money(p, cents: false)), visualDensity: VisualDensity.compact),
                   if (facts['mileage'] != null)
                     Chip(
@@ -61,7 +65,7 @@ class PageExtractCard extends StatelessWidget {
             if (listings.isNotEmpty) ...[
               const SizedBox(height: 6),
               Text('${listings.length} listings read', style: theme.textTheme.labelLarge),
-              for (final l in listings.take(5))
+              for (final l in listings.take(_maxListingLines))
                 Text(
                   '• ${l['title']}${l['price'] != null ? ' · ${money(l['price'], cents: false)}' : ''}',
                   style: theme.textTheme.bodySmall,

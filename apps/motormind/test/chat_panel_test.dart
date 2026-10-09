@@ -244,7 +244,7 @@ void main() {
       final s = await _start(tester, fullscreen: false);
       expect(find.byKey(const Key('browser-pane')), findsOneWidget);
       await _chooseMode(tester, s, 'practical');
-      // The live filters and the numbers form join the conversation (Q64);
+      // The live filters and the numbers form join the conversation;
       // the web pane stays in view.
       final chatList = find.byKey(const Key('chat-list'));
       expect(
@@ -281,7 +281,7 @@ void main() {
     testWidgets('a choice prompt renders options and tapping one sends it', (tester) async {
       final s = await _start(tester);
       await _turn(tester, s, () => s.container.read(chatServiceProvider.notifier).send('hi'));
-      // The opening mode prompt stays live (Q60) and the model's choice joins it.
+      // The opening mode prompt stays live and the model's choice joins it.
       expect(find.byKey(const Key('card-choice')), findsNWidgets(2));
       expect(_hintOf(tester), ChatStrings.hintPending);
       await _turn(tester, s, () => tester.tap(find.byKey(const Key('choice-buying'))));
@@ -324,7 +324,7 @@ void main() {
       final s = await _start(tester);
       await _chooseMode(tester, s, 'dreaming');
       expect(find.textContaining('No price ceiling for a dream car'), findsOneWidget);
-      // The one-time hint that the screen is negotiable (Q64).
+      // The one-time hint that the screen is negotiable.
       expect(find.textContaining('show, hide or change anything'), findsOneWidget);
       await _turn(tester, s, () => tester.tap(find.byKey(const Key('choice-kind-convertible'))));
       expect(s.container.read(searchProvider).query.bodyStyle, 'convertible');
@@ -366,7 +366,7 @@ void main() {
       await _chooseMode(tester, s, 'browsing');
       await _tapFilter(tester, 'price-35000');
       await _tapFilter(tester, 'price-25000');
-      // Two searches in a row leave one note (Q65).
+      // Two searches in a row leave one note.
       expect(find.textContaining('Looking for'), findsOneWidget);
       expect(find.textContaining('under \$25k on EchoPark'), findsOneWidget);
       // Fullscreen keeps the full card; docked collapses it to a summary with

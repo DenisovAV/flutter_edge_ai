@@ -69,15 +69,14 @@ void main() {
     expect(find.byKey(const Key('surface-bubble')), findsOneWidget);
   });
 
-  test('a pinned surface ignores model requests but not the user', () {
+  test('model requests and the person\'s control both move the surface', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final n = container.read(surfaceProvider.notifier);
     n.request(SurfaceState.fullscreen);
     expect(container.read(surfaceProvider), SurfaceState.fullscreen);
-    n.pinned = true;
     n.request(SurfaceState.collapsed);
-    expect(container.read(surfaceProvider), SurfaceState.fullscreen);
+    expect(container.read(surfaceProvider), SurfaceState.collapsed);
     n.userSet(SurfaceState.docked);
     expect(container.read(surfaceProvider), SurfaceState.docked);
   });

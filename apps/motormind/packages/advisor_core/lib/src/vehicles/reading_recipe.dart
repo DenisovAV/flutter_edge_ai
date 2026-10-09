@@ -20,10 +20,10 @@ enum RecipeStatus {
 /// an explicit null can mean "clear the note".
 const _keepNote = Object();
 
-/// A per-site reading recipe: data, not code (TQ71, DD-R26). It names the
+/// A per-site reading recipe: data, not code . It names the
 /// listing card element, where each field sits inside it, and how to tell
 /// whether the read worked. Shipped as a JSON asset, replaceable at runtime,
-/// so a repaired recipe (from a person today, a help service later, DD-R27)
+/// so a repaired recipe (from a person today, a help service later)
 /// is a drop-in. The on-device model never sees HTML.
 class ReadingRecipe {
   /// Creates a recipe; see the fields for what each part means.
@@ -247,12 +247,26 @@ class SelfCheckRules {
   /// Creates rules; the defaults expect at least three cards, most of them
   /// priced, and do not require images.
   const SelfCheckRules({
-    this.minCards = 3,
-    this.minPriceFraction = 0.8,
-    this.minImageFraction = 0.0,
+    this.minCards = defaultMinCards,
+    this.minPriceFraction = defaultMinPriceFraction,
+    this.minImageFraction = defaultMinImageFraction,
     this.totalPattern,
-    this.maxTotalRatio = 1.0,
+    this.maxTotalRatio = defaultMaxTotalRatio,
   });
+
+  /// Default for [minCards]: fewer than three cards is a missed selector,
+  /// not a short page. [SelfCheckRules.fromJson] fills missing fields from
+  /// these defaults.
+  static const defaultMinCards = 3;
+
+  /// Default for [minPriceFraction]: most cards carry a price.
+  static const defaultMinPriceFraction = 0.8;
+
+  /// Default for [minImageFraction]: images are not required.
+  static const defaultMinImageFraction = 0.0;
+
+  /// Default for [maxTotalRatio]: never more cards than the page's own total.
+  static const defaultMaxTotalRatio = 1.0;
 
   /// Fewer cards than this on a results page means the recipe missed them.
   final int minCards;

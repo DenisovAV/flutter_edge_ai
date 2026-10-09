@@ -42,7 +42,7 @@ class SearchQuery {
   /// Free text for the site to search, or null for none.
   final String? keywords;
 
-  /// Accepted [bodyStyle] values, in the order the filter strip shows them.
+  /// Accepted [bodyStyle] values, in the order the filters card shows them.
   static const bodyStyles = [
     'suv',
     'sedan',

@@ -66,10 +66,6 @@ final List<String> makeAliasesLongestFirst = List.unmodifiable(
   vehicleMakes.keys.toList()..sort((a, b) => b.length.compareTo(a.length)),
 );
 
-/// The display name for a make as a page or person wrote it ("bmw" gives
-/// "BMW", "Chevy" gives "Chevrolet"); the trimmed input when it is unknown.
-String displayMake(String raw) => vehicleMakes[raw.trim().toLowerCase()] ?? raw.trim();
-
 /// A listing heading: "2021 Honda CR-V EX-L", "Used 2019 Ford Mustang GT",
 /// "2022 Land Rover Range Rover". Group 1 is the year, group 2 the make and
 /// model text, which [splitMakeModel] divides. Not "2023" alone (a bare year

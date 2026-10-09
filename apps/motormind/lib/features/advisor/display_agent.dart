@@ -94,6 +94,7 @@ class DisplayDecision {
     StageMode? stage,
     StageSplit? split,
     String? cue,
+    bool clearCue = false,
     DecidedBy? by,
     int? tookMs,
     bool? thinking,
@@ -102,7 +103,7 @@ class DisplayDecision {
     notes: notes ?? this.notes,
     stage: stage ?? this.stage,
     split: split ?? this.split,
-    cue: cue ?? this.cue,
+    cue: clearCue ? null : (cue ?? this.cue),
     by: by ?? this.by,
     tookMs: tookMs ?? this.tookMs,
     thinking: thinking ?? this.thinking,
@@ -404,7 +405,9 @@ class DisplayController extends Notifier<DisplayDecision> {
         state = d;
       } on Exception catch (e) {
         logDev('display model failed: $e');
-        if (gen == _generation) state = state.copyWith(by: DecidedBy.modelFailed, thinking: false);
+        if (gen == _generation) {
+          state = state.copyWith(by: DecidedBy.modelFailed, thinking: false, clearCue: true);
+        }
       }
     });
   }

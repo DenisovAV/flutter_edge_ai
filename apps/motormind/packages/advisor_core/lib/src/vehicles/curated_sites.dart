@@ -1,6 +1,6 @@
 import 'search_query.dart';
 
-/// Sites the project tests page reading against (Q10, Q31). Each knows how
+/// Sites the project tests page reading against. Each knows how
 /// to build a search URL from the live [SearchQuery], so `find_vehicles` can
 /// open a results page when nothing has been read yet. User-initiated, one
 /// page at a time; nothing is fetched in bulk.

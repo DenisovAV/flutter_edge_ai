@@ -144,8 +144,6 @@ String cardSummary(ShownComponent s) {
     'affordability_gauge' => 'Affordability',
     'vehicle_card' => 'Listings',
     'page_extract' => 'Page',
-    'input_form' => s.request.props['title']?.toString() ?? 'Form',
-    'choice' || 'multi_choice' => 'Question',
     _ => labelFor(s.request.component.id),
   };
 }

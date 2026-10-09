@@ -33,7 +33,7 @@ at runtime from the conversation** rather than pre-designed screens
   instead of inventing an income ([ADR 0002](docs/adr/0002-model-never-does-arithmetic.md)).
 - **Composes the screen.** The model asks for a component from a registry (payment card,
   fullscreen breakdown, compare, question chips) and a surface (docked or fullscreen); the
-  user can override and pin.
+  person can override; a pin is planned.
 - **Browses with the buyer.** The top of the screen is a web pane showing a curated listing
   site (EchoPark by default). It is the person's browser: they scroll, tap, and answer any
   verification a site shows. The assistant reads only the page they have open, pulls

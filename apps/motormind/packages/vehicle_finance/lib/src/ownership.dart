@@ -111,7 +111,7 @@ class OwnershipInputs {
 /// them. The class is a namespace: nothing here is an instance member.
 abstract final class OwnershipTables {
   /// Source label attached to every assumption derived from these tables.
-  static const String source = 'PLACEHOLDER rough national averages; see TQ13';
+  static const String source = 'rough national averages, placeholder until sourced tables land';
 
   /// ISO-8601 date the tables were last reviewed.
   static const String asOf = assumptionsReviewedOn;

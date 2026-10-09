@@ -12,7 +12,6 @@ void main() {
       'data_on_device',
       'browser_actions',
     });
-    expect(Disclosures.gateSummary, contains('not a lender'));
     expect(Disclosures.byKey('no_compensation').long, contains('No one pays'));
     expect(() => Disclosures.byKey('nope'), throwsArgumentError);
   });

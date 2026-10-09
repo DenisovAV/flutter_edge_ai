@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-/// Secure storage for the Hugging Face token (VA-1.3.2). The value is never
+/// Secure storage for the Hugging Face token (backlog VA-1.3.2). The value is never
 /// logged, never put in analytics, and only sent as a bearer header to the
 /// model host.
 abstract class TokenStore {

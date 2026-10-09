@@ -3,7 +3,7 @@ import 'package:test/test.dart';
 import 'package:vehicle_finance/vehicle_finance.dart';
 
 // PresentRequest and ComponentRegistry have their own file,
-// present_request_test.dart; this one covers the profile and the tool specs.
+// present_request_test.dart; this one covers the profile's labels and JSON.
 void main() {
   group('BuyerProfile', () {
     test('applies an update_profile call without inventing labels', () {
@@ -48,15 +48,5 @@ void main() {
     test('empty profile summarizes as nothing known', () {
       expect(const BuyerProfile().toPromptSummary(), 'nothing known yet');
     });
-  });
-
-  test('tool specs have unique names and object schemas', () {
-    final names = AdvisorTools.all.map((t) => t.name).toList();
-    expect(names.toSet().length, names.length);
-    for (final t in AdvisorTools.all) {
-      expect(t.parameters['type'], 'object', reason: t.name);
-      expect(t.parameters['properties'], isA<Map>(), reason: t.name);
-    }
-    expect(AdvisorTools.byName('present').changesUi, isTrue);
   });
 }

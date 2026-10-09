@@ -6,23 +6,17 @@ import '../chat/chat_panel.dart';
 import 'display_agent.dart';
 import 'stage.dart';
 
-/// The Motormind surface state machine (VA-2.1, ADR 0006 §4). The model may
-/// *request* a state through `present`; the person owns the toggle and can
-/// pin. While pinned, requests update content but not state.
+/// The Motormind surface state machine (ADR 0006 §4). The model may
+/// *request* a state through `present`; the person owns the toggle. A pin
+/// that holds the state against requests is planned, not built.
 final surfaceProvider = NotifierProvider<SurfaceNotifier, SurfaceState>(SurfaceNotifier.new);
 
 class SurfaceNotifier extends Notifier<SurfaceState> {
-  /// True when the person has pinned the surface; model requests are then
-  /// ignored until unpinned.
-  bool pinned = false;
-
   @override
   SurfaceState build() => SurfaceState.collapsed;
 
   /// From the model.
-  void request(SurfaceState next) {
-    if (!pinned) state = next;
-  }
+  void request(SurfaceState next) => state = next;
 
   /// From the person's control.
   void userSet(SurfaceState next) => state = next;
@@ -168,7 +162,7 @@ class _Panel extends ConsumerWidget {
   }
 }
 
-/// The display agent's indicator (principle 13): a small fixed mark that the
+/// The display agent's indicator (the design rule: the person only needs to know the screen may change): a small fixed mark that the
 /// screen may change, never a row. The tooltip says who decided and how long
 /// it took.
 class _DisplayIndicator extends StatelessWidget {

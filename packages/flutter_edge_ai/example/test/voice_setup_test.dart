@@ -12,10 +12,10 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(const MaterialApp(home: VoiceSetupScreen()));
-    // Defaults are SttModel.moonshineTiny / Model.gemma3_1B / TtsModel.matcha.
+    // Defaults are SttModel.moonshineTiny / Model.gemma3_1B / TtsModel.inflect.
     expect(find.text('Moonshine Tiny'), findsOneWidget);
     expect(find.text('Gemma 3 1B IT'), findsOneWidget);
-    expect(find.text('Matcha-TTS'), findsOneWidget);
+    expect(find.text('Inflect-Nano-v2 (fast)'), findsOneWidget);
   });
 
   testWidgets(

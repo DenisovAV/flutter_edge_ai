@@ -11,9 +11,12 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' show SessionMetrics;
 /// last one, so it leaves out the prefill that [firstTokenMs] already measures
 /// and the bookkeeping the chat does after the last token (counting the reply's
 /// tokens, updating its history), which is part of `duration_ms` but not of
-/// decoding. Null where the
-/// value does not exist for this prompt; [readError] says when the counters
-/// could not be trusted.
+/// decoding. It assumes the model does not reason with thinking off: one that
+/// always does (DeepSeek R1, Qwen3 Thinking 2507) has its hidden reasoning
+/// counted in [outputTokens] but not in the time between the visible tokens,
+/// so the rate would come out too high. Neither benchmark model reasons. Null
+/// where the value does not exist for this prompt; [readError] says when the
+/// counters could not be trusted.
 class TokenStats {
   const TokenStats({
     this.inputTokens,

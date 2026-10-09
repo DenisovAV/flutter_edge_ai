@@ -51,8 +51,9 @@ only the engines, stores and features your app uses — see
   `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`,
   and the build hook fetches Qualcomm's QNN runtime. The same flag now covers
   **Qualcomm Linux arm64** boards. See [LiteRT-LM](/docs/litertlm).
-- **LiteRT-LM v0.18.0** (`native-v0.18.0-c`). Apple's Metal accelerator ships as
-  `LiteRtLmMetalAccelerator`, so an app can use `flutter_litert` beside it.
+- **LiteRT-LM v0.18.0** (`native-v0.18.0-d`). Apple's Metal accelerator ships as
+  `LiteRtLmMetalAccelerator`, so an app can use `flutter_litert` beside it, and
+  native tool calls work on Linux.
 
 ## What's new in 2.0
 

@@ -61,7 +61,7 @@ dependencies:
   genkit: ^1.0.0
   genkit_flutter_edge_ai: ^0.8.0
   flutter_edge_ai: ^2.1.1
-  flutter_edge_ai_litertlm: ^1.11.0  # only the engines/backends you actually use
+  flutter_edge_ai_litertlm: ^1.11.1  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.2.2  # the tokenizers an embedding backend needs
   flutter_edge_ai_mediapipe: ^1.1.1
 ```

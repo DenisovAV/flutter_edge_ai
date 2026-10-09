@@ -270,7 +270,7 @@ dependencies:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.1.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.11.0       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.11.1       # .litertlm + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.1.1       # .task / .bin
   flutter_edge_ai_embeddings: ^2.2.2      # tokenizer providers
   flutter_edge_ai_rag: ^1.0.0             # RAG orchestration + contracts

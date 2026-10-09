@@ -1,3 +1,6 @@
+## 1.11.1
+- Linux: native tool calls no longer crash (#551, `native-v0.18.0-d`).
+
 ## 1.11.0
 - Linux arm64: Qualcomm NPU behind the same `qualcomm_npu` flag (`native-v0.18.0-c`).
 

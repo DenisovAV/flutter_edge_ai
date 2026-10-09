@@ -2,17 +2,18 @@ import 'dart:async';
 
 import 'package:advisor_core/advisor_core.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/advisor_model_service.dart';
 import '../advisor/advisor_surface.dart';
 import '../advisor/stage.dart';
-import '../browser/browser_service.dart';
 import '../models/model_catalog.dart';
 import '../search/search_service.dart';
 import 'chat_state.dart';
 import 'edge_ai_chat_driver.dart';
+import 'external_tools.dart';
+import 'prompt_assets.dart';
+import 'starters.dart';
 
 export 'chat_state.dart';
 
@@ -25,46 +26,6 @@ final chatDriverFactoryProvider = Provider<ChatDriverFactory?>((ref) => null);
 /// stops it. Null disables it (tests). Generous for the emulator's CPU; a
 /// phone should trip this far less often.
 final turnIdleLimitProvider = Provider<Duration?>((ref) => const Duration(seconds: 75));
-
-final promptAssetsProvider = FutureProvider<SystemPromptBuilder>((ref) async {
-  final persona = await rootBundle.loadString('assets/prompts/persona.md');
-  final policy = await rootBundle.loadString('assets/prompts/policy.md');
-  final modes = await rootBundle.loadString('assets/prompts/modes.md');
-  return SystemPromptBuilder(persona: persona, policy: policy, modeGuidance: _parseModes(modes));
-});
-
-Map<ShoppingMode, String> _parseModes(String md) {
-  final out = <ShoppingMode, String>{};
-  ShoppingMode? current;
-  final buf = StringBuffer();
-  void flush() {
-    final mode = current;
-    if (mode != null) out[mode] = buf.toString().trim();
-    buf.clear();
-  }
-
-  for (final line in md.split('\n')) {
-    if (line.startsWith('# ')) {
-      flush();
-      final name = line.substring(2).trim();
-      current = ShoppingMode.values.where((m) => m.name == name).firstOrNull;
-    } else {
-      buf.writeln(line);
-    }
-  }
-  flush();
-  return out;
-}
-
-/// The opening prompt (Q43): the app, not the model, offers the shopping-mode
-/// choice so the first screen demonstrates structured interaction without a
-/// model round trip. Answering sets the mode locally and tells the model.
-const Map<String, (ShoppingMode, String)> openingChoices = {
-  'mode-browsing': (ShoppingMode.browsing, 'I\'m just looking for now.'),
-  'mode-practical': (ShoppingMode.practical, 'I want practical options that fit my budget.'),
-  'mode-buying': (ShoppingMode.buying, 'I\'m buying now and want to work through the numbers.'),
-  'mode-dreaming': (ShoppingMode.dreaming, 'Let\'s have some fun and look at a dream car.'),
-};
 
 final chatServiceProvider = NotifierProvider<ChatService, ChatState>(ChatService.new);
 
@@ -105,8 +66,8 @@ class ChatService extends Notifier<ChatState> {
       }
       await _driver?.close();
       _driver = driver;
-      _pipeline = TurnPipeline(driver: driver, profile: profile, external: _externalTool);
-      state = ChatState(ready: true, timeline: [ComponentEntry(_openingPrompt(profile))]);
+      _pipeline = TurnPipeline(driver: driver, profile: profile, external: ExternalTools(ref).call);
+      state = ChatState(ready: true, timeline: [ComponentEntry(Starters.openingPrompt(profile))]);
       // Every applied search becomes a line in the conversation, so the
       // transcript shows what the person chose and the model can be told.
       ref.read(searchProvider.notifier).onApplied = (s) {
@@ -132,73 +93,6 @@ class ChatService extends Notifier<ChatState> {
     } catch (e) {
       state = state.copyWith(busy: false, error: 'Could not start Motormind: $e');
     }
-  }
-
-  /// What the app adds under the filters card for each mode. Dreaming clears
-  /// the price ceiling and says so with a choice; practical and buying get the
-  /// numbers form in the conversation. Browsing gets nothing extra.
-  List<TimelineEntry>? _starterFor(ShoppingMode mode) {
-    final args = switch (mode) {
-      ShoppingMode.dreaming => {
-        'component': 'choice',
-        'props': {
-          'question': 'No price ceiling for a dream car. Start with a kind, or name it below?',
-          'options': [
-            {'id': 'kind-coupe', 'label': 'Sports / coupe'},
-            {'id': 'kind-convertible', 'label': 'Convertible'},
-            {'id': 'kind-suv', 'label': 'A big SUV'},
-            {'id': 'kind-pickup', 'label': 'A truck'},
-          ],
-        },
-      },
-      ShoppingMode.practical || ShoppingMode.buying => {
-        'component': 'input_form',
-        'props': {
-          'title': 'The numbers that matter most',
-          'fields': [
-            {
-              'id': 'payment',
-              'label': 'Monthly payment you can live with (\$)',
-              'type': 'currency',
-            },
-            {'id': 'down', 'label': 'Cash down (\$)', 'type': 'currency'},
-            {
-              'id': 'credit',
-              'label': 'Credit: excellent, good, fair, poor or rebuilding',
-              'type': 'text',
-            },
-            {'id': 'term', 'label': 'Loan length in months (48, 60, 72)', 'type': 'number'},
-          ],
-        },
-      },
-      ShoppingMode.browsing => null,
-    };
-    if (args == null) return null;
-    final v = PresentRequest.validate(args, resultTool: null);
-    return v.request == null ? null : [ComponentEntry(ShownComponent(request: v.request!))];
-  }
-
-  ShownComponent _filtersCard() {
-    final v = PresentRequest.validate({'component': 'search_filters'}, resultTool: null);
-    return ShownComponent(request: v.request!);
-  }
-
-  ShownComponent _openingPrompt(BuyerProfile profile) {
-    final v = PresentRequest.validate({
-      'component': 'choice',
-      'props': {
-        'question': profile.mode == null
-            ? 'How are you shopping today?'
-            : 'Pick up where you left off, or change how you\'re shopping:',
-        'options': [
-          {'id': 'mode-browsing', 'label': 'Just looking'},
-          {'id': 'mode-practical', 'label': 'Practical options'},
-          {'id': 'mode-buying', 'label': 'Buying now'},
-          {'id': 'mode-dreaming', 'label': 'Dream car'},
-        ],
-      },
-    }, resultTool: null);
-    return ShownComponent(request: v.request!);
   }
 
   void _replaceEntry(int index, TimelineEntry entry) {
@@ -386,7 +280,7 @@ class ChatService extends Notifier<ChatState> {
     }
     final extra = (supplement ?? '').trim();
     String withExtra(String text) => extra.isEmpty ? text : '$text $extra';
-    final opening = openingChoices[id];
+    final opening = Starters.openingChoices[id];
     if (opening != null) {
       final (mode, sentence) = opening;
       _pipeline?.profile = (_pipeline?.profile ?? const BuyerProfile()).applyUpdate({
@@ -404,23 +298,20 @@ class ChatService extends Notifier<ChatState> {
         state = state.copyWith(
           timeline: [
             ...state.timeline,
-            ComponentEntry(_filtersCard()),
+            ComponentEntry(Starters.filtersCard()),
             // Mode starters (Q64, Q66): the app says what it did and asks,
             // so the person can correct it instead of living with a default.
-            ...?_starterFor(mode),
-            MessageEntry(
-              const ChatMessage(
-                role: MessageRole.system,
-                text: 'You can ask Motormind to show, hide or change anything here.',
-              ),
+            if (Starters.forMode(mode) case final starter?) ComponentEntry(starter),
+            const MessageEntry(
+              ChatMessage(role: MessageRole.system, text: Starters.negotiableNote),
             ),
           ],
         );
       }
       return turn;
     }
-    if (id.startsWith('kind-')) {
-      final style = SearchQuery.normalizeBodyStyle(id.substring(5));
+    if (id.startsWith(Starters.kindPrefix)) {
+      final style = SearchQuery.normalizeBodyStyle(id.substring(Starters.kindPrefix.length));
       if (style != null) ref.read(searchProvider.notifier).update({'body_style': style});
       return send(
         withExtra(
@@ -431,68 +322,6 @@ class ChatService extends Notifier<ChatState> {
       );
     }
     return send(withExtra(label));
-  }
-
-  /// Tools the pipeline does not own: the web pane and the session listings.
-  Future<Map<String, Object?>> _externalTool(String name, Map<String, Object?> args) async {
-    switch (name) {
-      case AdvisorTools.readPage:
-        final url = args['url']?.toString();
-        ref.read(stageProvider.notifier).showWeb();
-        final PageExtract extract;
-        try {
-          extract = await ref.read(browserProvider.notifier).readPage(url: url);
-        } on PageChallengeException catch (e) {
-          return {'error': e.toString()};
-        }
-        final facts = extractFacts(extract.text);
-        return {
-          'url': extract.url,
-          'title': extract.title,
-          'text': extract.text.length > 1500 ? '${extract.text.substring(0, 1500)}…' : extract.text,
-          'facts': facts,
-          'listings': [for (final l in extract.listings.take(8)) l.toModelJson()],
-        };
-      case AdvisorTools.updateSearch:
-      case AdvisorTools.findVehicles:
-        // Both go through the live search: the chosen site, the current
-        // filters plus what the model passed, one visible page, read once.
-        final search = ref.read(searchProvider.notifier);
-        final changes = <String, Object?>{
-          for (final k in const [
-            'body_style',
-            'max_price',
-            'min_price',
-            'make',
-            'model',
-            'max_mileage',
-            'min_year',
-            'keywords',
-          ])
-            if (args.containsKey(k)) k: args[k],
-          if (args.containsKey('vehicle_class')) 'body_style': args['vehicle_class'],
-        };
-        search.update(changes, applyNow: false);
-        await search.apply();
-        final s = ref.read(searchProvider);
-        final site = CuratedSites.byId(s.siteId)?.name ?? s.siteId;
-        if (s.note != null) return {'error': s.note, 'query': s.query.describe(), 'site': site};
-        final results = ref
-            .read(listingStoreProvider)
-            .searchQuery(s.query, limit: (args['limit'] as num?)?.toInt() ?? 5);
-        return {
-          'query': s.query.describe(),
-          'site': site,
-          'count': s.lastCount ?? results.length,
-          'listings': [for (final l in results) l.toModelJson()],
-          if (results.isEmpty)
-            'note':
-                'The $site page for this search is open and was read; nothing on it matched. '
-                'Say so plainly and suggest loosening a filter or trying another site.',
-        };
-      default:
-        throw StateError('no handler for $name');
-    }
   }
 
   BuyerProfile get profile => _pipeline?.profile ?? const BuyerProfile();

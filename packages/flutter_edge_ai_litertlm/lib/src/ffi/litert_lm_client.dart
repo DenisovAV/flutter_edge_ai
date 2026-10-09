@@ -18,6 +18,7 @@ import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
 import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
+import 'sigprof_mask.dart';
 import '../thinking_context.dart';
 
 /// The per-turn `extra_context` JSON that sets thinking for this turn; see
@@ -885,6 +886,9 @@ class LiteRtLmFfiClient {
       // per-isolate top-level `edgeAiLogLevel`, default info) honours the
       // caller's setting instead of leaking perf logs at the default level.
       final isolateLogLevel = edgeAiLogLevel;
+      // The QNN backend's init fails under the debug VM's SIGPROF sampling on
+      // Linux (see withSigprofBlocked); Android's FastRPC client survives it.
+      final blockSigprof = npuDispatchDir != null && Platform.isLinux;
       final engineAddr = await Isolate.run(() {
         edgeAiLogLevel = isolateLogLevel;
         final isolateSw = Stopwatch()..start();
@@ -904,7 +908,10 @@ class LiteRtLmFfiClient {
           level: EdgeAiLogLevel.verbose,
         );
         final createStart = isolateSw.elapsedMilliseconds;
-        final ptr = create(Pointer.fromAddress(settingsAddr)).address;
+        int createEngine() => create(Pointer.fromAddress(settingsAddr)).address;
+        final ptr = blockSigprof
+            ? withSigprofBlocked(createEngine)
+            : createEngine();
         edgeAiLog(
           '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
           level: EdgeAiLogLevel.verbose,

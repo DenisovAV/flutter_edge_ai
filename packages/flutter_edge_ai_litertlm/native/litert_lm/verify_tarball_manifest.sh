@@ -250,8 +250,10 @@ done <<< "$prev_assets"
 # arrived. For these files that is a licence or a correctness problem.
 FORBIDDEN=(
   # Qualcomm licenses the QNN runtime for redistribution inside an application
-  # only; since native-v0.18.0 apps fetch it through `qualcomm_npu`.
+  # only; since native-v0.18.0 apps fetch it through `qualcomm_npu` (Linux
+  # arm64: from the QAIRT SDK zip, since native-v0.18.0-c).
   "android_arm64:libQnn*"
+  "linux_arm64:libQnn*"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
@@ -263,6 +265,10 @@ FORBIDDEN=(
 )
 REQUIRED=(
   "android_arm64:libLiteRtDispatch_Qualcomm.so"
+  # native-v0.18.0-c: Qualcomm NPU on Linux arm64 — our dispatch and the
+  # libcdsprpc.so shim the QNN Stubs need (build_qualcomm_dispatch.sh).
+  "linux_arm64:libLiteRtDispatch_Qualcomm.so"
+  "linux_arm64:libcdsprpc.so"
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
   "macos_arm64:libLiteRtLmMetalAccelerator.dylib"

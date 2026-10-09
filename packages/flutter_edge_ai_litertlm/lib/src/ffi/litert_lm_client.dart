@@ -18,6 +18,7 @@ import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
 import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
+import 'sigprof_mask.dart';
 import '../thinking_context.dart';
 
 /// The per-turn `extra_context` JSON that sets thinking for this turn; see
@@ -743,8 +744,12 @@ class LiteRtLmFfiClient {
     try {
       // Asked before the settings exist: a missing NPU stack is an expected
       // fallback, and throwing after settings_create would leak the settings.
-      final npuDispatchDir = Platform.isAndroid && backend == 'npu'
+      final npuDispatchDir = backend != 'npu'
+          ? null
+          : Platform.isAndroid
           ? await _prepareAndroidNpuDispatchDir()
+          : Platform.isLinux
+          ? _prepareLinuxNpuDispatchDir()
           : null;
 
       final settingsCreateStart = initSw.elapsedMilliseconds;
@@ -838,7 +843,8 @@ class LiteRtLmFfiClient {
         );
         calloc.free(dirPtr);
         edgeAiLog(
-          '[LiteRtLmFfi] NPU Android: dispatch_lib_dir=$npuDispatchDir',
+          '[LiteRtLmFfi] NPU ${Platform.operatingSystem}: '
+          'dispatch_lib_dir=$npuDispatchDir',
         );
       }
 
@@ -880,6 +886,9 @@ class LiteRtLmFfiClient {
       // per-isolate top-level `edgeAiLogLevel`, default info) honours the
       // caller's setting instead of leaking perf logs at the default level.
       final isolateLogLevel = edgeAiLogLevel;
+      // The QNN backend's init fails under the debug VM's SIGPROF sampling on
+      // Linux (see withSigprofBlocked); Android's FastRPC client survives it.
+      final blockSigprof = npuDispatchDir != null && Platform.isLinux;
       final engineAddr = await Isolate.run(() {
         edgeAiLogLevel = isolateLogLevel;
         final isolateSw = Stopwatch()..start();
@@ -899,7 +908,10 @@ class LiteRtLmFfiClient {
           level: EdgeAiLogLevel.verbose,
         );
         final createStart = isolateSw.elapsedMilliseconds;
-        final ptr = create(Pointer.fromAddress(settingsAddr)).address;
+        int createEngine() => create(Pointer.fromAddress(settingsAddr)).address;
+        final ptr = blockSigprof
+            ? withSigprofBlocked(createEngine)
+            : createEngine();
         edgeAiLog(
           '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
           level: EdgeAiLogLevel.verbose,
@@ -2108,8 +2120,49 @@ Future<String> _prepareAndroidNpuDispatchDir() async {
   return dir;
 }
 
-/// The Android NPU attempt cannot start because the dispatch directory could
-/// not be prepared. An [Exception], not an [Error], so `initializeFfiRuntime`
+/// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Linux arm64,
+/// after loading what QNN cannot find on its own.
+///
+/// Native Assets puts the whole stack in the bundle's `lib/`. From there the
+/// dispatch loads libQnnHtp and libQnnSystem by full path, and prepends the
+/// directory to `ADSP_LIBRARY_PATH` so FastRPC finds the Skels (fastrpc appends
+/// the system DSP paths itself). One step it cannot do: libQnnHtp opens its
+/// Hexagon Stub by bare name and has no RPATH, so glibc searches
+/// LD_LIBRARY_PATH and the system — never the app — and LD_LIBRARY_PATH cannot
+/// change after the process started. A library already loaded under that
+/// SONAME is matched first, so the Stubs are loaded here by full path, after
+/// the libcdsprpc.so shim they NEED.
+String _prepareLinuxNpuDispatchDir() {
+  final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
+  final missing = [
+    for (final n in qualcommNpuLibsLinux)
+      if (!File('$libDir/${androidLibFileName(n)}').existsSync())
+        androidLibFileName(n),
+  ];
+  if (missing.isNotEmpty) {
+    throw NpuDispatchUnavailableException(
+      'the Qualcomm NPU stack is not in $libDir (missing ${missing.join(', ')}); '
+      'build the app with hooks.user_defines.flutter_edge_ai_litertlm.'
+      '$qualcommNpuUserDefine: true',
+    );
+  }
+  for (final n in [
+    cdsprpcShimLib,
+    for (final lib in qairtLinuxLibs)
+      if (lib.endsWith('Stub')) lib,
+  ]) {
+    final path = '$libDir/${androidLibFileName(n)}';
+    try {
+      DynamicLibrary.open(path);
+    } on Object catch (e) {
+      throw NpuDispatchUnavailableException('$path did not load: $e');
+    }
+  }
+  return libDir;
+}
+
+/// The Android or Linux NPU attempt cannot start because the dispatch
+/// directory could not be prepared. An [Exception], not an [Error], so `initializeFfiRuntime`
 /// records it and falls back to gpu/cpu with the reason attached.
 class NpuDispatchUnavailableException implements Exception {
   const NpuDispatchUnavailableException(this.message);

@@ -5,7 +5,7 @@
 > changes. See the [migration guide](https://flutteredge.ai/docs/migration).
 
 Built-in OS AI engine for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai): runs inference
-against the **system/browser-provided** on-device model instead of a bundled Gemma checkpoint —
+against the **system/browser-provided** on-device model instead of a downloaded model file —
 Gemini Nano via ML Kit GenAI (AICore) on Android, Apple Foundation Models on iOS/macOS, Windows AI
 Foundry (Phi Silica) on Windows, and Gemini Nano via the Chrome **Prompt API** on Web. Opt-in
 package: add it only if you want your app to use whatever model the platform already ships, with no
@@ -61,7 +61,7 @@ Every row is a property of the running device, OS and build — not of the packa
 | iOS / macOS | Apple Foundation Models | FoundationModels framework | iPhone 15 Pro+, Apple Silicon Macs, Apple Intelligence enabled in **Settings → Apple Intelligence & Siri**. Inference needs **OS 26+** at runtime — below that the plugin reports `unavailableOsTooOld`, so you can still ship a fallback. The plugin itself builds from **iOS 13.0 / macOS 12.0**, so it links and runs on older OSes. |
 | Windows | Phi Silica | Windows AI Foundry (Windows App SDK 2.0+) | Windows 11 25H2+ on Copilot+ class hardware (or a supported GPU), in a packaged app. The build resolves the App SDK projection itself; a build that could not reports `unavailableDeviceUnsupported`. See [Windows setup](#windows-setup). |
 | Web | Gemini Nano | Chrome **Prompt API** (`self.LanguageModel`) | Desktop Chrome / Chromium-Edge only — **not** Chrome-Android/iOS, **not** Firefox/Safari. ~22 GB free disk + a GPU with >4 GB VRAM (or a 16 GB-RAM CPU-only path). See [Web setup](#web-setup). |
-| Linux | — | — | No OS built-in model. `availability()` reports an `unavailable*` status; fall back to a downloaded model. |
+| Linux | — | — | No OS built-in model. `availability()` reports `unavailableDeviceUnsupported`; fall back to a downloaded model. |
 
 Vision (image input) requires **OS 27 plus an OS 27 SDK / Swift 6.4 compiler** on Apple platforms —
 on OS 26 Apple Foundation Models is text-only, and that OS 27 branch is not device-verified yet.
@@ -129,7 +129,7 @@ await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
 ```
 
-## Feature parity vs. bundled Gemma engines
+## Feature parity vs. downloaded-model engines
 
 | Feature | Android (Gemini Nano) | iOS / macOS (Apple FM) | Windows (AI Foundry) | Web (Chrome Prompt API) |
 |---------|------------------------|-------------------------|----------------------|--------------------------|
@@ -247,20 +247,20 @@ flag and does not route reliably, so tool declarations are never handed to it na
 
 `BuiltInAi.availability()` / `BuiltInAi.ensureReady()` report a `BuiltInAiAvailability` status
 (surfaced via `BuiltInAiUnavailableException.status` when `ensureReady()` fails). The enum is shared
-across every platform, but **no platform produces all seven values**: ML Kit has no "too old" or
-"switched off" state, Apple never says `downloadable` (the OS fetches its own assets, so a model
-that isn't ready reports `downloading`), Chrome reports four states with no reason attached, and
-only Windows AI Foundry can return the whole set.
+across every platform, and no platform but Windows AI Foundry produces all seven values: ML Kit
+has no "too old" or "switched off" state, Apple never says `downloadable` (the OS fetches its own
+assets, so a model that isn't ready reports `downloading`), and Chrome reports four states with no
+reason attached.
 
 | Status | Meaning | User-facing remedy | Web notes |
 |--------|---------|---------------------|-----------|
 | `available` | Ready to use now. | — | — |
 | `downloadable` | Feature exists but isn't downloaded yet. | Call `BuiltInAi.ensureReady()` — it triggers the download and reports progress via `onProgress`. | On Web, `ensureReady()` reports a *real* percentage from the browser's `downloadprogress` event. |
 | `downloading` | A download is already in progress. | Call `BuiltInAi.ensureReady()` and wait; it polls until ready or the `timeout` elapses. | Same on Web. |
-| `unavailableDeviceUnsupported` | This device/browser doesn't have AICore (Android), Apple Intelligence hardware (Apple), a configured App SDK (Windows), or the Prompt API (Web). | Fall back to a bundled model — the device can't run the built-in one. | Also returned when `'LanguageModel' in self` is `false` — wrong browser, wrong platform, or the feature isn't enabled (see [Web setup](#web-setup)). |
+| `unavailableDeviceUnsupported` | This device/browser doesn't have AICore (Android), Apple Intelligence hardware (Apple), a configured App SDK (Windows), or the Prompt API (Web) — and always on Linux, which has no OS model. | Fall back to a bundled model — the device can't run the built-in one. | Also returned when `'LanguageModel' in self` is `false` — wrong browser, wrong platform, or the feature isn't enabled (see [Web setup](#web-setup)). |
 | `unavailableOsTooOld` | The OS version is below what the built-in model requires. | Prompt the user to update the OS, or fall back to a bundled model. | Never returned on Web. |
 | `unavailableDisabled` | The feature exists but is turned off. | Ask the user to enable it: Apple Intelligence in **Settings → Apple Intelligence & Siri** (iOS/macOS), or the Windows AI feature in Windows Settings. | Only Apple and Windows report it. ML Kit has no "switched off" state, so Android folds this into `unavailableOther`; Chrome folds it into `unavailableDeviceUnsupported`/`unavailableOther`. |
-| `unavailableOther` | Unclassified failure — including a platform with no plugin at all (Linux) and a probe that timed out. | Fall back to a bundled model; check device/console logs for detail. | Chrome's `'unavailable'` maps here — the browser doesn't report *why* (disk floor, VRAM, flag/origin-trial missing). |
+| `unavailableOther` | Unclassified failure — including a probe that timed out. | Fall back to a bundled model; check device/console logs for detail. | Chrome's `'unavailable'` maps here — the browser doesn't report *why* (disk floor, VRAM, flag/origin-trial missing). |
 
 `availability()` never throws and never hangs — a probe that doesn't return within
 `BuiltInAi.debugProbeTimeout` resolves to `unavailableOther`. `ensureReady()` throws

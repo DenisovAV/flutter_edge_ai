@@ -70,7 +70,7 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.1.1
-  flutter_edge_ai_litertlm: ^1.10.0   # or any other engine from the table
+  flutter_edge_ai_litertlm: ^1.11.0   # or any other engine from the table
 ```
 
 Then complete the platform setup below.
@@ -283,7 +283,7 @@ await model.close();
 
 - **`maxTokens` is the context window**, not the reply length: prompt, history
   and answer together. `.litertlm` needs at least 1024. Cap the reply with
-  `createChat(maxOutputTokens: …)`.
+  `createChat(maxOutputTokens: …)` (`.litertlm`; MediaPipe ignores it).
 - **`Message.isUser` defaults to `false`.** A user message without
   `isUser: true` gets an empty answer.
 - **`fileType` picks the engine**, not the file name. `installModel` defaults

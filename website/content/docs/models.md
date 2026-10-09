@@ -75,9 +75,9 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 |---|:---:|:---:|:---:|:---:|---|
 | `.task` | ✅ | ✅ | ✅ | ❌ | Older models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) |
 | `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Newer models (Gemma 4, Qwen3, FastVLM + desktop for all) |
-| `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4 in the current catalog) |
+| `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4, Gemma 3 1B and Gemma 3 270M in the current catalog) |
 | `.bin` | ✅ | ✅ | ✅ | ❌ | Manual chat template formatting required |
-| `.tflite` | ✅ | ✅ | ✅ | ✅ | Embeddings only (EmbeddingGemma, Gecko) |
+| `.tflite` | ✅ | ✅ | ✅ | ✅ | LLM via `ModelFileType.binary` (MediaPipe, mobile and web), and LiteRT embedding models (EmbeddingGemma, Gecko) on every platform |
 | `onnx` | ✅ | ✅ | ✅ | ✅ | ONNX models — an ORT-GenAI model directory on native, a Hugging Face repo via Transformers.js on Web — [ONNX](/docs/onnx) |
 | `builtIn` (no file) | ✅ | ✅ | ✅ | ⚠️ ³ | OS/browser model — [Built-in AI](/docs/builtin-ai) |
 
@@ -126,12 +126,12 @@ ONNX Web ignores it.
 Qwen3 is different: core parses its emitted `<think>` tags on every platform,
 including Web.
 
-² Gemma3n function calling: on the downloadable E4B `.litertlm` build; not on
-E2B or the MediaPipe `.task` builds.
+² Gemma3n function calling: the downloadable catalog enables it only on the E4B
+`.litertlm` build.
 
-‡ **Reasons, but emits no `ThinkingResponse`.** These models run as
-`ModelType.general`, which has no reasoning parser — their thinking blocks
-arrive inside the answer as ordinary text and are not stripped. See
+‡ Runs as `ModelType.general`. These `.litertlm` bundles stream their reasoning
+on a thought channel, which arrives as `ThinkingResponse`; a model without such a
+channel keeps its raw thinking text inside the answer. See
 [Thinking Mode](/docs/thinking-mode).
 
 <Warning>
@@ -217,8 +217,8 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 |---|---|:---:|:---:|:---:|
 | [Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) | 2.4GB | ✅ | ✅ | ✅ |
 | [Gemma 4 E4B](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) | 4.3GB | ✅ | ✅ | ✅ |
-| [Gemma3n E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-preview) | 3.1GB | ✅ | ✅ | ✅ |
-| [Gemma3n E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-preview) | 6.5GB | ✅ | ✅ | ✅ |
+| [Gemma3n E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm) | 3.1GB | ✅ | ✅ | ✅ |
+| [Gemma3n E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-lm) | 6.5GB | ✅ | ✅ | ✅ |
 | [FastVLM 0.5B](https://huggingface.co/litert-community/FastVLM-0.5B) | 0.5GB | ✅ | ❌ | ❌ |
 | [Qwen2-VL 2B](https://huggingface.co/litert-community/Qwen2-VL-2B) | 1.8GB | ✅ | ✅ | ❌ |
 | [SmolVLM2 500M](https://huggingface.co/litert-community/SmolVLM2-500M) | 0.36GB | ✅ | ✅ | ❌ |
@@ -288,6 +288,8 @@ final install = await FlutterEdgeAi.installModel(
   modelType: ModelType.general,     // fallback — the manifest overrides it
   fileType: ModelFileType.litertlm, // selects the litertlm resolver
 )
+  // The manifest types this repo `qwen3`; 2507 is a `qwen` model (see the
+  // ModelType table) — use the inspect-first flow below to pass it yourself.
   .fromHuggingFace('litert-community/Qwen3-4B-Thinking-2507')
   .install();
 
@@ -322,7 +324,8 @@ final r = await FlutterEdgeAi.resolveHuggingFace(
 );
 // … inspect r.file / r.notes / r.runtime …
 await FlutterEdgeAi.installModel(
-  modelType: r.modelType ?? ModelType.general,
+  // 2507 resolves to qwen3; ModelType.qwen is the right type for it.
+  modelType: ModelType.qwen,
   fileType: r.fileType,
 )
   .fromNetwork(r.url) // r.url pins the resolver's revision
@@ -481,7 +484,7 @@ into the same space as SigLIP's vision tower — image↔text retrieval rather t
 document RAG. It is the only embedding profile here that is **not** installed
 through `installEmbedder()`.
 
-**Text in, vectors out — the plugin does not run the vision tower.** You embed
+**Text in, vectors out — flutter_edge_ai does not run the vision tower.** You embed
 the image side elsewhere (or offline) and query it with vectors this profile
 produces.
 
@@ -492,8 +495,8 @@ because the int8 export carries no `attention_mask`. It also ignores the
 one moves the text vector off the space the two towers share.
 
 SigLIP 2 reuses the Gemma BPE vocabulary, so a `tokenizer.json` cannot be told
-apart by its vocabulary alone, and the [ONNX tokenizer loader](/docs/onnx)
-**refuses** such a file rather than reading it with Gemma's convention and
+apart by its vocabulary alone, and the embedding tokenizer router in
+`flutter_edge_ai_embeddings` (`GemmaEmbeddingTokenizers`) **refuses** such a file rather than reading it with Gemma's convention and
 returning a plausible but wrong vector.
 
 To tell whether an export is the one this profile expects, look at two blocks of
@@ -524,5 +527,5 @@ import 'package:flutter_edge_ai_embeddings/embedding_tokenizer.dart'
 and pass that as the tokenizer factory of the `ForwardPassDescriptor` you give
 to `CommonEmbeddingModel.create`. That library is native-only. See the
 [`flutter_edge_ai_embeddings` README](https://pub.dev/packages/flutter_edge_ai_embeddings)
-for the full profile, and [ONNX Runtime](/docs/onnx) for why the factory
-declines to guess.
+for the full profile, and [Embeddings & RAG](/docs/embeddings-and-rag) for why
+the tokenizer router declines to guess.

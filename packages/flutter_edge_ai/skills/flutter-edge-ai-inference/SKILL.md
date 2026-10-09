@@ -268,7 +268,7 @@ print(model.activeBackend); // what actually loaded
 | `preferredBackend` | Tried in order |
 | --- | --- |
 | `null` or `gpu` | GPU, then CPU |
-| `npu` | NPU, GPU, CPU on Windows and on Qualcomm Android; GPU, CPU everywhere else |
+| `npu` | NPU, GPU, CPU on Windows, and on Qualcomm Android and Qualcomm Linux arm64 when the app sets `qualcomm_npu`; GPU, CPU everywhere else |
 | `cpu` | CPU only |
 
 Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android) or Intel Lunar/Panther Lake (Windows) and a model compiled for that NPU; `PreferredBackend.cpu` never falls back. The iOS Simulator is CPU-only. On web, MediaPipe is GPU-only.

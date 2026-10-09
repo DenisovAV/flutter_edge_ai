@@ -1,20 +1,20 @@
 ---
 title: Getting Started
-description: Run Gemma and other on-device LLMs in your Flutter app — Android, iOS, Web, and Desktop.
+description: On-device AI for Flutter on Android, iOS, Web, macOS, Windows and Linux — open models or the one the OS ships, no server.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
 
-Bring the power of Google's lightweight Gemma language models and other on-device
-LLMs directly to your Flutter applications. With **flutter_edge_ai** you can
-seamlessly incorporate advanced AI capabilities into your apps — all without
-relying on external servers.
+**flutter_edge_ai** is on-device AI for Flutter on Android, iOS, Web, macOS,
+Windows and Linux. Run Gemma and other open models — Qwen, DeepSeek, Phi,
+FastVLM, SmolLM and more, see [Models](/docs/models) — or the model the
+operating system already ships, with text, vision, audio, function calling,
+embeddings, RAG and speech. No server, no cloud.
 
-[Gemma](https://ai.google.dev/gemma) is a family of lightweight, state-of-the-art
-open models built from the same research and technology used to create the Gemini
-models. The plugin supports not only Gemma, but also Qwen, DeepSeek, Phi, FastVLM,
-SmolLM and more — see [Models](/docs/models) for the full list.
+The core is small: it installs models and dispatches to engines, and you add
+only the engines, stores and features your app uses — see
+[Packages](/docs/packages).
 
 ## Features
 
@@ -28,11 +28,12 @@ SmolLM and more — see [Models](/docs/models) for the full list.
 - **Function Calling:** Let models call external functions and integrate with other services. See [Function Calling](/docs/function-calling).
 - **Agent Skills:** Give the model a catalog of `SKILL.md` skills it picks and runs itself — text, JS, native intents, or MCP tools. See [Agent Skills](/docs/agent).
 - **Speech & Voice (STT + TTS + voice loop):** Transcribe audio, synthesize speech, and run a full on-device speech-to-speech voice loop (`VoiceSession`) via `flutter_edge_ai_speech` — STT (moonshine/Whisper/Parakeet) + TTS (Matcha/Qwen3/Inflect) today. See [Speech](/docs/speech).
-- **Thinking Mode:** View the reasoning process of DeepSeek, Gemma 4, and Qwen3 models. See [Thinking Mode](/docs/thinking-mode).
+- **Thinking Mode:** View the reasoning process of DeepSeek, Gemma 4, Qwen3 and Qwen3.5 models. See [Thinking Mode](/docs/thinking-mode).
 - **Stop Generation:** Cancel text generation mid-process on Android, iOS, Web, and Desktop.
 - **Backend Switching:** Choose CPU or GPU where supported, plus NPU for
-  `.litertlm` on supported Qualcomm Snapdragon Android devices and Intel
-  LunarLake/PantherLake Windows PCs.
+  `.litertlm` on Qualcomm Android devices and Qualcomm Linux arm64 boards
+  (opt-in, see [LiteRT-LM](/docs/litertlm)) and on Intel LunarLake/PantherLake
+  Windows PCs.
 - **LoRA Support:** Efficient fine-tuning and integration of LoRA (Low-Rank Adaptation) weights.
 - **Enhanced Downloads:** Smart retry logic with exponential backoff and automatic restart of interrupted downloads.
 - **Android Foreground Service:** opt in with `foreground: true` for large downloads to bypass the 9-minute timeout.
@@ -40,6 +41,18 @@ SmolLM and more — see [Models](/docs/models) for the full list.
   then use independent `flutter_edge_ai_rag` indexes with Qdrant or SQLite
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
+
+## What's new in 2.1
+
+- **`enableThinking` replaces `isThinking`** on `createChat`, `createSession`
+  and `openSession` (breaking); `ModelRuntimeDefaults.isThinking` is
+  `thinkingDeclared`. New `ModelType.qwen35`. See [Migration](/docs/migration).
+- **Qualcomm NPU is opt-in** (`flutter_edge_ai_litertlm` 1.10.0): set
+  `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`,
+  and the build hook fetches Qualcomm's QNN runtime. The same flag now covers
+  **Qualcomm Linux arm64** boards. See [LiteRT-LM](/docs/litertlm).
+- **LiteRT-LM v0.18.0** (`native-v0.18.0-c`). Apple's Metal accelerator ships as
+  `LiteRtLmMetalAccelerator`, so an app can use `flutter_litert` beside it.
 
 ## What's new in 2.0
 
@@ -60,7 +73,7 @@ SmolLM and more — see [Models](/docs/models) for the full list.
 
 - **flutter_gemma is now Flutter Edge AI.** Every package has a new name — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, … Installed models, vector stores and platform setup carry over, and `dart fix --apply` renames the old Dart names. See [Migration](/docs/migration).
 
-Through 1.11.3 the packages shipped under the `flutter_gemma*` names; the new names continue the same numbering (the table is in [Migration](/docs/migration)).
+Core through 1.11.3 (`flutter_gemma_litertlm` through 1.8.5) shipped under the `flutter_gemma*` names; the new names continue the same numbering (the table is in [Migration](/docs/migration)).
 
 ## What's new in 1.9
 
@@ -394,7 +407,7 @@ final toolMessage = Message.toolResponse(
 // System information message
 final systemMessage = Message.systemInfo(text: "Function completed successfully");
 
-// Thinking content (for DeepSeek models)
+// Thinking content (DeepSeek, Gemma 4, Qwen3, …)
 final thinkingMessage = Message.thinking(text: "Let me analyze this problem...");
 
 // Check if a message contains an image

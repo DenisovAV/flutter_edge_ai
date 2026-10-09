@@ -5,9 +5,10 @@
 Pod::Spec.new do |s|
   s.name             = 'flutter_edge_ai'
   s.version          = '2.1.1'
-  s.summary          = 'Flutter Edge AI - Run Gemma AI models locally on desktop'
+  s.summary          = 'Flutter Edge AI core — on-device AI for Flutter on macOS.'
   s.description      = <<-DESC
-Flutter plugin for running Gemma AI models locally on macOS using LiteRT-LM.
+Core of Flutter Edge AI: model installation and the engine registries. Engines
+(LiteRT-LM, ONNX Runtime, the OS's own models) are opt-in packages.
                        DESC
   s.homepage         = 'https://github.com/DenisovAV/flutter_edge_ai'
   s.license          = { :file => '../LICENSE' }

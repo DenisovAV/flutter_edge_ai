@@ -12,7 +12,7 @@ no engine by default — you opt in by registering `LiteRtLmEngine()`.) It runs
 JVM, no gRPC — and it is the **primary desktop engine** (macOS, Windows, Linux);
 [ONNX Runtime](/docs/onnx) also runs on desktop, and macOS and Windows can additionally
 use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
-**Native Assets** (SHA256-verified, from the `native-v0.18.0-b` GitHub release), so
+**Native Assets** (SHA256-verified, from the `native-v0.18.0-c` GitHub release), so
 there's no manual native setup.
 
 The same package also ships **`LiteRtEmbeddingBackend`**, the LiteRT C API
@@ -22,9 +22,9 @@ embedding backend — see [Embeddings & RAG](/docs/embeddings-and-rag).
 
 | Platform | Support |
 |----------|---------|
-| Android | ✅ FFI (GPU via OpenCL, NPU on Qualcomm Snapdragon) |
+| Android | ✅ FFI (GPU via OpenCL, NPU on Qualcomm — opt-in via `qualcomm_npu`) |
 | iOS | ✅ FFI (GPU via Metal on device; CPU on simulator) |
-| macOS / Linux | ✅ FFI (GPU via Metal / Vulkan) |
+| macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in via `qualcomm_npu`) |
 | Windows | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
 | Web | ⚠️ early preview via `@litert-lm/core` (text-only) |
 
@@ -93,8 +93,8 @@ Pick the accelerator with `preferredBackend:` on `getActiveModel`:
 | Backend | Where |
 |---------|-------|
 | `cpu` | All native platforms |
-| `gpu` | Metal (Apple), DirectX 12 / WebGPU (Windows), Vulkan / WebGPU (Linux); on web the runtime picks WebGPU or WASM itself and `preferredBackend` is not applied |
-| `npu` | Android (Qualcomm Snapdragon, `.litertlm`) and Windows (Intel LunarLake / PantherLake) |
+| `gpu` | OpenCL (Android), Metal (Apple), DirectX 12 / WebGPU (Windows), Vulkan / WebGPU (Linux); on web the runtime picks WebGPU or WASM itself and `preferredBackend` is not applied |
+| `npu` | Qualcomm on Android and on Linux arm64 (opt-in, `.litertlm`), and Windows (Intel LunarLake / PantherLake) |
 
 GPU is the right default, but it is not uniformly faster: on Android the win is
 in **prefill**, and decode can be slower than CPU. One measured pair — Galaxy S26,
@@ -141,6 +141,21 @@ mirror, add `qualcomm_npu_maven_url: <maven base URL>` or
 `qualcomm_npu_aar: <path to the same AAR>`. Without the flag, `npu` on Android
 falls back to GPU, then CPU, and the log says how to enable it.
 
+**Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
+Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino
+VENTUNO Q — QCS9075, …), `qualcomm_npu: true` bundles the stack into the
+Linux arm64 build. Qualcomm publishes no Maven artifact for Linux, so the hook
+reads the 14 libraries it needs out of Qualcomm's public QAIRT 2.50 SDK zip with
+HTTP range requests — about 32 MB of the 2.6 GB archive — checks each one
+against a pinned SHA-256, and caches them; about 90 MB more installed. Offline,
+download the zip yourself and add `qualcomm_npu_qairt_zip: <path>`. On the
+board, Qualcomm's FastRPC library has to be present (`qcom-fastrpc1` on Ubuntu;
+Qualcomm's images ship it) and the user has to be in group `fastrpc`
+(`sudo usermod -aG fastrpc $USER`, then log in again). Without either, `npu`
+falls back to GPU, then CPU, and the log names what is missing. Use the bundle
+compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
+x64 build ignores the flag.
+
 <Warning>
 
 **NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
@@ -180,8 +195,9 @@ the check is per OS, so a PC without an Intel NPU still attempts it, and
 
 `maxTokens` (on `getActiveModel` / `createModel`) sizes the whole **context
 window** — system prompt + history + message **plus** the generated output (the
-KV-cache budget), not the response length. `.litertlm` models bake a fixed
-`kv_cache_max_len` of 1024, so this engine **clamps `maxTokens` up to 1024** (with
+KV-cache budget), not the response length. CPU/GPU `.litertlm` bundles bake a
+minimum `kv_cache_max_len` (1024 for the supported bundles), so this engine
+**clamps `maxTokens` up to 1024** (with
 a log warning) to avoid a native KV-cache crash — on every backend attempt except
 the NPU one, where the bundle's own compiled `cache_length` governs instead (see
 the NPU warning above).

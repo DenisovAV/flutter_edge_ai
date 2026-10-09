@@ -1,5 +1,5 @@
 name: flutter_edge_ai_onnx
-description: "ONNX Runtime engine for flutter_edge_ai: GenAI inference on 5 native platforms + web generation (Transformers.js) & embeddings (onnxruntime-web)."
+description: "ONNX Runtime engine for flutter_edge_ai: GenAI inference and embeddings on 5 native platforms; web via Transformers.js and onnxruntime-web."
 version: 0.5.2
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_onnx

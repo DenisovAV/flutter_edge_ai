@@ -160,7 +160,7 @@ Filtering on an **undeclared** key is a safe no-op (never throws). With no
 Supported operators: `=`, `!=`, `>`, `>=`, `<`, `<=`, `BETWEEN`, `IN`
 (`FieldEquals`, `FieldRange`, `FieldMatchAny`); max 16 declared columns.
 
-## Upgrading from 1.0.x
+## Upgrading from 1.0.x (as `flutter_gemma_rag_sqlite`)
 
 **1.1.0 does not read an index written by 1.0.x.** The switch to in-SQLite
 `vec0` KNN moved the data from a plain `documents` table into a `vec_documents`
@@ -182,7 +182,7 @@ happened.
 by this package's Native Assets hook (`hook/build.dart`), SHA256-verified, and
 loaded automatically before any database is opened.
 
-**New in 1.3.0:** that fetch is real. Until 1.2.0 the loadables were committed
+**New in 1.3.0** (as `flutter_gemma_rag_sqlite`): that fetch is real. Until 1.2.0 the loadables were committed
 into the package, so every install carried all seven platforms' binaries to use
 one of them. They now come from this repository's `native-sqlite-vec-v*` GitHub
 Release, which means the **first** build of each platform needs `github.com`

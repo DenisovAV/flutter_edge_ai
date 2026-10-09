@@ -7,9 +7,8 @@ meta:
 ---
 
 Detailed setup and reference for running flutter_edge_ai on **macOS, Windows, and
-Linux**. Desktop platforms run LiteRT-LM **directly via `dart:ffi`** — no
-Kotlin/JVM gRPC server, no Java required, no separate process, no IPC overhead.
-Engine startup is ~2 s instead of ~10–15 s.
+Linux**. Desktop platforms run LiteRT-LM **directly via `dart:ffi`** — no Java,
+no separate process, no IPC.
 
 LiteRT-LM (`.litertlm`) is the **primary, default** desktop engine — but not the
 only one. **`flutter_edge_ai_onnx`** ([ONNX Runtime](/docs/onnx) — ORT-GenAI
@@ -75,14 +74,9 @@ directories instead.)
 | Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL 9+) |
 | Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc requirement |
 
-<Warning>
-
-**Fixed in litertlm 1.4.0.** On litertlm 1.2.0–1.3.1, Windows **discrete GPUs**
-crash on `PreferredBackend.gpu`. Upgrade to 1.4.0; on the affected versions use
-`PreferredBackend.cpu` or `.npu`. macOS/Linux GPU and Windows CPU/NPU were
-never affected.
-
-</Warning>
+Qualcomm Linux arm64 boards also run `PreferredBackend.npu` on the Hexagon DSP
+when the app opts in with `qualcomm_npu: true` — see
+[LiteRT-LM](/docs/litertlm).
 
 <Info>
 
@@ -103,7 +97,7 @@ prompt and never mentions the rest, with no error raised
 
 - **Flutter** ≥ 3.44.0
 - **macOS**: Apple Silicon (arm64)
-- **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed since `flutter_gemma_litertlm` 1.7.1 (see below).
+- **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed (see below).
 - **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
 - **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available
 
@@ -113,15 +107,19 @@ No Java/JVM/JRE required.
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 Future<void> chat() async {
-  // Install model (downloads on first run, cached after).
+  // Once, in main(): core has no engine of its own.
+  await FlutterEdgeAi.initialize(inferenceEngines: const [LiteRtLmEngine()]);
+
+  // Install model (downloads on first run, cached after). Gemma 4 from
+  // litert-community is public — no token needed.
   await FlutterEdgeAi.installModel(
     modelType: ModelType.gemma4,
     fileType: ModelFileType.litertlm,
   ).fromNetwork(
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
-    token: 'hf_...',
   ).install();
 
   // Create model with full capabilities — keep it for the app's lifetime.
@@ -286,14 +284,13 @@ so on): Native Assets drops the `lib` prefix on Windows, while `LiteRtLm.dll`
 imports them with it.
 
 `StreamProxy.dll` exposes a `LoadLibraryExA(LOAD_WITH_ALTERED_SEARCH_PATH)` helper
-that the plugin uses to pre-load `LiteRt.dll`, `libLiteRtTopKWebGpuSampler.dll`
+that `flutter_edge_ai_litertlm` uses to pre-load `LiteRt.dll`, `libLiteRtTopKWebGpuSampler.dll`
 and `libLiteRtWebGpuAccelerator.dll`, then `LiteRtLm.dll` itself. Without this,
 modern Windows DLL search order doesn't always include the application directory
 for secondary `LoadLibrary` calls — they would fail to find the GPU accelerator
 DLL and silently fall back to CPU.
 
-End-users need nothing installed. Since `flutter_gemma_litertlm` 1.7.1
-`LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
+End-users need nothing installed. `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
 measured on `native-v0.18.0`, 16 of its 24 DLLs import none.
 
 The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
@@ -316,7 +313,7 @@ The bundle includes:
 - `libwebgpu_dawn.so` (Dawn WebGPU backend — split into a shared lib in LiteRT-LM v0.14.0; the accelerator loads it via `$ORIGIN` rpath, so GPU fails without it)
 
 `libStreamProxy.so` exposes `stream_proxy_load_global` (an `RTLD_GLOBAL`
-`dlopen`). The plugin uses it to pre-load `libLiteRt.so` before `libLiteRtLm.so`
+`dlopen`). `flutter_edge_ai_litertlm` uses it to pre-load `libLiteRt.so` before `libLiteRtLm.so`
 so the WebGPU accelerator's runtime `dlsym(RTLD_DEFAULT, "LiteRt*")` resolves —
 without `RTLD_GLOBAL`, Dart's default `RTLD_LOCAL` would hide the symbols.
 
@@ -381,23 +378,20 @@ backend, capabilities), those become process-fixed. Recreating the engine with
 different settings causes GPU-stack conflicts (notably `wgpu::Instance already set`
 from the WebGpu sampler binary on Linux/Windows).
 
-The plugin avoids this by reusing the same `InferenceModel` when params match, and
+`flutter_edge_ai_litertlm` avoids this by reusing the same `InferenceModel` when params match, and
 by disabling GPU sampler preload on Linux (CPU-sampler fallback) so runtime model
 swap works. To swap models at runtime, call `model.close()` first, then
 `getActiveModel(...)` again. Switching backend (CPU ↔ GPU) works the same way.
 
 ## Known limitations
 
-### Windows discrete GPU crashes (litertlm 1.2.0–1.3.1) — fixed in 1.4.0
+### Windows discrete GPU (historical)
 
-Windows **discrete GPUs** crash on `PreferredBackend.gpu` in litertlm
-1.2.0–1.3.1. The Windows native build passed a Bazel define that upstream had
-removed, so it silently linked the LiteRt runtime statically — which conflicts
-with the separately shipped WebGPU accelerator once Dawn was split out into its
-own library. The define was corrected in 1.4.0 and Windows GPU works again.
-
-On 1.2.0–1.3.1 use `PreferredBackend.cpu` or `.npu`. macOS/Linux GPU and
-Windows CPU/NPU were never affected.
+`flutter_gemma_litertlm` 1.2.0–1.3.1 crashed on Windows **discrete GPUs**: the
+Windows build passed a Bazel define upstream had removed, so the LiteRt runtime
+was linked statically and conflicted with the separately shipped WebGPU
+accelerator. Fixed in 1.4.0, before the rename — every
+`flutter_edge_ai_litertlm` release has the fix.
 
 ### Per-token sampler: GPU on Windows, CPU on macOS and Linux
 
@@ -409,9 +403,9 @@ encoder** runs on CPU by default (the GPU delegate can't prepare its ops);
 override per-encoder with `preferredVisionBackend:` / `preferredAudioBackend:`
 on `getActiveModel(...)`.
 
-- **Windows** — GPU. The plugin preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.18.0` exports its full C ABI (7 of 7 functions).
+- **Windows** — GPU. `flutter_edge_ai_litertlm` preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.18.0` exports its full C ABI (7 of 7 functions).
 - **macOS** — CPU. The bundle does not ship `libLiteRtTopKMetalSampler`: upstream opens it by bare file name, which cannot reach a library inside the app bundle, so the factory uses the CPU chain.
-- **Linux** — CPU. The sampler `.so` exports its full C ABI, but it holds a process-static `wgpu::Instance` that any second `engine_create` rejects. Since runtime model swap matters more than the few ms saved, the plugin doesn't preload it and lets the factory fall back to CPU.
+- **Linux** — CPU. The sampler `.so` exports its full C ABI, but it holds a process-static `wgpu::Instance` that any second `engine_create` rejects. Since runtime model swap matters more than the few ms saved, `flutter_edge_ai_litertlm` doesn't preload it and lets the factory fall back to CPU.
 
 ### `randomSeed` / `temperature` / `topK` / `topP` — only the first session's values apply
 
@@ -421,7 +415,7 @@ on `getActiveModel(...)`.
 on that same engine keeps those values, whatever it asks for. Upstream defect
 ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/issues/2080),
 open), reproducing on v0.14.0, v0.15.0 and v0.16.0 on CPU as well as GPU, and on
-v0.17.0 (checked on CPU).
+v0.17.0 (checked on CPU); not re-checked on v0.18.0.
 
 </Warning>
 
@@ -439,7 +433,7 @@ of a model reload. If your app uses one fixed configuration throughout, as most
 chat apps do, this never surfaces: the first session already set the values you
 wanted.
 
-Before litertlm 1.2.0 we carried a build-time patch that fixed this downstream
+Before `flutter_gemma_litertlm` 1.2.0 we carried a build-time patch that fixed this downstream
 (offered upstream as [PR #2081](https://github.com/google-ai-edge/LiteRT-LM/pull/2081)).
 v0.14.0 added a native session-config sampler API and the patch was dropped, but
 the underlying baking was never fixed.
@@ -458,7 +452,7 @@ exceed. Use CPU on the simulator, or test on a physical iPhone for GPU validatio
 
 ### Engine create fails with no native log on Linux
 
-In **debug builds** the plugin redirects native stderr to
+In **debug builds** `flutter_edge_ai_litertlm` redirects native stderr to
 `<tmpdir>/litertlm_native.log` and dumps it via `debugPrint` after a failed
 `engine_create`. In release builds stderr goes to the systemd journal / app's own
 stderr.
@@ -483,15 +477,6 @@ Symptom: `engine_create` returns null with no Dart-side error, app silently fall
 back to CPU. Verify `dxcompiler.dll` and `dxil.dll` are next to your `app.exe`
 (Native Assets bundles them). Neither imports the Visual C++ runtime, so a missing
 redistributable is not the cause — look at the GPU driver instead.
-
-<Warning>
-
-On a Windows **discrete GPU** with litertlm 1.2.0–1.3.1, GPU also crashes for a
-separate reason — a Bazel define we passed had been removed upstream, so the
-runtime linked statically. Fixed in 1.4.0. See
-[Known limitations](#known-limitations).
-
-</Warning>
 
 ### Model file not found
 

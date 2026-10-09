@@ -84,9 +84,9 @@ final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 - **`.litertlm` models require minSdk 30.** `libLiteRtLm.so` depends on API 30+ Bionic syscalls (`pthread_cond_clockwait`, `sem_clockwait`) that can't be shimmed on older devices. MediaPipe `.task` models work on lower API levels.
 - **`.litertlm` / embeddings / vision are `arm64-v8a` only.** MediaPipe text inference (`.task` / `.bin`) also runs on `x86_64` and `armeabi-v7a`. If you only use arm64-only features, add `ndk { abiFilters 'arm64-v8a' }` (in `build.gradle.kts`: `ndk { abiFilters += listOf("arm64-v8a") }`) so the Play Store doesn't offer broken APKs. See [Installation → Android architecture](/docs/installation#android-architecture-support).
 - **GPU:** nothing to add — the OpenCL `<uses-native-library>` entries come from the core plugin's own manifest (`flutter_gemma` 1.2.0+) through the manifest merger. If the GPU backend still falls back, check that the merged manifest contains `libvndksupport.so` and `libOpenCL.so`. See [Installation → Android](/docs/installation#android).
-- **Google Play rejects the release: "Your app does not support 16 KB memory page sizes".** Fixed in `flutter_gemma_litertlm` 1.8.0. Nothing fails at build or run time — the rejection happens at submission. The Qualcomm Hexagon DSP blobs this package bundles for the NPU path (`libQnnHtpV{73,75,79,81}Skel.so`) arrived from the QAIRT SDK with a 4 KB `p_align`, and they ship in every APK because the NPU libraries are bundled unconditionally; Play scans `lib/**/*.so` without caring that a Hexagon image is loaded by the DSP rather than mapped by the kernel. Upgrade to 1.8.0 and check your own build with Google’s `check_elf_alignment.sh` against the APK. See [#529](https://github.com/DenisovAV/flutter_edge_ai/issues/529).
-- **GPU backend crashes at `engine_create` on Mali GPUs (`SIGSEGV`, `pc 0` in `libLiteRtOpenClAccelerator.so`).** Fixed in `flutter_gemma_litertlm` 1.8.2. In 1.7.0–1.8.1 the OpenCL and GPU accelerators called `AHardwareBuffer_allocate` without declaring `libandroid.so`, so Android bound the call to address 0; only Mali GPUs (Samsung A-series, MediaTek, Google Tensor) take that path, so CPU and Adreno were unaffected. Upgrade to 1.8.2. See [#545](https://github.com/DenisovAV/flutter_edge_ai/issues/545).
-- **Zero chunks and `Stream error: <U+FFFD>`, then `SIGABRT`.** Fixed in `flutter_gemma_litertlm` 1.5.2. On Android the first `dlopen` of `libLiteRtLm` decides for the whole process whether its symbols are reachable from the default search scope, and bionic never promotes it afterwards — so an app that embedded or transcribed anything before its first generation left the stream-callback ABI probe blind and the wrong callback shape was registered. Upgrade to 1.5.2. If your own or third-party code loads `libLiteRtLm` first, load it with `RTLD_GLOBAL` — 1.5.2 cannot repair that case, but it raises a `StateError` naming it rather than generating corrupt text. See [#447](https://github.com/DenisovAV/flutter_edge_ai/issues/447).
+- **Google Play rejects the release: "Your app does not support 16 KB memory page sizes".** Fixed in `flutter_gemma_litertlm` 1.8.0; every `flutter_edge_ai_litertlm` release includes the fix. Nothing fails at build or run time — the rejection happens at submission. The Qualcomm Hexagon DSP blobs of the NPU path (`libQnnHtpV{73,75,79,81}Skel.so`) come from Qualcomm with a 4 KB `p_align`, and Play scans `lib/**/*.so` without caring that a Hexagon image is loaded by the DSP rather than mapped by the kernel. Since 1.10.0 they ship only in apps that set `qualcomm_npu: true`, and the build hook raises them to 16 KB. Check your own build with Google’s `check_elf_alignment.sh` against the APK. See [#529](https://github.com/DenisovAV/flutter_edge_ai/issues/529).
+- **GPU backend crashes at `engine_create` on Mali GPUs (`SIGSEGV`, `pc 0` in `libLiteRtOpenClAccelerator.so`).** Fixed in `flutter_gemma_litertlm` 1.8.2; every `flutter_edge_ai_litertlm` release includes the fix. In 1.7.0–1.8.1 the OpenCL and GPU accelerators called `AHardwareBuffer_allocate` without declaring `libandroid.so`, so Android bound the call to address 0; only Mali GPUs (Samsung A-series, MediaTek, Google Tensor) take that path, so CPU and Adreno were unaffected. See [#545](https://github.com/DenisovAV/flutter_edge_ai/issues/545).
+- **Zero chunks and `Stream error: <U+FFFD>`, then `SIGABRT`.** Fixed in `flutter_gemma_litertlm` 1.5.2; every `flutter_edge_ai_litertlm` release includes the fix. On Android the first `dlopen` of `libLiteRtLm` decides for the whole process whether its symbols are reachable from the default search scope, and bionic never promotes it afterwards — so an app that embedded or transcribed anything before its first generation left the stream-callback ABI probe blind and the wrong callback shape was registered. If your own or third-party code loads `libLiteRtLm` first, load it with `RTLD_GLOBAL` — the package cannot repair that case, but it raises a `StateError` naming it rather than generating corrupt text. See [#447](https://github.com/DenisovAV/flutter_edge_ai/issues/447).
 
 ## Web
 
@@ -104,7 +104,7 @@ final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 
 ### Web `.litertlm` (early preview) feature matrix
 
-Web `.litertlm` inference runs Gemma `.litertlm` models in the browser via the
+Web `.litertlm` inference runs `.litertlm` models in the browser via the
 upstream [`@litert-lm/core`](https://www.npmjs.com/package/@litert-lm/core)
 package (WebGPU + WASM). It is an **early preview** and a subset of the native
 path. MediaPipe `.task` on web is unaffected and remains fully supported.
@@ -133,9 +133,9 @@ executor surface.
 
 <Warning>
 
-**Fixed in litertlm 1.4.0.** Windows **discrete GPUs** crash on
-`PreferredBackend.gpu` in litertlm 1.2.0–1.3.1. Upgrade to 1.4.0; on the
-affected versions use `PreferredBackend.cpu` or `.npu`. macOS/Linux GPU and
+**Historical.** Windows **discrete GPUs** crashed on `PreferredBackend.gpu` in
+`flutter_gemma_litertlm` 1.2.0–1.3.1, fixed in 1.4.0 — before the rename, so
+every `flutter_edge_ai_litertlm` release has the fix. macOS/Linux GPU and
 Windows CPU/NPU were never affected. See [Desktop → Known
 limitations](/docs/desktop#known-limitations).
 
@@ -166,8 +166,9 @@ setting — and so do MediaPipe, ONNX and built-in AI. On the engines that read
 it, it reaches the text decoder only: the vision and audio encoders keep the
 type the model file asks for.
 
-It needs `flutter_gemma_litertlm` 1.8.3 or later; older versions accept the
-argument and ignore it.
+Every `flutter_edge_ai_litertlm` release applies it (it arrived in
+`flutter_gemma_litertlm` 1.8.3; older versions accepted the argument and
+ignored it).
 
 On Android the GPU shares system memory, so on a 4–6 GB phone running out of it
 at `float32` can end the app rather than fall back to CPU. Both precisions share
@@ -231,6 +232,23 @@ root's `user_defines` count. If the build fails fetching `qnn-runtime`, the
 machine cannot reach Maven Central; set `qualcomm_npu_maven_url` to a mirror or
 `qualcomm_npu_aar` to a local copy of the same AAR.
 
+**`PreferredBackend.npu` on a Qualcomm Linux board falls back to GPU.** The
+same `qualcomm_npu: true` covers Linux arm64 builds. The log names which of
+these is missing:
+- The build did not bundle the stack — the flag is not set, or not in the
+  workspace root's pubspec.
+- `/dev/fastrpc-cdsp` does not exist — the board exposes no compute DSP.
+- It, or `/dev/dma_heap/system`, is not accessible — add the user to group
+  `fastrpc` (`sudo usermod -aG fastrpc $USER`) and log in again.
+- `libcdsprpc.so.1` does not open — install Qualcomm's FastRPC
+  (`qcom-fastrpc1` on Ubuntu).
+
+If the build fails reading the QAIRT SDK, the machine cannot reach
+`softwarecenter.qualcomm.com`; download `v2.50.0.260828.zip` elsewhere and set
+`qualcomm_npu_qairt_zip` to its path. Do not set `DSP_LIBRARY_PATH`: FastRPC
+prefers it over `ADSP_LIBRARY_PATH`, which is where the bundled Skels are
+announced.
+
 **`PreferredBackend.npu` is unavailable on a recent Snapdragon.** SoC coverage is
 the runtime's, not ours: Snapdragon 8 Gen 5 (**SM8845** — OnePlus 15R, iQOO 15R
 and the like) is not covered upstream, and a context compiled for SM8850 is
@@ -263,7 +281,7 @@ if you hit it.
 
 ## Multimodal
 
-- Ensure you're using a multimodal model (Gemma 4, Gemma3n E2B/E4B, FastVLM).
+- Ensure you're using a multimodal model (Gemma 4, Gemma3n E2B/E4B, FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision).
 - Set `supportImage: true` (and `supportAudio: true` for audio) when creating the model.
 - Check device memory — multimodal models require more RAM.
 - **Image input crashes at model load on a GPU text backend (older releases).**
@@ -282,8 +300,8 @@ Some packages download their native library from a GitHub Release when you first
 build for a platform, then cache it under `~/.cache/flutter_gemma/native/`
 (`~/Library/Caches/…` on macOS, `%LOCALAPPDATA%\…` on Windows). This applies to
 `flutter_edge_ai_litertlm` (always has), `flutter_edge_ai_onnx`, and
-`flutter_gemma_rag_sqlite` **from 1.3.0** — before that it shipped the loadables
-inside the package.
+`flutter_edge_ai_sqlite` (every release; as `flutter_gemma_rag_sqlite` from
+1.3.0 — before that it shipped the loadables inside the package).
 
 - **The build fails with a download error or an HTTP status.** The first build of
   each platform needs `github.com` reachable. In an air-gapped or proxied CI,
@@ -308,7 +326,7 @@ inside the package.
 ## Embeddings
 
 - **`StateError: No embedding tokenizer is configured`** on the first embedding. Since `flutter_gemma` 1.9.0 an embedding backend no longer carries a tokenizer: which family a model needs (Gemma SentencePiece, BERT WordPiece) is a property of the model, not of the engine that runs it, so the app registers it once. Add `flutter_edge_ai_embeddings` to `pubspec.yaml`, import it, and pass `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` to `FlutterEdgeAi.initialize()` beside `embeddingBackends:`. The error text names the package and the parameter. See [Embeddings & RAG](/docs/embeddings-and-rag).
-- **`Target of URI doesn't exist: package:flutter_gemma_embeddings/web_embedding_model.dart`** at `flutter build web`. `flutter_gemma_embeddings` 2.2.0 moved that file into `flutter_gemma_litertlm` 1.8.0, alongside the rest of the LiteRT.js bundle it belongs to. A lockfile holding `flutter_gemma_litertlm` at 1.7.x while `flutter_gemma_embeddings` moves to 2.2.0 resolves cleanly and only then fails to compile. Upgrade `flutter_gemma_litertlm` to 1.8.0. Native builds are unaffected — that import sits behind a web-only conditional export.
+- **On the old `flutter_gemma_*` packages: `Target of URI doesn't exist: package:flutter_gemma_embeddings/web_embedding_model.dart`** at `flutter build web`. `flutter_gemma_embeddings` 2.2.0 moved that file into `flutter_gemma_litertlm` 1.8.0, alongside the rest of the LiteRT.js bundle it belongs to. A lockfile holding `flutter_gemma_litertlm` at 1.7.x while `flutter_gemma_embeddings` moves to 2.2.0 resolves cleanly and only then fails to compile. Upgrade `flutter_gemma_litertlm` to 1.8.0. Native builds are unaffected — that import sits behind a web-only conditional export.
 
 ## Function calling
 

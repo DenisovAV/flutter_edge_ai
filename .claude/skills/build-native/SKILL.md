@@ -233,12 +233,13 @@ Verify the LFS pull produced real binaries, not pointers — `head -c 20 <file>`
 
 **This section previously said the opposite.** It claimed both NPU stacks are unbuildable and must be copied from the previous release, and instructed asserting byte-identity against it. That was wrong, and it is the single most expensive mistake this skill has recorded: it turned two of our own configuration defects into upstream bug reports (#2957, #3217) that had to be retracted, and it is the direct cause of the Android NPU crash below.
 
-Both dispatch libraries build from the same pin as the runtime:
+All three dispatch libraries build from the same pin as the runtime:
 
 | Bundle | Target | Notes |
 |---|---|---|
 | `windows_x86_64` | `@litert//litert/vendors/intel_openvino/dispatch:LiteRtDispatch` | Bazel fetches the OpenVino SDK itself (`configurable_repo`) — no preinstalled toolkit on the runner. Built in CI. |
 | `android_arm64` | `//litert/vendors/qualcomm/dispatch:dispatch_api_so` | From the **LiteRT** repo at the derived `LITERT_REF`, not LiteRT-LM. Bazel auto-downloads the QAIRT that LiteRT's `third_party/qairt/workspace.bzl` pins (~500 MB) — 2.44 at v0.16.0, 2.47 at v0.17.x, **2.50.0.260828 at v0.18.0** — or point `LITERT_QAIRT_SDK` at a local copy of that same version. The script fails unless the SDK's `sdk.yaml` version equals the hook's `qnnRuntimeVersion` (see below). Built locally by `build_qualcomm_dispatch.sh`. |
+| `linux_arm64` (since native-v0.18.0-c) | the same target, `TARGET=linux_arm64` | Built in CI by the `build-linux-arm64-qualcomm-dispatch` job (`ubuntu-22.04-arm`, clang-17 — clang 14 fails on `std::source_location`), from a standalone LiteRT checkout where the script drops the Android-only `-Wl,-lc++abi` linkopt. Never downloads the 2.6 GB SDK: `fetch_qairt_sdk_slim.py` reads the headers, `sdk.yaml` and two host libs out of the zip by HTTP range and checks them against a pinned SHA-256 before writing. Also emits our `libcdsprpc.so` shim (empty, `NEEDED libcdsprpc.so.1`, `SONAME libcdsprpc.so`). Run the job alone with `qualcomm_dispatch_linux_only: true`; a full release packs both files into `linux_arm64`. The QNN runtime is never built or shipped: the app's hook reads it from the QAIRT zip (`lib/src/hook/qairt_linux.dart`). |
 
 Why the old rule was believable and still wrong: a fresh LiteRT-LM build genuinely emits neither library, because neither lives in the LiteRT-LM tree — they are LiteRT vendor targets. "Absent from the output" was read as "unbuildable" instead of "wrong target".
 
@@ -274,7 +275,7 @@ So bumping the LiteRT pin is a two-file change whenever its `third_party/qairt/w
 
 `libQnnHtpV79Skel.so` must stay in the hook's list: it is **absent from `/vendor/dsp/cdsp/` even on Qualcomm reference firmware**, so shipping it is required, not a workaround for unusual devices.
 
-Assert the dispatch per bundle before packing — `build_qualcomm_dispatch.sh` promotes exactly one file. Shipping without it fails no build and no CPU/GPU smoke test — only a user on `PreferredBackend.npu` finds out. The on-device run (check #10) is still the only coverage of the pair working together.
+Assert the dispatch per bundle before packing — `build_qualcomm_dispatch.sh` promotes exactly one file on Android and two (dispatch + shim) on Linux; `verify_tarball_manifest.sh` requires both in `linux_arm64` and forbids `libQnn*` there. Shipping without it fails no build and no CPU/GPU smoke test — only a user on `PreferredBackend.npu` finds out. The on-device run (check #10) is still the only coverage of the pair working together.
 
 #### Windows CI specifics
 

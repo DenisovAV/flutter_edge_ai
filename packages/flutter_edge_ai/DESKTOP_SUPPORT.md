@@ -43,7 +43,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.18.0-b`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.18.0-c`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
@@ -76,7 +76,7 @@ loading sequence differs per platform (handled in `litert_lm_client.dart`).
 | Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL 9+) |
 | Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc requirement |
 
-> **Fixed in litertlm 1.4.0:** Windows **discrete GPUs** crashed on `PreferredBackend.gpu` in litertlm 1.2.0–1.3.1. Upgrade to 1.4.0; on the affected versions use `PreferredBackend.cpu` or `.npu`. macOS/Linux GPU and Windows CPU/NPU were never affected. See [Known Limitations](#known-limitations).
+> Qualcomm Linux arm64 boards also run `PreferredBackend.npu` on the Hexagon DSP when the app opts in with `qualcomm_npu: true` — see the [`flutter_edge_ai_litertlm` README](../flutter_edge_ai_litertlm/README.md).
 
 For mobile platforms see the main [README](README.md).
 
@@ -100,8 +100,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^2.1.0            # core
-  flutter_edge_ai_litertlm: ^1.9.0   # .litertlm engine
+  flutter_edge_ai: ^2.1.1            # core
+  flutter_edge_ai_litertlm: ^1.11.0  # .litertlm engine
 ```
 
 ```dart
@@ -112,13 +112,13 @@ Future<void> chat() async {
   // Register the LiteRT-LM engine (it takes .litertlm files only).
   await FlutterEdgeAi.initialize(inferenceEngines: const [LiteRtLmEngine()]);
 
-  // Install model (downloads on first run, cached after).
+  // Install model (downloads on first run, cached after). Gemma 4 from
+  // litert-community is public — no token needed.
   await FlutterEdgeAi.installModel(
     modelType: ModelType.gemma4,
     fileType: ModelFileType.litertlm,
   ).fromNetwork(
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
-    token: 'hf_...',
   ).install();
 
   // Create model with full capabilities — keep it for the app's lifetime.
@@ -310,16 +310,13 @@ Same as switching model — close, then reopen with the new `preferredBackend`.
 
 ## Known Limitations
 
-### Windows discrete GPU crashes (litertlm 1.2.0–1.3.1) — fixed in 1.4.0
+### Windows discrete GPU (historical)
 
-Windows **discrete GPUs** crash on `PreferredBackend.gpu` in litertlm
-1.2.0–1.3.1. The Windows native build passed a Bazel define that upstream had
-removed, so it silently linked the LiteRt runtime statically — which conflicts
-with the separately shipped WebGPU accelerator once Dawn was split into its own
-library. Corrected in 1.4.0.
-
-On 1.2.0–1.3.1 use `PreferredBackend.cpu` or `.npu`. macOS/Linux GPU and
-Windows CPU/NPU were never affected.
+`flutter_gemma_litertlm` 1.2.0–1.3.1 crashed on Windows **discrete GPUs**: the
+Windows build passed a Bazel define upstream had removed, so the LiteRt runtime
+was linked statically and conflicted with the separately shipped WebGPU
+accelerator. Fixed in 1.4.0, before the rename — every
+`flutter_edge_ai_litertlm` release has the fix.
 
 ### Per-token sampler: GPU on Windows, CPU on macOS and Linux
 
@@ -375,8 +372,8 @@ never surfaces, because the first session already set the values you wanted.
 > (`native/litert_lm/patch_c_api.sh`, offered upstream as
 > [PR #2081](https://github.com/google-ai-edge/LiteRT-LM/pull/2081)) that fixed
 > this downstream. v0.14.0 added a native session-config sampler API, so the
-> patch was dropped — but the underlying baking was not fixed, which is how this
-> section came to claim otherwise between 2026-07-23 and now. The repros live in
+> patch was dropped — but the underlying baking was not fixed, although this
+> section claimed otherwise for a while from 2026-07-23. The repros live in
 > `example/integration_test/sampler_baking_2080_test.dart` and
 > `sampler_reverse_probe_test.dart`.
 
@@ -401,9 +398,10 @@ simulator, or test on a physical iPhone for GPU validation.
 
 ### Engine create fails with no native log on Linux
 
-In **debug builds** the plugin redirects native stderr to
+In **debug builds** `flutter_edge_ai_litertlm` redirects native stderr to
 `<tmpdir>/litertlm_native.log` and dumps it via `debugPrint` after a failed
-`engine_create`. If you don't see a dump, set `defaultTargetPlatform == TargetPlatform.linux` and run in `flutter run --debug`.
+`engine_create`. If you don't see a dump, make sure the app runs as a debug
+build (`flutter run --debug`).
 
 In release builds stderr goes to systemd journal / app's own stderr — check
 your distribution's log facility.

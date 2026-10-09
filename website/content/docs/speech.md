@@ -257,7 +257,9 @@ inside a spoken turn (see [Tool calling](#tool-calling-in-the-voice-loop) below)
 The loop needs an LLM as well as the two speech models: add
 `flutter_edge_ai_litertlm`, register `inferenceEngines: [LiteRtLmEngine()]` in
 `initialize`, and install a `.litertlm` model (see [LiteRT-LM](/docs/litertlm)) —
-otherwise `getActiveModel` throws `StateError('No active inference model set')`.
+otherwise `getActiveModel` throws a `StateError` — `No active inference model set`
+when no model is installed, or `No inference engine can handle this model
+(ModelFileType.litertlm)…` when the engine is not registered.
 
 ```dart
 final recognizer = await FlutterEdgeAi.getActiveStt();

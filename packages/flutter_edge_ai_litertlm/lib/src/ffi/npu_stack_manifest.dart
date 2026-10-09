@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:ffi' show Abi;
+import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../npu_stacks.dart';
 
-/// Whether this build bundles the Android Qualcomm NPU stack, and why not.
+/// Whether this build bundles the Qualcomm NPU stack (Android, Linux arm64),
+/// and why not.
 final class NpuStackCheck {
   const NpuStackCheck.bundled() : bundled = true, known = true, reason = null;
   const NpuStackCheck.missing(String this.reason)
@@ -52,7 +54,9 @@ NpuStackCheck? _cached;
 Future<NpuStackCheck> checkQualcommNpuStack({
   NativeAssetsManifestReader? read,
   String? abi,
+  String? operatingSystem,
 }) async {
+  final stack = qualcommNpuLibsFor(operatingSystem ?? Platform.operatingSystem);
   if (read == null && _cached != null) return _cached!;
   final String text;
   try {
@@ -70,13 +74,15 @@ Future<NpuStackCheck> checkQualcommNpuStack({
                 Abi.current().toString()]
             as Map?;
     final missing = [
-      for (final name in qualcommNpuLibs)
+      for (final name in stack)
         if (!(assets?.containsKey(nativeAssetId(name)) ?? false))
           androidLibFileName(name),
     ];
-    result = missing.isEmpty
+    result = stack.isEmpty
+        ? const NpuStackCheck.missing('no Qualcomm NPU stack exists here')
+        : missing.isEmpty
         ? const NpuStackCheck.bundled()
-        : missing.length == qualcommNpuLibs.length
+        : missing.length == stack.length
         ? const NpuStackCheck.missing(qualcommNpuNotEnabledReason)
         : NpuStackCheck.missing(
             'this build bundles only part of the Qualcomm NPU stack (missing '

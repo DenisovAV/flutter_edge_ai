@@ -111,8 +111,9 @@ instruction written into their prompt.
 On a `.litertlm`, both Gemma 4 and FunctionGemma go through LiteRT-LM's own tool
 path: the declarations travel to the runtime as structured data, the call comes
 back parsed, and the result of a turn goes back as one role-`tool` message that
-continues the same model turn. Since **flutter_gemma 1.8.4 with
-flutter_gemma_litertlm 1.7.1** that is true for FunctionGemma too — before them,
+continues the same model turn. That is true for FunctionGemma too, in every
+`flutter_edge_ai` release (it arrived in `flutter_gemma` 1.8.4 with
+`flutter_gemma_litertlm` 1.7.1) — before them,
 its tool results were sent as an ordinary user message, and the model answered
 them by repeating the call it had just made. Both halves are needed: core decides
 the wire format, the engine sends it.

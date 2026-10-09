@@ -38,8 +38,8 @@ native platforms).
 - **Built-in AI** uses the model the OS ships: Gemini Nano on Android, Apple
   Foundation Models on iOS and macOS 26+, Phi Silica on Windows, and the Chrome
   Prompt API on the Web.
-- Native libraries are built for arm64 on Android, iOS and macOS, and for x64
-  on Windows and Linux.
+- Native libraries are built for arm64 on Android, iOS and macOS, for x64 on
+  Windows, and for x64 and arm64 on Linux (ONNX Runtime: Linux x64 only).
 
 ## What each engine supports for text generation
 
@@ -79,8 +79,9 @@ places.
 
 **Which runtime runs a model** follows the file type you declare when you
 install it (`ModelFileType`). If no registered engine can run it, creating the
-model throws a `StateError` that names the package to add. Embedding backends,
-speech backends and vector stores are chosen the same way.
+model throws a `StateError` that names the package to add. Embedding and speech
+backends are chosen the same way; a vector store is chosen by its
+`VectorStoreSpec.providerId` among the providers passed to `FlutterEdgeAiRag`.
 
 **What the device can do** has explicit checks:
 
@@ -89,11 +90,13 @@ speech backends and vector stores are chosen the same way.
 final availability = await BuiltInAi.availability();
 
 // OS models: native tool calling, vision, structured output.
-// LocalAi comes from flutter_local_ai, which flutter_edge_ai_builtin_ai uses.
+// LocalAi comes from flutter_local_ai, which flutter_edge_ai_builtin_ai uses;
+// add it as a direct dependency to import it.
 final caps = await LocalAi.capabilities();
 final nativeTools = caps.supportsToolCalling;
 
 // Vector stores: can a registered provider open this store on this platform?
+// (rag: a FlutterEdgeAiRag instance)
 final canOpen = rag.canOpen(spec);
 ```
 

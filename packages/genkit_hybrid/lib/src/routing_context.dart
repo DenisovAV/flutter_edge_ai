@@ -8,7 +8,9 @@ class RoutingContext {
     required this.isStreaming,
   });
 
-  /// The incoming generate request (may be null, mirroring Genkit's contract).
+  /// The incoming generate request. Genkit 1.0 never hands a model a null
+  /// request, so `hybridModel` always sets it; it stays nullable for a
+  /// [RoutingContext] built by hand.
   final ModelRequest? request;
 
   /// The set of available branch keys to choose from.

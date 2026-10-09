@@ -4,7 +4,6 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:genkit/genkit.dart';
-import 'package:genkit/plugin.dart' show GenkitPlugin;
 import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
 import 'package:genkit_google_genai/genkit_google_genai.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
@@ -270,14 +269,20 @@ class AiEngine {
     name: '${inner.name}/ctx',
     metadata: {...inner.metadata},
     fn: (request, context) {
-      if (request == null || request.config?['maxTokens'] != null) {
-        return inner.fn(request, context);
-      }
+      // Run [inner] the way genkit_hybrid runs a branch: as an action, with
+      // the caller's streaming callback, context and cancellation.
+      forward(ModelRequest r) => inner(
+        r,
+        onChunk: context.streamingRequested ? context.sendChunk : null,
+        context: context.context,
+        cancel: context.cancel,
+      );
+      if (request.config?['maxTokens'] != null) return forward(request);
       final budgeted = ModelRequest.fromJson({
         ...request.toJson(),
         'config': {...?request.config, 'maxTokens': kOnDeviceContextTokens},
       });
-      return inner.fn(budgeted, context);
+      return forward(budgeted);
     },
   );
 

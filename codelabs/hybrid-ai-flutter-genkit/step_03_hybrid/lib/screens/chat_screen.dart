@@ -137,6 +137,16 @@ class _ChatScreenState extends State<ChatScreen> {
           _scrollToBottom();
         }
       }
+      // genkit 1.0 ends the stream normally when the model fails or the
+      // reply is blocked, and reports it in the result, so surface it as an error here.
+      final result = await stream.onResult;
+      final reason = result.finishReason;
+      if (reason != FinishReason.stop &&
+          reason != FinishReason.length &&
+          reason != FinishReason.unknown) {
+        throw result.cause ??
+            StateError(result.finishMessage ?? 'The model stopped: $reason');
+      }
       generationSucceeded = true;
 
       // Best-effort demo counter for CostStrategy: genkit_hybrid exposes no

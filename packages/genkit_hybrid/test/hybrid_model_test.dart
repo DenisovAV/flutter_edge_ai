@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:genkit/genkit.dart';
 import 'package:genkit/plugin.dart';
 import 'package:genkit_hybrid/src/hybrid_model.dart';
@@ -15,26 +17,15 @@ class _Pick implements RoutingStrategy {
 
 ModelRequest _req() => ModelRequest(messages: []);
 
-final _blockingCtx = (
-  streamingRequested: false,
-  sendChunk: (ModelResponseChunk _) {},
-  context: <String, dynamic>{},
-  inputStream: null,
-  init: null,
-);
-
-({List<String> received, dynamic ctx}) _streamingCtx() {
+({List<String> received, void Function(ModelResponseChunk) onChunk})
+_streamingCtx() {
   final received = <String>[];
-  final ctx = (
-    streamingRequested: true,
-    sendChunk: (ModelResponseChunk chunk) {
+  return (
+    received: received,
+    onChunk: (ModelResponseChunk chunk) {
       received.add(chunk.content.first.text ?? '');
     },
-    context: <String, dynamic>{},
-    inputStream: null,
-    init: null,
   );
-  return (received: received, ctx: ctx);
 }
 
 void main() {
@@ -55,7 +46,7 @@ void main() {
       },
       strategy: _Pick(['cloud']),
     );
-    final res = await model.fn(_req(), _blockingCtx);
+    final res = await model(_req());
     expect(cloudCalls, 1);
     expect(deviceCalls, 0);
     expect(res.message!.content.first.text, 'from-cloud');
@@ -74,7 +65,7 @@ void main() {
       },
       strategy: _Pick(['onDevice', 'cloud']),
     );
-    final res = await model.fn(_req(), _blockingCtx);
+    final res = await model(_req());
     expect(cloudCalls, 1);
     expect(res.message!.content.first.text, 'recovered');
   });
@@ -88,7 +79,7 @@ void main() {
       strategy: _Pick(['onDevice', 'cloud']),
     );
     expect(
-      () => model.fn(_req(), _blockingCtx),
+      () => model(_req()),
       throwsA(
         predicate<StateError>(
           (e) => e.message.contains('fail-before-token:c2'),
@@ -102,10 +93,7 @@ void main() {
       branches: {'cloud': fakeModel(name: 'c')},
       strategy: _Pick([]),
     );
-    expect(
-      () => model.fn(_req(), _blockingCtx),
-      throwsA(isA<GenkitException>()),
-    );
+    expect(() => model(_req()), throwsA(isA<GenkitException>()));
   });
 
   test('unknown branch key throws config error', () async {
@@ -113,10 +101,7 @@ void main() {
       branches: {'cloud': fakeModel(name: 'c')},
       strategy: _Pick(['nope']),
     );
-    expect(
-      () => model.fn(_req(), _blockingCtx),
-      throwsA(isA<GenkitException>()),
-    );
+    expect(() => model(_req()), throwsA(isA<GenkitException>()));
   });
 
   test(
@@ -127,7 +112,7 @@ void main() {
         name: 'auth-fail',
         fn: (request, context) async => throw GenkitException(
           'bad key',
-          status: StatusCodes.PERMISSION_DENIED,
+          status: StatusCode.permissionDenied,
         ),
       );
       final model = hybridModel(
@@ -141,10 +126,7 @@ void main() {
         },
         strategy: _Pick(['cloud', 'onDevice']),
       );
-      expect(
-        () => model.fn(_req(), _blockingCtx),
-        throwsA(isA<GenkitException>()),
-      );
+      expect(() => model(_req()), throwsA(isA<GenkitException>()));
       expect(
         cloudCalls,
         0,
@@ -157,7 +139,7 @@ void main() {
     final unavailable = Model(
       name: 'down',
       fn: (request, context) async =>
-          throw GenkitException('offline', status: StatusCodes.UNAVAILABLE),
+          throw GenkitException('offline', status: StatusCode.unavailable),
     );
     final model = hybridModel(
       branches: {
@@ -170,7 +152,7 @@ void main() {
       },
       strategy: _Pick(['cloud', 'onDevice']),
     );
-    final res = await model.fn(_req(), _blockingCtx);
+    final res = await model(_req());
     expect(deviceCalls, 1);
     expect(res.message!.content.first.text, 'recovered');
   });
@@ -186,7 +168,7 @@ void main() {
         },
         strategy: _Pick(['onDevice', 'cloud']),
       );
-      final res = await model.fn(_req(), s.ctx);
+      final res = await model(_req(), onChunk: s.onChunk);
       expect(s.received, ['he', 'llo']);
       expect(res.message!.content.first.text, 'done');
     },
@@ -213,7 +195,7 @@ void main() {
         strategy: _Pick(['onDevice', 'cloud']),
       );
       await expectLater(
-        () => model.fn(_req(), s.ctx),
+        () => model(_req(), onChunk: s.onChunk),
         throwsA(isA<StateError>()),
       );
       expect(s.received, ['partial']); // first token already delivered
@@ -237,4 +219,78 @@ void main() {
       expect(b.name, 'router-A');
     },
   );
+
+  test("a branch gets the caller's context and cancellation token", () async {
+    Map<String, dynamic>? seenContext;
+    CancellationToken? seenCancel;
+    final model = hybridModel(
+      branches: {
+        'a': Model(
+          name: 'a',
+          fn: (request, context) async {
+            seenContext = context.context;
+            seenCancel = context.cancel;
+            return ModelResponse(
+              finishReason: FinishReason.stop,
+              message: Message(
+                role: Role.model,
+                content: [TextPart(text: 'ok')],
+              ),
+            );
+          },
+        ),
+      },
+      strategy: _Pick(['a']),
+    );
+    final controller = CancellationController();
+
+    await model(_req(), context: {'user': 'u1'}, cancel: controller.token);
+
+    expect(seenContext?['user'], 'u1');
+    expect(seenCancel, same(controller.token));
+  });
+
+  for (final streaming in [false, true]) {
+    test('a branch that fails after a cancel reports its own error and never '
+        'falls back (streaming: $streaming)', () async {
+      final started = Completer<void>();
+      Map<String, dynamic>? seenContext;
+      var fallbackCalls = 0;
+      final model = hybridModel(
+        branches: {
+          'a': Model(
+            name: 'a',
+            fn: (request, context) async {
+              seenContext = context.context;
+              started.complete();
+              await context.cancel!.whenCancelled;
+              throw StateError('stop failed');
+            },
+          ),
+          'b': fakeModel(name: 'b', onCall: () => fallbackCalls++),
+        },
+        strategy: _Pick(['a', 'b']),
+      );
+      final controller = CancellationController();
+
+      final result = model(
+        _req(),
+        onChunk: streaming ? _streamingCtx().onChunk : null,
+        context: {'user': 'u1'},
+        cancel: controller.token,
+      );
+      final outcome = expectLater(
+        result,
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'stop failed'),
+        ),
+      );
+      await started.future;
+      controller.cancel();
+      await outcome;
+
+      expect(seenContext?['user'], 'u1');
+      expect(fallbackCalls, 0);
+    });
+  }
 }

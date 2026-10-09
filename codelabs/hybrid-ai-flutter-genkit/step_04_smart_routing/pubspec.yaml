@@ -13,11 +13,11 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Cloud AI via Gemini API (Genkit)
-  genkit: ^0.16.0
-  genkit_google_genai: ^0.3.1
+  genkit: ^1.0.0
+  genkit_google_genai: ^1.0.0
 
   # On-device AI via genkit_flutter_edge_ai
-  genkit_flutter_edge_ai: ^0.7.0
+  genkit_flutter_edge_ai: ^0.8.0
   # Core registers no runtime by default. ai_engine.dart explicitly registers
   # LiteRT-LM and the EmbeddingGemma tokenizer provider from these packages.
   flutter_edge_ai: ^2.0.0
@@ -25,7 +25,7 @@ dependencies:
   flutter_edge_ai_embeddings: ^2.2.2
 
   # Hybrid on-device ↔ cloud routing
-  genkit_hybrid: ^0.2.2
+  genkit_hybrid: ^0.3.0
 
   # Image input (multimodal)
   image_picker: ^1.2.3

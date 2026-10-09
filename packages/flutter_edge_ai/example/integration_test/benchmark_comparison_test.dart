@@ -18,6 +18,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 
 import 'benchmark_peak_sampler.dart';
+import 'benchmark_token_stats.dart';
 import 'inference_test_helpers.dart';
 
 // --- Model configs ---
@@ -81,6 +82,9 @@ class BenchmarkResult {
   final DateTime timestamp;
   final BenchmarkMemory memory;
 
+  /// Null when the engine reports no token counters (MediaPipe).
+  final TokenStats? tokens;
+
   BenchmarkResult({
     required this.modelName,
     required this.testCategory,
@@ -91,6 +95,7 @@ class BenchmarkResult {
     required this.firstTokenMs,
     required this.timestamp,
     required this.memory,
+    this.tokens,
   });
 
   Map<String, dynamic> toJson() => {
@@ -111,6 +116,7 @@ class BenchmarkResult {
       'active': memory.activeBackend?.name,
     },
     'memory': memory.toJson(),
+    'tokens': tokens?.toJson(),
   };
 }
 
@@ -375,16 +381,23 @@ Future<(T, BenchmarkMemory)> _measuredPrompt<T>(
 }
 
 /// One streamed answer and its timing.
-typedef _Answer = ({String text, int firstTokenMs, int durationMs});
+typedef _Answer = ({
+  String text,
+  int firstTokenMs,
+  int lastTokenMs,
+  int durationMs,
+});
 
 Future<_Answer> _streamAnswer(InferenceChat chat, Message message) async {
   final sw = Stopwatch()..start();
   var firstTokenMs = -1;
+  var lastTokenMs = -1;
   await chat.addQueryChunk(message);
   final buffer = StringBuffer();
   await for (final response in chat.generateChatResponseAsync()) {
     if (response is TextResponse) {
       if (firstTokenMs < 0) firstTokenMs = sw.elapsedMilliseconds;
+      lastTokenMs = sw.elapsedMilliseconds;
       buffer.write(response.token);
     }
   }
@@ -392,6 +405,7 @@ Future<_Answer> _streamAnswer(InferenceChat chat, Message message) async {
   return (
     text: buffer.toString(),
     firstTokenMs: firstTokenMs,
+    lastTokenMs: lastTokenMs,
     durationMs: sw.elapsedMilliseconds,
   );
 }
@@ -528,10 +542,22 @@ Future<BenchmarkResult> _runQuery({
   required Message message,
   required LoadMemory load,
 }) async {
-  final (answer, memory) = await _measuredPrompt(
-    load,
-    () => _streamAnswer(chat, message),
-  );
+  final (
+    (answer, metricsBefore, metricsAfter, sameSession),
+    memory,
+  ) = await _measuredPrompt(load, () async {
+    // Keep the session the "before" reading came from: the chat may
+    // recreate it, and counters of two sessions cannot be subtracted.
+    final session = chat.session;
+    final before = session.getSessionMetrics();
+    final answer = await _streamAnswer(chat, message);
+    return (
+      answer,
+      before,
+      chat.session.getSessionMetrics(),
+      identical(chat.session, session),
+    );
+  });
   final result = BenchmarkResult(
     modelName: modelName,
     testCategory: category,
@@ -542,6 +568,13 @@ Future<BenchmarkResult> _runQuery({
     firstTokenMs: answer.firstTokenMs,
     timestamp: DateTime.now(),
     memory: memory,
+    tokens: tokenStatsBetween(
+      metricsBefore,
+      metricsAfter,
+      sameSession: sameSession,
+      firstTokenMs: answer.firstTokenMs,
+      lastTokenMs: answer.lastTokenMs,
+    ),
   );
 
   print('[Benchmark] $modelName / $category / $testName');
@@ -549,6 +582,7 @@ Future<BenchmarkResult> _runQuery({
     '  First token: ${result.firstTokenMs}ms, Total: ${result.durationMs}ms',
   );
   print('  Memory: ${result.memory.describe()}');
+  print('  Tokens: ${result.tokens?.describe() ?? 'not reported'}');
   print(
     '  Response: "${result.response.length > 100 ? result.response.substring(0, 100) : result.response}..."',
   );

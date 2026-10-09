@@ -182,5 +182,21 @@ void main() {
         throwsA(isA<GenkitException>()),
       );
     });
+
+    test('an option of the wrong type is INVALID_ARGUMENT', () async {
+      final embedder = buildEmbedder();
+
+      await expectLater(
+        embedder(EmbedRequest(
+          input: [DocumentData(content: [TextPart(text: 'test')])],
+          options: {'preferredBackend': 42},
+        )),
+        throwsA(isA<GenkitException>().having(
+          (e) => e.status,
+          'status',
+          StatusCode.invalidArgument,
+        )),
+      );
+    });
   });
 }

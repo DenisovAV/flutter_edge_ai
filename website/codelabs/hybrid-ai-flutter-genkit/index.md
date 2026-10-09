@@ -207,8 +207,8 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Step 2: Cloud AI
-  genkit: ^0.16.0
-  genkit_google_genai: ^0.3.1
+  genkit: ^1.0.0
+  genkit_google_genai: ^1.0.0
 ```
 
 Run `flutter pub get`.
@@ -253,6 +253,16 @@ class CloudAIService implements AIService {
     await for (final chunk in stream) {
       if (chunk.text.isNotEmpty) yield chunk.text;
     }
+    // genkit 1.0 ends the stream normally when the model fails or the
+    // reply is blocked, and reports it in the result, so rethrow it for the caller.
+    final result = await stream.onResult;
+    final reason = result.finishReason;
+    if (reason != FinishReason.stop &&
+        reason != FinishReason.length &&
+        reason != FinishReason.unknown) {
+      throw result.cause ??
+          StateError(result.finishMessage ?? 'The model stopped: $reason');
+    }
   }
 
   @override
@@ -261,6 +271,13 @@ class CloudAIService implements AIService {
   }
 }
 ```
+
+The check after the loop matters: in genkit 1.0 a model error does not throw
+out of `generateStream`. The stream ends normally and the outcome arrives in
+`onResult`: `FinishReason.failed` for an error, `blocked` when Gemini's safety
+filters stop the reply. Treating anything but `stop`, `length` or `unknown` as
+an error, and rethrowing its `cause` or its `finishMessage`, is what lets the
+chat screen show it instead of an empty reply.
 
 ### Wire it up in chat_screen.dart
 
@@ -466,7 +483,7 @@ Add `genkit_flutter_edge_ai` and `flutter_edge_ai`:
 
 ```yaml
   # Step 3: On-device AI (LiteRT-LM engine)
-  genkit_flutter_edge_ai: ^0.7.0
+  genkit_flutter_edge_ai: ^0.8.0
   flutter_edge_ai: ^2.0.0
   # flutter_edge_ai registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
@@ -604,6 +621,16 @@ class LocalAIService implements AIService {
     await for (final chunk in stream) {
       if (chunk.text.isNotEmpty) yield chunk.text;
     }
+    // genkit 1.0 ends the stream normally when the model fails or the
+    // reply is blocked, and reports it in the result, so rethrow it for the caller.
+    final result = await stream.onResult;
+    final reason = result.finishReason;
+    if (reason != FinishReason.stop &&
+        reason != FinishReason.length &&
+        reason != FinishReason.unknown) {
+      throw result.cause ??
+          StateError(result.finishMessage ?? 'The model stopped: $reason');
+    }
   }
 
   @override
@@ -719,7 +746,7 @@ plugins and `flutter_edge_ai_litertlm`) is already in place from Steps 2–3:
 
 ```yaml
   # Hybrid on-device ↔ cloud routing
-  genkit_hybrid: ^0.2.2
+  genkit_hybrid: ^0.3.0
 ```
 
 Run `flutter pub get`.
@@ -745,7 +772,6 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:genkit/genkit.dart';
-import 'package:genkit/plugin.dart' show GenkitPlugin;
 import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
 import 'package:genkit_google_genai/genkit_google_genai.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
@@ -1011,14 +1037,20 @@ class AiEngine {
     name: '${inner.name}/ctx',
     metadata: {...inner.metadata},
     fn: (request, context) {
-      if (request == null || request.config?['maxTokens'] != null) {
-        return inner.fn(request, context);
-      }
+      // Run [inner] the way genkit_hybrid runs a branch: as an action, with
+      // the caller's streaming callback, context and cancellation.
+      forward(ModelRequest r) => inner(
+        r,
+        onChunk: context.streamingRequested ? context.sendChunk : null,
+        context: context.context,
+        cancel: context.cancel,
+      );
+      if (request.config?['maxTokens'] != null) return forward(request);
       final budgeted = ModelRequest.fromJson({
         ...request.toJson(),
         'config': {...?request.config, 'maxTokens': kOnDeviceContextTokens},
       });
-      return inner.fn(budgeted, context);
+      return forward(budgeted);
     },
   );
 
@@ -1220,6 +1252,16 @@ final stream = _engine.ai.generateStream(
 await for (final chunk in stream) {
   buffer.write(chunk.text);
   // ... the throttled setState loop, unchanged from Step 2/3
+}
+// genkit 1.0 ends the stream normally when the model fails or the
+// reply is blocked, and reports it in the result, so surface it as an error here.
+final result = await stream.onResult;
+final reason = result.finishReason;
+if (reason != FinishReason.stop &&
+    reason != FinishReason.length &&
+    reason != FinishReason.unknown) {
+  throw result.cause ??
+      StateError(result.finishMessage ?? 'The model stopped: $reason');
 }
 // ...
 // Best-effort demo counter for CostStrategy: genkit_hybrid exposes no
@@ -1751,29 +1793,35 @@ _local = _withContextBudget(
 
 /// Wraps the on-device [inner] model so every request reaching it carries a
 /// context window big enough for the RAG prompt. genkit_flutter_edge_ai reads
-/// `maxTokens` ONLY from the per-request `request.config` (defaulting to
-/// 1024) — registration-time [FlutterEdgeAiModelConfig] has no options field
-/// — so the budget has to ride along with each request. genkit_hybrid calls
-/// a branch as `branch.fn(request, context)`, so forwarding the same
-/// `context` leaves streaming and fallback untouched. Only the on-device
+/// `maxTokens` ONLY from the per-request `request.config` (defaulting to 1024)
+/// — registration-time [FlutterEdgeAiModelConfig] has no options field — so the
+/// budget has to ride along with each request. genkit_hybrid runs a branch as
+/// an action, so forwarding the caller's streaming callback, context and
+/// cancellation leaves streaming and fallback untouched. Only the on-device
 /// branch is wrapped: Gemini's config has no `maxTokens` key. An explicit
 /// request `maxTokens` wins. The request is COPIED, never mutated — cascade
-/// hands the very same object to the cloud branch next. [inner]'s metadata
-/// is forwarded as a COPY too: genkit's `Model` constructor writes into the
-/// map it is handed, so passing `inner.metadata` itself would rewrite the
-/// wrapped model's own metadata.
+/// hands the very same object to the cloud branch next. [inner]'s metadata is
+/// forwarded as a COPY too: genkit's `Model` constructor writes into the map it
+/// is handed, so passing `inner.metadata` itself would rewrite the wrapped
+/// model's own metadata.
 Model _withContextBudget(Model inner) => Model(
   name: '${inner.name}/ctx',
   metadata: {...inner.metadata},
   fn: (request, context) {
-    if (request == null || request.config?['maxTokens'] != null) {
-      return inner.fn(request, context);
-    }
+    // Run [inner] the way genkit_hybrid runs a branch: as an action, with
+    // the caller's streaming callback, context and cancellation.
+    forward(ModelRequest r) => inner(
+      r,
+      onChunk: context.streamingRequested ? context.sendChunk : null,
+      context: context.context,
+      cancel: context.cancel,
+    );
+    if (request.config?['maxTokens'] != null) return forward(request);
     final budgeted = ModelRequest.fromJson({
       ...request.toJson(),
       'config': {...?request.config, 'maxTokens': kOnDeviceContextTokens},
     });
-    return inner.fn(budgeted, context);
+    return forward(budgeted);
   },
 );
 ```

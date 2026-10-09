@@ -18,7 +18,7 @@ gemma.PreferredBackend? parsePreferredBackend(
     default:
       throw GenkitException(
         'Unknown $field: "$value". Supported values: cpu, gpu, npu.',
-        status: StatusCodes.INVALID_ARGUMENT,
+        status: StatusCode.invalidArgument,
       );
   }
 }

@@ -33,6 +33,16 @@ class CloudAIService implements AIService {
     await for (final chunk in stream) {
       if (chunk.text.isNotEmpty) yield chunk.text;
     }
+    // genkit 1.0 ends the stream normally when the model fails or the
+    // reply is blocked, and reports it in the result, so rethrow it for the caller.
+    final result = await stream.onResult;
+    final reason = result.finishReason;
+    if (reason != FinishReason.stop &&
+        reason != FinishReason.length &&
+        reason != FinishReason.unknown) {
+      throw result.cause ??
+          StateError(result.finishMessage ?? 'The model stopped: $reason');
+    }
   }
 
   @override

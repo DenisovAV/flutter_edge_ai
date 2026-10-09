@@ -10,15 +10,22 @@ import 'package:genkit/genkit.dart';
 bool isTransient(Object error) {
   if (error is! GenkitException) return true;
   switch (error.status) {
-    case StatusCodes.UNAVAILABLE:
-    case StatusCodes.DEADLINE_EXCEEDED:
-    case StatusCodes.RESOURCE_EXHAUSTED:
-    case StatusCodes.INTERNAL:
+    case StatusCode.unavailable:
+    case StatusCode.deadlineExceeded:
+    case StatusCode.resourceExhausted:
+    case StatusCode.internal:
       return true;
     default:
       return false;
   }
 }
+
+/// Whether a branch that failed with [error] may hand the request to the next
+/// one. Never after a cancel: the next branch would only throw a
+/// `CancelledException` on entry, replacing [error], which says what went
+/// wrong.
+bool canFallBack(Object error, CancellationToken? cancel) =>
+    !(cancel?.isCancelled ?? false) && isTransient(error);
 
 /// Runs [order] against [branches] with [request]/[context], NON-STREAMING.
 ///
@@ -30,7 +37,7 @@ bool isTransient(Object error) {
 Future<ModelResponse> runInOrder(
   List<String> order,
   Map<String, Model> branches,
-  ModelRequest? request,
+  ModelRequest request,
   ActionFnArg<ModelResponseChunk, ModelRequest, void> context, {
   FutureOr<bool> Function(ModelResponse)? accept,
 }) async {
@@ -38,9 +45,9 @@ Future<ModelResponse> runInOrder(
     final isLast = i == order.length - 1;
     ModelResponse resp;
     try {
-      resp = await branches[order[i]]!.fn(request, context);
+      resp = await callBranch(branches[order[i]]!, request, context);
     } catch (e) {
-      if (isLast || !isTransient(e)) rethrow;
+      if (isLast || !canFallBack(e, context.cancel)) rethrow;
       continue; // transient failure, not the last branch -> try the next one
     }
     // accept is evaluated OUTSIDE the branch-error catch: a throwing predicate
@@ -51,3 +58,18 @@ Future<ModelResponse> runInOrder(
   }
   throw StateError('unreachable'); // loop always returns or rethrows.
 }
+
+/// Runs [model] for [request] the way any caller runs a model, carrying
+/// [context]'s streaming, request context and cancellation. Genkit 1.0 no
+/// longer exposes an action's function, so a branch is called as an action and
+/// gets its own trace span.
+Future<ModelResponse> callBranch(
+  Model model,
+  ModelRequest request,
+  ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
+) => model(
+  request,
+  onChunk: context.streamingRequested ? context.sendChunk : null,
+  context: context.context,
+  cancel: context.cancel,
+);

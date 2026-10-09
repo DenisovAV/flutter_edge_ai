@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# test_all.sh — run every workspace package's tests, from the package's own dir.
+# test_all.sh — run every workspace package's tests, and the host tests of every
+# example app, each from its own dir.
 #
 # WHY THIS EXISTS
 #
@@ -97,8 +98,13 @@ fi
 fail=0 tested=0 untested=0 total=0
 summary=""
 
-for dir in packages/*/; do
-  pkg="$(basename "$dir")"
+# Example apps too. They are not workspace members, so the root `pub get` never
+# resolves them, and until 2026-10-09 this loop never visited them either: two
+# of the core example's host tests had gone stale (a default the app changed in
+# August, and a device test left behind in test/) with nobody running them.
+for dir in packages/*/ packages/*/example/; do
+  pkg="${dir#packages/}"
+  pkg="${pkg%/}"
   [[ -f "${dir}pubspec.yaml" ]] || continue
   total=$((total + 1))
 
@@ -124,6 +130,10 @@ for dir in packages/*/; do
   echo "::group::flutter test — $pkg"
   if [[ $WANT_COVERAGE -eq 1 && "$pkg" == "flutter_edge_ai" ]]; then
     (cd "$dir" && flutter test --coverage)
+  elif [[ "$pkg" == */example ]]; then
+    # Outside the workspace: resolve it here, so a resolution failure is
+    # reported as one rather than as a failing test.
+    (cd "$dir" && flutter pub get && flutter test)
   else
     (cd "$dir" && flutter test)
   fi

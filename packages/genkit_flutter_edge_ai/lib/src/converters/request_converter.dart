@@ -27,7 +27,7 @@ String? extractSystemInstruction(List<Message> messages) {
         throw GenkitException(
           'System message contains non-text parts which are not supported '
           'for system instructions. Only text content is used.',
-          status: StatusCodes.INVALID_ARGUMENT,
+          status: StatusCode.invalidArgument,
         );
       }
     }
@@ -92,7 +92,7 @@ Future<List<gemma.Message>> convertMessages(
       if (toolResponse == null) {
         throw GenkitException(
           'Tool message contains no ToolResponsePart.',
-          status: StatusCodes.INVALID_ARGUMENT,
+          status: StatusCode.invalidArgument,
         );
       }
       result.add(gemma.Message.toolResponse(
@@ -146,7 +146,7 @@ Future<Uint8List?> _extractMediaBytes(
         if (commaIndex == -1) {
           throw GenkitException(
             'Malformed data: URI (missing comma separator)',
-            status: StatusCodes.INVALID_ARGUMENT,
+            status: StatusCode.invalidArgument,
           );
         }
         try {
@@ -154,7 +154,7 @@ Future<Uint8List?> _extractMediaBytes(
         } on FormatException catch (e) {
           throw GenkitException(
             'Invalid base64 in media data URI: $e',
-            status: StatusCodes.INVALID_ARGUMENT,
+            status: StatusCode.invalidArgument,
           );
         }
       }
@@ -167,12 +167,12 @@ Future<Uint8List?> _extractMediaBytes(
         } on FormatException catch (e) {
           throw GenkitException(
             'Malformed file:// URI "$url": $e',
-            status: StatusCodes.INVALID_ARGUMENT,
+            status: StatusCode.invalidArgument,
           );
         } on UnsupportedError catch (e) {
           throw GenkitException(
             'Unsupported file:// URI "$url": $e',
-            status: StatusCodes.INVALID_ARGUMENT,
+            status: StatusCode.invalidArgument,
           );
         }
         return readFileBytes(path);
@@ -191,7 +191,7 @@ Future<Uint8List?> _extractMediaBytes(
           if (uri == null) {
             throw GenkitException(
               'Malformed media URL: $url',
-              status: StatusCodes.INVALID_ARGUMENT,
+              status: StatusCode.invalidArgument,
             );
           }
           final response = await client.get(uri);
@@ -200,14 +200,14 @@ Future<Uint8List?> _extractMediaBytes(
           }
           throw GenkitException(
             'Failed to download media from $url: HTTP ${response.statusCode}',
-            status: StatusCodes.INTERNAL,
+            status: StatusCode.internal,
           );
         } on GenkitException {
           rethrow;
         } catch (e) {
           throw GenkitException(
             'Failed to download media from $url: $e',
-            status: StatusCodes.INTERNAL,
+            status: StatusCode.internal,
           );
         } finally {
           if (httpClient == null) client.close();
@@ -217,7 +217,7 @@ Future<Uint8List?> _extractMediaBytes(
       // Unrecognized URL scheme — reject explicitly.
       throw GenkitException(
         'Unsupported media URL scheme: $url',
-        status: StatusCodes.INVALID_ARGUMENT,
+        status: StatusCode.invalidArgument,
       );
     }
   }

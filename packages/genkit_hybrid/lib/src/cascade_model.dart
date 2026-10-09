@@ -47,14 +47,9 @@ Model cascadeModel({
     name: name,
     fn: (request, context) async {
       // Always run non-streamed (the verdict needs the full response).
-      final blocking = (
-        streamingRequested: false,
-        sendChunk: (ModelResponseChunk _) {},
+      final blocking = ActionFnArg<ModelResponseChunk, ModelRequest, void>(
         context: context.context,
-        inputStream: context.inputStream,
-        // Safe because Model fixes Init = void; revisit if cascadeModel is
-        // ever generalized to a non-void Init.
-        init: null,
+        cancel: context.cancel,
       );
       final resp = await runInOrder(
         frozenOrder,

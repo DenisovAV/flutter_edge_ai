@@ -103,7 +103,7 @@ class ContextWindowMiddleware extends GenerateMiddleware {
         'Context-window trimmer: input budget is <= 0 (reserveOutputTokens '
         '$reserveOutputTokens >= context window $contextWindow). Lower '
         'reserveOutputTokens or set maxInputTokens explicitly.',
-        status: StatusCodes.INVALID_ARGUMENT,
+        status: StatusCode.invalidArgument,
       );
     }
 
@@ -215,7 +215,7 @@ class ContextWindowMiddleware extends GenerateMiddleware {
 /// intact on **both** the in-process and serialized paths with no code
 /// generation.
 GenerateMiddlewareDef<Map<String, dynamic>> contextWindowMiddlewareDef() {
-  return defineMiddleware<Map<String, dynamic>>(
+  return generateMiddleware<Map<String, dynamic>>(
     name: kContextWindowMiddlewareName,
     create: (config, ctx) => ContextWindowMiddleware(
       maxInputTokens: (config?['maxInputTokens'] as num?)?.toInt(),

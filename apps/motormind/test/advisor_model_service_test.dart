@@ -39,7 +39,7 @@ class FakeGateway implements EdgeAiGateway {
   Future<void> uninstall(AdvisorModelSpec spec) async => installed.remove(spec.id);
 
   @override
-  Future<InferenceModel> load(AdvisorModelSpec spec) async {
+  Future<InferenceModel> load(AdvisorModelSpec spec, {String? token}) async {
     loaded.add(spec.id);
     return _FakeModel();
   }
@@ -76,10 +76,10 @@ void main() {
   Future<ModelsState> ready() => container.read(advisorModelServiceProvider.future);
 
   test('reports installed models from the gateway on build', () async {
-    gateway.installed.add(ModelCatalog.qwen3_0_6B.id);
+    gateway.installed.add(ModelCatalog.qwen3Small.id);
     final state = await ready();
-    expect(state.statusOf(ModelCatalog.qwen3_0_6B), isA<Installed>());
-    expect(state.statusOf(ModelCatalog.gemma4E2B), isA<NotInstalled>());
+    expect(state.statusOf(ModelCatalog.qwen3Small), isA<ModelInstalled>());
+    expect(state.statusOf(ModelCatalog.gemma4E2B), isA<ModelNotInstalled>());
     expect(state.activeId, isNull);
   });
 
@@ -89,66 +89,87 @@ void main() {
     final seen = <int>[];
     container.listen(advisorModelServiceProvider, (prev, next) {
       final s = next.value?.statusOf(ModelCatalog.gemma4E2B);
-      if (s is Downloading) seen.add(s.percent);
+      if (s is ModelDownloading) seen.add(s.percent);
     });
     await container.read(advisorModelServiceProvider.notifier).download(ModelCatalog.gemma4E2B);
     expect(seen, [0, 33, 67, 100]);
     expect(
       container.read(advisorModelServiceProvider).value!.statusOf(ModelCatalog.gemma4E2B),
-      isA<Installed>(),
+      isA<ModelInstalled>(),
     );
     expect(gateway.lastToken, 'hf_test');
   });
 
   test('no token stored means no token sent', () async {
     await ready();
-    await container.read(advisorModelServiceProvider.notifier).download(ModelCatalog.qwen3_0_6B);
+    await container.read(advisorModelServiceProvider.notifier).download(ModelCatalog.qwen3Small);
     expect(gateway.lastToken, isNull);
   });
 
-  test('a 401/403 download failure asks for a token; other failures do not', () async {
+  test('a forbidden download asks for a token; any other failure does not', () async {
     await ready();
     final n = container.read(advisorModelServiceProvider.notifier);
-    gateway.installError = Exception('HTTP 403 Forbidden');
+    gateway.installError = const DownloadException(ForbiddenError());
     await n.download(ModelCatalog.gemma4E2B);
     var status = container
         .read(advisorModelServiceProvider)
         .value!
         .statusOf(ModelCatalog.gemma4E2B);
-    expect(status, isA<Failed>());
-    // Non-DownloadException errors are generic failures even if they mention 403.
-    expect((status as Failed).needsToken, isFalse);
+    expect(status, isA<ModelFailed>());
+    expect((status as ModelFailed).needsToken, isTrue);
 
+    // A plain exception is a generic failure with a sentence for the person,
+    // never the engine's own text.
     gateway.installError = Exception('disk full');
     await n.download(ModelCatalog.gemma4E2B);
     status = container.read(advisorModelServiceProvider).value!.statusOf(ModelCatalog.gemma4E2B);
-    expect((status as Failed).message, contains('disk full'));
+    expect((status as ModelFailed).needsToken, isFalse);
+    expect(status.message, isNot(contains('disk full')));
+  });
+
+  test('activating a model that is not installed fails with a sentence', () async {
+    await ready();
+    final n = container.read(advisorModelServiceProvider.notifier);
+    await n.activate(ModelCatalog.gemma4E2B);
+    final status = container
+        .read(advisorModelServiceProvider)
+        .value!
+        .statusOf(ModelCatalog.gemma4E2B);
+    expect(status, isA<ModelFailed>());
+    expect(gateway.loaded, isEmpty);
+  });
+
+  test('the context window shrinks with free memory and never grows past the catalog', () {
+    expect(windowForFreeMemory(8.0, ceiling: 8192), 8192);
+    expect(windowForFreeMemory(5.0, ceiling: 8192), 4096);
+    expect(windowForFreeMemory(2.5, ceiling: 8192), 2048);
+    expect(windowForFreeMemory(2.5, ceiling: 1024), 1024);
   });
 
   test(
     'activate loads the model, switching closes the previous one, remove clears active',
     () async {
-      gateway.installed.addAll([ModelCatalog.qwen3_0_6B.id, ModelCatalog.gemma4E2B.id]);
+      gateway.installed.addAll([ModelCatalog.qwen3Small.id, ModelCatalog.gemma4E2B.id]);
       await ready();
       final n = container.read(advisorModelServiceProvider.notifier);
 
-      await n.activate(ModelCatalog.qwen3_0_6B);
+      await n.activate(ModelCatalog.qwen3Small);
       var state = container.read(advisorModelServiceProvider).value!;
-      expect(state.activeId, ModelCatalog.qwen3_0_6B.id);
-      expect(state.statusOf(ModelCatalog.qwen3_0_6B), isA<Ready>());
+      expect(state.activeId, ModelCatalog.qwen3Small.id);
+      expect(state.statusOf(ModelCatalog.qwen3Small), isA<ModelReady>());
       final first = n.loadedModel as _FakeModel;
 
       await n.activate(ModelCatalog.gemma4E2B);
       state = container.read(advisorModelServiceProvider).value!;
       expect(first.closed, isTrue);
       expect(state.activeId, ModelCatalog.gemma4E2B.id);
-      expect(state.statusOf(ModelCatalog.qwen3_0_6B), isA<Installed>());
-      expect(gateway.loaded, [ModelCatalog.qwen3_0_6B.id, ModelCatalog.gemma4E2B.id]);
+      expect(state.statusOf(ModelCatalog.qwen3Small), isA<ModelInstalled>());
+      expect(gateway.loaded, [ModelCatalog.qwen3Small.id, ModelCatalog.gemma4E2B.id]);
 
       await n.remove(ModelCatalog.gemma4E2B);
       state = container.read(advisorModelServiceProvider).value!;
       expect(state.activeId, isNull);
-      expect(state.statusOf(ModelCatalog.gemma4E2B), isA<NotInstalled>());
+      expect(state.statusOf(ModelCatalog.gemma4E2B), isA<ModelNotInstalled>());
       expect(n.loadedModel, isNull);
     },
   );

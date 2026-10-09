@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/app.dart';
 import '../../app/router.dart';
 import '../advisor/advisor_surface.dart';
 import '../advisor/stage_view.dart';
 
-/// Placeholder home: the content area above, the advisor surface below.
-/// Everything here is replaced as VA-2 and VA-11 land.
+/// Home: the stage above, the Motormind surface over it, and the three entry
+/// points (captures, models, disclosures).
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -14,7 +15,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Motormind AI'),
+        title: const Text(appName),
         actions: [
           IconButton(
             key: const Key('open-captures'),

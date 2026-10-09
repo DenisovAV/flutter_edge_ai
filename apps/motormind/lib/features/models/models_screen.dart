@@ -6,7 +6,9 @@ import '../../services/token_store.dart';
 import '../advisor/display_agent.dart';
 import 'model_catalog.dart';
 
-/// The model picker (VA-1.2.1) and download manager (VA-1.3.1, VA-1.3.2).
+/// Where the person picks, downloads and removes on-device models, enters a
+/// Hugging Face token for gated hosts, and switches on the display-agent
+/// experiment (VA-1.2.1, VA-1.3.1, VA-1.3.2).
 class ModelsScreen extends ConsumerWidget {
   const ModelsScreen({super.key});
 
@@ -25,13 +27,12 @@ class ModelsScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: models.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text('The on-device engine could not start.\n\n$e'),
+      body: switch (models) {
+        AsyncError() => const Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('The on-device engine could not start on this device.'),
         ),
-        data: (state) => ListView(
+        AsyncData(value: final state) => ListView(
           padding: const EdgeInsets.all(12),
           children: [
             const Padding(
@@ -43,10 +44,7 @@ class ModelsScreen extends ConsumerWidget {
             ),
             for (final m in ModelCatalog.all) _ModelCard(spec: m, status: state.statusOf(m)),
             const SizedBox(height: 16),
-            // DD-R33 / TQ59: one model, two sessions. The second session gets
-            // the screen state and returns a few layout decisions; the rules
-            // table is its fallback and its benchmark. Off by default until
-            // the replay cost is measured on a phone.
+            // The experiment is described on displayAgentModeProvider.
             SwitchListTile(
               key: const Key('display-agent-switch'),
               title: const Text('Let a second session arrange the screen'),
@@ -55,57 +53,96 @@ class ModelsScreen extends ConsumerWidget {
                 'to show; the rules decide otherwise. Each decision costs a short prefill, and '
                 'on this engine a session switch replays the conversation.',
               ),
-              value: ref.watch(displayAgentModeProvider) == 'model',
-              onChanged: (v) =>
-                  ref.read(displayAgentModeProvider.notifier).set(v ? 'model' : 'rules'),
+              value: ref.watch(displayAgentModeProvider) == DisplayAgentMode.model,
+              onChanged: (v) => ref
+                  .read(displayAgentModeProvider.notifier)
+                  .set(v ? DisplayAgentMode.model : DisplayAgentMode.rules),
             ),
           ],
         ),
-      ),
+        _ => const Center(child: CircularProgressIndicator()),
+      },
     );
   }
 
   Future<void> _editToken(BuildContext context, WidgetRef ref) async {
     final store = ref.read(tokenStoreProvider);
-    final controller = TextEditingController(text: await store.read() ?? '');
+    final current = await store.read() ?? '';
     if (!context.mounted) return;
-    final result = await showDialog<String>(
+    final result = await showDialog<_TokenEdit>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Hugging Face token'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Only needed for gated models or a private mirror. Stored in secure storage on '
-              'this device and sent only to the model host.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              key: const Key('token-field'),
-              controller: controller,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'hf_…'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, ''), child: const Text('Clear')),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      builder: (context) => _TokenDialog(initial: current),
     );
-    if (result == null) return;
-    if (result.isEmpty) {
-      await store.clear();
-    } else {
-      await store.write(result);
+    switch (result) {
+      case null:
+        return;
+      case _TokenEdit(cleared: true):
+        await store.clear();
+      case _TokenEdit(:final token):
+        await store.write(token);
     }
   }
+}
+
+/// The outcome of the token dialog: a token to save, or a request to clear.
+class _TokenEdit {
+  const _TokenEdit.save(this.token) : cleared = false;
+  const _TokenEdit.clear() : token = '', cleared = true;
+
+  final String token;
+  final bool cleared;
+}
+
+/// Owns its text controller so the dialog disposes what it creates.
+class _TokenDialog extends StatefulWidget {
+  const _TokenDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_TokenDialog> createState() => _TokenDialogState();
+}
+
+class _TokenDialogState extends State<_TokenDialog> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Hugging Face token'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Only needed for gated models or a private mirror. Stored in secure storage on '
+          'this device and sent only to the model host.',
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const Key('token-field'),
+          controller: _controller,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'hf_…'),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context, const _TokenEdit.clear()),
+        child: const Text('Clear'),
+      ),
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      FilledButton(
+        onPressed: () => Navigator.pop(context, _TokenEdit.save(_controller.text)),
+        child: const Text('Save'),
+      ),
+    ],
+  );
 }
 
 class _ModelCard extends ConsumerWidget {
@@ -144,13 +181,13 @@ class _ModelCard extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             switch (status) {
-              NotInstalled() => FilledButton.icon(
+              ModelNotInstalled() => FilledButton.icon(
                 key: Key('download-${spec.id}'),
                 onPressed: () => service.download(spec),
                 icon: const Icon(Icons.download),
                 label: const Text('Download'),
               ),
-              Downloading(:final percent) => Row(
+              ModelDownloading(:final percent) => Row(
                 children: [
                   Expanded(
                     child: LinearProgressIndicator(
@@ -163,11 +200,11 @@ class _ModelCard extends ConsumerWidget {
                   IconButton(
                     tooltip: 'Cancel',
                     icon: const Icon(Icons.close),
-                    onPressed: service.cancelDownload,
+                    onPressed: () => service.cancelDownload(spec),
                   ),
                 ],
               ),
-              Installed() => Wrap(
+              ModelInstalled() => Wrap(
                 spacing: 8,
                 children: [
                   FilledButton.icon(
@@ -183,14 +220,14 @@ class _ModelCard extends ConsumerWidget {
                   ),
                 ],
               ),
-              Loading() => const Row(
+              ModelLoading() => const Row(
                 children: [
                   SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                   SizedBox(width: 12),
                   Text('Loading into memory…'),
                 ],
               ),
-              Ready() => Row(
+              ModelReady() => Row(
                 children: [
                   Icon(Icons.check_circle, color: theme.colorScheme.primary),
                   const SizedBox(width: 8),
@@ -201,7 +238,7 @@ class _ModelCard extends ConsumerWidget {
                   ),
                 ],
               ),
-              Failed(:final message, :final needsToken) => Column(
+              ModelFailed(:final message, :final needsToken) => Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(

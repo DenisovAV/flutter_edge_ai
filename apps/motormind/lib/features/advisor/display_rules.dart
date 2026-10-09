@@ -1,11 +1,8 @@
 import 'package:advisor_core/advisor_core.dart';
 
-import '../../services/log.dart';
-
-/// What the display decisions see: the screen state, not the conversation.
-/// This is the input a display agent (DD-R33) would get; today a table of
-/// rules consumes it, and every decision is logged so the rules can be
-/// compared against an agent later (DD-R21).
+/// What the display rules see: the screen state, never the conversation.
+/// This is the same input a display agent gets, so rules and agent can be
+/// compared on equal terms.
 class DisplayContext {
   const DisplayContext({
     required this.surface,
@@ -14,55 +11,50 @@ class DisplayContext {
     this.userExpandedFilters,
   });
 
+  /// Collapsed, docked or fullscreen.
   final SurfaceState surface;
 
   /// True once any search filter has a value.
   final bool filtersSet;
+
+  /// True while the soft keyboard is up.
   final bool keyboardOpen;
 
   /// The person's last explicit choice on the filters card, if any; it wins
-  /// over the rule until the context changes (DD-R13).
+  /// over the rule until the context changes.
   final bool? userExpandedFilters;
 }
 
-enum FiltersCardMode { expanded, summary, hidden }
+/// How the filters card is shown.
+enum FiltersCardMode {
+  /// Every chip row visible.
+  expanded,
 
-/// The decision table from DYNAMIC_DESIGN Section 6, one function per row.
-/// Rules are deliberately small and named so a display agent can replace them
-/// one at a time once the harness shows it choosing at least as well.
+  /// One line with the current filters and a funnel to reopen.
+  summary,
+
+  /// Out of the way (while typing).
+  hidden,
+}
+
+/// The decision table from the design notes, one pure function per row. The
+/// rules are small and named so a display agent can replace them one at a
+/// time once a harness shows it choosing at least as well. Logging happens
+/// where a whole decision is made, not here.
 abstract final class DisplayRules {
   /// The filters card: full while nothing is set or in fullscreen; one
   /// summary line with a funnel once a filter is chosen in the docked panel;
-  /// out of the way while typing (DD-R32, DD-R7).
+  /// out of the way while typing.
   static FiltersCardMode filtersCard(DisplayContext c) {
-    final FiltersCardMode mode;
-    if (c.keyboardOpen) {
-      mode = FiltersCardMode.hidden;
-    } else if (c.userExpandedFilters != null) {
-      mode = c.userExpandedFilters! ? FiltersCardMode.expanded : FiltersCardMode.summary;
-    } else if (!c.filtersSet || c.surface == SurfaceState.fullscreen) {
-      mode = FiltersCardMode.expanded;
-    } else {
-      mode = FiltersCardMode.summary;
+    if (c.keyboardOpen) return FiltersCardMode.hidden;
+    if (c.userExpandedFilters case final expanded?) {
+      return expanded ? FiltersCardMode.expanded : FiltersCardMode.summary;
     }
-    _log('filtersCard', c, mode.name);
-    return mode;
+    if (!c.filtersSet || c.surface == SurfaceState.fullscreen) return FiltersCardMode.expanded;
+    return FiltersCardMode.summary;
   }
 
-  /// Transcript notes ("Looking for … 8 listings read") only when there is
-  /// room to read them (Q65).
-  static bool showSearchNotes(DisplayContext c) {
-    final show = c.surface == SurfaceState.fullscreen;
-    _log('searchNotes', c, show ? 'shown' : 'hidden');
-    return show;
-  }
-
-  static String? _last;
-  static void _log(String rule, DisplayContext c, String decision) {
-    final line =
-        '[motormind] display $rule -> $decision (surface=${c.surface.name}, filters=${c.filtersSet}, keyboard=${c.keyboardOpen}, user=${c.userExpandedFilters})';
-    if (line == _last) return; // rules run on every build; log changes only
-    _last = line;
-    logDev(line);
-  }
+  /// Transcript notes ("Looking for … 8 matched") only when there is room
+  /// to read them (Q65).
+  static bool showSearchNotes(DisplayContext c) => c.surface == SurfaceState.fullscreen;
 }

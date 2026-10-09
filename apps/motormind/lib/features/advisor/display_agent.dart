@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:advisor_core/advisor_core.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,6 +15,45 @@ import 'advisor_surface.dart';
 import 'display_rules.dart';
 import 'stage.dart';
 
+/// Who made the current display decision.
+enum DecidedBy {
+  /// The rules table.
+  rules,
+
+  /// The second model session.
+  model,
+
+  /// The model answered but could not be read; the rules' answer stands.
+  modelFallback,
+
+  /// The model failed or timed out; the rules' answer stands.
+  modelFailed,
+}
+
+/// Which agent is in charge of the screen.
+enum DisplayAgentMode {
+  /// The rules table (the default until the model is measured on a phone).
+  rules,
+
+  /// A second session of the loaded model, with the rules as fallback.
+  model,
+}
+
+/// The stage's share of the screen when docked.
+enum StageSplit {
+  /// A sliver while typing: the conversation gets the room (the keyboard rule).
+  typing,
+
+  /// A third: the page is eye candy until a selection is made.
+  third,
+
+  /// Half, leaning to the stage so a card's header clears the fold.
+  half,
+
+  /// Two thirds: there are cards to look at.
+  twoThirds,
+}
+
 /// The display agent's output: a few named decisions over the registry's
 /// visibility slots. Everything else about the screen is the allocator's.
 class DisplayDecision {
@@ -23,25 +63,30 @@ class DisplayDecision {
     required this.stage,
     required this.split,
     this.cue,
-    this.by = 'rules',
+    this.by = DecidedBy.rules,
     this.tookMs,
+    this.thinking = false,
   });
+
+  /// Longest cue the agent may show; one line on a phone.
+  static const maxCueLength = 60;
 
   final FiltersCardMode filters;
 
   /// Transcript search notes shown or hidden.
   final bool notes;
   final StageMode stage;
-
-  /// The stage's share of the screen when docked.
   final StageSplit split;
 
-  /// One optional line of orientation (principle 6), at most 60 characters.
+  /// One optional line of orientation (principle 6), at most [maxCueLength].
   final String? cue;
+  final DecidedBy by;
 
-  /// Who decided: `rules` or `model`.
-  final String by;
+  /// How long the model took, when it decided.
   final int? tookMs;
+
+  /// True while the model is being asked; the indicator shows it.
+  final bool thinking;
 
   DisplayDecision copyWith({
     FiltersCardMode? filters,
@@ -49,8 +94,9 @@ class DisplayDecision {
     StageMode? stage,
     StageSplit? split,
     String? cue,
-    String? by,
+    DecidedBy? by,
     int? tookMs,
+    bool? thinking,
   }) => DisplayDecision(
     filters: filters ?? this.filters,
     notes: notes ?? this.notes,
@@ -59,6 +105,7 @@ class DisplayDecision {
     cue: cue ?? this.cue,
     by: by ?? this.by,
     tookMs: tookMs ?? this.tookMs,
+    thinking: thinking ?? this.thinking,
   );
 
   Map<String, Object?> toJson() => {
@@ -71,9 +118,22 @@ class DisplayDecision {
 
   @override
   String toString() => jsonEncode(toJson());
-}
 
-enum StageSplit { third, half, twoThirds }
+  @override
+  bool operator ==(Object other) =>
+      other is DisplayDecision &&
+      other.filters == filters &&
+      other.notes == notes &&
+      other.stage == stage &&
+      other.split == split &&
+      other.cue == cue &&
+      other.by == by &&
+      other.tookMs == tookMs &&
+      other.thinking == thinking;
+
+  @override
+  int get hashCode => Object.hash(filters, notes, stage, split, cue, by, tookMs, thinking);
+}
 
 /// What the display agent sees: screen state plus the last thing the person
 /// said (so "show me the website" works without a tool), never the
@@ -93,6 +153,9 @@ class ScreenState {
     required this.busy,
   });
 
+  /// Characters of the person's last message the agent sees.
+  static const lastUserTextLength = 80;
+
   final SurfaceState surface;
   final bool keyboardOpen;
   final bool filtersSet;
@@ -101,27 +164,36 @@ class ScreenState {
   final int listingCount;
   final StageMode stageMode;
 
-  /// The person flipped the stage by hand this search; that wins (DD-R13).
+  /// The person flipped the stage by hand this search; that wins.
   final bool userStageMode;
   final bool? userExpandedFilters;
   final String lastUserText;
+
+  /// True while a conversation turn is running; the model agent waits.
   final bool busy;
 
-  String describe() =>
-      'surface=${surface.name}; keyboard=${keyboardOpen ? 'open' : 'closed'}; '
-      'filters=${filtersSet ? filtersSummary : 'none'}; cards=$cardCount; listings=$listingCount; '
-      'stage=${stageMode.name}; last_user_text="${lastUserText.length > 80 ? lastUserText.substring(0, 80) : lastUserText}"';
+  /// One line for the model.
+  String describe() {
+    final text = lastUserText.length > lastUserTextLength
+        ? lastUserText.substring(0, lastUserTextLength)
+        : lastUserText;
+    return 'surface=${surface.name}; keyboard=${keyboardOpen ? 'open' : 'closed'}; '
+        'filters=${filtersSet ? filtersSummary : 'none'}; cards=$cardCount; '
+        'listings=$listingCount; stage=${stageMode.name}; last_user_text="$text"';
+  }
 }
 
-/// Rules first (the table in DisplayRules), a model second. Both produce the
-/// same decision shape, so they can be compared on the same inputs (DD-R21).
+/// Rules first (the table in [DisplayRules]), a model second. Both produce
+/// the same decision shape, so they can be compared on the same inputs.
 abstract class DisplayAgent {
   Future<DisplayDecision> decide(ScreenState s, DisplayDecision defaults);
 }
 
+/// The rules table, applied synchronously.
 class RulesDisplayAgent implements DisplayAgent {
   const RulesDisplayAgent();
 
+  /// The decision the rules make for [s].
   static DisplayDecision apply(ScreenState s) {
     final c = DisplayContext(
       surface: s.surface,
@@ -129,22 +201,24 @@ class RulesDisplayAgent implements DisplayAgent {
       keyboardOpen: s.keyboardOpen,
       userExpandedFilters: s.userExpandedFilters,
     );
-    // Cards whenever there is a card to show (DD-R24); the web page when
-    // there is none, or when the person or the app asked for it.
+    // Cards whenever there is a card to show; the web page when there is
+    // none, or when the person or the app asked for it.
     final stage = s.userStageMode
         ? s.stageMode
         : (s.cardCount > 0 ? StageMode.cards : StageMode.web);
+    final StageSplit split;
+    if (s.keyboardOpen) {
+      split = StageSplit.typing;
+    } else if (s.listingCount > 0 && stage == StageMode.cards) {
+      split = StageSplit.twoThirds;
+    } else {
+      split = StageSplit.half;
+    }
     return DisplayDecision(
       filters: DisplayRules.filtersCard(c),
       notes: DisplayRules.showSearchNotes(c),
       stage: stage,
-      // TQ66: the web page is eye candy until a selection is made; once there
-      // are cards they get the room.
-      split: s.keyboardOpen
-          ? StageSplit.third
-          : (s.listingCount > 0 && stage == StageMode.cards
-                ? StageSplit.twoThirds
-                : StageSplit.half),
+      split: split,
     );
   }
 
@@ -152,26 +226,29 @@ class RulesDisplayAgent implements DisplayAgent {
   Future<DisplayDecision> decide(ScreenState s, DisplayDecision defaults) async => apply(s);
 }
 
-/// A second session of the loaded model, opened per decision with a tiny
-/// prompt and closed after. Generation is serialized with the interaction
-/// session by the engine, and on the FFI engine a session switch replays the
-/// other session's history, so this runs only while the conversation is idle
-/// and the cost is logged every time (TQ59: "measure the thing we care
-/// about, prompt size per turn").
+/// The display prompt, an asset like the other prompts so it can be tuned
+/// without a rebuild.
+final displayPromptProvider = FutureProvider<String>(
+  (ref) => rootBundle.loadString('assets/prompts/display.md'),
+);
+
+/// A second session of the loaded model, opened per decision with a short
+/// prompt and closed after. Generation is serialized with the conversation
+/// by the engine, and on the FFI engine a session switch replays the other
+/// session's history, so this runs only while the conversation is idle and
+/// the cost is logged every time (TQ59: measure prompt size per turn).
 class ModelDisplayAgent implements DisplayAgent {
-  ModelDisplayAgent(this.model);
+  ModelDisplayAgent(this.model, this.systemInstruction);
+
+  /// Enough for one small JSON object.
+  static const maxOutputTokens = 80;
+
+  /// Generous on purpose: the emulator under software GL needs most of it;
+  /// a phone should answer in a second or two, and the time is logged.
+  static const decisionTimeout = Duration(seconds: 60);
 
   final InferenceModel model;
-
-  static const systemInstruction =
-      'You arrange a phone screen for a car-shopping assistant. You get the screen state and '
-      'must answer with one JSON object and nothing else, keys: '
-      'filters (expanded|summary|hidden), notes (shown|hidden), stage (web|cards), '
-      'split (third|half|twoThirds), cue (a short orientation line or null). '
-      'Rules: while the keyboard is open hide the filters and give the conversation room; '
-      'when listings exist show cards unless the person asked for the website; '
-      'collapse filters to a summary once something is set unless the surface is fullscreen; '
-      'show notes only in fullscreen; a cue only when the person returns or something changed.';
+  final String systemInstruction;
 
   @override
   Future<DisplayDecision> decide(ScreenState s, DisplayDecision defaults) async {
@@ -181,60 +258,65 @@ class ModelDisplayAgent implements DisplayAgent {
       session = await model.openSession(
         temperature: 0.1,
         systemInstruction: systemInstruction,
-        maxOutputTokens: 80,
+        maxOutputTokens: maxOutputTokens,
       );
       await session.addQueryChunk(
         Message.text(text: 'Screen: ${s.describe()}\nDefault: ${defaults.toJson()}', isUser: true),
       );
-      // Generous on purpose: the emulator under software GL needs most of this; a
-      // phone should answer in a second or two, and the time is logged.
-      final raw = await session.getResponse().timeout(const Duration(seconds: 60));
-      final parsed = _parse(raw, defaults);
-      return parsed.copyWith(by: 'model', tookMs: sw.elapsedMilliseconds);
+      final raw = await session.getResponse().timeout(decisionTimeout);
+      return parse(raw, defaults).copyWith(tookMs: sw.elapsedMilliseconds);
     } finally {
       await session?.close();
     }
   }
 
-  static DisplayDecision _parse(String raw, DisplayDecision d) {
+  /// Reads one JSON object out of [raw]; anything unreadable keeps the
+  /// corresponding default. Visible for tests.
+  static DisplayDecision parse(String raw, DisplayDecision d) {
     final start = raw.indexOf('{');
     final end = raw.lastIndexOf('}');
-    if (start < 0 || end <= start) return d.copyWith(by: 'model-fallback');
-    Map<String, Object?> m;
+    if (start < 0 || end <= start) return d.copyWith(by: DecidedBy.modelFallback);
+    final Map<String, Object?> m;
     try {
       m = (jsonDecode(raw.substring(start, end + 1)) as Map).cast<String, Object?>();
-    } catch (_) {
-      return d.copyWith(by: 'model-fallback');
+    } on FormatException {
+      return d.copyWith(by: DecidedBy.modelFallback);
     }
-    T pick<T extends Enum>(List<T> values, Object? v, T fallback) =>
-        values.where((e) => e.name == v?.toString()).firstOrNull ?? fallback;
     final cue = m['cue']?.toString();
     return DisplayDecision(
-      filters: pick(FiltersCardMode.values, m['filters'], d.filters),
+      filters: FiltersCardMode.values.asNameMap()[m['filters']?.toString()] ?? d.filters,
       notes: m['notes'] == null ? d.notes : m['notes'].toString() == 'shown',
-      stage: pick(StageMode.values, m['stage'], d.stage),
-      split: pick(StageSplit.values, m['split'], d.split),
+      stage: StageMode.values.asNameMap()[m['stage']?.toString()] ?? d.stage,
+      split: StageSplit.values.asNameMap()[m['split']?.toString()] ?? d.split,
       cue: cue == null || cue == 'null' || cue.isEmpty
           ? null
-          : (cue.length > 60 ? cue.substring(0, 60) : cue),
+          : (cue.length > DisplayDecision.maxCueLength
+                ? cue.substring(0, DisplayDecision.maxCueLength)
+                : cue),
+      by: DecidedBy.model,
     );
   }
 }
 
 /// Which agent is in charge. Persisted; the Models screen offers the switch.
-final displayAgentModeProvider = NotifierProvider<DisplayAgentModeNotifier, String>(
+/// One model, two sessions: the second gets the screen state and returns a
+/// few layout decisions; the rules table is its fallback and its benchmark.
+/// Off by default until the replay cost is measured on a phone.
+final displayAgentModeProvider = NotifierProvider<DisplayAgentModeNotifier, DisplayAgentMode>(
   DisplayAgentModeNotifier.new,
 );
 
-class DisplayAgentModeNotifier extends Notifier<String> {
-  static const key = 'display.agent';
+class DisplayAgentModeNotifier extends Notifier<DisplayAgentMode> {
+  static const _key = 'display.agent';
 
   @override
-  String build() => ref.watch(sharedPreferencesProvider).getString(key) ?? 'rules';
+  DisplayAgentMode build() =>
+      DisplayAgentMode.values.asNameMap()[ref.watch(sharedPreferencesProvider).getString(_key)] ??
+      DisplayAgentMode.rules;
 
-  Future<void> set(String mode) async {
+  Future<void> set(DisplayAgentMode mode) async {
     state = mode;
-    await ref.read(sharedPreferencesProvider).setString(key, mode);
+    await ref.read(sharedPreferencesProvider).setString(_key, mode.name);
   }
 }
 
@@ -245,6 +327,7 @@ final keyboardOpenProvider = NotifierProvider<KeyboardOpenNotifier, bool>(Keyboa
 class KeyboardOpenNotifier extends Notifier<bool> {
   @override
   bool build() => false;
+
   void set(bool v) {
     if (v != state) state = v;
   }
@@ -257,9 +340,12 @@ class KeyboardOpenNotifier extends Notifier<bool> {
 final displayProvider = NotifierProvider<DisplayController, DisplayDecision>(DisplayController.new);
 
 class DisplayController extends Notifier<DisplayDecision> {
+  /// A screen change settles for this long before the model is asked, so a
+  /// run of taps costs one decision.
+  static const decideDebounce = Duration(milliseconds: 800);
+
   Timer? _debounce;
   int _generation = 0;
-  bool thinking = false;
 
   @override
   DisplayDecision build() {
@@ -268,9 +354,11 @@ class DisplayController extends Notifier<DisplayDecision> {
     final rules = RulesDisplayAgent.apply(s);
     // The model agent runs only once the conversation has started and is
     // idle: on the FFI engine a session switch replays the other session's
-    // history, and running it before the first turn made that turn twice as
-    // slow on the emulator (experiment log, 2026-10-08).
-    if (ref.read(displayAgentModeProvider) == 'model' && !s.busy && s.lastUserText.isNotEmpty) {
+    // history, and running it before the first turn doubled that turn's
+    // time on the emulator (experiment log, 2026-10-08). The mode is
+    // watched, so flipping the switch takes effect at once.
+    final mode = ref.watch(displayAgentModeProvider);
+    if (mode == DisplayAgentMode.model && !s.busy && s.lastUserText.isNotEmpty) {
       _askModel(s, rules);
     }
     return rules;
@@ -280,13 +368,9 @@ class DisplayController extends Notifier<DisplayDecision> {
     final search = ref.watch(searchProvider);
     final stage = ref.watch(stageProvider);
     final chat = ref.watch(chatServiceProvider);
-    final listings = stage.cards.where((c) => c.request.component.id == 'vehicle_card').fold<int>(
-      0,
-      (n, c) {
-        final r = c.result;
-        return n + ((r?.result?['listings'] as List?)?.length ?? 0);
-      },
-    );
+    final listings = stage.cards
+        .where((c) => c.request.component.id == 'vehicle_card')
+        .fold<int>(0, (n, c) => n + ((c.result?.result?['listings'] as List?)?.length ?? 0));
     return ScreenState(
       surface: ref.watch(surfaceProvider),
       keyboardOpen: ref.watch(keyboardOpenProvider),
@@ -302,24 +386,25 @@ class DisplayController extends Notifier<DisplayDecision> {
     );
   }
 
+  /// Asks the model after [decideDebounce]; a newer screen change cancels a
+  /// stale answer. The timer fires after build, so build stays pure.
   void _askModel(ScreenState s, DisplayDecision defaults) {
     final model = ref.read(advisorModelServiceProvider.notifier).loadedModel;
     if (model == null) return;
     final gen = ++_generation;
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 800), () async {
-      thinking = true;
-      state = state.copyWith(); // repaint the indicator
+    _debounce = Timer(decideDebounce, () async {
+      final prompt = await ref.read(displayPromptProvider.future);
+      if (gen != _generation) return;
+      state = state.copyWith(thinking: true);
       try {
-        final d = await ModelDisplayAgent(model).decide(s, defaults);
+        final d = await ModelDisplayAgent(model, prompt).decide(s, defaults);
         if (gen != _generation) return; // the screen moved on
         logDev('display model=${d.toJson()} rules=${defaults.toJson()} took=${d.tookMs}ms');
         state = d;
-      } catch (e) {
+      } on Exception catch (e) {
         logDev('display model failed: $e');
-      } finally {
-        thinking = false;
-        if (gen == _generation) state = state.copyWith();
+        if (gen == _generation) state = state.copyWith(by: DecidedBy.modelFailed, thinking: false);
       }
     });
   }

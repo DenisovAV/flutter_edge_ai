@@ -1,8 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// What the person did with listings: viewed (opened the detail), liked,
-/// dismissed. These are the signals Motormind may learn from (DD-R29): it
-/// proposes a sort or filter after enough evidence, never silently.
+/// dismissed. A summary of makes reaches the model with each turn; proposing
+/// a sort or filter from it is the next step and will only ever be a
+/// proposal, never a silent change.
 class ListingSignals {
   const ListingSignals({this.viewed = const {}, this.liked = const {}, this.dismissed = const {}});
 
@@ -18,18 +19,21 @@ class ListingSignals {
       );
 }
 
+/// Session-scoped listing signals.
 final listingSignalsProvider = NotifierProvider<ListingSignalsNotifier, ListingSignals>(
   ListingSignalsNotifier.new,
 );
 
+/// Records viewed, liked and dismissed listings by a stable key.
 class ListingSignalsNotifier extends Notifier<ListingSignals> {
   @override
   ListingSignals build() => const ListingSignals();
 
-  /// Keys are "title|price" so the same car read twice counts once.
-  static String keyFor(Map l) => '${l['title']}|${l['price']}';
+  /// "title|price" with whole dollars, so the same car read twice counts
+  /// once and the key reads well in widget tests.
+  static String keyFor(Map l) => '${l['title']}|${(l['price'] as num?)?.round()}';
 
-  void viewed(Map l) => state = state.copyWith(viewed: {...state.viewed, keyFor(l)});
+  void markViewed(Map l) => state = state.copyWith(viewed: {...state.viewed, keyFor(l)});
 
   void toggleLiked(Map l) {
     final k = keyFor(l);
@@ -43,8 +47,9 @@ class ListingSignalsNotifier extends Notifier<ListingSignals> {
     state = state.copyWith(dismissed: {...state.dismissed, k}, liked: {...state.liked}..remove(k));
   }
 
-  /// A short line for the model's context ("viewed 3, liked 1: Honda, Honda").
-  /// Makes only; nothing the model could turn into a number.
+  /// A short line for the model's context ("viewed 3 (Honda); liked 1
+  /// (Honda)"). Only makes are named, so the model cannot turn this into a
+  /// figure it then quotes.
   String? summary(List<Map> listings) {
     if (state.viewed.isEmpty && state.liked.isEmpty) return null;
     final likedMakes = <String>[

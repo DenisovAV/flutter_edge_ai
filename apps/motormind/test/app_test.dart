@@ -6,10 +6,13 @@ import 'package:motormind/app/app.dart';
 import 'package:motormind/app/prefs.dart';
 import 'package:motormind/features/advisor/advisor_surface.dart';
 import 'package:motormind/features/advisor/stage_view.dart';
+import 'package:motormind/features/disclosures/disclosures_notifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<Widget> _app({int? acknowledgedVersion}) async {
-  SharedPreferences.setMockInitialValues({'disclosures.acknowledgedVersion': ?acknowledgedVersion});
+  SharedPreferences.setMockInitialValues({
+    DisclosuresAcknowledgedNotifier.ackKey: ?acknowledgedVersion,
+  });
   final prefs = await SharedPreferences.getInstance();
   return ProviderScope(
     overrides: [
@@ -37,7 +40,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('surface-bubble')), findsOneWidget);
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getInt('disclosures.acknowledgedVersion'), Disclosures.gateVersion);
+    expect(prefs.getInt(DisclosuresAcknowledgedNotifier.ackKey), Disclosures.gateVersion);
   });
 
   testWidgets('an acknowledged current version skips the gate; an old version does not', (
@@ -57,10 +60,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('surface-bubble')));
     await tester.pumpAndSettle();
-    expect(find.text('Motormind (docked)'), findsOneWidget);
+    expect(find.byKey(const Key('surface-docked')), findsOneWidget);
     await tester.tap(find.byKey(const Key('surface-toggle')));
     await tester.pumpAndSettle();
-    expect(find.text('Motormind (fullscreen)'), findsOneWidget);
+    expect(find.byKey(const Key('surface-fullscreen')), findsOneWidget);
     await tester.tap(find.byKey(const Key('surface-toggle')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('surface-bubble')), findsOneWidget);

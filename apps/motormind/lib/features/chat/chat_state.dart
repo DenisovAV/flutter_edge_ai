@@ -14,7 +14,14 @@ enum MessageRole {
 
 /// One rendered message in the transcript.
 class ChatMessage {
-  const ChatMessage({required this.role, required this.text, this.streaming = false});
+  const ChatMessage({required this.role, required this.text, this.streaming = false})
+    : isSearchNote = false;
+
+  /// A system note about an applied search; these replace one another.
+  const ChatMessage.searchNote(this.text)
+    : role = MessageRole.system,
+      streaming = false,
+      isSearchNote = true;
 
   final MessageRole role;
   final String text;
@@ -22,14 +29,25 @@ class ChatMessage {
   /// True while tokens are still arriving for this message.
   final bool streaming;
 
-  ChatMessage copyWith({String? text, bool? streaming}) =>
-      ChatMessage(role: role, text: text ?? this.text, streaming: streaming ?? this.streaming);
+  /// True for the one-line search notes (see [ChatMessage.searchNote]).
+  final bool isSearchNote;
+
+  ChatMessage copyWith({String? text, bool? streaming}) => isSearchNote
+      ? ChatMessage.searchNote(text ?? this.text)
+      : ChatMessage(role: role, text: text ?? this.text, streaming: streaming ?? this.streaming);
 }
 
 /// A card or prompt the model (or the app) asked to show, with the result it
 /// renders from, if any.
 class ShownComponent {
-  const ShownComponent({required this.request, this.result, this.answered = false});
+  ShownComponent({required this.request, this.result, this.answered = false, int? id})
+    : id = id ?? _nextId++;
+
+  static int _nextId = 1;
+
+  /// Identity that survives [copyWith], so "mark answered" finds the card
+  /// without relying on object identity.
+  final int id;
 
   final PresentRequest request;
   final ToolResult? result;
@@ -39,7 +57,7 @@ class ShownComponent {
   final bool answered;
 
   ShownComponent copyWith({bool? answered}) =>
-      ShownComponent(request: request, result: result, answered: answered ?? this.answered);
+      ShownComponent(request: request, result: result, answered: answered ?? this.answered, id: id);
 }
 
 /// Messages and components interleaved in the order they happened.
@@ -101,22 +119,18 @@ class ChatState {
       if (e is MessageEntry) e.message,
   ];
 
-  List<ShownComponent> get shown => [
-    for (final e in timeline)
-      if (e is ComponentEntry) e.shown,
-  ];
-
   /// The last thing the person said, or an empty string before the first turn.
   String get lastUserText =>
       messages.where((m) => m.role == MessageRole.user).lastOrNull?.text ?? '';
 
   /// True while a choice or form (other than the app-owned filters card) is
   /// waiting for an answer.
-  bool get hasPendingPrompt => shown.any(
-    (s) =>
-        s.request.component.isInteraction &&
-        s.request.component.id != 'search_filters' &&
-        !s.answered,
+  bool get hasPendingPrompt => timeline.any(
+    (e) =>
+        e is ComponentEntry &&
+        e.shown.request.component.isInteraction &&
+        e.shown.request.component.id != 'search_filters' &&
+        !e.shown.answered,
   );
 
   ChatState copyWith({

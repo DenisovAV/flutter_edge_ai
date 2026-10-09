@@ -7,9 +7,11 @@ import '../../services/advisor_model_service.dart';
 import '../../services/log.dart';
 import '../advisor/advisor_surface.dart';
 import '../advisor/stage.dart';
+import '../listings/listing_signals.dart';
 import '../models/model_catalog.dart';
 import '../search/search_service.dart';
 import 'chat_state.dart';
+import 'chat_strings.dart';
 import 'edge_ai_chat_driver.dart';
 import 'external_tools.dart';
 import 'prompt_assets.dart';
@@ -33,10 +35,34 @@ class ChatService extends Notifier<ChatState> {
   TurnPipeline? _pipeline;
   ChatDriver? _driver;
 
+  /// The turn in flight, so an interrupt can wait for it to wind down.
+  Future<void>? _turn;
+
   @override
   ChatState build() {
     ref.onDispose(() => _driver?.close());
+    // Every applied search becomes one note in the conversation, so the
+    // transcript shows what the person chose. A consecutive note is replaced
+    // and an identical one skipped, so the transcript never repeats itself.
+    ref.listen(searchProvider, (previous, next) {
+      if (!state.ready || next.applying || next.lastCount == null) return;
+      if (previous?.lastCount == next.lastCount && previous?.query == next.query) return;
+      _noteSearch(next);
+    });
     return const ChatState();
+  }
+
+  void _noteSearch(SearchState s) {
+    final line = ChatStrings.searchNote(s.query.describe(), s.siteName, s.lastCount ?? 0);
+    final t = [...state.timeline];
+    final last = t.lastOrNull;
+    if (last is MessageEntry &&
+        last.message.role == MessageRole.system &&
+        last.message.isSearchNote) {
+      if (last.message.text == line) return;
+      t.removeLast();
+    }
+    state = state.copyWith(timeline: [...t, MessageEntry(ChatMessage.searchNote(line))]);
   }
 
   /// Opens a chat on the active model. Call again to start a new conversation.
@@ -56,42 +82,23 @@ class ChatService extends Notifier<ChatState> {
         final activeId = ref.read(advisorModelServiceProvider).value?.activeId;
         final spec = activeId == null ? null : ModelCatalog.byId(activeId);
         if (model == null || spec == null) {
-          state = state.copyWith(
-            busy: false,
-            error: 'No model is loaded. Open Models and choose one.',
-          );
+          state = state.copyWith(busy: false, error: ChatStrings.noModel);
           return;
         }
+        // Close the previous chat before opening the next so two sessions
+        // never sit in device memory at once.
+        await _driver?.close();
+        _driver = null;
         driver = await EdgeAiChatDriver.open(model, spec, systemInstruction: instruction);
       }
       await _driver?.close();
       _driver = driver;
       _pipeline = TurnPipeline(driver: driver, profile: profile, external: ExternalTools(ref).call);
+      // A fresh conversation: every flag from the previous one is dropped.
       state = ChatState(ready: true, timeline: [ComponentEntry(Starters.openingPrompt(profile))]);
-      // Every applied search becomes a line in the conversation, so the
-      // transcript shows what the person chose and the model can be told.
-      ref.read(searchProvider.notifier).onApplied = (s) {
-        final line =
-            'Looking for ${s.query.describe()} on ${CuratedSites.byId(s.siteId)?.name ?? s.siteId}: ${s.lastCount ?? 0} listings read.';
-        final t = [...state.timeline];
-        // One note per run of searches (Q65): a consecutive note is replaced,
-        // an identical one is skipped, so the transcript never repeats itself.
-        if (t.isNotEmpty &&
-            t.last is MessageEntry &&
-            (t.last as MessageEntry).message.role == MessageRole.system &&
-            (t.last as MessageEntry).message.text.startsWith('Looking for')) {
-          if ((t.last as MessageEntry).message.text == line) return;
-          t.removeLast();
-        }
-        state = state.copyWith(
-          timeline: [
-            ...t,
-            MessageEntry(ChatMessage(role: MessageRole.system, text: line)),
-          ],
-        );
-      };
-    } catch (e) {
-      state = state.copyWith(busy: false, error: 'Could not start Motormind: $e');
+    } on Exception catch (e) {
+      logDev('start failed: $e');
+      state = state.copyWith(busy: false, error: ChatStrings.startFailed);
     }
   }
 
@@ -103,9 +110,17 @@ class ChatService extends Notifier<ChatState> {
 
   /// [filtersCardComing] is set by [choose] when the filters card is about to
   /// join the conversation, so the first turn already knows it is on screen.
-  Future<void> send(String text, {bool filtersCardComing = false}) async {
+  Future<void> send(String text, {bool filtersCardComing = false}) {
     final pipeline = _pipeline;
-    if (pipeline == null || state.busy || text.trim().isEmpty) return;
+    if (pipeline == null || state.busy || text.trim().isEmpty) return Future.value();
+    return _turn = _runTurn(pipeline, text, filtersCardComing: filtersCardComing);
+  }
+
+  Future<void> _runTurn(
+    TurnPipeline pipeline,
+    String text, {
+    required bool filtersCardComing,
+  }) async {
     final userMsg = ChatMessage(role: MessageRole.user, text: text.trim());
     var reply = const ChatMessage(role: MessageRole.motormind, text: '', streaming: true);
     // The obvious filters in a sentence ("a Honda sports car under 40k") apply
@@ -119,7 +134,9 @@ class ChatService extends Notifier<ChatState> {
         state.timeline.any(
           (e) => e is ComponentEntry && e.shown.request.component.id == 'search_filters',
         );
-    final siteName = CuratedSites.byId(search.siteId)?.name ?? search.siteId;
+    final siteName = CuratedSites.nameFor(search.siteId);
+    final signals = ref.read(listingSignalsProvider.notifier).summary(_listingsOnStage());
+    final signalContext = signals == null ? '' : '\n[Listings: $signals.]';
     final searchContext = !hasFiltersCard
         ? ''
         : search.query.isEmpty
@@ -156,7 +173,7 @@ class ChatService extends Notifier<ChatState> {
 
       arm();
       logDev('turn start');
-      await for (final e in pipeline.run(text.trim() + searchContext)) {
+      await for (final e in pipeline.run(text.trim() + searchContext + signalContext)) {
         arm();
         switch (e) {
           case TextDelta(:final text):
@@ -169,6 +186,10 @@ class ChatService extends Notifier<ChatState> {
           case ToolFinished():
             state = state.copyWith(clearActiveTool: true);
           case ProfileUpdated():
+            break;
+          case Presented(:final result, automatic: true)
+              when result?.tool == AdvisorTools.findVehicles:
+            // The live search already put this result on the stage.
             break;
           case Presented(:final request, :final result):
             final surface = ref.read(surfaceProvider);
@@ -198,21 +219,29 @@ class ChatService extends Notifier<ChatState> {
               ref.read(surfaceProvider.notifier).request(SurfaceState.fullscreen);
             }
           case InputRejected(:final arguments):
-            state = state.copyWith(
-              guardNote:
-                  'Refused a calculation: ${arguments.join(', ')} was not something you told me.',
-            );
+            state = state.copyWith(guardNote: ChatStrings.refusedInputs(arguments));
           case PresentRejected():
             state = state.copyWith(clearActiveTool: true);
           case GuardTripped(:final report, :final replaced):
             state = state.copyWith(
               guardNote: replaced
-                  ? 'Motormind\'s wording was replaced because it contained numbers not from a calculation.'
-                  : 'Checking numbers: ${report.unmatched.map((m) => m.raw).join(', ')}',
+                  ? ChatStrings.numbersReplaced
+                  : ChatStrings.checkingNumbers(report.unmatched.map((m) => m.raw)),
             );
             if (replaced) updateReply(reply.copyWith(text: ''));
           case PolicyFlagged(:final flags):
             state = state.copyWith(policyFlags: flags);
+          case NarrationReplaced(:final text):
+            // The guard or the prose-list conversion rewrote the reply; what
+            // streamed so far is replaced, not appended to, and the note no
+            // longer quotes the numbers that were taken out.
+            updateReply(reply.copyWith(text: text));
+            if (state.guardNote != null) {
+              state = state.copyWith(guardNote: ChatStrings.numbersReplaced);
+            }
+          case TurnFailed(:final message):
+            logDev('turn failed inside the pipeline: $message');
+            state = state.copyWith(error: ChatStrings.somethingWrong);
           case TurnDone(:final narration, :final results):
             // Gemma sometimes ends a turn right after a tool call with no
             // words. The screen must still answer, so the app writes the
@@ -223,12 +252,10 @@ class ChatService extends Notifier<ChatState> {
       }
       watchdog?.cancel();
       if (stoppedByWatchdog) {
-        state = state.copyWith(
-          error:
-              'Stopped: Motormind went ${idleLimit!.inSeconds} seconds without a word. Try a shorter message.',
-        );
+        state = state.copyWith(error: ChatStrings.stoppedAfter(idleLimit!.inSeconds));
       }
-    } catch (e) {
+    } on Exception catch (e) {
+      logDev('turn failed: $e');
       final msg = _friendly(e);
       updateReply(reply.copyWith(text: reply.text.isEmpty ? msg : reply.text, streaming: false));
       state = state.copyWith(error: msg);
@@ -238,40 +265,54 @@ class ChatService extends Notifier<ChatState> {
     }
   }
 
+  /// The listings currently on the stage, as the maps the cards render from.
+  List<Map<String, Object?>> _listingsOnStage() => [
+    for (final c in ref.read(stageProvider).cards)
+      if (c.request.component.id == 'vehicle_card')
+        ...((c.result?.result?['listings'] as List?) ?? const []).map(
+          (l) => (l as Map).cast<String, Object?>(),
+        ),
+  ];
+
   String _silentTurnText(List<ToolResult> results) {
     final searched = results.any(
       (r) => r.tool == AdvisorTools.findVehicles || r.tool == AdvisorTools.updateSearch,
     );
     if (searched) {
       final s = ref.read(searchProvider);
-      final site = CuratedSites.byId(s.siteId)?.name ?? s.siteId;
       final n = s.lastCount ?? 0;
-      if (n == 0) {
-        return 'Nothing on $site matched ${s.query.describe()}. Loosen a filter or try another site.';
-      }
-      return '$n listings on $site match ${s.query.describe()}. Tap a type or price to narrow it, or tell me more.';
+      if (n == 0) return ChatStrings.noMatches(s.siteName, s.query.describe());
+      return ChatStrings.matches(n, s.siteName, s.query.describe());
     }
-    if (results.isNotEmpty) return 'Here is what I found. Tell me more when you are ready.';
-    return 'Nothing to add yet. Pick an option above, change a filter, or tell me more.';
+    if (results.isNotEmpty) return ChatStrings.hereIsWhatIFound;
+    return ChatStrings.nothingToAdd;
   }
 
-  /// Cancels the generation in flight; whatever was produced so far stays
-  /// (cards, partial text). The person can type a new prompt (Q58).
+  /// Cancels the generation in flight and waits for the turn to wind down;
+  /// whatever was produced so far stays (cards, partial text). The person
+  /// can type a new prompt at once (Q58).
   Future<void> interrupt() async {
     await _driver?.cancel();
+    await _turn;
   }
 
-  /// Answer a choice prompt or a form. [supplement] is text the person typed
+  /// Dismisses the sales-language banner.
+  void clearPolicyFlags() => state = state.copyWith(policyFlags: const []);
+
+  /// Answers a choice prompt or a form. [supplement] is text the person typed
   /// alongside the selection (Q60): it is sent with the selection. Opening-mode
-  /// choices set the mode locally and put a starter on the stage before the
-  /// model answers. [source] is the card answered; it is marked answered but
-  /// stays visible.
+  /// choices set the mode locally and add the filters card and a starter to
+  /// the conversation before the model answers. [source] is the card
+  /// answered; it collapses to its question but stays in the transcript.
   Future<void> choose(String id, String label, {String? supplement, ShownComponent? source}) async {
+    // While a turn runs, a tap would be retired and then dropped by send();
+    // refusing it up front keeps the chips live for after the turn.
+    if (_pipeline == null || state.busy) return;
     if (source != null) {
       ref.read(stageProvider.notifier).markAnswered(source);
       final t = [
         for (final e in state.timeline)
-          if (e is ComponentEntry && identical(e.shown, source))
+          if (e is ComponentEntry && e.shown.id == source.id)
             ComponentEntry(source.copyWith(answered: true))
           else
             e,
@@ -313,25 +354,20 @@ class ChatService extends Notifier<ChatState> {
     if (id.startsWith(Starters.kindPrefix)) {
       final style = SearchQuery.normalizeBodyStyle(id.substring(Starters.kindPrefix.length));
       if (style != null) ref.read(searchProvider.notifier).update({'body_style': style});
-      return send(
-        withExtra(
-          id == 'kind-unsure'
-              ? 'I am not sure what kind of vehicle yet.'
-              : 'I am looking at a $label.',
-        ),
-      );
+      return send(withExtra('I am looking at a $label.'));
     }
     return send(withExtra(label));
   }
 
   BuyerProfile get profile => _pipeline?.profile ?? const BuyerProfile();
 
+  /// The engine's context-window overflow message, the one failure the
+  /// person can act on (start a new conversation).
+  static final _contextOverflow = RegExp(r'exceeds available state|context (window|length)');
+
   static String _friendly(Object e) {
-    final s = e.toString();
-    if (s.contains('exceeds available state') || s.contains('context')) {
-      return 'The conversation grew past what this model can hold in memory. Start a new conversation to continue.';
-    }
-    if (e is TimeoutException) return e.message ?? 'Motormind took too long to answer.';
-    return 'Something went wrong: $s';
+    if (e is TimeoutException) return e.message ?? ChatStrings.tooLong;
+    if (_contextOverflow.hasMatch(e.toString())) return ChatStrings.contextFull;
+    return ChatStrings.somethingWrong;
   }
 }

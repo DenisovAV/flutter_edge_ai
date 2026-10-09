@@ -79,17 +79,17 @@ class RecipeStore extends AsyncNotifier<Map<String, ReadingRecipe>> {
     if (recipes == null || r == null) return;
     if (check.ok) {
       _failures[siteId] = 0;
-      if (r.status != 'verified') {
-        state = AsyncData({...recipes, siteId: r.copyWith(status: 'verified')});
+      if (r.status != RecipeStatus.verified) {
+        state = AsyncData({...recipes, siteId: r.withStatus(RecipeStatus.verified, note: null)});
       }
       return;
     }
     final n = (_failures[siteId] ?? 0) + 1;
     _failures[siteId] = n;
-    if (r.status == 'unverified' || n >= _failuresBeforeBroken) {
+    if (r.status == RecipeStatus.unverified || n >= _failuresBeforeBroken) {
       state = AsyncData({
         ...recipes,
-        siteId: r.copyWith(status: 'broken', note: check.problems.join('; ')),
+        siteId: r.withStatus(RecipeStatus.broken, note: check.problems.join('; ')),
       });
     }
   }

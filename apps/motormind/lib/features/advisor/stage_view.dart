@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/widgets/scroll_cut.dart';
 import '../browser/browser_pane.dart';
 import '../chat/cards/formatting.dart';
 import '../chat/chat_service.dart';
 import '../chat/result_card.dart';
-import '../listings/listing_cards.dart';
 import 'stage.dart';
 
 /// The web pane is injectable so widget tests do not need a platform webview.
@@ -23,6 +23,7 @@ class StageView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final stage = ref.watch(stageProvider);
     final hasCards = stage.cards.isNotEmpty;
+    final showingCards = stage.mode == StageMode.cards && hasCards;
     return Column(
       children: [
         Padding(
@@ -44,9 +45,7 @@ class StageView extends ConsumerWidget {
                     enabled: hasCards,
                   ),
                 ],
-                selected: {
-                  stage.mode == StageMode.cards && hasCards ? StageMode.cards : StageMode.web,
-                },
+                selected: {showingCards ? StageMode.cards : StageMode.web},
                 onSelectionChanged: (s) => ref.read(stageProvider.notifier).setMode(s.first),
                 showSelectedIcon: false,
                 style: const ButtonStyle(visualDensity: VisualDensity.compact),
@@ -55,8 +54,8 @@ class StageView extends ConsumerWidget {
           ),
         ),
         Expanded(
-          child: stage.mode == StageMode.cards && hasCards
-              ? _Cards(stage: stage)
+          child: showingCards
+              ? _Cards(stage: stage, focused: stage.focused!)
               : ref.watch(webPaneBuilderProvider)(),
         ),
       ],
@@ -65,8 +64,13 @@ class StageView extends ConsumerWidget {
 }
 
 class _Cards extends ConsumerStatefulWidget {
-  const _Cards({required this.stage});
+  const _Cards({required this.stage, required this.focused});
+
   final StageState stage;
+  final ShownComponent focused;
+
+  /// Height of the chip strip that lists the other cards.
+  static const _chipStripHeight = 40.0;
 
   @override
   ConsumerState<_Cards> createState() => _CardsState();
@@ -84,13 +88,13 @@ class _CardsState extends ConsumerState<_Cards> {
   @override
   Widget build(BuildContext context) {
     final stage = widget.stage;
-    final focused = stage.focused!;
+    final focused = widget.focused;
     return Column(
       key: const Key('stage'),
       children: [
         if (stage.cards.length > 1)
           SizedBox(
-            height: 40,
+            height: _Cards._chipStripHeight,
             child: ListView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -128,7 +132,9 @@ class _CardsState extends ConsumerState<_Cards> {
   }
 }
 
-/// One-line label for a card chip.
+/// One-line label for a card chip. Components without a hand-written label
+/// fall back to their registry name on purpose; the payment and trade
+/// chips carry the one number a person would look for.
 String cardSummary(ShownComponent s) {
   final o = outputsOf(s.result);
   return switch (s.request.component.id) {

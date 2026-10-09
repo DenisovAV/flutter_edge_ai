@@ -5,13 +5,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../browser/browser_service.dart';
 import '../chat/cards/formatting.dart';
 import '../chat/chat_service.dart';
+import '../chat/chat_strings.dart';
 import 'listing_signals.dart';
 
-/// The Cards stage's listing card (DD-R24, R25, R28): compact tiles with an
-/// image, the facts read, and the source named on every tile ("like a Google
-/// search"). A tap expands the tile in place (the detail, with "open on
-/// `<site>`") and marks it viewed; a heart marks it liked. Both are signals
-/// Motormind may learn from, never silently (DD-R29).
+/// The Cards stage's listing card: compact tiles with an image, the facts
+/// read, and the source named on every tile, so a mixed-site stage reads like
+/// a search engine's results and never pretends to be one inventory. A tap
+/// expands the tile in place (open on the site, monthly cost, not this one)
+/// and marks it viewed; a heart marks it liked. Both are signals Motormind
+/// may learn from, and it only ever proposes, never narrows silently.
 class ListingCards extends ConsumerStatefulWidget {
   const ListingCards({super.key, required this.shown});
   final ShownComponent shown;
@@ -52,7 +54,7 @@ class _ListingCardsState extends ConsumerState<ListingCards> {
                   ),
                 ),
                 Text(
-                  sites.map((s) => CuratedSites.byId(s)?.name ?? s).join(' + '),
+                  sites.map(CuratedSites.nameFor).join(' + '),
                   style: theme.textTheme.labelSmall,
                 ),
               ],
@@ -66,16 +68,17 @@ class _ListingCardsState extends ConsumerState<ListingCards> {
                 ),
               ),
             for (final l in listings)
-              if (!signals.dismissed.contains(ListingSignalsNotifier.keyFor(l)))
+              if (ListingSignalsNotifier.keyFor(l) case final key
+                  when !signals.dismissed.contains(key))
                 _ListingTile(
                   listing: l,
-                  open: _open == ListingSignalsNotifier.keyFor(l),
-                  viewed: signals.viewed.contains(ListingSignalsNotifier.keyFor(l)),
-                  liked: signals.liked.contains(ListingSignalsNotifier.keyFor(l)),
+                  signalKey: key,
+                  open: _open == key,
+                  viewed: signals.viewed.contains(key),
+                  liked: signals.liked.contains(key),
                   onTap: () {
-                    final k = ListingSignalsNotifier.keyFor(l);
-                    setState(() => _open = _open == k ? null : k);
-                    if (_open == k) signalsNotifier.viewed(l);
+                    setState(() => _open = _open == key ? null : key);
+                    if (_open == key) signalsNotifier.markViewed(l);
                   },
                   onLike: () => signalsNotifier.toggleLiked(l),
                   onDismiss: () => signalsNotifier.dismiss(l),
@@ -87,7 +90,7 @@ class _ListingCardsState extends ConsumerState<ListingCards> {
                   },
                   onAsk: () => ref
                       .read(chatServiceProvider.notifier)
-                      .send('What would the ${l['title']} cost me a month?'),
+                      .send(ChatStrings.monthlyCostOf('${l['title']}')),
                 ),
           ],
         ),
@@ -97,8 +100,14 @@ class _ListingCardsState extends ConsumerState<ListingCards> {
 }
 
 class _ListingTile extends StatelessWidget {
+  /// Thumbnail box; the image is decoded at twice this width for sharpness.
+  static const _thumbWidth = 56.0;
+  static const _thumbHeight = 42.0;
+  static const _thumbGap = 10.0;
+
   const _ListingTile({
     required this.listing,
+    required this.signalKey,
     required this.open,
     required this.viewed,
     required this.liked,
@@ -110,6 +119,7 @@ class _ListingTile extends StatelessWidget {
   });
 
   final Map listing;
+  final String signalKey;
   final bool open;
   final bool viewed;
   final bool liked;
@@ -124,7 +134,9 @@ class _ListingTile extends StatelessWidget {
     final theme = Theme.of(context);
     final l = listing;
     final siteId = BrowserService.siteIdFor('${l['sourceUrl']}');
-    final siteName = CuratedSites.byId(siteId ?? '')?.name ?? 'web';
+    final siteName = siteId == null ? 'web' : CuratedSites.nameFor(siteId);
+    // The age is computed at build time; it refreshes when the card rebuilds,
+    // which is enough for a session-scoped list.
     final readAt = DateTime.tryParse('${l['readAt']}');
     final age = readAt == null ? null : _age(DateTime.now().difference(readAt));
     final image = l['imageUrl']?.toString();
@@ -133,7 +145,7 @@ class _ListingTile extends StatelessWidget {
       if (l['mileage'] != null) '${thousands(l['mileage'])} mi',
     ].join(' · ');
     return InkWell(
-      key: Key('listing-${ListingSignalsNotifier.keyFor(l)}'),
+      key: Key('listing-$signalKey'),
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
@@ -146,18 +158,19 @@ class _ListingTile extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(6),
                   child: SizedBox(
-                    width: 56,
-                    height: 42,
+                    width: _thumbWidth,
+                    height: _thumbHeight,
                     child: image != null && image.startsWith('http')
                         ? Image.network(
                             image,
                             fit: BoxFit.cover,
+                            cacheWidth: (_thumbWidth * 2).round(),
                             errorBuilder: (_, _, _) => const _Placeholder(),
                           )
                         : const _Placeholder(),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: _thumbGap),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -180,7 +193,7 @@ class _ListingTile extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  key: Key('like-${ListingSignalsNotifier.keyFor(l)}'),
+                  key: Key('like-$signalKey'),
                   visualDensity: VisualDensity.compact,
                   icon: Icon(liked ? Icons.favorite : Icons.favorite_border, size: 18),
                   onPressed: onLike,
@@ -189,13 +202,13 @@ class _ListingTile extends StatelessWidget {
             ),
             if (open)
               Padding(
-                padding: const EdgeInsets.only(left: 66, top: 2, bottom: 4),
+                padding: const EdgeInsets.only(left: _thumbWidth + _thumbGap, top: 2, bottom: 4),
                 child: Wrap(
                   spacing: 6,
                   runSpacing: 2,
                   children: [
                     ActionChip(
-                      key: Key('open-site-${ListingSignalsNotifier.keyFor(l)}'),
+                      key: Key('open-site-$signalKey'),
                       label: Text('Open on $siteName'),
                       visualDensity: VisualDensity.compact,
                       onPressed: onOpenSite,
@@ -234,79 +247,4 @@ class _Placeholder extends StatelessWidget {
     color: Theme.of(context).colorScheme.surfaceContainerHighest,
     child: const Icon(Icons.directions_car_outlined, size: 20),
   );
-}
-
-/// Wraps a scrollable so a soft edge appears at the bottom while there is
-/// more below (TQ69: the "cut" that says the content continues). The edge is
-/// the affordance; the nudge is the display agent's call.
-class ScrollCut extends StatefulWidget {
-  const ScrollCut({super.key, required this.child, required this.controller});
-  final Widget child;
-  final ScrollController controller;
-
-  @override
-  State<ScrollCut> createState() => _ScrollCutState();
-}
-
-class _ScrollCutState extends State<ScrollCut> {
-  bool _more = false;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_check);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_check);
-    super.dispose();
-  }
-
-  void _check() {
-    if (!widget.controller.hasClients) return;
-    final p = widget.controller.position;
-    final more = p.maxScrollExtent > 0 && p.pixels < p.maxScrollExtent - 8;
-    if (more != _more) setState(() => _more = more);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.surface;
-    return Stack(
-      children: [
-        NotificationListener<ScrollMetricsNotification>(
-          onNotification: (_) {
-            _check();
-            return false;
-          },
-          child: widget.child,
-        ),
-        if (_more)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 28,
-            child: IgnorePointer(
-              child: DecoratedBox(
-                key: const Key('scroll-cut'),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [color.withValues(alpha: 0), color],
-                  ),
-                ),
-                child: const Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Icon(Icons.keyboard_arrow_down, size: 16),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
 }

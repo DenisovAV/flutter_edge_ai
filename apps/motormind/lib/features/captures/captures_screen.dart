@@ -41,12 +41,12 @@ class CapturesScreen extends ConsumerWidget {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: Icon(switch (r.status) {
-                      'verified' => Icons.check_circle_outline,
-                      'broken' => Icons.build_circle_outlined,
-                      _ => Icons.help_outline,
+                      RecipeStatus.verified => Icons.check_circle_outline,
+                      RecipeStatus.broken => Icons.build_circle_outlined,
+                      RecipeStatus.unverified => Icons.help_outline,
                     }),
                     title: Text(
-                      '${CuratedSites.byId(r.siteId)?.name ?? r.siteId} · v${r.version} · ${r.status}',
+                      '${CuratedSites.nameFor(r.siteId)} · v${r.version} · ${r.status.name}',
                     ),
                     subtitle: r.note == null ? null : Text(r.note!),
                   ),
@@ -104,7 +104,7 @@ class CapturesScreen extends ConsumerWidget {
                     ),
                     subtitle: Text(
                       [
-                        CuratedSites.byId(c.siteId)?.name ?? c.siteId,
+                        CuratedSites.nameFor(c.siteId),
                         c.capturedLabel,
                         c.sizeLabel,
                         if (c.check case final check?) check.ok ? 'recipe ok' : 'recipe failed',

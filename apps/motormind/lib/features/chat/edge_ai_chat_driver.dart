@@ -9,11 +9,21 @@ import '../models/model_catalog.dart';
 /// The real [ChatDriver]: one `InferenceChat` over the loaded model, with the
 /// advisor's tools declared and the system prompt installed.
 class EdgeAiChatDriver implements ChatDriver {
-  EdgeAiChatDriver._(this._chat, this._model, this._spec);
+  EdgeAiChatDriver._(this._chat);
+
+  /// A reply plus a short narration; longer answers on a phone cost more
+  /// time than they add.
+  static const maxOutputTokens = 400;
+
+  /// Tool calls one turn may chain (a search, a payment, a present…); more
+  /// than this and the person waits too long for a first word.
+  static const maxToolTurns = 4;
 
   final InferenceChat _chat;
-  final InferenceModel _model;
-  final AdvisorModelSpec _spec;
+
+  /// Set by [cancel]; reset when the next send starts. A cancel that lands
+  /// between turns is therefore forgotten, which is the wanted behavior:
+  /// the person asked for a new turn.
   bool _cancelled = false;
 
   static Future<EdgeAiChatDriver> open(
@@ -32,13 +42,13 @@ class EdgeAiChatDriver implements ChatDriver {
       supportsFunctionCalls: spec.supportsTools,
       modelType: spec.modelType,
       systemInstruction: systemInstruction,
-      maxOutputTokens: 400,
+      maxOutputTokens: maxOutputTokens,
     );
     logDev(
       'system instruction: ${systemInstruction.length} chars '
       '(~${systemInstruction.length ~/ 4} tokens) of ${spec.maxTokens} context',
     );
-    return EdgeAiChatDriver._(chat, model, spec);
+    return EdgeAiChatDriver._(chat);
   }
 
   /// Generation errors inside the SDK can surface on an unawaited future
@@ -54,7 +64,7 @@ class EdgeAiChatDriver implements ChatDriver {
           await _chat.addQueryChunk(Message.text(text: userText, isUser: true));
           final stream = _chat.generateChatResponseWithTools(
             onToolCall: (call) => onToolCall(call.name, call.args.cast<String, Object?>()),
-            maxToolTurns: 4,
+            maxToolTurns: maxToolTurns,
             isCancelled: () => _cancelled,
           );
           await for (final r in stream) {
@@ -84,12 +94,6 @@ class EdgeAiChatDriver implements ChatDriver {
   }
 
   @override
-  Future<void> updateSystemInstruction(String instruction) async {
-    // The SDK fixes the instruction at chat creation; a new chat would drop
-    // history. Left as a no-op until a history-preserving path exists.
-  }
-
-  @override
   Future<void> cancel() async {
     _cancelled = true;
     try {
@@ -101,7 +105,4 @@ class EdgeAiChatDriver implements ChatDriver {
 
   @override
   Future<void> close() => _chat.close();
-
-  String get modelId => _spec.id;
-  InferenceModel get model => _model;
 }

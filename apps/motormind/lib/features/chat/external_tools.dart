@@ -49,14 +49,14 @@ class ExternalTools {
     try {
       extract = await _ref.read(browserProvider.notifier).readPage(url: args['url']?.toString());
     } on PageChallengeException catch (e) {
-      return {'error': e.toString()};
+      return {'error': e.message};
     }
     final text = extract.text;
     return {
       'url': extract.url,
       'title': extract.title,
       'text': text.length > pageTextForModel ? '${text.substring(0, pageTextForModel)}…' : text,
-      'facts': extractFacts(text),
+      'facts': extractListingFacts(text).toJson(),
       'listings': [for (final l in extract.listings.take(listingsForModel)) l.toModelJson()],
     };
   }

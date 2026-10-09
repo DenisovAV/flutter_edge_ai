@@ -11,106 +11,10 @@ import '../advisor/stage.dart';
 import '../browser/browser_service.dart';
 import '../models/model_catalog.dart';
 import '../search/search_service.dart';
+import 'chat_state.dart';
 import 'edge_ai_chat_driver.dart';
 
-/// One rendered message in the transcript.
-class ChatMessage {
-  const ChatMessage({required this.role, required this.text, this.streaming = false});
-
-  final String role; // 'user' | 'advisor' | 'system' (a note in the transcript)
-  final String text;
-  final bool streaming;
-
-  ChatMessage copyWith({String? text, bool? streaming}) =>
-      ChatMessage(role: role, text: text ?? this.text, streaming: streaming ?? this.streaming);
-}
-
-/// A card or prompt the model (or the app) asked to show.
-class ShownComponent {
-  const ShownComponent({required this.request, this.result, this.answered = false});
-  final PresentRequest request;
-  final ToolResult? result;
-
-  /// True once the person answered an interaction component; it then renders
-  /// collapsed so the conversation keeps its history without live buttons.
-  final bool answered;
-
-  ShownComponent copyWith({bool? answered}) =>
-      ShownComponent(request: request, result: result, answered: answered ?? this.answered);
-}
-
-/// Messages and components interleaved in the order they happened.
-sealed class TimelineEntry {
-  const TimelineEntry();
-}
-
-class MessageEntry extends TimelineEntry {
-  const MessageEntry(this.message);
-  final ChatMessage message;
-}
-
-class ComponentEntry extends TimelineEntry {
-  const ComponentEntry(this.shown);
-  final ShownComponent shown;
-}
-
-/// Everything the chat panel renders.
-class ChatState {
-  const ChatState({
-    this.timeline = const [],
-    this.activeTool,
-    this.busy = false,
-    this.policyFlags = const [],
-    this.guardNote,
-    this.error,
-    this.ready = false,
-    this.turnStartedAt,
-  });
-
-  final List<TimelineEntry> timeline;
-  final String? activeTool;
-  final bool busy;
-  final List<PolicyFlag> policyFlags;
-  final String? guardNote;
-  final String? error;
-  final bool ready;
-
-  /// When the current turn began; null when idle. The panel shows elapsed time.
-  final DateTime? turnStartedAt;
-
-  List<ChatMessage> get messages => [
-    for (final e in timeline)
-      if (e is MessageEntry) e.message,
-  ];
-  List<ShownComponent> get shown => [
-    for (final e in timeline)
-      if (e is ComponentEntry) e.shown,
-  ];
-
-  ChatState copyWith({
-    List<TimelineEntry>? timeline,
-    String? activeTool,
-    bool clearActiveTool = false,
-    bool? busy,
-    List<PolicyFlag>? policyFlags,
-    String? guardNote,
-    bool clearGuardNote = false,
-    String? error,
-    bool clearError = false,
-    bool? ready,
-    DateTime? turnStartedAt,
-    bool clearTurnStartedAt = false,
-  }) => ChatState(
-    timeline: timeline ?? this.timeline,
-    activeTool: clearActiveTool ? null : (activeTool ?? this.activeTool),
-    busy: busy ?? this.busy,
-    policyFlags: policyFlags ?? this.policyFlags,
-    guardNote: clearGuardNote ? null : (guardNote ?? this.guardNote),
-    error: clearError ? null : (error ?? this.error),
-    ready: ready ?? this.ready,
-    turnStartedAt: clearTurnStartedAt ? null : (turnStartedAt ?? this.turnStartedAt),
-  );
-}
+export 'chat_state.dart';
 
 /// Factory seam so tests can inject a scripted [ChatDriver].
 typedef ChatDriverFactory = Future<ChatDriver> Function(String systemInstruction);
@@ -213,7 +117,7 @@ class ChatService extends Notifier<ChatState> {
         // an identical one is skipped, so the transcript never repeats itself.
         if (t.isNotEmpty &&
             t.last is MessageEntry &&
-            (t.last as MessageEntry).message.role == 'system' &&
+            (t.last as MessageEntry).message.role == MessageRole.system &&
             (t.last as MessageEntry).message.text.startsWith('Looking for')) {
           if ((t.last as MessageEntry).message.text == line) return;
           t.removeLast();
@@ -221,7 +125,7 @@ class ChatService extends Notifier<ChatState> {
         state = state.copyWith(
           timeline: [
             ...t,
-            MessageEntry(ChatMessage(role: 'system', text: line)),
+            MessageEntry(ChatMessage(role: MessageRole.system, text: line)),
           ],
         );
       };
@@ -308,8 +212,8 @@ class ChatService extends Notifier<ChatState> {
   Future<void> send(String text, {bool filtersCardComing = false}) async {
     final pipeline = _pipeline;
     if (pipeline == null || state.busy || text.trim().isEmpty) return;
-    final userMsg = ChatMessage(role: 'user', text: text.trim());
-    var reply = const ChatMessage(role: 'advisor', text: '', streaming: true);
+    final userMsg = ChatMessage(role: MessageRole.user, text: text.trim());
+    var reply = const ChatMessage(role: MessageRole.motormind, text: '', streaming: true);
     // The obvious filters in a sentence ("a Honda sports car under 40k") apply
     // before the model has read it, so the page is already changing.
     ref.read(searchProvider.notifier).updateFromText(text);
@@ -506,7 +410,7 @@ class ChatService extends Notifier<ChatState> {
             ...?_starterFor(mode),
             MessageEntry(
               const ChatMessage(
-                role: 'system',
+                role: MessageRole.system,
                 text: 'You can ask Motormind to show, hide or change anything here.',
               ),
             ),

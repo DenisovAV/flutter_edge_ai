@@ -297,7 +297,7 @@ class DisplayController extends Notifier<DisplayDecision> {
       stageMode: stage.mode,
       userStageMode: stage.userSet,
       userExpandedFilters: search.userExpanded,
-      lastUserText: chat.messages.where((m) => m.role == 'user').lastOrNull?.text ?? '',
+      lastUserText: chat.lastUserText,
       busy: chat.busy,
     );
   }

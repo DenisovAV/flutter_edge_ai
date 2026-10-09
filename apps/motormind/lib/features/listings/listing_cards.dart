@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../browser/browser_service.dart';
+import '../chat/cards/formatting.dart';
 import '../chat/chat_service.dart';
-import '../chat/result_card.dart' show money;
 import 'listing_signals.dart';
 
 /// The Cards stage's listing card (DD-R24, R25, R28): compact tiles with an
@@ -234,12 +234,6 @@ class _Placeholder extends StatelessWidget {
     color: Theme.of(context).colorScheme.surfaceContainerHighest,
     child: const Icon(Icons.directions_car_outlined, size: 20),
   );
-}
-
-String thousands(Object? v) {
-  final n = (v as num?)?.round();
-  if (n == null) return '';
-  return n.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]},');
 }
 
 /// Wraps a scrollable so a soft edge appears at the bottom while there is

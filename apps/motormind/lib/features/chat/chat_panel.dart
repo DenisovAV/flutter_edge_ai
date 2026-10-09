@@ -118,7 +118,7 @@ class _ChatPanelState extends ConsumerState<ChatPanel> {
                     for (final e in chat.timeline)
                       switch (e) {
                         MessageEntry(:final message)
-                            when message.role == 'system' &&
+                            when message.role == MessageRole.system &&
                                 message.text.startsWith('Looking for') &&
                                 !ref.watch(displayProvider).notes =>
                           const SizedBox.shrink(),
@@ -215,8 +215,8 @@ class _Bubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isUser = message.role == 'user';
-    if (message.role == 'system') {
+    final isUser = message.role == MessageRole.user;
+    if (message.role == MessageRole.system) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Text(message.text, key: const Key('system-line'), style: theme.textTheme.labelSmall),
@@ -260,14 +260,7 @@ String _plain(String text) => text
 /// chip): the hint says so while a choice or form is live, and invites more
 /// once filters exist.
 String _hint(ChatState chat, WidgetRef ref) {
-  final pending = chat.timeline.any(
-    (e) =>
-        e is ComponentEntry &&
-        e.shown.request.component.isInteraction &&
-        e.shown.request.component.id != 'search_filters' &&
-        !e.shown.answered,
-  );
-  if (pending) return 'Something else? Type it here…';
+  if (chat.hasPendingPrompt) return 'Something else? Type it here…';
   final search = ref.watch(searchProvider);
   if (!search.query.isEmpty) return 'Tell me more: must-haves, a budget, a trade-in…';
   return 'Tell me about the car you have in mind…';

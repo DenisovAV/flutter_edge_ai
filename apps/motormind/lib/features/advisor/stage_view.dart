@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../browser/browser_pane.dart';
+import '../chat/cards/formatting.dart';
 import '../chat/chat_service.dart';
 import '../chat/result_card.dart';
 import '../listings/listing_cards.dart';

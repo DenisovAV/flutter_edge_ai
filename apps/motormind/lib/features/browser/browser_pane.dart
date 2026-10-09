@@ -6,8 +6,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../captures/captures_screen.dart';
 import 'browser_service.dart';
 
-/// The web pane on the stage: a slim address line and
-/// the webview. The advisor reads from it; the person browses it, including
+/// The web pane on the stage: a slim address line with the Capture control,
+/// and the webview. Motormind reads from it; the person browses it, including
 /// answering any human-verification step a site shows.
 class BrowserPane extends ConsumerStatefulWidget {
   const BrowserPane({super.key});
@@ -23,8 +23,11 @@ class _BrowserPaneState extends ConsumerState<BrowserPane> {
   void initState() {
     super.initState();
     final service = ref.read(browserProvider.notifier);
+    // BrowserService.open stores the URL even before the pane exists; this
+    // is where that promise is kept.
     final initial = ref.read(browserProvider).url ?? CuratedSites.defaultSite.home;
     _controller = WebViewController()
+      // read_page injects JavaScript to collect the page's text and HTML.
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -38,6 +41,12 @@ class _BrowserPaneState extends ConsumerState<BrowserPane> {
       )
       ..loadRequest(Uri.parse(initial));
     service.attach(_controller);
+  }
+
+  @override
+  void dispose() {
+    ref.read(browserProvider.notifier).detach(_controller);
+    super.dispose();
   }
 
   @override

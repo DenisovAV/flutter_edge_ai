@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:advisor_core/advisor_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/prefs.dart';
 import '../../services/advisor_model_service.dart';
+import '../../services/log.dart';
 import '../chat/chat_service.dart';
 import '../search/search_service.dart';
 import 'advisor_surface.dart';
@@ -313,12 +313,10 @@ class DisplayController extends Notifier<DisplayDecision> {
       try {
         final d = await ModelDisplayAgent(model).decide(s, defaults);
         if (gen != _generation) return; // the screen moved on
-        debugPrint(
-          '[motormind] display model=${d.toJson()} rules=${defaults.toJson()} took=${d.tookMs}ms',
-        );
+        logDev('display model=${d.toJson()} rules=${defaults.toJson()} took=${d.tookMs}ms');
         state = d;
       } catch (e) {
-        debugPrint('[motormind] display model failed: $e');
+        logDev('display model failed: $e');
       } finally {
         thinking = false;
         if (gen == _generation) state = state.copyWith();

@@ -3,6 +3,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'log.dart';
+
 /// Compile-time switch (VA-7.1.3). Demo builds pass nothing and ship the
 /// no-op; the store flavor passes `--dart-define=MOTORMIND_ANALYTICS=true`
 /// after `flutterfire configure` has generated the platform config.
@@ -57,7 +59,7 @@ class FirebaseAnalyticsService implements Analytics {
         if (allowedParams.contains(e.key) && e.value is! num) e.key: e.value,
     };
     if (kDebugMode && params != null && safe.length != params.length) {
-      debugPrint('analytics: dropped disallowed params from "$name"');
+      logDev('analytics: dropped disallowed params from "$name"');
     }
     await _fa?.logEvent(name: name, parameters: safe);
   }

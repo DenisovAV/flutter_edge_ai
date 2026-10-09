@@ -2,9 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:advisor_core/advisor_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../../services/log.dart';
 
 /// Where captures are written. Tests inject a temp directory.
 final captureDirProvider = FutureProvider<Directory>((ref) async {
@@ -29,17 +30,30 @@ class PageCapture {
     this.task,
   });
 
+  /// File stem shared by the `.html` and `.json` files.
   final String id;
+
+  /// The curated site the page belongs to, or `other`.
   final String siteId;
   final String url;
   final String title;
   final DateTime capturedAt;
   final String htmlPath;
+
+  /// Size of the HTML file on disk (UTF-8 bytes, not characters).
   final int htmlBytes;
+
+  /// The recipe's verdict on this page at capture time, when a recipe applied.
   final SelfCheck? check;
 
   /// The test task this capture answers, if the person picked one.
   final String? task;
+
+  /// "412 KB", for lists.
+  String get sizeLabel => '${(htmlBytes / 1024).round()} KB';
+
+  /// Local date and time to the minute, for lists.
+  String get capturedLabel => capturedAt.toLocal().toString().substring(0, 16);
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -53,7 +67,8 @@ class PageCapture {
     if (task != null) 'task': task,
   };
 
-  static PageCapture fromJson(Map<String, Object?> j) => PageCapture(
+  /// Restores a capture's metadata from its `.json` file.
+  factory PageCapture.fromJson(Map<String, Object?> j) => PageCapture(
     id: j['id'] as String,
     siteId: j['siteId'] as String,
     url: j['url'] as String,
@@ -62,17 +77,7 @@ class PageCapture {
     htmlPath: j['htmlPath'] as String,
     htmlBytes: (j['htmlBytes'] as num?)?.toInt() ?? 0,
     check: j['check'] is Map
-        ? () {
-            final c = (j['check'] as Map).cast<String, Object?>();
-            return SelfCheck(
-              ok: c['ok'] == true,
-              cardsFound: (c['cardsFound'] as num?)?.toInt() ?? 0,
-              withPrice: (c['withPrice'] as num?)?.toInt() ?? 0,
-              withImage: (c['withImage'] as num?)?.toInt() ?? 0,
-              pageTotal: (c['pageTotal'] as num?)?.toInt(),
-              problems: ((c['problems'] as List?) ?? const []).cast<String>(),
-            );
-          }()
+        ? SelfCheck.fromJson((j['check'] as Map).cast<String, Object?>())
         : null,
     task: j['task'] as String?,
   );
@@ -82,7 +87,14 @@ final captureStoreProvider = AsyncNotifierProvider<CaptureStore, List<PageCaptur
   CaptureStore.new,
 );
 
+/// The saved captures, newest first. A capture whose metadata cannot be read
+/// is skipped and logged rather than failing the whole list.
 class CaptureStore extends AsyncNotifier<List<PageCapture>> {
+  /// Characters of the ISO timestamp kept in the id: date and time to the
+  /// second, with the millisecond appended separately so two captures in one
+  /// second do not overwrite each other.
+  static final _idJunk = RegExp(r'[:.\-T]');
+
   @override
   Future<List<PageCapture>> build() async {
     final dir = await ref.watch(captureDirProvider.future);
@@ -96,8 +108,8 @@ class CaptureStore extends AsyncNotifier<List<PageCapture>> {
               (jsonDecode(await f.readAsString()) as Map).cast<String, Object?>(),
             ),
           );
-        } catch (e) {
-          debugPrint('[motormind] capture ${f.path}: $e');
+        } on Exception catch (e) {
+          logDev('capture ${f.path} skipped: $e');
         }
       }
     }
@@ -119,8 +131,7 @@ class CaptureStore extends AsyncNotifier<List<PageCapture>> {
     final dir = await ref.read(captureDirProvider.future);
     await dir.create(recursive: true);
     final stamp = DateTime.now();
-    final id =
-        '$siteId-${stamp.toIso8601String().replaceAll(RegExp(r'[:.]'), '').substring(0, 15)}';
+    final id = '$siteId-${stamp.toIso8601String().replaceAll(_idJunk, '').substring(0, 17)}';
     final htmlFile = File('${dir.path}/$id.html');
     await htmlFile.writeAsString(html);
     final capture = PageCapture(
@@ -140,17 +151,16 @@ class CaptureStore extends AsyncNotifier<List<PageCapture>> {
   }
 
   Future<void> delete(PageCapture c) async {
-    final dir = await ref.read(captureDirProvider.future);
-    for (final ext in const ['html', 'json']) {
-      final f = File('${dir.path}/${c.id}.$ext');
+    final html = File(c.htmlPath);
+    final json = File(c.htmlPath.replaceFirst(RegExp(r'\.html$'), '.json'));
+    for (final f in [html, json]) {
       if (await f.exists()) await f.delete();
     }
     state = AsyncData([...?state.value?.where((x) => x.id != c.id)]);
   }
 }
 
-/// The pages worth capturing, written as instructions a person can follow
-/// when they have a minute. Each becomes one fixture for the recipe tests.
+/// One page worth capturing, with the steps to reach it.
 class CaptureTask {
   const CaptureTask({
     required this.id,
@@ -164,7 +174,10 @@ class CaptureTask {
   final List<String> steps;
 }
 
-const captureTasks = [
+/// The pages worth capturing, as instructions a person can follow when they
+/// have a minute. Each becomes one fixture for the recipe tests. The chip
+/// names in the steps are the labels on the filters card.
+const List<CaptureTask> captureTasks = [
   CaptureTask(
     id: 'echopark-suv-50k',
     siteId: 'echopark',
@@ -186,7 +199,7 @@ const captureTasks = [
     siteId: 'cars',
     title: 'Cars.com: coupes under \$40k',
     steps: [
-      'Pick "Look on: Cars.com", tap Sports / coupe and Under \$50k.',
+      'Pick "Look on: Cars.com", tap Sports / coupe and Under \$50k (the card has no \$40k rung).',
       'If Cars.com asks you to confirm you are a person, tick its box.',
       'Scroll down once so photos load, then tap Capture.',
     ],

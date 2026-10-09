@@ -1,10 +1,10 @@
 import 'dart:async';
 
 import 'package:advisor_core/advisor_core.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../services/advisor_model_service.dart';
+import '../../services/log.dart';
 import '../advisor/advisor_surface.dart';
 import '../advisor/stage.dart';
 import '../models/model_catalog.dart';
@@ -155,7 +155,7 @@ class ChatService extends Notifier<ChatState> {
       }
 
       arm();
-      debugPrint('[motormind] turn start');
+      logDev('turn start');
       await for (final e in pipeline.run(text.trim() + searchContext)) {
         arm();
         switch (e) {
@@ -164,7 +164,7 @@ class ChatService extends Notifier<ChatState> {
           case ThinkingDelta():
             break;
           case ToolStarted(:final name):
-            debugPrint('[motormind] tool $name');
+            logDev('tool $name');
             state = state.copyWith(activeTool: name);
           case ToolFinished():
             state = state.copyWith(clearActiveTool: true);
@@ -233,7 +233,7 @@ class ChatService extends Notifier<ChatState> {
       updateReply(reply.copyWith(text: reply.text.isEmpty ? msg : reply.text, streaming: false));
       state = state.copyWith(error: msg);
     } finally {
-      debugPrint('[motormind] turn done');
+      logDev('turn done');
       state = state.copyWith(busy: false, clearActiveTool: true, clearTurnStartedAt: true);
     }
   }

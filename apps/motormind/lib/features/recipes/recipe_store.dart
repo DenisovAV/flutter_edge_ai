@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:advisor_core/advisor_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../../services/log.dart';
 
 /// Where recipe overrides live on the device. Tests inject a temp directory;
 /// the app uses its documents folder.
@@ -19,21 +20,32 @@ final recipeStoreProvider = AsyncNotifierProvider<RecipeStore, Map<String, Readi
 );
 
 /// Reading recipes by site id. The shipped ones are assets; a repaired recipe
-/// written to the device (by a person today, a help service later, DD-R27)
-/// wins when its version is higher. A recipe that fails its self-check on a
-/// real page is marked broken here and stays broken until a newer one passes.
+/// written to the device (by a person today, a help service later) wins when
+/// its version is at least the shipped one. A recipe that fails its
+/// self-check on a real page is marked broken here and stays broken until a
+/// newer one passes. [recordCheck] is called from inside a page read, so a
+/// read can rebuild whatever watches this store.
 class RecipeStore extends AsyncNotifier<Map<String, ReadingRecipe>> {
-  static const shipped = ['echopark', 'cars'];
+  /// Site ids with a recipe in `assets/recipes/`; must match the file names.
+  static const List<String> shipped = ['echopark', 'cars'];
+
+  /// A verified recipe survives one failed read (a slow page); the second
+  /// failure in a row marks it broken.
+  static const _failuresBeforeBroken = 2;
+
+  /// Consecutive self-check failures per site; reset on a pass and on reload.
+  final Map<String, int> _failures = {};
 
   @override
   Future<Map<String, ReadingRecipe>> build() async {
+    _failures.clear();
     final out = <String, ReadingRecipe>{};
     for (final id in shipped) {
       try {
         final text = await rootBundle.loadString('assets/recipes/$id.json');
         out[id] = ReadingRecipe.fromJson((jsonDecode(text) as Map).cast<String, Object?>());
-      } catch (e) {
-        debugPrint('[motormind] recipe asset $id: $e');
+      } on Exception catch (e) {
+        logDev('recipe asset $id could not be loaded: $e');
       }
     }
     try {
@@ -48,19 +60,19 @@ class RecipeStore extends AsyncNotifier<Map<String, ReadingRecipe>> {
           if (current == null || r.version >= current.version) out[r.siteId] = r;
         }
       }
-    } catch (e) {
-      debugPrint('[motormind] recipe overrides: $e');
+    } on Exception catch (e) {
+      logDev('recipe overrides could not be read: $e');
     }
     return out;
   }
 
+  /// The recipe for [siteId]; null while the store is still loading or when
+  /// no recipe covers the site. Readers that must not miss the recipe await
+  /// the provider's future instead.
   ReadingRecipe? forSite(String siteId) => state.value?[siteId];
 
-  /// Record the outcome of a read on a real page. Verified recipes stay
-  /// verified on a one-off failure (a slow page); a second failure in a row
-  /// marks them broken.
-  final Map<String, int> _failures = {};
-
+  /// Records the outcome of a read on a real page and moves the recipe's
+  /// status accordingly (see [_failuresBeforeBroken]).
   void recordCheck(String siteId, SelfCheck check) {
     final recipes = state.value;
     final r = recipes?[siteId];
@@ -74,7 +86,7 @@ class RecipeStore extends AsyncNotifier<Map<String, ReadingRecipe>> {
     }
     final n = (_failures[siteId] ?? 0) + 1;
     _failures[siteId] = n;
-    if (r.status == 'unverified' || n >= 2) {
+    if (r.status == 'unverified' || n >= _failuresBeforeBroken) {
       state = AsyncData({
         ...recipes,
         siteId: r.copyWith(status: 'broken', note: check.problems.join('; ')),
@@ -82,17 +94,18 @@ class RecipeStore extends AsyncNotifier<Map<String, ReadingRecipe>> {
     }
   }
 
-  /// Install a repaired recipe (DD-R27 drop-in). It is kept only if its
-  /// version is not older than the current one.
-  Future<void> install(ReadingRecipe r) async {
+  /// Installs a repaired recipe. An older version than the current one is
+  /// refused and nothing is written, so a stale file cannot win on the next
+  /// launch.
+  Future<bool> install(ReadingRecipe r) async {
+    final recipes = state.value ?? {};
+    final current = recipes[r.siteId];
+    if (current != null && r.version < current.version) return false;
     final dir = await ref.read(recipeDirProvider.future);
     await dir.create(recursive: true);
     await File('${dir.path}/${r.siteId}.json').writeAsString(jsonEncode(r.toJson()));
-    final recipes = state.value ?? {};
-    final current = recipes[r.siteId];
-    if (current == null || r.version >= current.version) {
-      state = AsyncData({...recipes, r.siteId: r});
-      _failures[r.siteId] = 0;
-    }
+    state = AsyncData({...recipes, r.siteId: r});
+    _failures[r.siteId] = 0;
+    return true;
   }
 }

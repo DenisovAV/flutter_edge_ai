@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:advisor_core/advisor_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
+import '../../services/log.dart';
 import '../models/model_catalog.dart';
 
 /// The real [ChatDriver]: one `InferenceChat` over the loaded model, with the
@@ -34,11 +34,10 @@ class EdgeAiChatDriver implements ChatDriver {
       systemInstruction: systemInstruction,
       maxOutputTokens: 400,
     );
-    if (kDebugMode) {
-      debugPrint(
-        '[motormind] system instruction: ${systemInstruction.length} chars (~${systemInstruction.length ~/ 4} tokens) of ${spec.maxTokens} context',
-      );
-    }
+    logDev(
+      'system instruction: ${systemInstruction.length} chars '
+      '(~${systemInstruction.length ~/ 4} tokens) of ${spec.maxTokens} context',
+    );
     return EdgeAiChatDriver._(chat, model, spec);
   }
 

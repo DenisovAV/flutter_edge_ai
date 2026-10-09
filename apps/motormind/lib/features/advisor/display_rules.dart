@@ -1,5 +1,6 @@
 import 'package:advisor_core/advisor_core.dart';
-import 'package:flutter/foundation.dart';
+
+import '../../services/log.dart';
 
 /// What the display decisions see: the screen state, not the conversation.
 /// This is the input a display agent (DD-R33) would get; today a table of
@@ -62,6 +63,6 @@ abstract final class DisplayRules {
         '[motormind] display $rule -> $decision (surface=${c.surface.name}, filters=${c.filtersSet}, keyboard=${c.keyboardOpen}, user=${c.userExpandedFilters})';
     if (line == _last) return; // rules run on every build; log changes only
     _last = line;
-    if (kDebugMode) debugPrint(line);
+    logDev(line);
   }
 }

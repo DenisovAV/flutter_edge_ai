@@ -1,12 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/models/model_catalog.dart';
+import 'log.dart';
 import 'token_store.dart';
 
 /// Where a catalog model is, from the app's point of view.
@@ -231,13 +231,13 @@ Future<int> contextWindowFor(AdvisorModelSpec spec) async {
         final gb = available / (1024 * 1024 * 1024);
         if (gb < 5.5 && window > 4096) window = 4096;
         if (gb < 3.0 && window > 2048) window = 2048;
-        if (kDebugMode) {
-          debugPrint('[motormind] available memory ${gb.toStringAsFixed(1)} GB -> context $window');
+        {
+          logDev('available memory ${gb.toStringAsFixed(1)} GB -> context $window');
         }
       }
     }
   } catch (e) {
-    if (kDebugMode) debugPrint('[motormind] memory snapshot failed: $e');
+    logDev('memory snapshot failed: $e');
   }
   return window;
 }

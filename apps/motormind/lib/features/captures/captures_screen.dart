@@ -1,4 +1,5 @@
 import 'package:advisor_core/advisor_core.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -102,10 +103,13 @@ class CapturesScreen extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text(
-                      '${CuratedSites.byId(c.siteId)?.name ?? c.siteId} · ${c.capturedAt.toLocal().toString().substring(0, 16)} · '
-                      '${(c.htmlBytes / 1024).round()} KB'
-                      '${c.check == null ? '' : ' · ${c.check!.ok ? 'recipe ok' : 'recipe failed'}'}'
-                      '${c.task == null ? '' : ' · ${c.task}'}',
+                      [
+                        CuratedSites.byId(c.siteId)?.name ?? c.siteId,
+                        c.capturedLabel,
+                        c.sizeLabel,
+                        if (c.check case final check?) check.ok ? 'recipe ok' : 'recipe failed',
+                        ?c.task,
+                      ].join(' · '),
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline),
@@ -114,8 +118,10 @@ class CapturesScreen extends ConsumerWidget {
                   ),
                 const SizedBox(height: 8),
                 Text(
-                  'Files are in the app\'s documents folder under captures/. From a computer: '
-                  'adb shell run-as com.sirisdevelopment.motormind ls app_flutter/captures',
+                  kDebugMode
+                      ? 'Files are in the app\'s documents folder under captures/. From a computer: '
+                            'adb shell run-as com.sirisdevelopment.motormind ls app_flutter/captures'
+                      : 'Files are in the app\'s documents folder under captures/.',
                   style: theme.textTheme.labelSmall,
                 ),
               ],
@@ -134,70 +140,73 @@ class CapturesScreen extends ConsumerWidget {
 class CaptureButton extends ConsumerWidget {
   const CaptureButton({super.key});
 
+  /// Site id used when the page is not on a curated site.
+  static const _unknownSite = 'other';
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return IconButton(
-      key: const Key('capture-page'),
-      tooltip: 'Capture this page for the recipe tests',
-      icon: const Icon(Icons.photo_camera_outlined, size: 18),
-      visualDensity: VisualDensity.compact,
-      onPressed: () async {
-        final browser = ref.read(browserProvider.notifier);
-        final messenger = ScaffoldMessenger.of(context);
-        final siteId = BrowserService.siteIdFor(ref.read(browserProvider).url) ?? 'other';
-        final task = await showModalBottomSheet<String?>(
-          context: context,
-          builder: (context) => SafeArea(
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                const ListTile(title: Text('Which page is this?')),
-                for (final t in captureTasks.where((t) => t.siteId == siteId || siteId == 'other'))
-                  ListTile(title: Text(t.title), onTap: () => Navigator.pop(context, t.id)),
-                ListTile(
-                  title: const Text('Just this page'),
-                  onTap: () => Navigator.pop(context, ''),
-                ),
-              ],
-            ),
-          ),
-        );
-        if (task == null) return;
-        try {
-          final snap = await browser.snapshot();
-          SelfCheck? check;
-          final recipe = ref.read(recipeStoreProvider.notifier).forSite(siteId);
-          if (recipe != null && snap.html.isNotEmpty) {
-            check = const RecipeReader()
-                .read(snap.html, recipe, sourceUrl: snap.url, now: DateTime.now())
-                .check;
-          }
-          final c = await ref
-              .read(captureStoreProvider.notifier)
-              .save(
-                siteId: siteId,
-                url: snap.url,
-                title: snap.title,
-                html: snap.html,
-                check: check,
-                task: task.isEmpty ? null : task,
-              );
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(
-                'Captured ${(c.htmlBytes / 1024).round()} KB'
-                '${check == null
-                    ? ''
-                    : check.ok
-                    ? '; the recipe reads it'
-                    : '; the recipe fails on it (${check.problems.first})'}',
-              ),
-            ),
+  Widget build(BuildContext context, WidgetRef ref) => IconButton(
+    key: const Key('capture-page'),
+    tooltip: 'Capture this page for the recipe tests',
+    icon: const Icon(Icons.photo_camera_outlined, size: 18),
+    visualDensity: VisualDensity.compact,
+    onPressed: () => _capture(context, ref),
+  );
+
+  Future<void> _capture(BuildContext context, WidgetRef ref) async {
+    // The messenger is taken before the first await: the context may be gone
+    // by the time the sheet closes.
+    final messenger = ScaffoldMessenger.of(context);
+    final siteId = BrowserService.siteIdFor(ref.read(browserProvider).url) ?? _unknownSite;
+    final task = await _askWhichPage(context, siteId);
+    if (task == null) return;
+    try {
+      final snap = await ref.read(browserProvider.notifier).snapshot();
+      SelfCheck? check;
+      final recipe = ref.read(recipeStoreProvider.notifier).forSite(siteId);
+      if (recipe != null && snap.html.isNotEmpty) {
+        check = const RecipeReader()
+            .read(snap.html, recipe, sourceUrl: snap.url, now: DateTime.now())
+            .check;
+      }
+      final c = await ref
+          .read(captureStoreProvider.notifier)
+          .save(
+            siteId: siteId,
+            url: snap.url,
+            title: snap.title,
+            html: snap.html,
+            check: check,
+            task: task.isEmpty ? null : task,
           );
-        } catch (e) {
-          messenger.showSnackBar(SnackBar(content: Text('Could not capture: $e')));
-        }
-      },
-    );
+      final verdict = switch (check) {
+        null => '',
+        SelfCheck(ok: true) => '; the recipe reads it',
+        SelfCheck(:final problems) =>
+          '; the recipe fails on it (${problems.firstOrNull ?? 'no detail'})',
+      };
+      messenger.showSnackBar(SnackBar(content: Text('Captured ${c.sizeLabel}$verdict')));
+    } on Exception catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not capture: $e')));
+    }
   }
+
+  /// Asks which task the page answers; returns the task id, an empty string
+  /// for "just this page", or null when dismissed.
+  Future<String?> _askWhichPage(
+    BuildContext context,
+    String siteId,
+  ) => showModalBottomSheet<String?>(
+    context: context,
+    builder: (context) => SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        children: [
+          const ListTile(title: Text('Which page is this?')),
+          for (final t in captureTasks.where((t) => t.siteId == siteId || siteId == _unknownSite))
+            ListTile(title: Text(t.title), onTap: () => Navigator.pop(context, t.id)),
+          ListTile(title: const Text('Just this page'), onTap: () => Navigator.pop(context, '')),
+        ],
+      ),
+    ),
+  );
 }

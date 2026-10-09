@@ -274,7 +274,7 @@ const _litertlmBundle = _NativeBundle(
     'litertlm-linux_x86_64.tar.gz':
         '6317826a74350212b161eb9b15a496f705da761d5089eb4071f0a35f7fe68764',
     'litertlm-linux_arm64.tar.gz':
-        '2e0bba4dd5de9b583f0db63c50949bad1099f10be6651897831d39eb9791fa3d',
+        'a390dae6b9e02e64e680f15e60f6b99b52b1c65347ad77d59bd460906837c457',
     'litertlm-windows_x86_64.tar.gz':
         '4bdf9d262bf6a59e7be3d336e812a56cb701a87bd13e1e5d9c6ca8d04bae30ae',
     'litertlm-macos_arm64.tar.gz':

@@ -591,6 +591,18 @@ OLDER than the runtime segfaults, a NEWER one segfaults the same way from the
 other side (which is what happens if you build an older ref while `PREBUILT_REF`
 still points at main), and a `grep` on a missing header silently answers "no".
 
+**Linux has a second provider ABI on top of this one (#551).** The Linux
+providers are built with Google's libc++ (`std::__u`), our runtime with clang +
+libstdc++, so `patch_c_api.sh` section 12 puts `gemma_constraint_abi_bridge.h`
+between them: it calls the provider's vtable slots with the provider's own
+convention and reads its `BitmapLogitMask` at fixed offsets. Those facts were
+measured on the `4453b286` binaries. **Whenever `PREBUILT_REF` moves**,
+disassemble the new Linux providers (`FstConstraint::Start`, `ComputeNext`,
+`ComputeMask`, the `BitmapLogitMask` constructor) and re-check the constants at
+the top of the bridge; the gate is `litertlm_native_tools_test` passing on
+Linux x86_64 AND arm64 — the old cast died there on the first constrained token
+while every other suite stayed green.
+
 ### 9b. 16 KB page alignment (Android) — Google finds this, not you
 
 Google Play rejects an app when **any** `.so` in its APK has a `PT_LOAD`

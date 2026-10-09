@@ -136,13 +136,16 @@ class LiteRtLmEngine
   ) async {
     final cacheDir = (await getApplicationSupportDirectory()).path;
 
-    // Android npu is opt-in per app. Ask the build before the hardware: an app
-    // that did not bundle the stack must not even dlopen a vendor library.
-    // When the manifest cannot say (no binding in a background isolate), core's
-    // prepareNpuDispatchDir checks the APK itself before anything is loaded.
+    // Qualcomm npu (Android, Linux arm64) is opt-in per app. Ask the build
+    // before the hardware: an app that did not bundle the stack must not even
+    // dlopen a vendor library. When the manifest cannot say (no binding in a
+    // background isolate), the attempt itself checks the libraries before
+    // anything is loaded — core's prepareNpuDispatchDir on Android, the
+    // preload in LiteRtLmFfiClient on Linux.
     bool? npuAvailable;
     String? npuUnavailableBecause;
-    if (config.preferredBackend == PreferredBackend.npu && Platform.isAndroid) {
+    if (config.preferredBackend == PreferredBackend.npu &&
+        (Platform.isAndroid || Platform.isLinux)) {
       final stack = await checkQualcommNpuStack();
       if (!stack.known) {
         edgeAiLog(

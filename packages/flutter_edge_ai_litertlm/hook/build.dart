@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
 // The hook's helpers live in lib/src/hook/, not hook/src/: pub.dev accepts
 // only hook/build.dart under hook/ ("Hook files are experimental").
 import 'package:flutter_edge_ai_litertlm/src/hook/download.dart';
+import 'package:flutter_edge_ai_litertlm/src/hook/qairt_linux.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/qnn_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:hooks/hooks.dart';
@@ -83,6 +85,12 @@ class _NativeBundle {
   /// itself also drives the flat-cache cleanup.
   final List<String> androidExtraLibs;
 
+  /// Linux-only libraries this bundle owns (only the arm64 tarball carries
+  /// them). LiteRT: the Qualcomm dispatch and our `libcdsprpc.so` shim.
+  /// Registered by the opt-in flag, never by presence (see
+  /// _registerQualcommNpuLinux); the list also drives the flat-cache cleanup.
+  final List<String> linuxExtraLibs;
+
   /// When `true`, per-platform subdirectories live directly under
   /// [_cacheBaseDir] (`<cacheBase>/macos_arm64/...`). When `false`, they live
   /// under a per-bundle namespace (`<cacheBase>/<namespace>/macos_arm64/...`).
@@ -106,6 +114,7 @@ class _NativeBundle {
     this.skipCompanionsOn = const {},
     this.windowsExtraLibs = const [],
     this.androidExtraLibs = const [],
+    this.linuxExtraLibs = const [],
     this.useFlatLayout = false,
   });
 
@@ -155,6 +164,11 @@ class _NativeBundle {
     if (os == OS.android) {
       for (final a in androidExtraLibs) {
         yield _dylibFileName(os, a);
+      }
+    }
+    if (os == OS.linux) {
+      for (final l in linuxExtraLibs) {
+        yield _dylibFileName(os, l);
       }
     }
   }
@@ -371,6 +385,10 @@ const _litertlmBundle = _NativeBundle(
     'QnnHtpV81Stub',
     'QnnHtpV81Skel',
   ],
+  // Linux arm64 NPU: the Qualcomm dispatch (built from the LiteRT pin, like
+  // Android's) and our libcdsprpc.so shim. The QNN runtime comes from
+  // Qualcomm's QAIRT SDK zip at build time — see _registerQualcommNpuLinux.
+  linuxExtraLibs: [qualcommDispatchLib, cdsprpcShimLib],
 );
 
 const _bundles = [_litertlmBundle];
@@ -954,9 +972,17 @@ Future<void> _processBundle({
     }
   }
 
-  // Android-only: the Qualcomm NPU stack, for apps that opted in.
+  // Android and Linux arm64: the Qualcomm NPU stack, for apps that opted in.
   if (os == OS.android && bundle.androidExtraLibs.isNotEmpty) {
     await _registerQualcommNpu(
+      input: input,
+      output: output,
+      prebuiltDir: prebuiltDir,
+      stage: stage,
+    );
+  }
+  if (os == OS.linux && bundle.linuxExtraLibs.isNotEmpty) {
+    await _registerQualcommNpuLinux(
       input: input,
       output: output,
       prebuiltDir: prebuiltDir,
@@ -1121,13 +1147,14 @@ Future<Directory> _ensureQnnRuntime(
   }
 }
 
-/// Where the prepared QNN runtime is cached: beside the native bundles, or —
-/// when that is not writable (a container with no HOME, a read-only home) —
-/// in the hook's shared output directory for this project.
-Directory _qnnCacheRoot(BuildInput input) {
+/// Where the prepared QNN runtime for [target] (`android_arm64`,
+/// `linux_arm64`) is cached: beside the native bundles, or — when that is not
+/// writable (a container with no HOME, a read-only home) — in the hook's
+/// shared output directory for this project.
+Directory _qnnCacheRoot(BuildInput input, [String target = 'android_arm64']) {
   final preferred = Directory(
     '${_cacheBaseDir().path}${Platform.pathSeparator}qnn'
-    '${Platform.pathSeparator}android_arm64',
+    '${Platform.pathSeparator}$target',
   );
   try {
     preferred.createSync(recursive: true);
@@ -1140,9 +1167,119 @@ Directory _qnnCacheRoot(BuildInput input) {
     return preferred;
   } on FileSystemException {
     return Directory.fromUri(
-      input.outputDirectoryShared.resolve('qnn/android_arm64/'),
+      input.outputDirectoryShared.resolve('qnn/$target/'),
     );
   }
+}
+
+/// Registers the Linux arm64 Qualcomm NPU stack when the app set
+/// `qualcomm_npu`: our dispatch and libcdsprpc.so shim from the native
+/// bundle, Qualcomm's QNN runtime from the QAIRT SDK zip via the cache.
+///
+/// Registration follows the flag, never file presence — as on Android, and
+/// for the same two reasons. On linux_x64 the flag has nothing to bundle (no
+/// Qualcomm NPU there), and says so instead of failing an app that sets it
+/// for its Android or Linux arm64 builds.
+Future<void> _registerQualcommNpuLinux({
+  required BuildInput input,
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) async {
+  final enabled = readBoolUserDefine(
+    input.userDefines[qualcommNpuUserDefine],
+    qualcommNpuUserDefine,
+  );
+  if (!enabled) return;
+  if (input.config.code.targetArchitecture != Architecture.arm64) {
+    stderr.writeln(
+      '[$_packageName] qualcomm_npu: no Qualcomm NPU on linux_'
+      '${input.config.code.targetArchitecture.name}; nothing to bundle there.',
+    );
+    return;
+  }
+
+  void register(String name, Uri file) => output.assets.code.add(
+    CodeAsset(
+      package: _packageName,
+      name: 'src/native/$name',
+      linkMode: DynamicLoadingBundled(),
+      file: stage(file),
+    ),
+  );
+
+  // Ours, from the native bundle. Enabled and missing is a bundle older than
+  // the Linux stack, not a reason to ship QNN without what loads it.
+  for (final name in const [qualcommDispatchLib, cdsprpcShimLib]) {
+    final file = prebuiltDir.resolve(_dylibFileName(OS.linux, name));
+    if (!File.fromUri(file).existsSync()) {
+      throw StateError(
+        '[$_packageName] qualcomm_npu is set, but ${file.toFilePath()} is '
+        'missing from the native bundle.',
+      );
+    }
+    register(name, file);
+  }
+
+  final qnnDir = await _ensureQairtLinux(input, output);
+  for (final name in qairtLinuxLibs) {
+    register(name, qnnDir.uri.resolve(_dylibFileName(OS.linux, name)));
+  }
+  stderr.writeln(
+    '[$_packageName] qualcomm_npu: bundling Qualcomm QNN runtime from QAIRT '
+    '$qairtBuild (Qualcomm licence; LICENSE.pdf and QNN_NOTICE.txt in '
+    '${qnnDir.path}).',
+  );
+}
+
+/// Returns the cache directory holding the QNN runtime for Linux arm64,
+/// reading it out of the QAIRT SDK zip first if needed.
+Future<Directory> _ensureQairtLinux(
+  BuildInput input,
+  BuildOutputBuilder output,
+) async {
+  final root = _qnnCacheRoot(input, 'linux_arm64');
+  final entry = Directory('${root.path}/${qairtCacheEntryName()}');
+  if (isCompleteQnnCache(entry, fileNames: qairtLinuxFileNames)) return entry;
+
+  final localZip = input.userDefines.path(qualcommNpuQairtZipUserDefine);
+  final ({Map<String, Uint8List> libraries, Map<String, Uint8List> notices})
+  files;
+  if (localZip != null) {
+    // Offline and air-gapped builds: the same pinned bytes, read from a copy.
+    output.dependencies.add(localZip);
+    final zip = File.fromUri(localZip);
+    if (!zip.existsSync()) {
+      throw StateError(
+        '[$_packageName] $qualcommNpuQairtZipUserDefine points at '
+        '${zip.path}, which does not exist.',
+      );
+    }
+    files = qairtFilesFromZip(zip);
+  } else {
+    try {
+      // Outside the cache lock: a slow network must not hold up another
+      // build that only needs to read a complete entry.
+      files = await fetchQairtFiles(
+        httpRangeReader(qairtZipUrl, expectedLength: qairtZipLength),
+      );
+    } on Object catch (e) {
+      throw StateError(
+        '[$_packageName] qualcomm_npu is set, but the QNN runtime could not be '
+        'read from $qairtZipUrl: $e\nWithout network access, download that '
+        'zip yourself and set '
+        'hooks.user_defines.$_packageName.$qualcommNpuQairtZipUserDefine to '
+        'its path.',
+      );
+    }
+  }
+  return writeQnnCacheEntry(
+    root,
+    qairtCacheEntryName(),
+    qairtLinuxFileNames,
+    () => files.libraries,
+    () => files.notices,
+  );
 }
 
 // ============================================================================

@@ -19,8 +19,17 @@ String _manifest(Map<String, Iterable<String>> idsByAbi) => jsonEncode({
 final _base = [nativeAssetId('LiteRtLm'), nativeAssetId('StreamProxy')];
 final _stack = [for (final n in qualcommNpuLibs) nativeAssetId(n)];
 
-Future<NpuStackCheck> _check(String text, {String abi = 'android_arm64'}) =>
-    checkQualcommNpuStack(read: () async => text, abi: abi);
+final _linuxStack = [for (final n in qualcommNpuLibsLinux) nativeAssetId(n)];
+
+Future<NpuStackCheck> _check(
+  String text, {
+  String abi = 'android_arm64',
+  String os = 'android',
+}) => checkQualcommNpuStack(
+  read: () async => text,
+  abi: abi,
+  operatingSystem: os,
+);
 
 void main() {
   test('every library registered: bundled', () async {
@@ -89,6 +98,52 @@ void main() {
       expect(r.reason, contains('not in a format'));
     },
   );
+
+  group('linux_arm64', () {
+    test('every library registered: bundled', () async {
+      final r = await _check(
+        _manifest({
+          'linux_arm64': [..._base, ..._linuxStack],
+        }),
+        abi: 'linux_arm64',
+        os: 'linux',
+      );
+      expect(r.bundled, isTrue);
+    });
+
+    test('the Android set is not the Linux stack', () async {
+      final r = await _check(
+        _manifest({
+          'linux_arm64': [..._base, ..._stack],
+        }),
+        abi: 'linux_arm64',
+        os: 'linux',
+      );
+      expect(r.bundled, isFalse);
+      expect(r.reason, contains('libcdsprpc.so'));
+      expect(r.reason, contains('libQnnHtpV68Skel.so'));
+    });
+
+    test('none registered: the same opt-in reason as Android', () async {
+      final r = await _check(
+        _manifest({'linux_arm64': _base}),
+        abi: 'linux_arm64',
+        os: 'linux',
+      );
+      expect(r.known, isTrue);
+      expect(r.reason, qualcommNpuNotEnabledReason);
+    });
+  });
+
+  test('a host with no Qualcomm stack is a definite no', () async {
+    final r = await _check(
+      _manifest({'macos_arm64': _base}),
+      abi: 'macos_arm64',
+      os: 'macos',
+    );
+    expect(r.bundled, isFalse);
+    expect(r.known, isTrue);
+  });
 
   test('ids match what the hook registers', () {
     expect(

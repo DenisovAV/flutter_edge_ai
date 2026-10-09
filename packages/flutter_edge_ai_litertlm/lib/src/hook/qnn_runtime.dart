@@ -69,29 +69,39 @@ bool readBoolUserDefine(Object? value, String key) => switch (value) {
 };
 
 // ---------------------------------------------------------------------------
-// ZIP (an AAR is a plain zip)
+// ZIP (an AAR is a plain zip; so is the QAIRT SDK)
 // ---------------------------------------------------------------------------
 
 /// Reads [length] bytes at [offset] of some archive.
 typedef ReadAt = Uint8List Function(int offset, int length);
 
-/// Returns the bytes of each entry in [entryNames] from a zip archive of
-/// [archiveLength] bytes read through [readAt].
-///
-/// A minimal reader for what an AAR is: stored or deflated entries, under
-/// 4 GB and 65535 entries. Integrity comes from the SHA256 the caller verified
-/// over the whole archive, so per-entry CRCs are not checked. Throws
-/// [FormatException] for a missing entry or anything outside that shape —
-/// never returns a partial map.
-Map<String, Uint8List> extractZipEntriesWith(
-  ReadAt readAt,
+/// [ReadAt] for an archive that is not on this machine — the QAIRT SDK, read
+/// by HTTP range requests.
+typedef ReadAtAsync = Future<Uint8List> Function(int offset, int length);
+
+/// One central-directory entry the caller asked for.
+class _ZipEntry {
+  _ZipEntry(this.name, this.method, this.compressedSize, this.size, this.local);
+
+  final String name;
+  final int method;
+  final int compressedSize;
+  final int size;
+
+  /// Offset of the entry's local header.
+  final int local;
+}
+
+/// How many bytes at the end of an archive hold its end-of-central-directory
+/// record: 22 bytes plus a comment of up to 64 KB.
+int _zipTailLength(int archiveLength) =>
+    archiveLength < 22 + 0xFFFF ? archiveLength : 22 + 0xFFFF;
+
+/// Finds the central directory from the archive's last [_zipTailLength] bytes.
+({int count, int offset, int size}) _locateCentralDirectory(
+  Uint8List tail,
   int archiveLength,
-  Set<String> entryNames,
 ) {
-  // End-of-central-directory record: 22 bytes plus a comment of up to 64 KB.
-  final tailLength = archiveLength < 22 + 0xFFFF ? archiveLength : 22 + 0xFFFF;
-  final tailStart = archiveLength - tailLength;
-  final tail = readAt(tailStart, tailLength);
   final t = ByteData.sublistView(tail);
   var eocd = -1;
   for (var i = tail.length - 22; i >= 0; i--) {
@@ -102,68 +112,158 @@ Map<String, Uint8List> extractZipEntriesWith(
   }
   if (eocd < 0) throw const FormatException('not a zip archive (no EOCD)');
   final count = t.getUint16(eocd + 10, Endian.little);
-  final cdSize = t.getUint32(eocd + 12, Endian.little);
-  final cdOffset = t.getUint32(eocd + 16, Endian.little);
-  if (count == 0xFFFF || cdOffset == 0xFFFFFFFF || cdSize == 0xFFFFFFFF) {
+  final size = t.getUint32(eocd + 12, Endian.little);
+  final offset = t.getUint32(eocd + 16, Endian.little);
+  if (count == 0xFFFF || offset == 0xFFFFFFFF || size == 0xFFFFFFFF) {
     throw const FormatException('zip64 archives are not supported');
   }
-  if (cdOffset + cdSize > archiveLength) {
+  if (offset + size > archiveLength) {
     throw const FormatException('zip central directory runs past the end');
   }
+  return (count: count, offset: offset, size: size);
+}
 
-  final cd = readAt(cdOffset, cdSize);
+/// The entries of [cd] named in [wanted]. Throws when one is missing.
+List<_ZipEntry> _wantedEntries(Uint8List cd, int count, Set<String> wanted) {
   final c = ByteData.sublistView(cd);
-  final out = <String, Uint8List>{};
+  final found = <_ZipEntry>[];
   var p = 0;
   for (var i = 0; i < count; i++) {
     if (p + 46 > cd.length || c.getUint32(p, Endian.little) != 0x02014b50) {
       throw FormatException('corrupt zip central directory entry $i');
     }
-    final method = c.getUint16(p + 10, Endian.little);
-    final compressedSize = c.getUint32(p + 20, Endian.little);
-    final size = c.getUint32(p + 24, Endian.little);
     final nameLen = c.getUint16(p + 28, Endian.little);
-    final extraLen = c.getUint16(p + 30, Endian.little);
-    final commentLen = c.getUint16(p + 32, Endian.little);
-    final localOffset = c.getUint32(p + 42, Endian.little);
     final name = utf8.decode(
       Uint8List.sublistView(cd, p + 46, p + 46 + nameLen),
     );
-    p += 46 + nameLen + extraLen + commentLen;
-    if (!entryNames.contains(name)) continue;
-
-    final local = readAt(localOffset, 30);
-    final l = ByteData.sublistView(local);
-    if (l.getUint32(0, Endian.little) != 0x04034b50) {
-      throw FormatException('corrupt zip local header for $name');
-    }
-    final start =
-        localOffset +
-        30 +
-        l.getUint16(26, Endian.little) +
-        l.getUint16(28, Endian.little);
-    if (start + compressedSize > archiveLength) {
-      throw FormatException('$name runs past the end of the archive');
-    }
-    final raw = readAt(start, compressedSize);
-    final Uint8List entry = switch (method) {
-      0 => raw,
-      8 => Uint8List.fromList(ZLibDecoder(raw: true).convert(raw)),
-      _ => throw FormatException(
-        '$name uses zip compression method $method (only stored/deflate)',
-      ),
-    };
-    if (entry.length != size) {
-      throw FormatException(
-        '$name inflated to ${entry.length} bytes, the archive says $size',
+    if (wanted.contains(name)) {
+      found.add(
+        _ZipEntry(
+          name,
+          c.getUint16(p + 10, Endian.little),
+          c.getUint32(p + 20, Endian.little),
+          c.getUint32(p + 24, Endian.little),
+          c.getUint32(p + 42, Endian.little),
+        ),
       );
     }
-    out[name] = entry;
+    p +=
+        46 +
+        nameLen +
+        c.getUint16(p + 30, Endian.little) +
+        c.getUint16(p + 32, Endian.little);
   }
-  final missing = entryNames.difference(out.keys.toSet());
+  final missing = wanted.difference({for (final e in found) e.name});
   if (missing.isNotEmpty) {
     throw FormatException('missing from the archive: ${missing.join(', ')}');
   }
+  return found;
+}
+
+/// Where [e]'s data starts, from its 30-byte local header.
+int _entryDataStart(_ZipEntry e, Uint8List localHeader, int archiveLength) {
+  final l = ByteData.sublistView(localHeader);
+  if (localHeader.length < 30 || l.getUint32(0, Endian.little) != 0x04034b50) {
+    throw FormatException('corrupt zip local header for ${e.name}');
+  }
+  final start =
+      e.local +
+      30 +
+      l.getUint16(26, Endian.little) +
+      l.getUint16(28, Endian.little);
+  if (start + e.compressedSize > archiveLength) {
+    throw FormatException('${e.name} runs past the end of the archive');
+  }
+  return start;
+}
+
+/// [e]'s bytes from its stored or deflated [raw] data.
+Uint8List _entryBytes(_ZipEntry e, Uint8List raw) {
+  final Uint8List entry = switch (e.method) {
+    0 => raw,
+    8 => Uint8List.fromList(ZLibDecoder(raw: true).convert(raw)),
+    _ => throw FormatException(
+      '${e.name} uses zip compression method ${e.method} (only stored/deflate)',
+    ),
+  };
+  if (entry.length != e.size) {
+    throw FormatException(
+      '${e.name} inflated to ${entry.length} bytes, the archive says ${e.size}',
+    );
+  }
+  return entry;
+}
+
+/// Returns the bytes of each entry in [entryNames] from a zip archive of
+/// [archiveLength] bytes read through [readAt].
+///
+/// A minimal reader for what an AAR and the QAIRT SDK are: stored or deflated
+/// entries, under 4 GB and 65535 entries. Integrity comes from a SHA256 the
+/// caller verifies — over the whole archive, or per library — so per-entry
+/// CRCs are not checked. Throws [FormatException] for a missing entry or
+/// anything outside that shape — never returns a partial map.
+Map<String, Uint8List> extractZipEntriesWith(
+  ReadAt readAt,
+  int archiveLength,
+  Set<String> entryNames,
+) {
+  final tailLength = _zipTailLength(archiveLength);
+  final dir = _locateCentralDirectory(
+    readAt(archiveLength - tailLength, tailLength),
+    archiveLength,
+  );
+  final entries = _wantedEntries(
+    readAt(dir.offset, dir.size),
+    dir.count,
+    entryNames,
+  );
+  return {
+    for (final e in entries)
+      e.name: _entryBytes(
+        e,
+        readAt(
+          _entryDataStart(e, readAt(e.local, 30), archiveLength),
+          e.compressedSize,
+        ),
+      ),
+  };
+}
+
+/// [extractZipEntriesWith] over an archive read asynchronously: the central
+/// directory and the wanted entries only, never the rest. Up to [parallel]
+/// entries are read at once — over HTTP each read is a round trip, and the
+/// entries are independent.
+Future<Map<String, Uint8List>> extractZipEntriesAsync(
+  ReadAtAsync readAt,
+  int archiveLength,
+  Set<String> entryNames, {
+  int parallel = 4,
+}) async {
+  final tailLength = _zipTailLength(archiveLength);
+  final dir = _locateCentralDirectory(
+    await readAt(archiveLength - tailLength, tailLength),
+    archiveLength,
+  );
+  final entries = _wantedEntries(
+    await readAt(dir.offset, dir.size),
+    dir.count,
+    entryNames,
+  );
+  final out = <String, Uint8List>{};
+  var next = 0;
+  Future<void> worker() async {
+    while (next < entries.length) {
+      final e = entries[next++];
+      final start = _entryDataStart(
+        e,
+        await readAt(e.local, 30),
+        archiveLength,
+      );
+      out[e.name] = _entryBytes(e, await readAt(start, e.compressedSize));
+    }
+  }
+
+  await Future.wait([for (var i = 0; i < parallel; i++) worker()]);
   return out;
 }
 
@@ -413,14 +513,15 @@ List<String> get qnnLibFileNames => [
 ];
 
 /// Whether [dir] holds a complete, intact cache entry: the marker lists every
-/// library, and each file has the recorded size and SHA-256.
+/// library in [fileNames] (the Android set by default), and each file has the
+/// recorded size and SHA-256.
 ///
 /// The hash, not only the size: these are executables the app ships, reused
 /// for every later build, and a same-length change — a flipped byte, a cache
 /// restored from somewhere else — would otherwise pass forever without ever
 /// meeting the AAR's checksum again. Hashing the ~83 MB costs a fraction of a
 /// second, and only on the builds where the hook runs at all.
-bool isCompleteQnnCache(Directory dir) {
+bool isCompleteQnnCache(Directory dir, {List<String>? fileNames}) {
   final marker = File('${dir.path}/$qnnCacheMarker');
   if (!marker.existsSync()) return false;
   final Map<String, Object?> recorded;
@@ -430,7 +531,7 @@ bool isCompleteQnnCache(Directory dir) {
   } on Object {
     return false;
   }
-  for (final name in qnnLibFileNames) {
+  for (final name in fileNames ?? qnnLibFileNames) {
     final entry = recorded[name];
     if (entry is! Map) return false;
     final size = entry['size'], hash = entry['sha256'];
@@ -445,28 +546,54 @@ bool isCompleteQnnCache(Directory dir) {
 /// Writes the libraries extracted from the verified [aar] into a new
 /// directory under [cacheRoot] and promotes it to the entry for this
 /// version, returning that entry.
+Directory promoteQnnCache(Directory cacheRoot, File aar) => writeQnnCacheEntry(
+  cacheRoot,
+  qnnCacheEntryName(),
+  qnnLibFileNames,
+  () {
+    final entries = extractZipEntriesFromFile(aar, {
+      for (final f in qnnLibFileNames) 'jni/arm64-v8a/$f',
+    });
+    return {
+      for (final f in qnnLibFileNames)
+        f: prepareQnnLibrary(f, entries['jni/arm64-v8a/$f']!),
+    };
+  },
+  // Qualcomm's own LICENSE.pdf and NOTICE.txt travel with the libraries.
+  () => extractZipEntriesFromFile(aar, {'LICENSE.pdf', 'NOTICE.txt'}),
+);
+
+/// Writes [libraries] (file name → bytes, exactly [fileNames]) and [notices]
+/// into a new directory under [cacheRoot] and promotes it to the entry
+/// [entryName], returning that entry.
 ///
 /// Safe against concurrent builds sharing the cache: an exclusive lock file
 /// serialises writers, the work happens in a fresh `mkdtemp` directory, every
 /// file is flushed before the marker is written last, and a valid entry is
-/// never rewritten or deleted.
-Directory promoteQnnCache(Directory cacheRoot, File aar) {
+/// never rewritten or deleted. [libraries] and [notices] run only when the
+/// entry is not already complete.
+Directory writeQnnCacheEntry(
+  Directory cacheRoot,
+  String entryName,
+  List<String> fileNames,
+  Map<String, Uint8List> Function() libraries,
+  Map<String, Uint8List> Function() notices,
+) {
   cacheRoot.createSync(recursive: true);
-  final target = Directory('${cacheRoot.path}/${qnnCacheEntryName()}');
+  final target = Directory('${cacheRoot.path}/$entryName');
   final lock = File('${cacheRoot.path}/.lock').openSync(mode: FileMode.append);
   try {
     lock.lockSync(FileLock.blockingExclusive);
     removeStaleQnnTemps(cacheRoot);
-    if (isCompleteQnnCache(target)) return target;
+    if (isCompleteQnnCache(target, fileNames: fileNames)) return target;
 
-    final entries = extractZipEntriesFromFile(aar, {
-      for (final f in qnnLibFileNames) 'jni/arm64-v8a/$f',
-    });
+    final libs = libraries();
     final tmp = cacheRoot.createTempSync(qnnPrepareTempPrefix);
     try {
       final recorded = <String, Map<String, Object>>{};
-      for (final f in qnnLibFileNames) {
-        final bytes = prepareQnnLibrary(f, entries['jni/arm64-v8a/$f']!);
+      for (final f in fileNames) {
+        final bytes = libs[f];
+        if (bytes == null) throw StateError('$f was not prepared');
         final out = File('${tmp.path}/$f').openSync(mode: FileMode.write);
         try {
           out
@@ -481,12 +608,7 @@ Directory promoteQnnCache(Directory cacheRoot, File aar) {
           'sha256': sha256.convert(bytes).toString(),
         };
       }
-      // Qualcomm's own LICENSE.pdf and NOTICE.txt travel with the libraries.
-      final notices = extractZipEntriesFromFile(aar, {
-        'LICENSE.pdf',
-        'NOTICE.txt',
-      });
-      for (final e in notices.entries) {
+      for (final e in notices().entries) {
         File('${tmp.path}/${e.key}').writeAsBytesSync(e.value, flush: true);
       }
       File(
@@ -502,7 +624,7 @@ Directory promoteQnnCache(Directory cacheRoot, File aar) {
     } finally {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     }
-    if (!isCompleteQnnCache(target)) {
+    if (!isCompleteQnnCache(target, fileNames: fileNames)) {
       throw StateError(
         'QNN cache at ${target.path} is incomplete after writing',
       );

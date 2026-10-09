@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build libLiteRtDispatch_Qualcomm.so for Android arm64 from LiteRT source.
+# Build libLiteRtDispatch_Qualcomm.so for Android arm64 or Linux arm64 from
+# LiteRT source (TARGET=android_arm64, the default, or TARGET=linux_arm64).
 #
 # Requires the Qualcomm QNN dispatch bridge between LiteRT-LM and the on-device
 # QNN/HTP runtime. This lib is NOT shipped in official LiteRT releases as of
@@ -14,12 +15,21 @@
 #     the derived LITERT_REF (2.50.0.260828 at the v0.18.0 pin) — a local SDK
 #     must be that same version.
 #
+# Linux arm64 (TARGET=linux_arm64) builds natively on an arm64 Linux host — CI
+# runs it on ubuntu-22.04-arm, whose glibc sets the floor — with clang >= 15
+# (abseil needs std::source_location; Ubuntu 22.04's clang 14 fails). Google
+# publishes no Linux dispatch at all. It also builds our libcdsprpc.so shim
+# (see "Linux shim" below).
+#
 # Usage:
 #   ./build_qualcomm_dispatch.sh
+#   TARGET=linux_arm64 CC=clang-17 CXX=clang++-17 ./build_qualcomm_dispatch.sh
 #   LITERTLM_REF=<sha> ./build_qualcomm_dispatch.sh          # match a specific engine build
 #   LITERT_QAIRT_SDK=/path/to/qairt/<version> ./build_qualcomm_dispatch.sh
 #
 # Env:
+#   TARGET            android_arm64 (default) or linux_arm64.
+#   CC, CXX           Linux only: clang >= 15 (default clang / clang++).
 #   LITERTLM_REF      LiteRT-LM commit to derive LITERT_REF from (default below).
 #   LITERT_REF        Override the derived LiteRT ref. Rarely correct — the two
 #                     must come from one tree or the dispatch SIGSEGVs.
@@ -29,8 +39,30 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PREBUILT_DIR="$SCRIPT_DIR/prebuilt/android_arm64"
+TARGET="${TARGET:-android_arm64}"
+case "$TARGET" in
+  android_arm64) QAIRT_HOST_LIB=aarch64-android ;;
+  # The OpenEmbedded set: the Ubuntu one (aarch64-ubuntu-gcc9.4) stops at V68,
+  # and the hook takes the runtime from this one (lib/src/hook/qairt_linux.dart).
+  linux_arm64) QAIRT_HOST_LIB=aarch64-oe-linux-gcc11.2 ;;
+  *) echo "ERROR: TARGET must be android_arm64 or linux_arm64, got '$TARGET'" >&2; exit 1 ;;
+esac
+PREBUILT_DIR="$SCRIPT_DIR/prebuilt/$TARGET"
 LITERT_DIR="/tmp/LiteRT"
+
+if [ "$TARGET" = linux_arm64 ]; then
+  if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != aarch64 ]; then
+    echo "ERROR: TARGET=linux_arm64 builds on an arm64 Linux host (this is $(uname -sm))" >&2
+    exit 1
+  fi
+  CC="${CC:-clang}"
+  CXX="${CXX:-clang++}"
+  CLANG_MAJOR="$("$CC" --version 2>/dev/null | sed -n 's/.*clang version \([0-9]*\).*/\1/p' | head -1 || true)"
+  if [ -z "$CLANG_MAJOR" ] || [ "$CLANG_MAJOR" -lt 15 ]; then
+    echo "ERROR: $CC is not clang >= 15 (got '${CLANG_MAJOR:-none}'); abseil needs std::source_location" >&2
+    exit 1
+  fi
+fi
 
 # The dispatch library must be built from the SAME LiteRT tree as the engine it
 # calls into. Hardcoding a ref here is how it silently drifted: this file sat at
@@ -67,7 +99,7 @@ if [ -z "$LITERT_REF" ]; then
 fi
 
 # Resolve Android NDK
-if [ -z "${ANDROID_NDK_HOME:-}" ]; then
+if [ "$TARGET" = android_arm64 ] && [ -z "${ANDROID_NDK_HOME:-}" ]; then
   if [ -d "$HOME/Library/Android/sdk/ndk" ]; then
     ANDROID_NDK_HOME="$HOME/Library/Android/sdk/ndk/$(ls -1 "$HOME/Library/Android/sdk/ndk" | sort -V | tail -1)"
     export ANDROID_NDK_HOME
@@ -78,15 +110,19 @@ if [ -z "${ANDROID_NDK_HOME:-}" ]; then
   fi
 fi
 
-if [ -z "${ANDROID_HOME:-}" ]; then
+if [ "$TARGET" = android_arm64 ] && [ -z "${ANDROID_HOME:-}" ]; then
   export ANDROID_HOME="$(dirname "$(dirname "$ANDROID_NDK_HOME")")"
   echo "Auto-detected ANDROID_HOME=$ANDROID_HOME"
 fi
 
-echo "=== Building libLiteRtDispatch_Qualcomm.so for Android arm64 ==="
+echo "=== Building libLiteRtDispatch_Qualcomm.so for $TARGET ==="
 echo "LiteRT ref:         $LITERT_REF"
-echo "ANDROID_NDK_HOME:   $ANDROID_NDK_HOME"
-echo "ANDROID_HOME:       $ANDROID_HOME"
+if [ "$TARGET" = android_arm64 ]; then
+  echo "ANDROID_NDK_HOME:   $ANDROID_NDK_HOME"
+  echo "ANDROID_HOME:       $ANDROID_HOME"
+else
+  echo "CC / CXX:           $CC / $CXX (clang $CLANG_MAJOR)"
+fi
 if [ -n "${LITERT_QAIRT_SDK:-}" ]; then
   echo "LITERT_QAIRT_SDK:   $LITERT_QAIRT_SDK (local)"
 else
@@ -109,6 +145,20 @@ git -C "$LITERT_DIR" checkout -f "$LITERT_REF"
 echo "Building from: $(git -C "$LITERT_DIR" log --oneline -1)"
 
 cd "$LITERT_DIR"
+
+# Linux: drop the dispatch's `-Wl,-lc++abi` linkopt. It is there for the
+# Android NDK's libc++; on Linux libstdc++ carries the C++ ABI and lld fails
+# on the missing libc++abi. Edited in this throwaway checkout only (the
+# `checkout -f` above restores it on the next run), so Android keeps it.
+if [ "$TARGET" = linux_arm64 ]; then
+  DISPATCH_BUILD=litert/vendors/qualcomm/dispatch/BUILD
+  if grep -q -- '-Wl,-lc++abi' "$DISPATCH_BUILD"; then
+    sed -i -e '/-Wl,-lc++abi/d' "$DISPATCH_BUILD"
+    echo "Linux: removed -Wl,-lc++abi from $DISPATCH_BUILD"
+  else
+    echo "Linux: $DISPATCH_BUILD has no -Wl,-lc++abi (upstream dropped it?)"
+  fi
+fi
 
 # 2. Build dispatch lib.
 #
@@ -134,16 +184,28 @@ if [ -n "${LITERT_QAIRT_SDK:-}" ]; then
 fi
 echo ""
 echo "=== Running Bazel build ==="
-bazelisk build \
-  --repo_env=ANDROID_NDK_HOME="$ANDROID_NDK_HOME" \
-  --repo_env=ANDROID_HOME="$ANDROID_HOME" \
-  --repo_env=HERMETIC_PYTHON_VERSION=3.12 \
-  "${QAIRT_ENV[@]+"${QAIRT_ENV[@]}"}" \
-  --config=android_arm64 \
-  --compilation_mode=opt \
-  --strip=always \
-  --linkopt=-Wl,-z,max-page-size=16384 \
-  //litert/vendors/qualcomm/dispatch:dispatch_api_so
+if [ "$TARGET" = android_arm64 ]; then
+  bazelisk build \
+    --repo_env=ANDROID_NDK_HOME="$ANDROID_NDK_HOME" \
+    --repo_env=ANDROID_HOME="$ANDROID_HOME" \
+    --repo_env=HERMETIC_PYTHON_VERSION=3.12 \
+    "${QAIRT_ENV[@]+"${QAIRT_ENV[@]}"}" \
+    --config=android_arm64 \
+    --compilation_mode=opt \
+    --strip=always \
+    --linkopt=-Wl,-z,max-page-size=16384 \
+    //litert/vendors/qualcomm/dispatch:dispatch_api_so
+else
+  bazelisk build \
+    --repo_env=CC="$CC" --repo_env=CXX="$CXX" \
+    --action_env=CC="$CC" --action_env=CXX="$CXX" \
+    --repo_env=HERMETIC_PYTHON_VERSION=3.12 \
+    "${QAIRT_ENV[@]+"${QAIRT_ENV[@]}"}" \
+    --config=linux_arm64 \
+    --compilation_mode=opt \
+    --strip=always \
+    //litert/vendors/qualcomm/dispatch:dispatch_api_so
+fi
 
 # 3. Stage the dispatch; promote it only once every check below has passed, so
 # an abort never leaves an unchecked dispatch in $PREBUILT_DIR for the next
@@ -184,7 +246,7 @@ if [ -z "$OUTPUT_BASE" ]; then
   exit 1
 fi
 QAIRT_DIR="$OUTPUT_BASE/external/qairt"
-if [ ! -d "$QAIRT_DIR/lib/aarch64-android" ]; then
+if [ ! -d "$QAIRT_DIR/lib/$QAIRT_HOST_LIB" ]; then
   echo "ERROR: QAIRT SDK not found at $QAIRT_DIR" >&2
   echo "       Its version cannot be checked against the hook's qnn-runtime pin." >&2
   echo "       A mismatched pair fails only on real hardware, at engine_create." >&2
@@ -227,6 +289,7 @@ echo "  matches the hook's qnn-runtime $HOOK_QNN"
 # the link flag stopped reaching the linker. (The 4 KB Hexagon Skels that used
 # to be raised here are raised by the hook now — prepareQnnLibrary in
 # lib/src/hook/qnn_runtime.dart.)
+if [ "$TARGET" = android_arm64 ]; then
 echo ""
 echo "=== Checking 16 KB page alignment ==="
 python3 - "$STAGE" <<'PYALIGN'
@@ -251,6 +314,7 @@ for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.so"))):
     checked += 1
 print(f"  {checked} .so checked, all PT_LOAD at >= 16 KB")
 PYALIGN
+fi
 
 # 6. Verify the staged dispatch before it can reach the bundle. This is the one
 # symbol the library exists to export; without it the NPU path is dead.
@@ -260,10 +324,44 @@ if ! nm -D "$STAGE/libLiteRtDispatch_Qualcomm.so" 2>/dev/null \
   exit 1
 fi
 
-# 7. Promote the dispatch — the one Qualcomm-NPU file this bundle carries.
+# Linux shim. Qualcomm's Linux Stubs (libQnnHtpV*Stub.so) carry
+# `NEEDED libcdsprpc.so` and `RPATH $ORIGIN`, but Ubuntu's qcom-fastrpc1
+# installs only libcdsprpc.so.1 — the bare name is a -dev symlink an end user
+# does not have. So we ship a libcdsprpc.so of our own, with nothing in it but
+# `NEEDED libcdsprpc.so.1`: next to the Stubs, $ORIGIN finds it, and it brings
+# in the system FastRPC library whose symbols the Stubs then resolve. Linked
+# against a stand-in libcdsprpc.so.1 built here (only its SONAME matters), so
+# the build host needs no FastRPC.
+if [ "$TARGET" = linux_arm64 ]; then
+  SHIM_TMP="$(mktemp -d)"
+  "$CC" -shared -fPIC -nostdlib -o "$SHIM_TMP/libcdsprpc.so.1" \
+    -Wl,-soname,libcdsprpc.so.1 -x c /dev/null
+  "$CC" -shared -fPIC -nostdlib -o "$STAGE/libcdsprpc.so" \
+    -Wl,-soname,libcdsprpc.so -Wl,--no-as-needed "$SHIM_TMP/libcdsprpc.so.1" \
+    -x c /dev/null
+  rm -rf "$SHIM_TMP"
+  SHIM_DYN="$(readelf -d "$STAGE/libcdsprpc.so")"
+  if ! printf '%s\n' "$SHIM_DYN" | grep -q 'NEEDED.*\[libcdsprpc\.so\.1\]' ||
+     ! printf '%s\n' "$SHIM_DYN" | grep -q 'SONAME.*\[libcdsprpc\.so\]'; then
+    echo "ERROR: the libcdsprpc.so shim lacks NEEDED libcdsprpc.so.1 or SONAME libcdsprpc.so:" >&2
+    printf '%s\n' "$SHIM_DYN" >&2
+    exit 1
+  fi
+  echo ""
+  echo "=== Linux dispatch: NEEDED and glibc floor ==="
+  readelf -d "$STAGE/libLiteRtDispatch_Qualcomm.so" | grep NEEDED
+  # `|| true`: no versioned import at all must reach the print, not pipefail.
+  echo "  max GLIBC: $(objdump -T "$STAGE/libLiteRtDispatch_Qualcomm.so" \
+    | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1 || true)"
+fi
+
+# 7. Promote what this target's bundle carries: the dispatch, and on Linux the
+# shim. Never the QNN runtime — the app's build hook fetches that.
+want_staged=1
+[ "$TARGET" = linux_arm64 ] && want_staged=2
 staged=$(find "$STAGE" -maxdepth 1 -type f -name '*.so' | wc -l | tr -d ' ')
-if [ "$staged" -ne 1 ]; then
-  echo "ERROR: staged $staged files, expected 1 (the dispatch)" >&2
+if [ "$staged" -ne "$want_staged" ]; then
+  echo "ERROR: staged $staged files, expected $want_staged" >&2
   exit 1
 fi
 mkdir -p "$PREBUILT_DIR"
@@ -283,5 +381,7 @@ done
 
 echo ""
 echo "=== Done ==="
-echo "  libLiteRtDispatch_Qualcomm.so → $PREBUILT_DIR/ (QNN runtime: from Maven via the hook)"
+echo "  $(cd "$STAGE" && ls *.so | tr '\n' ' ')→ $PREBUILT_DIR/ (QNN runtime: from Qualcomm via the app's hook)"
 ls -lh "$PREBUILT_DIR/libLiteRtDispatch_Qualcomm.so"
+[ "$TARGET" = linux_arm64 ] && ls -lh "$PREBUILT_DIR/libcdsprpc.so"
+exit 0

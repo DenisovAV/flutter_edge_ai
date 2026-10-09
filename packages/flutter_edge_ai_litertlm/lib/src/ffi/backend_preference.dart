@@ -8,11 +8,12 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart';
 
 /// Whether this host ships an NPU dispatch stack at all.
 ///
-/// Exactly two can: Android carries the Qualcomm QNN stack and Windows carries
-/// Intel's (`LiteRtDispatch.dll` + OpenVino + TBB). Nothing ships for macOS,
-/// Linux or iOS. On Android the stack is opt-in per app (`qualcomm_npu`), so
-/// `LiteRtLmEngine.createModel` first asks NativeAssetsManifest.json whether
-/// this build bundled it and only then lets this probe decide.
+/// Three can: Android and Linux arm64 carry the Qualcomm QNN stack and Windows
+/// carries Intel's (`LiteRtDispatch.dll` + OpenVino + TBB). Nothing ships for
+/// macOS or iOS. On Android and Linux the stack is opt-in per app
+/// (`qualcomm_npu`), so `LiteRtLmEngine.createModel` first asks
+/// NativeAssetsManifest.json whether this build bundled it and only then lets
+/// this probe decide.
 ///
 /// This gate exists because `backend: "npu"` is a string the native runtime
 /// accepts WITHOUT complaint on a host that cannot honour it. Since
@@ -39,6 +40,7 @@ bool get hostShipsNpuDispatch {
   return npuDispatchShipsFor(
     os,
     androidHasFastRpc: os == 'android' && _androidHasFastRpc,
+    linuxHasQualcommNpu: os == 'linux' && _linuxHasQualcommNpu,
   );
 }
 
@@ -56,11 +58,71 @@ bool get fastRpcProbed => _fastRpcProbe != null;
 bool npuDispatchShipsFor(
   String operatingSystem, {
   required bool androidHasFastRpc,
+  bool linuxHasQualcommNpu = false,
 }) => switch (operatingSystem) {
   'windows' => true, // Per OS, knowingly too coarse — see hostShipsNpuDispatch.
   'android' => androidHasFastRpc,
+  'linux' => linuxHasQualcommNpu,
   _ => false,
 };
+
+/// Whether the Linux probe has run in this isolate; see [fastRpcProbed].
+@visibleForTesting
+bool get linuxNpuProbed => _linuxNpuProbe != null;
+
+bool? _linuxNpuProbe;
+
+/// Why the Linux probe failed, worded for the person who has to fix it.
+String? _linuxNpuProbeError;
+
+/// Whether this Linux machine can run the Qualcomm NPU stack.
+///
+/// The stack is built for arm64 only, and on arm64 most machines (a Raspberry
+/// Pi, a Jetson, a cloud VM) have no Hexagon DSP. Three things must hold, and
+/// each failure gets its own reason because each has a different fix:
+/// - `/dev/fastrpc-cdsp` exists — the kernel exposes a compute DSP;
+/// - it and `/dev/dma_heap/system` open for this user — the upstream fastrpc
+///   udev rules grant both to group `fastrpc`, which a fresh user is not in;
+/// - `libcdsprpc.so.1` opens — Qualcomm's FastRPC user library, which the
+///   bundled Stubs reach through our `libcdsprpc.so` shim.
+///
+/// The device files are opened read-only and closed at once: that maps no
+/// memory and opens no DSP session. Probed once per isolate.
+bool get _linuxHasQualcommNpu => _linuxNpuProbe ??= () {
+  if (Abi.current() != Abi.linuxArm64) {
+    _linuxNpuProbeError =
+        'the Qualcomm NPU stack is built for linux_arm64 only, and this is '
+        '${Abi.current()}';
+    return false;
+  }
+  for (final node in const ['/dev/fastrpc-cdsp', '/dev/dma_heap/system']) {
+    try {
+      File(node).openSync().closeSync();
+    } on FileSystemException catch (e) {
+      final errno = e.osError?.errorCode;
+      if (errno == 2 && node == '/dev/fastrpc-cdsp') {
+        _linuxNpuProbeError =
+            'this machine has no Qualcomm compute DSP ($node does not exist)';
+        return false;
+      }
+      if (errno == 2) continue; // An older kernel without DMA-BUF heaps.
+      _linuxNpuProbeError = errno == 13
+          ? '$node is not accessible to this user. Add the user to group '
+                'fastrpc (sudo usermod -aG fastrpc \$USER) and log in again'
+          : '$node could not be opened: $e';
+      return false;
+    }
+  }
+  try {
+    DynamicLibrary.open('libcdsprpc.so.1');
+  } on Object catch (e) {
+    _linuxNpuProbeError =
+        "Qualcomm's FastRPC library libcdsprpc.so.1 did not open ($e); on "
+        'Ubuntu it comes with the qcom-fastrpc1 package';
+    return false;
+  }
+  return true;
+}();
 
 bool? _fastRpcProbe;
 
@@ -108,11 +170,16 @@ bool get _androidHasFastRpc => _fastRpcProbe ??= () {
 /// shape this replaced.
 @visibleForTesting
 String npuUnavailableReason(String operatingSystem, {String? fastRpcError}) =>
-    operatingSystem == 'android'
-    ? 'this device has no Qualcomm FastRPC (libcdsprpc.so did not open'
-          '${fastRpcError == null ? '' : ': $fastRpcError'}), so the bundled '
-          'NPU stack cannot run here'
-    : 'no NPU dispatch stack ships for $operatingSystem';
+    switch (operatingSystem) {
+      'android' =>
+        'this device has no Qualcomm FastRPC (libcdsprpc.so did not open'
+            '${fastRpcError == null ? '' : ': $fastRpcError'}), so the bundled '
+            'NPU stack cannot run here',
+      'linux' =>
+        'the bundled Qualcomm NPU stack cannot run here: '
+            '${fastRpcError ?? 'this machine has no Qualcomm NPU'}',
+      _ => 'no NPU dispatch stack ships for $operatingSystem',
+    };
 
 /// The backends to try, in order, for a [preferredBackend] request.
 ///
@@ -259,13 +326,15 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
         npuUnavailableBecause ??
         npuUnavailableReason(
           Platform.operatingSystem,
-          fastRpcError: _fastRpcProbeError,
+          fastRpcError: Platform.isLinux
+              ? _linuxNpuProbeError
+              : _fastRpcProbeError,
         );
     // ignore: avoid_print
     print(
       '[flutter_edge_ai] WARNING: $logTag npu was requested, but $reason — '
       'trying ${backends.map(ffiBackendWireName).join(" -> ")} instead. NPU '
-      'runs on Qualcomm Snapdragon Android (in apps built with '
+      'runs on Qualcomm Android and Qualcomm Linux arm64 (in apps built with '
       'hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu: true) and '
       'on Windows (Intel LunarLake/PantherLake). '
       'InferenceModel.activeBackend names what actually ran.',

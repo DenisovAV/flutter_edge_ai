@@ -61,34 +61,50 @@ void main() {
       );
     });
 
-    test(
-      'the rule: Windows always, Android only with FastRPC, nowhere else',
-      () {
-        // The predicate rather than `hostShipsNpuDispatch`, because
-        // `Platform.operatingSystem` has no override seam — asserting the getter
-        // on a macOS runner compares false to false and would pass for an
-        // implementation that disabled NPU everywhere.
+    test('the rule: Windows always, Android with FastRPC, Linux with a Qualcomm '
+        'NPU, nowhere else', () {
+      // The predicate rather than `hostShipsNpuDispatch`, because
+      // `Platform.operatingSystem` has no override seam — asserting the getter
+      // on a macOS runner compares false to false and would pass for an
+      // implementation that disabled NPU everywhere.
+      expect(npuDispatchShipsFor('windows', androidHasFastRpc: false), isTrue);
+      expect(npuDispatchShipsFor('android', androidHasFastRpc: true), isTrue);
+      expect(
+        npuDispatchShipsFor('android', androidHasFastRpc: false),
+        isFalse,
+        reason:
+            'the Qualcomm stack ships for every arm64 Android build, so the '
+            'APK proves nothing about the silicon',
+      );
+      expect(
+        npuDispatchShipsFor(
+          'linux',
+          androidHasFastRpc: false,
+          linuxHasQualcommNpu: true,
+        ),
+        isTrue,
+      );
+      expect(
+        npuDispatchShipsFor('linux', androidHasFastRpc: true),
+        isFalse,
+        reason: "Android's probe says nothing about a Linux machine",
+      );
+      expect(
+        npuDispatchShipsFor(
+          'macos',
+          androidHasFastRpc: true,
+          linuxHasQualcommNpu: true,
+        ),
+        isFalse,
+      );
+      for (final os in ['macos', 'linux', 'ios', 'fuchsia', '']) {
         expect(
-          npuDispatchShipsFor('windows', androidHasFastRpc: false),
-          isTrue,
-        );
-        expect(npuDispatchShipsFor('android', androidHasFastRpc: true), isTrue);
-        expect(
-          npuDispatchShipsFor('android', androidHasFastRpc: false),
+          npuDispatchShipsFor(os, androidHasFastRpc: true),
           isFalse,
-          reason:
-              'the Qualcomm stack ships for every arm64 Android build, so the '
-              'APK proves nothing about the silicon',
+          reason: '$os ships no NPU dispatch stack at all',
         );
-        for (final os in ['macos', 'linux', 'ios', 'fuchsia', '']) {
-          expect(
-            npuDispatchShipsFor(os, androidHasFastRpc: true),
-            isFalse,
-            reason: '$os ships no NPU dispatch stack at all',
-          );
-        }
-      },
-    );
+      }
+    });
 
     test('the FastRPC probe runs on Android only', () {
       // As an eagerly evaluated argument it ran on every host that asked for
@@ -99,6 +115,13 @@ void main() {
       );
       expect(fastRpcProbed, isFalse);
     }, skip: Platform.isAndroid ? 'the probe is the point on Android' : false);
+
+    test('the Linux probe runs on Linux only', () {
+      // It opens device files and dlopens a Qualcomm library; neither belongs
+      // on a host where the answer is fixed.
+      expect(hostShipsNpuDispatch, isNotNull);
+      expect(linuxNpuProbed, isFalse);
+    }, skip: Platform.isLinux ? 'the probe is the point on Linux' : false);
 
     test('the reason npu is missing is worded per platform', () {
       final android = npuUnavailableReason(
@@ -112,6 +135,16 @@ void main() {
         isNot(contains('ships')),
         reason: 'the stack does ship on Android; the device lacks FastRPC',
       );
+
+      final linux = npuUnavailableReason(
+        'linux',
+        fastRpcError:
+            '/dev/dma_heap/system is not accessible to this user. '
+            'Add the user to group fastrpc',
+      );
+      expect(linux, contains('group fastrpc'), reason: 'the fix is named');
+      expect(linux, isNot(contains('ships')));
+      expect(npuUnavailableReason('linux'), contains('no Qualcomm NPU'));
 
       expect(npuUnavailableReason('macos'), contains('no NPU dispatch stack'));
       expect(npuUnavailableReason('macos'), isNot(contains('FastRPC')));

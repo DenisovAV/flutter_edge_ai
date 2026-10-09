@@ -21,10 +21,15 @@ on:
       release_tag:
         description: 'Release tag to publish to (blank = native-<litertlm_version>). Use this for a re-release of the same upstream source, e.g. native-v0.17.0-a.'
         required: false
+      qualcomm_dispatch_linux_only:
+        description: 'Build only the Linux arm64 Qualcomm dispatch + libcdsprpc shim (an artifact to add to an existing linux_arm64 archive); never publishes'
+        type: boolean
+        default: false
 
 jobs:
   build-linux-x86_64:
     name: Linux x86_64
+    if: ${{ !inputs.qualcomm_dispatch_linux_only }}
     # Pin to ubuntu-22.04 (glibc 2.35) for broader compatibility. Our
     # libLiteRtLm.so ends up needing only GLIBC_2.34, which works on
     # Ubuntu 22.04+ / Debian 12+ / RHEL 9+.
@@ -156,6 +161,7 @@ jobs:
 
   build-linux-arm64:
     name: Linux arm64
+    if: ${{ !inputs.qualcomm_dispatch_linux_only }}
     # Pin to ubuntu-22.04-arm (glibc 2.35) for broader compatibility.
     runs-on: ubuntu-22.04-arm
     timeout-minutes: 60
@@ -282,6 +288,7 @@ jobs:
 
   build-windows-x86_64:
     name: Windows x86_64
+    if: ${{ !inputs.qualcomm_dispatch_linux_only }}
     runs-on: windows-latest
     timeout-minutes: 150
     defaults:
@@ -691,10 +698,45 @@ jobs:
           name: litertlm-windows_x86_64
           path: artifacts/
 
+  # The Qualcomm NPU dispatch for Linux arm64 and our libcdsprpc.so shim. A
+  # job of its own: it builds from a standalone LiteRT checkout (the
+  # `-Wl,-lc++abi` edit must not reach LiteRT-LM's tree, where Android needs
+  # it), against QAIRT headers read out of the 2.6 GB SDK zip by range — the
+  # runner's disk cannot hold the SDK beside a Bazel build. The QNN runtime is
+  # never built or shipped here: apps fetch it through `qualcomm_npu`.
+  build-linux-arm64-qualcomm-dispatch:
+    name: Linux arm64 Qualcomm dispatch
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 90
+    env:
+      LITERTLM_VERSION: ${{ inputs.litertlm_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-17 (abseil needs clang >= 15)
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 17
+          clang-17 --version
+
+      - name: Fetch the QAIRT headers
+        run: python3 packages/flutter_edge_ai_litertlm/native/litert_lm/fetch_qairt_sdk_slim.py /tmp/qairt-slim
+
+      - name: Build dispatch and libcdsprpc shim
+        run: |
+          TARGET=linux_arm64 LITERTLM_REF="$LITERTLM_VERSION" \
+          CC=clang-17 CXX=clang++-17 LITERT_QAIRT_SDK=/tmp/qairt-slim \
+            bash packages/flutter_edge_ai_litertlm/native/litert_lm/build_qualcomm_dispatch.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualcomm-dispatch-linux_arm64
+          path: packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/linux_arm64/
+          if-no-files-found: error
+
   publish-release:
     name: Publish to GitHub Release
-    needs: [build-linux-x86_64, build-linux-arm64, build-windows-x86_64]
-    if: inputs.publish_release
+    needs: [build-linux-x86_64, build-linux-arm64, build-windows-x86_64, build-linux-arm64-qualcomm-dispatch]
+    if: inputs.publish_release && !inputs.qualcomm_dispatch_linux_only
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -709,6 +751,14 @@ jobs:
       - name: Package archives
         run: |
           mkdir -p release
+          # The Linux arm64 Qualcomm dispatch + shim are a separate job's
+          # artifact; they ship inside the linux_arm64 archive.
+          d=artifacts/qualcomm-dispatch-linux_arm64
+          for f in libLiteRtDispatch_Qualcomm.so libcdsprpc.so; do
+            [ -s "$d/$f" ] || { echo "::error::$d/$f is missing"; exit 1; }
+          done
+          cp "$d"/libLiteRtDispatch_Qualcomm.so "$d"/libcdsprpc.so artifacts/litertlm-linux_arm64/
+          rm -rf "$d"
           # A missing artifact dir used to be skipped silently. Combined with the
           # delete-old-assets step below and fail_on_unmatched_files, that means:
           # the previous asset is deleted, the replacement is never built, and

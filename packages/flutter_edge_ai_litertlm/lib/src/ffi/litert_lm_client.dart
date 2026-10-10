@@ -20,6 +20,7 @@ import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import '../litertlm_bundle_sampler.dart';
+import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
 import '../thinking_context.dart';
 
@@ -335,10 +336,14 @@ class LiteRtLmFfiClient {
   String? get bundleSamplerError => _bundleSamplerRead.error;
   BundleSamplerRead _bundleSamplerRead = const BundleSamplerRead.notRead();
 
-  /// The sampler of the engine's first conversation, which LiteRT-LM keeps for
-  /// every later one (google-ai-edge/LiteRT-LM#2080).
-  ResolvedSampling? _engineSampling;
-  bool _warnedEngineSampling = false;
+  /// The sampler of the engine's first generation, which LiteRT-LM keeps for
+  /// every later conversation (google-ai-edge/LiteRT-LM#2080).
+  final _samplerLatch = EngineSamplerLatch();
+
+  /// The sampler each live conversation was created with, so the first
+  /// generation can record it (see [_noteGeneration]).
+  final Map<Pointer<LiteRtLmConversation>, (ResolvedSampling, bool)>
+  _conversationSampling = {};
   // Holding a reference prevents the proxy DynamicLibrary from being GC'd
   // while function pointers obtained via lookupFunction are still in use.
   // ignore: unused_field
@@ -1026,29 +1031,25 @@ class LiteRtLmFfiClient {
     );
   }
 
-  /// LiteRT-LM keeps the sampler of an engine's first conversation for every
-  /// later one (google-ai-edge/LiteRT-LM#2080), so a session that asks for
-  /// another one does not get it. Says so: once per engine when the caller
-  /// set the values, in the verbose log when only the defaults differ (a Qwen
-  /// session with thinking on after one with it off).
-  void _noteEngineSampling(ResolvedSampling sampling, bool explicit) {
-    final fixed = _engineSampling ??= sampling;
+  /// Reports what LiteRT-LM#2080 means for [conv]'s generation (see
+  /// [EngineSamplerLatch]). The engine builds its sampler at its first
+  /// generation, not when a conversation is created.
+  void _noteGeneration(Pointer<LiteRtLmConversation> conv) {
+    final entry = _conversationSampling[conv];
     // The NPU executor never reads a sampler; its own warning covers it.
-    if (fixed == sampling || _backend == 'npu') return;
-    final message =
-        'this session asks for $sampling, but LiteRT-LM keeps the sampler of '
-        "the engine's first conversation, $fixed, for every later one "
-        '(google-ai-edge/LiteRT-LM#2080). Close and reload the model to change '
-        'it.';
-    if (!explicit) {
-      edgeAiLog('[LiteRtLmFfi] $message', level: EdgeAiLogLevel.verbose);
+    if (entry == null || _backend == 'npu') return;
+    final note = _samplerLatch.onGeneration(entry.$1, explicit: entry.$2);
+    if (note == null) return;
+    if (!note.warn) {
+      edgeAiLog('[LiteRtLmFfi] ${note.message}', level: EdgeAiLogLevel.verbose);
       return;
     }
-    if (_warnedEngineSampling) return;
-    _warnedEngineSampling = true;
+    // A release build is where a wrong sampler gets reported, and edgeAiLog
+    // is silent there.
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] WARNING: $message Shown once per engine.',
+      '[flutter_edge_ai_litertlm] WARNING: ${note.message} Shown once per '
+      'engine.',
     );
   }
 
@@ -1171,7 +1172,6 @@ class LiteRtLmFfiClient {
     b.litert_lm_sampler_params_set_seed(samplerParams, sampling.randomSeed);
     b.litert_lm_session_config_set_sampler_params(sessionConfig, samplerParams);
     b.litert_lm_sampler_params_delete(samplerParams);
-    _noteEngineSampling(sampling, samplingExplicit);
 
     // The NPU executor argmaxes regardless of what we just set, so tell the
     // caller rather than letting them believe a seed or temperature took hold.
@@ -1291,6 +1291,7 @@ class LiteRtLmFfiClient {
     }
 
     _liveConvs.add(conv); // #379: track liveness so late cancels can't UAF
+    _conversationSampling[conv] = (sampling, samplingExplicit);
     return conv;
   }
 
@@ -1780,6 +1781,7 @@ class LiteRtLmFfiClient {
     );
 
     b.litert_lm_conversation_optional_args_delete(optionalArgs);
+    if (result == 0) _noteGeneration(conv);
 
     if (result != 0) {
       controller.addError(
@@ -1856,6 +1858,7 @@ class LiteRtLmFfiClient {
         if (response == nullptr) {
           throw Exception('send_message returned null');
         }
+        _noteGeneration(conv);
 
         final strPtr = b.litert_lm_json_response_get_string(response);
         final result = strPtr == nullptr
@@ -1902,6 +1905,7 @@ class LiteRtLmFfiClient {
     // Drop liveness first so any onCancel that races this teardown no-ops in
     // [_cancelOn] rather than dereferencing the pointer we are about to free.
     _liveConvs.remove(conv);
+    _conversationSampling.remove(conv);
     if (_bindings != null) {
       _bindings!.litert_lm_conversation_delete(conv);
       edgeAiLog('[LiteRtLmFfi] Conversation closed');
@@ -1966,8 +1970,8 @@ class LiteRtLmFfiClient {
     _isInitialized = false;
     _backend = null;
     _bundleSamplerRead = const BundleSamplerRead.notRead();
-    _engineSampling = null;
-    _warnedEngineSampling = false;
+    _samplerLatch.reset();
+    _conversationSampling.clear();
     _tokenizerMissing = false;
     _isShuttingDown = false;
   }

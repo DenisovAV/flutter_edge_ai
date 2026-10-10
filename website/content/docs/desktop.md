@@ -423,9 +423,9 @@ v0.17.0 (checked on CPU); not re-checked on v0.18.0.
 So the common shape is: an app loads a model, runs one generation with the
 defaults (the model's own sampler, else its family's), and from then on the
 engine keeps them. A later `temperature: 1.5` changes nothing, and a later
-`topK: 1` will not give you argmax; since `flutter_edge_ai_litertlm` 1.12.0 the
-first session that sets different values prints a warning, once per loaded
-model. The seed is not
+`topK: 1` will not give you argmax. Since `flutter_edge_ai_litertlm` 1.12.0 a
+warning is printed, once per loaded model, when a later session's values
+differ and either set was chosen by the caller. The seed is not
 re-applied either — the sampler keeps its RNG state across sessions, so two
 identical requests on one engine produce different text.
 

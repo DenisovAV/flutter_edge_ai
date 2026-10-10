@@ -55,7 +55,7 @@ bool _enginesRegistered = false;
 /// Every session here decodes greedily, as all of them did before
 /// flutter_edge_ai 2.2 made the model's own sampler the default (#572). The
 /// suite shares one engine, and LiteRT-LM keeps the sampler of an engine's
-/// first conversation (google-ai-edge/LiteRT-LM#2080), so pinning only some
+/// first generation (google-ai-edge/LiteRT-LM#2080), so pinning only some
 /// sessions would pin nothing. Sampling on web is covered by
 /// litertlm_web_sampling_test.dart.
 const _topK = 1;

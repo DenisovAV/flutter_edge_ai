@@ -15,8 +15,8 @@ model. The four parameters are nullable, and an unset one comes from:
 Output that was greedy is now sampled. Pass `topK: 1` to keep it greedy; values
 you pass are used as before, and a value no engine can sample with (a negative
 temperature, `topK` below 1, `topP` outside (0, 1]) throws an `ArgumentError`.
-`.litertlm` keeps the sampler of an engine's first conversation for every later
-one (google-ai-edge/LiteRT-LM#2080): close and reload the model to change it.
+`.litertlm` keeps the sampler of an engine's first generation for every later
+conversation (google-ai-edge/LiteRT-LM#2080): close and reload the model to change it.
 
 Upgrade every `flutter_edge_ai_*` package together (`flutter pub upgrade`, not
 `flutter pub upgrade flutter_edge_ai` alone): earlier engine releases override

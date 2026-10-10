@@ -236,8 +236,8 @@ wins, field by field. Pass `topK: 1` for greedy decoding.
 - **A temperature or top-p without a top-k** asks for sampling, so a greedy
   family (Phi, Hammer) or model config contributes no `topK: 1`: the session
   gets the next layer's top-k instead.
-- **`.litertlm` keeps the sampler of an engine's first conversation** for every
-  later one ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/issues/2080)).
+- **`.litertlm` keeps the sampler of an engine's first generation** for every
+  later conversation ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/issues/2080)).
   To change it, close the model and load it again. A new chat on the same
   model still gets a new answer to the same prompt, and a freshly loaded model
   repeats its first answer for the same seed.

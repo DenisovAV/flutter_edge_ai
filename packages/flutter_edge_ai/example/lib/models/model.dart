@@ -888,10 +888,10 @@ enum Model implements InferenceModelInterface {
   final double topP;
   // Raw capability flags from the enum literal. The public [supportImage] /
   // [supportAudio] getters below suppress these on web for .litertlm models,
-  // where @litert-lm/core@0.17.1 does not expose the Vision/AudioExecutor
-  // config yet — so image/audio inputs are silently dropped. Advertising them
-  // in the UI would offer a picker that produces no result. Native and web
-  // MediaPipe (.task) keep the declared value.
+  // where @litert-lm/core@0.18.0 creates the LLM engine with no vision or
+  // audio executor — so an image/audio message throws UnsupportedError.
+  // Advertising them in the UI would offer a picker that only produces that
+  // error. Native and web MediaPipe (.task) keep the declared value.
   final bool _supportImageRaw;
   final bool _supportAudioRaw;
 

@@ -106,7 +106,7 @@ Future<InferenceChat> _openChat(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group('web function calling (@litert-lm/core 0.17.1)', () {
+  group('web function calling (@litert-lm/core 0.18.0)', () {
     tearDownAll(() async {
       await _model?.close();
       _model = null;

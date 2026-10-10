@@ -29,7 +29,9 @@
 ///
 /// Why these tests and not the full 18 from `litertlm_ffi_test.dart`:
 ///   * The upstream `@litert-lm/core` is "early preview, text-in/text-out only".
-///   * Vision / audio / thinking are warn-and-ignore (no Engine path to test).
+///   * Vision / audio throw UnsupportedError (no vision or audio executor in
+///     the engine) — `web_multimodal_test.dart`. Thinking has its own suite,
+///     `web_thinking_test.dart`.
 ///   * CPU/GPU/NPU is a single WebGPU/WASM backend (no choice to assert).
 ///   * LoRA throws UnsupportedError, exercised in the unit smoke
 ///     (`test/web/litert_lm_web_test.dart`).

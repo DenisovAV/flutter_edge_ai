@@ -116,8 +116,10 @@ core), concurrent sessions (serialized), large models via OPFS streaming.
 
 **Not supported on web `.litertlm` yet (mobile/desktop only):**
 
-- ❌ **Vision / image input** — image inputs are dropped with a debug warning.
-- ❌ **Audio input** — no Audio executor config in the JS API.
+- ❌ **Vision / image input** — an image message throws `UnsupportedError`; the
+  JS API creates the LLM engine with no vision executor.
+- ❌ **Audio input** — an audio message throws `UnsupportedError`; no audio
+  executor either.
 - ❌ **LoRA weights** — `loraPath` throws `UnsupportedError`.
 
 <Info>

@@ -239,7 +239,7 @@ await chat.addQueryChunk(
 );
 ```
 
-On web only a MediaPipe `.task` build takes images (the flutter-edge-ai-mediapipe skill). The `.litertlm` web engine is text-only: `supportImage: true` loads without error, but `addQueryChunk` with an image throws `UnsupportedError`.
+On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (same Hugging Face repo as the `.litertlm`, `ModelFileType.task`, the flutter-edge-ai-mediapipe skill). On that build Gemma 4 has no thinking, and its tools never reach the model. The `.litertlm` web engine is text-only: `supportImage: true` loads without error, but `addQueryChunk` with an image throws `UnsupportedError`.
 
 ## Audio
 

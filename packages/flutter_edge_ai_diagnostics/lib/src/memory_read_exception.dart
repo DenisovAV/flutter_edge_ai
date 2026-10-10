@@ -1,7 +1,7 @@
 /// Thrown when the OS should have answered a memory query and did not.
 ///
-/// This is the counterpart to a null field. A null means the value does not
-/// exist on this platform or OS version; this exception means it should exist
+/// This is the counterpart to a null field. A null means the value is not
+/// reported on this platform or OS version; this exception means it should exist
 /// and the read failed (a kernel error, a permission error, or a file that
 /// lacks a field it always carries). Turning those into null would report a
 /// broken read as a documented gap.

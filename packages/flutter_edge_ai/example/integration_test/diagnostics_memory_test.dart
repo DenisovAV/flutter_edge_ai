@@ -1,7 +1,7 @@
 // Device test for flutter_edge_ai_diagnostics: proves the numbers are real on an
 // actual Android or iOS process, which host tests cannot do for iOS at all.
 //
-//   flutter test integration_test/diagnostics_memory_test.dart -d <device-id>
+//   flutter test integration_test/diagnostics_memory_test.dart -d <device-id> --no-uninstall
 //
 // No setUp, on purpose (Rule 6b): anything that can fail sits inside the test
 // body, so a failure is reported as a failure.
@@ -19,15 +19,15 @@ void main() {
   // rather than fail.
   final skip = !FlutterEdgeAiDiagnostics.isSupported;
 
-  testWidgets('reports both values on a real device', (tester) async {
+  testWidgets('reports the supported values on a real device', (tester) async {
     final snapshot = await FlutterEdgeAiDiagnostics.memorySnapshot();
     // ignore: avoid_print
     print('diagnostics snapshot on ${Platform.operatingSystem}: $snapshot');
 
     expect(snapshot.anonymousBytes, isNotNull);
     expect(snapshot.anonymousBytes, greaterThan(0));
-    // fileBackedBytes exists on Android only: the app's own libraries are
-    // always resident clean file pages. On iOS it is null by design.
+    // Android reports resident clean pages, including mapped framework and
+    // library files. The package does not read this value on iOS yet.
     if (Platform.isAndroid) {
       expect(snapshot.fileBackedBytes, isNotNull);
       expect(snapshot.fileBackedBytes, greaterThan(0));

@@ -113,6 +113,10 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// [modelPath] — path to the embedding model file (optional if active model set).
   /// [tokenizerPath] — path to the tokenizer file (optional if active model set).
   /// [preferredBackend] — backend preference (e.g., CPU, GPU).
+  ///
+  /// May fail with a `TimeoutException` when the previous embedder is still
+  /// closing after 60 s; its close keeps running, and a later call succeeds
+  /// once it finishes.
   Future<EmbeddingModel> createEmbeddingModel({
     String? modelPath,
     String? tokenizerPath,
@@ -585,7 +589,8 @@ abstract class EmbeddingModel {
   /// it wherever the answer is actually known.
   PreferredBackend? get activeBackend => null;
 
-  /// Whether [close] has already been called.
+  /// Whether [close] has already been called, or the model can no longer be
+  /// used because its worker exited.
   ///
   /// Core's embedder cache is the caller that needs this. It evicts on the close
   /// listener, which means it trusts an implementation to fire one — and a model

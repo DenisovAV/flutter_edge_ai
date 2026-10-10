@@ -34,6 +34,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:meta/meta.dart';
 
 import 'dart:isolate';
 
@@ -81,6 +82,15 @@ class _CloseAck {
   final String? error;
 }
 
+/// The last message of a worker whose load failed. The load error itself went
+/// first, as a plain `String`, so the caller never waits for this; it follows
+/// once the worker has closed the forward pass it built. [error] is set when
+/// that close threw.
+class _LoadCleanup {
+  const _LoadCleanup(this.error);
+  final String? error;
+}
+
 /// The error a request gets when the worker closed before it started.
 const _closedBeforeRunMessage =
     'EmbeddingWorker closed before this request ran';
@@ -122,6 +132,10 @@ class EmbeddingWorker {
   /// waiting afterwards: the only way to stop sooner is to kill the isolate,
   /// and a killed isolate never frees its native model.
   static const _slowCloseNotice = Duration(seconds: 30);
+
+  /// How long [spawn] waits for the load before saying it is still waiting.
+  /// It keeps waiting afterwards, for the same reason as [_slowCloseNotice].
+  static const _slowLoadNotice = Duration(seconds: 30);
 
   final SendPort _commandPort;
   final ReceivePort _fromWorker;
@@ -167,19 +181,38 @@ class EmbeddingWorker {
   /// Completes with the reason if the worker dies without being closed — an
   /// uncaught error, or the isolate ended under it. The owner uses it to turn
   /// itself closed, so nothing keeps handing out a model whose every call
-  /// fails (R5 W6). Never completes after a clean [close].
+  /// fails. Never completes after a clean [close].
+  ///
+  /// Not for use outside this package: `CommonEmbeddingModel`, the worker's
+  /// only owner, is its one reader. Not `@internal`, which the analyzer only
+  /// accepts under `lib/src/`, nor `@visibleForTesting`, which would flag
+  /// that reader.
   Future<String> get unexpectedExit => _unexpectedExit.future;
 
   /// Why the worker died, if it exited without being closed; null otherwise.
+  ///
+  /// Not for use outside this package, for the reason [unexpectedExit] gives.
   String? get deathReason => _deathReason;
 
   /// Spawn the worker and wait until the forward pass is loaded.
+  ///
+  /// A load that fails fails this at once, even though the worker still has
+  /// to close the forward pass it built: a native close that never returns
+  /// must not hold the caller, which may be the embedder cache's lane — and
+  /// with it every embedder request in the app. The close then runs in the
+  /// worker on its own, and a failure is reported when it comes.
+  ///
+  /// After [slowLoadNotice] without an answer it says once that it is still
+  /// waiting, and keeps waiting.
   static Future<EmbeddingWorker> spawn({
     required ForwardPassDescriptor descriptor,
     required String tokenizerPath,
+    @visibleForTesting Duration slowLoadNotice = _slowLoadNotice,
   }) async {
     final fromWorker = ReceivePort();
     final readyCompleter = Completer<_Ready>();
+    final engineTag = descriptor.engineTag;
+    final modelPath = descriptor.modelPath;
 
     // First message from the worker is either _Ready or a String error. A
     // `null` is the isolate's onExit signal — if it arrives before _Ready, the
@@ -187,11 +220,13 @@ class EmbeddingWorker {
     // so fail the completer instead of hanging forever. A `List` is an
     // uncaught error from onError, which arrives before that onExit.
     String? uncaughtDuringLoad;
+    var loadFailureReported = false;
     late final StreamSubscription<dynamic> sub;
     sub = fromWorker.listen((msg) {
       if (msg is _Ready) {
         readyCompleter.complete(msg);
       } else if (msg is String) {
+        loadFailureReported = true;
         if (!readyCompleter.isCompleted) {
           readyCompleter.completeError(StateError(msg));
         }
@@ -211,6 +246,15 @@ class EmbeddingWorker {
       }
     });
 
+    final notice = Timer(
+      slowLoadNotice,
+      () => _warn(
+        'loading the $engineTag embedder for $modelPath has taken '
+        '${_describeDuration(slowLoadNotice)}: the worker is still inside a '
+        'native call. It keeps waiting rather than kill the worker, because a '
+        'killed worker never frees its native model.',
+      ),
+    );
     final _Ready ready;
     try {
       await Isolate.spawn(
@@ -230,13 +274,22 @@ class EmbeddingWorker {
       );
       ready = await readyCompleter.future;
     } catch (_) {
-      // Nothing to kill. A worker that fails to load closes whatever forward
-      // pass it built and leaves through `Isolate.exit` carrying the error, and
-      // the onExit `null` means it is already gone. Killing it here instead
-      // could land before that close — the leak [close] no longer has.
-      await sub.cancel();
-      fromWorker.close();
+      // Nothing to kill: a killed worker never closes the forward pass it
+      // built. A worker that reported a load failure is still closing that
+      // pass, so keep listening — not waiting — until it exits, and report a
+      // close that fails. Otherwise it is already gone (onExit), or was never
+      // started.
+      if (loadFailureReported) {
+        sub.onData(
+          (msg) => _afterFailedLoad(msg, engineTag, modelPath, sub, fromWorker),
+        );
+      } else {
+        await sub.cancel();
+        fromWorker.close();
+      }
       rethrow;
+    } finally {
+      notice.cancel();
     }
 
     final worker = EmbeddingWorker._(
@@ -251,6 +304,41 @@ class EmbeddingWorker {
     sub.onData(worker._onReply);
     return worker;
   }
+
+  /// Handles what a worker whose load failed sends after the error: the
+  /// outcome of closing its forward pass, then its exit.
+  static void _afterFailedLoad(
+    dynamic msg,
+    String engineTag,
+    String modelPath,
+    StreamSubscription<dynamic> sub,
+    ReceivePort fromWorker,
+  ) {
+    if (msg is _LoadCleanup) {
+      final error = msg.error;
+      if (error != null) {
+        _warn(
+          'the $engineTag embedding forward pass for $modelPath failed to '
+          'close after its load failed; its native model may still be '
+          'resident: $error',
+        );
+      }
+    } else if (msg is List) {
+      _warn(
+        'the $engineTag embedding worker for $modelPath died while closing '
+        'the forward pass after its load failed; its native model may still '
+        'be resident: ${_describeUncaught(msg)}',
+      );
+    } else if (msg == null) {
+      unawaited(sub.cancel());
+      fromWorker.close();
+    }
+  }
+
+  /// "30 s", or "200 ms" for the short durations tests inject.
+  static String _describeDuration(Duration d) => d.inMilliseconds % 1000 == 0
+      ? '${d.inSeconds} s'
+      : '${d.inMilliseconds} ms';
 
   /// An `onError` message — `[error, stack]`, both as strings — as one text.
   static String _describeUncaught(List<dynamic> message) {
@@ -271,8 +359,8 @@ class EmbeddingWorker {
     } else if (msg is _CloseAck) {
       final error = msg.error;
       if (error != null) {
-        // Reported, not rethrown (R5 W4): the caller asked to stop using this
-        // model, and there is nothing it could do with the failure.
+        // Reported, not rethrown: the caller asked to stop using this model,
+        // and there is nothing it could do with the failure.
         _warn(
           'the $_engineTag embedding forward pass for $_modelPath failed to '
           'close; its native model may still be resident: $error',
@@ -294,9 +382,9 @@ class EmbeddingWorker {
     }
   }
 
-  /// The worker is gone without having closed its forward pass cleanly (R5
-  /// W6): fail everything waiting, say so where release builds can see it,
-  /// and let the owner know, so it stops handing out this model.
+  /// The worker is gone without having closed its forward pass cleanly: fail
+  /// everything waiting, say so where release builds can see it, and let the
+  /// owner know, so it stops handing out this model.
   void _died(String reason) {
     final whileClosing = _closeFuture != null;
     _deathReason = reason;
@@ -480,21 +568,19 @@ Future<void> _workerEntry(_WorkerInit init) async {
     pass = built;
   } catch (e, st) {
     edgeAiLog('[EmbeddingWorker] load failed: $e\n$st');
-    // A pass that was constructed may hold native handles whatever stage it
-    // failed at. `EmbeddingForwardPass.close()` is specified for exactly this:
-    // it is also called after `load()` or a getter throws, frees whatever load
-    // allocated, and must not throw for a pass that never loaded — so it is
-    // always called. Closed BEFORE the error is sent: the main isolate gives
-    // up on this worker the moment the error arrives.
+    // The error goes FIRST. The caller may be holding the embedder cache's
+    // lane, and so every embedder request in the app; a native close that
+    // never returns must not hold it too.
+    init.replyTo.send('Embedding worker failed to load: $e');
+    // Then the pass, in this same isolate — never by killing it, which would
+    // skip the close. A pass that was constructed may hold native handles
+    // whatever stage it failed at. `EmbeddingForwardPass.close()` is specified
+    // for exactly this: it is also called after `load()` or a getter throws,
+    // frees whatever load allocated, and must not throw for a pass that never
+    // loaded — so it is always called. The main isolate is still listening and
+    // reports a close that fails.
     final closeError = built == null ? null : await _closePass(built);
-    Isolate.exit(
-      init.replyTo,
-      closeError == null
-          ? 'Embedding worker failed to load: $e'
-          : 'Embedding worker failed to load: $e (closing the forward pass '
-                'also failed, so its native model may still be resident: '
-                '$closeError)',
-    );
+    Isolate.exit(init.replyTo, _LoadCleanup(closeError));
   }
 
   edgeAiLog(

@@ -141,8 +141,8 @@ void main() {
       'a close that outlasts the wait fails the caller with a '
       'TimeoutException, keeps running, and holds every later build',
       () async {
-        // R5 D5 / §4.6 step 5. Unbounded, one wedged native close hangs every
-        // embedder call in the app behind the serialize lane.
+        // Unbounded, one wedged native close hangs every embedder call in the
+        // app behind the serialize lane.
         final cache = EmbedderCache(
           closeWaitLimit: const Duration(milliseconds: 100),
         );
@@ -183,6 +183,71 @@ void main() {
       },
       timeout: const Timeout(Duration(seconds: 10)),
     );
+
+    test('callers queued behind a close share one deadline: all fail when it '
+        'passes, not one limit apart, and its end is announced', () async {
+      // A fresh limit per caller made the Nth queued caller wait N limits:
+      // with the 60 s default, a few queued requests meant minutes.
+      const limit = Duration(milliseconds: 200);
+      final cache = EmbedderCache(closeWaitLimit: limit);
+      final gate = Completer<void>();
+      final model = _FakeEmbedder(closeGate: gate);
+      cache.record(model, paramsFor('/a'));
+      final printed = <String>[];
+
+      final failedAt = <Duration>[];
+      await runZoned(
+        () async {
+          final clock = Stopwatch()..start();
+          final callers = [
+            for (var i = 0; i < 3; i++)
+              cache
+                  .serialize(
+                    () => cache.reuseOrInvalidate(
+                      paramsFor('/b'),
+                      label: 'caller $i',
+                    ),
+                  )
+                  .then<Object?>(
+                    (v) => v,
+                    onError: (Object e) {
+                      failedAt.add(clock.elapsed);
+                      return e;
+                    },
+                  ),
+          ];
+          final outcomes = await Future.wait(callers);
+          expect(outcomes, everyElement(isA<TimeoutException>()));
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+
+      expect(failedAt, hasLength(3));
+      expect(
+        failedAt.last,
+        lessThan(limit * 2),
+        reason:
+            'the third caller failed at ${failedAt.last.inMilliseconds} '
+            'ms; one shared deadline puts all three at about '
+            '${limit.inMilliseconds} ms, a limit each at 600',
+      );
+      expect(model.closeCount, 1, reason: 'one close, waited for by all');
+
+      // The close ends after its callers gave up: say so, once, since they
+      // were told to retry.
+      gate.complete();
+      await pumpEventQueue();
+      final announced = printed.where((l) => l.contains('finished closing'));
+      expect(announced, hasLength(1));
+      expect(announced.single, contains('/a'));
+      expect(
+        await cache.reuseOrInvalidate(paramsFor('/b'), label: 'after'),
+        isNull,
+        reason: 'with the close done, the build goes ahead',
+      );
+    }, timeout: const Timeout(Duration(seconds: 10)));
 
     test('an embedder the app closed without awaiting is not rebuilt until its '
         'close has finished', () async {

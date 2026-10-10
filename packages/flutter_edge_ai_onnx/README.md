@@ -106,10 +106,11 @@ profile, not of the output's name, and should move there.
 Text-only, one session at a time (v1). No vision, no audio, no LoRA. Sampling
 follows the model's `genai_config.json` (greedy unless it sets `do_sample`);
 the `temperature`, `topK`, `topP` and `randomSeed` you pass override it, and
-`temperature: 0` or `topK: 1` keeps decoding greedy. A temperature or `topP`
-without `topK` over a config with `top_k: 1` also gets a top-k, from the
-model's family, so it samples. On web `randomSeed` has no effect:
-Transformers.js takes no seed. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
+`temperature: 0` or `topK: 1` keeps decoding greedy. Natively, a temperature
+or `topP` without `topK` over a config with `top_k: 1` also gets a top-k (the
+family's, else 40), so it samples. On web the seed is not applied yet and
+`topP` is ignored (Transformers.js samples with top-k only); each is said once
+when set. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
 template (`OgaTokenizerApplyChatTemplate`) — the engine never builds turn
 markers itself.
 

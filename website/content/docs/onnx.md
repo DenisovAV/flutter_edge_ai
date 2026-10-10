@@ -126,9 +126,10 @@ Text-only, one session at a time (v1): no vision, no audio, no LoRA. Sampling
 follows the model's own config (`genai_config.json` natively,
 `generation_config.json` on Web), which is greedy unless it sets `do_sample`;
 the `temperature`, `topK` and `topP` you pass override it, and `temperature: 0`
-or `topK: 1` keeps decoding greedy. A temperature or `topP` without `topK` over a
-config with `top_k: 1` also gets a top-k, from the model's family, so it
-samples. `randomSeed` applies natively only: Transformers.js takes no seed. Prompts use the model's own chat template
+or `topK: 1` keeps decoding greedy. Natively, a temperature or `topP` without
+`topK` over a config with `top_k: 1` also gets a top-k (the family's, else 40),
+so it samples. On Web the seed is not applied yet and `topP` is ignored
+(Transformers.js samples with top-k only); each is said once when set. Prompts use the model's own chat template
 (ORT-GenAI's `OgaTokenizerApplyChatTemplate` natively; the model's
 `chat_template` on Web) — the engine never builds turn markers itself.
 On native, `preferredBackend` is not applied at all: neither ORT client appends an

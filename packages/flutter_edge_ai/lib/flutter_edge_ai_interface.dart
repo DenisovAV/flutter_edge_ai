@@ -190,13 +190,17 @@ abstract class InferenceModel {
   /// Creates a new [InferenceModelSession] for generation.
   ///
   /// [temperature], [randomSeed], [topK], [topP] — sampling. A value you set
-  /// is used as is. An unset one comes from the model itself when the engine
-  /// can read it (a `.litertlm` bundle's sampler, an ONNX model's
+  /// is used as is; one no engine can sample with throws an [ArgumentError].
+  /// An unset one comes from the model itself when the engine can read it (a
+  /// native `.litertlm` bundle's sampler, an ONNX model's
   /// `genai_config.json`), otherwise from the family's published defaults
   /// ([SamplingParams.forModelType]), otherwise from [SamplingParams.fallback].
-  /// Pass `topK: 1` for greedy decoding. On `.litertlm` the sampler is fixed
-  /// by the engine's first generation (LiteRT-LM#2080), so a later session
-  /// with different values needs the model reloaded.
+  /// Engines that cannot take a value say so once, and two depart from this:
+  /// ONNX leaves unset fields to its config, and built-in AI sends
+  /// `temperature: 0.8, topK: 1`. Pass `topK: 1` or `temperature: 0` for
+  /// greedy decoding. On `.litertlm` the sampler is fixed by the engine's
+  /// first generation (LiteRT-LM#2080), so a later session with different
+  /// values needs the model reloaded.
   /// [loraPath] — optional path to LoRA model.
   /// [enableVisionModality] — enable vision modality for multimodal models.
   /// [enableAudioModality] — enable audio modality for Gemma 3n E4B models.

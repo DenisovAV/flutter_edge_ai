@@ -7,12 +7,15 @@ import 'model.dart';
 /// A null field is unset. An engine resolves each unset field on its own, in
 /// this order:
 ///
-/// 1. what the model file ships, when the engine can read it (a `.litertlm`
-///    bundle's sampler, an ONNX model's `genai_config.json`);
+/// 1. what the model file ships, when the engine can read it (a native
+///    `.litertlm` bundle's sampler, an ONNX model's `genai_config.json`);
 /// 2. the model family's published defaults, [SamplingParams.forModelType];
 /// 3. [SamplingParams.fallback].
 ///
 /// [resolve] implements that order for engines that pick the values in Dart.
+/// ONNX leaves unset fields to its config and takes only a top-k from the
+/// family; built-in AI sends its OS defaults' stand-in, temperature 0.8 and
+/// top-k 1.
 @immutable
 final class SamplingParams {
   const SamplingParams({

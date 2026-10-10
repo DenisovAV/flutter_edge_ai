@@ -227,23 +227,29 @@ Leave `temperature`, `topK` and `topP` unset and each session gets the sampler
 the model file ships, else the defaults its family publishes
 (`SamplingParams.forModelType`; Gemma: `temperature: 1.0, topK: 64,
 topP: 0.95`), else `temperature: 0.8, topK: 40, topP: 0.95`. A value you pass
-wins, field by field. Pass `topK: 1` for greedy decoding.
+wins, field by field. Pass `topK: 1` or `temperature: 0` for greedy decoding.
 
 - **Where the model file's sampler is read:** a `.litertlm` bundle on native
   platforms, and an ONNX model's `genai_config.json`. Web `.litertlm` and
   MediaPipe `.task` use the family defaults, and MediaPipe holds an unset
-  top-k to its ceiling of 40.
+  top-k to 40, its own default.
 - **A temperature or top-p without a top-k** asks for sampling, so a greedy
   family (Phi, Hammer) or model config contributes no `topK: 1`: the session
-  gets the next layer's top-k instead.
+  gets the next layer's top-k instead. Built-in AI is the exception: it keeps
+  `topK: 1`, and says so once.
 - **`.litertlm` keeps the sampler of an engine's first generation** for every
   later conversation ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/issues/2080)).
-  To change it, close the model and load it again. A new chat on the same
-  model still gets a new answer to the same prompt, and a freshly loaded model
-  repeats its first answer for the same seed.
-- **`randomSeed`** is 1 when unset. ONNX leaves an unset seed to the model
-  config, and a seed has no effect on ONNX web or built-in AI. Built-in AI
-  sends `temperature: 0.8, topK: 1` for unset values, as it always has.
+  To change it, close the model and load it again; a warning says so once when
+  you set either sampler. A new chat on the same model still gets a new answer
+  to the same prompt, and a freshly loaded model repeats its first answer for
+  the same seed.
+- **MediaPipe on GPU** takes the first session's top-k as its ceiling until the
+  model is reloaded, and rejects a larger one.
+- **What an engine ignores** is printed once: built-in AI takes no seed, ONNX
+  web applies neither the seed nor top-p, and the NPU decodes greedily
+  whatever you set. `randomSeed` is 1 when unset, except on ONNX, which leaves
+  it to the model config. Built-in AI sends `temperature: 0.8, topK: 1` for
+  unset values, as it always has.
 
 ### System Instructions
 

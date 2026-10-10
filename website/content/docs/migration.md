@@ -12,19 +12,23 @@ meta:
 `temperature: 0.8, randomSeed: 1, topK: 1`, which was greedy decoding for every
 model. The four parameters are nullable, and an unset one comes from:
 
-1. the sampler the model file ships — a `.litertlm` bundle's, or an ONNX
-   model's `genai_config.json`;
+1. the sampler the model file ships — a native `.litertlm` bundle's, or an
+   ONNX model's `genai_config.json`;
 2. the defaults its family publishes, `SamplingParams.forModelType` (Gemma:
    `temperature: 1.0, topK: 64, topP: 0.95`);
 3. `temperature: 0.8, topK: 40, topP: 0.95, randomSeed: 1`.
 
-Output that was greedy is now sampled. Pass `topK: 1` to keep it greedy; values
-you pass are used as before, and a value no engine can sample with (a negative
-temperature, `topK` below 1, `topP` outside (0, 1]) throws an `ArgumentError`.
+Output that was greedy is now sampled on LiteRT-LM and MediaPipe, except for
+the families whose publishers decode greedily (Phi, Hammer). ONNX follows the
+model's config as before, and built-in AI keeps `temperature: 0.8, topK: 1`.
+Pass `topK: 1` or `temperature: 0` to keep it greedy; values you pass are used
+as before, and a value no engine can sample with (a negative temperature,
+`topK` below 1, `topP` outside (0, 1]) throws an `ArgumentError`. `.litertlm`
+keeps the sampler of an engine's first generation for every later conversation
+(google-ai-edge/LiteRT-LM#2080): close and reload the model to change it.
 `genkit_flutter_edge_ai` 0.8.1 and `flutter_edge_ai_agent` 0.2.8 pass unset
-values through the same way. Where each engine reads its values, and what
-`.litertlm` does on a second session, is under
-[Sampling](/docs/getting-started#sampling).
+values through the same way. What each engine reads, and what it ignores, is
+under [Sampling](/docs/getting-started#sampling).
 
 Upgrade every `flutter_edge_ai_*` package together (`flutter pub upgrade`, not
 `flutter pub upgrade flutter_edge_ai` alone): earlier engine releases override

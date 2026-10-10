@@ -117,7 +117,10 @@ final class SamplingParams {
   /// it; leave it empty otherwise.
   ///
   /// When [explicit] [needsSamplingTopK], a greedy layer below ([isGreedy]) is
-  /// skipped whole rather than lending its top-k of 1. Throws an
+  /// skipped whole rather than lending its top-k of 1. When [explicit] itself
+  /// is greedy, the result has top-k 1 whatever the layers say, so a
+  /// temperature of 0 is greedy on every engine: some pick their sampler from
+  /// top-k alone (MediaPipe samples a temperature of 0 at 1.0). Throws an
   /// [ArgumentError] when [explicit] fails [validate].
   static ResolvedSampling resolve(
     SamplingParams explicit, {
@@ -138,7 +141,7 @@ final class SamplingParams {
     }
     return ResolvedSampling(
       temperature: s.temperature!,
-      topK: s.topK!,
+      topK: explicit.isGreedy ? 1 : s.topK!,
       topP: s.topP!,
       randomSeed: s.randomSeed!,
     );

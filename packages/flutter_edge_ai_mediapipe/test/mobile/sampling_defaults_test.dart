@@ -54,6 +54,15 @@ void main() {
     );
   });
 
+  test('temperature 0 is greedy: topK 1, sent with temperature 1.0', () async {
+    expect(await _sentSampler((m) => m.createSession(temperature: 0)), [
+      1.0,
+      1,
+      1,
+      0.95,
+    ]);
+  });
+
   test('a model with no family values gets the fallback', () async {
     expect(
       await _sentSampler(

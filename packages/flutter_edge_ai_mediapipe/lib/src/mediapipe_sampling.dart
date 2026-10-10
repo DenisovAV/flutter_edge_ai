@@ -10,7 +10,9 @@ const mediaPipeMaxTopK = 40;
 ///
 /// A top-k the caller did not set is held to [mediaPipeMaxTopK]: the Gemma
 /// family default of 64 is above it. A top-k the caller set reaches MediaPipe
-/// unchanged.
+/// unchanged. Greedy decoding is sent with a temperature of 1.0 rather than
+/// 0: MediaPipe picks greedy from the top-k alone, and its GPU sampler
+/// divides by the temperature regardless.
 ResolvedSampling resolveMediaPipeSampling(
   SamplingParams explicit, {
   required ModelType modelType,
@@ -21,10 +23,14 @@ ResolvedSampling resolveMediaPipeSampling(
     modelType: modelType,
     thinking: thinking,
   );
-  if (explicit.topK != null || s.topK <= mediaPipeMaxTopK) return s;
+  final topK = explicit.topK == null && s.topK > mediaPipeMaxTopK
+      ? mediaPipeMaxTopK
+      : s.topK;
+  final temperature = topK == 1 && s.temperature == 0 ? 1.0 : s.temperature;
+  if (topK == s.topK && temperature == s.temperature) return s;
   return ResolvedSampling(
-    temperature: s.temperature,
-    topK: mediaPipeMaxTopK,
+    temperature: temperature,
+    topK: topK,
     topP: s.topP,
     randomSeed: s.randomSeed,
   );

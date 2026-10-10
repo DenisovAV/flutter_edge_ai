@@ -175,16 +175,21 @@ void main() {
       );
     });
 
-    test('temperature 0 asks for greedy, so no layer is skipped', () {
-      for (final explicit in const [
-        SamplingParams(temperature: 0),
-        SamplingParams(temperature: 0, topP: 0.9),
-      ]) {
-        expect(
-          SamplingParams.resolve(explicit, modelType: ModelType.phi).topK,
-          1,
-          reason: '$explicit',
-        );
+    test('temperature 0 is greedy on every family: topK 1', () {
+      for (final type in [ModelType.gemma4, ModelType.qwen3, ModelType.phi]) {
+        for (final explicit in const [
+          SamplingParams(temperature: 0),
+          SamplingParams(temperature: 0, topP: 0.9),
+          SamplingParams(temperature: 0, topK: 40),
+        ]) {
+          final r = SamplingParams.resolve(
+            explicit,
+            modelType: type,
+            modelDefaults: const SamplingParams(topK: 20),
+          );
+          expect(r.topK, 1, reason: '$type $explicit');
+          expect(r.temperature, 0, reason: '$type $explicit');
+        }
       }
     });
 

@@ -1249,7 +1249,7 @@ packages:
     source: hosted
     version: "2.4.2"
   vm_service:
-    dependency: transitive
+    dependency: "direct dev"
     description:
       name: vm_service
       sha256: "5f37239c4851efcef929cea7824e76df7f2f0970aef85d66bbc430afa40e72f0"

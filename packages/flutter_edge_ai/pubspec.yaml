@@ -31,7 +31,7 @@ dependencies:
   background_downloader: ^9.5.6
   # Native Assets build hooks (for hook/build.dart)
   hooks: ^2.0.0
-  code_assets: ^1.2.0
+  code_assets: ">=1.2.0 <3.0.0"
   crypto: ^3.0.6
   genai_primitives: ^0.2.3
   # Annotations (@immutable, @visibleForTesting) used across core, e.g. chat.dart.

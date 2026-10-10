@@ -37,7 +37,7 @@ dependencies:
   ffi: ^2.1.0
   mutex: ^3.1.0
   hooks: ^2.0.0
-  code_assets: ^1.2.0
+  code_assets: ">=1.2.0 <3.0.0"
   crypto: ^3.0.6
   path_provider: ^2.1.4
 

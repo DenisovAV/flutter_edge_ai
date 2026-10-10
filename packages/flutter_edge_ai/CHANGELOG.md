@@ -1,6 +1,9 @@
 ## 2.2.0
 - **Breaking:** unset sampling values come from the model file, then its family, not greedy `topK: 1` (#572).
 
+## 2.1.2
+- Allow `code_assets` 2.x, which other native plugins now require (#603).
+
 ## 2.1.1
 - A crash while saving the active inference, STT or TTS model no longer leaves a mix.
 - Android: Qualcomm NPU finds its libraries in Play (AAB) installs; prepared off the main thread.

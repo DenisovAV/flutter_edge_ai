@@ -2,6 +2,9 @@
 - Unset sampling uses the `.litertlm` sampler; web applies the values you pass (#572).
 - Require `flutter_edge_ai` ^2.2.0.
 
+## 1.11.2
+- Allow `code_assets` 2.x, which other native plugins now require (#603).
+
 ## 1.11.1
 - Linux: native tool calls no longer crash (#551, `native-v0.18.0-d`).
 

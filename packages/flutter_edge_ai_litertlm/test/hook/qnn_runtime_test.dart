@@ -280,7 +280,7 @@ void main() {
       };
       final hook = File('hook/build.dart').readAsStringSync();
       final bundle = RegExp(
-        r"const _litertlmBundle = _NativeBundle\([\s\S]*?version: '([^']+)'",
+        r"final _litertlmBundle = _NativeBundle\([\s\S]*?version: '([^']+)'",
       ).firstMatch(hook)?.group(1);
       expect(bundle, isNotNull, reason: 'could not read the bundle version');
       expect(

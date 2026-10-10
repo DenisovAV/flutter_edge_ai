@@ -77,10 +77,10 @@ packages:
     dependency: transitive
     description:
       name: code_assets
-      sha256: bf394f466ba9205f1812a0433b392d6af280f155f56651eda7c18cc32ed493b8
+      sha256: "828110d598123b5ea96c00c9f3c72105bf79f8ee36c20a39b26209ade421ec57"
       url: "https://pub.dev"
     source: hosted
-    version: "1.2.1"
+    version: "2.1.0"
   collection:
     dependency: transitive
     description:
@@ -290,14 +290,14 @@ packages:
       path: "../../flutter_edge_ai_onnx"
       relative: true
     source: path
-    version: "0.5.3"
+    version: "0.5.4"
   flutter_edge_ai_qdrant:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_qdrant"
       relative: true
     source: path
-    version: "2.0.0"
+    version: "2.0.1"
   flutter_edge_ai_rag:
     dependency: "direct main"
     description:
@@ -318,7 +318,7 @@ packages:
       path: "../../flutter_edge_ai_sqlite"
       relative: true
     source: path
-    version: "2.0.0"
+    version: "2.0.1"
   flutter_inappwebview:
     dependency: transitive
     description:
@@ -743,10 +743,10 @@ packages:
     dependency: transitive
     description:
       name: native_toolchain_c
-      sha256: f9c168717100ae6d9fee9ffb0be379bf1f8b26b0f6bcbd4fdddcd931993a6a72
+      sha256: "90eaad8059ebc2004a63810a4696ea9acdb02473e47ed3b6b3bafb100ac77e31"
       url: "https://pub.dev"
     source: hosted
-    version: "0.19.2"
+    version: "0.19.5"
   nested:
     dependency: transitive
     description:
@@ -759,10 +759,10 @@ packages:
     dependency: transitive
     description:
       name: objective_c
-      sha256: b7fb95a6d9a4f009edd63dc5ac69f07420b23a16161c6dd8660290b59c602e8e
+      sha256: "5c80c2ad6e2c0397de5db38c6d653e69616a3397e13aa7633bf39eb668f2041b"
       url: "https://pub.dev"
     source: hosted
-    version: "9.5.0"
+    version: "9.6.2"
   package_config:
     dependency: transitive
     description:
@@ -927,10 +927,10 @@ packages:
     dependency: transitive
     description:
       name: qdrant_edge
-      sha256: "343490f7fc95a6f81e66eccdb9a2986f7ceeac1cb390de8cfbef1a6d5ca8077c"
+      sha256: "4cc2407a056e9436827e8921d07f26fc41bdc99d6fa9202107deed077bb77fcd"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.0-dev.4"
+    version: "0.8.0-dev.5"
   rational:
     dependency: transitive
     description:

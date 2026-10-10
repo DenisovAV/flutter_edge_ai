@@ -1,6 +1,6 @@
 name: flutter_edge_ai_qdrant
 description: "qdrant-edge on-device vector-store provider for flutter_edge_ai_rag, via the official qdrant_edge UniFFI SDK. Native platforms only."
-version: 2.0.0
+version: 2.0.1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_qdrant
 topics: [rag, qdrant, vector-search, embeddings, on-device]
@@ -29,9 +29,10 @@ dependencies:
   # For the store's owned-subdir path handling (qdrant_edge_v1).
   path: ^1.9.0
   # Official Qdrant Edge Dart SDK (UniFFI binding of the shared qdrant-edge-ffi
-  # crate). Keep the prerelease range below dev.5: dev.4 fixes native-memory
-  # leaks, while a later prerelease may change the API or native archive.
-  qdrant_edge: '>=0.8.0-dev.4 <0.8.0-dev.5'
+  # crate). Keep the prerelease range below dev.6: dev.5 allows code_assets 2.x
+  # (dev.4 fixed native-memory leaks), while a later prerelease may change the
+  # API or native archive.
+  qdrant_edge: '>=0.8.0-dev.5 <0.8.0-dev.6'
 
 dev_dependencies:
   flutter_test:

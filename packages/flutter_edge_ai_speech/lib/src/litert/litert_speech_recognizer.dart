@@ -8,6 +8,7 @@
 // [SttModelProfile] — moonshine/whisper/parakeet select a profile, not a
 // recognizer subclass.
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
@@ -15,6 +16,7 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart'
 import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
     show SpeechRecognizer;
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../model/stt_model_profile.dart';
 import 'stt_worker.dart';
@@ -73,10 +75,27 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
     // every later assignment — there is no "first call is checked, the rest are
     // not" asymmetry to reason about.
     this.language = language;
+    // A worker that dies on its own turns this recognizer closed and tells its
+    // listeners, so core drops its cached recognizer and the next
+    // `getActiveStt` builds a fresh one — instead of handing out this one,
+    // whose every call would fail.
+    unawaited(_worker.unexpectedExit.then(_onWorkerDied));
   }
 
   final SttWorker _worker;
   final VoidCallback onClose;
+
+  /// What every [close] after the first returns: completes, normally, once
+  /// the one shared teardown is done — so a second caller waits for it
+  /// instead of returning while it is still running.
+  Future<void>? _closeFuture;
+
+  /// Whether [onClose] and the close listeners have run; they run once,
+  /// whether the recognizer was closed or its worker died.
+  bool _closeNotified = false;
+
+  /// Why the worker died, when it did; later calls quote it.
+  String? _deathReason;
 
   /// Whether this model's decoder prompt HAS a language slot (whisper yes,
   /// moonshine/parakeet no). Captured at create from the profile, because the
@@ -112,6 +131,9 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
   /// accelerator (defaults to CPU).
   ///
   /// Caller owns the returned instance and must call [close] when done.
+  ///
+  /// [engineFactory] is the worker's test seam (see [SttWorker.spawn]);
+  /// production leaves it null.
   static Future<LiteRtSpeechRecognizer> create({
     required SttModelProfile profile,
     required String modelPath,
@@ -119,6 +141,7 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
     PreferredBackend? preferredBackend,
     VoidCallback? onClose,
     String? language,
+    @visibleForTesting SttWorkerEngineFactory? engineFactory,
   }) async {
     // BEFORE the spawn: the constructor's own assignment would throw only after
     // the isolate is up and the model loaded, orphaning the worker.
@@ -131,6 +154,7 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
       tokenizerPath: tokenizerPath,
       profile: profile,
       backend: preferredBackend,
+      engineFactory: engineFactory,
     );
     // Kept as the mutable default rather than baked into the profile: the
     // caller may retarget it later without a reload (see [language]).
@@ -144,8 +168,12 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
 
   void _assertNotClosed() {
     if (_isClosed) {
+      final death = _deathReason;
       throw StateError(
-        'LiteRtSpeechRecognizer is closed; create a new instance to use it',
+        death == null
+            ? 'LiteRtSpeechRecognizer is closed; create a new instance to use it'
+            : 'LiteRtSpeechRecognizer is closed because $death; create a new '
+                  'instance to use it',
       );
     }
   }
@@ -159,15 +187,61 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
     return _worker.transcribe(samples, language: language ?? this.language);
   }
 
+  /// Closes the recognizer and its worker.
+  ///
+  /// Transcriptions that have not started fail with a "closed" [StateError];
+  /// the one in flight finishes first, and this waits for it and for the
+  /// native model to be disposed, however long that takes. A recognizer whose
+  /// worker died is already closed — its listeners have run — and this only
+  /// releases what is left. Concurrent callers share one teardown.
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() {
+    final teardownDone = _closeFuture;
+    if (teardownDone != null) return teardownDone;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // `whenComplete` hands the first caller the teardown's own outcome — a
+    // throwing `onClose` or listener included — while every later caller
+    // gets `settled`, which only ever completes normally once it is done.
+    return _close().whenComplete(settled.complete);
+  }
+
+  Future<void> _close() async {
     _isClosed = true;
     try {
       await _worker.close();
     } finally {
+      _notifyClosed();
+    }
+  }
+
+  void _notifyClosed() {
+    if (_closeNotified) return;
+    _closeNotified = true;
+    try {
       onClose();
+    } finally {
+      // Even when `onClose` throws: core drops its cached instance on a close
+      // listener, and one it never hears about is handed to every later
+      // caller.
       fireCloseListeners();
+    }
+  }
+
+  void _onWorkerDied(String reason) {
+    _deathReason = reason;
+    _isClosed = true;
+    try {
+      _notifyClosed();
+    } catch (e, st) {
+      // Nobody awaits this path, so a throwing listener would otherwise be an
+      // unhandled error with no context; `print`, because edgeAiLog is silent
+      // in release.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_speech] WARNING: a close listener threw while a '
+        'speech recognizer whose worker had died was being closed: $e\n$st',
+      );
     }
   }
 }

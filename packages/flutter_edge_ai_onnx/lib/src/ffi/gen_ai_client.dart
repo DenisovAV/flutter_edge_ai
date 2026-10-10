@@ -15,6 +15,10 @@
 //     model+tokenizer on every `Isolate.run` call (~hundreds of ms) would
 //     dwarf the ~18ms/token decode cost this is trying to measure/serve.
 //
+// The worker loop — one request at a time, close without a kill — lives in
+// `gen_ai_worker.dart`; this file holds the main-isolate client and the
+// `dart:ffi` engine that loop drives (`_FfiGenAiEngine`).
+//
 // GOTCHA (verified in the spike, and load-bearing here): on this GenAI
 // version the prompt forward pass (prefill) runs INSIDE
 // `OgaGenerator_AppendTokenSequences`, not the first `GenerateNextToken`.
@@ -39,6 +43,7 @@ import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:mutex/mutex.dart';
 
 import 'gen_ai_protocol.dart';
+import 'gen_ai_worker.dart';
 import 'ort_genai_bindings.g.dart';
 
 /// Env var override for host tests / macOS dev: a directory containing both
@@ -138,8 +143,10 @@ abstract class GenAiClient {
   /// before creating a new one" rule.
   Future<void> resetSession();
 
-  /// Frees every native handle (generator, tokenizer, model) and kills the
-  /// worker isolate. Idempotent.
+  /// Frees every native handle (generator, tokenizer, model) and stops the
+  /// worker isolate — after the call in flight, however long it takes; the
+  /// worker is never killed, because a killed worker frees nothing.
+  /// Idempotent.
   Future<void> shutdown();
 
   /// Stats from the most recently completed [generate] call, or `null`
@@ -150,39 +157,91 @@ abstract class GenAiClient {
 /// Main-isolate handle to the ORT-GenAI worker. Spawns the isolate, performs
 /// the load handshake, and multiplexes concurrent requests by id. See this
 /// file's top doc for why native handles never cross the port. The message
-/// protocol itself lives in `gen_ai_protocol.dart`.
+/// protocol itself lives in `gen_ai_protocol.dart`, the worker loop in
+/// `gen_ai_worker.dart`.
 class GenAiFfiClient implements GenAiClient {
   /// [workerEntry] is the injection seam for tests — defaults to the real
-  /// dlopen-ing `_defaultWorkerEntry`. Tests spawn a scripted fake worker
-  /// (real isolate, real ports, zero FFI) that speaks the same
-  /// `gen_ai_protocol.dart` message shapes, exercising the real dispatch/
-  /// mutex/`_closed`-recheck machinery below with no native library involved
-  /// (hardened plan Task 2b) — that fake cannot speak to whether the real
-  /// worker's native handle teardown is use-after-free-safe (only
-  /// `onnx_generation_host_smoke_test.dart`, which runs against real ORT-GenAI
-  /// libs, can). Never override it in production code.
-  GenAiFfiClient({@visibleForTesting GenAiWorkerEntry? workerEntry})
-    : _workerEntry = workerEntry ?? _defaultWorkerEntry;
+  /// dlopen-ing `_defaultWorkerEntry`. Tests spawn a fake worker (real
+  /// isolate, real ports, zero FFI) that runs the same worker loop
+  /// (`serveGenAiWorker`) over a scripted engine, exercising the real
+  /// dispatch/mutex/`_closed`-recheck machinery below and the real queue/close
+  /// rules with no native library involved (hardened plan Task 2b) — that
+  /// fake cannot speak to whether the FFI engine's native handle teardown is
+  /// use-after-free-safe (only `onnx_generation_host_smoke_test.dart`, which
+  /// runs against real ORT-GenAI libs, can). Never override it in production
+  /// code.
+  ///
+  /// [slowLoadNotice] and [slowCloseNotice] are how long [load] and
+  /// [shutdown] wait before saying, once, that they are still waiting; tests
+  /// shorten them.
+  GenAiFfiClient({
+    @visibleForTesting GenAiWorkerEntry? workerEntry,
+    @visibleForTesting this._slowLoadNotice = _defaultSlowLoadNotice,
+    @visibleForTesting this._slowCloseNotice = _defaultSlowCloseNotice,
+  }) : _workerEntry = workerEntry ?? _defaultWorkerEntry;
+
+  /// How long [shutdown] waits, by default, before saying it is still
+  /// waiting. It keeps waiting afterwards: the only way to stop sooner is to
+  /// kill the isolate, and a killed isolate never frees its native model.
+  static const _defaultSlowCloseNotice = Duration(seconds: 30);
+
+  /// How long [load] waits, by default, before saying it is still waiting. It
+  /// keeps waiting afterwards, for the same reason.
+  static const _defaultSlowLoadNotice = Duration(seconds: 30);
 
   final GenAiWorkerEntry _workerEntry;
+  final Duration _slowLoadNotice;
+  final Duration _slowCloseNotice;
 
-  Isolate? _isolate;
   SendPort? _commandPort;
   ReceivePort? _fromWorker;
-  StreamSubscription? _sub;
+  StreamSubscription<dynamic>? _sub;
+
+  /// The model directory [load] was given; names the model in warnings.
+  String? _modelDir;
 
   /// Serializes `generate`/`countTokens` calls. [stopGeneration] is
   /// deliberately NOT gated by this — see its doc.
   final Mutex _mutex = Mutex();
 
   bool _loaded = false;
+
+  /// True from the moment [shutdown] is called, or the worker dies; every
+  /// call refuses from then on.
   bool _closed = false;
+
+  /// Why the worker is gone when it went without being asked to — the text
+  /// every later call fails with. Null otherwise.
+  String? _deathReason;
+
+  /// The error, with its stack, an uncaught exception in the worker reported
+  /// through the spawn's `onError` port, kept until the `onExit` that follows.
+  String? _crashError;
+
+  /// True once the worker's [CloseAck] arrived; the `onExit` after it is the
+  /// normal end, not a death.
+  bool _acked = false;
+
+  /// True once a [LoopFailed] arrived: the worker closed its engine before the
+  /// error that ends it, so the death that follows has not left the model
+  /// resident — unless [_closeErrorBeforeDeath] says that close failed.
+  bool _closedBeforeDeath = false;
+  String? _closeErrorBeforeDeath;
+
+  /// Completes when the worker is gone: its [CloseAck], or its onExit.
+  final _gone = Completer<void>();
+
+  /// Completes, with the reason, when the worker exits without acking a
+  /// [shutdown]; read through [unexpectedExitOf].
+  final _unexpectedExit = Completer<String>();
+
+  /// The one teardown every [shutdown] call shares.
+  Future<void>? _shutdownFuture;
 
   int _nextId = 0;
   final Map<int, StreamController<String>> _activeStreams = {};
   final Map<int, Completer<void>> _streamDone = {};
   final Map<int, Completer<int>> _countPending = {};
-  Completer<void>? _closeAck;
   Completer<void>? _resetAck;
 
   GenAiGenerationStats? _lastStats;
@@ -201,52 +260,86 @@ class GenAiFfiClient implements GenAiClient {
     final fromWorker = ReceivePort();
     final readyCompleter = Completer<Ready>();
 
-    late final StreamSubscription sub;
+    // First message from the worker is either Ready or a String error. A
+    // two-element List is an uncaught error (the onError port), which comes
+    // before the onExit `null`; if that `null` arrives before Ready, the
+    // worker died during load, so fail the completer instead of hanging.
+    String? uncaughtDuringLoad;
+    var loadFailureReported = false;
+    late final StreamSubscription<dynamic> sub;
     sub = fromWorker.listen((msg) {
       if (msg is Ready) {
         if (!readyCompleter.isCompleted) readyCompleter.complete(msg);
       } else if (msg is String) {
+        loadFailureReported = true;
         if (!readyCompleter.isCompleted) {
           readyCompleter.completeError(StateError(msg));
         }
+      } else if (msg is List) {
+        uncaughtDuringLoad = _describeUncaught(msg);
       } else if (msg == null) {
         if (!readyCompleter.isCompleted) {
+          final reason = uncaughtDuringLoad;
           readyCompleter.completeError(
-            StateError('ONNX GenAI worker isolate exited during load'),
+            StateError(
+              reason == null
+                  ? 'ONNX GenAI worker isolate exited during load'
+                  : 'ONNX GenAI worker isolate exited during load: $reason',
+            ),
           );
         }
       }
     });
 
-    final envLibsDir = Platform.environment[genAiLibsDirEnvVar];
-    final isolate = await Isolate.spawn(
-      _workerEntry,
-      WorkerInit(
-        replyTo: fromWorker.sendPort,
-        modelDir: modelDir,
-        contextWindow: contextWindow,
-        libsDir: (envLibsDir != null && envLibsDir.isNotEmpty)
-            ? envLibsDir
-            : null,
-        logLevel: edgeAiLogLevel,
+    final notice = Timer(
+      _slowLoadNotice,
+      () => _warn(
+        'loading the ONNX GenAI model $modelDir has taken '
+        '${_describeDuration(_slowLoadNotice)}: the worker is still inside a '
+        'native call. It keeps waiting rather than kill the worker, because a '
+        'killed worker never frees its native model.',
       ),
-      onExit: fromWorker.sendPort,
-      debugName: 'onnx-genai-worker',
     );
-
+    final envLibsDir = Platform.environment[genAiLibsDirEnvVar];
     final Ready ready;
     try {
+      await Isolate.spawn(
+        _workerEntry,
+        WorkerInit(
+          replyTo: fromWorker.sendPort,
+          modelDir: modelDir,
+          contextWindow: contextWindow,
+          libsDir: (envLibsDir != null && envLibsDir.isNotEmpty)
+              ? envLibsDir
+              : null,
+          logLevel: edgeAiLogLevel,
+        ),
+        // onError + onExit post to fromWorker so we never wait on a dead
+        // isolate, and learn why it died when it says.
+        onError: fromWorker.sendPort,
+        onExit: fromWorker.sendPort,
+        debugName: 'onnx-genai-worker',
+      );
       ready = await readyCompleter.future;
     } catch (_) {
-      await sub.cancel();
-      fromWorker.close();
-      isolate.kill(priority: Isolate.immediate);
+      // Nothing to kill: a killed worker never frees what its load allocated.
+      // A worker that reported a load failure is still freeing it, so keep
+      // listening — not waiting — until it exits, and report a close that
+      // fails. Otherwise it is already gone (onExit), or was never started.
+      if (loadFailureReported) {
+        sub.onData((msg) => _afterFailedLoad(msg, modelDir, sub, fromWorker));
+      } else {
+        await sub.cancel();
+        fromWorker.close();
+      }
       rethrow;
+    } finally {
+      notice.cancel();
     }
 
-    _isolate = isolate;
     _fromWorker = fromWorker;
     _commandPort = ready.commandPort;
+    _modelDir = modelDir;
     _loaded = true;
     sub.onData(_dispatch);
     _sub = sub;
@@ -278,27 +371,134 @@ class GenAiFfiClient implements GenAiClient {
         completer.complete(msg.count!);
       }
     } else if (msg is ResetSessionAck) {
-      if (_resetAck case final ack? when !ack.isCompleted) ack.complete();
+      if (msg.error case final error?) {
+        // Not rethrown — resetSession() has no caller that could act on it —
+        // but not swallowed either: the next turn may continue the old
+        // conversation.
+        _warn(
+          'resetting the ONNX GenAI generator for $_modelDir failed, so the '
+          'next turn may continue the previous conversation: $error',
+        );
+      }
+      _completeResetAck();
     } else if (msg is CloseAck) {
-      if (_closeAck case final ack? when !ack.isCompleted) ack.complete();
+      _acked = true;
+      if (msg.error case final error?) {
+        _warn(
+          'the ONNX GenAI model $_modelDir failed to close; its native model '
+          'may still be resident: $error',
+        );
+      }
+      if (!_gone.isCompleted) _gone.complete();
+      _completeResetAck();
+    } else if (msg is LoopFailed) {
+      _closedBeforeDeath = true;
+      _closeErrorBeforeDeath = msg.error;
+    } else if (msg is List) {
+      // onError: an uncaught error is about to take the worker down. The
+      // onExit `null` that follows reports it.
+      _crashError = _describeUncaught(msg);
     } else if (msg == null) {
-      // Worker died unexpectedly (onExit signal). Fail everything in-flight
-      // rather than leave callers hanging forever.
-      final err = StateError('ONNX GenAI worker isolate exited unexpectedly');
-      for (final id in _activeStreams.keys.toList()) {
-        final controller = _activeStreams.remove(id);
-        controller?.addError(err);
-        unawaited(controller?.close());
-        _streamDone.remove(id)?.complete();
-      }
-      for (final c in _countPending.values) {
-        if (!c.isCompleted) c.completeError(err);
-      }
-      _countPending.clear();
-      _closed = true;
-      if (_closeAck case final ack? when !ack.isCompleted) ack.complete();
-      if (_resetAck case final ack? when !ack.isCompleted) ack.complete();
+      if (_acked) return; // the normal exit after a CloseAck.
+      _died();
     }
+  }
+
+  /// The worker exited without acking — an uncaught error, or an isolate
+  /// killed from outside: tell the owner, fail everything in flight rather
+  /// than leave callers hanging, refuse new calls with the reason, and say so
+  /// where release builds can see it.
+  void _died() {
+    final crash = _crashError;
+    final what = _shutdownFuture == null
+        ? 'exited unexpectedly'
+        : 'exited while shutting down';
+    final reason =
+        'the ONNX GenAI worker isolate $what${crash == null ? '' : ': $crash'}';
+    _deathReason = reason;
+    _closed = true;
+    // Before anything in flight fails: the owning model turns itself closed
+    // first, so a caller that retries from its error handler gets a fresh
+    // model instead of this one.
+    if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
+    _failAllPending(StateError(reason));
+    _fromWorker?.close();
+    final closeError = _closeErrorBeforeDeath;
+    final model = !_closedBeforeDeath
+        ? 'its native model may still be resident'
+        : closeError == null
+        ? 'its native model was freed before the worker ended'
+        : 'freeing its native model failed too, so it may still be resident: '
+              '$closeError';
+    _warn('$reason (model $_modelDir); $model');
+    if (!_gone.isCompleted) _gone.complete();
+    _completeResetAck();
+  }
+
+  /// Handles what a worker whose load failed sends after the error: the
+  /// outcome of freeing what the load allocated, then its exit.
+  static void _afterFailedLoad(
+    dynamic msg,
+    String modelDir,
+    StreamSubscription<dynamic> sub,
+    ReceivePort fromWorker,
+  ) {
+    if (msg is LoadCleanup) {
+      final error = msg.error;
+      if (error != null) {
+        _warn(
+          'the ONNX GenAI model $modelDir failed to close after its load '
+          'failed; its native model may still be resident: $error',
+        );
+      }
+    } else if (msg is List) {
+      _warn(
+        'the ONNX GenAI worker for $modelDir died while freeing what its '
+        'failed load had allocated; its native model may still be resident: '
+        '${_describeUncaught(msg)}',
+      );
+    } else if (msg == null) {
+      unawaited(sub.cancel());
+      fromWorker.close();
+    }
+  }
+
+  /// "30 s", or "200 ms" for the short durations tests inject.
+  static String _describeDuration(Duration d) => d.inMilliseconds % 1000 == 0
+      ? '${d.inSeconds} s'
+      : '${d.inMilliseconds} ms';
+
+  /// An `onError` message — `[error, stack]`, both as strings — as one text.
+  static String _describeUncaught(List<dynamic> message) {
+    final error = message.isNotEmpty ? message[0] : null;
+    final stack = message.length > 1 ? message[1] : null;
+    return stack == null ? '$error' : '$error\n$stack';
+  }
+
+  void _completeResetAck() {
+    if (_resetAck case final ack? when !ack.isCompleted) ack.complete();
+  }
+
+  void _failAllPending(StateError error) {
+    for (final id in _activeStreams.keys.toList()) {
+      final controller = _activeStreams.remove(id);
+      controller?.addError(error);
+      unawaited(controller?.close());
+      _streamDone.remove(id)?.complete();
+    }
+    for (final c in _countPending.values) {
+      if (!c.isCompleted) c.completeError(error);
+    }
+    _countPending.clear();
+  }
+
+  /// The error a call gets once the client cannot serve it: [shutdown] ran,
+  /// the worker died ([_deathReason]), or [load] never succeeded.
+  StateError _unusable(String whenShutDown) {
+    final death = _deathReason;
+    return StateError(
+      death == null ? whenShutDown : 'GenAiFfiClient is closed: $death',
+    );
   }
 
   @override
@@ -323,22 +523,23 @@ class GenAiFfiClient implements GenAiClient {
     GenAiTurn turn,
   ) async {
     if (_closed || !_loaded) {
-      controller.addError(StateError('GenAiFfiClient is not loaded'));
+      controller.addError(_unusable('GenAiFfiClient is not loaded'));
       await controller.close();
       return;
     }
     await _mutex.acquire();
     // Recheck AFTER acquiring: a caller that passed the check above can park
     // on the mutex behind an in-flight generate() while shutdown() runs to
-    // completion (drains the holder, kills the worker isolate, closes the
-    // ports) — without this recheck, `_commandPort!.send(...)` below would
-    // send into a dead port and `done.future` would never complete, hanging
-    // this stream forever AND wedging the mutex for every caller behind it
-    // (hardened plan Task 2, the FLAG fix — see
-    // `gen_ai_client_lifecycle_test.dart`'s shutdown-while-generating test).
-    if (_closed) {
+    // completion (the worker stops the holder, frees its handles and exits,
+    // the ports close) — without this recheck, the send below would go into
+    // a dead port and `done.future` would never complete, hanging this stream
+    // forever AND wedging the mutex for every caller behind it (hardened plan
+    // Task 2, the FLAG fix — see `gen_ai_client_lifecycle_test.dart`'s
+    // shutdown-while-generating test).
+    final commandPort = _commandPort;
+    if (_closed || commandPort == null) {
       _mutex.release();
-      controller.addError(StateError('GenAiFfiClient shut down'));
+      controller.addError(_unusable('GenAiFfiClient shut down'));
       await controller.close();
       return;
     }
@@ -346,7 +547,7 @@ class GenAiFfiClient implements GenAiClient {
     final done = _streamDone[id] = Completer<void>();
     _activeStreams[id] = controller;
     try {
-      _commandPort!.send(GenerateRequest(id, turn));
+      commandPort.send(GenerateRequest(id, turn));
       await done.future;
     } catch (e) {
       if (_activeStreams.containsKey(id)) {
@@ -363,77 +564,128 @@ class GenAiFfiClient implements GenAiClient {
   @override
   Future<int> countTokens(String text) {
     if (_closed || !_loaded) {
-      throw StateError('GenAiFfiClient is not loaded');
+      throw _unusable('GenAiFfiClient is not loaded');
     }
     return _mutex.protect(() {
       // Same recheck as `_runGenerateGuarded` — see its comment. A caller
       // can pass the check above and then park on the mutex behind a
       // `shutdown()` that runs to completion before this callback gets the
       // mutex.
-      if (_closed) {
-        throw StateError('GenAiFfiClient shut down');
+      final commandPort = _commandPort;
+      if (_closed || commandPort == null) {
+        throw _unusable('GenAiFfiClient shut down');
       }
       final id = _nextId++;
       final completer = Completer<int>();
       _countPending[id] = completer;
-      _commandPort!.send(CountTokensRequest(id, text));
+      commandPort.send(CountTokensRequest(id, text));
       return completer.future;
     });
   }
 
   @override
   Future<void> stopGeneration() async {
-    if (_commandPort == null) return;
-    _commandPort!.send(const StopSignal());
+    _commandPort?.send(const StopSignal());
   }
 
   @override
   Future<void> resetSession() async {
-    if (_closed || _commandPort == null) return;
+    final commandPort = _commandPort;
+    if (_closed || commandPort == null) return;
     final ack = _resetAck = Completer<void>();
-    _commandPort!.send(const ResetSessionRequest());
+    commandPort.send(const ResetSessionRequest());
     try {
       await ack.future.timeout(const Duration(seconds: 5));
-    } catch (_) {
-      // Timed out or the worker died — fall through, nothing more to do.
+    } on TimeoutException {
+      // The worker is still busy with the call ahead of the reset — a long
+      // prefill. Nothing more to do here: the reset stays queued in front of
+      // any later request, so it still runs before the next turn.
     }
   }
 
+  /// Stops the worker without abandoning its native model.
+  ///
+  /// Requests the worker has not started fail with a "shut down"
+  /// [StateError]. A generation in flight stops at its next token and its
+  /// stream ends normally; a token count in flight finishes. Then the worker
+  /// frees the generator, tokenizer and model, acks and exits, and this
+  /// returns.
+  ///
+  /// It waits for all of that however long the call in flight takes (a
+  /// prefill is one synchronous native call), and never kills the isolate: a
+  /// killed isolate runs no more Dart code, so its handles are never freed
+  /// and the model stays resident for the life of the process. After
+  /// [_slowCloseNotice] it says what it is waiting for, once.
+  ///
+  /// Idempotent; concurrent callers share one teardown.
   @override
-  Future<void> shutdown() async {
-    if (_closed) return;
+  Future<void> shutdown() => _shutdownFuture ??= _shutDown();
+
+  Future<void> _shutDown() async {
     _closed = true;
-    if (_commandPort == null) {
+    final commandPort = _commandPort;
+    if (commandPort == null) {
       // Never loaded (or load failed) — nothing native to tear down.
       return;
     }
-    final ack = _closeAck = Completer<void>();
-    _commandPort!.send(const Close());
-    try {
-      await ack.future.timeout(const Duration(seconds: 5));
-    } catch (_) {
-      // Timed out or the worker already died — fall through to a forced kill.
+    if (!_gone.isCompleted) {
+      commandPort.send(const Close());
+      final notice = Timer(
+        _slowCloseNotice,
+        () => _warn(
+          'shutting down the ONNX GenAI model $_modelDir has taken '
+          '${_describeDuration(_slowCloseNotice)}: the worker is still inside '
+          'a native call — the call in flight, if any, or freeing the model. '
+          'It keeps waiting rather than kill the worker, because a killed '
+          'worker never frees its native model.',
+        ),
+      );
+      try {
+        await _gone.future;
+      } finally {
+        notice.cancel();
+      }
     }
     await _sub?.cancel();
     _fromWorker?.close();
-    _isolate?.kill(priority: Isolate.beforeNextEvent);
+    // The worker answers every request it received before it acks, and the
+    // port delivers in order; if it died instead, `_died` has already failed
+    // them. So nothing should be left — anything that is, is a bug here, and
+    // its error says so rather than claim the request was never run.
+    _failAllPending(
+      StateError(
+        'internal error: the ONNX GenAI worker for $_modelDir stopped without '
+        'answering this request',
+      ),
+    );
+  }
 
-    final err = StateError('GenAiFfiClient shut down');
-    for (final id in _activeStreams.keys.toList()) {
-      final controller = _activeStreams.remove(id);
-      controller?.addError(err);
-      unawaited(controller?.close());
-      _streamDone.remove(id)?.complete();
-    }
-    for (final c in _countPending.values) {
-      if (!c.isCompleted) c.completeError(err);
-    }
-    _countPending.clear();
+  /// `print`, not [edgeAiLog]: edgeAiLog is silent in release, and release is
+  /// where a leaked native model or a hung shutdown gets debugged. Both are
+  /// abnormal, so this costs nothing in the normal case.
+  static void _warn(String message) {
+    // ignore: avoid_print
+    print('[flutter_edge_ai_onnx] WARNING: $message');
   }
 }
 
+/// Completes, with the reason, when [client]'s worker exits without being
+/// asked to — an uncaught error, or an isolate killed from outside — and never
+/// after a clean [GenAiClient.shutdown]. Null for a client that has no worker
+/// of its own (any [GenAiClient] that is not a [GenAiFfiClient]).
+///
+/// `OnnxInferenceModel` listens to it to turn itself closed and fire its
+/// close listeners, so nothing keeps handing out a model whose every call
+/// fails. A top-level function rather than a member, and
+/// not exported, so the public [GenAiClient] and [GenAiFfiClient] surface
+/// stays as it is.
+Future<String>? unexpectedExitOf(GenAiClient client) => switch (client) {
+  GenAiFfiClient() => client._unexpectedExit.future,
+  _ => null,
+};
+
 // ---------------------------------------------------------------------------
-// Worker isolate entry point.
+// Worker isolate: library loading and the dart:ffi engine.
 // ---------------------------------------------------------------------------
 
 /// Candidate paths/names to try opening [libraryName] (bare, no `lib`
@@ -599,13 +851,36 @@ void _exportOrtLibPath(ffi.DynamicLibrary ortLib) {
   return (ortLib, genaiLib);
 }
 
-Future<void> _defaultWorkerEntry(WorkerInit init) async {
-  edgeAiLogLevel = init.logLevel;
+Future<void> _defaultWorkerEntry(WorkerInit init) =>
+    serveGenAiWorker(init, _FfiGenAiEngine(init));
 
-  late final OrtGenAiBindings oga;
+/// The production [GenAiWorkerEngine]: every native handle — model,
+/// tokenizer, generator — is created, used and destroyed here, on the worker
+/// isolate.
+final class _FfiGenAiEngine implements GenAiWorkerEngine {
+  _FfiGenAiEngine(this._init);
 
-  void check(ffi.Pointer<OgaResult> result, String step) {
+  final WorkerInit _init;
+
+  /// Null until [load] opened the libraries. Every handle below is created
+  /// through it, so a non-null handle implies non-null bindings.
+  OrtGenAiBindings? _oga;
+  ffi.Pointer<OgaModel>? _model;
+  ffi.Pointer<OgaTokenizer>? _tokenizer;
+  ffi.Pointer<OgaGenerator>? _generator;
+
+  OrtGenAiBindings get _bindings =>
+      _oga ?? (throw StateError('ORT-GenAI engine used before it was loaded'));
+
+  ffi.Pointer<OgaModel> get _loadedModel =>
+      _model ?? (throw StateError('ORT-GenAI model is not loaded'));
+
+  ffi.Pointer<OgaTokenizer> get _loadedTokenizer =>
+      _tokenizer ?? (throw StateError('ORT-GenAI tokenizer is not loaded'));
+
+  void _check(ffi.Pointer<OgaResult> result, String step) {
     if (result == ffi.nullptr) return;
+    final oga = _bindings;
     // Free the result in `finally` — mirrors `ort_ffi_client.dart`'s
     // `_check()` — so a non-UTF-8 error message (toDartString() throwing)
     // can't leak the native OgaResult handle.
@@ -620,21 +895,23 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
     }
   }
 
-  ffi.Pointer<OgaModel>? model;
-  ffi.Pointer<OgaTokenizer>? tokenizer;
-  ffi.Pointer<OgaGenerator>? generator;
+  @override
+  Future<void> load() async {
+    // Only GenAI's handle is used from here on. ORT stays loaded whether or
+    // not anything holds its handle — Dart never unloads a DynamicLibrary —
+    // and opening it first is what lets GenAI's own lookup find it (see
+    // [_openGenAiLibraries]).
+    final (_, genaiLib) = _openGenAiLibraries(_init.libsDir);
+    final oga = _oga = OrtGenAiBindings(genaiLib);
 
-  try {
-    final (ortLib, genaiLib) = _openGenAiLibraries(init.libsDir);
-    // ignore: unused_local_variable — kept reachable so the image isn't GC'd.
-    final keepOrtLibLoaded = ortLib;
-    oga = OrtGenAiBindings(genaiLib);
-
-    final configPathC = init.modelDir.toNativeUtf8();
+    final configPathC = _init.modelDir.toNativeUtf8();
     final modelOut = pkg_ffi.calloc<ffi.Pointer<OgaModel>>();
     try {
-      check(oga.OgaCreateModel(configPathC.cast(), modelOut), 'OgaCreateModel');
-      model = modelOut.value;
+      _check(
+        oga.OgaCreateModel(configPathC.cast(), modelOut),
+        'OgaCreateModel',
+      );
+      _model = modelOut.value;
     } finally {
       pkg_ffi.calloc.free(configPathC);
       pkg_ffi.calloc.free(modelOut);
@@ -642,91 +919,35 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
 
     final tokenizerOut = pkg_ffi.calloc<ffi.Pointer<OgaTokenizer>>();
     try {
-      check(oga.OgaCreateTokenizer(model, tokenizerOut), 'OgaCreateTokenizer');
-      tokenizer = tokenizerOut.value;
+      _check(
+        oga.OgaCreateTokenizer(_loadedModel, tokenizerOut),
+        'OgaCreateTokenizer',
+      );
+      _tokenizer = tokenizerOut.value;
     } finally {
       pkg_ffi.calloc.free(tokenizerOut);
     }
-  } catch (e, st) {
-    edgeAiLog('[GenAiFfiClient/worker] load failed: $e\n$st');
-    if (model != null) {
-      try {
-        oga.OgaDestroyModel(model);
-      } catch (_) {}
-    }
-    init.replyTo.send('ONNX GenAI worker failed to load: $e');
-    return;
   }
 
-  final commandPort = ReceivePort();
-  init.replyTo.send(Ready(commandPort.sendPort));
-
-  var stopRequested = false;
-
-  /// The in-flight [runGenerate] call, if any — the command loop below is
-  /// `unawaited` on purpose (so a queued `StopSignal` can interleave via the
-  /// decode loop's per-token yield), but that also means a teardown message
-  /// arriving while a generation is still running would otherwise race it:
-  /// `ResetSessionRequest`/`Close` destroy `generator`/`tokenizer`/`model`
-  /// out from under the suspended decode loop, which then resumes and hands
-  /// the freed pointer straight to native calls (use-after-free). Every
-  /// teardown branch below sets [stopRequested] (so the decode loop unwinds
-  /// promptly, bounded to ~one token) and awaits this future FIRST, so
-  /// `runGenerate`'s own `finally` (which destroys its `tokenizerStream`) has
-  /// already run before any generator/tokenizer/model handle is freed.
-  Future<void>? activeGeneration;
-
   /// Runs one turn: (re)creates the generator if needed, applies the chat
-  /// template, prefills, then decodes token-by-token, streaming pieces back
-  /// as they arrive. Deliberately NOT awaited by the command loop below —
-  /// the `await Future(() {})` yield inside the decode loop is what lets a
-  /// queued `StopSignal` interleave and flip [stopRequested].
-  Future<void> runGenerate(int id, GenAiTurn turn) async {
-    stopRequested = false;
+  /// template, prefills, then decodes token-by-token, passing pieces to
+  /// [emit] as they arrive. The `await Future(() {})` yields are what let a
+  /// queued `StopSignal`/`ResetSessionRequest`/`Close` flip [stopRequested].
+  @override
+  Future<GenAiGenerationStats> generate(
+    GenAiTurn turn, {
+    required void Function(String piece) emit,
+    required bool Function() stopRequested,
+  }) async {
+    final oga = _bindings;
+    final model = _loadedModel;
+    final tokenizer = _loadedTokenizer;
     ffi.Pointer<OgaTokenizerStream>? tokenizerStream;
     try {
-      if (turn.isFirstTurn && generator != null) {
-        oga.OgaDestroyGenerator(generator!);
-        generator = null;
-      }
+      if (turn.isFirstTurn) resetGenerator();
 
-      if (generator == null) {
-        final paramsOut = pkg_ffi.calloc<ffi.Pointer<OgaGeneratorParams>>();
-        final ffi.Pointer<OgaGeneratorParams> params;
-        try {
-          check(
-            oga.OgaCreateGeneratorParams(model!, paramsOut),
-            'OgaCreateGeneratorParams',
-          );
-          params = paramsOut.value;
-        } finally {
-          pkg_ffi.calloc.free(paramsOut);
-        }
-        final maxLengthNameC = 'max_length'.toNativeUtf8();
-        try {
-          check(
-            oga.OgaGeneratorParamsSetSearchNumber(
-              params,
-              maxLengthNameC.cast(),
-              init.contextWindow.toDouble(),
-            ),
-            'OgaGeneratorParamsSetSearchNumber(max_length)',
-          );
-          final genOut = pkg_ffi.calloc<ffi.Pointer<OgaGenerator>>();
-          try {
-            check(
-              oga.OgaCreateGenerator(model, params, genOut),
-              'OgaCreateGenerator',
-            );
-            generator = genOut.value;
-          } finally {
-            pkg_ffi.calloc.free(genOut);
-          }
-        } finally {
-          pkg_ffi.calloc.free(maxLengthNameC);
-          oga.OgaDestroyGeneratorParams(params);
-        }
-      }
+      final generator = _generator ?? _createGenerator(oga, model);
+      _generator = generator;
 
       // --- Chat template (SDK-owns-templates, Task 3) ----------------------
       final messages = <Map<String, String>>[
@@ -738,9 +959,9 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
       final templatedOut = pkg_ffi.calloc<ffi.Pointer<ffi.Char>>();
       final String templated;
       try {
-        check(
+        _check(
           oga.OgaTokenizerApplyChatTemplate(
-            tokenizer!,
+            tokenizer,
             ffi.nullptr, // template_str: use the tokenizer's own built-in
             messagesJsonC.cast(),
             ffi.nullptr, // tools
@@ -764,7 +985,7 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
       final sequencesOut = pkg_ffi.calloc<ffi.Pointer<OgaSequences>>();
       final ffi.Pointer<OgaSequences> sequences;
       try {
-        check(oga.OgaCreateSequences(sequencesOut), 'OgaCreateSequences');
+        _check(oga.OgaCreateSequences(sequencesOut), 'OgaCreateSequences');
         sequences = sequencesOut.value;
       } finally {
         pkg_ffi.calloc.free(sequencesOut);
@@ -772,13 +993,13 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
       final promptC = templated.toNativeUtf8();
       final int promptTokens;
       try {
-        check(
+        _check(
           oga.OgaTokenizerEncode(tokenizer, promptC.cast(), sequences),
           'OgaTokenizerEncode',
         );
         promptTokens = oga.OgaSequencesGetSequenceCount(sequences, 0);
-        check(
-          oga.OgaGenerator_AppendTokenSequences(generator!, sequences),
+        _check(
+          oga.OgaGenerator_AppendTokenSequences(generator, sequences),
           'OgaGenerator_AppendTokenSequences (prefill)',
         );
       } finally {
@@ -788,7 +1009,7 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
 
       final streamOut = pkg_ffi.calloc<ffi.Pointer<OgaTokenizerStream>>();
       try {
-        check(
+        _check(
           oga.OgaCreateTokenizerStream(tokenizer, streamOut),
           'OgaCreateTokenizerStream',
         );
@@ -796,6 +1017,7 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
       } finally {
         pkg_ffi.calloc.free(streamOut);
       }
+      final stream = tokenizerStream;
 
       var generatedCount = 0;
       final cap = turn.maxOutputTokens;
@@ -805,8 +1027,8 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
         final outCount = pkg_ffi.calloc<ffi.Size>();
         final int token;
         try {
-          check(
-            oga.OgaGenerator_GetNextTokens(generator!, outPtr, outCount),
+          _check(
+            oga.OgaGenerator_GetNextTokens(generator, outPtr, outCount),
             'OgaGenerator_GetNextTokens',
           );
           token = outPtr.value[outCount.value - 1];
@@ -816,8 +1038,8 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
         }
         final decodedOut = pkg_ffi.calloc<ffi.Pointer<ffi.Char>>();
         try {
-          check(
-            oga.OgaTokenizerStreamDecode(tokenizerStream!, token, decodedOut),
+          _check(
+            oga.OgaTokenizerStreamDecode(stream, token, decodedOut),
             'OgaTokenizerStreamDecode',
           );
           // `out` from OgaTokenizerStreamDecode is owned by the stream — do
@@ -825,7 +1047,7 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
           final piece = decodedOut.value == ffi.nullptr
               ? ''
               : decodedOut.value.cast<pkg_ffi.Utf8>().toDartString();
-          if (piece.isNotEmpty) init.replyTo.send(Chunk(id, piece));
+          if (piece.isNotEmpty) emit(piece);
         } finally {
           pkg_ffi.calloc.free(decodedOut);
         }
@@ -834,16 +1056,16 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
 
       // Prefill above is one long synchronous FFI call with no `await` in
       // it — a `StopSignal` sent while it was running sits unprocessed in
-      // the isolate's mailbox the whole time (the outer command loop can't
-      // dispatch it until this function yields), so it would otherwise
+      // the isolate's mailbox the whole time (the worker's port listener
+      // can't file it until this function yields), so it would otherwise
       // ALWAYS survive to force one unconditional token out of the
       // just-primed generator. Yield once here, mirroring the decode loop's
       // own per-token yield below, so that already-queued stop lands before
       // (not after) the first token is spent.
       await Future<void>(() {});
-      if (!stopRequested) {
-        check(
-          oga.OgaGenerator_GenerateNextToken(generator!),
+      if (!stopRequested()) {
+        _check(
+          oga.OgaGenerator_GenerateNextToken(generator),
           'OgaGenerator_GenerateNextToken (first token)',
         );
         decodeAndEmit();
@@ -852,105 +1074,121 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
       // Timed separately from prefill+first-token, matching the spike: the
       // first token's forward pass rides along with AppendTokenSequences.
       final swDecode = Stopwatch()..start();
-      while (!oga.OgaGenerator_IsDone(generator!) &&
+      while (!oga.OgaGenerator_IsDone(generator) &&
           (cap == null || generatedCount < cap)) {
         // Yield one event-loop turn per token so a queued StopSignal can
         // flip `stopRequested` before the next token is generated.
         await Future<void>(() {});
-        if (stopRequested) break;
-        check(
-          oga.OgaGenerator_GenerateNextToken(generator!),
+        if (stopRequested()) break;
+        _check(
+          oga.OgaGenerator_GenerateNextToken(generator),
           'OgaGenerator_GenerateNextToken (decode)',
         );
         decodeAndEmit();
       }
       swDecode.stop();
 
-      init.replyTo.send(
-        GenerateDone(
-          id,
-          stopRequested,
-          promptTokens,
-          generatedCount,
-          swDecode.elapsedMilliseconds,
-        ),
+      return GenAiGenerationStats(
+        promptTokens: promptTokens,
+        generatedTokens: generatedCount,
+        decodeMs: swDecode.elapsedMilliseconds,
       );
-    } catch (e, st) {
-      edgeAiLog('[GenAiFfiClient/worker] generate failed: $e\n$st');
-      init.replyTo.send(GenerateError(id, e.toString()));
     } finally {
       if (tokenizerStream != null) {
         oga.OgaDestroyTokenizerStream(tokenizerStream);
       }
-      stopRequested = false;
     }
   }
 
-  try {
-    await for (final msg in commandPort) {
-      if (msg is GenerateRequest) {
-        final future = runGenerate(msg.id, msg.turn);
-        activeGeneration = future;
-        unawaited(
-          future.whenComplete(() {
-            if (identical(activeGeneration, future)) activeGeneration = null;
-          }),
-        );
-      } else if (msg is CountTokensRequest) {
-        try {
-          final sequencesOut = pkg_ffi.calloc<ffi.Pointer<OgaSequences>>();
-          final ffi.Pointer<OgaSequences> sequences;
-          try {
-            check(oga.OgaCreateSequences(sequencesOut), 'OgaCreateSequences');
-            sequences = sequencesOut.value;
-          } finally {
-            pkg_ffi.calloc.free(sequencesOut);
-          }
-          final textC = msg.text.toNativeUtf8();
-          try {
-            check(
-              oga.OgaTokenizerEncode(tokenizer, textC.cast(), sequences),
-              'OgaTokenizerEncode',
-            );
-            final count = oga.OgaSequencesGetSequenceCount(sequences, 0);
-            init.replyTo.send(CountTokensReply(msg.id, count, null));
-          } finally {
-            pkg_ffi.calloc.free(textC);
-            oga.OgaDestroySequences(sequences);
-          }
-        } catch (e) {
-          init.replyTo.send(CountTokensReply(msg.id, null, e.toString()));
-        }
-      } else if (msg is StopSignal) {
-        stopRequested = true;
-      } else if (msg is ResetSessionRequest) {
-        // Unwind any in-flight decode loop (bounded — one more token at
-        // most) and wait for its `finally` to finish BEFORE freeing the
-        // generator it's still holding a reference to. See [activeGeneration]'s
-        // doc.
-        stopRequested = true;
-        if (activeGeneration case final active?) await active;
-        if (generator != null) {
-          oga.OgaDestroyGenerator(generator!);
-          generator = null;
-        }
-        init.replyTo.send(const ResetSessionAck());
-      } else if (msg is Close) {
-        // Same race as `ResetSessionRequest` above, but for the full
-        // tokenizer/model teardown in this function's own `finally` below —
-        // without this await, a generation suspended on its per-token yield
-        // would resume and touch `generator`/`tokenizer` handles freed by
-        // that `finally` right after `break`.
-        stopRequested = true;
-        if (activeGeneration case final active?) await active;
-        commandPort.close();
-        break;
-      }
+  ffi.Pointer<OgaGenerator> _createGenerator(
+    OrtGenAiBindings oga,
+    ffi.Pointer<OgaModel> model,
+  ) {
+    final paramsOut = pkg_ffi.calloc<ffi.Pointer<OgaGeneratorParams>>();
+    final ffi.Pointer<OgaGeneratorParams> params;
+    try {
+      _check(
+        oga.OgaCreateGeneratorParams(model, paramsOut),
+        'OgaCreateGeneratorParams',
+      );
+      params = paramsOut.value;
+    } finally {
+      pkg_ffi.calloc.free(paramsOut);
     }
-  } finally {
-    if (generator != null) oga.OgaDestroyGenerator(generator!);
-    oga.OgaDestroyTokenizer(tokenizer);
-    oga.OgaDestroyModel(model);
-    init.replyTo.send(const CloseAck());
+    final maxLengthNameC = 'max_length'.toNativeUtf8();
+    try {
+      _check(
+        oga.OgaGeneratorParamsSetSearchNumber(
+          params,
+          maxLengthNameC.cast(),
+          _init.contextWindow.toDouble(),
+        ),
+        'OgaGeneratorParamsSetSearchNumber(max_length)',
+      );
+      final genOut = pkg_ffi.calloc<ffi.Pointer<OgaGenerator>>();
+      try {
+        _check(
+          oga.OgaCreateGenerator(model, params, genOut),
+          'OgaCreateGenerator',
+        );
+        return genOut.value;
+      } finally {
+        pkg_ffi.calloc.free(genOut);
+      }
+    } finally {
+      pkg_ffi.calloc.free(maxLengthNameC);
+      oga.OgaDestroyGeneratorParams(params);
+    }
+  }
+
+  @override
+  int countTokens(String text) {
+    final oga = _bindings;
+    final sequencesOut = pkg_ffi.calloc<ffi.Pointer<OgaSequences>>();
+    final ffi.Pointer<OgaSequences> sequences;
+    try {
+      _check(oga.OgaCreateSequences(sequencesOut), 'OgaCreateSequences');
+      sequences = sequencesOut.value;
+    } finally {
+      pkg_ffi.calloc.free(sequencesOut);
+    }
+    final textC = text.toNativeUtf8();
+    try {
+      _check(
+        oga.OgaTokenizerEncode(_loadedTokenizer, textC.cast(), sequences),
+        'OgaTokenizerEncode',
+      );
+      return oga.OgaSequencesGetSequenceCount(sequences, 0);
+    } finally {
+      pkg_ffi.calloc.free(textC);
+      oga.OgaDestroySequences(sequences);
+    }
+  }
+
+  @override
+  void resetGenerator() {
+    final generator = _generator;
+    if (generator == null) return;
+    // Forgotten first, so a throw below cannot hand the next turn a
+    // generator that is half destroyed.
+    _generator = null;
+    _bindings.OgaDestroyGenerator(generator);
+  }
+
+  /// Destroys generator, tokenizer and model — whichever exist, so a load
+  /// that failed halfway is cleaned up too.
+  @override
+  void close() {
+    final oga = _oga;
+    if (oga == null) return; // the libraries never opened: nothing to free.
+    final generator = _generator;
+    final tokenizer = _tokenizer;
+    final model = _model;
+    _generator = null;
+    _tokenizer = null;
+    _model = null;
+    if (generator != null) oga.OgaDestroyGenerator(generator);
+    if (tokenizer != null) oga.OgaDestroyTokenizer(tokenizer);
+    if (model != null) oga.OgaDestroyModel(model);
   }
 }

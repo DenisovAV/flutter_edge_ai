@@ -9,6 +9,7 @@
 // main-isolate API generic over [TtsModelProfile] — matcha/kokoro/supertonic
 // select a profile, not a synthesizer subclass.
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
@@ -16,6 +17,7 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart'
 import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
     show SpeechSynthesizer;
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../model/tts_model_profile.dart';
 import '../qwen3/qwen3_languages.dart'
@@ -31,11 +33,29 @@ typedef VoidCallback = void Function();
 /// class. Unlike STT, there is no input-conversion step: the worker takes
 /// text in and returns 16-bit PCM bytes out.
 class LiteRtSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
-  LiteRtSpeechSynthesizer._(this._worker, this.onClose);
+  LiteRtSpeechSynthesizer._(this._worker, this.onClose) {
+    // A worker that dies on its own turns this synthesizer closed and tells
+    // its listeners, so core drops its cached synthesizer and the next
+    // `getActiveTts` builds a fresh one — instead of handing out this one,
+    // whose every call would fail.
+    unawaited(_worker.unexpectedExit.then(_onWorkerDied));
+  }
 
   final TtsWorker _worker;
   final VoidCallback onClose;
   bool _isClosed = false;
+
+  /// What every [close] after the first returns: completes, normally, once
+  /// the one shared teardown is done — so a second caller waits for it
+  /// instead of returning while it is still running.
+  Future<void>? _closeFuture;
+
+  /// Whether [onClose] and the close listeners have run; they run once,
+  /// whether the synthesizer was closed or its worker died.
+  bool _closeNotified = false;
+
+  /// Why the worker died, when it did; later calls quote it.
+  String? _deathReason;
 
   /// Load [profile]'s frontend + native model bundle and prepare it for
   /// synthesis on a background isolate.
@@ -65,6 +85,9 @@ class LiteRtSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
   /// release doesn't need a breaking signature change.
   ///
   /// Caller owns the returned instance and must call [close] when done.
+  ///
+  /// [engineFactory] is the worker's test seam (see [TtsWorker.spawn]);
+  /// production leaves it null.
   static Future<LiteRtSpeechSynthesizer> create({
     required TtsModelProfile profile,
     required Map<String, String> artifactPaths,
@@ -72,6 +95,7 @@ class LiteRtSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
     String language = 'english',
     Float32List? voice,
     VoidCallback? onClose,
+    @visibleForTesting TtsWorkerEngineFactory? engineFactory,
   }) async {
     var effectiveLanguage = language;
     if (profile.pipeline == TtsPipelineKind.qwen3ArCodec) {
@@ -84,14 +108,20 @@ class LiteRtSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
       backend: preferredBackend,
       language: effectiveLanguage,
       voice: voice,
+      engineFactory: engineFactory,
     );
     return LiteRtSpeechSynthesizer._(worker, onClose ?? () {});
   }
 
   void _assertNotClosed() {
     if (_isClosed) {
+      final death = _deathReason;
       throw StateError(
-        'LiteRtSpeechSynthesizer is closed; create a new instance to use it',
+        death == null
+            ? 'LiteRtSpeechSynthesizer is closed; create a new instance to use '
+                  'it'
+            : 'LiteRtSpeechSynthesizer is closed because $death; create a new '
+                  'instance to use it',
       );
     }
   }
@@ -105,15 +135,61 @@ class LiteRtSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
     return _worker.synthesize(text);
   }
 
+  /// Closes the synthesizer and its worker.
+  ///
+  /// Syntheses that have not started fail with a "closed" [StateError]; the
+  /// one in flight finishes first, and this waits for it and for the native
+  /// model to be disposed, however long that takes. A synthesizer whose
+  /// worker died is already closed — its listeners have run — and this only
+  /// releases what is left. Concurrent callers share one teardown.
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() {
+    final teardownDone = _closeFuture;
+    if (teardownDone != null) return teardownDone;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // `whenComplete` hands the first caller the teardown's own outcome — a
+    // throwing `onClose` or listener included — while every later caller
+    // gets `settled`, which only ever completes normally once it is done.
+    return _close().whenComplete(settled.complete);
+  }
+
+  Future<void> _close() async {
     _isClosed = true;
     try {
       await _worker.close();
     } finally {
+      _notifyClosed();
+    }
+  }
+
+  void _notifyClosed() {
+    if (_closeNotified) return;
+    _closeNotified = true;
+    try {
       onClose();
+    } finally {
+      // Even when `onClose` throws: core drops its cached instance on a close
+      // listener, and one it never hears about is handed to every later
+      // caller.
       fireCloseListeners();
+    }
+  }
+
+  void _onWorkerDied(String reason) {
+    _deathReason = reason;
+    _isClosed = true;
+    try {
+      _notifyClosed();
+    } catch (e, st) {
+      // Nobody awaits this path, so a throwing listener would otherwise be an
+      // unhandled error with no context; `print`, because edgeAiLog is silent
+      // in release.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_speech] WARNING: a close listener threw while a '
+        'speech synthesizer whose worker had died was being closed: $e\n$st',
+      );
     }
   }
 }

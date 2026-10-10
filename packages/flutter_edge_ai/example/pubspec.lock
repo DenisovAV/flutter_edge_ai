@@ -290,7 +290,7 @@ packages:
       path: "../../flutter_edge_ai_onnx"
       relative: true
     source: path
-    version: "0.5.4"
+    version: "0.5.5"
   flutter_edge_ai_qdrant:
     dependency: "direct main"
     description:
@@ -311,7 +311,7 @@ packages:
       path: "../../flutter_edge_ai_speech"
       relative: true
     source: path
-    version: "0.5.4"
+    version: "0.5.5"
   flutter_edge_ai_sqlite:
     dependency: "direct main"
     description:

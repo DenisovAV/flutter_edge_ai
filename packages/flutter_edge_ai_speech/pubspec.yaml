@@ -1,6 +1,6 @@
 name: flutter_edge_ai_speech
 description: "On-device speech (STT + TTS) for flutter_edge_ai via the LiteRT C API + dart:ffi. Opt-in Stt/TtsBackendProvider."
-version: 0.5.4
+version: 0.5.5
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_speech
 topics: [speech, stt, gemma, litert, on-device]

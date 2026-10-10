@@ -5,17 +5,18 @@
 // Deliberately its own file, src-only (NOT barrel-exported from
 // `flutter_edge_ai_onnx.dart`) — hardened plan Task 2a. Pulling the protocol
 // out from under `gen_ai_client.dart`'s leading underscores lets
-// `test/gen_ai_client_lifecycle_test.dart` spawn a scripted FAKE worker (a
-// real isolate, real ports, zero FFI/dlopen) that speaks the exact same
-// message shapes the real `_workerEntry` does — exercising the REAL
-// `GenAiFfiClient` dispatch/mutex/`_closed`-recheck machinery, which a
-// `FakeGenAiClient`-based session test cannot reach. That fake-worker
-// coverage is client-side only: it cannot prove the real worker's native
+// `test/gen_ai_client_lifecycle_test.dart` spawn a FAKE worker (a real
+// isolate, real ports, zero FFI/dlopen) that runs the real worker loop
+// (`serveGenAiWorker`, `gen_ai_worker.dart`) over a scripted engine —
+// exercising the REAL `GenAiFfiClient` dispatch/mutex/`_closed`-recheck
+// machinery and the real queue/close rules, which a `FakeGenAiClient`-based
+// session test cannot reach. It still cannot prove the FFI engine's native
 // handle teardown is use-after-free-safe (see
 // `onnx_generation_host_smoke_test.dart` for that).
 import 'dart:isolate';
 
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart' show EdgeAiLogLevel;
+import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart'
+    show EdgeAiLogLevel;
 
 import 'gen_ai_client.dart' show GenAiTurn;
 
@@ -42,8 +43,15 @@ class Ready {
   final SendPort commandPort;
 }
 
+/// A main → worker request the worker queues and serves one at a time, in
+/// arrival order (`gen_ai_worker.dart`). Sealed so serving it, and failing it
+/// when a [Close] arrives before it started, are exhaustive switches.
+sealed class QueuedRequest {
+  const QueuedRequest();
+}
+
 /// Main → worker: start streaming a turn.
-class GenerateRequest {
+class GenerateRequest extends QueuedRequest {
   GenerateRequest(this.id, this.turn);
   final int id;
   final GenAiTurn turn;
@@ -86,17 +94,20 @@ class StopSignal {
 }
 
 /// Main → worker: destroy the live generator so the next turn starts fresh.
-class ResetSessionRequest {
+class ResetSessionRequest extends QueuedRequest {
   const ResetSessionRequest();
 }
 
-/// Worker → main: [ResetSessionRequest] handled.
+/// Worker → main: [ResetSessionRequest] handled. [error] is set, with its
+/// stack, when destroying the generator threw: the next turn may then
+/// continue the old conversation, and the client says so.
 class ResetSessionAck {
-  const ResetSessionAck();
+  const ResetSessionAck([this.error]);
+  final String? error;
 }
 
 /// Main → worker: tokenize [text] (no chat template) and report its length.
-class CountTokensRequest {
+class CountTokensRequest extends QueuedRequest {
   CountTokensRequest(this.id, this.text);
   final int id;
   final String text;
@@ -110,17 +121,41 @@ class CountTokensReply {
   final String? error;
 }
 
-/// Main → worker: tear everything down and exit the command loop.
+/// Main → worker: fail every queued request that has not started, let the
+/// one in flight finish (a generation stops at its next token), free every
+/// native handle, then leave with [CloseAck].
 class Close {
   const Close();
 }
 
-/// Worker → main: final message before the isolate exits — every native
-/// handle has been freed.
+/// Worker → main: the last message, sent through `Isolate.exit` once every
+/// native handle has been freed — nothing of the worker runs after it.
+/// [error] is set, with its stack, when freeing them threw: the native model
+/// may then still be resident, and the main isolate says so.
 class CloseAck {
-  const CloseAck();
+  const CloseAck([this.error]);
+  final String? error;
+}
+
+/// Worker → main: the last message of a worker whose load failed. The load
+/// error itself went first, as a plain `String`, so the caller never waits
+/// for this; it follows once the worker has freed what the load allocated.
+/// [error] is set, with its stack, when that close threw.
+class LoadCleanup {
+  const LoadCleanup([this.error]);
+  final String? error;
+}
+
+/// Worker → main: the serving loop itself threw — a bug, since serving a
+/// request never throws — and the worker closed the engine anyway before the
+/// error ends it. [error] is set, with its stack, when that close threw too.
+class LoopFailed {
+  const LoopFailed([this.error]);
+  final String? error;
 }
 
 /// Signature every worker entry point (real or a test fake) must match —
-/// the injection seam `GenAiFfiClient({workerEntry})` spawns.
+/// the injection seam `GenAiFfiClient({workerEntry})` spawns. Both the real
+/// entry and the test fake hand their engine to `serveGenAiWorker`
+/// (`gen_ai_worker.dart`), so a fake exercises the real worker loop.
 typedef GenAiWorkerEntry = Future<void> Function(WorkerInit init);

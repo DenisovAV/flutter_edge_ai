@@ -62,9 +62,9 @@ Update dependencies:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.1.1
+  flutter_edge_ai: ^2.1.2
   flutter_edge_ai_rag: ^1.0.0
-  flutter_edge_ai_sqlite: ^2.0.0 # or flutter_edge_ai_qdrant: ^2.0.0
+  flutter_edge_ai_sqlite: ^2.0.1 # or flutter_edge_ai_qdrant: ^2.0.1
 ```
 
 Remove `vectorStore:` and `filterSchema:` from `FlutterEdgeAi.initialize()`.
@@ -269,13 +269,13 @@ dependencies:
 **Current equivalents (2.0):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.1.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.11.1       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai: ^2.1.2                 # core — always required
+  flutter_edge_ai_litertlm: ^1.11.2       # .litertlm + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.1.1       # .task / .bin
   flutter_edge_ai_embeddings: ^2.2.2      # tokenizer providers
   flutter_edge_ai_rag: ^1.0.0             # RAG orchestration + contracts
-  flutter_edge_ai_qdrant: ^2.0.0          # native qdrant provider
-  flutter_edge_ai_sqlite: ^2.0.0          # sqlite-vec provider; needs Flutter 3.47
+  flutter_edge_ai_qdrant: ^2.0.1          # native qdrant provider
+  flutter_edge_ai_sqlite: ^2.0.1          # sqlite-vec provider; needs Flutter 3.47
 ```
 
 Pick by what you actually used in 0.16.x:

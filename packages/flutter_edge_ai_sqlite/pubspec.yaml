@@ -1,6 +1,6 @@
 name: flutter_edge_ai_sqlite
 description: "SQLite vector search (sqlite-vec) provider for flutter_edge_ai_rag across native platforms and web."
-version: 2.0.0
+version: 2.0.1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_sqlite
 topics: [rag, sqlite, vector-search, embeddings, web]
@@ -45,7 +45,7 @@ dependencies:
   # Release and registers it as a CodeAsset resolved by DynamicLibrary.open.
   # `crypto` verifies the published SHA256 before the archive is extracted.
   hooks: ^2.0.0
-  code_assets: ^1.2.0
+  code_assets: ">=1.2.0 <3.0.0"
   crypto: ^3.0.6
 
 dev_dependencies:

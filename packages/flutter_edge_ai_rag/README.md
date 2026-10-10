@@ -14,8 +14,8 @@ Add this package and at least one storage provider:
 ```yaml
 dependencies:
   flutter_edge_ai_rag: ^1.0.0
-  flutter_edge_ai_sqlite: ^2.0.0   # all six platforms; needs Flutter 3.47
-  # or flutter_edge_ai_qdrant: ^2.0.0 (native only)
+  flutter_edge_ai_sqlite: ^2.0.1   # all six platforms; needs Flutter 3.47
+  # or flutter_edge_ai_qdrant: ^2.0.1 (native only)
 ```
 
 ```dart

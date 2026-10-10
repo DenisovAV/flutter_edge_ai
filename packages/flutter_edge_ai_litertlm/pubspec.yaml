@@ -1,6 +1,6 @@
 name: flutter_edge_ai_litertlm
 description: "LiteRT-LM (.litertlm) engine for flutter_edge_ai: dart:ffi on 5 native platforms plus web, CPU/GPU/NPU, and the LiteRT embedding backend."
-version: 1.11.1
+version: 1.11.2
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_litertlm
 topics: [gemma, llm, litert, on-device, ffi]
@@ -37,7 +37,7 @@ dependencies:
   ffi: ^2.1.0
   mutex: ^3.1.0
   hooks: ^2.0.0
-  code_assets: ^1.2.0
+  code_assets: ">=1.2.0 <3.0.0"
   crypto: ^3.0.6
   path_provider: ^2.1.4
 

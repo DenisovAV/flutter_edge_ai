@@ -220,6 +220,14 @@ Future<ModelResponse> _executeGeneration({
     topK = config?.topK;
     topP = config?.topP;
     randomSeed = config?.randomSeed;
+    // Here, before a model loads: a value no engine can sample with is the
+    // caller's error, not a transient one a hybrid router would hand on.
+    gemma.SamplingParams(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+    ).validate();
     supportImage = config?.supportImage ?? false;
     supportAudio = config?.supportAudio ?? false;
     enableThinking = config?.enableThinking ?? false;

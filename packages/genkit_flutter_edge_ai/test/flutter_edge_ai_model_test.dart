@@ -498,6 +498,41 @@ void main() {
       });
     }
 
+    // flutter_edge_ai throws an ArgumentError for these; outside the parse try
+    // it escaped untyped, so a hybrid router quietly sent the request on.
+    for (final (field, value) in [
+      ('topK', 0),
+      ('topP', 1.5),
+      ('temperature', -0.1),
+    ]) {
+      test('$field: $value is INVALID_ARGUMENT before a model loads', () async {
+        final model = buildModel();
+
+        await expectLater(
+          model(
+            ModelRequest(
+              messages: [
+                Message(
+                  role: Role.user,
+                  content: [TextPart(text: 'Hi')],
+                ),
+              ],
+              config: {field: value},
+            ),
+          ),
+          throwsA(
+            isA<GenkitException>().having(
+              (e) => e.status,
+              'status',
+              StatusCode.invalidArgument,
+            ),
+          ),
+        );
+        expect(runtime.getActiveModelCallCount, 0);
+        expect(fakeModel.lastSampling, isNull);
+      });
+    }
+
     for (final field in [
       'maxTokens',
       'topK',

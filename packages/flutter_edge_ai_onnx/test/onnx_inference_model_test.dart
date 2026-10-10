@@ -1,5 +1,7 @@
 // Fake-backed unit tests for OnnxInferenceModel — zero dlopen (hardened
 // plan Phase 3, Task 6).
+import 'dart:async';
+
 import 'package:flutter_edge_ai/core/domain/platform_types.dart';
 import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai_onnx/src/onnx_inference_model.dart';
@@ -148,6 +150,41 @@ void main() {
       await model.close();
       expect(listenerCalls, 1);
       expect(client.shutdownCalls, 1);
+    });
+
+    test('when shutdown and onClose both throw, close() reports the shutdown '
+        'error and prints the other one', () async {
+      final client = FakeGenAiClient()
+        ..shutdownError = StateError('shutdown failed');
+      var listenerCalls = 0;
+      final model = _model(
+        client,
+        onClose: () => throw StateError('onClose failed'),
+      );
+      model.addCloseListener(() => listenerCalls++);
+      final printed = <String>[];
+
+      await runZoned(
+        () => expectLater(
+          model.close(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'shutdown failed',
+            ),
+          ),
+        ),
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => printed.add(line),
+        ),
+      );
+      expect(listenerCalls, 1, reason: 'core evicts on the listener');
+      expect(
+        printed,
+        contains(contains('onClose failed')),
+        reason: 'the second failure was lost',
+      );
     });
   });
 }

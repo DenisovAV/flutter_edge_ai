@@ -180,6 +180,26 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
 
   Future<void> _close() async {
     _isClosed = true;
+    // Every step runs even when an earlier one threw: a throwing shutdown — a
+    // custom GenAiClient's — must still reach the listeners core evicts on.
+    // The first failure goes to the caller; a later one is printed, because
+    // a `finally` that throws would replace the first and lose it.
+    Object? firstError;
+    StackTrace? firstStack;
+    void fail(String step, Object error, StackTrace stack) {
+      if (firstError == null) {
+        firstError = error;
+        firstStack = stack;
+        return;
+      }
+      // `print`, not edgeAiLog, which is silent in release.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_onnx] WARNING: $step also failed while the ONNX '
+        'model was closing: $error\n$stack',
+      );
+    }
+
     try {
       // OnnxSession.close() already stops+resets; this extra stop is
       // defense-in-depth for the (currently unreachable, but not worth
@@ -187,15 +207,21 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
       // Idempotent/cheap on the client and worker either way.
       await client.stopGeneration();
       await _session?.close();
-    } finally {
-      // Nested, so a throwing shutdown — a custom GenAiClient's — still
-      // reaches the listeners core evicts on.
-      try {
-        await client.shutdown();
-      } finally {
-        _notifyClosed();
-      }
+    } catch (e, st) {
+      fail('closing the session', e, st);
     }
+    try {
+      await client.shutdown();
+    } catch (e, st) {
+      fail('shutting the client down', e, st);
+    }
+    try {
+      _notifyClosed();
+    } catch (e, st) {
+      fail('a close listener', e, st);
+    }
+    final error = firstError;
+    if (error != null) Error.throwWithStackTrace(error, firstStack!);
   }
 
   void _notifyClosed() {

@@ -1,6 +1,7 @@
 // Fake-backed unit tests for OnnxInferenceModel — zero dlopen (hardened
 // plan Phase 3, Task 6).
 import 'package:flutter_edge_ai/core/domain/platform_types.dart';
+import 'package:flutter_edge_ai/core/message.dart';
 import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai_onnx/src/onnx_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +18,47 @@ OnnxInferenceModel _model(FakeGenAiClient client, {void Function()? onClose}) {
   );
 }
 
+Future<Map<String, Object>> _searchOptionsOf(
+  FakeGenAiClient client,
+  OnnxInferenceModel model,
+) async {
+  await model.session!.addQueryChunk(const Message(text: 'Hi', isUser: true));
+  await model.session!.getResponse();
+  return client.generateCalls.last.searchOptions;
+}
+
 void main() {
+  group('sampling reaches the generator', () {
+    test('values the caller sets become ORT-GenAI search options', () async {
+      final client = FakeGenAiClient();
+      final model = _model(client);
+      await model.createSession(temperature: 0.7, topK: 20, randomSeed: 3);
+      expect(await _searchOptionsOf(client, model), {
+        'do_sample': true,
+        'temperature': 0.7,
+        'top_k': 20,
+        'random_seed': 3,
+      });
+    });
+
+    test('nothing set leaves the model config alone', () async {
+      final client = FakeGenAiClient();
+      final model = _model(client);
+      await model.createSession();
+      expect(await _searchOptionsOf(client, model), isEmpty);
+    });
+
+    test('an invalid value throws before the live session is closed', () async {
+      final client = FakeGenAiClient();
+      final model = _model(client);
+      final live = await model.createSession();
+
+      await expectLater(model.createSession(topP: 0), throwsArgumentError);
+      expect(model.session, same(live));
+      expect(client.resetSessionCalls, 0);
+    });
+  });
+
   group('createSession singleton lane', () {
     test(
       'a second sequential createSession closes the first session',

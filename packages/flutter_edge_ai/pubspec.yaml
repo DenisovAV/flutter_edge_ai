@@ -1,6 +1,6 @@
 name: flutter_edge_ai
 description: "On-device AI for Flutter: run Gemma and other LLMs, embeddings and speech on Android, iOS, Web, macOS, Windows and Linux. Pluggable engines, no server."
-version: 2.1.2
+version: 2.2.0
 resolution: workspace
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai

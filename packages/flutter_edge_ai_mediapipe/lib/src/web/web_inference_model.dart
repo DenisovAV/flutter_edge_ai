@@ -14,6 +14,7 @@ import 'package:flutter_edge_ai/core/extensions.dart';
 import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
 import 'package:flutter_edge_ai/core/message.dart';
 import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/core/sampling.dart';
 import 'package:flutter_edge_ai/core/tool.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
     show InferenceModel, InferenceModelSession, SessionMetrics;
@@ -24,6 +25,7 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart'
 import 'package:flutter_edge_ai/web/web_image_format.dart';
 import 'package:flutter_edge_ai/web/web_model_source.dart';
 
+import '../mediapipe_sampling.dart';
 import 'llm_inference_web.dart';
 
 /// Base class for prompt parts (text, image, audio)
@@ -97,9 +99,9 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceModelSession> createSession({
-    double temperature = 0.8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality, // Enabling vision modality support
@@ -138,8 +140,27 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     // Audio modality is handled via supportAudio flag in the model
     if (enableAudioModality == true && !supportAudio) {
       if (kDebugMode) {
-        edgeAiLog('Warning: Audio modality requested but supportAudio is false');
+        edgeAiLog(
+          'Warning: Audio modality requested but supportAudio is false',
+        );
       }
+    }
+
+    // Resolved before anything loads: values it rejects must not fetch a
+    // model or open its reader. A `.task` file carries no sampler, so an unset
+    // field comes from the family defaults. MediaPipe web 0.10.29 has no topP
+    // option; it is passed and dropped.
+    final sampling = resolveMediaPipeSampling(
+      SamplingParams(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        randomSeed: randomSeed,
+      ),
+      modelType: modelType,
+    );
+    if (topP != null) {
+      edgeAiLog('[MediaPipe web] topP is ignored: MediaPipe web has no top-p.');
     }
 
     if (_initCompleter case Completer<InferenceModelSession> completer) {
@@ -174,10 +195,10 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       final config = LlmInferenceOptions(
         baseOptions: baseOptions,
         maxTokens: maxTokens,
-        randomSeed: randomSeed,
-        topK: topK,
-        temperature: temperature,
-        topP: topP,
+        randomSeed: sampling.randomSeed,
+        topK: sampling.topK,
+        temperature: sampling.temperature,
+        topP: sampling.topP,
         supportedLoraRanks: !hasLoraParams
             ? null
             : Int32List.fromList(loraRanks!).toJS,
@@ -418,7 +439,9 @@ class WebModelSession extends InferenceModelSession {
         // Create proper image object for MediaPipe
         final imageObj = <String, String>{'imageSource': part.dataUrl}.jsify();
         if (kDebugMode) {
-          edgeAiLog('🖼️ _createPromptArray: Created image object with jsify()');
+          edgeAiLog(
+            '🖼️ _createPromptArray: Created image object with jsify()',
+          );
         }
         jsArray.add(imageObj as JSAny);
       } else if (part is AudioPromptPart) {
@@ -597,7 +620,9 @@ class WebModelSession extends InferenceModelSession {
               _controller?.add(partial);
               if (complete) {
                 if (kDebugMode) {
-                  edgeAiLog('✅ getResponseAsync: Multimodal response completed');
+                  edgeAiLog(
+                    '✅ getResponseAsync: Multimodal response completed',
+                  );
                 }
                 _controller?.close();
               }

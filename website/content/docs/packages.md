@@ -93,8 +93,8 @@ can be registered on its own:
 
 - **`OnnxEngine`** — text generation via [ORT-GenAI](https://github.com/microsoft/onnxruntime-genai)
   on native, [Transformers.js](https://huggingface.co/docs/transformers.js) on
-  Web. Text-only, greedy decoding, one session at a time in v1 — no vision, no
-  audio, no LoRA yet.
+  Web. Text-only, one session at a time in v1 — no vision, no audio, no LoRA
+  yet.
 - **`OnnxEmbeddingBackend`** — embeddings via plain ONNX Runtime
   (WordPiece/BERT-style and SentencePiece models) on native, onnxruntime-web
   on Web, priority 10 over `LiteRtEmbeddingBackend`'s catch-all priority 0.

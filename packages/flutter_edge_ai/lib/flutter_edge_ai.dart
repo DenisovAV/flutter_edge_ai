@@ -40,6 +40,7 @@ export 'core/registry/hugging_face_resolver.dart'
 export 'core/domain/platform_types.dart'; // PreferredBackend + ActivationDataType
 export 'core/message.dart';
 export 'core/model.dart'; // Export ModelType and other model-related classes
+export 'core/sampling.dart'; // SamplingParams: per-family defaults, resolve order
 export 'core/model_response.dart';
 export 'core/function_call_parser.dart';
 export 'core/tool.dart';

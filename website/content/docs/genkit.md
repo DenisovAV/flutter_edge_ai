@@ -23,11 +23,11 @@ with the on-device model exactly as it would with any cloud provider.
 ```
 dependencies:
   genkit: ^1.0.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.8.0
-  flutter_edge_ai: ^2.1.2
+  genkit_flutter_edge_ai: ^0.8.1
+  flutter_edge_ai: ^2.2.0
   # Add the inference engine(s) you need:
-  flutter_edge_ai_litertlm: ^1.11.2   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.1.1  # .task / .bin models (mobile + web)
+  flutter_edge_ai_litertlm: ^1.12.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.2.0  # .task / .bin models (mobile + web)
   # Optional — for embeddings (needs a backend, e.g. flutter_edge_ai_litertlm above):
   flutter_edge_ai_embeddings: ^2.2.2
 ```
@@ -164,6 +164,12 @@ final response = await ai.generate(
   ),
 );
 ```
+
+Leave `temperature`, `topK` and `topP` unset to get the model's own sampler: the
+one a `.litertlm` file ships, else the defaults its family publishes. On
+`.litertlm` the first request after a model loads fixes the sampler for that
+loaded model (LiteRT-LM#2080), so a later request with different values needs
+the model reloaded.
 
 Prefer Genkit's standard top-level parameter — `ai.generate(toolChoice: .none)`
 — which takes **precedence** over the `toolChoice` config field above (kept as a

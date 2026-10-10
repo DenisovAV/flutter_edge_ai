@@ -4,13 +4,15 @@
 // through `LocalAiModel`, so the bookkeeping on each side has to agree —
 // `model.sessions` here, `host.sessions`/`host.closedIds` at the host.
 
+import 'dart:async';
+
 import 'package:flutter_edge_ai/core/tool.dart' show Tool;
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
     show RuntimeConfig;
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart'
     show BuiltInAiEngine;
 import 'package:flutter_edge_ai_builtin_ai/src/builtin_ai_model.dart'
-    show BuiltInAiModel;
+    show BuiltInAiModel, resetSamplingWarnings;
 import 'package:flutter_local_ai/flutter_local_ai.dart'
     show LocalAiModel, LocalAiTool, debugLocalAiHost;
 import 'package:flutter_local_ai/testing.dart' show FakeLocalAiHost;
@@ -26,6 +28,7 @@ void main() {
   setUp(() {
     host = FakeLocalAiHost();
     debugLocalAiHost = host;
+    resetSamplingWarnings();
   });
 
   tearDown(() async {
@@ -42,6 +45,56 @@ void main() {
     addTearDown(model.close);
     return model;
   }
+
+  group('sampling', () {
+    test('unset values keep flutter_local_ai\'s 0.8 / topK 1', () async {
+      final model = await newModel();
+      await model.createSession();
+      expect(host.sessions.single.temperature, 0.8);
+      expect(host.sessions.single.topK, 1);
+      expect(host.sessions.single.topP, isNull);
+    });
+
+    test('values the caller sets reach the host', () async {
+      final model = await newModel();
+      await model.createSession(temperature: 0.3, topK: 5, topP: 0.9);
+      expect(host.sessions.single.temperature, 0.3);
+      expect(host.sessions.single.topK, 5);
+      expect(host.sessions.single.topP, 0.9);
+    });
+
+    test('an invalid value throws before the live session is closed', () async {
+      final model = await newModel();
+      final live = await model.createSession();
+
+      await expectLater(model.createSession(topK: 0), throwsArgumentError);
+      expect(host.closedIds, isEmpty);
+      expect(model.session, same(live));
+    });
+
+    test('openSession throws on an invalid value and opens nothing', () async {
+      final model = await newModel();
+      await expectLater(model.openSession(topP: 1.5), throwsArgumentError);
+      expect(host.sessions, isEmpty);
+    });
+
+    test('says once that a temperature without topK stays greedy', () async {
+      final model = await newModel();
+      final lines = <String>[];
+      await runZoned(
+        () async {
+          await model.openSession(temperature: 0.9);
+          await model.openSession(temperature: 0.9, randomSeed: 3);
+          await model.openSession(randomSeed: 4);
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => lines.add(line),
+        ),
+      );
+      expect(lines.where((l) => l.contains('decodes greedily')), hasLength(1));
+      expect(lines.where((l) => l.contains('randomSeed')), hasLength(1));
+    });
+  });
 
   group('session lanes', () {
     test('createSession replaces and closes the previous singleton', () async {

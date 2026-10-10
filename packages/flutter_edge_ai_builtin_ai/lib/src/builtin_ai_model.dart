@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart'
 import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart'
     show CloseNotifier;
 import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
+import 'package:flutter_edge_ai/core/sampling.dart' show SamplingParams;
 import 'package:flutter_edge_ai/core/tool.dart' show Tool, ToolChoice;
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart' show edgeAiLog;
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
@@ -33,6 +34,59 @@ void _warnThinkingIgnoredOnce() {
     '[BuiltInAI] Thinking mode is not supported by built-in OS models '
     '(Gemini Nano / Apple Foundation Models); the flag is ignored.',
   );
+}
+
+// flutter_local_ai 0.2.1's own `openSession` defaults. It takes no null
+// temperature or top-k, so an unset one is sent as these, as built-in AI
+// always has: the OS models' own defaults are out of reach until it does, and
+// an invented top-k could exceed a browser's `maxTopK`, which Chrome 151+ no
+// longer lets flutter_local_ai clamp to. top-p is passed only when set; it
+// reaches Windows only (Android and Chrome drop it, Apple's sampler takes the
+// top-k first).
+const _localAiTemperature = 0.8;
+const _localAiTopK = 1;
+
+bool _greedyTopKWarned = false;
+bool _seedIgnoredWarned = false;
+
+@visibleForTesting
+void resetSamplingWarnings() {
+  _greedyTopKWarned = false;
+  _seedIgnoredWarned = false;
+}
+
+/// Throws for a value no engine can sample with, before anything is closed or
+/// opened, and says once what built-in AI cannot honour. Printed, because a
+/// release build is where it gets reported and edgeAiLog is silent there.
+void _checkSampling({
+  required double? temperature,
+  required int? topK,
+  required double? topP,
+  required int? randomSeed,
+}) {
+  final explicit = SamplingParams(
+    temperature: temperature,
+    topK: topK,
+    topP: topP,
+    randomSeed: randomSeed,
+  )..validate();
+  if (explicit.needsSamplingTopK && !_greedyTopKWarned) {
+    _greedyTopKWarned = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_builtin_ai] WARNING: a temperature or topP was set '
+      'without topK, so the OS model gets topK $_localAiTopK and decodes '
+      'greedily. Pass a topK above 1 to sample. Shown once.',
+    );
+  }
+  if (randomSeed != null && !_seedIgnoredWarned) {
+    _seedIgnoredWarned = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_builtin_ai] WARNING: randomSeed is ignored: built-in '
+      'OS models take no seed. Shown once.',
+    );
+  }
 }
 
 /// A loaded OS built-in model, adapting flutter_local_ai's [LocalAiModel] to
@@ -102,8 +156,8 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       List.unmodifiable([?_session, ..._openSessions]);
 
   Future<BuiltInAiSession> _newSession({
-    required double temperature,
-    required int topK,
+    required double? temperature,
+    required int? topK,
     required double? topP,
     required bool? enableVisionModality,
     required bool? enableAudioModality,
@@ -146,8 +200,8 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       // Native tool calling stays reachable through `localAiModel` /
       // `BuiltInAiSession.localAiSession`.
       final inner = await _model.openSession(
-        temperature: temperature,
-        topK: topK,
+        temperature: temperature ?? _localAiTemperature,
+        topK: topK ?? _localAiTopK,
         topP: topP,
         maxOutputTokens: maxOutputTokens,
         systemInstruction: systemInstruction ?? this.systemInstruction,
@@ -174,9 +228,9 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceModelSession> createSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -194,6 +248,12 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       if (loraPath != null) {
         throw UnsupportedError('LoRA is not exposed by this engine.');
       }
+      _checkSampling(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        randomSeed: randomSeed,
+      );
       // The singleton lane: a new session replaces the previous one, whose
       // native context must be released first.
       final previous = _session;
@@ -223,9 +283,9 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceModelSession> openSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -238,6 +298,12 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
     if (loraPath != null) {
       throw UnsupportedError('LoRA is not exposed by this engine.');
     }
+    _checkSampling(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+    );
     final created = await _newSession(
       temperature: temperature,
       topK: topK,
@@ -255,9 +321,9 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceChat> createChat({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     int tokenBuffer = 256,
     String? loraPath,

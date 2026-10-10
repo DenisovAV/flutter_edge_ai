@@ -6,6 +6,7 @@ import 'package:flutter_edge_ai/core/tool.dart';
 import 'package:flutter_edge_ai/core/chat.dart';
 import 'package:flutter_edge_ai/core/message.dart';
 import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/core/sampling.dart';
 import 'package:flutter_edge_ai/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/core/domain/platform_types.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -188,7 +189,18 @@ abstract class InferenceModel {
 
   /// Creates a new [InferenceModelSession] for generation.
   ///
-  /// [temperature], [randomSeed], [topK], [topP] — parameters for sampling.
+  /// [temperature], [randomSeed], [topK], [topP] — sampling. A value you set
+  /// is used as is; one no engine can sample with throws an [ArgumentError].
+  /// An unset one comes from the model itself when the engine can read it (a
+  /// native `.litertlm` bundle's sampler, an ONNX model's
+  /// `genai_config.json`), otherwise from the family's published defaults
+  /// ([SamplingParams.forModelType]), otherwise from [SamplingParams.fallback].
+  /// Engines that cannot take a value say so once, and two depart from this:
+  /// ONNX leaves unset fields to its config, and built-in AI sends
+  /// `temperature: 0.8, topK: 1`. Pass `topK: 1` or `temperature: 0` for
+  /// greedy decoding. On `.litertlm` the sampler is fixed by the engine's
+  /// first generation (LiteRT-LM#2080), so a later session with different
+  /// values needs the model reloaded.
   /// [loraPath] — optional path to LoRA model.
   /// [enableVisionModality] — enable vision modality for multimodal models.
   /// [enableAudioModality] — enable audio modality for Gemma 3n E4B models.
@@ -204,9 +216,9 @@ abstract class InferenceModel {
   /// MediaPipe `.task` path has no session-level output cap and ignores it
   /// (a log line is emitted).
   Future<InferenceModelSession> createSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality, // Add vision modality support
@@ -269,9 +281,9 @@ abstract class InferenceModel {
   /// [FlutterEdgeAiPlugin.createModel]) is exceeded — close an existing
   /// session before opening a new one.
   Future<InferenceModelSession> openSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -299,9 +311,9 @@ abstract class InferenceModel {
   }
 
   Future<InferenceChat> createChat({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     int tokenBuffer = 256,
     String? loraPath,
@@ -371,9 +383,9 @@ abstract class InferenceModel {
   /// singleton. Hold the returned chat reference yourself and close it
   /// when done.
   Future<InferenceChat> openChat({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     int tokenBuffer = 256,
     String? loraPath,

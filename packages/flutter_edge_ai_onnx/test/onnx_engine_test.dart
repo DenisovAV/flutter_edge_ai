@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_edge_ai/core/domain/model_source.dart';
+import 'package:flutter_edge_ai/core/message.dart';
 import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
     show InferenceModelSpec;
@@ -141,6 +142,33 @@ void main() {
       expect(model.fileType, ModelFileType.onnx);
       expect(model.maxTokens, 1024);
     });
+
+    test(
+      'a temperature over a config with top_k 1 gets the family top-k',
+      () async {
+        final client = FakeGenAiClient();
+        final engine = OnnxEngine(clientFactory: () => client);
+        File(
+          '${tempDir.path}/genai_config.json',
+        ).writeAsStringSync('{"search": {"do_sample": false, "top_k": 1}}');
+        final modelFile = File('${tempDir.path}/model.onnx')
+          ..writeAsStringSync('not a real model');
+        final model = await engine.createModel(
+          _spec(ModelFileType.onnx),
+          RuntimeConfig(maxTokens: 1024, modelPath: modelFile.path),
+        );
+
+        final session = await model.createSession(temperature: 0.7);
+        await session.addQueryChunk(const Message(text: 'Hi', isUser: true));
+        await session.getResponse();
+
+        expect(client.generateCalls.single.searchOptions, {
+          'do_sample': true,
+          'temperature': 0.7,
+          'top_k': 64,
+        });
+      },
+    );
 
     test('activeBackend is null even when a backend was requested', () async {
       final client = FakeGenAiClient();

@@ -60,6 +60,7 @@ class GenAiTurn {
     this.systemInstruction,
     this.isFirstTurn = false,
     this.maxOutputTokens,
+    this.searchOptions = const {},
   });
 
   /// Raw user-turn content (tool responses are already folded into plain
@@ -80,6 +81,12 @@ class GenAiTurn {
   /// context-window `max_length`, which is set once when the generator is
   /// created (see [GenAiClient.load]'s `contextWindow`).
   final int? maxOutputTokens;
+
+  /// Sampling search options (`do_sample`, `temperature`, `top_k`, `top_p`,
+  /// `random_seed`) the caller set, from `onnxSearchOptions`. Applied when a
+  /// fresh generator is created, so a session's first turn decides them; an
+  /// option left out keeps the model's `genai_config.json` value.
+  final Map<String, Object> searchOptions;
 }
 
 /// Prompt/decode counters for the most recently completed [GenAiClient.generate]
@@ -712,6 +719,27 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
             ),
             'OgaGeneratorParamsSetSearchNumber(max_length)',
           );
+          for (final MapEntry(:key, :value) in turn.searchOptions.entries) {
+            final nameC = key.toNativeUtf8();
+            try {
+              check(
+                value is bool
+                    ? oga.OgaGeneratorParamsSetSearchBool(
+                        params,
+                        nameC.cast(),
+                        value,
+                      )
+                    : oga.OgaGeneratorParamsSetSearchNumber(
+                        params,
+                        nameC.cast(),
+                        (value as num).toDouble(),
+                      ),
+                'OgaGeneratorParamsSetSearch($key)',
+              );
+            } finally {
+              pkg_ffi.calloc.free(nameC);
+            }
+          }
           final genOut = pkg_ffi.calloc<ffi.Pointer<OgaGenerator>>();
           try {
             check(

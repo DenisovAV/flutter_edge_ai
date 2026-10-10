@@ -1,3 +1,7 @@
+## 0.5.4
+- Sampling values reach ORT-GenAI and Transformers.js; web no longer forces greedy (#572).
+- Require `flutter_edge_ai` ^2.2.0.
+
 ## 0.5.3
 - Allow `code_assets` 2.x, which other native plugins now require (#603).
 

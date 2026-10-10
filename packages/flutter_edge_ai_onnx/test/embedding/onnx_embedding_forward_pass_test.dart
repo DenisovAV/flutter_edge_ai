@@ -13,7 +13,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// result — the seam that makes `OnnxEmbeddingForwardPass`'s input-routing
 /// and padding logic testable without any native session.
 class _FakeOrtClient implements OrtClient {
-  _FakeOrtClient({required this.ioSpec, required this.runResult});
+  _FakeOrtClient({
+    required this.ioSpec,
+    required this.runResult,
+    this.loadError,
+  });
 
   final OrtIoSpec ioSpec;
   final OrtRunResult Function(
@@ -22,6 +26,9 @@ class _FakeOrtClient implements OrtClient {
     List<int>? typeIds,
   )
   runResult;
+
+  /// When set, `load()` throws it instead of opening the session.
+  final Object? loadError;
 
   int loadCallCount = 0;
   int closeCallCount = 0;
@@ -32,6 +39,8 @@ class _FakeOrtClient implements OrtClient {
   @override
   Future<OrtIoSpec> load(String modelPath) async {
     loadCallCount++;
+    final error = loadError;
+    if (error != null) throw error;
     return ioSpec;
   }
 
@@ -444,6 +453,92 @@ void main() {
         pass.run(tokenIds: const [1]),
         throwsA(isA<StateError>()),
       );
+    });
+
+    test('a dimension probe that throws closes the client it opened', () async {
+      // The probe runs after the session is open. A throw there used to leave
+      // that session behind, pointed at only by a pass whose load had failed.
+      final fake = _FakeOrtClient(
+        ioSpec: const OrtIoSpec(
+          inputNames: ['input_ids'],
+          outputName: 'sentence_embedding',
+          hasLastHiddenStateOutput: false,
+          staticDim: null, // triggers the probe
+        ),
+        runResult: (ids, mask, typeIds) =>
+            throw StateError('probe forward pass failed'),
+      );
+      final pass = OnnxEmbeddingForwardPass(
+        '/tmp/model.onnx',
+        clientFactory: () => fake,
+      );
+
+      await expectLater(
+        pass.load(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('probe forward pass failed'),
+          ),
+        ),
+        reason: 'the caller gets the load error, not a close error',
+      );
+      expect(fake.closeCallCount, 1);
+
+      // Unwound to "never loaded": nothing reads the half-built state.
+      expect(() => pass.outputDimension, throwsStateError);
+      await expectLater(pass.run(tokenIds: const [1]), throwsStateError);
+      // And the worker's own close() after a failed load is still safe.
+      await pass.close();
+      expect(fake.closeCallCount, 1);
+    });
+
+    test(
+      'a probe that rejects the output shape closes the client too',
+      () async {
+        final fake = _FakeOrtClient(
+          ioSpec: const OrtIoSpec(
+            inputNames: ['input_ids'],
+            outputName: 'sentence_embedding',
+            hasLastHiddenStateOutput: false,
+            staticDim: null,
+          ),
+          // A rank-0 output: the probe throws its own StateError.
+          runResult: (ids, mask, typeIds) =>
+              OrtRunResult(values: Float32List(1), shape: const []),
+        );
+        final pass = OnnxEmbeddingForwardPass(
+          '/tmp/model.onnx',
+          clientFactory: () => fake,
+        );
+
+        await expectLater(pass.load(), throwsStateError);
+        expect(fake.closeCallCount, 1);
+      },
+    );
+
+    test('a client whose own load throws is closed as well', () async {
+      final fake = _FakeOrtClient(
+        ioSpec: const OrtIoSpec(
+          inputNames: ['input_ids'],
+          outputName: 'sentence_embedding',
+          hasLastHiddenStateOutput: false,
+          staticDim: 2,
+        ),
+        runResult: (ids, mask, typeIds) => OrtRunResult(
+          values: Float32List.fromList([1, 0]),
+          shape: const [1, 2],
+        ),
+        loadError: StateError('CreateSession failed'),
+      );
+      final pass = OnnxEmbeddingForwardPass(
+        '/tmp/model.onnx',
+        clientFactory: () => fake,
+      );
+
+      await expectLater(pass.load(), throwsStateError);
+      expect(fake.closeCallCount, 1);
     });
   });
 }

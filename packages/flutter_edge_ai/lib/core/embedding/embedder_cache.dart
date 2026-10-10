@@ -201,6 +201,25 @@ class EmbedderCache {
   void invalidate() => _cached = null;
 }
 
+/// The error for a `createEmbeddingModel` call that names one of its two files
+/// but not the other, or null when the pair is whole: both given, or both
+/// omitted to use the active embedder.
+///
+/// A half-given pair has no honest answer, and each shell used to invent a
+/// different one without a word: mobile and web returned the ACTIVE embedder,
+/// ignoring the path they were handed, and desktop kept the caller's model but
+/// took the tokenizer from the active spec — one model's vectors through
+/// another model's tokenizer. One rule here, so the three shells cannot drift
+/// apart again.
+ArgumentError? embedderPathPairError(String? modelPath, String? tokenizerPath) {
+  if ((modelPath == null) == (tokenizerPath == null)) return null;
+  final given = modelPath != null ? 'modelPath' : 'tokenizerPath';
+  return ArgumentError(
+    'createEmbeddingModel takes modelPath and tokenizerPath together, or '
+    'neither to use the active embedder; only $given was given.',
+  );
+}
+
 /// A built embedder and the params it was built from, which only ever travel
 /// together.
 class _CachedEmbedder {

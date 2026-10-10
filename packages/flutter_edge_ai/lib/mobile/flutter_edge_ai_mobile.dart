@@ -455,6 +455,12 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     // held for the app's lifetime; if it does not speak here it never speaks.
     noticeEmbedderBackendIgnored(preferredBackend);
 
+    // Before the lane: a half-given pair is the caller's mistake whatever is
+    // cached or building, so it need not wait behind another caller's build.
+    // It used to be read as "no paths" and answered with the ACTIVE embedder.
+    final pathsError = embedderPathPairError(modelPath, tokenizerPath);
+    if (pathsError != null) return Future.error(pathsError, StackTrace.current);
+
     // Serialised, because resolving paths, comparing them against the cached
     // embedder and building are three steps with awaits between them: run
     // interleaved, two callers both finish deciding before either records a
@@ -477,7 +483,9 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
   }) async {
     String label = 'explicit paths';
 
-    // Modern API: Use active embedding model if paths not provided
+    // Modern API: use the active embedding model when no paths are given.
+    // `createEmbeddingModel` has already refused a half-given pair, so this
+    // branch means BOTH are null; `||` is kept for the null promotion below.
     if (modelPath == null || tokenizerPath == null) {
       final manager = _unifiedManager;
       final activeModel = manager.activeEmbeddingModel;

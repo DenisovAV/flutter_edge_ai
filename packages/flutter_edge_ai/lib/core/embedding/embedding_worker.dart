@@ -4,8 +4,17 @@
 // from a registered `EmbeddingTokenizerProvider` (`flutter_edge_ai_embeddings`). Generalization of what used to be
 // `litert/litert_embedding_worker.dart`; the isolate machinery below
 // (message classes, id-correlated pending map, onExit-null death handling,
-// timeout-guarded close, log-level seeding, debugName) is preserved
-// verbatim from that file.
+// log-level seeding, debugName) comes from that file.
+//
+// Close never kills the isolate. It used to wait five seconds for an ack and
+// then `Isolate.kill` — but the worker served requests one `await for` turn at
+// a time, so a close sent behind a batch waited for the whole batch, the five
+// seconds ran out, and the kill landed before the worker's `finally` could
+// call `pass.close()`. A killed isolate runs no more Dart code, so the native
+// model stayed resident for the life of the process. Now the worker queues
+// requests itself and serves one at a time, so a close fails everything that
+// has not started, lets the one call in flight finish, closes the forward pass
+// and exits on its own.
 //
 // Why a long-lived worker and not `Isolate.run` per call:
 //   - A real forward pass costs hundreds of ms to load/compile but far less
@@ -22,7 +31,10 @@
 // (reply).
 
 import 'dart:async';
+import 'dart:collection';
+
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+
 import 'dart:isolate';
 
 import 'forward_pass.dart';
@@ -54,16 +66,24 @@ class _EmbedReply {
   final String? error;
 }
 
-/// Sentinel asking the worker to tear down the forward pass and exit.
+/// Sentinel asking the worker to stop: fail every request that has not
+/// started, let the one in flight finish, close the forward pass, ack, exit.
 class _Close {
   const _Close();
 }
 
-/// Ack the worker sends after [EmbeddingForwardPass.close] completes, so the
-/// main isolate can kill the isolate without racing native teardown.
+/// The worker's last message, sent through `Isolate.exit` once
+/// [EmbeddingForwardPass.close] has returned — so nothing of the worker runs
+/// after it. [error] is set when that close threw: the native model may then
+/// still be resident, and the main isolate says so.
 class _CloseAck {
-  const _CloseAck();
+  const _CloseAck(this.error);
+  final String? error;
 }
+
+/// The error a request gets when the worker closed before it started.
+const _closedBeforeRunMessage =
+    'EmbeddingWorker closed before this request ran';
 
 /// Parameters needed to boot the worker isolate. Must be fully sendable —
 /// [descriptor] carries a top-level factory tear-off (see
@@ -90,14 +110,17 @@ class _WorkerInit {
 /// the load handshake, and multiplexes concurrent requests by id.
 class EmbeddingWorker {
   EmbeddingWorker._(
-    this._isolate,
     this._commandPort,
     this._fromWorker,
     this.inputSequenceLength,
     this.outputDimension,
   );
 
-  final Isolate _isolate;
+  /// How long [close] waits before saying it is still waiting. It keeps
+  /// waiting afterwards: the only way to stop sooner is to kill the isolate,
+  /// and a killed isolate never frees its native model.
+  static const _slowCloseNotice = Duration(seconds: 30);
+
   final SendPort _commandPort;
   final ReceivePort _fromWorker;
 
@@ -110,8 +133,16 @@ class EmbeddingWorker {
 
   final _pending = <int, Completer<List<double>>>{};
   int _nextId = 0;
-  bool _closed = false;
-  Completer<void>? _closeAck;
+
+  /// True from the moment [close] is called, or the worker dies; [embed]
+  /// refuses from then on.
+  bool _closing = false;
+
+  /// Completes when the worker is gone: its [_CloseAck], or its onExit.
+  final _gone = Completer<void>();
+
+  /// The one teardown every [close] call shares.
+  Future<void>? _closeFuture;
 
   /// Spawn the worker and wait until the forward pass is loaded.
   static Future<EmbeddingWorker> spawn({
@@ -125,7 +156,7 @@ class EmbeddingWorker {
     // `null` is the isolate's onExit signal — if it arrives before _Ready, the
     // worker died during load (e.g. a native crash compiling a corrupt model),
     // so fail the completer instead of hanging forever.
-    late final StreamSubscription sub;
+    late final StreamSubscription<dynamic> sub;
     sub = fromWorker.listen((msg) {
       if (msg is _Ready) {
         readyCompleter.complete(msg);
@@ -142,31 +173,32 @@ class EmbeddingWorker {
       }
     });
 
-    final isolate = await Isolate.spawn(
-      _workerEntry,
-      _WorkerInit(
-        replyTo: fromWorker.sendPort,
-        descriptor: descriptor,
-        tokenizerPath: tokenizerPath,
-        logLevel: edgeAiLogLevel,
-      ),
-      // onExit posts `null` to fromWorker so we never wait on a dead isolate.
-      onExit: fromWorker.sendPort,
-      debugName: 'embedding-forward-worker',
-    );
-
     final _Ready ready;
     try {
+      await Isolate.spawn(
+        _workerEntry,
+        _WorkerInit(
+          replyTo: fromWorker.sendPort,
+          descriptor: descriptor,
+          tokenizerPath: tokenizerPath,
+          logLevel: edgeAiLogLevel,
+        ),
+        // onExit posts `null` to fromWorker so we never wait on a dead isolate.
+        onExit: fromWorker.sendPort,
+        debugName: 'embedding-forward-worker',
+      );
       ready = await readyCompleter.future;
     } catch (_) {
+      // Nothing to kill. A worker that fails to load closes whatever forward
+      // pass it built and leaves through `Isolate.exit` carrying the error, and
+      // the onExit `null` means it is already gone. Killing it here instead
+      // could land before that close — the leak [close] no longer has.
       await sub.cancel();
       fromWorker.close();
-      isolate.kill(priority: Isolate.immediate);
       rethrow;
     }
 
     final worker = EmbeddingWorker._(
-      isolate,
       ready.commandPort,
       fromWorker,
       ready.seqLen,
@@ -187,14 +219,27 @@ class EmbeddingWorker {
         completer.complete(msg.vector!);
       }
     } else if (msg is _CloseAck) {
-      _closeAck?.complete();
+      final error = msg.error;
+      if (error != null) {
+        _warn(
+          'the embedding forward pass failed to close; its native model may '
+          'still be resident: $error',
+        );
+      }
+      if (!_gone.isCompleted) _gone.complete();
     } else if (msg == null) {
-      // onExit: the worker isolate died. If this is part of a normal close,
-      // the ack path already handled it; otherwise it's an unexpected crash —
-      // fail every in-flight request rather than leave callers hanging.
-      _failAllPending('Embedding worker isolate exited unexpectedly');
-      _closed = true;
-      _closeAck?.complete();
+      // onExit. After a _CloseAck the port is already closed, so this only
+      // arrives when the worker died without one — a native crash in a request
+      // or in its own teardown. Fail every in-flight request rather than leave
+      // callers hanging.
+      _closing = true;
+      _failAllPending(
+        _closeFuture == null
+            ? 'Embedding worker isolate exited unexpectedly'
+            : 'Embedding worker isolate exited while closing',
+      );
+      _fromWorker.close();
+      if (!_gone.isCompleted) _gone.complete();
     }
   }
 
@@ -207,7 +252,7 @@ class EmbeddingWorker {
 
   /// Embed one text. The forward runs in the worker; the UI isolate stays free.
   Future<List<double>> embed(String text, {required String prefix}) {
-    if (_closed) {
+    if (_closing) {
       return Future.error(StateError('EmbeddingWorker is closed'));
     }
     final id = _nextId++;
@@ -217,24 +262,56 @@ class EmbeddingWorker {
     return completer.future;
   }
 
-  /// Tear down the forward pass and stop the isolate. Waits for the worker to
-  /// finish native teardown (a _CloseAck, or the isolate's onExit) before
-  /// killing it, so handles are never freed mid-dispose.
-  Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
-    _closeAck = Completer<void>();
-    _commandPort.send(const _Close());
-    // Wait for the worker's dispose ack / exit; cap the wait so a wedged
-    // native teardown can't hang close() forever.
-    try {
-      await _closeAck!.future.timeout(const Duration(seconds: 5));
-    } catch (_) {
-      // Timed out or errored — fall through to a forced kill below.
+  /// Stops the worker without abandoning its native model.
+  ///
+  /// Requests that have not started fail with a "closed" [StateError]. The one
+  /// in flight — the worker serves one at a time — finishes and gets its
+  /// vector. Then the worker closes the forward pass, acks and exits, and this
+  /// returns.
+  ///
+  /// It waits for all of that however long the call in flight takes, and
+  /// never kills the isolate: a killed isolate runs no more Dart code, so its
+  /// forward pass is never closed and the native model stays resident for the
+  /// life of the process. After [_slowCloseNotice] it says what it is waiting
+  /// for, once.
+  ///
+  /// Idempotent; concurrent callers share one teardown.
+  Future<void> close() => _closeFuture ??= _shutDown();
+
+  Future<void> _shutDown() async {
+    _closing = true;
+    if (!_gone.isCompleted) {
+      _commandPort.send(const _Close());
+      final notice = Timer(
+        _slowCloseNotice,
+        () => _warn(
+          'EmbeddingWorker.close() has waited '
+          '${_slowCloseNotice.inSeconds} s for the worker to finish the '
+          'embedding request in flight and close its native model. It keeps '
+          'waiting rather than kill the worker, because a killed worker never '
+          'frees its native model.',
+        ),
+      );
+      try {
+        await _gone.future;
+      } finally {
+        notice.cancel();
+      }
     }
     _fromWorker.close();
-    _isolate.kill(priority: Isolate.beforeNextEvent);
-    _failAllPending('EmbeddingWorker closed mid-request');
+    // The worker answers every request it received before it acks, and the
+    // port delivers in order, so this is empty — unless the worker died, and
+    // then onExit has already failed them. A net, not a path.
+    _failAllPending(_closedBeforeRunMessage);
+  }
+
+  /// `print`, not [edgeAiLog], for the reason `EmbedderCache` gives: edgeAiLog
+  /// is silent in release, and release is where a leaked native model or a
+  /// hung close gets debugged. Both are abnormal, so this costs nothing in the
+  /// normal case.
+  static void _warn(String message) {
+    // ignore: avoid_print
+    print('[flutter_edge_ai] WARNING: $message');
   }
 }
 
@@ -283,6 +360,18 @@ List<double> _copyPooledFinal(ForwardResult result) {
   return List<double>.of(result.values);
 }
 
+/// Closes [pass], reporting a failure as text instead of throwing, so the
+/// caller still sends its last message. Null means it closed cleanly.
+Future<String?> _closePass(EmbeddingForwardPass pass) async {
+  try {
+    await pass.close();
+    return null;
+  } catch (e, st) {
+    edgeAiLog('[EmbeddingWorker] forward pass close failed: $e\n$st');
+    return '$e';
+  }
+}
+
 /// Isolate entry point. Loads the tokenizer + forward pass, then serves
 /// requests until _Close.
 Future<void> _workerEntry(_WorkerInit init) async {
@@ -291,57 +380,123 @@ Future<void> _workerEntry(_WorkerInit init) async {
 
   final EmbeddingTokenizer tokenizer;
   final EmbeddingForwardPass pass;
+  final int seqLen;
+  final int dim;
+  // Nullable twin of `pass`, so the failure path can tell "never built" from
+  // "built, then failed" — and close the second.
+  EmbeddingForwardPass? built;
   try {
     tokenizer = await init.descriptor.tokenizerFactory(init.tokenizerPath);
-    pass = init.descriptor.factory(init.descriptor.modelPath);
-    await pass.load();
+    built = init.descriptor.factory(init.descriptor.modelPath);
+    await built.load();
+    // Read inside the try: a getter that throws is a failed load too, and
+    // the pass is open by now.
+    seqLen = built.inputSequenceLength ?? -1;
+    dim = built.outputDimension;
+    pass = built;
   } catch (e, st) {
     edgeAiLog('[EmbeddingWorker] load failed: $e\n$st');
-    init.replyTo.send('Embedding worker failed to load: $e');
-    return;
+    // A pass that was constructed may hold native handles whatever stage it
+    // failed at; `close()` is idempotent by contract, so it is always called.
+    // Closed BEFORE the error is sent — the main isolate gives up on this
+    // worker the moment the error arrives.
+    final closeError = built == null ? null : await _closePass(built);
+    Isolate.exit(
+      init.replyTo,
+      closeError == null
+          ? 'Embedding worker failed to load: $e'
+          : 'Embedding worker failed to load: $e (closing the forward pass '
+                'also failed, so its native model may still be resident: '
+                '$closeError)',
+    );
   }
 
   edgeAiLog(
     '[EmbeddingWorker] loaded: engine=${init.descriptor.engineTag}, '
-    'seqLen=${pass.inputSequenceLength}, dim=${pass.outputDimension}',
+    'seqLen=$seqLen, dim=$dim',
   );
 
   final commandPort = ReceivePort();
-  init.replyTo.send(
-    _Ready(
-      commandPort.sendPort,
-      pass.inputSequenceLength ?? -1,
-      pass.outputDimension,
-    ),
-  );
+  final queued = Queue<_EmbedRequest>();
+  var closeRequested = false;
+  Completer<void>? wake;
 
-  try {
-    await for (final msg in commandPort) {
-      if (msg is _EmbedRequest) {
-        try {
-          final tokenized = tokenizer.encode(msg.prefix, msg.text);
-          final result = await pass.run(
-            tokenIds: tokenized.ids,
-            attentionMask: tokenized.attentionMask,
-            tokenTypeIds: tokenized.tokenTypeIds,
-          );
-          final contract =
-              pass.outputContract ?? init.descriptor.outputContract;
-          final effectiveMask = result.attentionMask ?? tokenized.attentionMask;
-          final vector = _finalize(contract, result, effectiveMask);
-          init.replyTo.send(_EmbedReply(msg.id, vector, null));
-        } catch (e) {
-          init.replyTo.send(_EmbedReply(msg.id, null, e.toString()));
-        }
-      } else if (msg is _Close) {
-        commandPort.close();
-        break;
+  // The listener only files messages; the loop below does the work. That
+  // split is what lets a close overtake a queue: the listener sees _Close as
+  // soon as the event loop is free, not after every request ahead of it ran.
+  commandPort.listen((msg) {
+    if (msg is _EmbedRequest) {
+      queued.add(msg);
+    } else if (msg is _Close) {
+      closeRequested = true;
+      commandPort.close();
+      // Only what has not started. The request in flight, if any, was taken
+      // off the queue when it started, and it finishes on its own terms.
+      while (queued.isNotEmpty) {
+        final request = queued.removeFirst();
+        init.replyTo.send(
+          _EmbedReply(request.id, null, _closedBeforeRunMessage),
+        );
       }
     }
+    final waiting = wake;
+    wake = null;
+    waiting?.complete();
+  });
+
+  init.replyTo.send(_Ready(commandPort.sendPort, seqLen, dim));
+
+  final String? closeError;
+  try {
+    // One request in flight at a time, in arrival order.
+    while (!closeRequested) {
+      if (queued.isEmpty) {
+        final idle = wake = Completer<void>();
+        await idle.future;
+        continue;
+      }
+      // Yield to the event loop before every request. A forward pass may
+      // block this isolate inside a synchronous native call, so a _Close sent
+      // meanwhile is still in the message queue when the call returns — and
+      // awaiting a completed future only drains microtasks, never that queue.
+      // A zero-duration timer is posted to the BACK of the same queue, so by
+      // the time it fires the listener has filed the close and emptied
+      // `queued`.
+      await Future<void>.delayed(Duration.zero);
+      if (closeRequested || queued.isEmpty) continue;
+      await _serve(queued.removeFirst(), tokenizer, pass, init);
+    }
   } finally {
-    // Always free native handles, even if the loop exits unexpectedly, then
-    // ack so the main isolate can kill us without racing teardown.
-    await pass.close();
-    init.replyTo.send(const _CloseAck());
+    // Also on an unexpected throw out of the loop: the native model is freed
+    // either way, and the throw then takes the isolate down, which the main
+    // isolate's onExit handling reports.
+    closeError = await _closePass(pass);
+  }
+  // Ack and exit in one step: nothing of this worker runs after the ack, so
+  // the main isolate never has to kill it.
+  Isolate.exit(init.replyTo, _CloseAck(closeError));
+}
+
+/// Runs one request and replies — with the vector, or with the error. Never
+/// throws, so one bad input cannot stop the loop that serves the rest.
+Future<void> _serve(
+  _EmbedRequest msg,
+  EmbeddingTokenizer tokenizer,
+  EmbeddingForwardPass pass,
+  _WorkerInit init,
+) async {
+  try {
+    final tokenized = tokenizer.encode(msg.prefix, msg.text);
+    final result = await pass.run(
+      tokenIds: tokenized.ids,
+      attentionMask: tokenized.attentionMask,
+      tokenTypeIds: tokenized.tokenTypeIds,
+    );
+    final contract = pass.outputContract ?? init.descriptor.outputContract;
+    final effectiveMask = result.attentionMask ?? tokenized.attentionMask;
+    final vector = _finalize(contract, result, effectiveMask);
+    init.replyTo.send(_EmbedReply(msg.id, vector, null));
+  } catch (e) {
+    init.replyTo.send(_EmbedReply(msg.id, null, e.toString()));
   }
 }

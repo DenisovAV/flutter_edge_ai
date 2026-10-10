@@ -439,6 +439,13 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     // held for the app's lifetime; if it does not speak here it never speaks.
     noticeEmbedderBackendIgnored(preferredBackend);
 
+    // Before the lane: a half-given pair is the caller's mistake whatever is
+    // cached or building, so it need not wait behind another caller's build.
+    // This shell used to fill the missing half from the ACTIVE spec, pairing
+    // the caller's model with another model's tokenizer.
+    final pathsError = embedderPathPairError(modelPath, tokenizerPath);
+    if (pathsError != null) return Future.error(pathsError, StackTrace.current);
+
     // Serialised, because this shell resolves paths from preferences before it
     // can compare them — an await between "decide" and "record" that two
     // callers can both slip through. Moving that resolution earlier once
@@ -471,6 +478,11 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     // new file was served stale — and a caller passing explicit paths got
     // whatever singleton existed, with no comparison at all. Resolving first
     // costs one preferences read on a reuse and removes both.
+    //
+    // `createEmbeddingModel` has already refused a half-given pair, so this
+    // branch means BOTH are null, and both come from the active spec — plain
+    // assignment, never `??=`, which is what once kept the caller's model and
+    // took the active spec's tokenizer for it.
     if (modelPath == null || tokenizerPath == null) {
       if (currentActiveModel == null) {
         throw StateError(
@@ -484,8 +496,8 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
       if (filePaths == null || filePaths.isEmpty) {
         throw StateError('Embedding model file paths not found');
       }
-      modelPath ??= filePaths[PreferencesKeys.embeddingModelFile];
-      tokenizerPath ??= filePaths[PreferencesKeys.embeddingTokenizerFile];
+      modelPath = filePaths[PreferencesKeys.embeddingModelFile];
+      tokenizerPath = filePaths[PreferencesKeys.embeddingTokenizerFile];
       if (currentActiveModel is EmbeddingModelSpec) {
         label = currentActiveModel.name;
       }

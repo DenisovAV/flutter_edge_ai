@@ -10,6 +10,7 @@
 
 import 'package:flutter_edge_ai/core/embedding/forward_pass.dart'
     show EmbeddingForwardPass, EmbeddingOutputContract, ForwardResult;
+import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart' show edgeAiLog;
 
 import 'ort_client.dart';
 import 'ort_ffi_client.dart';
@@ -36,10 +37,33 @@ class OnnxEmbeddingForwardPass implements EmbeddingForwardPass {
   @override
   Future<void> load() async {
     final client = _clientFactory();
-    final spec = await client.load(_modelPath);
-    _client = client;
-    _spec = spec;
-    _outputDimension = spec.staticDim ?? await _probeDimension();
+    try {
+      final spec = await client.load(_modelPath);
+      _client = client;
+      _spec = spec;
+      _outputDimension = spec.staticDim ?? await _probeDimension();
+    } catch (_) {
+      // A failed load closes what it opened. The probe runs AFTER the session
+      // is open, so a throw there used to leave a live ORT session behind with
+      // only a half-loaded pass pointing at it — freed only if whoever held
+      // the pass thought to close one whose load had failed. Unwound to
+      // "never loaded", so a later run() says so instead of using it.
+      _client = null;
+      _spec = null;
+      _outputDimension = null;
+      try {
+        await client.close();
+      } catch (closeError, closeStack) {
+        // The load error is the one the caller needs; this one is reported
+        // beside it rather than in its place.
+        edgeAiLog(
+          '[OnnxEmbeddingForwardPass] closing the ORT client after a failed '
+          'load also failed; its session may be leaked: '
+          '$closeError\n$closeStack',
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Discovers the output dimension via a one-token forward pass when the

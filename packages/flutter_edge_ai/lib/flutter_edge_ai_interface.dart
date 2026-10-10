@@ -104,14 +104,21 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
 
   /// Creates and returns a new [EmbeddingModel] instance.
   ///
-  /// Modern API: If paths are not provided, uses the active embedding model set via
-  /// `FlutterEdgeAi.installEmbedder()` or
+  /// Modern API: If neither path is provided, uses the active embedding model
+  /// set via `FlutterEdgeAi.installEmbedder()` or
   /// `modelManager.ensureModelReadyFromSpec()`.
   ///
-  /// Legacy API: Provide explicit paths for backward compatibility.
+  /// Legacy API: Provide both explicit paths for backward compatibility.
   ///
-  /// [modelPath] — path to the embedding model file (optional if active model set).
-  /// [tokenizerPath] — path to the tokenizer file (optional if active model set).
+  /// [modelPath] and [tokenizerPath] go together: pass both, or neither. The
+  /// returned future fails with an [ArgumentError] when only one of them is
+  /// given — the other half is never filled in from the active embedding
+  /// model, and the active model is never returned in its place.
+  ///
+  /// [modelPath] — path to the embedding model file (omit, with
+  /// [tokenizerPath], to use the active model).
+  /// [tokenizerPath] — path to the tokenizer file (omit, with [modelPath], to
+  /// use the active model).
   /// [preferredBackend] — backend preference (e.g., CPU, GPU).
   Future<EmbeddingModel> createEmbeddingModel({
     String? modelPath,

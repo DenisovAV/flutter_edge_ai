@@ -183,6 +183,12 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     // held for the app's lifetime; if it does not speak here it never speaks.
     noticeWebEmbedderBackendIgnored(preferredBackend);
 
+    // Before the lane: a half-given pair is the caller's mistake whatever is
+    // cached or building, so it need not wait behind another caller's build.
+    // It used to be read as "no paths" and answered with the ACTIVE embedder.
+    final pathsError = embedderPathPairError(modelPath, tokenizerPath);
+    if (pathsError != null) return Future.error(pathsError, StackTrace.current);
+
     // Serialised, so that resolving paths, comparing them and constructing the
     // model are one step — which is what stops two concurrent first callers from
     // each building one, the defect this shell actually had.
@@ -208,7 +214,9 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     String? tokenizerPath,
     PreferredBackend? preferredBackend,
   }) async {
-    // Modern API: Use active embedding model if paths not provided
+    // Modern API: use the active embedding model when no paths are given.
+    // `createEmbeddingModel` has already refused a half-given pair, so this
+    // branch means BOTH are null; `||` is kept for the null promotion below.
     if (modelPath == null || tokenizerPath == null) {
       final manager = modelManager as WebModelManager;
       final activeModel = manager.activeEmbeddingModel;

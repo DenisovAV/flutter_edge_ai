@@ -100,6 +100,38 @@ void main() {
       gate.complete();
       expect(await rebuild, isNull);
     });
+
+    test('a rebuild is not asked for until the old model has finished '
+        'closing', () async {
+      // The shells build as soon as this returns null. Returning before the
+      // old model's teardown finished would put two native engines in memory
+      // at once — and the worker's close now waits for the request in flight
+      // instead of killing it after five seconds, so that teardown can take a
+      // while.
+      final cache = EmbedderCache();
+      final gate = Completer<void>();
+      final model = _FakeEmbedder(closeGate: gate);
+      cache.record(model, paramsFor('/a'));
+
+      var answered = false;
+      final rebuild = cache
+          .reuseOrInvalidate(paramsFor('/b'), label: 'rebuild')
+          .whenComplete(() => answered = true);
+      await pumpEventQueue();
+
+      expect(model.closeCount, 1, reason: 'the close has started');
+      expect(
+        answered,
+        isFalse,
+        reason:
+            'a "build a new one" answer before the old close finished '
+            'means two engines resident at once',
+      );
+
+      gate.complete();
+      expect(await rebuild, isNull);
+      expect(answered, isTrue);
+    });
   });
 
   group('EmbedderCache.record', () {

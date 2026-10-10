@@ -67,8 +67,16 @@ SKIP_RE = re.compile(
 # no shared import path, and a hook that fails to load is a hook that does not
 # run. Keep the two in step.
 CD_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*cd\s+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
+    r"(?:^|[;&|(]|&&|\|\|)\s*cd[ \t]+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
     re.MULTILINE,
+)
+OPAQUE_CD_RE = re.compile(
+    r"(?:^|[;&|(]|&&|\|\|)\s*(?:cd[ \t]+-|cd[ \t]*(?=[;&|)\n]|$)|pushd\b|popd\b)",
+    re.MULTILINE,
+)
+PUB_DIR_RE = re.compile(
+    r"(?<![\w-])(?:-C[ \t]*|--directory(?:=|[ \t]+))"
+    r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)"
 )
 
 
@@ -103,27 +111,46 @@ def _publish_is_exempt(cmd):
     return True
 
 
+def _resolve(target, base):
+    """[target] taken from [base]; None when it is built from a variable."""
+    if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
+        target = target[1:-1]
+    if "$" in target or "`" in target:
+        return None
+    target = os.path.expanduser(target)
+    return target if os.path.isabs(target) else os.path.join(base, target)
+
+
 def publish_dir(cmd, payload):
     """Where the publish will run, or None when that cannot be determined.
 
-    Only `cd`s BEFORE the publish count; one after it changes nothing. An
-    unresolvable target (a variable) yields None rather than a guess — asking
-    the right question of the wrong directory is the bug this replaced.
+    Only `cd`s BEFORE the publish count; one after it changes nothing. Then the
+    publish's own `-C`/`--directory` applies. An unresolvable target (a
+    variable, `cd -`, a bare `cd`, `pushd`/`popd`) yields None rather than a
+    guess — asking the right question of the wrong directory is the bug this
+    replaced. Not parsed: a `cd` inside a subshell that closes before the
+    publish, as in `(cd x) && dart pub publish`.
     """
     base = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     first = PUBLISH_RE.search(cmd)
     limit = first.start() if first else len(cmd)
 
+    if any(m.start() < limit for m in OPAQUE_CD_RE.finditer(cmd)):
+        return None
     for m in CD_RE.finditer(cmd):
         if m.start() >= limit:
             break
-        target = m.group(1)
-        if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
-            target = target[1:-1]
-        if "$" in target or "`" in target:
+        base = _resolve(m.group(1), base)
+        if base is None:
             return None
-        target = os.path.expanduser(target)
-        base = target if os.path.isabs(target) else os.path.join(base, target)
+
+    if first:
+        args = re.split(r"[;&|\n]", cmd[first.end() :], maxsplit=1)[0]
+        named = PUB_DIR_RE.search(args)
+        if named:
+            base = _resolve(named.group(1), base)
+            if base is None:
+                return None
 
     return os.path.normpath(base)
 
@@ -138,8 +165,9 @@ def _located(cmd, payload):
     where = publish_dir(cmd, payload)
     if where is None:
         raise GitUnavailable(
-            "the `cd` target is built from a variable, so the publish directory "
-            "is unknown — write the path literally"
+            "a `cd` or `-C` target is built from a variable, or the command uses "
+            "`cd -`, a bare `cd`, `pushd` or `popd`, so the publish directory is "
+            "unknown — write the path literally"
         )
     if not os.path.isfile(os.path.join(where, "pubspec.yaml")):
         raise GitUnavailable(f"no pubspec.yaml in {where} — nothing to check")
@@ -268,6 +296,14 @@ _DIR_TESTS = [
     ({"cwd": "/elsewhere/large_file_handler"}, "dart pub publish --force",
      "/elsewhere/large_file_handler"),  # a package that IS the repo
     ({"cwd": "/r"}, 'cd "$PKG" && dart pub publish', None),
+    # pub's own directory flag; destinations not in the text block.
+    ({"cwd": "/r"}, "dart pub publish -C packages/flutter_edge_ai --force",
+     "/r/packages/flutter_edge_ai"),
+    ({"cwd": "/r"}, "dart pub publish --directory=packages/x", "/r/packages/x"),
+    ({"cwd": "/r"}, 'dart pub publish -C "$PKG"', None),
+    ({"cwd": "/r"}, "cd packages/a && cd - && dart pub publish", None),
+    ({"cwd": "/r"}, "cd\ndart pub publish", None),
+    ({"cwd": "/r"}, "pushd packages/a && dart pub publish", None),
 ]
 
 

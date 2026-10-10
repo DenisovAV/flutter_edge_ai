@@ -61,8 +61,22 @@ DRY_RUN_RE = re.compile(r"(?<![\w-])--dry-run(?![\w-])")
 # a release is nearly always written as `cd <package>` followed by the publish,
 # so the directory that matters is wherever those leave us.
 CD_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*cd\s+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
+    r"(?:^|[;&|(]|&&|\|\|)\s*cd[ \t]+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
     re.MULTILINE,
+)
+# Directory changes whose destination is not in the command text: `cd -` (and
+# any `cd -<option>`), a bare `cd`, `pushd`/`popd`. They block, as a variable
+# target does, instead of being skipped — skipping one inspects the directory
+# the shell already left.
+OPAQUE_CD_RE = re.compile(
+    r"(?:^|[;&|(]|&&|\|\|)\s*(?:cd[ \t]+-|cd[ \t]*(?=[;&|)\n]|$)|pushd\b|popd\b)",
+    re.MULTILINE,
+)
+# `pub publish -C <dir>` / `--directory=<dir>`: pub's own way of naming the
+# package directory, applied on top of any `cd`.
+PUB_DIR_RE = re.compile(
+    r"(?<![\w-])(?:-C[ \t]*|--directory(?:=|[ \t]+))"
+    r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)"
 )
 
 
@@ -99,28 +113,48 @@ def _publish_is_exempt(cmd):
     return True
 
 
+def _resolve(target, base):
+    """[target] taken from [base]; None when it is built from a variable."""
+    if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
+        target = target[1:-1]
+    if "$" in target or "`" in target:
+        return None
+    target = os.path.expanduser(target)
+    return target if os.path.isabs(target) else os.path.join(base, target)
+
+
 def publish_dir(cmd, payload):
     """Where the publish will run, or None when that cannot be determined.
 
     Only `cd`s BEFORE the publish count; one after it changes nothing about the
-    archive. An unresolvable target (a variable) yields None rather than a
-    guess: checking the wrong repository is how this guard failed before, and a
-    wrong answer here is worse than no answer.
+    archive. Then the publish's own `-C`/`--directory` applies. An unresolvable
+    target (a variable, `cd -`, a bare `cd`, `pushd`/`popd`) yields None rather
+    than a guess: checking the wrong repository is how this guard failed before,
+    and a wrong answer here is worse than no answer.
+
+    Not parsed: a `cd` inside a subshell that closes before the publish, as in
+    `(cd x) && dart pub publish` — it is counted as if it still applied.
     """
     base = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     first = PUBLISH_RE.search(cmd)
     limit = first.start() if first else len(cmd)
 
+    if any(m.start() < limit for m in OPAQUE_CD_RE.finditer(cmd)):
+        return None
     for m in CD_RE.finditer(cmd):
         if m.start() >= limit:
             break
-        target = m.group(1)
-        if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
-            target = target[1:-1]
-        if "$" in target or "`" in target:
+        base = _resolve(m.group(1), base)
+        if base is None:
             return None
-        target = os.path.expanduser(target)
-        base = target if os.path.isabs(target) else os.path.join(base, target)
+
+    if first:
+        args = re.split(r"[;&|\n]", cmd[first.end() :], maxsplit=1)[0]
+        named = PUB_DIR_RE.search(args)
+        if named:
+            base = _resolve(named.group(1), base)
+            if base is None:
+                return None
 
     return os.path.normpath(base)
 
@@ -192,8 +226,9 @@ def main():
     where = publish_dir(cmd, payload)
     if where is None:
         sys.stderr.write(
-            "BLOCKED: cannot tell which directory the publish runs in — the "
-            "`cd` target is built from a variable.\n"
+            "BLOCKED: cannot tell which directory the publish runs in — a `cd` "
+            "or `-C` target is built from a variable, or the command uses "
+            "`cd -`, a bare `cd`, `pushd` or `popd`.\n"
             "Write the path literally so the guard checks the right repository.\n"
         )
         return 2
@@ -253,6 +288,19 @@ _DIR_TESTS = [
     # Unresolvable target: refuse instead of inspecting a guessed directory.
     ({"cwd": "/w/a"}, 'cd "$PKG" && dart pub publish', None),
     ({"cwd": "/w/a"}, "cd $PKG && dart pub publish", None),
+    # pub's own directory flag, alone and on top of a `cd`.
+    ({"cwd": "/w/a"}, "dart pub publish -C /w/b --force", "/w/b"),
+    ({"cwd": "/w/a"}, "cd packages && dart pub publish -C x", "/w/a/packages/x"),
+    ({"cwd": "/w/a"}, "dart pub publish -Cpackages/x", "/w/a/packages/x"),
+    ({"cwd": "/w/a"}, "dart pub publish --directory=packages/x", "/w/a/packages/x"),
+    ({"cwd": "/w/a"}, "flutter pub publish --directory packages/x", "/w/a/packages/x"),
+    ({"cwd": "/w/a"}, 'dart pub publish -C "$PKG"', None),
+    # Destinations not in the text block before the publish, not after it.
+    ({"cwd": "/w/a"}, "cd /w/b && cd - && dart pub publish", None),
+    ({"cwd": "/w/a"}, "cd -P /w/b && dart pub publish", None),
+    ({"cwd": "/w/a"}, "cd\ndart pub publish", None),
+    ({"cwd": "/w/a"}, "pushd /w/b && dart pub publish", None),
+    ({"cwd": "/w/a"}, "dart pub publish\ncd -", "/w/a"),
 ]
 
 

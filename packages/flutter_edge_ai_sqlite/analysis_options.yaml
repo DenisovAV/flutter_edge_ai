@@ -16,7 +16,6 @@ analyzer:
     # Standalone probe app for the web vec0 gate — has its own pubspec and is
     # compiled separately by build_runner; not part of this package's sources.
     - tool/web_vec0_probe/**
-    - build/**
   errors:
     # Treat warnings as info (example app demonstrates backward compatibility)
     deprecated_member_use: info

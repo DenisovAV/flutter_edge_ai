@@ -52,6 +52,14 @@ InferenceModel? _model;
 /// Guards [registerTestEngines] so it can be called from every test body.
 bool _enginesRegistered = false;
 
+/// Every session here decodes greedily, as all of them did before
+/// flutter_edge_ai 2.2 made the model's own sampler the default (#572). The
+/// suite shares one engine, and LiteRT-LM keeps the sampler of an engine's
+/// first conversation (google-ai-edge/LiteRT-LM#2080), so pinning only some
+/// sessions would pin nothing. Sampling on web is covered by
+/// litertlm_web_sampling_test.dart.
+const _topK = 1;
+
 Future<InferenceModel> _ensureModel() async {
   // Engine registration lives HERE, not in a setUpAll, and that is not style.
   //
@@ -102,7 +110,7 @@ void main() {
       tester,
     ) async {
       final model = await _ensureModel();
-      final session = await model.createSession();
+      final session = await model.createSession(topK: _topK);
       try {
         await session.addQueryChunk(
           const Message(text: 'Say hello in one word.', isUser: true),
@@ -127,7 +135,10 @@ void main() {
           'List every planet in the solar system with a sentence '
           'about each.';
 
-      final capped = await model.createSession(maxOutputTokens: 16);
+      final capped = await model.createSession(
+        topK: _topK,
+        maxOutputTokens: 16,
+      );
       final String cappedText;
       try {
         await capped.addQueryChunk(const Message(text: prompt, isUser: true));
@@ -136,7 +147,7 @@ void main() {
         await capped.close();
       }
 
-      final uncapped = await model.createSession();
+      final uncapped = await model.createSession(topK: _topK);
       final String uncappedText;
       try {
         await uncapped.addQueryChunk(const Message(text: prompt, isUser: true));
@@ -157,7 +168,7 @@ void main() {
 
     testWidgets('streaming yields at least one chunk', (tester) async {
       final model = await _ensureModel();
-      final session = await model.createSession();
+      final session = await model.createSession(topK: _topK);
       try {
         await session.addQueryChunk(
           const Message(text: 'Count from one to three.', isUser: true),
@@ -179,7 +190,10 @@ void main() {
       tester,
     ) async {
       final model = await _ensureModel();
-      final chat = await model.createChat(modelType: ModelType.gemma4);
+      final chat = await model.createChat(
+        topK: _topK,
+        modelType: ModelType.gemma4,
+      );
 
       await chat.addQueryChunk(
         const Message(text: 'My favourite color is blue.', isUser: true),
@@ -195,7 +209,10 @@ void main() {
 
     testWidgets('chat: clearHistory wipes context', (tester) async {
       final model = await _ensureModel();
-      final chat = await model.createChat(modelType: ModelType.gemma4);
+      final chat = await model.createChat(
+        topK: _topK,
+        modelType: ModelType.gemma4,
+      );
 
       await chat.addQueryChunk(
         const Message(text: 'Remember the number 42.', isUser: true),
@@ -225,7 +242,7 @@ void main() {
       tester,
     ) async {
       final model = await _ensureModel();
-      final session = await model.createSession();
+      final session = await model.createSession(topK: _topK);
       try {
         final n = await session.sizeInTokens('Hello world');
         expect(n, greaterThan(0));
@@ -236,9 +253,9 @@ void main() {
 
     testWidgets('multiple createSession on the same model', (tester) async {
       final model = await _ensureModel();
-      final s1 = await model.createSession();
+      final s1 = await model.createSession(topK: _topK);
       await s1.close();
-      final s2 = await model.createSession();
+      final s2 = await model.createSession(topK: _topK);
       await s2.addQueryChunk(const Message(text: 'Hi.', isUser: true));
       final r = await s2.getResponse();
       expect(r, isNotEmpty);

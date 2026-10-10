@@ -11,13 +11,16 @@ abstract class $FlutterEdgeAiModelOptions {
   /// Maximum number of tokens to generate. Defaults to 1024.
   int? get maxTokens;
 
-  /// Sampling temperature. Higher values increase randomness. Defaults to 0.8.
+  /// Sampling temperature. Higher values increase randomness. Unset, the
+  /// model's own sampler or its family's default applies.
   double? get temperature;
 
-  /// Top-K sampling parameter. Defaults to 1.
+  /// Top-K sampling parameter; 1 is greedy decoding. Unset, the model's own
+  /// sampler or its family's default applies.
   int? get topK;
 
-  /// Top-P (nucleus) sampling parameter.
+  /// Top-P (nucleus) sampling parameter. Unset, the model's own sampler or
+  /// its family's default applies.
   double? get topP;
 
   /// Whether the model supports image input (multimodal).
@@ -31,7 +34,7 @@ abstract class $FlutterEdgeAiModelOptions {
   /// can switch it off, and hidden either way.
   bool? get enableThinking;
 
-  /// Random seed for deterministic output. Defaults to 1.
+  /// Random seed for sampling. Unset, 1; ONNX leaves it to the model config.
   int? get randomSeed;
 
   /// Tool choice mode: 'auto', 'required', or 'none'. Defaults to 'auto'.

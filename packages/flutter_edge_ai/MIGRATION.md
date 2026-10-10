@@ -1,5 +1,31 @@
 # Migration guide
 
+## flutter_edge_ai 2.2.0: sampling defaults come from the model
+
+`createSession`, `openSession`, `createChat` and `openChat` no longer default to
+`temperature: 0.8, randomSeed: 1, topK: 1`, which was greedy decoding for every
+model. The four parameters are nullable, and an unset one comes from:
+
+1. the sampler the model file ships — a native `.litertlm` bundle's, or an ONNX
+   model's `genai_config.json`;
+2. the defaults its family publishes, `SamplingParams.forModelType` (Gemma:
+   `temperature: 1.0, topK: 64, topP: 0.95`);
+3. `temperature: 0.8, topK: 40, topP: 0.95, randomSeed: 1`.
+
+Output that was greedy is now sampled. Pass `topK: 1` to keep it greedy; values
+you pass are used as before, and a value no engine can sample with (a negative
+temperature, `topK` below 1, `topP` outside (0, 1]) throws an `ArgumentError`.
+`.litertlm` keeps the sampler of an engine's first conversation for every later
+one (google-ai-edge/LiteRT-LM#2080): close and reload the model to change it.
+
+Upgrade every `flutter_edge_ai_*` package together (`flutter pub upgrade`, not
+`flutter pub upgrade flutter_edge_ai` alone): earlier engine releases override
+the old signature and do not compile against core 2.2.0.
+
+If you implement `InferenceModel` yourself, declare the parameters as
+`double? temperature, int? randomSeed, int? topK, double? topP` and fill unset
+ones with `SamplingParams.resolve`.
+
 ## flutter_edge_ai 2.1.0: `isThinking` is `enableThinking`
 
 A rename with no `dart fix` rule, so the compiler finds every call site:
@@ -62,7 +88,7 @@ Update dependencies:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.1.1
+  flutter_edge_ai: ^2.2.0
   flutter_edge_ai_rag: ^1.0.0
   flutter_edge_ai_sqlite: ^2.0.0 # or flutter_edge_ai_qdrant: ^2.0.0
 ```
@@ -269,9 +295,9 @@ dependencies:
 **Current equivalents (2.0):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.1.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.11.1       # .litertlm + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.1.1       # .task / .bin
+  flutter_edge_ai: ^2.2.0                 # core — always required
+  flutter_edge_ai_litertlm: ^1.12.0       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.2.0       # .task / .bin
   flutter_edge_ai_embeddings: ^2.2.2      # tokenizer providers
   flutter_edge_ai_rag: ^1.0.0             # RAG orchestration + contracts
   flutter_edge_ai_qdrant: ^2.0.0          # native qdrant provider

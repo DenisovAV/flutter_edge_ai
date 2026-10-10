@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart'
 import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart'
     show CloseNotifier;
 import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
+import 'package:flutter_edge_ai/core/sampling.dart' show SamplingParams;
 import 'package:flutter_edge_ai/core/tool.dart' show Tool, ToolChoice;
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart' show edgeAiLog;
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
@@ -44,6 +45,16 @@ void _warnThinkingIgnoredOnce() {
 /// any previous one), while [openSession] returns detached sessions for
 /// concurrent conversations. Mixes [CloseNotifier] so core can reset its
 /// singleton bookkeeping on close.
+// flutter_local_ai 0.2.1's own `openSession` defaults. It takes no null
+// temperature or top-k, so an unset one is sent as these, as built-in AI
+// always has: the OS models' own defaults are out of reach until it does, and
+// an invented top-k could exceed a browser's `maxTopK`, which Chrome 151+ no
+// longer lets flutter_local_ai clamp to. top-p is passed only when set; it
+// reaches Windows only (Android and Chrome drop it, Apple's sampler takes the
+// top-k first).
+const _localAiTemperature = 0.8;
+const _localAiTopK = 1;
+
 class BuiltInAiModel extends InferenceModel with CloseNotifier {
   BuiltInAiModel({
     required this._model,
@@ -102,8 +113,8 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       List.unmodifiable([?_session, ..._openSessions]);
 
   Future<BuiltInAiSession> _newSession({
-    required double temperature,
-    required int topK,
+    required double? temperature,
+    required int? topK,
     required double? topP,
     required bool? enableVisionModality,
     required bool? enableAudioModality,
@@ -145,9 +156,14 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       // runner as well would produce two competing tool loops for one turn.
       // Native tool calling stays reachable through `localAiModel` /
       // `BuiltInAiSession.localAiSession`.
-      final inner = await _model.openSession(
+      SamplingParams(
         temperature: temperature,
         topK: topK,
+        topP: topP,
+      ).validate();
+      final inner = await _model.openSession(
+        temperature: temperature ?? _localAiTemperature,
+        topK: topK ?? _localAiTopK,
         topP: topP,
         maxOutputTokens: maxOutputTokens,
         systemInstruction: systemInstruction ?? this.systemInstruction,
@@ -174,9 +190,9 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceModelSession> createSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -223,9 +239,9 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceModelSession> openSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -255,9 +271,9 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceChat> createChat({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     int tokenBuffer = 256,
     String? loraPath,

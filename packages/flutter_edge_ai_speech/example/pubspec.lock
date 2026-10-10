@@ -180,14 +180,14 @@ packages:
       path: "../../flutter_edge_ai"
       relative: true
     source: path
-    version: "2.1.1"
+    version: "2.2.0"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_agent"
       relative: true
     source: path
-    version: "0.2.7"
+    version: "0.2.8"
   flutter_edge_ai_embeddings:
     dependency: "direct overridden"
     description:
@@ -201,7 +201,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.11.0"
+    version: "1.12.0"
   flutter_edge_ai_speech:
     dependency: "direct main"
     description:

@@ -1,3 +1,7 @@
+## 0.5.3
+- Sampling values reach ORT-GenAI and Transformers.js; web no longer forces greedy (#572).
+- Require `flutter_edge_ai` ^2.2.0.
+
 ## 0.5.2
 - Require `flutter_edge_ai` 2.x.
 

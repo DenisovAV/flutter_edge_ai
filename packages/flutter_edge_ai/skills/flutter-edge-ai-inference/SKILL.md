@@ -113,9 +113,10 @@ Use 4096 or more with images or audio — one image costs hundreds of tokens.
 - Fix: `Message(text: prompt, isUser: true)`.
 
 **Same reply every time**
-- Symptom: identical output for identical input. `createSession` and `createChat` default to `topK: 1`, which is greedy decoding.
-- Fix: pass `topK` (e.g. 40) and a `temperature`. Set them on the first session after `getActiveModel` — on `.litertlm` the first session's sampler settings can stay in effect for later ones.
-- Exception: decoding stays greedy whatever you pass on `.litertlm` running on the NPU (`activeBackend == PreferredBackend.npu`) and on ONNX, native and web. Those ignore the sampling parameters; only a debug log says so on the NPU.
+- Symptom: identical output for identical input.
+- Causes: `topK: 1` is passed somewhere (greedy; it was the default up to `flutter_edge_ai` 2.1); the model's family decodes greedily by default (`ModelType.phi`, `ModelType.hammer`); or the seed is fixed — an unset `randomSeed` is 1, so a freshly loaded model repeats its first sampled answer.
+- Fix: leave `temperature`, `topK` and `topP` unset to get the model's own sampler or its family's defaults (`SamplingParams.forModelType`), or pass a `temperature` — with no `topK`, a greedy family or bundle then contributes no `topK: 1`. Set them on the first session after `getActiveModel`: on `.litertlm` the first session's sampler stays in effect for later ones (a one-time warning says so when a later session asks for other values), and its random state carries on, so a new chat already gets a new answer. MediaPipe starts each session from its seed: vary `randomSeed` there for a different answer to the same prompt.
+- Exception: decoding stays greedy whatever you pass on `.litertlm` running on the NPU (`activeBackend == PreferredBackend.npu`); only a debug log says so. ONNX follows the model's `genai_config.json`, which is greedy unless it sets `do_sample`; values you pass override it.
 
 **`Session is closed`**
 - Symptom: `StateError: Session is closed` from a session or chat that is still in use.
@@ -125,9 +126,8 @@ Use 4096 or more with images or audio — one image costs hundreds of tokens.
 ## Generate
 
 ```dart
+// Sampling left unset: the model's own sampler, else its family's defaults.
 final InferenceModelSession session = await model.createSession(
-  temperature: 0.8,
-  topK: 40,
   maxOutputTokens: 256,
 );
 try {
@@ -155,8 +155,6 @@ To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()`
 ```dart
 final InferenceChat chat = await model.createChat(
   systemInstruction: 'You are a concise assistant.',
-  temperature: 0.8,
-  topK: 40,
   maxOutputTokens: 512,
 );
 try {

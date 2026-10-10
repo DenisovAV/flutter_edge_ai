@@ -65,10 +65,10 @@ Future<String?> _probe(PreferredBackend backend) async {
       maxTokens: 1024,
       preferredBackend: backend,
     );
-    session = await model.createSession();
-    await session.addQueryChunk(
-      const Message(text: _prompt, isUser: true),
-    );
+    // Greedy, so CPU and GPU decode the same tokens unless the arithmetic
+    // differs.
+    session = await model.createSession(topK: 1);
+    await session.addQueryChunk(const Message(text: _prompt, isUser: true));
     final reply = await session.getResponse();
     final active = model.activeBackend;
     final pads = RegExp('<pad>').allMatches(reply).length;

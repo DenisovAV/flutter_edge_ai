@@ -60,6 +60,7 @@ class GenAiTurn {
     this.systemInstruction,
     this.isFirstTurn = false,
     this.maxOutputTokens,
+    this.searchOptions = const {},
   });
 
   /// Raw user-turn content (tool responses are already folded into plain
@@ -80,6 +81,12 @@ class GenAiTurn {
   /// context-window `max_length`, which is set once when the generator is
   /// created (see [GenAiClient.load]'s `contextWindow`).
   final int? maxOutputTokens;
+
+  /// Sampling search options (`do_sample`, `temperature`, `top_k`, `top_p`,
+  /// `random_seed`) the caller set, from `onnxSearchOptions`. Applied when a
+  /// fresh generator is created, so a session's first turn decides them; an
+  /// option left out keeps the model's `genai_config.json` value.
+  final Map<String, Object> searchOptions;
 }
 
 /// Prompt/decode counters for the most recently completed [GenAiClient.generate]
@@ -603,6 +610,23 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
   edgeAiLogLevel = init.logLevel;
 
   late final OrtGenAiBindings oga;
+  late final ffi.DynamicLibrary genai;
+
+  // Not in the generated bindings. Looked up on first use, so a library
+  // without it fails only the session that asked for `do_sample`.
+  late final setSearchBool = genai
+      .lookupFunction<
+        ffi.Pointer<OgaResult> Function(
+          ffi.Pointer<OgaGeneratorParams>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Bool,
+        ),
+        ffi.Pointer<OgaResult> Function(
+          ffi.Pointer<OgaGeneratorParams>,
+          ffi.Pointer<ffi.Char>,
+          bool,
+        )
+      >('OgaGeneratorParamsSetSearchBool');
 
   void check(ffi.Pointer<OgaResult> result, String step) {
     if (result == ffi.nullptr) return;
@@ -629,6 +653,7 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
     // ignore: unused_local_variable — kept reachable so the image isn't GC'd.
     final keepOrtLibLoaded = ortLib;
     oga = OrtGenAiBindings(genaiLib);
+    genai = genaiLib;
 
     final configPathC = init.modelDir.toNativeUtf8();
     final modelOut = pkg_ffi.calloc<ffi.Pointer<OgaModel>>();
@@ -712,6 +737,23 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
             ),
             'OgaGeneratorParamsSetSearchNumber(max_length)',
           );
+          for (final MapEntry(:key, :value) in turn.searchOptions.entries) {
+            final nameC = key.toNativeUtf8();
+            try {
+              check(
+                value is bool
+                    ? setSearchBool(params, nameC.cast(), value)
+                    : oga.OgaGeneratorParamsSetSearchNumber(
+                        params,
+                        nameC.cast(),
+                        (value as num).toDouble(),
+                      ),
+                'OgaGeneratorParamsSetSearch($key)',
+              );
+            } finally {
+              pkg_ffi.calloc.free(nameC);
+            }
+          }
           final genOut = pkg_ffi.calloc<ffi.Pointer<OgaGenerator>>();
           try {
             check(

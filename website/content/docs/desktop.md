@@ -132,7 +132,8 @@ Future<void> chat() async {
 
   // Each chat / conversation is a session. Sessions are cheap to create
   // and destroy; the engine is reused across them.
-  final session = await model.createSession(temperature: 0.8, topK: 1);
+  // Sampling left unset: the model's own sampler, else its family's defaults.
+  final session = await model.createSession();
   await session.addQueryChunk(Message(text: 'Hi!', isUser: true));
   await for (final chunk in session.getResponseAsync()) {
     print(chunk);
@@ -419,11 +420,12 @@ v0.17.0 (checked on CPU); not re-checked on v0.18.0.
 
 </Warning>
 
-`topK` defaults to `1`, which is greedy — so the common shape is: an app loads a
-model, runs one generation with defaults, and from then on the engine is locked
-greedy. A later `temperature: 1.5` changes nothing, with no error and no warning.
-It runs the other way too: an engine whose first session is stochastic keeps
-sampling, and a later `topK: 1` will not give you argmax. The seed is not
+So the common shape is: an app loads a model, runs one generation with the
+defaults (the model's own sampler, else its family's), and from then on the
+engine keeps them. A later `temperature: 1.5` changes nothing, and a later
+`topK: 1` will not give you argmax; since `flutter_edge_ai_litertlm` 1.12.0 the
+first session that sets different values prints a warning, once per loaded
+model. The seed is not
 re-applied either — the sampler keeps its RNG state across sessions, so two
 identical requests on one engine produce different text.
 

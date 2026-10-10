@@ -16,10 +16,12 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart'
 import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
 import 'package:flutter_edge_ai/core/message.dart';
 import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/core/sampling.dart';
 import 'package:flutter_edge_ai/core/tool.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
 
+import '../onnx_sampling.dart';
 import 'transformers_js_interop.dart';
 import 'transformers_web_resolver.dart';
 
@@ -90,6 +92,18 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
   OnnxWebSession? _session;
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
+
+  static bool _seedNoted = false;
+
+  /// Transformers.js takes no seed, so a set `randomSeed` does nothing on
+  /// web. Said once per app run.
+  static void _noteSeedIgnored() {
+    if (_seedNoted) return;
+    _seedNoted = true;
+    edgeAiLog(
+      '[OnnxWeb] randomSeed is ignored on web: Transformers.js takes no seed.',
+    );
+  }
 
   @override
   InferenceModelSession? get session => _session;
@@ -173,9 +187,9 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceModelSession> createSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -226,6 +240,14 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
     final completer = _createCompleter = Completer<InferenceModelSession>();
 
     try {
+      // Checked first: values it rejects must not cost the live session.
+      final sampling = SamplingParams(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        randomSeed: randomSeed,
+      )..validate();
+      if (randomSeed != null) _noteSeedIgnored();
       await _ensurePipeline();
       await _session?.close();
 
@@ -239,6 +261,7 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
         tokenizer: _tokenizer!,
         systemInstruction: systemInstruction,
         maxOutputTokens: maxOutputTokens,
+        sampling: sampling,
         generationMutex: generationMutex,
         onClose: () {
           if (identical(_session, newSession)) _session = null;
@@ -283,6 +306,7 @@ class OnnxWebSession extends InferenceModelSession {
     required this.tokenizer,
     this.systemInstruction,
     this.maxOutputTokens,
+    this.sampling = const SamplingParams(),
     required this.generationMutex,
     required this.onClose,
   }) {
@@ -296,6 +320,9 @@ class OnnxWebSession extends InferenceModelSession {
   final TransformersTokenizer tokenizer;
   final String? systemInstruction;
   final int? maxOutputTokens;
+
+  /// What the caller set; unset fields keep the repo's generation_config.json.
+  final SamplingParams sampling;
 
   /// Shared across the owning model — serializes generation. Acquired for
   /// the whole duration of a getResponse(Async) call.
@@ -388,9 +415,16 @@ class OnnxWebSession extends InferenceModelSession {
           'max_new_tokens'.toJS,
           (maxOutputTokens ?? _defaultMaxNewTokens).toJS,
         )
-        ..setProperty('do_sample'.toJS, false.toJS)
         ..setProperty('streamer'.toJS, streamer)
         ..setProperty('stopping_criteria'.toJS, stoppingCriteria);
+      // Only what the caller set; the rest comes from the repo's
+      // generation_config.json. Transformers.js takes no seed.
+      for (final MapEntry(:key, :value) in onnxSearchOptions(
+        sampling,
+      ).entries) {
+        if (key == 'random_seed') continue;
+        generateOptions.setProperty(key.toJS, value.jsify());
+      }
 
       try {
         final result = pipeline.generate(messagesJs, generateOptions);

@@ -1,3 +1,4 @@
+import 'dart:convert' show jsonDecode;
 import 'dart:ffi' show Abi;
 import 'dart:io';
 
@@ -162,6 +163,7 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       );
     }
 
+    final configTopK = _configTopK(configFile);
     final client = _clientFactory();
     await client.load(modelDir, contextWindow: config.maxTokens);
 
@@ -182,7 +184,22 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       // this — "the platform runtime does not expose a final backend".
       activeBackend: null,
       fileType: spec.fileType,
+      configTopK: configTopK,
       onClose: () {},
     );
+  }
+
+  /// `search.top_k` in [configFile], or null when it sets none. A config that
+  /// does not parse is left to ORT-GenAI, which fails the load with its own
+  /// error.
+  static int? _configTopK(File configFile) {
+    try {
+      final config = jsonDecode(configFile.readAsStringSync());
+      final search = config is Map ? config['search'] : null;
+      final topK = search is Map ? search['top_k'] : null;
+      return topK is num ? topK.toInt() : null;
+    } on FormatException {
+      return null;
+    }
   }
 }

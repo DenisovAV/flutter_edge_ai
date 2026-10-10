@@ -69,8 +69,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.1.1
-  flutter_edge_ai_litertlm: ^1.11.1   # or any other engine from the table
+  flutter_edge_ai: ^2.2.0
+  flutter_edge_ai_litertlm: ^1.12.0   # or any other engine from the table
 ```
 
 Then complete the platform setup below.
@@ -278,6 +278,12 @@ await for (final response in chat.generateChatResponseAsync()) {
 
 await model.close();
 ```
+
+Sampling left unset comes from the model: the sampler a native `.litertlm` file
+ships, else the defaults its family publishes (`SamplingParams.forModelType`),
+else `topK: 40`. Pass `topK: 1` for greedy decoding. What each engine reads,
+and why `.litertlm` keeps the first session's values:
+[Sampling](https://flutteredge.ai/docs/getting-started#sampling).
 
 ## Three things that fail quietly
 

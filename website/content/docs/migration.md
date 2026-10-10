@@ -1,10 +1,38 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to Flutter Edge AI 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai 2.2.0: sampling defaults come from the model
+
+`createSession`, `openSession`, `createChat` and `openChat` no longer default to
+`temperature: 0.8, randomSeed: 1, topK: 1`, which was greedy decoding for every
+model. The four parameters are nullable, and an unset one comes from:
+
+1. the sampler the model file ships — a `.litertlm` bundle's, or an ONNX
+   model's `genai_config.json`;
+2. the defaults its family publishes, `SamplingParams.forModelType` (Gemma:
+   `temperature: 1.0, topK: 64, topP: 0.95`);
+3. `temperature: 0.8, topK: 40, topP: 0.95, randomSeed: 1`.
+
+Output that was greedy is now sampled. Pass `topK: 1` to keep it greedy; values
+you pass are used as before, and a value no engine can sample with (a negative
+temperature, `topK` below 1, `topP` outside (0, 1]) throws an `ArgumentError`.
+`genkit_flutter_edge_ai` 0.8.1 and `flutter_edge_ai_agent` 0.2.8 pass unset
+values through the same way. Where each engine reads its values, and what
+`.litertlm` does on a second session, is under
+[Sampling](/docs/getting-started#sampling).
+
+Upgrade every `flutter_edge_ai_*` package together (`flutter pub upgrade`, not
+`flutter pub upgrade flutter_edge_ai` alone): earlier engine releases override
+the old signature and do not compile against core 2.2.0.
+
+If you implement `InferenceModel` yourself, declare the parameters as
+`double? temperature, int? randomSeed, int? topK, double? topP` and fill unset
+ones with `SamplingParams.resolve`.
 
 ## flutter_edge_ai 2.1.0: `isThinking` is `enableThinking`
 
@@ -59,7 +87,7 @@ initializing core.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.1.1
+  flutter_edge_ai: ^2.2.0
   flutter_edge_ai_rag: ^1.0.0
   flutter_edge_ai_sqlite: ^2.0.0 # or flutter_edge_ai_qdrant: ^2.0.0
 ```
@@ -235,9 +263,9 @@ dependencies:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.1.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.11.1        # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
-  flutter_edge_ai_mediapipe: ^1.1.1       # add if you run .task / .bin models
+  flutter_edge_ai: ^2.2.0                 # core — always required
+  flutter_edge_ai_litertlm: ^1.12.0        # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai_mediapipe: ^1.2.0       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.2.2      # add if you compute embeddings (tokenizers; needs a backend, see above)
   flutter_edge_ai_rag: ^1.0.0             # add for on-device RAG (RagIndex) + one store below
   flutter_edge_ai_qdrant: ^2.0.0          # native on-device RAG store (qdrant)
@@ -302,7 +330,7 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 ```
 dependencies:
   flutter_edge_ai_embeddings: ^2.2.2   # tokenizer implementations (still required)
-  flutter_edge_ai_litertlm: ^1.11.1     # now provides LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.12.0     # now provides LiteRtEmbeddingBackend
 ```
 
 `LiteRtEmbeddingBackend()` itself is unchanged — only where the class is

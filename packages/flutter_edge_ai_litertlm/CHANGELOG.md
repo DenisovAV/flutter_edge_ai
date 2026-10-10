@@ -1,3 +1,7 @@
+## 1.12.0
+- Unset sampling uses the `.litertlm` sampler; web applies the values you pass (#572).
+- Require `flutter_edge_ai` ^2.2.0.
+
 ## 1.11.1
 - Linux: native tool calls no longer crash (#551, `native-v0.18.0-d`).
 

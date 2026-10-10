@@ -100,8 +100,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^2.1.1            # core
-  flutter_edge_ai_litertlm: ^1.11.1  # .litertlm engine
+  flutter_edge_ai: ^2.2.0            # core
+  flutter_edge_ai_litertlm: ^1.12.0  # .litertlm engine
 ```
 
 ```dart
@@ -131,7 +131,8 @@ Future<void> chat() async {
 
   // Each chat / conversation is a session. Sessions are cheap to create
   // and destroy; the engine is reused across them.
-  final session = await model.createSession(temperature: 0.8, topK: 1);
+  // Sampling left unset: the model's own sampler, else its family's defaults.
+  final session = await model.createSession();
   await session.addQueryChunk(Message(text: 'Hi!', isUser: true));
   await for (final chunk in session.getResponseAsync()) {
     print(chunk);
@@ -353,11 +354,10 @@ upstream defect ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/i
 open) and it reproduces on every version we have measured — v0.14.0, v0.15.0 and
 v0.16.0 on CPU as well as GPU, and v0.17.0 (checked on CPU).
 
-`topK` defaults to `1`, which is greedy. So the common shape is: an app loads a
-model, runs one generation with defaults, and from then on the engine is locked
-greedy — a later `temperature: 1.5` changes nothing, with no error and no
-warning. It also runs the other way: an engine whose first session is stochastic
-keeps sampling, and a later `topK: 1` will not give you argmax.
+So the common shape is: an app loads a model, runs one generation with the
+defaults (the model's own sampler, else its family's), and from then on the
+engine keeps them — a later `temperature: 1.5` changes nothing, and a later
+`topK: 1` will not give you argmax, with no error and no warning.
 
 The seed is not re-applied either. The sampler keeps its RNG state across
 sessions, so two byte-identical requests on one engine produce different text.

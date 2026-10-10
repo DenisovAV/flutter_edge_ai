@@ -13,11 +13,13 @@ import 'package:flutter/services.dart';
 import 'package:mutex/mutex.dart';
 
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/core/sampling.dart';
 import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
 
 import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
+import 'litert_lm_model_info.dart';
 import 'sigprof_mask.dart';
 import '../thinking_context.dart';
 
@@ -322,6 +324,21 @@ Future<int> _createConversationOffMainIsolate({
 /// [_legacyHandle] for backward compatibility.
 class LiteRtLmFfiClient {
   LiteRtLmBindings? _bindings;
+
+  /// The sampler the loaded `.litertlm` bundle ships, read once per engine.
+  /// Empty when the bundle has none, when the read failed
+  /// ([bundleSamplerError]), or when no engine is loaded.
+  SamplingParams get bundleSampler => _bundleSamplerRead.sampler;
+
+  /// Why the bundle's sampler could not be read, or null. When set, a session
+  /// that sets no sampling gets its family's defaults, not the bundle's.
+  String? get bundleSamplerError => _bundleSamplerRead.error;
+  BundleSamplerRead _bundleSamplerRead = const BundleSamplerRead.notRead();
+
+  /// The sampler of the engine's first conversation, which LiteRT-LM keeps for
+  /// every later one (google-ai-edge/LiteRT-LM#2080).
+  ResolvedSampling? _engineSampling;
+  bool _warnedEngineSampling = false;
   // Holding a reference prevents the proxy DynamicLibrary from being GC'd
   // while function pointers obtained via lookupFunction are still in use.
   // ignore: unused_field
@@ -889,12 +906,20 @@ class LiteRtLmFfiClient {
       // The QNN backend's init fails under the debug VM's SIGPROF sampling on
       // Linux (see withSigprofBlocked); Android's FastRPC client survives it.
       final blockSigprof = npuDispatchDir != null && Platform.isLinux;
-      final engineAddr = await Isolate.run(() {
+      final (engineAddr, samplerRead) = await Isolate.run(() {
         edgeAiLogLevel = isolateLogLevel;
         final isolateSw = Stopwatch()..start();
         final lib = _openLiteRtLmLibrary();
         edgeAiLog(
           '[LiteRtLmFfi/perf]   isolate: DynamicLibrary.open: ${isolateSw.elapsedMilliseconds}ms',
+          level: EdgeAiLogLevel.verbose,
+        );
+        // Read the bundle's own sampler here, off the UI isolate and before
+        // the engine exists, so a failing read cannot leave an engine behind.
+        final readStart = isolateSw.elapsedMilliseconds;
+        final samplerRead = tryReadBundleSampler(lib, modelPath);
+        edgeAiLog(
+          '[LiteRtLmFfi/perf]   isolate: bundle sampler read: ${isolateSw.elapsedMilliseconds - readStart}ms',
           level: EdgeAiLogLevel.verbose,
         );
         final lookupStart = isolateSw.elapsedMilliseconds;
@@ -916,7 +941,7 @@ class LiteRtLmFfiClient {
           '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
           level: EdgeAiLogLevel.verbose,
         );
-        return ptr;
+        return (ptr, samplerRead);
       });
       _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr);
       sw.stop();
@@ -955,6 +980,8 @@ class LiteRtLmFfiClient {
       }
 
       _isInitialized = true;
+      _bundleSamplerRead = samplerRead;
+      _reportBundleSampler();
       edgeAiLog(
         '[LiteRtLmFfi/perf] initialize() total: ${initSw.elapsedMilliseconds}ms',
       );
@@ -975,6 +1002,55 @@ class LiteRtLmFfiClient {
     }
   }
 
+  /// Says what the bundle-sampler read gave. A failed read is not thrown: the
+  /// engine works, and sessions still get the family defaults. It is printed,
+  /// because a release build is where a wrong sampler gets reported and
+  /// edgeAiLog is silent there.
+  void _reportBundleSampler() {
+    final read = _bundleSamplerRead;
+    final error = read.error;
+    if (error == null) {
+      final sampler = read.sampler;
+      edgeAiLog(
+        '[LiteRtLmFfi] bundle sampler: ${sampler.isEmpty ? 'none' : sampler}',
+      );
+      return;
+    }
+    edgeAiLog('[LiteRtLmFfi] bundle sampler read failed: $error');
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] WARNING: could not read the sampler this '
+      '.litertlm file ships, so sessions that set no sampling use the model '
+      'family defaults instead. ${error.split('\n').first}',
+    );
+  }
+
+  /// LiteRT-LM keeps the sampler of an engine's first conversation for every
+  /// later one (google-ai-edge/LiteRT-LM#2080), so a session that asks for
+  /// another one does not get it. Says so: once per engine when the caller
+  /// set the values, in the verbose log when only the defaults differ (a Qwen
+  /// session with thinking on after one with it off).
+  void _noteEngineSampling(ResolvedSampling sampling, bool explicit) {
+    final fixed = _engineSampling ??= sampling;
+    // The NPU executor never reads a sampler; its own warning covers it.
+    if (fixed == sampling || _backend == 'npu') return;
+    final message =
+        'this session asks for $sampling, but LiteRT-LM keeps the sampler of '
+        "the engine's first conversation, $fixed, for every later one "
+        '(google-ai-edge/LiteRT-LM#2080). Close and reload the model to change '
+        'it.';
+    if (!explicit) {
+      edgeAiLog('[LiteRtLmFfi] $message', level: EdgeAiLogLevel.verbose);
+      return;
+    }
+    if (_warnedEngineSampling) return;
+    _warnedEngineSampling = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] WARNING: $message Shown once per engine.',
+    );
+  }
+
   /// Create a new conversation handle with optional system message and
   /// tools. The engine allows only ONE live conversation at a time
   /// (upstream LiteRT-LM #966), so the caller must delete any prior
@@ -987,14 +1063,15 @@ class LiteRtLmFfiClient {
   /// session multiplexer to replay a session's history into a fresh
   /// conversation. When null the conversation starts empty (legacy
   /// behaviour).
+  ///
+  /// [sampling] is already resolved by the model layer, which knows the
+  /// model's family; [samplingExplicit] says whether the caller set any of it.
   Future<LiteRtLmConversationHandle> createConversationHandle({
     String? systemMessage,
     String? toolsJson,
     String? messagesJson,
-    double temperature = 0.8,
-    int topK = 40,
-    double? topP,
-    int seed = 1,
+    required ResolvedSampling sampling,
+    bool samplingExplicit = false,
     int? maxOutputTokens,
   }) {
     // The handle must be registered before the guard lifts: otherwise shutdown()
@@ -1014,10 +1091,8 @@ class LiteRtLmFfiClient {
           systemMessage: systemMessage,
           toolsJson: toolsJson,
           messagesJson: messagesJson,
-          temperature: temperature,
-          topK: topK,
-          topP: topP,
-          seed: seed,
+          sampling: sampling,
+          samplingExplicit: samplingExplicit,
           maxOutputTokens: maxOutputTokens,
         ),
       );
@@ -1039,20 +1114,18 @@ class LiteRtLmFfiClient {
     String? systemMessage,
     String? toolsJson,
     String? messagesJson,
-    double temperature = 0.8,
-    int topK = 40,
-    double? topP,
-    int seed = 1,
+    required ResolvedSampling sampling,
+    bool samplingExplicit = false,
     int? maxOutputTokens,
   }) async {
     _assertInitialized();
     final b = _bindings!;
 
-    // Always build a sessionConfig with the caller's sampler params — even
-    // when there's no systemMessage/tools. Otherwise temperature, topK,
-    // topP, and seed get silently dropped on the floor and the model
-    // falls back to its baked-in defaults (typically greedy), making
-    // every call ignore stochastic decoding requests.
+    // Always send a sampler, already resolved (caller, then the bundle's own,
+    // then the family, then the fallback). A session config without one makes
+    // LiteRT-LM copy the bundle's sampler WHOLE, or fall back to greedy when
+    // the bundle has none (engine_settings.cc MaybeUpdateAndValidate), so a
+    // caller's single field could not be merged with the bundle's others.
     //
     // LiteRT-LM v0.14.0: litert_lm_conversation_config_create() takes no
     // arguments — session_config, system message, tools, and messages are
@@ -1085,24 +1158,28 @@ class LiteRtLmFfiClient {
     // implemented at engine level, with types 1 (TopK) and 3 (Greedy) rejected
     // as "UNIMPLEMENTED: Sampler type: N not implemented yet". We still send
     // TopP unconditionally and pass top_k as a hint, which native honours.
-    // That was NOT re-checked at 924e79c9 — it is carried forward, not verified.
+    // At v0.18.0 the CPU sampler factory still rejects TOP_K and GREEDY
+    // (sampler_factory.cc), so a bundle declaring either is sent as TOP_P too.
     final samplerParams = b.litert_lm_sampler_params_create(2); // always TopP
-    b.litert_lm_sampler_params_set_top_k(samplerParams, topK);
-    b.litert_lm_sampler_params_set_top_p(samplerParams, topP ?? 0.95);
-    b.litert_lm_sampler_params_set_temperature(samplerParams, temperature);
-    b.litert_lm_sampler_params_set_seed(samplerParams, seed);
+    b.litert_lm_sampler_params_set_top_k(samplerParams, sampling.topK);
+    b.litert_lm_sampler_params_set_top_p(samplerParams, sampling.topP);
+    b.litert_lm_sampler_params_set_temperature(
+      samplerParams,
+      sampling.temperature,
+    );
+    b.litert_lm_sampler_params_set_seed(samplerParams, sampling.randomSeed);
     b.litert_lm_session_config_set_sampler_params(sessionConfig, samplerParams);
     b.litert_lm_sampler_params_delete(samplerParams);
+    _noteEngineSampling(sampling, samplingExplicit);
 
     // The NPU executor argmaxes regardless of what we just set, so tell the
     // caller rather than letting them believe a seed or temperature took hold.
-    // Only when they asked for something other than the greedy default —
+    // Only when they set one themselves: the defaults are not greedy, and
     // warning on every NPU session would train people to ignore it.
-    if (_backend == 'npu' &&
-        (temperature != 0.8 || topK != 40 || topP != null || seed != 1)) {
+    if (_backend == 'npu' && samplingExplicit) {
       edgeAiLog(
-        '[LiteRtLmFfi] NPU backend: sampler params (temperature=$temperature, '
-        'topK=$topK, topP=$topP, seed=$seed) are sent but the NPU executor '
+        '[LiteRtLmFfi] NPU backend: sampler params ($sampling) are sent but '
+        'the NPU executor '
         'samples greedily and never reads them — output is deterministic '
         'argmax. Use PreferredBackend.cpu or .gpu if you need sampling.',
       );
@@ -1168,7 +1245,7 @@ class LiteRtLmFfiClient {
       throw Exception(
         'litert_lm_conversation_config_create returned null '
         '(systemMessage=${systemMessage != null}, tools=${toolsJson != null}, '
-        'temperature=$temperature, topK=$topK, topP=$topP)',
+        '$sampling)',
       );
     }
 
@@ -1223,19 +1300,14 @@ class LiteRtLmFfiClient {
   Future<void> createConversation({
     String? systemMessage,
     String? toolsJson,
-    double temperature = 0.8,
-    int topK = 40,
-    double? topP,
-    int seed = 1,
+    required ResolvedSampling sampling,
   }) async {
     _legacyHandle?.close();
     final handle = await createConversationHandle(
       systemMessage: systemMessage,
       toolsJson: toolsJson,
-      temperature: temperature,
-      topK: topK,
-      topP: topP,
-      seed: seed,
+      sampling: sampling,
+      samplingExplicit: true,
     );
     // A shutdown that landed while we were suspended already closed this handle
     // (it was registered in _handles inside the guard). Publishing it would
@@ -1428,10 +1500,8 @@ class LiteRtLmFfiClient {
     required List<Map<String, Object?>> history,
     String? systemMessage,
     String? toolsJson,
-    double temperature = 0.8,
-    int topK = 40,
-    double? topP,
-    int seed = 1,
+    required ResolvedSampling sampling,
+    bool samplingExplicit = false,
     String? extraContext,
     int? maxOutputTokens,
   }) {
@@ -1499,10 +1569,8 @@ class LiteRtLmFfiClient {
               systemMessage: systemMessage,
               toolsJson: toolsJson,
               messagesJson: historyJson,
-              temperature: temperature,
-              topK: topK,
-              topP: topP,
-              seed: seed,
+              sampling: sampling,
+              samplingExplicit: samplingExplicit,
               maxOutputTokens: maxOutputTokens,
             );
             _virtualConv = conv;
@@ -1896,6 +1964,9 @@ class LiteRtLmFfiClient {
 
     _isInitialized = false;
     _backend = null;
+    _bundleSamplerRead = const BundleSamplerRead.notRead();
+    _engineSampling = null;
+    _warnedEngineSampling = false;
     _tokenizerMissing = false;
     _isShuttingDown = false;
   }

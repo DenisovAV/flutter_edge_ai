@@ -29,6 +29,11 @@ const _deviceDir = '/data/local/tmp/flutter_gemma_test';
 /// that actually ran, so the two cannot drift apart.
 const _requestedBackend = PreferredBackend.gpu;
 
+/// Greedy decoding, so every run decodes the same tokens and token counts and
+/// speeds stay comparable with earlier baselines. Up to flutter_edge_ai 2.1 an
+/// unset sampler was greedy; from 2.2 it is the model's own (#572).
+const _benchmarkTopK = 1;
+
 /// How often the sampled peak reads memory while a load or a prompt runs, in
 /// milliseconds; 0 switches the sampler off (`interval_ms: null` in the JSON).
 /// Set with `--dart-define=PEAK_INTERVAL_MS=250`.
@@ -479,6 +484,7 @@ Future<BenchmarkResult> _runVisionBenchmark({
   required LoadMemory load,
 }) async {
   final chat = await model.createChat(
+    topK: _benchmarkTopK,
     modelType: ModelType.gemmaIt,
     supportImage: true,
   );
@@ -511,6 +517,7 @@ Future<BenchmarkResult> _runAudioBenchmark({
   required LoadMemory load,
 }) async {
   final chat = await model.createChat(
+    topK: _benchmarkTopK,
     modelType: ModelType.gemmaIt,
     supportAudio: true,
   );
@@ -577,7 +584,9 @@ Future<BenchmarkResult> _runQuery({
     ),
   );
 
-  print('[Benchmark] $modelName / $category / $testName');
+  print(
+    '[Benchmark] $modelName / $category / $testName (topK $_benchmarkTopK)',
+  );
   print(
     '  First token: ${result.firstTokenMs}ms, Total: ${result.durationMs}ms',
   );
@@ -640,7 +649,10 @@ void main() {
         );
         try {
           for (final (name, question) in _textQuestions) {
-            final chat = await model.createChat(modelType: ModelType.gemmaIt);
+            final chat = await model.createChat(
+              topK: _benchmarkTopK,
+              modelType: ModelType.gemmaIt,
+            );
             final result = await _runTextBenchmark(
               modelName: modelConfig.name,
               load: load,
@@ -665,7 +677,10 @@ void main() {
           ),
         );
         try {
-          final chat = await model.createChat(modelType: ModelType.gemmaIt);
+          final chat = await model.createChat(
+            topK: _benchmarkTopK,
+            modelType: ModelType.gemmaIt,
+          );
 
           for (var i = 0; i < _chatSteps.length; i++) {
             final result = await _runTextBenchmark(

@@ -754,6 +754,44 @@ void main() {
       expect(fakeModel.lastSystemInstruction, 'Be concise.');
     });
 
+    test('leaves unset sampling unset for the model to fill', () async {
+      fakeChat.blockingResponse = const gemma.TextResponse('ok');
+      final model = buildModel();
+
+      await model(simpleRequest());
+
+      expect(fakeModel.lastSampling, (
+        temperature: null,
+        topK: null,
+        topP: null,
+        randomSeed: null,
+      ));
+    });
+
+    test('passes the sampling the request sets', () async {
+      fakeChat.blockingResponse = const gemma.TextResponse('ok');
+      final model = buildModel();
+
+      await model(
+        ModelRequest(
+          messages: [
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Hi')],
+            ),
+          ],
+          config: {'temperature': 0.3, 'topK': 7, 'topP': 0.5, 'randomSeed': 9},
+        ),
+      );
+
+      expect(fakeModel.lastSampling, (
+        temperature: 0.3,
+        topK: 7,
+        topP: 0.5,
+        randomSeed: 9,
+      ));
+    });
+
     test('extracts systemInstruction from system messages', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();

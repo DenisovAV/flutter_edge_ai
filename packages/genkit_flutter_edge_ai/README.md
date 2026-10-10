@@ -59,11 +59,11 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 # pubspec.yaml (your app)
 dependencies:
   genkit: ^1.0.0
-  genkit_flutter_edge_ai: ^0.8.0
-  flutter_edge_ai: ^2.1.1
-  flutter_edge_ai_litertlm: ^1.11.1  # only the engines/backends you actually use
+  genkit_flutter_edge_ai: ^0.8.1
+  flutter_edge_ai: ^2.2.0
+  flutter_edge_ai_litertlm: ^1.12.0  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.2.2  # the tokenizers an embedding backend needs
-  flutter_edge_ai_mediapipe: ^1.1.1
+  flutter_edge_ai_mediapipe: ^1.2.0
 ```
 
 ```dart
@@ -156,13 +156,13 @@ final response = await ai.generate(
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `maxTokens` | `int?` | 1024 | **Context window** (input + output), not reply length — it goes straight into `getActiveModel(maxTokens:)`. To shorten replies, trim the prompt or use the context-window middleware; lowering this shrinks the KV cache. |
-| `temperature` | `double?` | 0.8 | Sampling temperature |
-| `topK` | `int?` | 1 | Top-K sampling |
-| `topP` | `double?` | null | Top-P (nucleus) sampling |
+| `temperature` | `double?` | model's own | Sampling temperature |
+| `topK` | `int?` | model's own | Top-K sampling; `1` is greedy |
+| `topP` | `double?` | model's own | Top-P (nucleus) sampling |
 | `supportImage` | `bool?` | false | Enable multimodal image input |
 | `supportAudio` | `bool?` | false | Enable audio input (Gemma 4, Gemma3n) |
 | `enableThinking` | `bool?` | false | Enable thinking mode (Gemma 4, DeepSeek, Qwen3) |
-| `randomSeed` | `int?` | 1 | Random seed for deterministic output |
+| `randomSeed` | `int?` | 1 (ONNX: model's own) | Random seed for sampling |
 | `toolChoice` | `String?` | `'auto'` | Tool calling mode: `'auto'`, `'required'`, `'none'` |
 | `systemInstruction` | `String?` | null | System-level instruction (overrides system-role messages) |
 | `maxFunctionBufferLength` | `int?` | null | Max token buffer for streaming tool-call arguments (increase for large payloads) |
@@ -170,6 +170,12 @@ final response = await ai.generate(
 | `preferredBackend` | `String?` | null | Text-decoder backend: `'cpu'`, `'gpu'`, `'npu'` (null = engine default) |
 | `preferredVisionBackend` | `String?` | null | Vision-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; ignored by MediaPipe) |
 | `preferredAudioBackend` | `String?` | null | Audio-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; set `'gpu'` for faster audio; ignored by MediaPipe) |
+
+"Model's own" is the sampler a native `.litertlm` file ships, else the defaults
+its family publishes (`SamplingParams.forModelType` in `flutter_edge_ai`). On
+`.litertlm` the first request after a model loads fixes the sampler for that
+loaded model (LiteRT-LM#2080): a later request with different values needs the
+model reloaded.
 
 ## Streaming
 

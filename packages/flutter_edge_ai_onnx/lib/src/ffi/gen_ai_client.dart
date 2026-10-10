@@ -176,14 +176,9 @@ class GenAiFfiClient implements GenAiClient {
   /// shorten them.
   GenAiFfiClient({
     @visibleForTesting GenAiWorkerEntry? workerEntry,
-    @visibleForTesting Duration slowLoadNotice = _defaultSlowLoadNotice,
-    @visibleForTesting Duration slowCloseNotice = _defaultSlowCloseNotice,
-  }) : _workerEntry = workerEntry ?? _defaultWorkerEntry,
-       // Named and private: an initializing formal cannot be both.
-       // ignore: prefer_initializing_formals
-       _slowLoadNotice = slowLoadNotice,
-       // ignore: prefer_initializing_formals
-       _slowCloseNotice = slowCloseNotice;
+    @visibleForTesting this._slowLoadNotice = _defaultSlowLoadNotice,
+    @visibleForTesting this._slowCloseNotice = _defaultSlowCloseNotice,
+  }) : _workerEntry = workerEntry ?? _defaultWorkerEntry;
 
   /// How long [shutdown] waits, by default, before saying it is still
   /// waiting. It keeps waiting afterwards: the only way to stop sooner is to

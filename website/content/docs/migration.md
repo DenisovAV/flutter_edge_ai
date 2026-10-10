@@ -61,7 +61,7 @@ initializing core.
 dependencies:
   flutter_edge_ai: ^2.1.2
   flutter_edge_ai_rag: ^1.0.0
-  flutter_edge_ai_sqlite: ^2.0.0 # or flutter_edge_ai_qdrant: ^2.0.0
+  flutter_edge_ai_sqlite: ^2.0.1 # or flutter_edge_ai_qdrant: ^2.0.1
 ```
 
 Also breaking in 2.0:
@@ -240,8 +240,8 @@ dependencies:
   flutter_edge_ai_mediapipe: ^1.1.1       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.2.2      # add if you compute embeddings (tokenizers; needs a backend, see above)
   flutter_edge_ai_rag: ^1.0.0             # add for on-device RAG (RagIndex) + one store below
-  flutter_edge_ai_qdrant: ^2.0.0          # native on-device RAG store (qdrant)
-  flutter_edge_ai_sqlite: ^2.0.0          # RAG store (sqlite-vec; all platforms incl. web) — needs Flutter 3.47
+  flutter_edge_ai_qdrant: ^2.0.1          # native on-device RAG store (qdrant)
+  flutter_edge_ai_sqlite: ^2.0.1          # RAG store (sqlite-vec; all platforms incl. web) — needs Flutter 3.47
 ```
 
 Pick by what you actually used in 0.16.x:

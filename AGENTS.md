@@ -357,8 +357,9 @@ flutter analyze packages/ && dart format . && tool/test_all.sh
 |------|---------|
 | `lib/src/onnx_engine.dart` | `OnnxEngine` (InferenceEngineProvider; platform-gated `canHandle` + belt-and-suspenders `createModel` guard) |
 | `lib/src/onnx_inference_model.dart`, `onnx_session.dart` | `OnnxInferenceModel` (singleton-session lane) / `OnnxSession` (buffers query chunks, drives `GenAiClient.generate`) |
-| `lib/src/ffi/gen_ai_client.dart` | `GenAiFfiClient` — worker-isolate ORT-GenAI FFI client (mutex-serialized generate/countTokens; `ORT_LIB_PATH` co-location fix) |
-| `lib/src/ffi/gen_ai_protocol.dart` | Isolate message protocol (src-only, not barrel-exported) — the injection seam for a scripted fake worker in tests |
+| `lib/src/ffi/gen_ai_client.dart` | `GenAiFfiClient` — main side of the ORT-GenAI worker (mutex-serialized generate/countTokens; shutdown waits for the call in flight and never kills the worker) + `_FfiGenAiEngine`, the `dart:ffi` engine (`ORT_LIB_PATH` co-location fix) |
+| `lib/src/ffi/gen_ai_worker.dart` | `serveGenAiWorker` — the worker loop (one request at a time; close fails what has not started, frees the engine, exits via `Isolate.exit`) — and `GenAiWorkerEngine`, the interface the FFI engine and the test fake implement (src-only) |
+| `lib/src/ffi/gen_ai_protocol.dart` | Isolate message protocol (src-only, not barrel-exported); the test fake worker runs the real loop over a scripted engine through `GenAiFfiClient(workerEntry:)` |
 | `lib/src/embedding/onnx_embedding_backend.dart` | `OnnxEmbeddingBackend` (EmbeddingBackendProvider; priority 10 over LiteRT's catch-all 0) |
 | `lib/src/embedding/{ort_client,ort_ffi_client,onnx_embedding_forward_pass}.dart` | Plain ORT C API FFI client + forward pass (WordPiece/SentencePiece, `pooledFinal`/`tokenLevel` contracts) |
 | `hook/build.dart` | Native Assets hook — owns the ORT + ORT-GenAI CodeAssets, sourced from Microsoft's own releases (not a `native-vX` repo tag); `_archivesFor` covers macOS arm64, Linux x64, Windows x64, Android arm64 (AARs), and iOS arm64 device + Apple-Silicon simulator (self-contained xcframework) |

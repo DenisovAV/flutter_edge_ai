@@ -10,15 +10,28 @@
 // teardown is use-after-free-safe — see `onnx_generation_host_smoke_test.dart`
 // for that.
 //
+// A call that must be held — a native call that has not returned yet —
+// blocks on a gate: it waits, without yielding, until the file
+// `<log>.release` exists. The test creates that file when it is ready, so the
+// order of events is fixed by the test, not by how fast the machine is. A
+// gate gives up on its own after 30 s, so a failing test never leaves a
+// worker blocked for good.
+//
 // Engine configuration — the `modelDir` passed to `GenAiFfiClient.load` —
 // is JSON when the test needs it (anything else means the defaults):
 //   {"log": "/tmp/x.log", "failLoad": true, "throwOnClose": true}
 // - `log`: the engine appends one line per call (`load`, `generate`,
-//   `count`, `reset`, `close`) to this file — the only way the test, on the
-//   main isolate, can see what ran inside the worker. The writes are
-//   synchronous and flushed, so a line is on disk before the call returns.
+//   `count`, `reset`, `close`, and `tail` for a turn's last call) to this
+//   file — the only way the test, on the main isolate, can see what ran
+//   inside the worker. The writes are synchronous and flushed, so a line is
+//   on disk before the call returns. Gates use `<log>.release`.
 // - `failLoad`: `load` throws after it "allocated" something.
+// - `gateLoad`: `load` blocks on the gate.
+// - `gateClose`: `close` blocks on the gate before it logs.
 // - `throwOnClose`: `close` throws.
+// - `gateReset`: `resetGenerator` logs, then blocks on the gate.
+// - `throwOnReset`: `resetGenerator` throws.
+// - `killOnReset`: `resetGenerator` kills the isolate.
 // - `dieAfterMs`: the isolate kills itself this long after load, with nothing
 //   in flight — a worker that dies while idle.
 //
@@ -33,12 +46,13 @@
 //   sent FIRST, echoing what the worker received on [GenAiTurn.isFirstTurn]
 //   — lets a test assert the client-observable effect of `resetSession()`
 //   without reaching into worker-private state.
-// - `blockMs`: blocks the isolate synchronously this long before the first
-//   chunk — a prompt's prefill, one native call nothing can interrupt.
-// - `tailBlockMs`: once the chunks are done (or a stop broke them off), logs
-//   `tail` and blocks the isolate synchronously this long before the turn
-//   returns — a last native call, during which the test sends what it wants
-//   queued behind the turn.
+// - `gate`: blocks on the gate before the first chunk — a prompt's prefill,
+//   one native call nothing can interrupt.
+// - `gateAtTail`: once the chunks are done, logs `tail` and blocks on the
+//   gate before the turn returns — a last native call, during which the test
+//   sends what it wants queued behind the turn.
+// - `untilStopped`: after the chunks, yields until a stop is requested (30 s
+//   at most), so the turn ends only when something stops it.
 // - `kill`: when true, the isolate kills ITSELF (`Isolate.current.kill`)
 //   instead of ever replying — simulates an unexpected native crash
 //   mid-generation, same shape as `embedding_worker_test.dart`'s
@@ -46,8 +60,8 @@
 // - `crash`: when true, an uncaught error takes the isolate down at the
 //   turn's first yield — a death mid-turn that reports its reason.
 // - `throw`: when true, the turn throws — a native call that failed.
-//
-// countTokens text `block:<ms>` blocks the isolate synchronously that long.
+// - `throwUnprintable`: the turn throws an error whose `toString` throws, so
+//   serving it fails and the serving loop itself throws.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -70,15 +84,37 @@ Map<String, dynamic>? _objectOrNull(String json) {
   }
 }
 
+/// An error whose `toString` throws: serving it as a reply throws too.
+class _UnprintableError {
+  @override
+  String toString() =>
+      throw StateError('fake error that cannot describe itself');
+}
+
 class _ScriptedEngine implements GenAiWorkerEngine {
   _ScriptedEngine(String modelDir) : _config = _objectOrNull(modelDir) ?? {};
 
   final Map<String, dynamic> _config;
 
+  String? get _logPath => _config['log'] as String?;
+
   void _log(String line) {
-    final path = _config['log'] as String?;
+    final path = _logPath;
     if (path == null) return;
     File(path).writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+  }
+
+  /// Blocks this isolate — no events, no microtasks — until the test creates
+  /// `<log>.release`, the way a synchronous native call does.
+  void _blockUntilReleased() {
+    final release = File('$_logPath.release');
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    while (!release.existsSync()) {
+      if (DateTime.now().isAfter(deadline)) {
+        throw StateError('fake gate was never released');
+      }
+      sleep(const Duration(milliseconds: 5));
+    }
   }
 
   @override
@@ -87,6 +123,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
     if (_config['failLoad'] == true) {
       throw StateError('fake GenAI engine refused to load');
     }
+    if (_config['gateLoad'] == true) _blockUntilReleased();
     final dieAfterMs = _config['dieAfterMs'];
     if (dieAfterMs is num) {
       Timer(
@@ -121,12 +158,12 @@ class _ScriptedEngine implements GenAiWorkerEngine {
         ? [turn.userContent]
         : (script['chunks'] as List? ?? const []).cast<String>();
     final delayMs = (script?['delayMs'] as num?)?.toInt() ?? 0;
-    final blockMs = (script?['blockMs'] as num?)?.toInt() ?? 0;
 
-    if (blockMs > 0) sleep(Duration(milliseconds: blockMs));
+    if (script?['gate'] == true) _blockUntilReleased();
     if (script?['throw'] == true) {
       throw StateError('fake generation failed');
     }
+    if (script?['throwUnprintable'] == true) throw _UnprintableError();
     if (script?['crash'] == true) {
       scheduleMicrotask(() => throw StateError('fake native crash'));
     }
@@ -150,10 +187,16 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       generated++;
     }
 
-    final tailBlockMs = (script?['tailBlockMs'] as num?)?.toInt() ?? 0;
-    if (tailBlockMs > 0) {
+    if (script?['untilStopped'] == true) {
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      while (!stopRequested() && DateTime.now().isBefore(deadline)) {
+        await Future<void>(() {});
+      }
+    }
+
+    if (script?['gateAtTail'] == true) {
       _log('tail');
-      sleep(Duration(milliseconds: tailBlockMs));
+      _blockUntilReleased();
     }
 
     return GenAiGenerationStats(
@@ -166,19 +209,26 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   @override
   int countTokens(String text) {
     _log('count');
-    if (text.startsWith('block:')) {
-      sleep(Duration(milliseconds: int.parse(text.substring(6))));
-    }
     // Deterministic zero-native token count — good enough for lifecycle
     // assertions, which only care about the reply round-tripping.
     return (text.length / 4).ceil();
   }
 
   @override
-  void resetGenerator() => _log('reset');
+  void resetGenerator() {
+    _log('reset');
+    if (_config['gateReset'] == true) _blockUntilReleased();
+    if (_config['killOnReset'] == true) {
+      Isolate.current.kill(priority: Isolate.immediate);
+    }
+    if (_config['throwOnReset'] == true) {
+      throw StateError('fake generator reset blew up');
+    }
+  }
 
   @override
   void close() {
+    if (_config['gateClose'] == true) _blockUntilReleased();
     _log('close');
     if (_config['throwOnClose'] == true) {
       throw StateError('fake GenAI close blew up');

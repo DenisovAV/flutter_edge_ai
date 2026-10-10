@@ -19,6 +19,14 @@ import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
 import 'ffi/gen_ai_client.dart';
 import 'onnx_session.dart';
 
+/// An ORT-GenAI text model: one [GenAiClient] (and its worker isolate), one
+/// session at a time.
+///
+/// It closes itself when its worker dies — an uncaught error, or the isolate
+/// ended under it: it turns closed, runs [onClose] and fires its close
+/// listeners, once, so core drops its cached model, and later calls fail with
+/// the reason. [close] afterwards still releases the client and fires nothing
+/// again.
 class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   OnnxInferenceModel({
     required this.client,
@@ -28,10 +36,10 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     this.fileType = ModelFileType.onnx,
     required this.onClose,
   }) {
-    // R5 W6: a worker that dies on its own turns this model closed and tells
-    // its listeners, so core drops its cached model and the next
-    // `getActiveModel` builds a fresh one — instead of handing out this one,
-    // whose every call would fail.
+    // A worker that dies on its own turns this model closed and tells its
+    // listeners, so core drops its cached model and the next `getActiveModel`
+    // builds a fresh one — instead of handing out this one, whose every call
+    // would fail.
     final died = unexpectedExitOf(client);
     if (died != null) unawaited(died.then(_onWorkerDied));
   }
@@ -57,8 +65,9 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
-  /// The one teardown every [close] call shares, so a second caller waits for
-  /// it to finish instead of returning while it is still running.
+  /// What every [close] after the first returns: completes, normally, once
+  /// the one shared teardown is done — so a second caller waits for it
+  /// instead of returning while it is still running.
   Future<void>? _closeFuture;
 
   /// Whether [onClose] and the close listeners have run; they run once,
@@ -122,7 +131,12 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
       await _session?.close();
 
       if (_isClosed) {
-        throw StateError('Model was closed while creating a session');
+        final death = _deathReason;
+        throw StateError(
+          death == null
+              ? 'Model was closed while creating a session'
+              : 'Model was closed while creating a session, because $death',
+        );
       }
 
       late final OnnxSession newSession;
@@ -150,9 +164,19 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
 
   /// Closes the session, then shuts the client down. Also after the worker
   /// died: the client's ports still need closing, and the close listeners —
-  /// which the death already fired — do not fire again.
+  /// which the death already fired — do not fire again. Concurrent callers
+  /// share one teardown.
   @override
-  Future<void> close() => _closeFuture ??= _close();
+  Future<void> close() {
+    final teardownDone = _closeFuture;
+    if (teardownDone != null) return teardownDone;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // `whenComplete` hands the first caller the teardown's own outcome — a
+    // throwing `onClose` or listener included — while every later caller
+    // gets `settled`, which only ever completes normally once it is done.
+    return _close().whenComplete(settled.complete);
+  }
 
   Future<void> _close() async {
     _isClosed = true;
@@ -172,8 +196,14 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   void _notifyClosed() {
     if (_closeNotified) return;
     _closeNotified = true;
-    onClose();
-    fireCloseListeners();
+    try {
+      onClose();
+    } finally {
+      // Even when `onClose` throws: core drops its cached instance on a close
+      // listener, and one it never hears about is handed to every later
+      // caller.
+      fireCloseListeners();
+    }
   }
 
   void _onWorkerDied(String reason) {

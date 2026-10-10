@@ -54,6 +54,7 @@ import 'dart:typed_data';
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../model/tts_model_profile.dart';
 import '../qwen3/npy_reader.dart';
@@ -131,10 +132,28 @@ class _Close {
 
 /// The worker's last message, sent through `Isolate.exit` once
 /// [TtsWorkerEngine.dispose] has returned — so nothing of the worker runs
-/// after it. [error] is set when that dispose threw: the native model may then
-/// still be resident, and the main isolate says so.
+/// after it. [error] is set, with its stack, when that dispose threw: the
+/// native model may then still be resident, and the main isolate says so.
 class _CloseAck {
   const _CloseAck(this.error);
+  final String? error;
+}
+
+/// The last message of a worker whose load failed. The load error itself went
+/// first, as a plain `String`, so the caller never waits for this; it follows
+/// once the worker has disposed what the load built. [error] is set, with its
+/// stack, when that dispose threw.
+class _LoadCleanup {
+  const _LoadCleanup(this.error);
+  final String? error;
+}
+
+/// Sent when the serving loop itself threw — a bug, since serving a request
+/// never throws — after the worker disposed the engine anyway. The error then
+/// ends the isolate and reaches the main isolate through `onError`. [error] is
+/// set, with its stack, when that dispose threw too.
+class _LoopFailed {
+  const _LoopFailed(this.error);
   final String? error;
 }
 
@@ -190,12 +209,17 @@ class TtsWorker {
     this._fromWorker,
     this._sampleRate,
     this._modelName,
+    this._slowCloseNotice,
   );
 
-  /// How long [close] waits before saying it is still waiting. It keeps
-  /// waiting afterwards: the only way to stop sooner is to kill the isolate,
-  /// and a killed isolate never frees its native model.
-  static const _slowCloseNotice = Duration(seconds: 30);
+  /// How long [close] waits, by default, before saying it is still waiting.
+  /// It keeps waiting afterwards: the only way to stop sooner is to kill the
+  /// isolate, and a killed isolate never frees its native model.
+  static const _defaultSlowCloseNotice = Duration(seconds: 30);
+
+  /// How long [spawn] waits, by default, for the load before saying it is
+  /// still waiting. It keeps waiting afterwards, for the same reason.
+  static const _defaultSlowLoadNotice = Duration(seconds: 30);
 
   final SendPort _commandPort;
   final ReceivePort _fromWorker;
@@ -203,6 +227,8 @@ class TtsWorker {
 
   /// Names the model in the warnings this class prints.
   final String _modelName;
+
+  final Duration _slowCloseNotice;
 
   final _pending = <int, Completer<Uint8List>>{};
   int _nextId = 0;
@@ -215,13 +241,19 @@ class TtsWorker {
   /// every later [synthesize] fails with. Null otherwise.
   String? _deathReason;
 
-  /// The error an uncaught exception in the worker reported through the
-  /// spawn's `onError` port, kept until the `onExit` that follows it.
+  /// The error, with its stack, an uncaught exception in the worker reported
+  /// through the spawn's `onError` port, kept until the `onExit` that follows.
   String? _crashError;
 
   /// True once the worker's [_CloseAck] arrived; the `onExit` after it is the
   /// normal end, not a death.
   bool _acked = false;
+
+  /// True once a [_LoopFailed] arrived: the worker disposed its engine before
+  /// the error that ends it, so the death that follows has not left the model
+  /// resident — unless [_disposeErrorBeforeDeath] says that dispose failed.
+  bool _disposedBeforeDeath = false;
+  String? _disposeErrorBeforeDeath;
 
   /// Completes when the worker is gone: its [_CloseAck], or its onExit.
   final _gone = Completer<void>();
@@ -230,8 +262,9 @@ class TtsWorker {
 
   /// Completes, with the reason, when the worker exits without acking a
   /// [close] — an uncaught error, or an isolate killed from outside. Never
-  /// completes after a clean close. `LiteRtSpeechSynthesizer` listens to it to turn itself
-  /// closed and fire its close listeners (R5 W6).
+  /// completes after a clean close. `LiteRtSpeechSynthesizer` listens to it
+  /// to turn itself closed and fire its close listeners, so nothing keeps
+  /// handing out a synthesizer whose every call fails.
   Future<String> get unexpectedExit => _unexpectedExit.future;
 
   /// The one teardown every [close] call shares.
@@ -239,12 +272,19 @@ class TtsWorker {
 
   /// Spawn the worker and wait until the frontend + native model are loaded.
   ///
+  /// A load that fails fails this at once, even though the worker still has
+  /// to dispose what the load built: a native call that never returns must
+  /// not hold the caller. The dispose then runs in the worker on its own, and
+  /// a failure is reported when it comes.
+  ///
   /// [language] is Qwen3-only (see [_WorkerInit.language]'s doc); Matcha
   /// ignores it. Defaults to `'english'` so every existing (Matcha) caller
   /// is unaffected. [voice] is Qwen3-only (see [_WorkerInit.voice]'s doc);
   /// null (the default) uses the bundle's demo voice. [engineFactory] is the
   /// test seam; production leaves it null and gets the engine for
-  /// [profile]'s pipeline.
+  /// [profile]'s pipeline. After [slowLoadNotice] without an answer this says
+  /// once that it is still waiting; [slowCloseNotice] does the same for
+  /// [close].
   static Future<TtsWorker> spawn({
     required TtsModelProfile profile,
     required Map<String, String> artifactPaths,
@@ -252,33 +292,54 @@ class TtsWorker {
     String language = 'english',
     Float32List? voice,
     TtsWorkerEngineFactory? engineFactory,
+    @visibleForTesting Duration slowLoadNotice = _defaultSlowLoadNotice,
+    @visibleForTesting Duration slowCloseNotice = _defaultSlowCloseNotice,
   }) async {
     final fromWorker = ReceivePort();
     final readyCompleter = Completer<_Ready>();
+    final modelName = _describeModel(profile, artifactPaths);
 
     // First message from the worker is either _Ready or a String error. A
-    // two-element List is an uncaught error (the onError port), and a `null`
-    // is the isolate's onExit signal — if either arrives before _Ready, the
+    // two-element List is an uncaught error (the onError port), which comes
+    // before the onExit `null`; if that `null` arrives before _Ready, the
     // worker died during load (e.g. a native crash compiling a corrupt
     // model), so fail the completer instead of hanging forever.
+    String? uncaughtDuringLoad;
+    var loadFailureReported = false;
     late final StreamSubscription<dynamic> sub;
     sub = fromWorker.listen((msg) {
-      if (readyCompleter.isCompleted) return;
       if (msg is _Ready) {
-        readyCompleter.complete(msg);
+        if (!readyCompleter.isCompleted) readyCompleter.complete(msg);
       } else if (msg is String) {
-        readyCompleter.completeError(StateError(msg));
+        loadFailureReported = true;
+        if (!readyCompleter.isCompleted) {
+          readyCompleter.completeError(StateError(msg));
+        }
       } else if (msg is List) {
-        readyCompleter.completeError(
-          StateError('TTS worker isolate failed during load: ${msg.first}'),
-        );
+        uncaughtDuringLoad = _describeUncaught(msg);
       } else if (msg == null) {
-        readyCompleter.completeError(
-          StateError('TTS worker isolate exited during load'),
-        );
+        if (!readyCompleter.isCompleted) {
+          final reason = uncaughtDuringLoad;
+          readyCompleter.completeError(
+            StateError(
+              reason == null
+                  ? 'TTS worker isolate exited during load'
+                  : 'TTS worker isolate exited during load: $reason',
+            ),
+          );
+        }
       }
     });
 
+    final notice = Timer(
+      slowLoadNotice,
+      () => _warn(
+        'loading $modelName has taken ${_describeDuration(slowLoadNotice)}: '
+        'the worker is still inside a native call. It keeps waiting rather '
+        'than kill the worker, because a killed worker never frees its native '
+        'model.',
+      ),
+    );
     final _Ready ready;
     try {
       await Isolate.spawn(
@@ -301,24 +362,71 @@ class TtsWorker {
       );
       ready = await readyCompleter.future;
     } catch (_) {
-      // Nothing to kill. A worker that fails to load disposes whatever it
-      // built and leaves through `Isolate.exit` carrying the error, and the
-      // onExit `null` means it is already gone. Killing it here instead could
-      // land before that dispose — the leak [close] no longer has.
-      await sub.cancel();
-      fromWorker.close();
+      // Nothing to kill: a killed worker never disposes what it built. A
+      // worker that reported a load failure is still disposing it, so keep
+      // listening — not waiting — until it exits, and report a dispose that
+      // fails. Otherwise it is already gone (onExit), or was never started.
+      if (loadFailureReported) {
+        sub.onData((msg) => _afterFailedLoad(msg, modelName, sub, fromWorker));
+      } else {
+        await sub.cancel();
+        fromWorker.close();
+      }
       rethrow;
+    } finally {
+      notice.cancel();
     }
 
     final worker = TtsWorker._(
       ready.commandPort,
       fromWorker,
       ready.sampleRate,
-      _describeModel(profile, artifactPaths),
+      modelName,
+      slowCloseNotice,
     );
     // Re-point the subscription at the steady-state reply handler.
     sub.onData(worker._onReply);
     return worker;
+  }
+
+  /// Handles what a worker whose load failed sends after the error: the
+  /// outcome of disposing what the load built, then its exit.
+  static void _afterFailedLoad(
+    dynamic msg,
+    String modelName,
+    StreamSubscription<dynamic> sub,
+    ReceivePort fromWorker,
+  ) {
+    if (msg is _LoadCleanup) {
+      final error = msg.error;
+      if (error != null) {
+        _warn(
+          '$modelName failed to dispose after its load failed; its native '
+          'model may still be resident: $error',
+        );
+      }
+    } else if (msg is List) {
+      _warn(
+        'the TTS worker of $modelName died while disposing what its failed '
+        'load had built; its native model may still be resident: '
+        '${_describeUncaught(msg)}',
+      );
+    } else if (msg == null) {
+      unawaited(sub.cancel());
+      fromWorker.close();
+    }
+  }
+
+  /// "30 s", or "200 ms" for the short durations tests inject.
+  static String _describeDuration(Duration d) => d.inMilliseconds % 1000 == 0
+      ? '${d.inSeconds} s'
+      : '${d.inMilliseconds} ms';
+
+  /// An `onError` message — `[error, stack]`, both as strings — as one text.
+  static String _describeUncaught(List<dynamic> message) {
+    final error = message.isNotEmpty ? message[0] : null;
+    final stack = message.length > 1 ? message[1] : null;
+    return stack == null ? '$error' : '$error\n$stack';
   }
 
   /// Output sample rate (Hz), learned from the load handshake.
@@ -337,36 +445,55 @@ class TtsWorker {
       _acked = true;
       final error = msg.error;
       if (error != null) {
+        // Reported, not rethrown: the caller asked to stop using this model,
+        // and there is nothing it could do with the failure.
         _warn(
           '$_modelName failed to dispose; its native model may still be '
           'resident: $error',
         );
       }
       if (!_gone.isCompleted) _gone.complete();
+    } else if (msg is _LoopFailed) {
+      _disposedBeforeDeath = true;
+      _disposeErrorBeforeDeath = msg.error;
     } else if (msg is List) {
       // onError: an uncaught error is about to take the worker down. The
       // onExit `null` that follows reports it.
-      _crashError = '${msg.first}';
+      _crashError = _describeUncaught(msg);
     } else if (msg == null) {
       if (_acked) return; // the normal exit after a _CloseAck.
-      // The worker died without acking — an uncaught error, or an isolate
-      // killed from outside. Its model may still be resident; fail every
-      // pending request rather than leave callers hanging, and refuse new
-      // ones with the reason.
-      final crash = _crashError;
-      final what = _closeFuture == null
-          ? 'exited unexpectedly'
-          : 'exited while closing';
-      final reason =
-          'the TTS worker isolate $what${crash == null ? '' : ': $crash'}';
-      _deathReason = reason;
-      _closing = true;
-      _failAllPending(reason);
-      _fromWorker.close();
-      _warn('$reason ($_modelName); its native model may still be resident');
-      if (!_gone.isCompleted) _gone.complete();
-      if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
+      _died();
     }
+  }
+
+  /// The worker exited without acking — an uncaught error, or an isolate
+  /// killed from outside: tell the owner, fail every pending request rather
+  /// than leave callers hanging, refuse new ones with the reason, and say so
+  /// where release builds can see it.
+  void _died() {
+    final crash = _crashError;
+    final what = _closeFuture == null
+        ? 'exited unexpectedly'
+        : 'exited while closing';
+    final reason =
+        'the TTS worker isolate $what${crash == null ? '' : ': $crash'}';
+    _deathReason = reason;
+    _closing = true;
+    // Before the pending requests fail: the owner turns itself closed first,
+    // so a caller that retries from its error handler gets a fresh
+    // synthesizer instead of this one.
+    if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
+    _failAllPending(reason);
+    _fromWorker.close();
+    final disposeError = _disposeErrorBeforeDeath;
+    final model = !_disposedBeforeDeath
+        ? 'its native model may still be resident'
+        : disposeError == null
+        ? 'its native model was disposed before the worker ended'
+        : 'disposing its native model failed too, so it may still be '
+              'resident: $disposeError';
+    _warn('$reason ($_modelName); $model');
+    if (!_gone.isCompleted) _gone.complete();
   }
 
   void _failAllPending(String reason) {
@@ -403,7 +530,8 @@ class TtsWorker {
   /// It waits for all of that however long the call in flight takes, and
   /// never kills the isolate: a killed isolate runs no more Dart code, so its
   /// model is never disposed and stays resident for the life of the process.
-  /// After [_slowCloseNotice] it says what it is waiting for, once.
+  /// After the `slowCloseNotice` given to [spawn] it says what it is waiting
+  /// for, once.
   ///
   /// Idempotent; concurrent callers share one teardown.
   Future<void> close() => _closeFuture ??= _shutDown();
@@ -415,11 +543,11 @@ class TtsWorker {
       final notice = Timer(
         _slowCloseNotice,
         () => _warn(
-          'TtsWorker.close() has waited ${_slowCloseNotice.inSeconds} s for '
-          'the worker of $_modelName to finish the synthesis it is running, '
-          'if any, and dispose its native model. It keeps waiting rather than '
-          'kill the worker, because a killed worker never frees its native '
-          'model.',
+          'closing $_modelName has taken '
+          '${_describeDuration(_slowCloseNotice)}: the worker is still inside '
+          "a native call — the synthesis in flight, if any, or the model's own "
+          'dispose. It keeps waiting rather than kill the worker, because a '
+          'killed worker never frees its native model.',
         ),
       );
       try {
@@ -430,9 +558,13 @@ class TtsWorker {
     }
     _fromWorker.close();
     // The worker answers every request it received before it acks, and the
-    // port delivers in order, so this is empty — unless the worker died, and
-    // then onExit has already failed them. A net, not a path.
-    _failAllPending(_closedBeforeRunMessage);
+    // port delivers in order; if it died instead, `_died` has already failed
+    // them. So nothing should be left — anything that is, is a bug here, and
+    // its error says so rather than claim the request was never run.
+    _failAllPending(
+      'internal error: the TTS worker of $_modelName stopped without '
+      'answering this request',
+    );
   }
 
   /// `print`, not [edgeAiLog]: edgeAiLog is silent in release, and release is
@@ -728,15 +860,17 @@ final class _Qwen3Engine implements TtsWorkerEngine {
   void dispose() => _core?.dispose();
 }
 
-/// Disposes [engine], reporting a failure as text instead of throwing, so the
-/// caller still sends its last message. Null means it disposed cleanly.
+/// Disposes [engine], reporting a failure as text — error and stack, since
+/// the stack is all the main isolate will ever see of it — instead of
+/// throwing, so the caller still sends its last message. Null means it
+/// disposed cleanly.
 String? _disposeEngine(TtsWorkerEngine engine) {
   try {
     engine.dispose();
     return null;
   } catch (e, st) {
     edgeAiLog('[TtsWorker] dispose failed: $e\n$st');
-    return '$e';
+    return '$e\n$st';
   }
 }
 
@@ -766,17 +900,14 @@ Future<void> _workerEntry(_WorkerInit init) async {
     engine = built;
   } catch (e, st) {
     edgeAiLog('[TtsWorker] ${init.profile.pipeline.name} load failed: $e\n$st');
-    // Disposed BEFORE the error is sent — the main isolate gives up on this
-    // worker the moment the error arrives.
+    // The error goes FIRST, so a native dispose that never returns cannot
+    // hold the caller too.
+    init.replyTo.send('TTS worker failed to load: $e');
+    // Then what the load built is disposed, in this same isolate — never by
+    // killing it, which would skip the dispose. The main isolate is still
+    // listening and reports a dispose that fails.
     final disposeError = built == null ? null : _disposeEngine(built);
-    Isolate.exit(
-      init.replyTo,
-      disposeError == null
-          ? 'TTS worker failed to load: $e'
-          : 'TTS worker failed to load: $e (disposing what it had loaded '
-                'also failed, so native memory may still be held: '
-                '$disposeError)',
-    );
+    Isolate.exit(init.replyTo, _LoadCleanup(disposeError));
   }
 
   final commandPort = ReceivePort();
@@ -809,7 +940,6 @@ Future<void> _workerEntry(_WorkerInit init) async {
 
   init.replyTo.send(_Ready(commandPort.sendPort, sampleRate));
 
-  final String? disposeError;
   try {
     // One request in flight at a time, in arrival order.
     while (!closeRequested) {
@@ -828,15 +958,16 @@ Future<void> _workerEntry(_WorkerInit init) async {
       if (closeRequested || queued.isEmpty) continue;
       _serve(queued.removeFirst(), engine, init.replyTo);
     }
-  } finally {
-    // Also on an unexpected throw out of the loop: the native model is freed
-    // either way, and the throw then takes the isolate down, which the main
-    // isolate's onError/onExit handling reports.
-    disposeError = _disposeEngine(engine);
+  } catch (_) {
+    // Serving a request never throws, so this is a bug in the loop itself.
+    // The model is disposed anyway, and the main isolate told so; the error
+    // then ends the isolate and reaches it through onError and onExit.
+    init.replyTo.send(_LoopFailed(_disposeEngine(engine)));
+    rethrow;
   }
   // Ack and exit in one step: nothing of this worker runs after the ack, so
   // the main isolate never has to kill it.
-  Isolate.exit(init.replyTo, _CloseAck(disposeError));
+  Isolate.exit(init.replyTo, _CloseAck(_disposeEngine(engine)));
 }
 
 /// Runs one request and replies — with the PCM, or with the error. Never

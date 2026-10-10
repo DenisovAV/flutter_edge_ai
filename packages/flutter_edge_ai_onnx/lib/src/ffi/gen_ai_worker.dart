@@ -71,9 +71,12 @@ const closedBeforeRunMessage =
 ///   generation in flight at its next token, frees the engine (a failure is
 ///   reported in the ack, not thrown) and leaves with [CloseAck] through
 ///   `Isolate.exit`, so the client never has to kill the isolate.
-/// - A failed [GenAiWorkerEngine.load] closes the engine and leaves through
-///   `Isolate.exit` carrying the error.
-/// - Serving a request never throws; a failure is the request's reply.
+/// - A failed [GenAiWorkerEngine.load] sends its error first, so the caller
+///   fails at once, then closes the engine and leaves through `Isolate.exit`
+///   with [LoadCleanup].
+/// - Serving a request never throws; a failure is the request's reply. Should
+///   the loop itself throw, the engine is closed anyway, [LoopFailed] says
+///   so, and the error ends the isolate.
 Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
   edgeAiLogLevel = init.logLevel;
 
@@ -81,17 +84,13 @@ Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
     await engine.load();
   } catch (e, st) {
     edgeAiLog('[GenAiFfiClient/worker] load failed: $e\n$st');
-    // Closed BEFORE the error is sent — the client gives up on this worker
-    // the moment the error arrives.
-    final closeError = _closeEngine(engine);
-    Isolate.exit(
-      init.replyTo,
-      closeError == null
-          ? 'ONNX GenAI worker failed to load: $e'
-          : 'ONNX GenAI worker failed to load: $e (freeing what it had loaded '
-                'also failed, so native memory may still be held: '
-                '$closeError)',
-    );
+    // The error goes FIRST, so a native close that never returns cannot hold
+    // the caller too.
+    init.replyTo.send('ONNX GenAI worker failed to load: $e');
+    // Then what the load allocated is freed, in this same isolate — never by
+    // killing it, which would skip the close. The client is still listening
+    // and reports a close that fails.
+    Isolate.exit(init.replyTo, LoadCleanup(_closeEngine(engine)));
   }
 
   final commandPort = ReceivePort();
@@ -138,7 +137,6 @@ Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
 
   init.replyTo.send(Ready(commandPort.sendPort));
 
-  final String? closeError;
   try {
     while (!closeRequested) {
       if (queued.isEmpty) {
@@ -158,15 +156,17 @@ Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
         () => stopRequested,
       );
     }
-  } finally {
-    // Also on an unexpected throw out of the loop: the native handles are
-    // freed either way, and the throw then takes the isolate down, which the
-    // client's onError/onExit handling reports.
-    closeError = _closeEngine(engine);
+  } catch (_) {
+    // Serving a request never throws, so this is a bug in the loop itself.
+    // The native handles are freed anyway, and the client told so; the error
+    // then ends the isolate and reaches the client through onError and
+    // onExit.
+    init.replyTo.send(LoopFailed(_closeEngine(engine)));
+    rethrow;
   }
   // Ack and exit in one step: nothing of this worker runs after the ack, so
   // the client never has to kill it.
-  Isolate.exit(init.replyTo, CloseAck(closeError));
+  Isolate.exit(init.replyTo, CloseAck(_closeEngine(engine)));
 }
 
 /// Runs one request and replies. Never throws, so one failure cannot stop the
@@ -207,13 +207,15 @@ Future<void> _serve(
     case ResetSessionRequest():
       try {
         engine.resetGenerator();
+        replyTo.send(const ResetSessionAck());
       } catch (e, st) {
+        // Carried in the ack, not swallowed: the next turn may continue the
+        // old conversation, and the client says so where release builds see.
         edgeAiLog(
-          '[GenAiFfiClient/worker] resetting the generator failed: '
-          '$e\n$st',
+          '[GenAiFfiClient/worker] resetting the generator failed: $e\n$st',
         );
+        replyTo.send(ResetSessionAck('$e\n$st'));
       }
-      replyTo.send(const ResetSessionAck());
   }
 }
 
@@ -230,7 +232,8 @@ void _failUnstarted(QueuedRequest request, SendPort replyTo) {
   }
 }
 
-/// Closes [engine], reporting a failure as text instead of throwing, so the
+/// Closes [engine], reporting a failure as text — error and stack, since the
+/// stack is all the client will ever see of it — instead of throwing, so the
 /// caller still sends its last message. Null means it closed cleanly.
 String? _closeEngine(GenAiWorkerEngine engine) {
   try {
@@ -238,6 +241,6 @@ String? _closeEngine(GenAiWorkerEngine engine) {
     return null;
   } catch (e, st) {
     edgeAiLog('[GenAiFfiClient/worker] close failed: $e\n$st');
-    return '$e';
+    return '$e\n$st';
   }
 }

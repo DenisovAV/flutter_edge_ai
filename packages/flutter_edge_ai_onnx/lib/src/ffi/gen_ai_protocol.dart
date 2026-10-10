@@ -98,9 +98,12 @@ class ResetSessionRequest extends QueuedRequest {
   const ResetSessionRequest();
 }
 
-/// Worker → main: [ResetSessionRequest] handled.
+/// Worker → main: [ResetSessionRequest] handled. [error] is set, with its
+/// stack, when destroying the generator threw: the next turn may then
+/// continue the old conversation, and the client says so.
 class ResetSessionAck {
-  const ResetSessionAck();
+  const ResetSessionAck([this.error]);
+  final String? error;
 }
 
 /// Main → worker: tokenize [text] (no chat template) and report its length.
@@ -127,10 +130,27 @@ class Close {
 
 /// Worker → main: the last message, sent through `Isolate.exit` once every
 /// native handle has been freed — nothing of the worker runs after it.
-/// [error] is set when freeing them threw: the native model may then still be
-/// resident, and the main isolate says so.
+/// [error] is set, with its stack, when freeing them threw: the native model
+/// may then still be resident, and the main isolate says so.
 class CloseAck {
   const CloseAck([this.error]);
+  final String? error;
+}
+
+/// Worker → main: the last message of a worker whose load failed. The load
+/// error itself went first, as a plain `String`, so the caller never waits
+/// for this; it follows once the worker has freed what the load allocated.
+/// [error] is set, with its stack, when that close threw.
+class LoadCleanup {
+  const LoadCleanup([this.error]);
+  final String? error;
+}
+
+/// Worker → main: the serving loop itself threw — a bug, since serving a
+/// request never throws — and the worker closed the engine anyway before the
+/// error ends it. [error] is set, with its stack, when that close threw too.
+class LoopFailed {
+  const LoopFailed([this.error]);
   final String? error;
 }
 

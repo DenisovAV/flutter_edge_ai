@@ -170,15 +170,33 @@ class GenAiFfiClient implements GenAiClient {
   /// use-after-free-safe (only `onnx_generation_host_smoke_test.dart`, which
   /// runs against real ORT-GenAI libs, can). Never override it in production
   /// code.
-  GenAiFfiClient({@visibleForTesting GenAiWorkerEntry? workerEntry})
-    : _workerEntry = workerEntry ?? _defaultWorkerEntry;
+  ///
+  /// [slowLoadNotice] and [slowCloseNotice] are how long [load] and
+  /// [shutdown] wait before saying, once, that they are still waiting; tests
+  /// shorten them.
+  GenAiFfiClient({
+    @visibleForTesting GenAiWorkerEntry? workerEntry,
+    @visibleForTesting Duration slowLoadNotice = _defaultSlowLoadNotice,
+    @visibleForTesting Duration slowCloseNotice = _defaultSlowCloseNotice,
+  }) : _workerEntry = workerEntry ?? _defaultWorkerEntry,
+       // Named and private: an initializing formal cannot be both.
+       // ignore: prefer_initializing_formals
+       _slowLoadNotice = slowLoadNotice,
+       // ignore: prefer_initializing_formals
+       _slowCloseNotice = slowCloseNotice;
 
-  /// How long [shutdown] waits before saying it is still waiting. It keeps
-  /// waiting afterwards: the only way to stop sooner is to kill the isolate,
-  /// and a killed isolate never frees its native model.
-  static const _slowCloseNotice = Duration(seconds: 30);
+  /// How long [shutdown] waits, by default, before saying it is still
+  /// waiting. It keeps waiting afterwards: the only way to stop sooner is to
+  /// kill the isolate, and a killed isolate never frees its native model.
+  static const _defaultSlowCloseNotice = Duration(seconds: 30);
+
+  /// How long [load] waits, by default, before saying it is still waiting. It
+  /// keeps waiting afterwards, for the same reason.
+  static const _defaultSlowLoadNotice = Duration(seconds: 30);
 
   final GenAiWorkerEntry _workerEntry;
+  final Duration _slowLoadNotice;
+  final Duration _slowCloseNotice;
 
   SendPort? _commandPort;
   ReceivePort? _fromWorker;
@@ -201,13 +219,19 @@ class GenAiFfiClient implements GenAiClient {
   /// every later call fails with. Null otherwise.
   String? _deathReason;
 
-  /// The error an uncaught exception in the worker reported through the
-  /// spawn's `onError` port, kept until the `onExit` that follows it.
+  /// The error, with its stack, an uncaught exception in the worker reported
+  /// through the spawn's `onError` port, kept until the `onExit` that follows.
   String? _crashError;
 
   /// True once the worker's [CloseAck] arrived; the `onExit` after it is the
   /// normal end, not a death.
   bool _acked = false;
+
+  /// True once a [LoopFailed] arrived: the worker closed its engine before the
+  /// error that ends it, so the death that follows has not left the model
+  /// resident — unless [_closeErrorBeforeDeath] says that close failed.
+  bool _closedBeforeDeath = false;
+  String? _closeErrorBeforeDeath;
 
   /// Completes when the worker is gone: its [CloseAck], or its onExit.
   final _gone = Completer<void>();
@@ -242,29 +266,45 @@ class GenAiFfiClient implements GenAiClient {
     final readyCompleter = Completer<Ready>();
 
     // First message from the worker is either Ready or a String error. A
-    // two-element List is an uncaught error (the onError port), and a `null`
-    // is the isolate's onExit signal — if either arrives before Ready, the
+    // two-element List is an uncaught error (the onError port), which comes
+    // before the onExit `null`; if that `null` arrives before Ready, the
     // worker died during load, so fail the completer instead of hanging.
+    String? uncaughtDuringLoad;
+    var loadFailureReported = false;
     late final StreamSubscription<dynamic> sub;
     sub = fromWorker.listen((msg) {
-      if (readyCompleter.isCompleted) return;
       if (msg is Ready) {
-        readyCompleter.complete(msg);
+        if (!readyCompleter.isCompleted) readyCompleter.complete(msg);
       } else if (msg is String) {
-        readyCompleter.completeError(StateError(msg));
+        loadFailureReported = true;
+        if (!readyCompleter.isCompleted) {
+          readyCompleter.completeError(StateError(msg));
+        }
       } else if (msg is List) {
-        readyCompleter.completeError(
-          StateError(
-            'ONNX GenAI worker isolate failed during load: ${msg.first}',
-          ),
-        );
+        uncaughtDuringLoad = _describeUncaught(msg);
       } else if (msg == null) {
-        readyCompleter.completeError(
-          StateError('ONNX GenAI worker isolate exited during load'),
-        );
+        if (!readyCompleter.isCompleted) {
+          final reason = uncaughtDuringLoad;
+          readyCompleter.completeError(
+            StateError(
+              reason == null
+                  ? 'ONNX GenAI worker isolate exited during load'
+                  : 'ONNX GenAI worker isolate exited during load: $reason',
+            ),
+          );
+        }
       }
     });
 
+    final notice = Timer(
+      _slowLoadNotice,
+      () => _warn(
+        'loading the ONNX GenAI model $modelDir has taken '
+        '${_describeDuration(_slowLoadNotice)}: the worker is still inside a '
+        'native call. It keeps waiting rather than kill the worker, because a '
+        'killed worker never frees its native model.',
+      ),
+    );
     final envLibsDir = Platform.environment[genAiLibsDirEnvVar];
     final Ready ready;
     try {
@@ -287,13 +327,19 @@ class GenAiFfiClient implements GenAiClient {
       );
       ready = await readyCompleter.future;
     } catch (_) {
-      // Nothing to kill. A worker that fails to load frees whatever it
-      // allocated and leaves through `Isolate.exit` carrying the error, and
-      // the onExit `null` means it is already gone. Killing it here instead
-      // could land before that cleanup.
-      await sub.cancel();
-      fromWorker.close();
+      // Nothing to kill: a killed worker never frees what its load allocated.
+      // A worker that reported a load failure is still freeing it, so keep
+      // listening — not waiting — until it exits, and report a close that
+      // fails. Otherwise it is already gone (onExit), or was never started.
+      if (loadFailureReported) {
+        sub.onData((msg) => _afterFailedLoad(msg, modelDir, sub, fromWorker));
+      } else {
+        await sub.cancel();
+        fromWorker.close();
+      }
       rethrow;
+    } finally {
+      notice.cancel();
     }
 
     _fromWorker = fromWorker;
@@ -330,6 +376,15 @@ class GenAiFfiClient implements GenAiClient {
         completer.complete(msg.count!);
       }
     } else if (msg is ResetSessionAck) {
+      if (msg.error case final error?) {
+        // Not rethrown — resetSession() has no caller that could act on it —
+        // but not swallowed either: the next turn may continue the old
+        // conversation.
+        _warn(
+          'resetting the ONNX GenAI generator for $_modelDir failed, so the '
+          'next turn may continue the previous conversation: $error',
+        );
+      }
       _completeResetAck();
     } else if (msg is CloseAck) {
       _acked = true;
@@ -341,34 +396,88 @@ class GenAiFfiClient implements GenAiClient {
       }
       if (!_gone.isCompleted) _gone.complete();
       _completeResetAck();
+    } else if (msg is LoopFailed) {
+      _closedBeforeDeath = true;
+      _closeErrorBeforeDeath = msg.error;
     } else if (msg is List) {
       // onError: an uncaught error is about to take the worker down. The
       // onExit `null` that follows reports it.
-      _crashError = '${msg.first}';
+      _crashError = _describeUncaught(msg);
     } else if (msg == null) {
       if (_acked) return; // the normal exit after a CloseAck.
-      // The worker died without acking — an uncaught error, or an isolate
-      // killed from outside. Its model may still be resident; fail everything
-      // in flight rather than leave callers hanging, and refuse new calls
-      // with the reason.
-      final crash = _crashError;
-      final what = _shutdownFuture == null
-          ? 'exited unexpectedly'
-          : 'exited while shutting down';
-      final reason =
-          'the ONNX GenAI worker isolate $what'
-          '${crash == null ? '' : ': $crash'}';
-      _deathReason = reason;
-      _closed = true;
-      _failAllPending(StateError(reason));
-      _fromWorker?.close();
-      _warn(
-        '$reason (model $_modelDir); its native model may still be resident',
-      );
-      if (!_gone.isCompleted) _gone.complete();
-      _completeResetAck();
-      if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
+      _died();
     }
+  }
+
+  /// The worker exited without acking — an uncaught error, or an isolate
+  /// killed from outside: tell the owner, fail everything in flight rather
+  /// than leave callers hanging, refuse new calls with the reason, and say so
+  /// where release builds can see it.
+  void _died() {
+    final crash = _crashError;
+    final what = _shutdownFuture == null
+        ? 'exited unexpectedly'
+        : 'exited while shutting down';
+    final reason =
+        'the ONNX GenAI worker isolate $what${crash == null ? '' : ': $crash'}';
+    _deathReason = reason;
+    _closed = true;
+    // Before anything in flight fails: the owning model turns itself closed
+    // first, so a caller that retries from its error handler gets a fresh
+    // model instead of this one.
+    if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
+    _failAllPending(StateError(reason));
+    _fromWorker?.close();
+    final closeError = _closeErrorBeforeDeath;
+    final model = !_closedBeforeDeath
+        ? 'its native model may still be resident'
+        : closeError == null
+        ? 'its native model was freed before the worker ended'
+        : 'freeing its native model failed too, so it may still be resident: '
+              '$closeError';
+    _warn('$reason (model $_modelDir); $model');
+    if (!_gone.isCompleted) _gone.complete();
+    _completeResetAck();
+  }
+
+  /// Handles what a worker whose load failed sends after the error: the
+  /// outcome of freeing what the load allocated, then its exit.
+  static void _afterFailedLoad(
+    dynamic msg,
+    String modelDir,
+    StreamSubscription<dynamic> sub,
+    ReceivePort fromWorker,
+  ) {
+    if (msg is LoadCleanup) {
+      final error = msg.error;
+      if (error != null) {
+        _warn(
+          'the ONNX GenAI model $modelDir failed to close after its load '
+          'failed; its native model may still be resident: $error',
+        );
+      }
+    } else if (msg is List) {
+      _warn(
+        'the ONNX GenAI worker for $modelDir died while freeing what its '
+        'failed load had allocated; its native model may still be resident: '
+        '${_describeUncaught(msg)}',
+      );
+    } else if (msg == null) {
+      unawaited(sub.cancel());
+      fromWorker.close();
+    }
+  }
+
+  /// "30 s", or "200 ms" for the short durations tests inject.
+  static String _describeDuration(Duration d) => d.inMilliseconds % 1000 == 0
+      ? '${d.inSeconds} s'
+      : '${d.inMilliseconds} ms';
+
+  /// An `onError` message — `[error, stack]`, both as strings — as one text.
+  static String _describeUncaught(List<dynamic> message) {
+    final error = message.isNotEmpty ? message[0] : null;
+    final stack = message.length > 1 ? message[1] : null;
+    return stack == null ? '$error' : '$error\n$stack';
   }
 
   void _completeResetAck() {
@@ -529,11 +638,11 @@ class GenAiFfiClient implements GenAiClient {
       final notice = Timer(
         _slowCloseNotice,
         () => _warn(
-          'GenAiFfiClient.shutdown() has waited '
-          '${_slowCloseNotice.inSeconds} s for the ONNX GenAI worker of '
-          '$_modelDir to finish the call it is running, if any, and free its '
-          'native model. It keeps waiting rather than kill the worker, '
-          'because a killed worker never frees its native model.',
+          'shutting down the ONNX GenAI model $_modelDir has taken '
+          '${_describeDuration(_slowCloseNotice)}: the worker is still inside '
+          'a native call — the call in flight, if any, or freeing the model. '
+          'It keeps waiting rather than kill the worker, because a killed '
+          'worker never frees its native model.',
         ),
       );
       try {
@@ -545,9 +654,15 @@ class GenAiFfiClient implements GenAiClient {
     await _sub?.cancel();
     _fromWorker?.close();
     // The worker answers every request it received before it acks, and the
-    // port delivers in order, so this is empty — unless the worker died, and
-    // then onExit has already failed them. A net, not a path.
-    _failAllPending(StateError('GenAiFfiClient shut down'));
+    // port delivers in order; if it died instead, `_died` has already failed
+    // them. So nothing should be left — anything that is, is a bug here, and
+    // its error says so rather than claim the request was never run.
+    _failAllPending(
+      StateError(
+        'internal error: the ONNX GenAI worker for $_modelDir stopped without '
+        'answering this request',
+      ),
+    );
   }
 
   /// `print`, not [edgeAiLog]: edgeAiLog is silent in release, and release is
@@ -565,7 +680,8 @@ class GenAiFfiClient implements GenAiClient {
 /// of its own (any [GenAiClient] that is not a [GenAiFfiClient]).
 ///
 /// `OnnxInferenceModel` listens to it to turn itself closed and fire its
-/// close listeners (R5 W6). A top-level function rather than a member, and
+/// close listeners, so nothing keeps handing out a model whose every call
+/// fails. A top-level function rather than a member, and
 /// not exported, so the public [GenAiClient] and [GenAiFfiClient] surface
 /// stays as it is.
 Future<String>? unexpectedExitOf(GenAiClient client) => switch (client) {
@@ -786,9 +902,11 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
 
   @override
   Future<void> load() async {
-    final (ortLib, genaiLib) = _openGenAiLibraries(_init.libsDir);
-    // ignore: unused_local_variable — kept reachable so the image isn't GC'd.
-    final keepOrtLibLoaded = ortLib;
+    // Only GenAI's handle is used from here on. ORT stays loaded whether or
+    // not anything holds its handle — Dart never unloads a DynamicLibrary —
+    // and opening it first is what lets GenAI's own lookup find it (see
+    // [_openGenAiLibraries]).
+    final (_, genaiLib) = _openGenAiLibraries(_init.libsDir);
     final oga = _oga = OrtGenAiBindings(genaiLib);
 
     final configPathC = _init.modelDir.toNativeUtf8();

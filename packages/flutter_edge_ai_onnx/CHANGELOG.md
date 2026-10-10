@@ -1,5 +1,5 @@
 ## 0.5.5
-- Closing an ONNX text model mid-generation no longer leaks its native session.
+- Closing an ONNX text model mid-generation no longer leaks its native model.
 
 ## 0.5.4
 - ONNX embedder no longer leaks its session when loading fails.

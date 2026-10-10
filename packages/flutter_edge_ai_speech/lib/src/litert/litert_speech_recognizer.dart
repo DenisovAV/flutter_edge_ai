@@ -75,8 +75,8 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
     // every later assignment — there is no "first call is checked, the rest are
     // not" asymmetry to reason about.
     this.language = language;
-    // R5 W6: a worker that dies on its own turns this recognizer closed and
-    // tells its listeners, so core drops its cached recognizer and the next
+    // A worker that dies on its own turns this recognizer closed and tells its
+    // listeners, so core drops its cached recognizer and the next
     // `getActiveStt` builds a fresh one — instead of handing out this one,
     // whose every call would fail.
     unawaited(_worker.unexpectedExit.then(_onWorkerDied));
@@ -85,8 +85,9 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
   final SttWorker _worker;
   final VoidCallback onClose;
 
-  /// The one teardown every [close] call shares, so a second caller waits for
-  /// it to finish instead of returning while it is still running.
+  /// What every [close] after the first returns: completes, normally, once
+  /// the one shared teardown is done — so a second caller waits for it
+  /// instead of returning while it is still running.
   Future<void>? _closeFuture;
 
   /// Whether [onClose] and the close listeners have run; they run once,
@@ -186,8 +187,24 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
     return _worker.transcribe(samples, language: language ?? this.language);
   }
 
+  /// Closes the recognizer and its worker.
+  ///
+  /// Transcriptions that have not started fail with a "closed" [StateError];
+  /// the one in flight finishes first, and this waits for it and for the
+  /// native model to be disposed, however long that takes. A recognizer whose
+  /// worker died is already closed — its listeners have run — and this only
+  /// releases what is left. Concurrent callers share one teardown.
   @override
-  Future<void> close() => _closeFuture ??= _close();
+  Future<void> close() {
+    final teardownDone = _closeFuture;
+    if (teardownDone != null) return teardownDone;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // `whenComplete` hands the first caller the teardown's own outcome — a
+    // throwing `onClose` or listener included — while every later caller
+    // gets `settled`, which only ever completes normally once it is done.
+    return _close().whenComplete(settled.complete);
+  }
 
   Future<void> _close() async {
     _isClosed = true;
@@ -201,8 +218,14 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
   void _notifyClosed() {
     if (_closeNotified) return;
     _closeNotified = true;
-    onClose();
-    fireCloseListeners();
+    try {
+      onClose();
+    } finally {
+      // Even when `onClose` throws: core drops its cached instance on a close
+      // listener, and one it never hears about is handed to every later
+      // caller.
+      fireCloseListeners();
+    }
   }
 
   void _onWorkerDied(String reason) {

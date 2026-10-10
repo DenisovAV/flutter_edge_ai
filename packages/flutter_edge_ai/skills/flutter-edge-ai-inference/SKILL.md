@@ -239,6 +239,8 @@ await chat.addQueryChunk(
 );
 ```
 
+On web only a MediaPipe `.task` build takes images (the flutter-edge-ai-mediapipe skill). The `.litertlm` web engine is text-only: `supportImage: true` loads without error, but `addQueryChunk` with an image throws `UnsupportedError`.
+
 ## Audio
 
 ```dart
@@ -249,7 +251,7 @@ await chat.addQueryChunk(
 );
 ```
 
-`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop; the `.litertlm` web engine takes no audio.
+`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop; on the `.litertlm` web engine an audio message throws `UnsupportedError`.
 
 ## The model is a singleton
 

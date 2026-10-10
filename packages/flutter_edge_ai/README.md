@@ -58,7 +58,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 | ONNX Runtime | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Built-in AI | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
-¹ Web `.litertlm` is text and function calling only — no vision, audio or LoRA.
+¹ Web `.litertlm` takes text only: an image or audio message throws `UnsupportedError`, and LoRA is not supported.
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
@@ -307,7 +307,7 @@ await model.close();
 
 ¹ The downloadable E4B `.litertlm`.
 
-² On Web: no audio input; Gemma 3n vision is native-only; Gemma 4 thinking needs the `.litertlm` web build.
+² On Web: no audio input; Gemma 4 vision needs the `.task` web build and thinking the `.litertlm` one; Gemma 3n vision is native-only.
 
 Download links, sizes, formats per platform, embedding and speech models:
 [models](https://flutteredge.ai/docs/models).

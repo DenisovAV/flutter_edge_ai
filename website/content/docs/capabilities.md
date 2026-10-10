@@ -102,8 +102,8 @@ final canOpen = rag.canOpen(spec);
 
 **Model features are flags you set**: `supportImage` and `supportAudio` on
 `getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `createChat`.
-ONNX and Built-in AI throw `UnsupportedError` for image or audio input they
-cannot take.
+ONNX, Built-in AI and LiteRT-LM on web throw `UnsupportedError` for image or
+audio input they cannot take.
 
 After a model loads, `InferenceModel.activeBackend` and
 `EmbeddingModel.activeBackend` report the accelerator it actually runs on.

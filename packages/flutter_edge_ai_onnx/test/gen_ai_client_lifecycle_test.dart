@@ -1,14 +1,15 @@
 // Client-side lifecycle/mutex race tests against the REAL `GenAiFfiClient`
-// — a scripted fake worker isolate (`test/fakes/fake_gen_ai_worker.dart`)
-// stands in for the native ORT-GenAI worker, so these exercise the client's
-// real dispatch/mutex/`_closed`-recheck machinery with zero dlopen (hardened
-// plan Task 2c). The fake has NO FFI and no native pointers, so it CANNOT
-// prove the real worker's native handle teardown (`_defaultWorkerEntry`'s
-// `stopRequested = true; await activeGeneration;` guard before
-// OgaDestroyGenerator/Tokenizer/Model in `gen_ai_client.dart`) is
-// use-after-free-safe — that guard is only exercised by the real-native
-// regression test in `onnx_generation_host_smoke_test.dart`
-// ('real-worker close-during-generation').
+// — a fake worker isolate (`test/fakes/fake_gen_ai_worker.dart`: the real
+// worker loop over a scripted engine) stands in for the native ORT-GenAI
+// worker, so these exercise the client's real dispatch/mutex/`_closed`-recheck
+// machinery with zero dlopen (hardened plan Task 2c). The fake has NO FFI and
+// no native pointers, so it CANNOT prove the FFI engine's native handle
+// teardown is use-after-free-safe — that the worker never destroys the
+// generator/tokenizer/model while a generation is suspended on its per-token
+// yield is only exercised against real handles by
+// `onnx_generation_host_smoke_test.dart` ('real-worker
+// close-during-generation'). Close and death handling of the worker itself is
+// in `gen_ai_worker_close_test.dart`.
 //
 // Test (d) below is TDD for a fix landed in the same change: `_closed` is
 // now rechecked AFTER `_mutex.acquire()` in both `_runGenerateGuarded` and

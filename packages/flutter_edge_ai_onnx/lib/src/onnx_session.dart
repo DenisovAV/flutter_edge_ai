@@ -222,9 +222,10 @@ class OnnxSession extends InferenceModelSession {
     // the generator — resetSession()/close() on the client race an
     // in-flight generate() on the worker side (the ORT-GenAI analogue of
     // the litertlm FFI engine's "close previous conversation before
-    // creating a new one" ordering). The worker itself also forces a stop
-    // and drains the active generation before freeing native handles
-    // (defense-in-depth, see gen_ai_client.dart's `activeGeneration`), but
+    // creating a new one" ordering). The worker itself also stops the turn
+    // in flight when a reset or close arrives, and serves one request at a
+    // time, so it never frees a handle a suspended generation still holds
+    // (defense-in-depth, see `serveGenAiWorker` in gen_ai_worker.dart), but
     // sending the stop first here keeps this session from sitting on an
     // abandoned decode any longer than necessary.
     await client.stopGeneration();

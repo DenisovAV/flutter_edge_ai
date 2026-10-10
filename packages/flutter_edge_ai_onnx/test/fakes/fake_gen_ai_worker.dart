@@ -19,6 +19,8 @@
 //   synchronous and flushed, so a line is on disk before the call returns.
 // - `failLoad`: `load` throws after it "allocated" something.
 // - `throwOnClose`: `close` throws.
+// - `dieAfterMs`: the isolate kills itself this long after load, with nothing
+//   in flight — a worker that dies while idle.
 //
 // Turn script — [GenAiTurn.userContent] — is JSON too (falls back to a single
 // verbatim echo chunk if it doesn't parse):
@@ -84,6 +86,13 @@ class _ScriptedEngine implements GenAiWorkerEngine {
     _log('load');
     if (_config['failLoad'] == true) {
       throw StateError('fake GenAI engine refused to load');
+    }
+    final dieAfterMs = _config['dieAfterMs'];
+    if (dieAfterMs is num) {
+      Timer(
+        Duration(milliseconds: dieAfterMs.toInt()),
+        () => Isolate.current.kill(priority: Isolate.immediate),
+      );
     }
   }
 

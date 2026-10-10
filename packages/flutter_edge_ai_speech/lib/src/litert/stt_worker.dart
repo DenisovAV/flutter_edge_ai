@@ -36,7 +36,6 @@ import 'dart:typed_data';
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../model/stt_model_profile.dart';
 import 'stt_core.dart';
@@ -203,6 +202,14 @@ class SttWorker {
   /// Completes when the worker is gone: its [_CloseAck], or its onExit.
   final _gone = Completer<void>();
 
+  final _unexpectedExit = Completer<String>();
+
+  /// Completes, with the reason, when the worker exits without acking a
+  /// [close] — an uncaught error, or an isolate killed from outside. Never
+  /// completes after a clean close. `LiteRtSpeechRecognizer` listens to it to turn itself
+  /// closed and fire its close listeners (R5 W6).
+  Future<String> get unexpectedExit => _unexpectedExit.future;
+
   /// The one teardown every [close] call shares.
   Future<void>? _closeFuture;
 
@@ -215,7 +222,7 @@ class SttWorker {
     required String tokenizerPath,
     required SttModelProfile profile,
     PreferredBackend? backend,
-    @visibleForTesting SttWorkerEngineFactory? engineFactory,
+    SttWorkerEngineFactory? engineFactory,
   }) async {
     final fromWorker = ReceivePort();
     final readyCompleter = Completer<_Ready>();
@@ -326,6 +333,7 @@ class SttWorker {
         '$reason (model $_modelPath); its native model may still be resident',
       );
       if (!_gone.isCompleted) _gone.complete();
+      if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
     }
   }
 

@@ -54,7 +54,6 @@ import 'dart:typed_data';
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../model/tts_model_profile.dart';
 import '../qwen3/npy_reader.dart';
@@ -227,6 +226,14 @@ class TtsWorker {
   /// Completes when the worker is gone: its [_CloseAck], or its onExit.
   final _gone = Completer<void>();
 
+  final _unexpectedExit = Completer<String>();
+
+  /// Completes, with the reason, when the worker exits without acking a
+  /// [close] — an uncaught error, or an isolate killed from outside. Never
+  /// completes after a clean close. `LiteRtSpeechSynthesizer` listens to it to turn itself
+  /// closed and fire its close listeners (R5 W6).
+  Future<String> get unexpectedExit => _unexpectedExit.future;
+
   /// The one teardown every [close] call shares.
   Future<void>? _closeFuture;
 
@@ -244,7 +251,7 @@ class TtsWorker {
     PreferredBackend? backend,
     String language = 'english',
     Float32List? voice,
-    @visibleForTesting TtsWorkerEngineFactory? engineFactory,
+    TtsWorkerEngineFactory? engineFactory,
   }) async {
     final fromWorker = ReceivePort();
     final readyCompleter = Completer<_Ready>();
@@ -358,6 +365,7 @@ class TtsWorker {
       _fromWorker.close();
       _warn('$reason ($_modelName); its native model may still be resident');
       if (!_gone.isCompleted) _gone.complete();
+      if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
     }
   }
 

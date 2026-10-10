@@ -27,7 +27,14 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     required this.activeBackend,
     this.fileType = ModelFileType.onnx,
     required this.onClose,
-  });
+  }) {
+    // R5 W6: a worker that dies on its own turns this model closed and tells
+    // its listeners, so core drops its cached model and the next
+    // `getActiveModel` builds a fresh one — instead of handing out this one,
+    // whose every call would fail.
+    final died = unexpectedExitOf(client);
+    if (died != null) unawaited(died.then(_onWorkerDied));
+  }
 
   final GenAiClient client;
   final ModelType modelType;
@@ -50,6 +57,17 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
+  /// The one teardown every [close] call shares, so a second caller waits for
+  /// it to finish instead of returning while it is still running.
+  Future<void>? _closeFuture;
+
+  /// Whether [onClose] and the close listeners have run; they run once,
+  /// whether the model was closed or its worker died.
+  bool _closeNotified = false;
+
+  /// Why the worker died, when it did; later calls quote it.
+  String? _deathReason;
+
   @override
   InferenceModelSession? get session => _session;
 
@@ -68,8 +86,12 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     int? maxOutputTokens,
   }) async {
     if (_isClosed) {
+      final death = _deathReason;
       throw StateError(
-        'Model is closed. Create a new instance to use it again',
+        death == null
+            ? 'Model is closed. Create a new instance to use it again'
+            : 'Model is closed because $death. Create a new instance to use '
+                  'it again',
       );
     }
     if (loraPath != null) {
@@ -126,9 +148,13 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     return completer.future;
   }
 
+  /// Closes the session, then shuts the client down. Also after the worker
+  /// died: the client's ports still need closing, and the close listeners —
+  /// which the death already fired — do not fire again.
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() => _closeFuture ??= _close();
+
+  Future<void> _close() async {
     _isClosed = true;
     try {
       // OnnxSession.close() already stops+resets; this extra stop is
@@ -139,8 +165,31 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
       await _session?.close();
     } finally {
       await client.shutdown();
-      onClose();
-      fireCloseListeners();
+      _notifyClosed();
+    }
+  }
+
+  void _notifyClosed() {
+    if (_closeNotified) return;
+    _closeNotified = true;
+    onClose();
+    fireCloseListeners();
+  }
+
+  void _onWorkerDied(String reason) {
+    _deathReason = reason;
+    _isClosed = true;
+    try {
+      _notifyClosed();
+    } catch (e, st) {
+      // Nobody awaits this path, so a throwing listener would otherwise be an
+      // unhandled error with no context; `print`, because edgeAiLog is silent
+      // in release.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_onnx] WARNING: a close listener threw while an ONNX '
+        'model whose worker had died was being closed: $e\n$st',
+      );
     }
   }
 }

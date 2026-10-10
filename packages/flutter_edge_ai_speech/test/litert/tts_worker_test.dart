@@ -15,6 +15,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
     show PreferredBackend;
+import 'package:flutter_edge_ai_speech/src/litert/litert_speech_synthesizer.dart';
 import 'package:flutter_edge_ai_speech/src/litert/tts_worker.dart';
 import 'package:flutter_edge_ai_speech/src/model/tts_model_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,9 +46,14 @@ enum _Mode {
 
   /// The first call answers, then an uncaught error takes the isolate down.
   crashAfterRun,
+
+  /// The isolate kills itself [_idleDeathDelay] after load, with nothing in
+  /// flight.
+  dieWhileIdle,
 }
 
 const _slowCall = Duration(milliseconds: 800);
+const _idleDeathDelay = Duration(milliseconds: 100);
 const _longerThanOldCap = Duration(seconds: 6);
 const _fakeSampleRate = 22050;
 
@@ -68,6 +74,12 @@ class _FakeTtsEngine implements TtsWorkerEngine {
     _log('load');
     if (_mode == _Mode.failLoad) {
       throw StateError('fake TTS engine refused to load');
+    }
+    if (_mode == _Mode.dieWhileIdle) {
+      Timer(
+        _idleDeathDelay,
+        () => Isolate.current.kill(priority: Isolate.immediate),
+      );
     }
   }
 
@@ -90,6 +102,7 @@ class _FakeTtsEngine implements TtsWorkerEngine {
       case _Mode.fast:
       case _Mode.failLoad:
       case _Mode.throwOnDispose:
+      case _Mode.dieWhileIdle:
         break;
     }
     return Uint8List.fromList(text.codeUnits);
@@ -376,6 +389,52 @@ void main() {
         allOf(contains('WARNING'), contains('fake native crash')),
       );
       expect(linesOf(log).where((l) => l == 'run'), hasLength(1));
+    });
+  });
+
+  group('LiteRtSpeechSynthesizer on worker death', () {
+    test('a worker that dies while idle closes the synthesizer: onClose and '
+        'the close listeners run once, a later call fails with the reason, '
+        'and close() does not run them again', () async {
+      final log = logFor('synthesizer_death');
+      var onCloseCalls = 0;
+      var listenerCalls = 0;
+      final listened = Completer<void>();
+      late LiteRtSpeechSynthesizer synthesizer;
+      final printed = await capturePrints(() async {
+        synthesizer = await LiteRtSpeechSynthesizer.create(
+          profile: const TtsModelProfile.matcha(),
+          artifactPaths: {'fake': '${_Mode.dieWhileIdle.name}@${log.path}'},
+          onClose: () => onCloseCalls++,
+          engineFactory: _buildFake,
+        );
+        synthesizer.addCloseListener(() {
+          listenerCalls++;
+          if (!listened.isCompleted) listened.complete();
+        });
+        await listened.future.timeout(const Duration(seconds: 10));
+      });
+
+      expect(listenerCalls, 1);
+      expect(onCloseCalls, 1);
+      expect(
+        () => synthesizer.synthesize(_text),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('LiteRtSpeechSynthesizer is closed because'),
+              contains('exited unexpectedly'),
+            ),
+          ),
+        ),
+      );
+      await synthesizer.close().timeout(const Duration(seconds: 5));
+      expect(listenerCalls, 1, reason: 'close() after a death fires nothing');
+      expect(onCloseCalls, 1);
+      expect(printed.join('\n'), contains('exited unexpectedly'));
+      expect(linesOf(log), ['load'], reason: 'it died idle, before a dispose');
     });
   });
 }

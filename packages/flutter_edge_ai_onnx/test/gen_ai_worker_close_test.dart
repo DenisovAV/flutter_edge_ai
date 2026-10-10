@@ -12,7 +12,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_edge_ai/core/domain/platform_types.dart';
+import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
+import 'package:flutter_edge_ai_onnx/src/onnx_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes/fake_gen_ai_worker.dart';
@@ -321,6 +324,55 @@ void main() {
         printed.join('\n'),
         allOf(contains('WARNING'), contains('fake native crash')),
       );
+    });
+  });
+
+  group('OnnxInferenceModel on worker death', () {
+    test('a worker that dies while idle closes the model: onClose and the '
+        'close listeners run once, a later call fails with the reason, and '
+        'close() does not run them again', () async {
+      final log = logFor('model_death');
+      var onCloseCalls = 0;
+      var listenerCalls = 0;
+      final listened = Completer<void>();
+      late OnnxInferenceModel model;
+      final printed = await _capturePrints(() async {
+        final client = GenAiFfiClient(workerEntry: fakeGenAiWorkerEntry);
+        await client.load(jsonEncode({'log': log.path, 'dieAfterMs': 100}));
+        model = OnnxInferenceModel(
+          client: client,
+          maxTokens: 1024,
+          modelType: ModelType.gemmaIt,
+          activeBackend: PreferredBackend.cpu,
+          onClose: () => onCloseCalls++,
+        );
+        model.addCloseListener(() {
+          listenerCalls++;
+          if (!listened.isCompleted) listened.complete();
+        });
+        await listened.future.timeout(const Duration(seconds: 10));
+      });
+
+      expect(listenerCalls, 1);
+      expect(onCloseCalls, 1);
+      await expectLater(
+        model.createSession(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('Model is closed because'),
+              contains('exited unexpectedly'),
+            ),
+          ),
+        ),
+      );
+      await model.close().timeout(const Duration(seconds: 5));
+      expect(listenerCalls, 1, reason: 'close() after a death fires nothing');
+      expect(onCloseCalls, 1);
+      expect(printed.join('\n'), contains('exited unexpectedly'));
+      expect(_linesOf(log), ['load'], reason: 'it died idle, before a close');
     });
   });
 }

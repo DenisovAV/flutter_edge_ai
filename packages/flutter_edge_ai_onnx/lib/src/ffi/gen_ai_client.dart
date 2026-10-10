@@ -212,6 +212,10 @@ class GenAiFfiClient implements GenAiClient {
   /// Completes when the worker is gone: its [CloseAck], or its onExit.
   final _gone = Completer<void>();
 
+  /// Completes, with the reason, when the worker exits without acking a
+  /// [shutdown]; read through [unexpectedExitOf].
+  final _unexpectedExit = Completer<String>();
+
   /// The one teardown every [shutdown] call shares.
   Future<void>? _shutdownFuture;
 
@@ -363,6 +367,7 @@ class GenAiFfiClient implements GenAiClient {
       );
       if (!_gone.isCompleted) _gone.complete();
       _completeResetAck();
+      if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
     }
   }
 
@@ -553,6 +558,20 @@ class GenAiFfiClient implements GenAiClient {
     print('[flutter_edge_ai_onnx] WARNING: $message');
   }
 }
+
+/// Completes, with the reason, when [client]'s worker exits without being
+/// asked to — an uncaught error, or an isolate killed from outside — and never
+/// after a clean [GenAiClient.shutdown]. Null for a client that has no worker
+/// of its own (any [GenAiClient] that is not a [GenAiFfiClient]).
+///
+/// `OnnxInferenceModel` listens to it to turn itself closed and fire its
+/// close listeners (R5 W6). A top-level function rather than a member, and
+/// not exported, so the public [GenAiClient] and [GenAiFfiClient] surface
+/// stays as it is.
+Future<String>? unexpectedExitOf(GenAiClient client) => switch (client) {
+  GenAiFfiClient() => client._unexpectedExit.future,
+  _ => null,
+};
 
 // ---------------------------------------------------------------------------
 // Worker isolate: library loading and the dart:ffi engine.

@@ -16,6 +16,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
     show PreferredBackend;
+import 'package:flutter_edge_ai_speech/src/litert/litert_speech_recognizer.dart';
 import 'package:flutter_edge_ai_speech/src/litert/stt_worker.dart';
 import 'package:flutter_edge_ai_speech/src/model/stt_model_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,9 +47,14 @@ enum _Mode {
 
   /// The first call answers, then an uncaught error takes the isolate down.
   crashAfterRun,
+
+  /// The isolate kills itself [_idleDeathDelay] after load, with nothing in
+  /// flight.
+  dieWhileIdle,
 }
 
 const _slowCall = Duration(milliseconds: 800);
+const _idleDeathDelay = Duration(milliseconds: 100);
 const _longerThanOldCap = Duration(seconds: 6);
 
 class _FakeSttEngine implements SttWorkerEngine {
@@ -68,6 +74,12 @@ class _FakeSttEngine implements SttWorkerEngine {
     _log('load');
     if (_mode == _Mode.failLoad) {
       throw StateError('fake STT engine refused to load');
+    }
+    if (_mode == _Mode.dieWhileIdle) {
+      Timer(
+        _idleDeathDelay,
+        () => Isolate.current.kill(priority: Isolate.immediate),
+      );
     }
   }
 
@@ -92,6 +104,7 @@ class _FakeSttEngine implements SttWorkerEngine {
       case _Mode.fast:
       case _Mode.failLoad:
       case _Mode.throwOnDispose:
+      case _Mode.dieWhileIdle:
         break;
     }
     return 'transcript of ${samples.length}';
@@ -392,6 +405,53 @@ void main() {
         allOf(contains('WARNING'), contains('fake native crash')),
       );
       expect(linesOf(log).where((l) => l == 'run'), hasLength(1));
+    });
+  });
+
+  group('LiteRtSpeechRecognizer on worker death', () {
+    test('a worker that dies while idle closes the recognizer: onClose and '
+        'the close listeners run once, a later call fails with the reason, '
+        'and close() does not run them again', () async {
+      final log = logFor('recognizer_death');
+      var onCloseCalls = 0;
+      var listenerCalls = 0;
+      final listened = Completer<void>();
+      late LiteRtSpeechRecognizer recognizer;
+      final printed = await capturePrints(() async {
+        recognizer = await LiteRtSpeechRecognizer.create(
+          profile: const SttModelProfile.whisper(),
+          modelPath: '${_Mode.dieWhileIdle.name}@${log.path}',
+          tokenizerPath: 'unused',
+          onClose: () => onCloseCalls++,
+          engineFactory: _buildFake,
+        );
+        recognizer.addCloseListener(() {
+          listenerCalls++;
+          if (!listened.isCompleted) listened.complete();
+        });
+        await listened.future.timeout(const Duration(seconds: 10));
+      });
+
+      expect(listenerCalls, 1);
+      expect(onCloseCalls, 1);
+      expect(
+        () => recognizer.transcribe(Uint8List(32)),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('LiteRtSpeechRecognizer is closed because'),
+              contains('exited unexpectedly'),
+            ),
+          ),
+        ),
+      );
+      await recognizer.close().timeout(const Duration(seconds: 5));
+      expect(listenerCalls, 1, reason: 'close() after a death fires nothing');
+      expect(onCloseCalls, 1);
+      expect(printed.join('\n'), contains('exited unexpectedly'));
+      expect(linesOf(log), ['load'], reason: 'it died idle, before a dispose');
     });
   });
 }

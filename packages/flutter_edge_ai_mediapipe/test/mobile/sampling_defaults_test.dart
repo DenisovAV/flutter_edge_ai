@@ -72,4 +72,24 @@ void main() {
       [0.8, 1, 40, 0.95],
     );
   });
+
+  test('an invalid value throws before the live session is closed', () async {
+    const codec = PlatformService.pigeonChannelCodec;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMessageHandler(
+      _createSession,
+      (_) async => codec.encodeMessage(<Object?>[null]),
+    );
+    addTearDown(() => messenger.setMockMessageHandler(_createSession, null));
+    final model = MobileInferenceModel(
+      maxTokens: 1024,
+      onClose: () {},
+      modelType: ModelType.gemmaIt,
+    );
+    final live = await model.createSession();
+
+    await expectLater(model.createSession(topP: 0), throwsArgumentError);
+    expect(model.session, same(live));
+  });
 }

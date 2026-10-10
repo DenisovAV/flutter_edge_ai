@@ -227,6 +227,15 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     }
     const visionEnabled = false;
     const audioEnabled = false;
+    // Resolved before anything loads: values it rejects must not load the
+    // engine.
+    final sampling = _resolveSampling(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+      thinking: enableThinking,
+    );
 
     if (_createCompleter case Completer<InferenceModelSession> completer) {
       return completer.future;
@@ -236,12 +245,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
     try {
       final conversation = await _buildConversation(
-        sampling: SamplingParams(
-          temperature: temperature,
-          topK: topK,
-          topP: topP,
-          randomSeed: randomSeed,
-        ),
+        sampling: sampling,
         systemInstruction: systemInstruction,
         enableThinking: enableThinking,
         tools: tools,
@@ -319,14 +323,18 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
 
+    // Resolved before anything loads: values it rejects must not load the
+    // engine.
+    final sampling = _resolveSampling(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+      thinking: enableThinking,
+    );
     await _ensureEngine();
     final conversation = await _buildConversation(
-      sampling: SamplingParams(
-        temperature: temperature,
-        topK: topK,
-        topP: topP,
-        randomSeed: randomSeed,
-      ),
+      sampling: sampling,
       systemInstruction: systemInstruction,
       enableThinking: enableThinking,
       tools: tools,
@@ -348,11 +356,32 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     return session;
   }
 
+  /// The web API cannot read a bundle's sampler, so an unset field comes from
+  /// the family defaults; the models published for web (Gemma 4, Gemma 3n)
+  /// ship no sampler of their own. Throws an [ArgumentError] for a value no
+  /// engine can sample with.
+  ResolvedSampling _resolveSampling({
+    required double? temperature,
+    required int? topK,
+    required double? topP,
+    required int? randomSeed,
+    required bool thinking,
+  }) => SamplingParams.resolve(
+    SamplingParams(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+    ),
+    modelType: modelType,
+    thinking: thinking,
+  );
+
   /// Builds an `@litert-lm/core` Conversation from sampler + preface config.
   /// Shared by [createSession] (legacy singleton) and [openSession]
   /// (detached) so the JS interop and tool/thinking wiring stay in one place.
   Future<LiteRtLmConversation> _buildConversation({
-    required SamplingParams sampling,
+    required ResolvedSampling sampling,
     String? systemInstruction,
     required bool enableThinking,
     required List<Tool> tools,
@@ -376,21 +405,14 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     // The sampler goes with an explicit `type`. Without one the config stays
     // TYPE_UNSPECIFIED and the engine replaces the whole sampler with the
     // bundle's, or with greedy when the bundle has none, so the values below
-    // were silently ignored. The web API cannot read a bundle's sampler, so an
-    // unset field comes from the family defaults; the models published for
-    // web (Gemma 4, Gemma 3n) ship no sampler of their own.
-    final resolved = SamplingParams.resolve(
-      sampling,
-      modelType: modelType,
-      thinking: enableThinking,
-    );
+    // were silently ignored.
     final sessionConfigMap = <String, Object>{
       'samplerParams': <String, Object>{
         'type': _samplerTypeTopP,
-        'temperature': resolved.temperature,
-        'k': resolved.topK,
-        'p': resolved.topP,
-        'seed': resolved.randomSeed,
+        'temperature': sampling.temperature,
+        'k': sampling.topK,
+        'p': sampling.topP,
+        'seed': sampling.randomSeed,
       },
       if (maxOutputTokens != null) 'maxOutputTokens': maxOutputTokens,
     };

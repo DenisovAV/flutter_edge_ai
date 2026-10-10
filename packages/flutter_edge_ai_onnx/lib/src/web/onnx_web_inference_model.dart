@@ -94,15 +94,32 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
   bool _isClosed = false;
 
   static bool _seedNoted = false;
+  static bool _topPNoted = false;
 
-  /// Transformers.js takes no seed, so a set `randomSeed` does nothing on
-  /// web. Said once per app run.
-  static void _noteSeedIgnored() {
-    if (_seedNoted) return;
-    _seedNoted = true;
-    edgeAiLog(
-      '[OnnxWeb] randomSeed is ignored on web: Transformers.js takes no seed.',
-    );
+  /// Says once per app run what web does not apply. Printed, because a
+  /// release build is where it gets reported and edgeAiLog is silent there.
+  /// The seed is not wired to Transformers.js' global `random.seed` yet, and
+  /// Transformers.js 4.3.0 samples with top-k only.
+  static void _noteIgnoredOnWeb({
+    required int? randomSeed,
+    required double? topP,
+  }) {
+    if (randomSeed != null && !_seedNoted) {
+      _seedNoted = true;
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_onnx] WARNING: randomSeed is not applied on web '
+        'yet. Shown once.',
+      );
+    }
+    if (topP != null && !_topPNoted) {
+      _topPNoted = true;
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_onnx] WARNING: topP is ignored on web: '
+        'Transformers.js samples with top-k only. Shown once.',
+      );
+    }
   }
 
   @override
@@ -247,7 +264,7 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
         topP: topP,
         randomSeed: randomSeed,
       )..validate();
-      if (randomSeed != null) _noteSeedIgnored();
+      _noteIgnoredOnWeb(randomSeed: randomSeed, topP: topP);
       await _ensurePipeline();
       await _session?.close();
 
@@ -418,7 +435,8 @@ class OnnxWebSession extends InferenceModelSession {
         ..setProperty('streamer'.toJS, streamer)
         ..setProperty('stopping_criteria'.toJS, stoppingCriteria);
       // Only what the caller set; the rest comes from the repo's
-      // generation_config.json. Transformers.js takes no seed.
+      // generation_config.json. The seed is not applied on web yet (see
+      // _noteIgnoredOnWeb).
       for (final MapEntry(:key, :value) in onnxSearchOptions(
         sampling,
       ).entries) {

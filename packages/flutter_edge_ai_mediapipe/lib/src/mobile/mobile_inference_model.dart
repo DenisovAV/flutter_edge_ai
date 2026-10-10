@@ -197,6 +197,17 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     }
     final completer = _createCompleter = Completer<InferenceModelSession>();
     try {
+      // Resolved first: values it rejects must not cost the live session. A
+      // `.task` file carries no sampler, so an unset field comes from the
+      // family defaults rather than MediaPipe's own (topK 40, temperature 0.8).
+      final sampling = _resolveSampling(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        randomSeed: randomSeed,
+        thinking: enableThinking,
+      );
+
       // Close any prior singleton session before creating the next so its
       // Dart-side resources (event subscription, stream controller) are
       // released and stray calls on the old wrapper throw `Model is
@@ -211,15 +222,6 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       // LoRA support is fully integrated via Modern API (InferenceInstallationBuilder)
       final resolvedLoraPath = loraPath;
 
-      // A `.task` file carries no sampler, so an unset field comes from the
-      // family defaults rather than MediaPipe's own (topK 40, temperature 0.8).
-      final sampling = _resolveSampling(
-        temperature: temperature,
-        topK: topK,
-        topP: topP,
-        randomSeed: randomSeed,
-        thinking: enableThinking,
-      );
       await platformService.createSession(
         randomSeed: sampling.randomSeed,
         temperature: sampling.temperature,

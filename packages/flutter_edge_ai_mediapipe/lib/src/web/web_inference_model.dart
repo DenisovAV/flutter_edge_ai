@@ -146,6 +146,23 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       }
     }
 
+    // Resolved before anything loads: values it rejects must not fetch a
+    // model or open its reader. A `.task` file carries no sampler, so an unset
+    // field comes from the family defaults. MediaPipe web 0.10.29 has no topP
+    // option; it is passed and dropped.
+    final sampling = resolveMediaPipeSampling(
+      SamplingParams(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        randomSeed: randomSeed,
+      ),
+      modelType: modelType,
+    );
+    if (topP != null) {
+      edgeAiLog('[MediaPipe web] topP is ignored: MediaPipe web has no top-p.');
+    }
+
     if (_initCompleter case Completer<InferenceModelSession> completer) {
       return completer.future;
     }
@@ -175,18 +192,6 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
         ),
       };
 
-      // A `.task` file carries no sampler, so an unset field comes from the
-      // family defaults. MediaPipe web 0.10.29 has no topP option; it is
-      // passed and dropped.
-      final sampling = resolveMediaPipeSampling(
-        SamplingParams(
-          temperature: temperature,
-          topK: topK,
-          topP: topP,
-          randomSeed: randomSeed,
-        ),
-        modelType: modelType,
-      );
       final config = LlmInferenceOptions(
         baseOptions: baseOptions,
         maxTokens: maxTokens,

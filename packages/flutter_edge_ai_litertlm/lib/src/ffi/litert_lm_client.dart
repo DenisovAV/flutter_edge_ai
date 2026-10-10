@@ -339,6 +339,7 @@ class LiteRtLmFfiClient {
   /// The sampler of the engine's first generation, which LiteRT-LM keeps for
   /// every later conversation (google-ai-edge/LiteRT-LM#2080).
   final _samplerLatch = EngineSamplerLatch();
+  bool _warnedNpuSampling = false;
 
   /// The sampler each live conversation was created with, so the first
   /// generation can record it (see [_noteGeneration]).
@@ -1177,12 +1178,17 @@ class LiteRtLmFfiClient {
     // caller rather than letting them believe a seed or temperature took hold.
     // Only when they set one themselves: the defaults are not greedy, and
     // warning on every NPU session would train people to ignore it.
-    if (_backend == 'npu' && samplingExplicit) {
-      edgeAiLog(
-        '[LiteRtLmFfi] NPU backend: sampler params ($sampling) are sent but '
-        'the NPU executor '
-        'samples greedily and never reads them — output is deterministic '
-        'argmax. Use PreferredBackend.cpu or .gpu if you need sampling.',
+    // Printed once per engine: a release build is where it gets reported, and
+    // edgeAiLog is silent there.
+    if (_backend == 'npu' && samplingExplicit && !_warnedNpuSampling) {
+      _warnedNpuSampling = true;
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_litertlm] WARNING: NPU backend: sampler params '
+        '($sampling) are sent but the NPU executor decodes greedily and never '
+        'reads them, so output is deterministic argmax. Use '
+        'PreferredBackend.cpu or .gpu if you need sampling. Shown once per '
+        'engine.',
       );
     }
 
@@ -1971,6 +1977,7 @@ class LiteRtLmFfiClient {
     _backend = null;
     _bundleSamplerRead = const BundleSamplerRead.notRead();
     _samplerLatch.reset();
+    _warnedNpuSampling = false;
     _conversationSampling.clear();
     _tokenizerMissing = false;
     _isShuttingDown = false;

@@ -36,15 +36,6 @@ void _warnThinkingIgnoredOnce() {
   );
 }
 
-/// A loaded OS built-in model, adapting flutter_local_ai's [LocalAiModel] to
-/// flutter_edge_ai's [InferenceModel].
-///
-/// The OS owns the weights, so this is a session factory rather than anything
-/// holding a checkpoint. It supports both flutter_edge_ai session lanes:
-/// [createSession] keeps the singleton [session] field (replacing and closing
-/// any previous one), while [openSession] returns detached sessions for
-/// concurrent conversations. Mixes [CloseNotifier] so core can reset its
-/// singleton bookkeeping on close.
 // flutter_local_ai 0.2.1's own `openSession` defaults. It takes no null
 // temperature or top-k, so an unset one is sent as these, as built-in AI
 // always has: the OS models' own defaults are out of reach until it does, and
@@ -55,6 +46,58 @@ void _warnThinkingIgnoredOnce() {
 const _localAiTemperature = 0.8;
 const _localAiTopK = 1;
 
+bool _greedyTopKWarned = false;
+bool _seedIgnoredWarned = false;
+
+@visibleForTesting
+void resetSamplingWarnings() {
+  _greedyTopKWarned = false;
+  _seedIgnoredWarned = false;
+}
+
+/// Throws for a value no engine can sample with, before anything is closed or
+/// opened, and says once what built-in AI cannot honour. Printed, because a
+/// release build is where it gets reported and edgeAiLog is silent there.
+void _checkSampling({
+  required double? temperature,
+  required int? topK,
+  required double? topP,
+  required int? randomSeed,
+}) {
+  final explicit = SamplingParams(
+    temperature: temperature,
+    topK: topK,
+    topP: topP,
+    randomSeed: randomSeed,
+  )..validate();
+  if (explicit.needsSamplingTopK && !_greedyTopKWarned) {
+    _greedyTopKWarned = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_builtin_ai] WARNING: a temperature or topP was set '
+      'without topK, so the OS model gets topK $_localAiTopK and decodes '
+      'greedily. Pass a topK above 1 to sample. Shown once.',
+    );
+  }
+  if (randomSeed != null && !_seedIgnoredWarned) {
+    _seedIgnoredWarned = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_builtin_ai] WARNING: randomSeed is ignored: built-in '
+      'OS models take no seed. Shown once.',
+    );
+  }
+}
+
+/// A loaded OS built-in model, adapting flutter_local_ai's [LocalAiModel] to
+/// flutter_edge_ai's [InferenceModel].
+///
+/// The OS owns the weights, so this is a session factory rather than anything
+/// holding a checkpoint. It supports both flutter_edge_ai session lanes:
+/// [createSession] keeps the singleton [session] field (replacing and closing
+/// any previous one), while [openSession] returns detached sessions for
+/// concurrent conversations. Mixes [CloseNotifier] so core can reset its
+/// singleton bookkeeping on close.
 class BuiltInAiModel extends InferenceModel with CloseNotifier {
   BuiltInAiModel({
     required this._model,
@@ -156,11 +199,6 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       // runner as well would produce two competing tool loops for one turn.
       // Native tool calling stays reachable through `localAiModel` /
       // `BuiltInAiSession.localAiSession`.
-      SamplingParams(
-        temperature: temperature,
-        topK: topK,
-        topP: topP,
-      ).validate();
       final inner = await _model.openSession(
         temperature: temperature ?? _localAiTemperature,
         topK: topK ?? _localAiTopK,
@@ -210,6 +248,12 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       if (loraPath != null) {
         throw UnsupportedError('LoRA is not exposed by this engine.');
       }
+      _checkSampling(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        randomSeed: randomSeed,
+      );
       // The singleton lane: a new session replaces the previous one, whose
       // native context must be released first.
       final previous = _session;
@@ -254,6 +298,12 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
     if (loraPath != null) {
       throw UnsupportedError('LoRA is not exposed by this engine.');
     }
+    _checkSampling(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+    );
     final created = await _newSession(
       temperature: temperature,
       topK: topK,

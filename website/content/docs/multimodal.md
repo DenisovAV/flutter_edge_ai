@@ -51,8 +51,9 @@ The flag goes in **two** places: on `getActiveModel` it loads the vision encoder
 on `createChat` the session declares it will send images. `.litertlm` inherits the
 model's flag, but MediaPipe `.task` does not — on Android and iOS a chat created
 without it **drops the image and answers about the text alone**, with no error and
-no log in a release build; on web it throws `ArgumentError`. Set it in both places
-either way.
+no log in a release build. On web the chat follows the model instead: an image sent
+to a model loaded without `supportImage: true` throws `ArgumentError`. Set it in
+both places either way.
 
 ```dart
 // Text + Image

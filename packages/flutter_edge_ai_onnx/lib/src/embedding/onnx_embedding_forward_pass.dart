@@ -10,7 +10,6 @@
 
 import 'package:flutter_edge_ai/core/embedding/forward_pass.dart'
     show EmbeddingForwardPass, EmbeddingOutputContract, ForwardResult;
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart' show edgeAiLog;
 
 import 'ort_client.dart';
 import 'ort_ffi_client.dart';
@@ -54,12 +53,16 @@ class OnnxEmbeddingForwardPass implements EmbeddingForwardPass {
       try {
         await client.close();
       } catch (closeError, closeStack) {
-        // The load error is the one the caller needs; this one is reported
-        // beside it rather than in its place.
-        edgeAiLog(
-          '[OnnxEmbeddingForwardPass] closing the ORT client after a failed '
-          'load also failed; its session may be leaked: '
-          '$closeError\n$closeStack',
+        // The load error is the one the caller needs, so it is the one
+        // rethrown; this one is reported beside it. `print`, not edgeAiLog,
+        // which is silent in release — and `_client` is already null, so the
+        // worker's later close() of this pass cannot report it either. A
+        // session leaked here is debugged in release, like core's warnings.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_onnx] WARNING: closing the ORT client for '
+          '$_modelPath after a failed load also failed; its session may be '
+          'leaked: $closeError\n$closeStack',
         );
       }
       rethrow;

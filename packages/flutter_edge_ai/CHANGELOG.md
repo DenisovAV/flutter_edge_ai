@@ -1,7 +1,6 @@
 ## 2.1.3
 - Closing an embedder mid-batch no longer leaks its native model.
 - An embedder that fails to load releases its native handles.
-- createEmbeddingModel throws when given only one of modelPath and tokenizerPath.
 
 ## 2.1.2
 - Allow `code_assets` 2.x, which other native plugins now require (#603).

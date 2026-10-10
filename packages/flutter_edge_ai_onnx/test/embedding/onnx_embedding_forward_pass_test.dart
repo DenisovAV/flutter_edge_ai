@@ -2,6 +2,7 @@
 // real ONNX session (design D-T4's "fake-testable" requirement; Phase 2
 // hardened plan Task 3).
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -17,6 +18,7 @@ class _FakeOrtClient implements OrtClient {
     required this.ioSpec,
     required this.runResult,
     this.loadError,
+    this.closeError,
   });
 
   final OrtIoSpec ioSpec;
@@ -29,6 +31,9 @@ class _FakeOrtClient implements OrtClient {
 
   /// When set, `load()` throws it instead of opening the session.
   final Object? loadError;
+
+  /// When set, `close()` throws it after counting the call.
+  final Object? closeError;
 
   int loadCallCount = 0;
   int closeCallCount = 0;
@@ -59,6 +64,8 @@ class _FakeOrtClient implements OrtClient {
   @override
   Future<void> close() async {
     closeCallCount++;
+    final error = closeError;
+    if (error != null) throw error;
   }
 }
 
@@ -539,6 +546,55 @@ void main() {
 
       await expectLater(pass.load(), throwsStateError);
       expect(fake.closeCallCount, 1);
+    });
+
+    test('when closing after a failed load also fails, the LOAD error reaches '
+        'the caller and the close failure is printed', () async {
+      final fake = _FakeOrtClient(
+        ioSpec: const OrtIoSpec(
+          inputNames: ['input_ids'],
+          outputName: 'sentence_embedding',
+          hasLastHiddenStateOutput: false,
+          staticDim: null, // triggers the probe
+        ),
+        runResult: (ids, mask, typeIds) =>
+            throw StateError('probe forward pass failed'),
+        closeError: StateError('ReleaseSession failed'),
+      );
+      final pass = OnnxEmbeddingForwardPass(
+        '/models/broken.onnx',
+        clientFactory: () => fake,
+      );
+      final printed = <String>[];
+
+      await runZoned(
+        () => expectLater(
+          pass.load(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('probe forward pass failed'),
+            ),
+          ),
+          reason: 'the close failure must not replace the load error',
+        ),
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+
+      expect(fake.closeCallCount, 1);
+      // `print`, so it reaches a release build's log — edgeAiLog would not.
+      expect(
+        printed.join('\n'),
+        allOf(
+          contains('WARNING'),
+          contains('/models/broken.onnx'),
+          contains('ReleaseSession failed'),
+          contains('onnx_embedding_forward_pass_test.dart'),
+        ),
+      );
     });
   });
 }

@@ -114,6 +114,8 @@ class EmbeddingWorker {
     this._fromWorker,
     this.inputSequenceLength,
     this.outputDimension,
+    this._engineTag,
+    this._modelPath,
   );
 
   /// How long [close] waits before saying it is still waiting. It keeps
@@ -123,6 +125,24 @@ class EmbeddingWorker {
 
   final SendPort _commandPort;
   final ReceivePort _fromWorker;
+
+  /// Which engine and model file this worker runs — named in every warning,
+  /// because a warning that names no model cannot be acted on.
+  final String _engineTag;
+  final String _modelPath;
+
+  /// The last uncaught error the worker reported through `onError`, as
+  /// "error\nstack". An uncaught error ends the isolate, so this is the reason
+  /// the onExit that follows will carry.
+  String? _uncaughtError;
+
+  /// Why the worker died, once it exited without a [_CloseAck]. Later [embed]
+  /// calls quote it instead of a bare "closed".
+  String? _deathReason;
+
+  /// Completes, with the reason, only if the worker exits without a
+  /// [_CloseAck]. Never completes otherwise.
+  final _unexpectedExit = Completer<String>();
 
   /// Sequence length the forward pass reported at load, or -1 if the engine
   /// has none to report (see [EmbeddingForwardPass.inputSequenceLength]).
@@ -144,6 +164,15 @@ class EmbeddingWorker {
   /// The one teardown every [close] call shares.
   Future<void>? _closeFuture;
 
+  /// Completes with the reason if the worker dies without being closed — an
+  /// uncaught error, or the isolate ended under it. The owner uses it to turn
+  /// itself closed, so nothing keeps handing out a model whose every call
+  /// fails (R5 W6). Never completes after a clean [close].
+  Future<String> get unexpectedExit => _unexpectedExit.future;
+
+  /// Why the worker died, if it exited without being closed; null otherwise.
+  String? get deathReason => _deathReason;
+
   /// Spawn the worker and wait until the forward pass is loaded.
   static Future<EmbeddingWorker> spawn({
     required ForwardPassDescriptor descriptor,
@@ -155,7 +184,9 @@ class EmbeddingWorker {
     // First message from the worker is either _Ready or a String error. A
     // `null` is the isolate's onExit signal — if it arrives before _Ready, the
     // worker died during load (e.g. a native crash compiling a corrupt model),
-    // so fail the completer instead of hanging forever.
+    // so fail the completer instead of hanging forever. A `List` is an
+    // uncaught error from onError, which arrives before that onExit.
+    String? uncaughtDuringLoad;
     late final StreamSubscription<dynamic> sub;
     sub = fromWorker.listen((msg) {
       if (msg is _Ready) {
@@ -164,10 +195,17 @@ class EmbeddingWorker {
         if (!readyCompleter.isCompleted) {
           readyCompleter.completeError(StateError(msg));
         }
+      } else if (msg is List) {
+        uncaughtDuringLoad = _describeUncaught(msg);
       } else if (msg == null) {
         if (!readyCompleter.isCompleted) {
+          final reason = uncaughtDuringLoad;
           readyCompleter.completeError(
-            StateError('Embedding worker isolate exited during load'),
+            StateError(
+              reason == null
+                  ? 'Embedding worker isolate exited during load'
+                  : 'Embedding worker isolate exited during load: $reason',
+            ),
           );
         }
       }
@@ -185,6 +223,9 @@ class EmbeddingWorker {
         ),
         // onExit posts `null` to fromWorker so we never wait on a dead isolate.
         onExit: fromWorker.sendPort,
+        // An uncaught error arrives as `[error, stack]` before that `null`, so
+        // a worker that dies says why instead of only that it did.
+        onError: fromWorker.sendPort,
         debugName: 'embedding-forward-worker',
       );
       ready = await readyCompleter.future;
@@ -203,10 +244,19 @@ class EmbeddingWorker {
       fromWorker,
       ready.seqLen,
       ready.dim,
+      descriptor.engineTag,
+      descriptor.modelPath,
     );
     // Re-point the subscription at the steady-state reply handler.
     sub.onData(worker._onReply);
     return worker;
+  }
+
+  /// An `onError` message — `[error, stack]`, both as strings — as one text.
+  static String _describeUncaught(List<dynamic> message) {
+    final error = message.isNotEmpty ? message[0] : null;
+    final stack = message.length > 1 ? message[1] : null;
+    return stack == null ? '$error' : '$error\n$stack';
   }
 
   void _onReply(dynamic msg) {
@@ -221,26 +271,47 @@ class EmbeddingWorker {
     } else if (msg is _CloseAck) {
       final error = msg.error;
       if (error != null) {
+        // Reported, not rethrown (R5 W4): the caller asked to stop using this
+        // model, and there is nothing it could do with the failure.
         _warn(
-          'the embedding forward pass failed to close; its native model may '
-          'still be resident: $error',
+          'the $_engineTag embedding forward pass for $_modelPath failed to '
+          'close; its native model may still be resident: $error',
         );
       }
       if (!_gone.isCompleted) _gone.complete();
+    } else if (msg is List) {
+      // onError: an uncaught error, which ends the isolate. Its onExit follows
+      // on this same port, and reports the death with this as the reason.
+      _uncaughtError = _describeUncaught(msg);
     } else if (msg == null) {
       // onExit. After a _CloseAck the port is already closed, so this only
-      // arrives when the worker died without one — a native crash in a request
-      // or in its own teardown. Fail every in-flight request rather than leave
-      // callers hanging.
-      _closing = true;
-      _failAllPending(
-        _closeFuture == null
-            ? 'Embedding worker isolate exited unexpectedly'
-            : 'Embedding worker isolate exited while closing',
+      // arrives when the worker died without one.
+      _died(
+        _uncaughtError ??
+            'no error was reported; the isolate was terminated under the '
+                'worker',
       );
-      _fromWorker.close();
-      if (!_gone.isCompleted) _gone.complete();
     }
+  }
+
+  /// The worker is gone without having closed its forward pass cleanly (R5
+  /// W6): fail everything waiting, say so where release builds can see it,
+  /// and let the owner know, so it stops handing out this model.
+  void _died(String reason) {
+    final whileClosing = _closeFuture != null;
+    _deathReason = reason;
+    _closing = true;
+    final what =
+        'The $_engineTag embedding worker for $_modelPath exited unexpectedly'
+        '${whileClosing ? ' while closing' : ''}';
+    _failAllPending('$what: $reason');
+    _warn(
+      '$what; its forward pass may not have been closed, so its native model '
+      'may still be resident. Reason: $reason',
+    );
+    _fromWorker.close();
+    if (!_gone.isCompleted) _gone.complete();
+    if (!_unexpectedExit.isCompleted) _unexpectedExit.complete(reason);
   }
 
   void _failAllPending(String reason) {
@@ -253,7 +324,15 @@ class EmbeddingWorker {
   /// Embed one text. The forward runs in the worker; the UI isolate stays free.
   Future<List<double>> embed(String text, {required String prefix}) {
     if (_closing) {
-      return Future.error(StateError('EmbeddingWorker is closed'));
+      final deathReason = _deathReason;
+      return Future.error(
+        StateError(
+          deathReason == null
+              ? 'EmbeddingWorker is closed'
+              : 'EmbeddingWorker is closed: its worker exited unexpectedly: '
+                    '$deathReason',
+        ),
+      );
     }
     final id = _nextId++;
     final completer = Completer<List<double>>();
@@ -285,11 +364,11 @@ class EmbeddingWorker {
       final notice = Timer(
         _slowCloseNotice,
         () => _warn(
-          'EmbeddingWorker.close() has waited '
-          '${_slowCloseNotice.inSeconds} s for the worker to finish the '
-          'embedding request in flight and close its native model. It keeps '
-          'waiting rather than kill the worker, because a killed worker never '
-          'frees its native model.',
+          'closing the $_engineTag embedder for $_modelPath has taken '
+          '${_slowCloseNotice.inSeconds} s: the worker is still inside a '
+          'native call — either the embedding request in flight or the '
+          "forward pass's own close(). It keeps waiting rather than kill the "
+          'worker, because a killed worker never frees its native model.',
         ),
       );
       try {
@@ -300,9 +379,13 @@ class EmbeddingWorker {
     }
     _fromWorker.close();
     // The worker answers every request it received before it acks, and the
-    // port delivers in order, so this is empty — unless the worker died, and
-    // then onExit has already failed them. A net, not a path.
-    _failAllPending(_closedBeforeRunMessage);
+    // port delivers in order; if it died instead, `_died` has already failed
+    // them. So nothing should be left — anything that is, is a bug here, and
+    // its error says so rather than claim the request was never run.
+    _failAllPending(
+      'internal error: the embedding worker for $_modelPath stopped without '
+      'answering this request',
+    );
   }
 
   /// `print`, not [edgeAiLog], for the reason `EmbedderCache` gives: edgeAiLog
@@ -360,15 +443,16 @@ List<double> _copyPooledFinal(ForwardResult result) {
   return List<double>.of(result.values);
 }
 
-/// Closes [pass], reporting a failure as text instead of throwing, so the
-/// caller still sends its last message. Null means it closed cleanly.
+/// Closes [pass], reporting a failure as text — error and stack, since the
+/// stack is all the main isolate will ever see of it — instead of throwing,
+/// so the caller still sends its last message. Null means it closed cleanly.
 Future<String?> _closePass(EmbeddingForwardPass pass) async {
   try {
     await pass.close();
     return null;
   } catch (e, st) {
     edgeAiLog('[EmbeddingWorker] forward pass close failed: $e\n$st');
-    return '$e';
+    return '$e\n$st';
   }
 }
 
@@ -397,9 +481,11 @@ Future<void> _workerEntry(_WorkerInit init) async {
   } catch (e, st) {
     edgeAiLog('[EmbeddingWorker] load failed: $e\n$st');
     // A pass that was constructed may hold native handles whatever stage it
-    // failed at; `close()` is idempotent by contract, so it is always called.
-    // Closed BEFORE the error is sent — the main isolate gives up on this
-    // worker the moment the error arrives.
+    // failed at. `EmbeddingForwardPass.close()` is specified for exactly this:
+    // it is also called after `load()` or a getter throws, frees whatever load
+    // allocated, and must not throw for a pass that never loaded — so it is
+    // always called. Closed BEFORE the error is sent: the main isolate gives
+    // up on this worker the moment the error arrives.
     final closeError = built == null ? null : await _closePass(built);
     Isolate.exit(
       init.replyTo,
@@ -467,9 +553,10 @@ Future<void> _workerEntry(_WorkerInit init) async {
       await _serve(queued.removeFirst(), tokenizer, pass, init);
     }
   } finally {
-    // Also on an unexpected throw out of the loop: the native model is freed
-    // either way, and the throw then takes the isolate down, which the main
-    // isolate's onExit handling reports.
+    // Also on an unexpected throw out of the loop, so the native model is
+    // freed either way. That throw then escapes as an uncaught error and ends
+    // the isolate without a _CloseAck: the main isolate receives it through
+    // `onError`, then the onExit, and reports both as an unexpected exit.
     closeError = await _closePass(pass);
   }
   // Ack and exit in one step: nothing of this worker runs after the ack, so

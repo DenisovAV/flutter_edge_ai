@@ -23,7 +23,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     String? toolsJson,
     String? messagesJson,
     required ResolvedSampling sampling,
-    bool samplingExplicit = false,
+    required bool samplingExplicit,
     int? maxOutputTokens,
   }) {
     this.sampling = sampling;
@@ -39,7 +39,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     String? systemMessage,
     String? toolsJson,
     required ResolvedSampling sampling,
-    bool samplingExplicit = false,
+    required bool samplingExplicit,
     String? extraContext,
     int? maxOutputTokens,
   }) {

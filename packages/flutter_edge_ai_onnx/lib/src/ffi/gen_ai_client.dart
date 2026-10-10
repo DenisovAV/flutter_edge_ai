@@ -610,23 +610,6 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
   edgeAiLogLevel = init.logLevel;
 
   late final OrtGenAiBindings oga;
-  late final ffi.DynamicLibrary genai;
-
-  // Not in the generated bindings. Looked up on first use, so a library
-  // without it fails only the session that asked for `do_sample`.
-  late final setSearchBool = genai
-      .lookupFunction<
-        ffi.Pointer<OgaResult> Function(
-          ffi.Pointer<OgaGeneratorParams>,
-          ffi.Pointer<ffi.Char>,
-          ffi.Bool,
-        ),
-        ffi.Pointer<OgaResult> Function(
-          ffi.Pointer<OgaGeneratorParams>,
-          ffi.Pointer<ffi.Char>,
-          bool,
-        )
-      >('OgaGeneratorParamsSetSearchBool');
 
   void check(ffi.Pointer<OgaResult> result, String step) {
     if (result == ffi.nullptr) return;
@@ -653,7 +636,6 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
     // ignore: unused_local_variable — kept reachable so the image isn't GC'd.
     final keepOrtLibLoaded = ortLib;
     oga = OrtGenAiBindings(genaiLib);
-    genai = genaiLib;
 
     final configPathC = init.modelDir.toNativeUtf8();
     final modelOut = pkg_ffi.calloc<ffi.Pointer<OgaModel>>();
@@ -742,7 +724,11 @@ Future<void> _defaultWorkerEntry(WorkerInit init) async {
             try {
               check(
                 value is bool
-                    ? setSearchBool(params, nameC.cast(), value)
+                    ? oga.OgaGeneratorParamsSetSearchBool(
+                        params,
+                        nameC.cast(),
+                        value,
+                      )
                     : oga.OgaGeneratorParamsSetSearchNumber(
                         params,
                         nameC.cast(),

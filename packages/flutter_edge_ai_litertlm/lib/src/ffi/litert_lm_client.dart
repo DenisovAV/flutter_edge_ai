@@ -1074,7 +1074,7 @@ class LiteRtLmFfiClient {
     String? toolsJson,
     String? messagesJson,
     required ResolvedSampling sampling,
-    bool samplingExplicit = false,
+    required bool samplingExplicit,
     int? maxOutputTokens,
   }) {
     // The handle must be registered before the guard lifts: otherwise shutdown()
@@ -1118,7 +1118,7 @@ class LiteRtLmFfiClient {
     String? toolsJson,
     String? messagesJson,
     required ResolvedSampling sampling,
-    bool samplingExplicit = false,
+    required bool samplingExplicit,
     int? maxOutputTokens,
   }) async {
     _assertInitialized();
@@ -1509,7 +1509,7 @@ class LiteRtLmFfiClient {
     String? systemMessage,
     String? toolsJson,
     required ResolvedSampling sampling,
-    bool samplingExplicit = false,
+    required bool samplingExplicit,
     String? extraContext,
     int? maxOutputTokens,
   }) {

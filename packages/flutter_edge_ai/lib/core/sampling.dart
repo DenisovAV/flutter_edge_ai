@@ -184,7 +184,9 @@ final class ResolvedSampling {
     required this.topK,
     required this.topP,
     required this.randomSeed,
-  });
+  }) : assert(temperature >= 0 && temperature < double.infinity),
+       assert(topK >= 1),
+       assert(topP > 0 && topP <= 1);
 
   final double temperature;
   final int topK;

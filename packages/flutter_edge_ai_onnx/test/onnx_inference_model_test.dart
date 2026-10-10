@@ -123,5 +123,31 @@ void main() {
 
       expect(() => model.createSession(), throwsStateError);
     });
+
+    test('a throwing client shutdown still fires the close listeners, and '
+        'only the first close() reports it', () async {
+      final client = FakeGenAiClient()
+        ..shutdownError = StateError('shutdown failed');
+      var onCloseCalls = 0;
+      var listenerCalls = 0;
+      final model = _model(client, onClose: () => onCloseCalls++);
+      model.addCloseListener(() => listenerCalls++);
+
+      await expectLater(
+        model.close(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'shutdown failed',
+          ),
+        ),
+      );
+      expect(onCloseCalls, 1);
+      expect(listenerCalls, 1, reason: 'core evicts on the listener');
+      await model.close();
+      expect(listenerCalls, 1);
+      expect(client.shutdownCalls, 1);
+    });
   });
 }

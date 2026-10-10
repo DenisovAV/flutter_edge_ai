@@ -188,8 +188,13 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
       await client.stopGeneration();
       await _session?.close();
     } finally {
-      await client.shutdown();
-      _notifyClosed();
+      // Nested, so a throwing shutdown — a custom GenAiClient's — still
+      // reaches the listeners core evicts on.
+      try {
+        await client.shutdown();
+      } finally {
+        _notifyClosed();
+      }
     }
   }
 

@@ -1,3 +1,6 @@
+## 2.0.1
+- Allow `code_assets` 2.x, which other native plugins now require (#603).
+
 ## 2.0.0
 - **Breaking:** now a `flutter_edge_ai_rag` storage provider; a location binds one embedding profile.
 

@@ -1,4 +1,4 @@
-// Opt-in Gemma 4 E2B memory measurement on the vivo. Stage the model at
+// Opt-in Gemma 4 E2B memory measurement on an Android device. Stage the model at
 // /data/local/tmp/flutter_gemma_test/gemma-4-E2B-it.litertlm first, then run:
 // flutter test integration_test/diagnostics_model_memory_test.dart -d <device-id> --no-uninstall
 //
@@ -50,12 +50,8 @@ Future<void> _record(String backend, String phase) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  // Reads Android smaps: skipped elsewhere, like the other Android-only tests.
   testWidgets('Gemma 4 E2B memory across CPU and GPU load', (tester) async {
-    expect(
-      Platform.isAndroid,
-      isTrue,
-      reason: 'This probe reads Android smaps',
-    );
     expect(
       File(_modelPath).existsSync(),
       isTrue,
@@ -103,5 +99,5 @@ void main() {
       }
       await _record(label, 'after_close');
     }
-  });
+  }, skip: !Platform.isAndroid);
 }

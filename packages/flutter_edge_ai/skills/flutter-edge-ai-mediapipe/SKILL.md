@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-mediapipe
-description: Use when running .task or .bin models (MediaPipe GenAI, ModelFileType.task or ModelFileType.binary) with flutter_edge_ai_mediapipe on Android, iOS or web. Also use when CocoaPods rejects the iOS platform version, images are ignored in a MediaPipe chat, or maxOutputTokens has no effect. MediaPipe has no macOS, Windows or Linux support — use a .litertlm model there (flutter-edge-ai-inference).
+description: Use when running .task or .bin models (MediaPipe GenAI, ModelFileType.task or ModelFileType.binary) with flutter_edge_ai_mediapipe on Android, iOS or web. Also use when CocoaPods rejects the iOS platform version, images are ignored in a MediaPipe chat, maxOutputTokens has no effect, or an iOS app is terminated while loading a .task model on the GPU. MediaPipe has no macOS, Windows or Linux support — use a .litertlm model there (flutter-edge-ai-inference).
 ---
 
 # The MediaPipe engine
@@ -13,6 +13,7 @@ description: Use when running .task or .bin models (MediaPipe GenAI, ModelFileTy
 4. There is no desktop support.
 5. `maxTokens` is the real context limit — small values are not raised as they are on `.litertlm`. `maxOutputTokens` is ignored; stop generation with `session.stopGeneration()`.
 6. On Android and iOS, `createChat` inherits the model's audio support but **not** its image support — pass `supportImage: true` to the chat as well, or the image is dropped.
+7. Upstream MediaPipe LLM Inference is maintenance-only; prefer a `.litertlm` model (flutter-edge-ai-inference) for new work. On iOS do not load a `.task` model with `PreferredBackend.gpu`: Gemma 3 1B exceeds the app's memory limit while loading and iOS kills the app with no crash report. Use `.litertlm`, or CPU.
 
 ## Setup
 

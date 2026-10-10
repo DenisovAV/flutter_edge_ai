@@ -47,11 +47,12 @@ download after you made it.
 Which turns the interesting question around. It stops being *"which model do I
 need?"* and becomes *"what does this platform let me switch on?"* — because
 that answer is not yours to set. The web runtime has no vision or audio
-executor at all, and it does not refuse: it **drops the bytes** and lets the
-model answer confidently about something it never received. Step 4 is about
-asking, and about saying which side said no — a model that cannot, or a
-platform that will not. Two different failures with two different fixes, and
-this codelab hands you one of each.
+executor at all, and it says so late: the chat opens with both flags set, and
+the refusal comes as an `UnsupportedError` when the picture is sent — after
+the user has already picked it. Step 4 is about asking first, and about saying
+which side said no — a model that cannot, or a platform that will not. Two
+different failures with two different fixes, and this codelab hands you one of
+each.
 
 ### What you'll learn
 
@@ -147,13 +148,18 @@ The flags are yours to set. Whether the platform honours them is not.
 
 `flutter_edge_ai_litertlm`'s browser arm runs the upstream `@litert-lm/core`
 package, and that JS API exposes **no vision executor and no audio executor**.
-Setting `supportImage: true` there does not throw. It opens a session that will
-never be fed: the image bytes are dropped with a debug warning, and the model
-answers — fluently, confidently — about a picture it never received.
+Setting `supportImage: true` there does not throw. The model loads, the chat
+opens, and a debug build prints one warning. The refusal comes at the message:
+`addQueryChunk` with an image in it throws `UnsupportedError`, and the turn
+never reaches the model. (Before `flutter_edge_ai_litertlm` 1.11.3 it did not
+throw — the bytes were dropped, and the model answered about a picture it
+never received.)
 
-An exception you can catch. A dropped input you cannot, and neither can your
-user. So by the end of this codelab the app asks first, and when the answer is
-no it says **which** no it got:
+An exception you can catch, and Step 2's `catch` does: the error lands where
+the reply would have been. But it lands after the user has picked the photo
+and typed the question. So by the end of this codelab the app asks first,
+before it offers the button, and when the answer is no it says **which** no it
+got:
 
 ```dart
   bool get available => byModel && byPlatform;
@@ -275,15 +281,19 @@ talks, it just cannot see — vision is a native feature in this codelab, not
 because of anything Step 2 does differently on the web, but because the
 browser runtime has no vision executor for *any* checkpoint. The picture
 button stays live all the same, here and in Step 3 — and so does Step 3's
-microphone: press either in a browser and the attachment is dropped, and the
-model answers as though you had sent text alone. The only warning is a single
-line at `createChat`, printed once per session and only in a debug build,
-saying vision and audio are being forced off; after that every turn drops the
-pixels or the samples with nothing logged at all. In a release build even that
-one line is gone — `edgeAiLog` compiles out of release entirely. That silent
-drop is exactly what Step 4 closes, by asking the platform what it supports
-instead of assuming. For now the point is narrower: SmolVLM2 never installs in
-a browser, and it fails loudly rather than quietly when you try.
+microphone. Press either in a browser, pick the photo or record the clip, send
+it, and the turn fails: `addQueryChunk` throws `UnsupportedError`, and the
+`catch` in `_send` puts it in the reply bubble — *"⚠️ Unsupported operation:
+Web LiteRT-LM does not support image input for LLMs yet…"*, or *audio input*
+for a clip. Nothing reaches the model, and the next text-only turn works as
+before. A debug build also prints one line at `createChat`, saying the
+modalities were requested and an image or audio message will throw; a release
+build does not, because `edgeAiLog` compiles out of release entirely. The error
+in the bubble is there either way. It is an honest failure, and a late one: the
+user did the work before anything said no. Step 4 moves the answer ahead of the
+button, by asking the platform what it supports instead of assuming. For now
+the point is narrower: SmolVLM2 never installs in a browser, and it fails
+loudly rather than quietly when you try.
 
 `ModelType.general` and not `gemmaIt` is still the right call for the native
 build, but not for the reason it would be on an older format. On `.litertlm`
@@ -753,11 +763,13 @@ that is what the 2.59 GB was for.
 Duration: 9
 
 `step_03_audio` sets both flags to `true` unconditionally. On Android, iOS,
-macOS, Windows and Linux that is correct. Run it in Chrome and it is a lie the
-app tells itself: attach a photo, ask about it, and Gemma answers in confident
-detail about an image the runtime dropped before it ever reached the weights.
+macOS, Windows and Linux that is correct. Run it in Chrome and it is a promise
+the app cannot keep: both buttons are live, the user attaches a photo or
+records a question, and only on send does the runtime refuse it — an
+`UnsupportedError` where the answer should be. Better not to offer a button
+whose result the runtime will refuse than to let the user attach and then fail.
 
-`complete` fixes that by asking, and it asks two things.
+`complete` fixes that by asking first, and it asks two things.
 
 ### Two questions, and a name for the answer
 
@@ -783,11 +795,11 @@ The **platform half** is not:
   /// iOS, macOS, Windows and Linux.
   ///
   /// Not on the web: `flutter_edge_ai_litertlm`'s browser arm runs the upstream
-  /// `@litert-lm/core` package, whose JS API exposes no vision executor, so
-  /// image bytes are **dropped with a debug warning** rather than refused.
-  /// That is the worst failure mode a modality can have — the model answers,
-  /// fluently and confidently, about a picture it never received — which is
-  /// exactly why the app asks this before it sends anything.
+  /// `@litert-lm/core` package, whose JS API exposes no vision executor, so a
+  /// message carrying an image **throws `UnsupportedError`** when it is sent.
+  /// The refusal is honest, but it comes late — after the user has picked the
+  /// photo and typed the question — which is exactly why the app asks this
+  /// before it offers the button.
   static bool get image => !kIsWeb;
 ```
 
@@ -811,8 +823,8 @@ room that knows which.
         // Still two session flags on one model — but no longer hard-coded
         // `true`. Each is the AND of both answers: what the weights accept
         // and what this platform will carry to them. Asking for a modality
-        // the platform cannot deliver opens a session nothing will ever
-        // feed, and on the web that failure is silent.
+        // the platform cannot deliver buys nothing: on the web the session
+        // still opens, and the first picture or clip sent to it throws.
         supportImage: _imageCapability.available,
         supportAudio: _audioCapability.available,
         maxOutputTokens: 256,

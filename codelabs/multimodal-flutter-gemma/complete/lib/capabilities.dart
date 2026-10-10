@@ -78,11 +78,11 @@ abstract final class PlatformSupport {
   /// iOS, macOS, Windows and Linux.
   ///
   /// Not on the web: `flutter_edge_ai_litertlm`'s browser arm runs the upstream
-  /// `@litert-lm/core` package, whose JS API exposes no vision executor, so
-  /// image bytes are **dropped with a debug warning** rather than refused.
-  /// That is the worst failure mode a modality can have — the model answers,
-  /// fluently and confidently, about a picture it never received — which is
-  /// exactly why the app asks this before it sends anything.
+  /// `@litert-lm/core` package, whose JS API exposes no vision executor, so a
+  /// message carrying an image **throws `UnsupportedError`** when it is sent.
+  /// The refusal is honest, but it comes late — after the user has picked the
+  /// photo and typed the question — which is exactly why the app asks this
+  /// before it offers the button.
   static bool get image => !kIsWeb;
 
   static const imageBlockedReason =
@@ -92,7 +92,7 @@ abstract final class PlatformSupport {
   /// Audio input works on Android, on a real iPhone or iPad, and on all three
   /// desktops through the `.litertlm` engine. Not on the web, for the same
   /// reason images are not: the browser runtime exposes no audio executor
-  /// either, and the bytes are dropped just as quietly.
+  /// either, and a clip throws the same way, after the user has recorded it.
   ///
   /// The iOS **Simulator** is the case this flag deliberately does not try to
   /// cover, and the reason is not that it cannot be detected — `device_info_plus`

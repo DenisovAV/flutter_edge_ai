@@ -15,7 +15,8 @@ devices with 8GB+ RAM.
 Vision is supported by **Gemma 4 E2B/E4B**, **Gemma3n E2B/E4B**, **FastVLM 0.5B**
 (desktop), and the community models **Qwen2-VL 2B**, **SmolVLM2 500M**, and
 **LLaVA-OneVision 0.5B** (Android, iOS, Desktop). **Gemma 4** vision runs on all
-four platforms (Android, iOS, Web, Desktop); **Gemma3n** vision runs on Android,
+four platforms (Android, iOS, Desktop, and Web with the MediaPipe `-web.task`
+build, which has no thinking or Gemma 4 function calling); **Gemma3n** vision runs on Android,
 iOS, and Desktop only — its web build is `.litertlm`, which is text-only. On the
 `.litertlm` engine the
 text decoder runs on your chosen backend (on GPU: OpenCL on Android, Metal on
@@ -48,9 +49,10 @@ allow it — pass `preferredVisionBackend: PreferredBackend.gpu` to
 
 The flag goes in **two** places: on `getActiveModel` it loads the vision encoder,
 on `createChat` the session declares it will send images. `.litertlm` inherits the
-model's flag, but MediaPipe `.task` does not — a chat created without it **drops
-the image and answers about the text alone**, with no error and no log in a
-release build. Set it in both places either way.
+model's flag, but MediaPipe `.task` does not — on Android and iOS a chat created
+without it **drops the image and answers about the text alone**, with no error and
+no log in a release build; on web it throws `ArgumentError`. Set it in both places
+either way.
 
 ```dart
 // Text + Image
@@ -122,8 +124,9 @@ final response = await chat.generateChatResponse();
 
 <Warning>
 
-Audio input only works with `.litertlm` models that include the audio adapter.
-MediaPipe `.task` models on web do not support audio. On macOS, Gemma 3n audio
+Audio input needs a model that includes the audio adapter: `.litertlm` on
+Android, iOS and desktop, or a MediaPipe `.task` such as Gemma 3n on Android and
+iOS. Neither web engine takes audio. On macOS, Gemma 3n audio
 runs roughly 2× faster on GPU than on CPU — but the audio encoder defaults to
 CPU, so pass `preferredAudioBackend: PreferredBackend.gpu` (as above) to get that
 speedup; `preferredBackend` alone only moves the text decoder.

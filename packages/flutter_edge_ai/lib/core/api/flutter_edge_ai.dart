@@ -657,6 +657,8 @@ class FlutterEdgeAi {
   ///
   /// Throws:
   /// - [StateError] if no active embedding model is set
+  /// - `TimeoutException` if the previous embedder is still closing after
+  ///   60 s; its close keeps running, and a later call succeeds once it ends.
   ///
   /// Example:
   /// ```dart

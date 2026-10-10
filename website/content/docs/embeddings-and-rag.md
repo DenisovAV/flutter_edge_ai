@@ -22,7 +22,7 @@ inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.1.2
+  flutter_edge_ai: ^2.1.3
   flutter_edge_ai_litertlm: ^1.11.3
   flutter_edge_ai_embeddings: ^2.2.2
   flutter_edge_ai_rag: ^1.0.0

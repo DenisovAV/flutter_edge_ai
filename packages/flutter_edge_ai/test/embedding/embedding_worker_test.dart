@@ -13,12 +13,17 @@
 // fake tokenizer instead, since they need to control the exact
 // mask/tokenTypeIds the worker forwards.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter_edge_ai_embeddings/src/embedding_tokenizer.dart';
+import 'package:flutter_edge_ai/core/embedding/common_embedding_model.dart';
+import 'package:flutter_edge_ai/core/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/core/embedding/embedding_worker.dart';
+import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
+    show ActiveEmbedderParams;
 import 'package:flutter_edge_ai/core/embedding/forward_pass.dart';
 import 'package:flutter_edge_ai/core/embedding/tokenizer_adapter.dart';
 import 'package:flutter_edge_ai/core/domain/platform_types.dart';
@@ -27,13 +32,79 @@ import 'package:flutter_test/flutter_test.dart';
 /// Fake forward pass: behavior selected by [_FakeMode] (encoded into the
 /// otherwise-unused `modelPath` field of the descriptor — the only sendable
 /// channel available before the isolate boundary).
+///
+/// `modelPath` is `<mode>` or `<mode>@<log file>`. With a log file the pass
+/// appends one line per `load`/`run`/`close` call to it — the only way the
+/// test, on the main isolate, can see what the pass did inside the worker.
+/// The writes are synchronous, so a line is on disk before the call returns.
 class _FakeForwardPass implements EmbeddingForwardPass {
-  _FakeForwardPass(this.modelPath);
+  _FakeForwardPass(String modelPath)
+    : _mode = _FakeMode.fromModelPath(modelPath),
+      _logPath = modelPath.contains('@')
+          ? modelPath.substring(modelPath.indexOf('@') + 1)
+          : null;
 
-  final String modelPath;
+  final _FakeMode _mode;
+  final String? _logPath;
+
+  void _log(String line) {
+    final path = _logPath;
+    if (path == null) return;
+    File(path).writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+  }
+
+  /// The gated modes hold a call until the test creates this file — for a
+  /// close test, after it has sent the close, so the close is already queued
+  /// when the run returns. No timing: the order is fixed by the test, not by
+  /// how fast a runner is. Every test that gates also opens the gate in a
+  /// teardown, and the gate gives up by itself after [_gateDeadline], so a
+  /// failed test never leaves a worker blocked for good.
+  File get _release => File('$_logPath.release');
+
+  static const _gateDeadline = Duration(seconds: 30);
+
+  /// Blocks this isolate — no events, no microtasks — until released, the way
+  /// a synchronous native call does.
+  void _blockUntilReleased() {
+    final deadline = DateTime.now().add(_gateDeadline);
+    while (!_release.existsSync()) {
+      if (DateTime.now().isAfter(deadline)) {
+        throw StateError('fake gate was never released');
+      }
+      sleep(const Duration(milliseconds: 5));
+    }
+  }
+
+  Future<void> _waitUntilReleased() async {
+    final deadline = DateTime.now().add(_gateDeadline);
+    while (!_release.existsSync()) {
+      if (DateTime.now().isAfter(deadline)) {
+        throw StateError('fake gate was never released');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
 
   @override
-  Future<void> load() async {}
+  Future<void> load() async {
+    _log('load');
+    switch (_mode) {
+      case _FakeMode.failLoad:
+      case _FakeMode.failLoadThenBlockingClose:
+      case _FakeMode.failLoadThenBlockingCloseThrows:
+        throw StateError('fake forward pass refused to load');
+      case _FakeMode.blockingLoad:
+        _blockUntilReleased();
+      case _FakeMode.dieWhenIdle:
+        // Dies with nothing in flight: an uncaught error a moment after load,
+        // which ends the isolate (errorsAreFatal) without a _CloseAck.
+        Timer(const Duration(milliseconds: 100), () {
+          throw StateError('fake worker died while idle');
+        });
+      default:
+        break;
+    }
+  }
 
   @override
   Future<ForwardResult> run({
@@ -41,7 +112,32 @@ class _FakeForwardPass implements EmbeddingForwardPass {
     List<int>? attentionMask,
     List<int>? tokenTypeIds,
   }) async {
-    switch (_FakeMode.fromModelPath(modelPath)) {
+    _log('run');
+    switch (_mode) {
+      case _FakeMode.blockingUntilReleased:
+        // A synchronous native call: this isolate's event loop is blocked for
+        // the whole of it, so nothing — a close included — is delivered until
+        // it returns. The case the old `await for` loop could not get out of.
+        // It has to block synchronously: an async fake leaves the event loop
+        // free, so it passes even when the pump forgets to yield.
+        _blockUntilReleased();
+        return const ForwardResult(values: [3.0, 4.0], shape: [1, 2]);
+      case _FakeMode.asyncUntilReleased:
+        await _waitUntilReleased();
+        return const ForwardResult(values: [3.0, 4.0], shape: [1, 2]);
+      case _FakeMode.uncaughtErrorOnRun:
+        // An error nothing catches, as a pass's stray callback might throw: it
+        // ends the isolate mid-request, without a reply or a _CloseAck.
+        scheduleMicrotask(() => throw StateError('fake uncaught worker error'));
+        return Completer<ForwardResult>().future;
+      case _FakeMode.failLoad:
+      case _FakeMode.failLoadThenBlockingClose:
+      case _FakeMode.failLoadThenBlockingCloseThrows:
+      case _FakeMode.blockingLoad:
+      case _FakeMode.dimensionThrows:
+      case _FakeMode.throwOnClose:
+      case _FakeMode.dieWhenIdle:
+        return const ForwardResult(values: [3.0, 4.0], shape: [1, 2]);
       case _FakeMode.echoTokenIds:
         return ForwardResult(
           values: [for (final t in tokenIds) t.toDouble()],
@@ -121,18 +217,33 @@ class _FakeForwardPass implements EmbeddingForwardPass {
   }
 
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    if (_mode == _FakeMode.failLoadThenBlockingClose ||
+        _mode == _FakeMode.failLoadThenBlockingCloseThrows) {
+      // A native close that does not return until the test says so.
+      _blockUntilReleased();
+    }
+    _log('close');
+    if (_mode == _FakeMode.throwOnClose ||
+        _mode == _FakeMode.failLoadThenBlockingCloseThrows) {
+      throw StateError('fake forward pass failed to close');
+    }
+  }
 
   @override
-  int get outputDimension => 2;
+  int get outputDimension {
+    if (_mode == _FakeMode.dimensionThrows) {
+      throw StateError('fake forward pass has no dimension');
+    }
+    return 2;
+  }
 
   @override
   int? get inputSequenceLength => null;
 
   @override
   EmbeddingOutputContract? get outputContract =>
-      _FakeMode.fromModelPath(modelPath) ==
-          _FakeMode.contractOverridePooledFinal
+      _mode == _FakeMode.contractOverridePooledFinal
       ? EmbeddingOutputContract.pooledFinal
       : null;
 }
@@ -145,10 +256,23 @@ enum _FakeMode {
   tokenLevelMaskSensitive,
   resultMaskOverridesRequestMask,
   contractOverridePooledFinal,
-  killMidRequest;
+  killMidRequest,
+  blockingUntilReleased,
+  asyncUntilReleased,
+  uncaughtErrorOnRun,
+  dieWhenIdle,
+  failLoad,
+  failLoadThenBlockingClose,
+  failLoadThenBlockingCloseThrows,
+  blockingLoad,
+  dimensionThrows,
+  throwOnClose;
 
-  static _FakeMode fromModelPath(String modelPath) =>
-      _FakeMode.values.firstWhere((m) => m.name == modelPath);
+  static _FakeMode fromModelPath(String modelPath) {
+    final at = modelPath.indexOf('@');
+    final name = at < 0 ? modelPath : modelPath.substring(0, at);
+    return _FakeMode.values.firstWhere((m) => m.name == name);
+  }
 }
 
 EmbeddingForwardPass _buildFake(String modelPath) =>
@@ -513,6 +637,621 @@ void main() {
       final bystander = worker.embed('b', prefix: '');
       await expectLater(killer, throwsA(isA<StateError>()));
       await expectLater(bystander, throwsA(isA<StateError>()));
+    });
+  });
+
+  // The old close() waited five seconds for an ack and then killed the
+  // isolate. The worker served its port one `await for` turn at a time, so a
+  // close queued behind a batch never got there in time — and a killed isolate
+  // never ran `pass.close()`, leaving the native model resident for the life
+  // of the process. These tests read the fake pass's own log, written inside
+  // the worker, to see what actually ran there.
+  group('EmbeddingWorker close never abandons the native model', () {
+    File logFor(String name) => File('${tmpDir.path}/$name.log');
+
+    List<String> linesOf(File log) =>
+        log.existsSync() ? log.readAsLinesSync() : const <String>[];
+
+    Future<void> waitForLine(File log, String line) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (!linesOf(log).contains(line)) {
+        if (DateTime.now().isAfter(deadline)) {
+          fail('the worker never logged "$line"');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
+    ForwardPassDescriptor descriptorFor(_FakeMode mode, File log) =>
+        ForwardPassDescriptor(
+          engineTag: 'Fake',
+          modelPath: '${mode.name}@${log.path}',
+          factory: _buildFake,
+          tokenizerFactory: loadGemmaSentencePieceEmbeddingTokenizer,
+          outputContract: EmbeddingOutputContract.pooledFinal,
+          activeBackend: PreferredBackend.cpu,
+        );
+
+    /// Settles [future] into its value or its error, so a request that fails
+    /// before the test looks at it is never reported as unhandled.
+    Future<Object?> outcomeOf(Future<List<double>> future) =>
+        future.then<Object?>((v) => v, onError: (Object e) => e);
+
+    final closedBeforeRun = isA<StateError>().having(
+      (e) => e.message,
+      'message',
+      contains('closed before this request ran'),
+    );
+
+    /// Creates the file the gated modes wait for, letting the call they hold
+    /// return.
+    void release(File log) => File('${log.path}.release').createSync();
+
+    /// A log whose gate is also opened in a teardown, so a test that fails
+    /// before releasing it never leaves a worker blocked behind it.
+    File gatedLog(String name) {
+      final log = logFor(name);
+      addTearDown(() => release(log));
+      return log;
+    }
+
+    /// Polls [printed] until a line contains [text].
+    Future<void> waitForPrint(List<String> printed, String text) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 10));
+      while (!printed.any((l) => l.contains(text))) {
+        if (DateTime.now().isAfter(deadline)) {
+          fail('nothing printed "$text"; got: ${printed.join('\n')}');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
+    ZoneSpecification capturePrints(List<String> printed) => ZoneSpecification(
+      print: (self, parent, zone, line) => printed.add(line),
+    );
+
+    // Blocking is the case that matters: a synchronous FFI call keeps the
+    // close in the worker's message queue until it returns, so only a
+    // blocking fake shows whether the pump yields before each request. Async
+    // is the case where the listener sees the close while the call is running.
+    for (final mode in [
+      _FakeMode.blockingUntilReleased,
+      _FakeMode.asyncUntilReleased,
+    ]) {
+      test('${mode.name}: close() lets the request in flight finish, fails '
+          'every queued one, and closes the pass exactly once', () async {
+        final log = gatedLog(mode.name);
+        final worker = await EmbeddingWorker.spawn(
+          descriptor: descriptorFor(mode, log),
+          tokenizerPath: tokenizerPath,
+        );
+
+        final inFlight = outcomeOf(worker.embed('ab', prefix: ''));
+        final queued = [
+          for (var i = 0; i < 20; i++)
+            outcomeOf(worker.embed('ab', prefix: '')),
+        ];
+        await waitForLine(log, 'run');
+
+        // The close is sent synchronously inside close(), so it is in the
+        // worker's queue before the run is released: the order is fixed here,
+        // not by how fast this machine is.
+        final closing = worker.close();
+        release(log);
+        await closing;
+
+        // Read the moment close() returns, without polling. close() waits for
+        // the worker's own teardown, so the line is already on disk — and a
+        // worker that was killed never writes it at all.
+        final lines = linesOf(log);
+        expect(
+          lines.where((l) => l == 'close'),
+          hasLength(1),
+          reason:
+              'the forward pass must be closed, once, before close() '
+              'returns',
+        );
+        expect(
+          lines.where((l) => l == 'run'),
+          hasLength(1),
+          reason: 'nothing queued may start once a close has been asked for',
+        );
+        expect(await inFlight, [
+          3.0,
+          4.0,
+        ], reason: 'the request in flight finishes and gets its vector');
+        for (final outcome in await Future.wait(queued)) {
+          expect(outcome, closedBeforeRun);
+        }
+      });
+    }
+
+    test('close() never gives up on the call in flight: held past 6 s, the '
+        'native close still runs before close() returns', () async {
+      // The old close() gave up after 5 s and killed the worker, which then
+      // never closed its pass. Waiting is the whole fix, so pin it.
+      final log = gatedLog('never_kill');
+      final worker = await EmbeddingWorker.spawn(
+        descriptor: descriptorFor(_FakeMode.blockingUntilReleased, log),
+        tokenizerPath: tokenizerPath,
+      );
+      final inFlight = outcomeOf(worker.embed('ab', prefix: ''));
+      await waitForLine(log, 'run');
+
+      var returned = false;
+      final closing = worker.close().whenComplete(() => returned = true);
+      await Future<void>.delayed(const Duration(seconds: 6));
+      expect(returned, isFalse, reason: 'close() must still be waiting');
+      expect(linesOf(log), isNot(contains('close')));
+
+      release(log);
+      await closing;
+      expect(
+        linesOf(log).where((l) => l == 'close'),
+        hasLength(1),
+        reason: 'the native close ran, and before close() returned',
+      );
+      expect(await inFlight, [3.0, 4.0]);
+    }, timeout: const Timeout(Duration(seconds: 40)));
+
+    test('a second close() waits for the same teardown instead of returning '
+        'early', () async {
+      final log = gatedLog('concurrent_close');
+      final worker = await EmbeddingWorker.spawn(
+        descriptor: descriptorFor(_FakeMode.asyncUntilReleased, log),
+        tokenizerPath: tokenizerPath,
+      );
+      final inFlight = outcomeOf(worker.embed('ab', prefix: ''));
+      await waitForLine(log, 'run');
+
+      final first = worker.close();
+      final second = worker.close();
+      release(log);
+      await second;
+
+      // Checked before the FIRST close is awaited: a second close() that
+      // returned early would get here while the worker is still running,
+      // with nothing closed yet.
+      expect(
+        linesOf(log).where((l) => l == 'close'),
+        hasLength(1),
+        reason: 'the second close() returned before the pass was closed',
+      );
+      await first;
+      await worker.close();
+      expect(linesOf(log).where((l) => l == 'close'), hasLength(1));
+      expect(await inFlight, [3.0, 4.0]);
+    });
+
+    test('a worker that dies mid-request fails it with the reason, warns '
+        'with engine and model, and close() afterwards returns', () async {
+      final log = logFor('uncaught_error');
+      final printed = <String>[];
+      late EmbeddingWorker worker;
+      await runZoned(
+        () async {
+          worker = await EmbeddingWorker.spawn(
+            descriptor: descriptorFor(_FakeMode.uncaughtErrorOnRun, log),
+            tokenizerPath: tokenizerPath,
+          );
+          final dying = outcomeOf(worker.embed('ab', prefix: ''));
+          final reason = await worker.unexpectedExit.timeout(
+            const Duration(seconds: 10),
+          );
+          expect(reason, contains('fake uncaught worker error'));
+          expect(
+            await dying,
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('exited unexpectedly'),
+                contains('fake uncaught worker error'),
+              ),
+            ),
+          );
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+
+      expect(
+        printed.join('\n'),
+        allOf(
+          contains('WARNING'),
+          contains('Fake'),
+          contains(log.path),
+          contains('may not have been closed'),
+          contains('fake uncaught worker error'),
+        ),
+      );
+      await worker.close().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('close() hung on a worker that had died'),
+      );
+      await expectLater(
+        worker.embed('ab', prefix: ''),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('fake uncaught worker error'),
+          ),
+        ),
+        reason: 'later calls say why the worker is gone, not just that it is',
+      );
+    });
+
+    test('close() after an unexpected death returns at once, and later calls '
+        'say the worker died', () async {
+      final worker = await EmbeddingWorker.spawn(
+        descriptor: ForwardPassDescriptor(
+          engineTag: 'Fake',
+          modelPath: _FakeMode.killMidRequest.name,
+          factory: _buildFake,
+          tokenizerFactory: loadGemmaSentencePieceEmbeddingTokenizer,
+          outputContract: EmbeddingOutputContract.pooledFinal,
+          activeBackend: PreferredBackend.cpu,
+        ),
+        tokenizerPath: tokenizerPath,
+      );
+      await expectLater(
+        worker.embed('ab', prefix: ''),
+        throwsA(isA<StateError>()),
+      );
+
+      await worker.close().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => fail('close() hung on a worker that had died'),
+      );
+      await expectLater(
+        worker.embed('ab', prefix: ''),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('exited unexpectedly'),
+          ),
+        ),
+      );
+    });
+
+    test('embed() fails at once from the moment close() is called', () async {
+      final log = logFor('embed_after_close');
+      final worker = await EmbeddingWorker.spawn(
+        descriptor: descriptorFor(_FakeMode.pooledFinalFixed, log),
+        tokenizerPath: tokenizerPath,
+      );
+
+      final closing = worker.close();
+      await expectLater(
+        worker.embed('ab', prefix: ''),
+        throwsA(isA<StateError>()),
+        reason: 'refused while the teardown is still running',
+      );
+      await closing;
+      await expectLater(
+        worker.embed('ab', prefix: ''),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('closed'),
+          ),
+        ),
+      );
+      expect(
+        linesOf(log).where((l) => l == 'run'),
+        isEmpty,
+        reason: 'a refused call never reaches the forward pass',
+      );
+    });
+
+    test(
+      'a load failure reports the error, then closes the forward pass',
+      () async {
+        final log = logFor('fail_load');
+        await expectLater(
+          EmbeddingWorker.spawn(
+            descriptor: descriptorFor(_FakeMode.failLoad, log),
+            tokenizerPath: tokenizerPath,
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('fake forward pass refused to load'),
+            ),
+          ),
+        );
+        // The error is sent first, so the close is waited for, not assumed.
+        await waitForLine(log, 'close');
+        expect(linesOf(log), ['load', 'close']);
+      },
+    );
+
+    test('a failed load fails spawn at once even while closing its pass '
+        'blocks, and that close still runs', () async {
+      // The caller may hold the embedder cache's lane; a native close that
+      // never returns must not hold it as well.
+      final log = gatedLog('fail_load_blocking_close');
+      await expectLater(
+        EmbeddingWorker.spawn(
+          descriptor: descriptorFor(_FakeMode.failLoadThenBlockingClose, log),
+          tokenizerPath: tokenizerPath,
+        ).timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => fail('spawn waited for the close of the pass'),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('fake forward pass refused to load'),
+          ),
+        ),
+      );
+      expect(linesOf(log), ['load'], reason: 'the close is still blocked');
+
+      release(log);
+      await waitForLine(log, 'close');
+      expect(linesOf(log), ['load', 'close']);
+    });
+
+    test('a close that fails after a failed load is reported with the engine, '
+        'the model and the stack', () async {
+      final log = gatedLog('fail_load_close_throws');
+      final printed = <String>[];
+      await runZoned(
+        () => expectLater(
+          EmbeddingWorker.spawn(
+            descriptor: descriptorFor(
+              _FakeMode.failLoadThenBlockingCloseThrows,
+              log,
+            ),
+            tokenizerPath: tokenizerPath,
+          ),
+          throwsA(isA<StateError>()),
+        ),
+        zoneSpecification: capturePrints(printed),
+      );
+
+      release(log);
+      await waitForPrint(printed, 'failed to close after its load failed');
+      expect(
+        printed.join('\n'),
+        allOf(
+          contains('WARNING'),
+          contains('Fake'),
+          contains(log.path),
+          contains('fake forward pass failed to close'),
+          contains('embedding_worker_test.dart'),
+        ),
+      );
+    });
+
+    test(
+      'spawn says once that a load is taking long, and keeps waiting',
+      () async {
+        final log = gatedLog('slow_load');
+        final printed = <String>[];
+        late EmbeddingWorker worker;
+        await runZoned(() async {
+          final spawning = EmbeddingWorker.spawn(
+            descriptor: descriptorFor(_FakeMode.blockingLoad, log),
+            tokenizerPath: tokenizerPath,
+            slowLoadNotice: const Duration(milliseconds: 200),
+          );
+          await waitForPrint(printed, 'has taken 200 ms');
+          release(log);
+          worker = await spawning;
+        }, zoneSpecification: capturePrints(printed));
+
+        final notices = printed.where((l) => l.contains('has taken'));
+        expect(notices, hasLength(1), reason: 'once, not on a timer');
+        expect(
+          notices.single,
+          allOf(
+            contains('WARNING'),
+            contains('Fake'),
+            contains(log.path),
+            contains('still inside a native call'),
+          ),
+        );
+        await worker.close();
+      },
+    );
+
+    test(
+      'a pass that loads but cannot report its dimension is closed too',
+      () async {
+        final log = logFor('dimension_throws');
+        await expectLater(
+          EmbeddingWorker.spawn(
+            descriptor: descriptorFor(_FakeMode.dimensionThrows, log),
+            tokenizerPath: tokenizerPath,
+          ),
+          throwsA(isA<StateError>()),
+        );
+        await waitForLine(log, 'close');
+        expect(linesOf(log), ['load', 'close']);
+      },
+    );
+
+    test('a forward pass whose close throws still lets close() return, and '
+        'the failure is reported', () async {
+      final log = logFor('throw_on_close');
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          final worker = await EmbeddingWorker.spawn(
+            descriptor: descriptorFor(_FakeMode.throwOnClose, log),
+            tokenizerPath: tokenizerPath,
+          );
+          await worker.close();
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+
+      expect(linesOf(log), ['load', 'close']);
+      expect(
+        printed.join('\n'),
+        allOf(
+          contains('WARNING'),
+          contains('fake forward pass failed to close'),
+          // Which model, so the warning can be acted on...
+          contains('Fake'),
+          contains(log.path),
+          // ...and where: the stack of the throwing close, which used to stay
+          // behind in the worker's debug-only log.
+          contains('embedding_worker_test.dart'),
+        ),
+      );
+    });
+
+    test('CommonEmbeddingModel: a second close() waits for the teardown the '
+        'first one started', () async {
+      final log = gatedLog('model_second_close');
+      final model = await CommonEmbeddingModel.create(
+        descriptor: descriptorFor(_FakeMode.asyncUntilReleased, log),
+        tokenizerPath: tokenizerPath,
+      );
+      final inFlight = outcomeOf(model.generateEmbedding('ab'));
+      await waitForLine(log, 'run');
+
+      final first = model.close();
+      final second = model.close();
+      release(log);
+      await second;
+
+      // Before the first close is awaited: a second close() that returned
+      // early is how an app's own close let the cache build a replacement
+      // while the old native model was still loaded.
+      expect(
+        linesOf(log).where((l) => l == 'close'),
+        hasLength(1),
+        reason: 'the second close() returned before the pass was closed',
+      );
+      await first;
+      expect(await inFlight, [3.0, 4.0]);
+    });
+
+    test('a worker that dies while idle turns its model closed, fires its '
+        'close listeners once, warns, and the cache evicts it', () async {
+      final log = logFor('die_when_idle');
+      final printed = <String>[];
+      final cache = EmbedderCache();
+      final params = ActiveEmbedderParams(
+        modelPath: '/die.tflite',
+        tokenizerPath: '/die.json',
+      );
+      var listenerCalls = 0;
+      var onCloseCalls = 0;
+      final died = Completer<void>();
+      late CommonEmbeddingModel model;
+
+      await runZoned(
+        () async {
+          model = await CommonEmbeddingModel.create(
+            descriptor: descriptorFor(_FakeMode.dieWhenIdle, log),
+            tokenizerPath: tokenizerPath,
+            onClose: () => onCloseCalls++,
+          );
+          model.addCloseListener(() {
+            listenerCalls++;
+            if (!died.isCompleted) died.complete();
+          });
+          cache.record(model, params);
+          expect(cache.model, same(model));
+          await died.future.timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => fail('the dead worker never closed its model'),
+          );
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+
+      expect(model.isClosed, isTrue);
+      expect(listenerCalls, 1);
+      expect(onCloseCalls, 1);
+      expect(
+        cache.model,
+        isNull,
+        reason: 'a dead model must not be handed to the next caller',
+      );
+      expect(
+        printed.join('\n'),
+        allOf(
+          contains('WARNING'),
+          contains(log.path),
+          contains('fake worker died while idle'),
+        ),
+      );
+      expect(
+        () => model.generateEmbedding('ab'),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('fake worker died while idle'),
+          ),
+        ),
+      );
+
+      // The next caller builds, and is not held: there is nothing left to
+      // wait for. Closing the dead model afterwards notifies nobody twice.
+      expect(
+        await cache
+            .reuseOrInvalidate(params, label: 'after death')
+            .timeout(const Duration(seconds: 5)),
+        isNull,
+      );
+      // The guard, not the emptied listener list, is what keeps a close()
+      // after a death from notifying again: onClose is not a list.
+      await model.close();
+      expect(listenerCalls, 1);
+      expect(onCloseCalls, 1, reason: 'onClose ran for the death already');
+    });
+
+    test('CommonEmbeddingModel: a throwing onClose still fires the close '
+        'listeners, and only the first close() reports it', () async {
+      final log = logFor('throwing_on_close');
+      var listenerCalls = 0;
+      final model = await CommonEmbeddingModel.create(
+        descriptor: descriptorFor(_FakeMode.pooledFinalFixed, log),
+        tokenizerPath: tokenizerPath,
+        onClose: () => throw StateError('onClose failed'),
+      );
+      model.addCloseListener(() => listenerCalls++);
+
+      await expectLater(
+        model.close(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('onClose failed'),
+          ),
+        ),
+        reason: 'the first caller learns what went wrong',
+      );
+      expect(
+        listenerCalls,
+        1,
+        reason:
+            'the cache evicts on a listener; skipping it leaves a closed '
+            'model cached',
+      );
+      expect(linesOf(log), contains('close'), reason: 'the worker was closed');
+
+      // The model is closed; later callers are not handed that error forever.
+      await model.close();
+      await model.close();
     });
   });
 }

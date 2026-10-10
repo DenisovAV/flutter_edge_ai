@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_edge_ai'
-  s.version          = '2.1.2'
+  s.version          = '2.1.3'
   s.summary          = 'Flutter Edge AI core — on-device AI for Flutter on iOS.'
   s.description      = <<-DESC
 Core of Flutter Edge AI: model installation and the engine registries.

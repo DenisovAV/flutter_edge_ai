@@ -10,6 +10,10 @@ import 'package:flutter/foundation.dart' show VoidCallback;
 /// Listeners fire EXACTLY ONCE provided `close()` is idempotent
 /// (`if (_isClosed) return;`). [fireCloseListeners] clears the list so a
 /// second invocation is a no-op even without the guard.
+///
+/// Listeners may also fire without anyone calling `close()`: when the model's
+/// owner dies — an embedder whose worker exited — the model turns closed and
+/// fires them itself.
 mixin CloseNotifier {
   final List<VoidCallback> _closeListeners = [];
 

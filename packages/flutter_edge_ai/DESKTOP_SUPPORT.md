@@ -100,8 +100,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^2.1.1            # core
-  flutter_edge_ai_litertlm: ^1.11.1  # .litertlm engine
+  flutter_edge_ai: ^2.1.3            # core
+  flutter_edge_ai_litertlm: ^1.11.3  # .litertlm engine
 ```
 
 ```dart

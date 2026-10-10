@@ -87,19 +87,197 @@ void main() {
       await pumpEventQueue();
 
       // Someone asks for /a — the config the closing model was built from.
-      final duringClose = await cache.reuseOrInvalidate(
-        paramsFor('/a'),
-        label: 'matching',
-      );
+      // They are not handed the closing model, and they are not told to build
+      // either until it has finished closing.
+      var answered = false;
+      final duringClose = cache
+          .reuseOrInvalidate(paramsFor('/a'), label: 'matching')
+          .whenComplete(() => answered = true);
+      await pumpEventQueue();
+      expect(answered, isFalse, reason: 'the old model is still closing');
 
+      gate.complete();
       expect(
-        duringClose,
+        await duringClose,
         isNull,
         reason: 'the cached model is closing, so it is nobody\'s answer',
       );
-      gate.complete();
       expect(await rebuild, isNull);
     });
+
+    test('a rebuild is not asked for until the old model has finished '
+        'closing', () async {
+      // The shells build as soon as this returns null. Returning before the
+      // old model's teardown finished would put two native engines in memory
+      // at once — and the worker's close now waits for the request in flight
+      // instead of killing it after five seconds, so that teardown can take a
+      // while.
+      final cache = EmbedderCache();
+      final gate = Completer<void>();
+      final model = _FakeEmbedder(closeGate: gate);
+      cache.record(model, paramsFor('/a'));
+
+      var answered = false;
+      final rebuild = cache
+          .reuseOrInvalidate(paramsFor('/b'), label: 'rebuild')
+          .whenComplete(() => answered = true);
+      await pumpEventQueue();
+
+      expect(model.closeCount, 1, reason: 'the close has started');
+      expect(
+        answered,
+        isFalse,
+        reason:
+            'a "build a new one" answer before the old close finished '
+            'means two engines resident at once',
+      );
+
+      gate.complete();
+      expect(await rebuild, isNull);
+      expect(answered, isTrue);
+    });
+
+    test(
+      'a close that outlasts the wait fails the caller with a '
+      'TimeoutException, keeps running, and holds every later build',
+      () async {
+        // Unbounded, one wedged native close hangs every embedder call in the
+        // app behind the serialize lane.
+        final cache = EmbedderCache(
+          closeWaitLimit: const Duration(milliseconds: 100),
+        );
+        final gate = Completer<void>();
+        final model = _FakeEmbedder(closeGate: gate);
+        cache.record(model, paramsFor('/a'));
+
+        await expectLater(
+          cache.reuseOrInvalidate(paramsFor('/b'), label: 'first'),
+          throwsA(
+            isA<TimeoutException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('/a'), contains('closing')),
+            ),
+          ),
+        );
+        expect(model.closeCount, 1, reason: 'the close was started...');
+        expect(model.closed, isFalse, reason: '...and was not cut short');
+
+        // Still closing: the next caller must not be told to build either —
+        // and it waits for the SAME close rather than starting another.
+        await expectLater(
+          cache.reuseOrInvalidate(paramsFor('/b'), label: 'second'),
+          throwsA(isA<TimeoutException>()),
+          reason: 'building now would put two native models in memory',
+        );
+        expect(model.closeCount, 1);
+
+        gate.complete();
+        await pumpEventQueue();
+        expect(model.closed, isTrue);
+        expect(
+          await cache.reuseOrInvalidate(paramsFor('/b'), label: 'third'),
+          isNull,
+          reason: 'with the old model gone, the build may go ahead',
+        );
+      },
+      timeout: const Timeout(Duration(seconds: 10)),
+    );
+
+    test('callers queued behind a close share one deadline: all fail when it '
+        'passes, not one limit apart, and its end is announced', () async {
+      // A fresh limit per caller made the Nth queued caller wait N limits:
+      // with the 60 s default, a few queued requests meant minutes.
+      const limit = Duration(milliseconds: 200);
+      final cache = EmbedderCache(closeWaitLimit: limit);
+      final gate = Completer<void>();
+      final model = _FakeEmbedder(closeGate: gate);
+      cache.record(model, paramsFor('/a'));
+      final printed = <String>[];
+
+      final failedAt = <Duration>[];
+      await runZoned(
+        () async {
+          final clock = Stopwatch()..start();
+          final callers = [
+            for (var i = 0; i < 3; i++)
+              cache
+                  .serialize(
+                    () => cache.reuseOrInvalidate(
+                      paramsFor('/b'),
+                      label: 'caller $i',
+                    ),
+                  )
+                  .then<Object?>(
+                    (v) => v,
+                    onError: (Object e) {
+                      failedAt.add(clock.elapsed);
+                      return e;
+                    },
+                  ),
+          ];
+          final outcomes = await Future.wait(callers);
+          expect(outcomes, everyElement(isA<TimeoutException>()));
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+
+      expect(failedAt, hasLength(3));
+      expect(
+        failedAt.last,
+        lessThan(limit * 2),
+        reason:
+            'the third caller failed at ${failedAt.last.inMilliseconds} '
+            'ms; one shared deadline puts all three at about '
+            '${limit.inMilliseconds} ms, a limit each at 600',
+      );
+      expect(model.closeCount, 1, reason: 'one close, waited for by all');
+
+      // The close ends after its callers gave up: say so, once, since they
+      // were told to retry.
+      gate.complete();
+      await pumpEventQueue();
+      final announced = printed.where((l) => l.contains('finished closing'));
+      expect(announced, hasLength(1));
+      expect(announced.single, contains('/a'));
+      expect(
+        await cache.reuseOrInvalidate(paramsFor('/b'), label: 'after'),
+        isNull,
+        reason: 'with the close done, the build goes ahead',
+      );
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
+    test('an embedder the app closed without awaiting is not rebuilt until its '
+        'close has finished', () async {
+      // `isClosed` turns true the moment close() is called, long before the
+      // native model is gone. Answering "build" on that alone put two
+      // engines in memory whenever an app closed its embedder and asked for
+      // one again without awaiting the close.
+      final cache = EmbedderCache();
+      final gate = Completer<void>();
+      final model = _JoiningCloseEmbedder(gate);
+      cache.record(model, paramsFor('/a'));
+
+      unawaited(model.close());
+      expect(model.isClosed, isTrue);
+
+      var answered = false;
+      final rebuild = cache
+          .reuseOrInvalidate(paramsFor('/a'), label: 'after app close')
+          .whenComplete(() => answered = true);
+      await pumpEventQueue();
+      expect(answered, isFalse, reason: 'the app\'s close is still running');
+
+      gate.complete();
+      expect(await rebuild, isNull);
+      expect(
+        model.teardowns,
+        1,
+        reason: 'the cache joined the app\'s close rather than run another',
+      );
+    }, timeout: const Timeout(Duration(seconds: 10)));
   });
 
   group('EmbedderCache.record', () {
@@ -396,6 +574,9 @@ class _FakeEmbedder extends EmbeddingModel with CloseNotifier {
   final bool throwOnClose;
   int closeCount = 0;
 
+  /// True once a close has run to the end, gate included.
+  bool closed = false;
+
   @override
   Future<List<double>> generateEmbedding(
     String text, {
@@ -417,7 +598,36 @@ class _FakeEmbedder extends EmbeddingModel with CloseNotifier {
   Future<void> close() async {
     closeCount++;
     if (closeGate != null) await closeGate!.future;
+    closed = true;
     fireCloseListeners();
     if (throwOnClose) throw StateError('teardown failed');
+  }
+}
+
+/// Closes the way `CommonEmbeddingModel` does: `isClosed` turns true at once,
+/// the teardown takes as long as [_gate], and every `close()` call returns that
+/// same teardown.
+class _JoiningCloseEmbedder extends _FakeEmbedder {
+  _JoiningCloseEmbedder(this._gate);
+
+  final Completer<void> _gate;
+  Future<void>? _teardown;
+  bool _closing = false;
+
+  /// How many teardowns actually ran — one, however many callers closed.
+  int teardowns = 0;
+
+  @override
+  bool get isClosed => _closing;
+
+  @override
+  Future<void> close() => _teardown ??= _close();
+
+  Future<void> _close() async {
+    _closing = true;
+    teardowns++;
+    await _gate.future;
+    closed = true;
+    fireCloseListeners();
   }
 }

@@ -421,4 +421,63 @@ else
   exit 1
 fi
 
+# ── 12. Linux constraint-provider ABI bridge (#551) ──
+# The three Gemma data processors reinterpret_cast the prebuilt provider's
+# object to Constraint*. On Linux that object speaks Google's libc++ ABI and
+# our runtime does not, so every native tool call aborts on its first
+# constrained token. gemma_constraint_abi_bridge.h wraps it instead; on every
+# other platform WrapGemmaModelConstraint is the same cast as before.
+#
+# Unlike the sections above, a missing anchor FAILS the patch: a WARN here
+# builds a runtime that crashes on tool calls with every other check green.
+BRIDGE_SRC="$(cd "$(dirname "$0")" && pwd)/gemma_constraint_abi_bridge.h"
+FLUTTER_GEMMA_LITERT_LM_DIR="$DIR" FLUTTER_GEMMA_BRIDGE_SRC="$BRIDGE_SRC" python3 - <<'PYEOF'
+import os, shutil, sys
+
+root = os.environ["FLUTTER_GEMMA_LITERT_LM_DIR"]
+src = os.environ["FLUTTER_GEMMA_BRIDGE_SRC"]
+cd_dir = os.path.join(root, "runtime/components/constrained_decoding")
+include = '#include "runtime/components/constrained_decoding/gemma_constraint_abi_bridge.h"'
+
+def fail(msg):
+    print(f"  ERROR: section 12: {msg}")
+    sys.exit(1)
+
+shutil.copyfile(src, os.path.join(cd_dir, "gemma_constraint_abi_bridge.h"))
+
+build = os.path.join(cd_dir, "BUILD")
+text = open(build).read()
+if '"gemma_constraint_abi_bridge.h"' not in text:
+    start = text.find('name = "gemma_model_constraint_provider_shared_lib"')
+    if start < 0:
+        fail("gemma_model_constraint_provider_shared_lib not found in BUILD")
+    end = text.find("\n)\n", start)
+    block = text[start:end]
+    old_hdrs = 'hdrs = [\n        "gemma_model_constraint_provider.h",\n    ],'
+    old_deps = 'deps = [\n        ":constraint",\n'
+    if block.count(old_hdrs) != 1 or block.count(old_deps) != 1:
+        fail("hdrs/deps layout of gemma_model_constraint_provider_shared_lib changed")
+    block = block.replace(old_hdrs, 'hdrs = [\n        "gemma_constraint_abi_bridge.h",\n        "gemma_model_constraint_provider.h",\n    ],')
+    block = block.replace(old_deps, old_deps + '        ":logit_mask",\n        "@com_google_absl//absl/memory",\n        "@com_google_absl//absl/types:span",\n')
+    open(build, "w").write(text[:start] + block + text[end:])
+    print("  OK: BUILD exports gemma_constraint_abi_bridge.h")
+else:
+    print("  SKIP: BUILD already exports gemma_constraint_abi_bridge.h")
+
+cast = "return absl::WrapUnique(reinterpret_cast<Constraint*>(constraint));"
+provider_include = '#include "runtime/components/constrained_decoding/gemma_model_constraint_provider.h"'
+for name in ("gemma3", "gemma4", "function_gemma"):
+    path = os.path.join(root, f"runtime/conversation/model_data_processor/{name}_data_processor.cc")
+    code = open(path).read()
+    if "WrapGemmaModelConstraint(constraint)" in code:
+        print(f"  SKIP: {name}_data_processor.cc already bridged")
+        continue
+    if code.count(cast) != 1 or code.count(provider_include) != 1:
+        fail(f"{name}_data_processor.cc: expected exactly one cast and one provider include")
+    code = code.replace(provider_include, provider_include + "\n" + include)
+    code = code.replace(cast, "return WrapGemmaModelConstraint(constraint);")
+    open(path, "w").write(code)
+    print(f"  OK: {name}_data_processor.cc returns WrapGemmaModelConstraint")
+PYEOF
+
 echo "Patch complete."

@@ -236,7 +236,7 @@ dependencies:
 ```
 dependencies:
   flutter_edge_ai: ^2.1.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.11.0        # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai_litertlm: ^1.11.1        # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.1.1       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.2.2      # add if you compute embeddings (tokenizers; needs a backend, see above)
   flutter_edge_ai_rag: ^1.0.0             # add for on-device RAG (RagIndex) + one store below
@@ -302,7 +302,7 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 ```
 dependencies:
   flutter_edge_ai_embeddings: ^2.2.2   # tokenizer implementations (still required)
-  flutter_edge_ai_litertlm: ^1.11.0     # now provides LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.11.1     # now provides LiteRtEmbeddingBackend
 ```
 
 `LiteRtEmbeddingBackend()` itself is unchanged — only where the class is

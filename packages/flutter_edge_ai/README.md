@@ -70,7 +70,7 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.1.1
-  flutter_edge_ai_litertlm: ^1.11.0   # or any other engine from the table
+  flutter_edge_ai_litertlm: ^1.11.1   # or any other engine from the table
 ```
 
 Then complete the platform setup below.

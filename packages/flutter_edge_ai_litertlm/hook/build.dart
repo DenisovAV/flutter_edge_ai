@@ -216,7 +216,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 const _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-c',
+  version: '0.18.0-d',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -227,6 +227,13 @@ const _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.18.0-d rebuilds the two Linux libLiteRtLm.so and nothing else: the
+  // Gemma data processors wrap the prebuilt constraint provider instead of
+  // reinterpret_cast-ing it (patch_c_api.sh §12, #551) — on Linux it speaks
+  // Google's libc++ ABI and every native tool call aborted on its first
+  // constrained token. The other files and five archives are byte-identical
+  // to 0.18.0-c.
+  //
   // 0.18.0-c adds two files to the linux_arm64 archive and changes nothing
   // else: our Qualcomm dispatch (built in CI from the LiteRT pin against the
   // QAIRT 2.50 headers) and the libcdsprpc.so shim the QNN Stubs need, for
@@ -272,9 +279,9 @@ const _litertlmBundle = _NativeBundle(
   // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        '6317826a74350212b161eb9b15a496f705da761d5089eb4071f0a35f7fe68764',
+        '19e83477c58425c34b9ed1a06779f61effc225e0245c0cd16c80ab7fcc2e2788',
     'litertlm-linux_arm64.tar.gz':
-        'a390dae6b9e02e64e680f15e60f6b99b52b1c65347ad77d59bd460906837c457',
+        '4e7988402e92facc0c1d7a287bada2f4d27e787a7bf4842e4e5d9d3598706db4',
     'litertlm-windows_x86_64.tar.gz':
         '4bdf9d262bf6a59e7be3d336e812a56cb701a87bd13e1e5d9c6ca8d04bae30ae',
     'litertlm-macos_arm64.tar.gz':

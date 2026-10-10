@@ -45,7 +45,7 @@ used below).
 dependencies:
   flutter_edge_ai: ^2.1.1
   flutter_edge_ai_agent: ^0.2.7
-  flutter_edge_ai_litertlm: ^1.11.0   # an inference engine (LiteRtLmEngine)
+  flutter_edge_ai_litertlm: ^1.11.1   # an inference engine (LiteRtLmEngine)
 ```
 
 The agent is **not supported on Web** — never verified end-to-end, and the example app disables it. See the note below.

@@ -43,6 +43,10 @@ abstract class EmbeddingForwardPass {
   });
 
   /// Free native resources. Must be safe to call multiple times.
+  ///
+  /// Also called after `load()` or a getter throws: free whatever load
+  /// allocated, no-op for the rest; must not throw for a pass that never
+  /// loaded.
   Future<void> close();
 
   /// Output embedding dimension. Valid only after [load] completes.

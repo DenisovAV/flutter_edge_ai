@@ -133,8 +133,8 @@ class _ChatPageState extends State<ChatPage> {
         // Still two session flags on one model — but no longer hard-coded
         // `true`. Each is the AND of both answers: what the weights accept
         // and what this platform will carry to them. Asking for a modality
-        // the platform cannot deliver opens a session nothing will ever
-        // feed, and on the web that failure is silent.
+        // the platform cannot deliver buys nothing: on the web the session
+        // still opens, and the first picture or clip sent to it throws.
         supportImage: _imageCapability.available,
         supportAudio: _audioCapability.available,
         maxOutputTokens: 256,

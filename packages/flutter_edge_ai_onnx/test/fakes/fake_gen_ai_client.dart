@@ -30,6 +30,10 @@ class FakeGenAiClient implements GenAiClient {
   /// Set by the test to make [generate] fail instead of streaming.
   Object? generateError;
 
+  /// Set by the test to make [shutdown] throw — a custom [GenAiClient]
+  /// whose teardown fails.
+  Object? shutdownError;
+
   bool _stopRequested = false;
 
   @override
@@ -96,5 +100,7 @@ class FakeGenAiClient implements GenAiClient {
   Future<void> shutdown() async {
     shutdownCalls++;
     closed = true;
+    final error = shutdownError;
+    if (error != null) throw error;
   }
 }

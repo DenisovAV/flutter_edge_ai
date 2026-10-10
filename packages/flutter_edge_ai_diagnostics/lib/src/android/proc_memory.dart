@@ -31,14 +31,29 @@ int? anonymousBytesFromSmapsRollup(String text) {
   return privateDirty + swapPss;
 }
 
+/// `Private_Clean + Shared_Clean` from the text of `/proc/self/smaps_rollup`:
+/// resident clean pages, mostly mapped files. Clean anonymous pages can also
+/// be included, for example after a read from zram or `MADV_FREE`.
+///
+/// Null unless both fields are present, for the same reason as
+/// [anonymousBytesFromSmapsRollup]. `Pss_File` reports proportional file-backed
+/// memory and was added in mainline Linux 5.3; vendor backports may differ.
+int? fileBackedBytesFromSmapsRollup(String text) {
+  final fields = parseProcKbFields(text);
+  final privateClean = fields['Private_Clean'];
+  final sharedClean = fields['Shared_Clean'];
+  if (privateClean == null || sharedClean == null) return null;
+  return privateClean + sharedClean;
+}
+
 /// `MemAvailable` from the text of `/proc/meminfo`, or null if absent.
 int? availableBytesFromMeminfo(String text) =>
     parseProcKbFields(text)['MemAvailable'];
 
-/// Reads both values from `/proc`.
+/// Reads the three memory values from `/proc`.
 ///
-/// The one documented null: `smaps_rollup` does not exist on kernels older
-/// than 4.14, so an absent file means the value is not available here.
+/// An absent `smaps_rollup` means `anonymousBytes` and `fileBackedBytes` are
+/// unavailable. Availability depends on kernel support, including backports.
 /// Anything else is a failed read and throws [MemoryReadException]: a
 /// permission or I/O error, a missing `meminfo`, or a file that exists but
 /// lacks the field it always carries. The paths are parameters only so tests
@@ -66,6 +81,13 @@ Future<MemorySnapshot> readProcMemorySnapshot({
             anonymousBytesFromSmapsRollup(rollup),
             smapsRollupPath,
             'Private_Dirty and SwapPss',
+          ),
+    fileBackedBytes: rollup == null
+        ? null
+        : _require(
+            fileBackedBytesFromSmapsRollup(rollup),
+            smapsRollupPath,
+            'Private_Clean and Shared_Clean',
           ),
     availableBytes: _require(
       availableBytesFromMeminfo(meminfo),

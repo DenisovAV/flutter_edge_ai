@@ -236,7 +236,7 @@ All script tags go in `web/index.html` `<head>`, before Flutter boots.
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.17.1/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
   window.Engine = m.Engine;
   return m.Engine;
 })();
@@ -264,8 +264,8 @@ Storage mode, set in `FlutterEdgeAi.initialize(webStorageMode: ...)`:
 
 The `.litertlm` web engine loads the web build of a model —
 `gemma-4-E2B-it-web.litertlm` (2.0 GB, so use `streaming`), not
-`gemma-4-E2B-it.litertlm`. It is text-only: no images, audio or LoRA, and no
-Gemma 4 thinking.
+`gemma-4-E2B-it.litertlm`. It is text-only: an image or audio message throws
+`UnsupportedError`, and LoRA is not supported. Gemma 4 thinking works.
 
 A `--dart-define` token is compiled into `main.dart.js`, where every visitor can
 read it. Serve web users a model from a repo that needs no token.

@@ -2,6 +2,7 @@
 // real ONNX session (design D-T4's "fake-testable" requirement; Phase 2
 // hardened plan Task 3).
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -13,7 +14,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// result — the seam that makes `OnnxEmbeddingForwardPass`'s input-routing
 /// and padding logic testable without any native session.
 class _FakeOrtClient implements OrtClient {
-  _FakeOrtClient({required this.ioSpec, required this.runResult});
+  _FakeOrtClient({
+    required this.ioSpec,
+    required this.runResult,
+    this.loadError,
+    this.closeError,
+  });
 
   final OrtIoSpec ioSpec;
   final OrtRunResult Function(
@@ -22,6 +28,12 @@ class _FakeOrtClient implements OrtClient {
     List<int>? typeIds,
   )
   runResult;
+
+  /// When set, `load()` throws it instead of opening the session.
+  final Object? loadError;
+
+  /// When set, `close()` throws it after counting the call.
+  final Object? closeError;
 
   int loadCallCount = 0;
   int closeCallCount = 0;
@@ -32,6 +44,8 @@ class _FakeOrtClient implements OrtClient {
   @override
   Future<OrtIoSpec> load(String modelPath) async {
     loadCallCount++;
+    final error = loadError;
+    if (error != null) throw error;
     return ioSpec;
   }
 
@@ -50,6 +64,8 @@ class _FakeOrtClient implements OrtClient {
   @override
   Future<void> close() async {
     closeCallCount++;
+    final error = closeError;
+    if (error != null) throw error;
   }
 }
 
@@ -443,6 +459,141 @@ void main() {
       await expectLater(
         pass.run(tokenIds: const [1]),
         throwsA(isA<StateError>()),
+      );
+    });
+
+    test('a dimension probe that throws closes the client it opened', () async {
+      // The probe runs after the session is open. A throw there used to leave
+      // that session behind, pointed at only by a pass whose load had failed.
+      final fake = _FakeOrtClient(
+        ioSpec: const OrtIoSpec(
+          inputNames: ['input_ids'],
+          outputName: 'sentence_embedding',
+          hasLastHiddenStateOutput: false,
+          staticDim: null, // triggers the probe
+        ),
+        runResult: (ids, mask, typeIds) =>
+            throw StateError('probe forward pass failed'),
+      );
+      final pass = OnnxEmbeddingForwardPass(
+        '/tmp/model.onnx',
+        clientFactory: () => fake,
+      );
+
+      await expectLater(
+        pass.load(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('probe forward pass failed'),
+          ),
+        ),
+        reason: 'the caller gets the load error, not a close error',
+      );
+      expect(fake.closeCallCount, 1);
+
+      // Unwound to "never loaded": nothing reads the half-built state.
+      expect(() => pass.outputDimension, throwsStateError);
+      await expectLater(pass.run(tokenIds: const [1]), throwsStateError);
+      // And the worker's own close() after a failed load is still safe.
+      await pass.close();
+      expect(fake.closeCallCount, 1);
+    });
+
+    test(
+      'a probe that rejects the output shape closes the client too',
+      () async {
+        final fake = _FakeOrtClient(
+          ioSpec: const OrtIoSpec(
+            inputNames: ['input_ids'],
+            outputName: 'sentence_embedding',
+            hasLastHiddenStateOutput: false,
+            staticDim: null,
+          ),
+          // A rank-0 output: the probe throws its own StateError.
+          runResult: (ids, mask, typeIds) =>
+              OrtRunResult(values: Float32List(1), shape: const []),
+        );
+        final pass = OnnxEmbeddingForwardPass(
+          '/tmp/model.onnx',
+          clientFactory: () => fake,
+        );
+
+        await expectLater(pass.load(), throwsStateError);
+        expect(fake.closeCallCount, 1);
+      },
+    );
+
+    test('a client whose own load throws is closed as well', () async {
+      final fake = _FakeOrtClient(
+        ioSpec: const OrtIoSpec(
+          inputNames: ['input_ids'],
+          outputName: 'sentence_embedding',
+          hasLastHiddenStateOutput: false,
+          staticDim: 2,
+        ),
+        runResult: (ids, mask, typeIds) => OrtRunResult(
+          values: Float32List.fromList([1, 0]),
+          shape: const [1, 2],
+        ),
+        loadError: StateError('CreateSession failed'),
+      );
+      final pass = OnnxEmbeddingForwardPass(
+        '/tmp/model.onnx',
+        clientFactory: () => fake,
+      );
+
+      await expectLater(pass.load(), throwsStateError);
+      expect(fake.closeCallCount, 1);
+    });
+
+    test('when closing after a failed load also fails, the LOAD error reaches '
+        'the caller and the close failure is printed', () async {
+      final fake = _FakeOrtClient(
+        ioSpec: const OrtIoSpec(
+          inputNames: ['input_ids'],
+          outputName: 'sentence_embedding',
+          hasLastHiddenStateOutput: false,
+          staticDim: null, // triggers the probe
+        ),
+        runResult: (ids, mask, typeIds) =>
+            throw StateError('probe forward pass failed'),
+        closeError: StateError('ReleaseSession failed'),
+      );
+      final pass = OnnxEmbeddingForwardPass(
+        '/models/broken.onnx',
+        clientFactory: () => fake,
+      );
+      final printed = <String>[];
+
+      await runZoned(
+        () => expectLater(
+          pass.load(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('probe forward pass failed'),
+            ),
+          ),
+          reason: 'the close failure must not replace the load error',
+        ),
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+
+      expect(fake.closeCallCount, 1);
+      // `print`, so it reaches a release build's log — edgeAiLog would not.
+      expect(
+        printed.join('\n'),
+        allOf(
+          contains('WARNING'),
+          contains('/models/broken.onnx'),
+          contains('ReleaseSession failed'),
+          contains('onnx_embedding_forward_pass_test.dart'),
+        ),
       );
     });
   });

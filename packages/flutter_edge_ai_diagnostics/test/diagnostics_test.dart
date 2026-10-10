@@ -57,6 +57,40 @@ void main() {
       );
     });
 
+    test('equality covers fileBackedBytes', () {
+      final a = MemorySnapshot(
+        anonymousBytes: 1,
+        availableBytes: 2,
+        fileBackedBytes: 3,
+        takenAt: at,
+      );
+      expect(
+        a,
+        MemorySnapshot(
+          anonymousBytes: 1,
+          availableBytes: 2,
+          fileBackedBytes: 3,
+          takenAt: at,
+        ),
+      );
+      expect(
+        a,
+        isNot(
+          MemorySnapshot(anonymousBytes: 1, availableBytes: 2, takenAt: at),
+        ),
+      );
+      expect(
+        a.hashCode,
+        isNot(
+          MemorySnapshot(
+            anonymousBytes: 1,
+            availableBytes: 2,
+            takenAt: at,
+          ).hashCode,
+        ),
+      );
+    });
+
     test('toString shows nulls as null, not zero', () {
       final s = MemorySnapshot(
         anonymousBytes: null,
@@ -65,6 +99,7 @@ void main() {
       ).toString();
       expect(s, contains('anonymousBytes: null'));
       expect(s, contains('availableBytes: 7'));
+      expect(s, contains('fileBackedBytes: null'));
     });
   });
 }

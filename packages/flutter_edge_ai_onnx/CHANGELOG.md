@@ -1,6 +1,12 @@
-## 0.5.4
+## 0.5.6
 - Sampling values reach ORT-GenAI and Transformers.js; web no longer forces greedy (#572).
 - Require `flutter_edge_ai` ^2.2.0.
+
+## 0.5.5
+- Closing an ONNX text model mid-generation no longer leaks its native model.
+
+## 0.5.4
+- ONNX embedder no longer leaks its session when loading fails.
 
 ## 0.5.3
 - Allow `code_assets` 2.x, which other native plugins now require (#603).

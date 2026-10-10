@@ -117,6 +117,9 @@ dev_dependencies:
   # and test/benchmark_peak_sampler_test.dart.
   flutter_edge_ai_diagnostics:
     path: ../../flutter_edge_ai_diagnostics
+  # integration_test/embedding_close_leak_test.dart forces a full GC before
+  # each memory snapshot.
+  vm_service: ^15.0.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

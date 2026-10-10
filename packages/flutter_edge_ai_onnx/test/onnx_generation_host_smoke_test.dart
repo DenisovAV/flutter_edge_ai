@@ -129,13 +129,13 @@ void main() {
   test(
     'real-worker close-during-generation: stopGeneration() + resetSession() '
     'while a REAL generation is still in flight does not hang or throw, and '
-    'the client is reusable afterward — regression guard for the '
-    '_defaultWorkerEntry free-after-drain ordering in '
-    "ResetSessionRequest/Close (`stopRequested = true; await activeGeneration;` "
-    "before OgaDestroyGenerator/Tokenizer/Model in gen_ai_client.dart). "
+    'the client is reusable afterward — regression guard for the worker '
+    'never freeing the generator while a generation is suspended on its '
+    'per-token yield (a reset or close stops the turn and is served only '
+    'after it returns; `serveGenAiWorker` in gen_ai_worker.dart). '
     'gen_ai_client_lifecycle_test.dart\'s fake-worker test (b) exercises the '
-    'same shape against a zero-FFI fake and cannot detect a deleted await '
-    'here — only real native handles can actually use-after-free.',
+    'same shape against a zero-FFI engine and cannot detect a '
+    'use-after-free — only real native handles can.',
     () async {
       final client = GenAiFfiClient();
       await client.load(modelDir!, contextWindow: 1024);

@@ -11,6 +11,8 @@
 // Public method signatures (`generateEmbedding`/`generateEmbeddings`/
 // `getDimension`/`close`) are unchanged from `LitertEmbeddingModel`.
 
+import 'dart:async';
+
 import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
     show EmbeddingModel, TaskType;
@@ -24,10 +26,33 @@ import 'package:flutter_edge_ai/core/domain/platform_types.dart'
 typedef VoidCallback = void Function();
 
 class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
-  CommonEmbeddingModel._(this._worker, this.onClose, this.activeBackend);
+  CommonEmbeddingModel._(
+    this._worker,
+    this.onClose,
+    this.activeBackend,
+    this._modelPath,
+  ) {
+    // A worker that dies on its own turns this model closed and tells its
+    // listeners, so `EmbedderCache` evicts it and the next caller gets a fresh
+    // embedder — instead of this one, whose every call would fail.
+    unawaited(_worker.unexpectedExit.then(_onWorkerDied));
+  }
 
   final EmbeddingWorker _worker;
   final VoidCallback onClose;
+
+  /// The model file, named in the warnings this facade prints itself.
+  final String _modelPath;
+
+  /// What every [close] after the first one waits for: the end of the same
+  /// teardown, without its outcome. Only the first caller is told that a
+  /// listener threw; the model is closed either way, so later callers are not
+  /// handed that error again and again.
+  Future<void>? _closeFuture;
+
+  /// Whether [onClose] and the close listeners have run; they run once,
+  /// whether the model was closed or its worker died.
+  bool _closeNotified = false;
 
   /// Carried from the engine's [ForwardPassDescriptor], never decided here.
   /// This facade is runtime-agnostic by design, so it is not entitled to an
@@ -68,13 +93,18 @@ class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
       worker,
       onClose ?? () {},
       descriptor.activeBackend,
+      descriptor.modelPath,
     );
   }
 
   void _assertNotClosed() {
     if (_isClosed) {
+      final deathReason = _worker.deathReason;
       throw StateError(
-        'CommonEmbeddingModel is closed; create a new instance to use it',
+        deathReason == null
+            ? 'CommonEmbeddingModel is closed; create a new instance to use it'
+            : 'CommonEmbeddingModel is closed because its worker exited '
+                  'unexpectedly: $deathReason',
       );
     }
   }
@@ -107,14 +137,27 @@ class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     return outputDimension;
   }
 
+  /// Closes the worker. Every caller — the app, the cache joining a close the
+  /// app started — gets the same teardown and returns only once it is done,
+  /// which is what lets `EmbedderCache` hold a rebuild until the old native
+  /// model is gone.
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() {
+    final teardownDone = _closeFuture;
+    if (teardownDone != null) return teardownDone;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // `whenComplete` hands the first caller the teardown's own outcome — a
+    // listener's throw included, unhandled if they never look — while
+    // `settled` only ever completes normally.
+    return _close().whenComplete(settled.complete);
+  }
+
+  Future<void> _close() async {
     _isClosed = true;
     try {
       await _worker.close();
     } finally {
-      onClose();
       // Deliberately AFTER the teardown, not before it. A listener is app code
       // (`addCloseListener` is public) and `CloseNotifier` calls each one bare,
       // so firing them first would let one throw exit here before
@@ -125,7 +168,36 @@ class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
       // params while the teardown ran — is closed by [isClosed] instead, which
       // is already true above and which `EmbedderCache` checks on every read.
       // That covers every implementation in one place, not just this one.
+      _notifyClosed();
+    }
+  }
+
+  void _notifyClosed() {
+    if (_closeNotified) return;
+    _closeNotified = true;
+    try {
+      onClose();
+    } finally {
+      // Even when `onClose` throws: the cache evicts on a listener, and a
+      // closed model it never hears about is handed to every later caller.
       fireCloseListeners();
+    }
+  }
+
+  void _onWorkerDied(String reason) {
+    _isClosed = true;
+    try {
+      _notifyClosed();
+    } catch (e, st) {
+      // Nobody awaits this path, so a throwing listener would otherwise be an
+      // unhandled error with no context. `print` for the release-visibility
+      // reason `EmbedderCache` gives.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai] WARNING: a close listener threw while the embedder '
+        'for $_modelPath, whose worker had died ($reason), was being closed: '
+        '$e\n$st',
+      );
     }
   }
 }

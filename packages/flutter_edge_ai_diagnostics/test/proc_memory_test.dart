@@ -1,19 +1,23 @@
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart'
     show MemoryReadException;
 import 'package:flutter_edge_ai_diagnostics/src/android/proc_memory.dart';
+import 'package:ffi/ffi.dart' show malloc;
 import 'package:flutter_test/flutter_test.dart';
 
-// Trimmed from a real /proc/self/smaps_rollup (Linux 7.0). The first line is
-// the rollup header, which carries no size and must be skipped.
+// Adapted from /proc/self/smaps_rollup (Linux 7.0), with synthetic clean
+// values for the sum tests. The header carries no size and must be skipped.
 const _smapsRollup = '''
 00400000-ffffffffff601000 ---p 00000000 00:00 0                          [rollup]
 Rss:                7416 kB
 Pss:                2911 kB
 Pss_Anon:           1880 kB
 Pss_File:            999 kB
+Shared_Clean:       3000 kB
+Private_Clean:       500 kB
 Private_Dirty:      1880 kB
 Anonymous:          1880 kB
 Swap:                 64 kB
@@ -44,7 +48,7 @@ void main() {
 
     test('skips the smaps_rollup header line', () {
       final fields = parseProcKbFields(_smapsRollup);
-      expect(fields.length, 8);
+      expect(fields.length, 10);
       expect(fields['Rss'], 7416 * 1024);
     });
   });
@@ -66,6 +70,20 @@ void main() {
 
     test('is null for empty input', () {
       expect(anonymousBytesFromSmapsRollup(''), isNull);
+    });
+  });
+
+  group('fileBackedBytesFromSmapsRollup', () {
+    test('is Private_Clean + Shared_Clean', () {
+      expect(fileBackedBytesFromSmapsRollup(_smapsRollup), (3000 + 500) * 1024);
+    });
+
+    test('is null when either clean field is missing', () {
+      for (final field in ['Shared_Clean', 'Private_Clean']) {
+        final text = _smapsRollup.replaceAll(RegExp('$field:.*\\n'), '');
+        expect(fileBackedBytesFromSmapsRollup(text), isNull, reason: field);
+      }
+      expect(fileBackedBytesFromSmapsRollup(''), isNull);
     });
   });
 
@@ -96,6 +114,7 @@ void main() {
       );
 
       expect(snapshot.anonymousBytes, (1880 + 32) * 1024);
+      expect(snapshot.fileBackedBytes, (3000 + 500) * 1024);
       expect(snapshot.availableBytes, 9126572 * 1024);
     });
 
@@ -103,7 +122,7 @@ void main() {
         File('${dir.path}/meminfo')..writeAsStringSync(_meminfo);
 
     test(
-      'an absent smaps_rollup (kernel < 4.14) is the documented null',
+      'an absent smaps_rollup gives null for both process counters',
       () async {
         final snapshot = await readProcMemorySnapshot(
           smapsRollupPath: '${dir.path}/absent_rollup',
@@ -111,6 +130,7 @@ void main() {
         );
 
         expect(snapshot.anonymousBytes, isNull);
+        expect(snapshot.fileBackedBytes, isNull);
         expect(snapshot.availableBytes, 9126572 * 1024);
       },
     );
@@ -140,6 +160,26 @@ void main() {
             (e) => e.message,
             'message',
             contains('Private_Dirty and SwapPss'),
+          ),
+        ),
+      );
+    });
+
+    test('smaps_rollup without the clean fields is a failed read', () async {
+      final rollup = File('${dir.path}/smaps_rollup')
+        ..writeAsStringSync(
+          _smapsRollup.replaceAll(RegExp(r'Shared_Clean:.*\n'), ''),
+        );
+      await expectLater(
+        readProcMemorySnapshot(
+          smapsRollupPath: rollup.path,
+          meminfoPath: meminfoFixture().path,
+        ),
+        throwsA(
+          isA<MemoryReadException>().having(
+            (e) => e.message,
+            'message',
+            contains('Private_Clean and Shared_Clean'),
           ),
         ),
       );
@@ -232,12 +272,114 @@ void main() {
       Platform.isLinux && File('/proc/self/smaps_rollup').existsSync();
 
   group('real /proc on this Linux host', () {
-    test('both values are present and positive', () async {
+    test('all three values are present and positive', () async {
       final snapshot = await readProcMemorySnapshot();
       expect(snapshot.anonymousBytes, isNotNull);
       expect(snapshot.anonymousBytes, greaterThan(0));
+      expect(snapshot.fileBackedBytes, isNotNull);
+      expect(snapshot.fileBackedBytes, greaterThan(0));
       expect(snapshot.availableBytes, isNotNull);
       expect(snapshot.availableBytes, greaterThan(0));
+    });
+
+    test('fileBackedBytes rises when a file is mapped and read, '
+        'and anonymousBytes does not', () async {
+      const size = 64 * 1024 * 1024;
+      final libc = DynamicLibrary.process();
+      final open = libc
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, Int32),
+            int Function(Pointer<Uint8>, int)
+          >('open');
+      final mmap = libc
+          .lookupFunction<
+            Pointer<Uint8> Function(
+              Pointer<Void>,
+              IntPtr,
+              Int32,
+              Int32,
+              Int32,
+              Int64,
+            ),
+            Pointer<Uint8> Function(Pointer<Void>, int, int, int, int, int)
+          >('mmap');
+      final munmap = libc
+          .lookupFunction<
+            Int32 Function(Pointer<Uint8>, IntPtr),
+            int Function(Pointer<Uint8>, int)
+          >('munmap');
+      final close = libc
+          .lookupFunction<Int32 Function(Int32), int Function(int)>('close');
+
+      // /tmp may be tmpfs: its shmem pages stay dirty even after a flush.
+      // Keep the mapped file on the checkout's filesystem instead.
+      final scratch = Directory('.dart_tool')..createSync(recursive: true);
+      final dir = scratch.createTempSync('diag_mmap_');
+      final file = File('${dir.path}/weights');
+      int? fd;
+      Pointer<Uint8>? map;
+      try {
+        final out = file.openSync(mode: FileMode.write);
+        try {
+          // Small chunks avoid leaving a 64 MiB list for the GC to free
+          // during the later memory readings.
+          final chunk = Uint8List(1024 * 1024)..fillRange(0, 1024 * 1024, 7);
+          for (var i = 0; i < size ~/ chunk.length; i++) {
+            out.writeFromSync(chunk);
+          }
+          // With one mapping, unflushed file pages count as Private_Dirty
+          // (inside anonymousBytes). Flush so the read sees clean pages.
+          out.flushSync();
+        } finally {
+          out.closeSync();
+        }
+
+        final path = '${file.path}\u0000'.codeUnits;
+        final cPath = malloc<Uint8>(path.length);
+        try {
+          cPath.asTypedList(path.length).setAll(0, path);
+          fd = open(cPath, 0); // O_RDONLY
+        } finally {
+          malloc.free(cPath);
+        }
+        expect(fd, greaterThanOrEqualTo(0));
+
+        final before = await readProcMemorySnapshot();
+        final mapped = mmap(
+          nullptr,
+          size,
+          1,
+          2,
+          fd,
+          0,
+        ); // PROT_READ, MAP_PRIVATE
+        expect(
+          mapped,
+          isNot(Pointer<Uint8>.fromAddress(-1)),
+          reason: 'mmap returned MAP_FAILED',
+        );
+        map = mapped;
+        var sum = 0;
+        for (var i = 0; i < size; i += 4096) {
+          sum += map[i]; // touch every page so it is resident
+        }
+        final after = await readProcMemorySnapshot();
+
+        expect(sum, isPositive);
+        expect(
+          after.fileBackedBytes! - before.fileBackedBytes!,
+          greaterThanOrEqualTo(size * 3 ~/ 4),
+        );
+        expect(
+          after.anonymousBytes! - before.anonymousBytes!,
+          lessThan(size ~/ 4),
+          reason: 'a flushed read-only file mapping has no dirty private pages',
+        );
+      } finally {
+        if (map != null) munmap(map, size);
+        if (fd != null && fd >= 0) close(fd);
+        dir.deleteSync(recursive: true);
+      }
     });
 
     test(

@@ -1,6 +1,10 @@
 ## 2.2.0
 - **Breaking:** unset sampling values come from the model file, then its family, not greedy `topK: 1` (#572).
 
+## 2.1.3
+- Closing an embedder mid-batch no longer leaks its native model.
+- An embedder that fails to load releases its native handles.
+
 ## 2.1.2
 - Allow `code_assets` 2.x, which other native plugins now require (#603).
 

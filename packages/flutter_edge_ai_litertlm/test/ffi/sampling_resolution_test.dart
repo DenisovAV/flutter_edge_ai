@@ -3,7 +3,7 @@ import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai/core/sampling.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_model_info.dart';
+import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Records what reaches the native layer, then stops: no engine is loaded.
@@ -188,7 +188,7 @@ void main() {
       );
     });
 
-    test('zeros the C API returns for missing fields stay unset', () {
+    test('zero fields, which proto3 does not store, stay unset', () {
       expect(
         bundleSamplerFrom(type: 2, temperature: 0.6, topK: 0, topP: 0.95),
         const SamplingParams(temperature: 0.6, topP: 0.95),

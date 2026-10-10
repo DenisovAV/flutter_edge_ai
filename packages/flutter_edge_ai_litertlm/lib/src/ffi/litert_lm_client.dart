@@ -19,7 +19,7 @@ import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
 import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
-import 'litert_lm_model_info.dart';
+import '../litertlm_bundle_sampler.dart';
 import 'sigprof_mask.dart';
 import '../thinking_context.dart';
 
@@ -897,6 +897,15 @@ class LiteRtLmFfiClient {
       edgeAiLog(
         '[LiteRtLmFfi/perf] === START litert_lm_engine_create (native — model load + accelerator init + KV cache prefill) ===',
       );
+      // The bundle's own sampler: the container header and its LlmMetadata
+      // section, a few KB read before the engine exists. A failed read is
+      // reported, not thrown (see _reportBundleSampler).
+      final readSw = Stopwatch()..start();
+      final samplerRead = await tryReadBundleSampler(modelPath);
+      edgeAiLog(
+        '[LiteRtLmFfi/perf] bundle sampler read: ${readSw.elapsedMilliseconds}ms',
+        level: EdgeAiLogLevel.verbose,
+      );
       final settingsAddr = settings.address;
       final sw = Stopwatch()..start();
       // Snapshot the log level so the spawned isolate (a fresh copy of the
@@ -906,20 +915,12 @@ class LiteRtLmFfiClient {
       // The QNN backend's init fails under the debug VM's SIGPROF sampling on
       // Linux (see withSigprofBlocked); Android's FastRPC client survives it.
       final blockSigprof = npuDispatchDir != null && Platform.isLinux;
-      final (engineAddr, samplerRead) = await Isolate.run(() {
+      final engineAddr = await Isolate.run(() {
         edgeAiLogLevel = isolateLogLevel;
         final isolateSw = Stopwatch()..start();
         final lib = _openLiteRtLmLibrary();
         edgeAiLog(
           '[LiteRtLmFfi/perf]   isolate: DynamicLibrary.open: ${isolateSw.elapsedMilliseconds}ms',
-          level: EdgeAiLogLevel.verbose,
-        );
-        // Read the bundle's own sampler here, off the UI isolate and before
-        // the engine exists, so a failing read cannot leave an engine behind.
-        final readStart = isolateSw.elapsedMilliseconds;
-        final samplerRead = tryReadBundleSampler(lib, modelPath);
-        edgeAiLog(
-          '[LiteRtLmFfi/perf]   isolate: bundle sampler read: ${isolateSw.elapsedMilliseconds - readStart}ms',
           level: EdgeAiLogLevel.verbose,
         );
         final lookupStart = isolateSw.elapsedMilliseconds;
@@ -941,7 +942,7 @@ class LiteRtLmFfiClient {
           '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
           level: EdgeAiLogLevel.verbose,
         );
-        return (ptr, samplerRead);
+        return ptr;
       });
       _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr);
       sw.stop();

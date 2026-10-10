@@ -1,5 +1,5 @@
 // On-device: a session with no sampler set takes the sampler the `.litertlm`
-// bundle ships, read through LiteRT-LM's model_info C API (#572). Before
+// bundle ships, read from the file's header and LlmMetadata section (#572). Before
 // flutter_edge_ai 2.2 core always sent `topK: 1` and overrode it.
 //
 // Stage the models in the app documents dir (desktop/iOS) or
@@ -9,12 +9,9 @@
 //
 // Run: flutter test integration_test/sampling_defaults_test.dart -d <device>
 // CPU by default; --dart-define=TOOLS_BACKEND=gpu for the GPU backend.
-import 'dart:ffi';
-import 'dart:io';
-
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_model_info.dart';
+import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -41,20 +38,6 @@ Future<FfiInferenceModel> _load(String file, ModelType modelType) async {
   return model as FfiInferenceModel;
 }
 
-/// libLiteRtLm, opened the way the engine opens it.
-DynamicLibrary _liteRtLm() {
-  if (Platform.isIOS) {
-    return DynamicLibrary.open(
-      '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm',
-    );
-  }
-  if (Platform.isMacOS) {
-    return DynamicLibrary.open('LiteRtLm.framework/LiteRtLm');
-  }
-  if (Platform.isWindows) return DynamicLibrary.open('LiteRtLm.dll');
-  return DynamicLibrary.open('libLiteRtLm.so');
-}
-
 Future<String> _reply(InferenceModel model) async {
   final chat = await model.createChat();
   await chat.addQueryChunk(
@@ -70,17 +53,18 @@ Future<String> _reply(InferenceModel model) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  // Read without an engine: with native-v0.18.0-c this Qwen3 bundle does not
+  // Read without an engine: with native-v0.18.0-d this Qwen3 bundle does not
   // load ("piece must not include null character" from its tokenizer), and
   // the read does not need one.
   testWidgets('Qwen3: the bundle sampler is read', (tester) async {
     final path = await stagedModelPath('Qwen3-0.6B.litertlm');
     expect(path, isNotNull, reason: 'stage Qwen3-0.6B.litertlm first');
-    final read = tryReadBundleSampler(_liteRtLm(), path!);
+    final read = await tryReadBundleSampler(path!);
     expect(read.error, isNull);
-    expect(read.sampler.topK, 20);
-    expect(read.sampler.topP, closeTo(0.95, 1e-6));
-    expect(read.sampler.temperature, closeTo(0.6, 1e-6));
+    expect(
+      read.sampler,
+      const SamplingParams(temperature: 0.6, topK: 20, topP: 0.95),
+    );
   });
 
   testWidgets('Gemma 4: no bundle sampler, the family defaults apply', (

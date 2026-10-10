@@ -1,3 +1,6 @@
+## 0.5.4
+- ONNX embedder no longer leaks its session when loading fails.
+
 ## 0.5.3
 - Allow `code_assets` 2.x, which other native plugins now require (#603).
 

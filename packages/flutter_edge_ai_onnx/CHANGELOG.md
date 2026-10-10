@@ -1,3 +1,6 @@
+## 0.5.3
+- Allow `code_assets` 2.x, which other native plugins now require (#603).
+
 ## 0.5.2
 - Require `flutter_edge_ai` 2.x.
 

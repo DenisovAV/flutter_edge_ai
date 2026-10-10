@@ -241,7 +241,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "2.1.1"
+    version: "2.1.2"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
@@ -276,7 +276,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.11.0"
+    version: "1.11.2"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:
@@ -290,7 +290,7 @@ packages:
       path: "../../flutter_edge_ai_onnx"
       relative: true
     source: path
-    version: "0.5.2"
+    version: "0.5.3"
   flutter_edge_ai_qdrant:
     dependency: "direct main"
     description:
@@ -318,7 +318,7 @@ packages:
       path: "../../flutter_edge_ai_sqlite"
       relative: true
     source: path
-    version: "2.0.0"
+    version: "2.0.1"
   flutter_inappwebview:
     dependency: transitive
     description:

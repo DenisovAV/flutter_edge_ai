@@ -22,8 +22,8 @@ inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.1.1
-  flutter_edge_ai_litertlm: ^1.11.1
+  flutter_edge_ai: ^2.1.2
+  flutter_edge_ai_litertlm: ^1.11.2
   flutter_edge_ai_embeddings: ^2.2.2
   flutter_edge_ai_rag: ^1.0.0
   flutter_edge_ai_sqlite: ^2.0.0 # all six platforms, including Web

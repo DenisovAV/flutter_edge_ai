@@ -214,7 +214,7 @@ class _NativeBundle {
 /// libStreamProxy.dylib had been inheriting the build host and shipped minos
 /// 26.0 since native-v0.14.0. iOS vtool minos 13.0 (#245).
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
-const _litertlmBundle = _NativeBundle(
+final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
   version: '0.18.0-d',
   releaseTagPrefix: 'native-v',
@@ -405,7 +405,7 @@ const _litertlmBundle = _NativeBundle(
   linuxExtraLibs: [qualcommDispatchLib, cdsprpcShimLib],
 );
 
-const _bundles = [_litertlmBundle];
+final _bundles = [_litertlmBundle];
 
 // ============================================================================
 // Per-platform name resolution

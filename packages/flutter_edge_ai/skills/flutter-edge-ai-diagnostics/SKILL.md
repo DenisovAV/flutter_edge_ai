@@ -18,13 +18,13 @@ description: Use when measuring how much memory an on-device model costs with fl
 
 ## Interpret resident clean pages
 
-The baseline includes every clean mapped file the process has touched. Take a reading before loading and subtract; shared pages count in full, not proportionally. Singly mapped dirty file pages are in `Private_Dirty` (inside `anonymousBytes`); `Shared_Dirty` is in neither field.
+The baseline includes every clean mapped file the process has touched. Take a reading before loading and subtract; shared pages count in full, not proportionally. Singly mapped dirty file pages are in Private_Dirty (inside `anonymousBytes`); Shared_Dirty is in neither field.
 
-Clean anonymous pages can appear in `Private_Clean`, including pages read back from zram and not written since, and `MADV_FREE` pages. On zram's skip-swapcache path, pages can lose their swap slots and leave `SwapPss`. Under model-load pressure, cold heap memory can therefore move from `anonymousBytes` into `fileBackedBytes`. Interpret both counters together; neither alone measures all model memory or predicts an Android kill.
+Clean anonymous pages can appear in Private_Clean, including pages read back from zram and not written since, and MADV_FREE pages. On zram's skip-swapcache path, pages can lose their swap slots and leave SwapPss. Under model-load pressure, cold heap memory can therefore move from `anonymousBytes` into `fileBackedBytes`. Interpret both counters together; neither alone measures all model memory or predicts an Android kill.
 
 With version 0.2.2 on vivo 1933 (Android 11, kernel 4.9), Gemma 4 E2B `fileBackedBytes` in MiB was 103.6 → 800.5 → 1043.2 → 102.3 on CPU and 102.3 → 1390.3 → 1413.2 → 116.1 on GPU, measured before load, after load, after one prompt, and after close. The actual backend matched the request. `Private_Clean + Shared_Clean − (Rss − Anonymous)` was negative after load and after the prompt on both backends, so this run gave no positive lower bound for clean anonymous pages. It does not establish that none were present.
 
-On iOS, `TASK_VM_INFO` has an `external` field; evaluating it is a follow-up. A null `fileBackedBytes` does not imply that iOS lacks such accounting.
+On iOS, TASK_VM_INFO has an `external` field; evaluating it is a follow-up. A null `fileBackedBytes` does not imply that iOS lacks such accounting.
 
 ## Measure what a model costs
 

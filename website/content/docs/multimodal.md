@@ -133,9 +133,10 @@ speedup; `preferredBackend` alone only moves the text decoder.
 ## Web limitations
 
 The web `.litertlm` path (`@litert-lm/core`, early preview) does **not** support
-vision or audio yet — image inputs are dropped with a debug warning and there is
-no audio executor in the JS API. For full vision on web, use **MediaPipe `.task`
-web** models (which do support image input). See
+vision or audio yet — its JS API creates the LLM engine with no vision or audio
+executor, so an image or audio message throws `UnsupportedError`. For full
+vision on web, use **MediaPipe `.task` web** models (which do support image
+input). See
 [Troubleshooting](/docs/troubleshooting) for the full web `.litertlm` feature
 matrix.
 

@@ -50,7 +50,7 @@
 /// otherwise the float32 test prints INCONCLUSIVE.
 ///
 /// On web only the default test runs. The web engine does not read
-/// `activationDataType` (`@litert-lm/core` 0.17 has no such setting), runs the
+/// `activationDataType` (`@litert-lm/core` 0.18.0 has no such setting), runs the
 /// `-web.litertlm` files on its own GPU executor, and reports neither a backend
 /// nor session metrics, so no time to first token is printed there.
 ///

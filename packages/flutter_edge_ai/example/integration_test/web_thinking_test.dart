@@ -53,7 +53,7 @@ Future<void> _disposeModel() async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group('web thinking (@litert-lm/core 0.17.1)', () {
+  group('web thinking (@litert-lm/core 0.18.0)', () {
     tearDownAll(_disposeModel);
 
     testWidgets('enableThinking reaches the model on web', (tester) async {

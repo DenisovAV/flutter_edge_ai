@@ -1,6 +1,6 @@
 // Standalone library: the web `.litertlm` inference model + session. Lives in
 // flutter_edge_ai_litertlm (extracted from core's flutter_edge_ai_web.dart). Imports
-// the shared web infra (web_model_source, web_image_format) and core parsing
+// the shared web infra (web_model_source) and core parsing
 // directly so it no longer needs to be a `part of flutter_edge_ai_web.dart`.
 import 'dart:async';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
@@ -22,21 +22,22 @@ import 'package:flutter_edge_ai/core/function_call_parser.dart';
 import 'package:flutter_edge_ai/core/parsing/sdk_response_parser.dart';
 import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/web/web_model_source.dart';
-import 'package:flutter_edge_ai/web/web_image_format.dart';
 
 import 'litert_lm_web.dart';
 import '../thinking_context.dart';
 
 /// Web `.litertlm` inference via the upstream `@litert-lm/core` early-preview
-/// JS API (`@litert-lm/core` 0.17.1 on web through WebGPU/WASM).
+/// JS API (`@litert-lm/core` 0.18.0 on web through WebGPU/WASM).
 ///
 /// Mirrors [FfiInferenceModel] (mobile/desktop) for the same C API but maps
 /// it onto the JS surface: `Engine.create` → `engine.createConversation` →
 /// `conversation.sendMessageStreaming(text)` returning a JS AsyncIterator.
 ///
 /// **Limitations (matches upstream early-preview status):**
-/// - Text-in/text-out only — vision/audio are warn-and-ignore (the TS
-///   EngineSettings doesn't expose Audio/VisionExecutor yet).
+/// - Text-in/text-out only. An image or audio message throws
+///   [UnsupportedError] from [LiteRtLmWebSession.addQueryChunk], because the
+///   JS API creates the LLM engine with no vision or audio executor (see
+///   [createSession]).
 /// - Thinking reaches the model as `extra_context` with an explicit
 ///   `enable_thinking` ([thinkingContext]), the key the chat templates read —
 ///   measured on Gemma 4 E2B in Chrome (`web_thinking_test.dart`). The earlier
@@ -197,32 +198,29 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         'loraPath or use a MediaPipe .task web model.',
       );
     }
-    // Vision/audio modality on web @litert-lm/core@0.17.1 requires a
-    // dedicated Vision/AudioExecutor to be loaded at Engine.create() time.
-    // The WASM runtime asserts "Vision executor should not be null, please
-    // TryLoadingVisionExecutor() first.", but the TypeScript-level
-    // `EngineSettings` interface (wasm_binding_types.d.ts) only exposes
-    // `getMutableMainExecutorSettings()` — there's no setter for
-    // VisionExecutorSettings or AudioExecutorSettings in the early preview.
-    // Engine logs confirm this with `max_num_images: 0` baked in at create.
-    //
-    // Until upstream adds the Vision/Audio executor setters to the JS API,
-    // setting `visionModalityEnabled`/`audioModalityEnabled: true` in
-    // SessionConfig throws "Audio options should not be null" / "Vision
-    // options should not be null" — so we force-disable them and warn.
-    if (enableVisionModality == true || enableAudioModality == true) {
-      if (kDebugMode) {
-        edgeAiLog(
-          '[LiteRtLmWebInferenceModel] Warning: vision/audio modality '
-          'is requested but @litert-lm/core@0.17.1 does not expose the '
-          'Vision/AudioExecutor config in its TypeScript API — image/audio '
-          'inputs are dropped on web until upstream extends EngineSettings. '
-          'Track: https://github.com/google-ai-edge/LiteRT-LM',
-        );
-      }
-    }
-    const visionEnabled = false;
-    const audioEnabled = false;
+    // No vision or audio on web, as of @litert-lm/core 0.18.0. `Engine.create`
+    // builds the LLM engine with `EngineSettings.createDefault(modelAssets,
+    // backend)`, which takes no vision or audio backend — only the separate
+    // `EmbeddingEngine` has `createDefaultMultimodal` — so the engine never
+    // loads either executor. Measured on Gemma 4 E2B in Chrome 155 on Linux
+    // (WebGPU on a Tesla T4) against the raw JS API, one conversation per
+    // attempt:
+    //   - `visionModalityEnabled` / `audioModalityEnabled: true` in the
+    //     session config: `createConversation` throws "Vision options should
+    //     not be null." / "Audio options should not be null.";
+    //   - an image or audio content part with the typed `data` field (base64
+    //     string or bytes): "Audio or image item must contain a path or
+    //     blob." — only `EmbeddingEngine` converts `data`, a Conversation
+    //     passes the message JSON to the runtime as it is;
+    //   - the same part with the runtime's own `blob` field: "Vision executor
+    //     should not be null, please TryLoadingVisionExecutor() first." (and
+    //     the audio equivalent).
+    // Text before and after those attempts still answered, so the engine
+    // survives them. The modality flags are therefore not forwarded, and an
+    // image or audio message throws in [LiteRtLmWebSession.addQueryChunk]
+    // rather than being dropped, which left the model answering about media
+    // it never received.
+    _noteModalityRequested(enableVisionModality, enableAudioModality);
 
     if (_createCompleter case Completer<InferenceModelSession> completer) {
       return completer.future;
@@ -247,8 +245,6 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         conversation: conversation,
         modelType: modelType,
         fileType: fileType,
-        supportImage: visionEnabled,
-        supportAudio: audioEnabled,
         generationMutex: generationMutex,
         onClose: () {
           _session = null;
@@ -302,16 +298,8 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         'before opening a new one.',
       );
     }
-    // Vision/audio still blocked upstream (@litert-lm/core@0.17.1) — see the
-    // detailed comment in createSession. Force-disable here too.
-    if ((enableVisionModality == true || enableAudioModality == true) &&
-        kDebugMode) {
-      edgeAiLog(
-        '[LiteRtLmWebInferenceModel] Warning: vision/audio modality '
-        'is dropped on the web .litertlm path until upstream extends '
-        'EngineSettings.',
-      );
-    }
+    // No vision or audio on web — see the comment in createSession.
+    _noteModalityRequested(enableVisionModality, enableAudioModality);
 
     await _ensureEngine();
     final conversation = await _buildConversation(
@@ -331,13 +319,25 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       conversation: conversation,
       modelType: modelType,
       fileType: fileType,
-      supportImage: false,
-      supportAudio: false,
       generationMutex: generationMutex,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
     return session;
+  }
+
+  /// Says, in debug builds, that a requested vision/audio modality will not be
+  /// honoured. The session still opens: a text-only conversation is valid,
+  /// and an app that passes `supportImage: true` on every platform should keep
+  /// working on web for text. The media message itself is what throws.
+  void _noteModalityRequested(bool? vision, bool? audio) {
+    if (kDebugMode && (vision == true || audio == true)) {
+      edgeAiLog(
+        '[LiteRtLmWebInferenceModel] Warning: vision/audio modality was '
+        'requested, but web LiteRT-LM runs LLMs text-only; an image or audio '
+        'message will throw UnsupportedError.',
+      );
+    }
   }
 
   /// Builds an `@litert-lm/core` Conversation from sampler + preface config.
@@ -358,9 +358,9 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
     // Build SessionConfig matching upstream TS:
     //   { samplerParams?, maxOutputTokens? }
-    // Vision/audio modality intentionally not set — they require
-    // AudioExecutor/VisionExecutor at Engine.create() which the TS
-    // EngineSettings doesn't expose yet.
+    // Vision/audio modality intentionally not set: with either flag on,
+    // `createConversation` throws, because the engine has no vision or audio
+    // executor (see createSession).
     //
     // `maxOutputTokens` has been in `SessionConfig` since at least 0.14.0 — the
     // web path was simply never wired to set it, and logged that it ignored the
@@ -483,8 +483,6 @@ class LiteRtLmWebSession extends InferenceModelSession
     required this.conversation,
     required this.modelType,
     required this.fileType,
-    required this.supportImage,
-    required this.supportAudio,
     required this.generationMutex,
     required this.onClose,
   });
@@ -492,8 +490,6 @@ class LiteRtLmWebSession extends InferenceModelSession
   final LiteRtLmConversation conversation;
   final ModelType modelType;
   final ModelFileType fileType;
-  final bool supportImage;
-  final bool supportAudio;
 
   /// Shared across all sessions of the owning model — serializes generation
   /// (concurrent contexts, serialized inference). Acquired for the whole
@@ -502,8 +498,6 @@ class LiteRtLmWebSession extends InferenceModelSession
   final VoidCallback onClose;
 
   final StringBuffer _queryBuffer = StringBuffer();
-  final List<Uint8List> _pendingImages = [];
-  Uint8List? _pendingAudio;
   bool _isClosed = false;
   bool _isCancelled = false;
 
@@ -541,9 +535,32 @@ class LiteRtLmWebSession extends InferenceModelSession
     if (_isClosed) throw StateError('Session is closed');
   }
 
+  /// The error for an image or audio message. The engine has no vision or
+  /// audio executor (see [LiteRtLmWebInferenceModel.createSession]), so the
+  /// bytes could reach no encoder; dropping them instead let the model answer
+  /// about media it never received.
+  static UnsupportedError _unsupportedMedia(Message message) {
+    final kinds = [
+      if (message.hasImage) 'image',
+      if (message.hasAudio) 'audio',
+    ].join(' and ');
+    return UnsupportedError(
+      'Web LiteRT-LM does not support $kinds input for LLMs yet: '
+      '@litert-lm/core 0.18.0 creates the LLM engine without a vision or '
+      'audio executor. Send text only to a web .litertlm model'
+      '${message.hasImage ? ', or use a MediaPipe .task web model for images' : ''}.',
+    );
+  }
+
+  /// Stages [message] for the next generation. Throws [UnsupportedError] for
+  /// a message with an image or audio, before anything is staged, so the
+  /// rejected message leaves the next turn unchanged.
   @override
   Future<void> addQueryChunk(Message message) async {
     _assertNotClosed();
+    if (message.hasImage || message.hasAudio) {
+      throw _unsupportedMedia(message);
+    }
     final prompt = message.transformToChatPrompt(
       type: modelType,
       fileType: fileType,
@@ -563,27 +580,14 @@ class LiteRtLmWebSession extends InferenceModelSession
         name: name,
         response: SdkResponseParser.toolResponsePayload(message.text),
       ));
-    } else if (prompt.isNotEmpty || message.hasImage || message.hasAudio) {
+    } else if (prompt.isNotEmpty) {
       _stagedNonToolContent = true;
-    }
-    if (message.hasImage && supportImage) {
-      if (message.imageBytes != null) {
-        _pendingImages.add(message.imageBytes!);
-      }
-      for (final image in message.images) {
-        if (!_pendingImages.contains(image)) {
-          _pendingImages.add(image);
-        }
-      }
-    }
-    if (message.hasAudio && message.audioBytes != null && supportAudio) {
-      _pendingAudio = message.audioBytes;
     }
   }
 
   /// The staged tool results as one role-`tool` message, when they are the
   /// whole turn; mirrors `FfiInferenceModelSession`. A turn that also carries
-  /// user text or media is a user message, and the results stay in its text.
+  /// user text is a user message, and the results stay in its text.
   String? _takeToolResponseMessage() {
     final onlyTools =
         _pendingToolResponses.isNotEmpty && !_stagedNonToolContent;
@@ -610,12 +614,6 @@ class LiteRtLmWebSession extends InferenceModelSession
     _assertNotClosed();
     final text = _queryBuffer.toString();
     _queryBuffer.clear();
-    final images = _pendingImages.isNotEmpty
-        ? List<Uint8List>.from(_pendingImages)
-        : null;
-    final audio = _pendingAudio;
-    _pendingImages.clear();
-    _pendingAudio = null;
     _isCancelled = false;
     final toolMessage = _takeToolResponseMessage();
 
@@ -636,49 +634,13 @@ class LiteRtLmWebSession extends InferenceModelSession
       if (mutexHeld) generationMutex.release();
     }
 
-    // Build the request payload:
-    //  * pure text → pass a plain string (legacy fast path).
-    //  * any image/audio → build a Message object with a `content` array of
-    //    MessageContentItem (one text + N image/audio items), shaped per the
-    //    upstream TS declarations.
-    final JSAny messageArg;
-    if (toolMessage != null) {
-      // Tool results go back as one role-`tool` message, the only shape after
-      // which the template continues the model's own turn.
-      messageArg =
-          (jsonDecode(toolMessage) as Map<String, Object?>).jsify() as JSAny;
-    } else if ((images == null || images.isEmpty) && audio == null) {
-      messageArg = text.toJS;
-    } else {
-      final contentItems = <Map<String, Object>>[
-        if (text.isNotEmpty) <String, Object>{'type': 'text', 'text': text},
-        if (images != null)
-          for (final img in images)
-            <String, Object>{
-              'type': 'image',
-              // Data URL is the broadest-compatible shape; upstream `path` can
-              // also be a Blob URL or a file URL once we wire those.
-              'image_url': <String, Object>{
-                // Reuse the shared magic-number detector promoted to the public
-                // detectImageMimeType util (PNG / JPEG / WebP).
-                'url':
-                    'data:${detectImageMimeType(img)};base64,${base64Encode(img)}',
-              },
-            },
-        if (audio != null)
-          <String, Object>{
-            'type': 'audio',
-            // Audio payload (PCM 16kHz mono) per the native FFI contract.
-            'input_audio': <String, Object>{
-              'data': base64Encode(audio),
-              'format': 'wav',
-            },
-          },
-      ];
-      messageArg =
-          <String, Object>{'role': 'user', 'content': contentItems}.jsify()
-              as JSAny;
-    }
+    // The request payload: tool results go back as one role-`tool` message,
+    // the only shape after which the template continues the model's own turn;
+    // everything else is the staged text as a plain string (media never gets
+    // this far — addQueryChunk refuses it).
+    final JSAny messageArg = toolMessage != null
+        ? (jsonDecode(toolMessage) as Map<String, Object?>).jsify() as JSAny
+        : text.toJS;
     // Native tool models mirror FfiInferenceModelSession.getResponseAsync —
     // every raw chunk is stringified and appended to rawBuffer so chat.dart
     // can run SdkResponseParser.extractToolCalls on the assembled JSON. Other

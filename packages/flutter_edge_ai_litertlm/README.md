@@ -203,7 +203,9 @@ time by `flutter_edge_ai_litertlm`'s Native-Assets hook.
 
 ## Web setup (early preview)
 
-`.litertlm` web inference runs via `@litert-lm/core` (WebGPU/WASM, text-only).
+`.litertlm` web inference runs via `@litert-lm/core` (WebGPU/WASM, text-only:
+an image or audio message throws `UnsupportedError`, because the JS API creates
+the LLM engine with no vision or audio executor).
 `createSession(maxOutputTokens:)` is honoured here as it is on native. Earlier
 releases of this package accepted the argument and logged that it was ignored.
 Add the handshake below to your app's `web/index.html` `<head>` — the ESM doesn't
@@ -213,7 +215,7 @@ assign window globals and module scripts are deferred, so Dart awaits
 ```html
 <script type="module">
 window.litertLmReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.17.1/+esm');
+  const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
   window.Engine = m.Engine;
   return m.Engine;
 })();

@@ -292,17 +292,22 @@ class ModelFileSystemManager {
     return deletedCount;
   }
 
-  /// Safely deletes a model file
+  /// Safely deletes a model file in core's directory.
+  ///
+  /// A FileSource install is the app's own file, used in place under its
+  /// (possibly namespaced) filename: it is never deleted, here or by any
+  /// cleanup that goes through this, the rule `uninstallModel` already
+  /// follows. Whoever drops the model's record also calls
+  /// [forgetExternalFile].
   static Future<void> deleteModelFile(String filename) async {
     try {
-      // A FileSource install is referenced in place under its (possibly
-      // namespaced) filename -> its original path; delete THAT, not the
-      // managed-dir path the filename would otherwise map to (which is empty
-      // for an externally-referenced companion, so uninstall would leave the
-      // real file behind).
       final external = await ServiceRegistry.instance.protectedFilesRegistry
           .getExternalPath(filename);
-      final filePath = external ?? await getModelFilePath(filename);
+      if (external != null) {
+        edgeAiLog('Kept the app\'s own file for $filename: $external');
+        return;
+      }
+      final filePath = await getModelFilePath(filename);
       final file = File(filePath);
 
       if (await file.exists()) {
@@ -317,6 +322,16 @@ class ModelFileSystemManager {
         'delete',
       );
     }
+  }
+
+  /// Drops what a FileSource install registered for [filename] — the external
+  /// path and the cleanup protection — once its model record is gone. Leaves
+  /// the file itself alone. A no-op for any other file.
+  static Future<void> forgetExternalFile(String filename) async {
+    final registry = ServiceRegistry.instance.protectedFilesRegistry;
+    if (await registry.getExternalPath(filename) == null) return;
+    await registry.unregisterExternalPath(filename);
+    await registry.unprotect(filename);
   }
 
   /// Ensures a directory exists, creating it if necessary

@@ -1,6 +1,7 @@
 // Unit test for the 1.5.0 facade API-completeness surface:
-//   - destructive uninstallEmbedder() (deletes model + tokenizer, clears the
-//     active identity, no-op when nothing is active),
+//   - uninstallEmbedder() (uninstalls model + tokenizer, keeps files the app
+//     installed with fromFile, clears the active identity, no-op when nothing
+//     is active),
 //   - the typed identity getters (activeEmbedderSpec vs the other modalities),
 //   - getModelPath() resolving an installed file's on-device path.
 //
@@ -131,36 +132,39 @@ void main() {
       },
     );
 
-    test(
-      'uninstallEmbedder deletes ALL files and clears the active identity',
-      () async {
-        await FlutterEdgeAi.initialize(
-          embeddingBackends: [_FakeEmbeddingBackend()],
+    test('uninstallEmbedder uninstalls both files, keeps fromFile ones and '
+        'clears the active identity', () async {
+      await FlutterEdgeAi.initialize(
+        embeddingBackends: [_FakeEmbeddingBackend()],
+      );
+
+      final spec = await installEmbedder();
+      final paths = [
+        for (final file in spec.files)
+          await FlutterEdgeAi.getModelPath(file.filename),
+      ];
+      expect(paths.every((p) => File(p).existsSync()), isTrue);
+
+      await FlutterEdgeAi.uninstallEmbedder();
+
+      // Both the model AND the tokenizer are uninstalled, not just one;
+      // installed with fromFile, they are the app's own files and stay.
+      final repository = ServiceRegistry.instance.modelRepository;
+      for (final file in spec.files) {
+        expect(await repository.isInstalled(file.filename), isFalse);
+      }
+      for (final p in paths) {
+        expect(
+          File(p).existsSync(),
+          isTrue,
+          reason: '$p is the app\'s own file',
         );
-
-        final spec = await installEmbedder();
-        final paths = [
-          for (final file in spec.files)
-            await FlutterEdgeAi.getModelPath(file.filename),
-        ];
-        expect(paths.every((p) => File(p).existsSync()), isTrue);
-
-        await FlutterEdgeAi.uninstallEmbedder();
-
-        // Both the model AND the tokenizer are gone — not just one file.
-        for (final p in paths) {
-          expect(
-            File(p).existsSync(),
-            isFalse,
-            reason: '$p should be deleted by uninstallEmbedder',
-          );
-        }
-        // Identity cleared → getActiveEmbedder now fails fast.
-        expect(FlutterEdgeAi.hasActiveEmbedder(), isFalse);
-        expect(FlutterEdgeAi.activeEmbedderSpec, isNull);
-        expect(() => FlutterEdgeAi.getActiveEmbedder(), throwsStateError);
-      },
-    );
+      }
+      // Identity cleared → getActiveEmbedder now fails fast.
+      expect(FlutterEdgeAi.hasActiveEmbedder(), isFalse);
+      expect(FlutterEdgeAi.activeEmbedderSpec, isNull);
+      expect(() => FlutterEdgeAi.getActiveEmbedder(), throwsStateError);
+    });
 
     test('uninstallEmbedder is a no-op when nothing is active', () async {
       await FlutterEdgeAi.initialize(

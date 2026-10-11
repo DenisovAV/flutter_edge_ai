@@ -218,10 +218,14 @@ class MobileModelManager extends ModelFileManager
 
     // A `fromFile` install is used in place and never copied into core's
     // directory, so look for it where it was installed from, as the embedding
-    // and TTS restores do.
-    final source = ModelSource.tryDecode(
-      identity?[PreferencesKeys.activeInferenceSource],
-    );
+    // and TTS restores do. Only a one-key record is followed: the per-field
+    // keys of older releases can name another model's file.
+    final source =
+        ActiveIdentityStore.hasRecord(prefs, ActiveIdentityKind.inference)
+        ? ModelSource.tryDecode(
+            identity?[PreferencesKeys.activeInferenceSource],
+          )
+        : null;
     final filePath = source is FileSource
         ? source.path
         : await ServiceRegistry.instance.fileSystemService.getTargetPath(
@@ -568,13 +572,21 @@ class MobileModelManager extends ModelFileManager
     final fs = ServiceRegistry.instance.fileSystemService;
     // `fromFile` files are used in place, never copied into core's directory:
     // restore them from where they were installed, and never run the legacy
-    // migration on them — it renames files.
-    final modelSource = ModelSource.tryDecode(
-      identity?[PreferencesKeys.activeSttSource],
+    // migration on them — it renames files. Only a one-key record is
+    // followed: the per-field keys of older releases can pair this model with
+    // another one's tokenizer.
+    final trusted = ActiveIdentityStore.hasRecord(
+      prefs,
+      ActiveIdentityKind.stt,
     );
-    final tokenizerSource = ModelSource.tryDecode(
-      identity?[PreferencesKeys.activeSttTokenizerSource],
-    );
+    final modelSource = trusted
+        ? ModelSource.tryDecode(identity?[PreferencesKeys.activeSttSource])
+        : null;
+    final tokenizerSource = trusted
+        ? ModelSource.tryDecode(
+            identity?[PreferencesKeys.activeSttTokenizerSource],
+          )
+        : null;
     // The model weight keeps its plain basename (only companions are
     // namespaced), so only the tokenizer needs a legacy migration.
     final tokenizerPath = tokenizerSource is FileSource
@@ -760,6 +772,7 @@ class MobileModelManager extends ModelFileManager
         try {
           await ModelFileSystemManager.deleteModelFile(filename);
           await repository.deleteModel(filename);
+          await ModelFileSystemManager.forgetExternalFile(filename);
         } catch (e) {
           edgeAiLog('Failed to delete model file $filename: $e');
         }
@@ -1073,6 +1086,7 @@ class MobileModelManager extends ModelFileManager
       for (final file in spec.files) {
         await ModelFileSystemManager.deleteModelFile(file.filename);
         await repository.deleteModel(file.filename);
+        await ModelFileSystemManager.forgetExternalFile(file.filename);
       }
 
       // Directory (ORT-GenAI) model: its members lived in a per-model

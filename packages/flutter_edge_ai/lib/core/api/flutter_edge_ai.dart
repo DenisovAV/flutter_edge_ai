@@ -468,7 +468,8 @@ class FlutterEdgeAi {
     // them to createSession finds out, instead of a reasoning model silently
     // truncating mid-<think>.
     if (defaults != null &&
-        (defaults.thinkingDeclared != null || defaults.minOutputTokens != null)) {
+        (defaults.thinkingDeclared != null ||
+            defaults.minOutputTokens != null)) {
       edgeAiLog(
         '[flutter_edge_ai] getActiveModel: manifest defaults carry session-level '
         'fields (thinkingDeclared/minOutputTokens) that getActiveModel does not apply '
@@ -971,10 +972,16 @@ class FlutterEdgeAi {
 
     // Delete metadata last.
     await repository.deleteModel(modelId);
+    // A FileSource file stays where it is; forget what its install registered.
+    if (modelInfo.source is FileSource) {
+      await registry.protectedFilesRegistry.unregisterExternalPath(modelId);
+      await registry.protectedFilesRegistry.unprotect(modelId);
+    }
   }
 
   /// Uninstall the active embedding model — deletes ALL its files (model +
   /// tokenizer) and clears the active-embedder identity. No-op if none active.
+  /// A file installed with `fromFile` is the app's own and stays where it is.
   static Future<void> uninstallEmbedder() async {
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final spec = manager.activeEmbeddingModel;
@@ -988,7 +995,8 @@ class FlutterEdgeAi {
   }
 
   /// Uninstall the active STT model — deletes all its files and clears the
-  /// active-STT identity. No-op if none active.
+  /// active-STT identity. No-op if none active. A file installed with
+  /// `fromFile` is the app's own and stays where it is.
   static Future<void> uninstallStt() async {
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final spec = manager.activeSttModel;
@@ -998,7 +1006,8 @@ class FlutterEdgeAi {
   }
 
   /// Uninstall the active TTS model — deletes all its files and clears the
-  /// active-TTS identity. No-op if none active.
+  /// active-TTS identity. No-op if none active. A file installed with
+  /// `fromFile` is the app's own and stays where it is.
   static Future<void> uninstallTts() async {
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final spec = manager.activeTtsModel;

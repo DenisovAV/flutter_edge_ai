@@ -71,6 +71,13 @@ abstract final class ActiveIdentityStore {
     return legacy.isEmpty ? null : legacy;
   }
 
+  /// Whether [read] answers from the one-key record, whose fields were written
+  /// together. Per-field keys can pair one model's filename with another
+  /// model's source, so a caller that would follow a source should not
+  /// trust one read from them.
+  static bool hasRecord(SharedPreferences prefs, ActiveIdentityKind kind) =>
+      prefs.getString(kind.key) != null;
+
   /// Stores [fields] as the identity of [kind] in one write, then drops the
   /// per-field keys of older releases. Throws [StateError] if the write fails.
   static Future<void> write(

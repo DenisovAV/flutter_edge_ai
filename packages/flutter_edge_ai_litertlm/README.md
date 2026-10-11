@@ -10,10 +10,9 @@ only if you run either. Android, iOS, macOS, Linux and Windows via `dart:ffi`;
 Web (early preview) via `@litert-lm/core` and LiteRT.js.
 
 This package **owns** the shared LiteRT-LM native library (`libLiteRtLm`) and
-exposes the LiteRt interpreter FFI (`LiteRtBindings`); both are shared by
-[flutter_edge_ai_speech](https://pub.dev/packages/flutter_edge_ai_speech). As of
-1.5.0 this package also ships the LiteRT C API embedding backend
-(`LiteRtEmbeddingBackend`) — see [Embeddings](#embeddings) below — over the
+exposes the LiteRT C API bindings (`LiteRtBindings`); both are shared by
+[flutter_edge_ai_speech](https://pub.dev/packages/flutter_edge_ai_speech). It
+also ships the LiteRT C API embedding backend (`LiteRtEmbeddingBackend`) — see [Embeddings](#embeddings) below — over the
 runtime-agnostic embedding pipeline in `flutter_edge_ai`. Tokenizers come from
 [flutter_edge_ai_embeddings](https://pub.dev/packages/flutter_edge_ai_embeddings),
 which the app registers; this package does not depend on it.
@@ -40,6 +39,39 @@ await FlutterEdgeAi.initialize(
 `LiteRtLmEngine` handles `ModelFileType.litertlm` models; pass it alongside
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
+
+Depend on both packages (`flutter_edge_ai: ^2.2.0`,
+`flutter_edge_ai_litertlm: ^1.12.0`) and install `.litertlm` files with
+`fileType: ModelFileType.litertlm`: `installModel` defaults to
+`ModelFileType.task`, which routes the file to MediaPipe.
+
+## Sampling
+
+Leave `temperature`, `topK`, `topP` and `randomSeed` unset on `createSession`
+or `createChat` and each comes from the sampler the `.litertlm` file ships,
+else from the model family's defaults (`SamplingParams.forModelType`), else
+`temperature: 0.8, topK: 40, topP: 0.95, randomSeed: 1`; a value you pass wins,
+field by field. `topK: 1` or `temperature: 0` decodes greedily. Before core
+2.2.0 an unset `topK` was 1, so every session decoded greedily.
+
+- LiteRT-LM keeps the sampler of an engine's first generation, random state
+  included, for every later conversation
+  ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/issues/2080)):
+  set sampling before the first generation, or close and reload the model to
+  change it. A warning says so once per loaded model when a later session asks
+  for other values and either set was yours.
+- On web the file's sampler is not read, so unset values come from the family
+  defaults. The values you pass are applied; before 1.12.0 web dropped them.
+- On the NPU decoding is greedy whatever you pass; a one-time warning says so
+  when you set any value.
+
+## Context and reply length
+
+`maxTokens` on `getActiveModel` is the whole context window — prompt, history
+and reply — not the reply length. On CPU and GPU a value below 1024 is raised
+to 1024, because the published bundles fail to allocate below it; on the NPU it
+is passed through, so use the context size the bundle was compiled for. Cap the
+reply with `createSession(maxOutputTokens:)`.
 
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)
 
@@ -144,8 +176,8 @@ then load the entry module from `web/index.html`:
 ```
 
 Upgrading from an earlier version: delete the copies in your app's `web/` and
-re-copy all four from this package. Before 1.8.0 they came from
-`flutter_edge_ai_embeddings`, and the copies you have are built against an older
+re-copy all four from this package. Before `flutter_gemma_litertlm` 1.8.0 they
+came from `flutter_gemma_embeddings`, and the copies you have are built against an older
 `@litertjs/core` than the runtime this version loads. If you built your own
 `web/wasm/`, either delete it and take the CDN default or rebuild it from the
 version in `LiteRtWebRuntime.pinnedVersion`.
@@ -160,8 +192,8 @@ version in `LiteRtWebRuntime.pinnedVersion`.
 
 LiteRT.js loads a WASM runtime at the first embedding call —
 `litert_wasm_internal.js`, or `litert_wasm_compat_internal.js` on a browser
-without relaxed SIMD, each with a ~9 MB `.wasm` beside it. Since 1.8.0 they come
-from the pinned `@litertjs/core` build on jsDelivr by default — nothing to
+without relaxed SIMD, each with a ~9 MB `.wasm` beside it. Since
+`flutter_gemma_litertlm` 1.8.0 they come from the pinned `@litertjs/core` build on jsDelivr by default — nothing to
 install, and nothing this package has to carry into every native-only app.
 
 To serve them yourself (offline, an air-gapped deploy, or a CSP that forbids
@@ -198,16 +230,17 @@ Whatever host you use must send `Access-Control-Allow-Origin` (LiteRT.js sets
 `crossOrigin="anonymous"` on the script it injects) and serve `.wasm` as
 `application/wasm`.
 
-Native platforms need no setup — the LiteRT native library is bundled at build
-time by `flutter_edge_ai_litertlm`'s Native-Assets hook.
+Native embeddings need no web files; the platform setup under
+[Platforms](#platforms) still applies.
 
 ## Web setup (early preview)
 
-`.litertlm` web inference runs via `@litert-lm/core` (WebGPU/WASM, text-only:
-an image or audio message throws `UnsupportedError`, because the JS API creates
-the LLM engine with no vision or audio executor).
-`createSession(maxOutputTokens:)` is honoured here as it is on native. Earlier
-releases of this package accepted the argument and logged that it was ignored.
+`.litertlm` web inference runs via `@litert-lm/core` (WebGPU/WASM). Load a
+model's web export (`gemma-4-E2B-it-web.litertlm`, not `gemma-4-E2B-it.litertlm`).
+It is text-only: an image or audio message throws `UnsupportedError`, because
+the JS API creates the LLM engine with no vision or audio executor, and
+`loraPath` throws too. `createSession(maxOutputTokens:)` is honoured here as it
+is on native.
 Add the handshake below to your app's `web/index.html` `<head>` — the ESM doesn't
 assign window globals and module scripts are deferred, so Dart awaits
 `window.litertLmReady` (which resolves to the `Engine` constructor):
@@ -232,7 +265,15 @@ Native platforms need no web setup.
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
-| Web      | ✅ via `@litert-lm/core` (CDN, early preview) |
+| Web      | ⚠️ early preview via `@litert-lm/core` (CDN, text-only) |
+
+The native library (`native-v0.18.0-d`, LiteRT-LM v0.18.0) is fetched at build
+time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
+needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
+entitlements, and on macOS a `post_install` block in `macos/Podfile`, without
+which the first model load fails with
+`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. See
+[platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
 `PreferredBackend.npu` is attempted only on Windows, on Android devices with
 Qualcomm FastRPC (`libcdsprpc.so`) and on Qualcomm Linux arm64 boards, the last
@@ -240,6 +281,10 @@ two when the app opted in (below); elsewhere it falls back to GPU, then CPU, and
 prints why. On Windows the check is per OS, so
 a PC without an Intel NPU can report `activeBackend == npu` while the model runs
 elsewhere.
+
+Run a Gemma 4 bundle on the NPU: a Gemma 3 bundle drops every prefill chunk
+after the first, with no error, and answers from the start of the prompt alone
+([LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508)).
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 
@@ -310,10 +355,28 @@ Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
 compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
 x64 build ignores the flag.
 
-The native library is fetched at build time by `hook/build.dart` (Native Assets)
-from a SHA256-verified GitHub release — no manual setup on native platforms.
-
 ## Troubleshooting
+
+### Wrong digits from a long prompt on GPU
+
+Gemma 4 can copy numbers wrongly out of a prompt of about 2,000 tokens or more
+on Metal and Adreno, the same way on every run. The published Gemma 4
+`.litertlm` files ask for half-precision activations; pass
+`activationDataType: ActivationDataType.float32` to `getActiveModel` for full
+precision.
+
+### Linux: any tool call aborts the app (fixed in 1.11.1)
+
+Up to 1.11.0, a chat or session with `tools` aborted on its first constrained
+token on Linux x64 and arm64: the prebuilt constraint provider uses another C++
+ABI than the runtime. 1.11.1 (`native-v0.18.0-d`) bridges it. See
+[#551](https://github.com/DenisovAV/flutter_edge_ai/issues/551).
+
+### iOS/macOS: GPU crashes in apps that also use `flutter_litert` (fixed in 1.10.1)
+
+In 1.10.0 the GPU backend crashed in `LiteRtCreateCompiledModel` when the app
+also used `flutter_litert`. 1.10.1 (`native-v0.18.0-b`) fixes it; no app change
+is needed.
 
 ### Qwen keeps reasoning with thinking off, or shows `<|channel>thought` text (fixed in 1.9.0)
 
@@ -327,7 +390,7 @@ template reads. 1.9.0 sends `enable_thinking` both ways on every platform, and
 `ModelType` and no longer appends ` /no_think` to an audio message (Qwen3-ASR
 returned an empty transcript).
 
-### A stopped chat answers every later message with nothing (fixed in 1.8.1)
+### A stopped chat answers every later message with nothing (fixed in `flutter_gemma_litertlm` 1.8.1)
 
 Symptom: after `stopGeneration()` in the middle of a reply — or after
 abandoning the response stream — every later message on that chat or session
@@ -338,8 +401,8 @@ entry.)
 Cause: a conversation whose generation is cancelled mid-reply stays unusable
 in the native runtime.
 
-Fix: upgrade to 1.8.1. The first turn after a stop now runs on a fresh
-conversation that replays the chat's history, including whatever the stopped
+Fix: every `flutter_edge_ai_litertlm` release has it. The first turn after a
+stop runs on a fresh conversation that replays the chat's history, including whatever the stopped
 reply had produced. That history is replayed as text: images and audio sent in
 earlier turns are not, so after a stop the model can no longer see them.
 
@@ -360,9 +423,9 @@ ship only when the app sets `qualcomm_npu: true`, and the hook raises them to
 16 KB. Check your own build with Google's `check_elf_alignment.sh` against the
 APK, not against this package.
 
-### Android GPU crashes at engine_create on Mali (fixed in 1.8.2)
+### Android GPU crashes at engine_create on Mali (fixed in `flutter_gemma_litertlm` 1.8.2)
 
-Symptom: in 1.7.0–1.8.1, `PreferredBackend.gpu` on an Android phone with a Mali
+Symptom: in `flutter_gemma_litertlm` 1.7.0–1.8.1, `PreferredBackend.gpu` on an Android phone with a Mali
 GPU (Samsung A-series, MediaTek, Google Tensor) kills the process while the
 model loads — `SIGSEGV` at `pc 0` inside `libLiteRtOpenClAccelerator.so`. The
 CPU backend and Adreno GPUs are unaffected.
@@ -371,14 +434,15 @@ Cause: the OpenCL and GPU accelerators from LiteRT-LM v0.17.0 call
 `AHardwareBuffer_allocate` without declaring `libandroid.so` as a dependency, so
 Android binds the call to address 0. Only Mali takes that path.
 
-Fix: upgrade to 1.8.2 (`native-v0.17.1-a`). No app change is needed. See
+Fix: every `flutter_edge_ai_litertlm` release has it; no app change is needed. See
 [#545](https://github.com/DenisovAV/flutter_edge_ai/issues/545).
 
-### Any tool call kills the app (fixed in 1.7.1)
+### Any tool call kills the app (fixed in `flutter_gemma_litertlm` 1.7.1)
 
-Symptom: in 1.7.0, a chat or session created with `tools` dies on the first
-decoded token — `EXC_BAD_ACCESS` / `SIGSEGV` inside the runtime, on every
-platform, CPU and GPU alike. Dart sees no exception; `flutter test` reports only
+Symptom: in `flutter_gemma_litertlm` 1.7.0, a chat or session created with
+`tools` dies on the first decoded token — `EXC_BAD_ACCESS` / `SIGSEGV` inside
+the runtime, on every platform, CPU and GPU alike (Linux had a second cause,
+fixed in 1.11.1 — see above). Dart sees no exception; `flutter test` reports only
 that the test did not complete. Generation without tools is unaffected.
 
 Cause: constrained decoding is implemented by a prebuilt companion,
@@ -387,16 +451,14 @@ Upstream replaced the `Constraint` interface, and the companion published at tag
 v0.17.0 still implements the old one, so the runtime we build calls into the
 wrong vtable slot.
 
-Fix: upgrade to 1.7.1, which pins the native bundle `native-v0.17.0-a` — the same
-runtime with the companion rebuilt from upstream main. FunctionGemma also needs
-`flutter_gemma` 1.8.4: 1.7.1 sends the tool result as a role-`tool` message, and
-core decides that it should.
+Fix: every `flutter_edge_ai_litertlm` release has it: since
+`flutter_gemma_litertlm` 1.7.1 the companion is rebuilt from upstream main.
 
-### Windows: embeddings or speech fail with `status=3` (fixed in 1.7.0)
+### Windows: embeddings or speech fail with `status=3` (fixed in `flutter_gemma_litertlm` 1.7.0)
 
 Symptom: on Windows only, `LiteRtEmbeddingBackend` and `flutter_edge_ai_speech`
 fail with `LiteRT call failed: CreateTensorBufferFromHostMemory(...) (status=3)`
-in 1.4.0–1.6.4. Text generation is unaffected.
+in `flutter_gemma_litertlm` 1.4.0–1.6.4. Text generation is unaffected.
 
 Cause: LiteRT made `LiteRtLayout` one layout on every compiler; this package
 still wrote tensor shapes in the old MSVC layout on Windows.
@@ -405,7 +467,7 @@ Every `flutter_edge_ai_litertlm` release includes the fix. On the legacy package
 line, upgrade `flutter_gemma_litertlm` to 1.7.0 and `flutter_gemma_speech` to
 0.5.1.
 
-### Garbled or empty streams on Android (fixed in 1.5.2)
+### Garbled or empty streams on Android (fixed in `flutter_gemma_litertlm` 1.5.2)
 
 Symptom: a generation delivers zero chunks and throws
 `Exception: Stream error: <U+FFFD>`, often followed by
@@ -415,15 +477,16 @@ catch.
 Cause: on Android the first `dlopen` of `libLiteRtLm` decides, for the whole
 process, whether its exports are reachable from the default symbol search
 scope, and bionic never promotes an already-loaded library afterwards. Before
-1.5.2 the embeddings and speech entry point opened it locally, so an app that
-embedded or transcribed anything before its first generation left the
+`flutter_gemma_litertlm` 1.5.2 the embeddings and speech entry point opened it
+locally, so an app that embedded or transcribed anything before its first
+generation left the
 stream-callback ABI probe unable to see the library — and the probe read that
 as "old library" and registered the wrong callback shape.
 
-Fix: upgrade to 1.5.2. If you load `libLiteRtLm` yourself from app or
-third-party code, load it before flutter_edge_ai does and with `RTLD_GLOBAL`.
-1.5.2 cannot repair that case — bionic never promotes an already-loaded library
-— but it no longer generates corrupt text: a `.litertlm` generation raises a
+Fix: every `flutter_edge_ai_litertlm` release has it. If you load `libLiteRtLm`
+yourself from app or third-party code, load it before flutter_edge_ai does and
+with `RTLD_GLOBAL`. The package cannot repair that case — bionic never promotes
+an already-loaded library — but it no longer generates corrupt text: a `.litertlm` generation raises a
 `StateError` naming the condition, and embeddings or speech (which resolve
 through their own handle and do not need the symbols to be ambient) log a
 warning and carry on.
@@ -442,6 +505,6 @@ native version bump can leave the library unbundled, surfacing as an opaque
 flutter clean
 rm -rf ~/Library/Caches/flutter_gemma/native        # macOS
 rm -rf ~/.cache/flutter_gemma/native                # Linux
-# Windows: rmdir /s "%LOCALAPPDATA%\flutter_gemma\native"  (path may vary)
+# Windows: rmdir /s /q "%LOCALAPPDATA%\flutter_gemma\native"
 flutter pub get
 ```

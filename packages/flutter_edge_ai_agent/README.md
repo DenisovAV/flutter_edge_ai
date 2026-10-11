@@ -68,8 +68,8 @@ WebView), verified on hardware. On web the skill runs in a sandboxed `<iframe>`.
   function-calling, emitting a `Stream<AgentEvent>` (skill loads, tool calls,
   inline results, streamed text).
 - Cross-platform UI: `AgentChatView`, adaptive `SkillManagerView` /
-  `McpManagerView`, `SecretEditorDialog`, `SkillTesterView`, and the add-skill
-  disclaimer.
+  `McpManagerView`, `McpToolCallPermissionDialog`, `SecretEditorDialog`,
+  `SkillTesterView`, and the add-skill disclaimer.
 - **Bundled starter skills** (ported verbatim from Gallery, Apache-2.0) — see
   below.
 
@@ -110,8 +110,15 @@ a deployment that does not serve `assets/packages/flutter_edge_ai_agent/` causes
 
 ## Quick start
 
-The app also depends on `flutter_edge_ai_litertlm`, which provides
-`LiteRtLmEngine`.
+The app also depends on an inference engine, here `flutter_edge_ai_litertlm`,
+which provides `LiteRtLmEngine`:
+
+```yaml
+dependencies:
+  flutter_edge_ai: ^2.2.0
+  flutter_edge_ai_agent: ^0.2.8
+  flutter_edge_ai_litertlm: ^1.12.0
+```
 
 ```dart
 import 'package:flutter/material.dart';
@@ -144,7 +151,8 @@ final session = await AgentSession.fromModel(
     TextSkillExecutor(),
     JsSkillExecutor(sourceFor: source.jsSkillSourceFor),
     NativeIntentExecutor(),
-    // McpSkillExecutor(...) to also call remote MCP tools.
+    // McpSkillExecutor(clients: [...], permissionHook: ...) for remote MCP
+    // tools — every call is denied unless the hook allows it.
   ],
 );
 
@@ -155,6 +163,13 @@ final session = await AgentSession.fromModel(
 
 See `packages/flutter_edge_ai/example` (the **Agent Skills** screen) for a
 runnable demo.
+
+`AgentSession.fromModel` also takes `modelType` (default `ModelType.gemma4`;
+pass yours for any other model), `maxOutputTokens`, `temperature`, `topK`,
+`topP` and `randomSeed`. Left unset (since 0.2.8), the engine resolves the
+sampling values — on `.litertlm` from the bundle's sampler, then the family's
+defaults — instead of the old greedy `topK: 1`. Pass `topK: 1` for greedy
+decoding; built-in AI already decodes greedily when it is unset.
 
 ## Asking about a photo
 
@@ -192,8 +207,13 @@ metadata:
 ---
 # Title
 ## Instructions
-Call the `run_js` tool with: data: { field: Type }
+Call the `run_js` tool with: skillName: kebab-case-id, data: a JSON string { field: Type }
 ```
+
+The skill's type comes from the tool its body names: `run_js` → JS,
+`run_intent` → intent, `run_mcp` → MCP, none → text-only. A
+`scriptName: other.html` in the body picks a script other than
+`scripts/index.html`.
 
 JS skills additionally ship `scripts/index.html` exposing
 `window.ai_edge_gallery_get_result(data, secret)` returning a JSON string
@@ -202,8 +222,9 @@ JS skills additionally ship `scripts/index.html` exposing
 
 The model does not choose which script runs — `run_js` always runs the skill's
 own `scripts/index.html` (or the `scriptName` its `SKILL.md` declares), resolved
-by `JsSkillExecutor`. Its tool schema therefore takes only `data` (no
-`scriptName`): a required script-name field only made the model invent a
+by `JsSkillExecutor`. Its tool, `runSkill` (the `run_js` spelling SKILL.md uses
+is accepted too), therefore takes only `skillName` and `data`, with no
+`scriptName`: a required script-name field only made the model invent a
 filename, and honouring one would let it name any file under `scripts/`.
 
 ## Registering executors

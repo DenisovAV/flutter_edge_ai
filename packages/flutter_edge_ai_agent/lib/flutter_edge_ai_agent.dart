@@ -12,9 +12,10 @@
 /// over flutter_edge_ai's existing function-calling: the four built-in
 /// [agentTools], the [AgentLoop], and the [AgentSession] facade with its
 /// [AgentEvent] stream. It also includes the concrete executors — the
-/// [TextSkillExecutor], the [JsSkillExecutor] (the only executor importing
-/// `webview_flutter` — runs a skill's `scripts/index.html` in a sandboxed
-/// headless webview), the [McpSkillExecutor], and the [NativeIntentExecutor]
+/// [TextSkillExecutor], the [JsSkillExecutor] (the only executor that needs a
+/// webview — `flutter_inappwebview` on native, an iframe on web — runs a
+/// skill's `scripts/index.html` sandboxed and headless), the
+/// [McpSkillExecutor], and the [NativeIntentExecutor]
 /// (a whitelist of OS intents behind user/OS confirmation).
 ///
 /// It also ships the cross-platform Flutter UI the host app mounts: the

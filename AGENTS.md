@@ -196,9 +196,9 @@ The core plugin manifest (`packages/flutter_edge_ai/android/src/main/AndroidMani
 
 - **The plugins do NOT apply KGP** (#440). `flutter_edge_ai` and `flutter_edge_ai_mediapipe`
   declare no `kotlin-android`, no `ext.kotlin_version`, no KGP classpath
-  (`flutter_edge_ai_builtin_ai` has no `android/` at all since 0.3.0 — but its dependency
-  `flutter_local_ai` DOES apply KGP itself and needs Kotlin 2.3.21, so an app using it
-  cannot set `android.builtInKotlin=true`). Flutter's own Gradle plugin applies `kotlin-android` to any plugin subproject
+  (`flutter_edge_ai_builtin_ai` has no `android/` at all since 0.3.0; its dependency
+  `flutter_local_ai` stopped applying `kotlin-android` in 0.2.0 but still puts KGP 2.3.21
+  on its buildscript classpath, and apps need Kotlin 2.3.21 for the ML Kit `beta4` metadata). Flutter's own Gradle plugin applies `kotlin-android` to any plugin subproject
   that doesn't (`FlutterPluginUtils.detectApplyingKotlinGradlePlugin`), which is what makes
   `flutter: '>=3.44.0'` load-bearing rather than cosmetic. Re-adding a version guard is the
   #323/#360 regression, not a fix. `android.builtInKotlin=true` fails on AGP 9 for any app

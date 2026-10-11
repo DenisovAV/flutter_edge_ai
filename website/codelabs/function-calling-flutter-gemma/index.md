@@ -592,10 +592,14 @@ It takes a Hugging Face checkpoint through LoRA fine-tuning, merges, exports to
 `.litertlm`, and bundles the result with metadata — five commands, because each
 stage fails differently and a single `run` would hide which one you are in.
 
-The commands below are verified against **litetune 0.3.0**, the current PyPI
-release. It pins LiteRT-LM 0.17.1 for verification and the matching 0.17.1
-builder for conversion. The source is available on
-[GitHub](https://github.com/DenisovAV/litetune).
+The commands below are verified against **litetune 0.4.0**, the current PyPI
+release, run end to end on 2026-10-11. It pins LiteRT-LM 0.18.0 for
+verification and the matching 0.18.0 builder for conversion. The source is
+available on [GitHub](https://github.com/DenisovAV/litetune).
+
+Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
+relative `--output-dir`, as below, that version wrote a bundle without its GPU
+activation key, and on the GPU it answers wrong.
 
 **This is alpha software**, and it says what it has measured: six models end to
 end — `google/functiongemma-270m-it` with the tool-call scorer, plus
@@ -620,6 +624,11 @@ without it every invocation, `--help` included, dies in under a second:
 ```bash
 sudo apt-get install -y libvulkan1     # Debian/Ubuntu
 ```
+
+Use a Python from python.org, Homebrew or your OS: with a Python that uv
+installed, litetune 0.4.0 cannot start its stage environments (`venv --copies`
+leaves `libpython` behind) and every stage reports `could_not_check` — measured
+with uv's Python 3.11.
 
 By default, `tune` and the float-reference side of `verify` choose CUDA, then
 Apple's Metal (`mps`), then CPU. The commands below set
@@ -663,9 +672,9 @@ stock model's 13. They are not enough to resolve much — the interval on 18 row
 is wider than most differences worth having — and they cost something that the
 score cannot see. `step_04_finetune/README.md` has both halves, measured.
 
-That score snapshot was recorded with litetune 0.1.7 and LiteRT-LM 0.16.1.
-Version 0.3.0 verifies with LiteRT-LM 0.17.1, so rerun before comparing a new
-artifact with the historical number.
+That score snapshot was recorded with litetune 0.1.7 and LiteRT-LM 0.16.1. A
+rerun on litetune 0.4.0 and LiteRT-LM 0.18.0 (2026-10-11) gave the tuned model
+the same 18 of 18 with the runtime's grammar on, and 16 of 18 with it off.
 
 ### The five commands
 

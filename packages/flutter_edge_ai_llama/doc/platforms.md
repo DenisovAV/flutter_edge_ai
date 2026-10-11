@@ -289,7 +289,7 @@ replacing a usable legacy session.
 Local macOS ARM64 checks:
 
 - Connector format/analyze: PASS; VM 51, Chrome 50 plus three explicit skips,
-  demo seven, and Python tooling 16 tests passed.
+  demo seven, and Python tooling 17 tests passed.
 - Workspace analysis: PASS with 570 info diagnostics and no warnings/errors.
 - Shipped skills: 46 Dart blocks and 115 inline references compiled without errors.
 - Real macOS CPU facade: PASS for install, generation, two-turn recall,
@@ -306,7 +306,9 @@ smoke with a checksum-verified loopback fixture installed into app-owned storage
 An isolated iPhone 17 Pro simulator on iOS 26.4 passed the same three cycles with
 core 2.2.0 and the unchanged runtime pins. Hosted macOS VM and mobile failures
 are being investigated; the local pass does not establish their cause. The
-packaged smoke now prints each lifecycle stage. The SDK action explicitly enables
+packaged smoke now prints each lifecycle stage. Apple CI retains recent app
+thread samples with `--native-diagnostics` to investigate startup stalls;
+diagnostics do not replace or retry the required smoke. The SDK action explicitly enables
 SwiftPM for consistent setup, although Flutter 3.47.1 already defaults it on.
 
 Core 2.2.0 is not yet hosted on pub.dev. The default hosted `package` gate

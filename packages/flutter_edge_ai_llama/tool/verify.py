@@ -10,11 +10,36 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from threading import Thread
+from threading import Event, Thread
 
 from serve_web_fixture import create_server
 
 PACKAGE = Path(__file__).resolve().parents[1]
+
+
+def sample_native_apps(directory, stop):
+    """Retain three recent read-only thread samples per Apple test process."""
+    directory.mkdir(parents=True, exist_ok=True)
+    sequence = {}
+    while not stop.wait(5):
+        try:
+            processes = subprocess.run(["ps", "-axo", "pid=,comm="],
+                                       capture_output=True, text=True, timeout=5)
+            for line in processes.stdout.splitlines():
+                fields = line.strip().split(None, 1)
+                if len(fields) != 2:
+                    continue
+                pid, executable = fields
+                if not pid.isdigit() or not (executable.endswith("/flutter_edge_ai_llama_demo") or executable.endswith("/Runner.app/Runner")):
+                    continue
+                slot = sequence.get(pid, 0) % 3
+                sequence[pid] = slot + 1
+                subprocess.run(["sample", pid, "1", "-file", str(directory / f"app-{pid}-{slot}.txt")],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            # Diagnostics must not turn a failed runtime test into a success or
+            # replace its failure with a sampler/tool availability failure.
+            continue
 
 
 def main():
@@ -26,6 +51,8 @@ def main():
     parser.add_argument("--storage-helper-url")
     parser.add_argument("--platform", choices=("android", "ios", "macos", "windows", "linux", "web"))
     parser.add_argument("--device")
+    parser.add_argument("--native-diagnostics", action="store_true",
+                        help="Apple runtime lanes: retain recent app thread samples in RUNNER_TEMP")
     parser.add_argument("--core-path", type=Path,
                         help="Package preparation only: validate against this unreleased core; hosted validation remains required before publishing")
     args = parser.parse_args()
@@ -36,7 +63,18 @@ def main():
 
     def run(command, directory=PACKAGE):
         print("Running:", subprocess.list2cmdline([str(x) for x in command]), flush=True)
-        subprocess.run([str(x) for x in command], cwd=directory, check=True)
+        stop = Event()
+        monitor = None
+        if args.native_diagnostics and len(command) > 1 and command[1] == "test":
+            diagnostics = Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())) / "edge-ai-native-diagnostics"
+            monitor = Thread(target=sample_native_apps, args=(diagnostics, stop), daemon=True)
+            monitor.start()
+        try:
+            subprocess.run([str(x) for x in command], cwd=directory, check=True)
+        finally:
+            stop.set()
+            if monitor is not None:
+                monitor.join()
 
     if args.lane in ("native", "device") and args.model_path is not None:
         if not args.model_path.is_file():
@@ -52,6 +90,8 @@ def main():
     if args.lane == "device" and not args.device:
         parser.error("device requires --device")
 
+    if args.native_diagnostics and (sys.platform != "darwin" or args.lane not in ("native", "device")):
+        parser.error("--native-diagnostics requires an Apple native/device runtime lane")
     if args.core_path is not None:
         if args.lane != "package":
             parser.error("--core-path is only supported by the package preparation lane")

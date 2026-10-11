@@ -110,7 +110,20 @@ jobs:
           python-version: "3.13"
       - uses: ./.github/actions/setup-flutter-llama
       - run: python tool/fetch_test_model.py
-      - run: python tool/verify.py native --model-path tool/fixtures/chat.gguf
+      - name: Required native CPU smoke
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            python tool/verify.py native --model-path tool/fixtures/chat.gguf --native-diagnostics
+          else
+            python tool/verify.py native --model-path tool/fixtures/chat.gguf
+          fi
+      - name: Preserve Apple runtime thread samples
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-diagnostics-${{ matrix.runner }}
+          path: ${{ runner.temp }}/edge-ai-native-diagnostics
+          if-no-files-found: ignore
       - name: Linux desktop dependencies
         if: matrix.runner == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
@@ -139,7 +152,15 @@ jobs:
           xcrun simctl boot "$simulator_id"
           xcrun simctl bootstatus "$simulator_id" -b
           trap 'xcrun simctl shutdown "$simulator_id"' EXIT
-          python tool/verify.py device --device "$simulator_id" --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf
+          python tool/verify.py device --device "$simulator_id" --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --native-diagnostics
+
+      - name: Preserve iOS runtime thread samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-diagnostics-ios-simulator
+          path: ${{ runner.temp }}/edge-ai-native-diagnostics
+          if-no-files-found: ignore
 
   android-runtime:
     name: Android emulator CPU

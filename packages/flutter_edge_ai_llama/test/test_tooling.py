@@ -72,6 +72,21 @@ class ToolingTests(unittest.TestCase):
             server.shutdown.assert_called_once()
             server.server_close.assert_called_once()
 
+    def test_native_sampler_targets_only_test_apps_and_stops(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stop = MagicMock()
+            stop.wait.side_effect = [False, True]
+            processes = subprocess.CompletedProcess([], 0, stdout=(
+                "123 /Applications/Unrelated.app/Contents/MacOS/Unrelated\n"
+                "456 /tmp/flutter_edge_ai_llama_demo.app/Contents/MacOS/flutter_edge_ai_llama_demo\n"
+                "789 /tmp/Runner.app/Runner\n"))
+            with patch.object(package_verify.subprocess, "run", side_effect=[
+                processes, subprocess.CompletedProcess([], 0), subprocess.CompletedProcess([], 0),
+            ]) as run:
+                package_verify.sample_native_apps(Path(directory), stop)
+            samples = [call.args[0] for call in run.call_args_list if call.args[0][0] == "sample"]
+            self.assertEqual([command[1] for command in samples], ["456", "789"])
+
     def test_fixture_server_rejects_unverified_model(self):
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "chat.gguf"

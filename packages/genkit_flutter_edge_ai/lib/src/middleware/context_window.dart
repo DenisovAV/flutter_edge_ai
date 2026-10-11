@@ -18,10 +18,12 @@ const _kDefaultContextWindow = 1024;
 /// input budget is derived rather than given explicitly.
 const _kDefaultReserveOutputTokens = 256;
 
-/// The words Genkit writes around a schema it puts in the prompt
-/// ("Output should be in JSON format and conform to the following schema:"
-/// and the code fence), in tokens.
-const _kSchemaInstructionsTokens = 32;
+/// The text Genkit writes into the prompt for an output [schema]: its
+/// `jsonSchemaInstructions`, which the constrained-output simulation uses. It
+/// is not exported, so it is rebuilt here; a test pins the two together.
+String schemaInstructionsText(Map<String, dynamic> schema) =>
+    'Output should be in JSON format and conform to the following '
+    'schema:\n\n```\n${const JsonEncoder.withIndent('  ').convert(schema)}\n```\n';
 
 /// Flat per-media-part token estimate (images/audio don't have a text length to
 /// measure; this keeps a long multimodal turn from being counted as ~free).
@@ -122,7 +124,7 @@ class ContextWindowMiddleware extends GenerateMiddleware {
     final output = request.output;
     final schema = output?.schema;
     final schemaTokens = output?.constrained == true && schema != null
-        ? (jsonEncode(schema).length / 4).ceil() + _kSchemaInstructionsTokens
+        ? (schemaInstructionsText(schema).length / 4).ceil()
         : 0;
     final budget =
         (maxInputTokens ?? (contextWindow - reserveOutputTokens)) -

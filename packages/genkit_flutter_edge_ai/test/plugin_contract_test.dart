@@ -6,13 +6,16 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:genkit/genkit.dart' show Genkit;
+import 'package:genkit/genkit.dart'
+    show Genkit, SimulateConstrainedGenerationMiddleware;
 import 'package:genkit/plugin.dart';
 import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
 import 'package:genkit_flutter_edge_ai/src/converters/request_converter.dart';
 import 'package:genkit_flutter_edge_ai/src/converters/tool_converter.dart';
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_embedder.dart';
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_model.dart';
+import 'package:genkit_flutter_edge_ai/src/middleware/context_window.dart'
+    show schemaInstructionsText;
 
 import 'src/fake_runtime.dart';
 
@@ -681,8 +684,44 @@ void main() {
       },
     );
 
+    test(
+      'the reserved text is the text Genkit writes into the prompt',
+      () async {
+        final schema = FlutterEdgeAiEmbedConfig.$schema.jsonSchema();
+        String? written;
+        await SimulateConstrainedGenerationMiddleware().model(
+          ModelRequest(
+            messages: [
+              Message(
+                role: Role.user,
+                content: [TextPart(text: 'x')],
+              ),
+            ],
+            output: OutputConfig(constrained: true, schema: schema),
+          ),
+          ActionFnArg(),
+          (r, c) async {
+            written = r.messages.single.content.last.text;
+            return ModelResponse(finishReason: FinishReason.stop);
+          },
+        );
+        expect(schemaInstructionsText(schema), written);
+      },
+    );
+
     test('room is held for an output schema the model will add', () async {
-      final middleware = ContextWindowMiddleware(maxInputTokens: 200);
+      final schema = {
+        'type': 'object',
+        'properties': {
+          for (var i = 0; i < 20; i++) 'field$i': {'type': 'string'},
+        },
+      };
+      final schemaTokens = (schemaInstructionsText(schema).length / 4).ceil();
+      // Both messages (~150 tokens) fit in what is left without the schema;
+      // with it, only the last (~50) does.
+      final middleware = ContextWindowMiddleware(
+        maxInputTokens: schemaTokens + 120,
+      );
       final old = Message(
         role: Role.user,
         content: [TextPart(text: 'a' * 400)], // ~100 tokens
@@ -705,12 +744,6 @@ void main() {
       }
 
       expect(await keptWith(null), 2);
-      final schema = {
-        'type': 'object',
-        'properties': {
-          for (var i = 0; i < 20; i++) 'field$i': {'type': 'string'},
-        },
-      };
       expect(
         await keptWith(OutputConfig(constrained: true, schema: schema)),
         1,

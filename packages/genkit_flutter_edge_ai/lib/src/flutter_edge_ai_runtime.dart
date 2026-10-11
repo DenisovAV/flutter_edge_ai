@@ -21,6 +21,14 @@ abstract class FlutterEdgeAiRuntime {
   Future<gemma.EmbeddingModel> getActiveEmbedder({
     gemma.PreferredBackend? preferredBackend,
   });
+
+  /// The name of the active inference model, or null when none is set. A
+  /// model handle loaded under another name belongs to a model that is no
+  /// longer active.
+  String? get activeModelName;
+
+  /// The name of the active embedding model, or null when none is set.
+  String? get activeEmbedderName;
 }
 
 /// Default runtime that delegates to [gemma.FlutterEdgeAi] static methods.
@@ -56,4 +64,11 @@ class DefaultFlutterEdgeAiRuntime implements FlutterEdgeAiRuntime {
       preferredBackend: preferredBackend,
     );
   }
+
+  @override
+  String? get activeModelName => gemma.FlutterEdgeAi.activeModelSpec?.name;
+
+  @override
+  String? get activeEmbedderName =>
+      gemma.FlutterEdgeAi.activeEmbedderSpec?.name;
 }

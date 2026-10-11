@@ -76,6 +76,31 @@ void main() {
       'data:$type;base64,${base64Encode(bytes)}';
 
   group('config', () {
+    test('a maxOutputTokens larger than the context window is an '
+        'INVALID_ARGUMENT', () async {
+      await expectLater(
+        buildModel()(
+          text('hi', config: {'maxTokens': 512, 'maxOutputTokens': 600}),
+        ),
+        genkitError(StatusCode.invalidArgument, contains('maxOutputTokens')),
+      );
+      await buildModel()(
+        text('hi', config: {'maxTokens': 512, 'maxOutputTokens': 512}),
+      );
+      expect(runtime.getActiveModelCallCount, 1);
+    });
+
+    test('a sampling value no engine takes is named in the error', () async {
+      await expectLater(
+        buildModel()(
+          // The schema's minimum lets infinity through; the engines' check
+          // does not.
+          text('hi', config: {'temperature': double.infinity}),
+        ),
+        genkitError(StatusCode.invalidArgument, contains('temperature')),
+      );
+    });
+
     test('maxTokens below 1 is an INVALID_ARGUMENT before any load', () async {
       await expectLater(
         buildModel()(text('hi', config: {'maxTokens': 0})),
@@ -226,17 +251,20 @@ void main() {
       },
     );
 
-    test('a model configured without tools refuses them', () async {
-      await expectLater(
-        buildModel(supportsTools: false)(
-          request(
-            [TextPart(text: 'hi')],
-            tools: [ToolDefinition(name: 't', description: 'd')],
+    test(
+      'a model configured without tools refuses them as UNIMPLEMENTED',
+      () async {
+        await expectLater(
+          buildModel(supportsTools: false)(
+            request(
+              [TextPart(text: 'hi')],
+              tools: [ToolDefinition(name: 't', description: 'd')],
+            ),
           ),
-        ),
-        genkitError(StatusCode.invalidArgument, contains('supportsTools')),
-      );
-    });
+          genkitError(StatusCode.unimplemented, contains('supportsTools')),
+        );
+      },
+    );
 
     test(r'a $ref input schema is flattened; a recursive one fails', () {
       final tools = convertTools([
@@ -440,9 +468,159 @@ void main() {
       );
       await expectLater(
         buildModel(supportsMedia: false)(request(withImage, config: images)),
-        genkitError(StatusCode.invalidArgument, contains('supportsMedia')),
+        genkitError(StatusCode.unimplemented, contains('supportsMedia')),
+      );
+      // The config alone asks a text-only model to load its vision encoder.
+      await expectLater(
+        buildModel(supportsMedia: false)(text('x', config: images)),
+        genkitError(StatusCode.unimplemented, contains('supportImage')),
       );
       expect(runtime.getActiveModelCallCount, 0);
+    });
+  });
+
+  group('messages', () {
+    Future<List<gemma.Message>> convert(Message message) => convertMessages([
+      message,
+      Message(
+        role: Role.user,
+        content: [TextPart(text: 'q')],
+      ),
+    ]);
+
+    test('a media type is read without case', () async {
+      final messages = await convertMessages([
+        Message(
+          role: Role.user,
+          content: [
+            MediaPart(
+              media: Media(
+                url: dataUri('IMAGE/PNG', png),
+                contentType: 'Image/PNG',
+              ),
+            ),
+          ],
+        ),
+      ]);
+      expect(messages.single.images, hasLength(1));
+    });
+
+    test('media outside a user message is refused, not dropped', () async {
+      final media = MediaPart(media: Media(url: dataUri('image/png', png)));
+      for (final role in [Role.model, Role.system]) {
+        await expectLater(
+          convert(
+            Message(
+              role: role,
+              content: [
+                TextPart(text: 't'),
+                media,
+              ],
+            ),
+          ),
+          genkitError(StatusCode.invalidArgument, contains('media')),
+          reason: role.value,
+        );
+      }
+      await expectLater(
+        convert(
+          Message(
+            role: Role.tool,
+            content: [TextPart(text: 't')],
+          ),
+        ),
+        genkitError(StatusCode.invalidArgument, contains('tool responses')),
+      );
+    });
+
+    test('a system message with media fails even when the config sets the '
+        'system instruction', () async {
+      await expectLater(
+        buildModel()(
+          ModelRequest(
+            messages: [
+              Message(
+                role: Role.system,
+                content: [
+                  MediaPart(media: Media(url: dataUri('image/png', png))),
+                ],
+              ),
+              Message(
+                role: Role.user,
+                content: [TextPart(text: 'q')],
+              ),
+            ],
+            config: {'systemInstruction': 'be brief'},
+          ),
+        ),
+        genkitError(StatusCode.invalidArgument),
+      );
+    });
+
+    test('an unknown role is refused', () async {
+      await expectLater(
+        convert(
+          Message(
+            role: const Role('critic'),
+            content: [TextPart(text: 't')],
+          ),
+        ),
+        genkitError(StatusCode.invalidArgument, contains('critic')),
+      );
+    });
+
+    test("a model turn's reasoning is left out, not refused", () async {
+      final messages = await convert(
+        Message(
+          role: Role.model,
+          content: [
+            ReasoningPart(reasoning: 'hmm'),
+            TextPart(text: 'answer'),
+          ],
+        ),
+      );
+      expect(messages.first.text, 'answer');
+    });
+
+    test("a tool response's text content reaches the model", () async {
+      final messages = await convert(
+        Message(
+          role: Role.tool,
+          content: [
+            ToolResponsePart(
+              toolResponse: ToolResponse(
+                name: 'search',
+                output: {'hits': 2},
+                content: [TextPart(text: 'first hit')],
+              ),
+            ),
+          ],
+        ),
+      );
+      final body = jsonDecode(messages.first.text) as Map<String, dynamic>;
+      expect(body, containsPair('content', 'first hit'));
+      expect(body, containsPair('hits', 2));
+    });
+
+    test("a tool response's media content is refused", () async {
+      await expectLater(
+        convert(
+          Message(
+            role: Role.tool,
+            content: [
+              ToolResponsePart(
+                toolResponse: ToolResponse(
+                  name: 'camera',
+                  content: [
+                    MediaPart(media: Media(url: dataUri('image/png', png))),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        genkitError(StatusCode.invalidArgument, contains('camera')),
+      );
     });
   });
 
@@ -517,10 +695,123 @@ void main() {
           urlMessage('https://media.example/missing.png'),
           httpClient: client,
         ),
-        genkitError(StatusCode.unavailable, contains('404')),
+        genkitError(StatusCode.invalidArgument, contains('404')),
       );
       expect(cancelled, isTrue);
     });
+
+    test('a server error may pass and is UNAVAILABLE; a refusal is the '
+        "URL's", () async {
+      for (final (code, status) in [
+        (503, StatusCode.unavailable),
+        (429, StatusCode.unavailable),
+        (403, StatusCode.invalidArgument),
+      ]) {
+        final client = MockClient((request) async => http.Response('', code));
+        await expectLater(
+          convertMessages(
+            urlMessage('https://media.example/a.png'),
+            httpClient: client,
+          ),
+          genkitError(status, contains('$code')),
+          reason: '$code',
+        );
+      }
+    });
+
+    test('a cancel aborts a download in progress', () async {
+      Future<void>? aborted;
+      final client = MockClient.streaming((request, _) async {
+        aborted = (request as http.Abortable).abortTrigger;
+        return http.StreamedResponse(
+          Stream<List<int>>.periodic(
+            const Duration(milliseconds: 10),
+            (_) => [0],
+          ),
+          200,
+        );
+      });
+      final controller = CancellationController();
+      final watch = Stopwatch()..start();
+      final outcome = expectLater(
+        convertMessages(
+          urlMessage('https://media.example/slow.png'),
+          httpClient: client,
+          cancel: controller.token,
+        ),
+        throwsA(isA<CancelledException>()),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      controller.cancel();
+      await outcome;
+      expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+      // The request itself is torn down, not only left unread.
+      await aborted!.timeout(const Duration(seconds: 1));
+    });
+
+    test("one deadline covers all of a request's downloads", () async {
+      final client = MockClient.streaming(
+        (request, _) async => http.StreamedResponse(
+          Stream.fromFuture(
+            Future.delayed(const Duration(milliseconds: 150), () => png),
+          ),
+          200,
+        ),
+      );
+      // Each download fits in 250 ms; the two together do not.
+      await expectLater(
+        convertMessages(
+          [
+            ...urlMessage('https://media.example/a.png'),
+            ...urlMessage('https://media.example/b.png'),
+          ],
+          httpClient: client,
+          downloadTimeout: const Duration(milliseconds: 250),
+        ),
+        genkitError(StatusCode.deadlineExceeded),
+      );
+    });
+
+    test('a network failure is UNAVAILABLE and says what failed', () async {
+      final client = MockClient(
+        (request) async =>
+            throw http.ClientException('Connection reset', request.url),
+      );
+      await expectLater(
+        convertMessages(
+          urlMessage('https://media.example/a.png?token=secret'),
+          httpClient: client,
+        ),
+        throwsA(
+          isA<GenkitException>()
+              .having((e) => e.status, 'status', StatusCode.unavailable)
+              .having((e) => e.message, 'message', contains('Connection reset'))
+              .having((e) => e.message, 'message', isNot(contains('secret'))),
+        ),
+      );
+    });
+
+    test(
+      'a generic served Content-Type does not override the extension',
+      () async {
+        final client = MockClient(
+          (request) async => http.Response.bytes(
+            [1, 2, 3],
+            200,
+            headers: {'content-type': 'text/plain'},
+          ),
+        );
+        final messages = await convertMessages([
+          Message(
+            role: Role.user,
+            content: [
+              MediaPart(media: Media(url: 'https://media.example/clip.wav')),
+            ],
+          ),
+        ], httpClient: client);
+        expect(messages.single.audioBytes, isNotNull);
+      },
+    );
 
     test('a body over the size limit fails without reading it', () async {
       final client = MockClient.streaming(
@@ -559,6 +850,20 @@ void main() {
       });
     });
 
+    test('usage comes from the session that generated, even when the chat '
+        'replaces it afterwards', () async {
+      chat
+        ..sessionMetrics = gemma.SessionMetrics(
+          inputTokens: 12,
+          outputTokens: 5,
+        )
+        // A single-turn model's chat opens a fresh session once it answers.
+        ..onGenerate = () => chat.sessionMetrics = gemma.SessionMetrics();
+      final response = await buildModel()(text('hi'));
+      expect(response.usage?.inputTokens, 12);
+      expect(response.latencyMs, isNotNull);
+    });
+
     test('an engine that reports zeros reports no usage', () async {
       chat.sessionMetrics = gemma.SessionMetrics();
       expect((await buildModel()(text('hi'))).usage, isNull);
@@ -582,7 +887,9 @@ void main() {
     test(
       'no model installed is UNAVAILABLE, so a router can fall back',
       () async {
-        runtime.loadError = StateError('No active inference model set.');
+        runtime
+          ..activeModelName = null
+          ..loadError = StateError('No active inference model set.');
         await expectLater(
           buildModel()(text('hi')),
           genkitError(StatusCode.unavailable, contains('No active inference')),
@@ -590,11 +897,45 @@ void main() {
       },
     );
 
-    test('an unsupported request is UNIMPLEMENTED', () async {
+    test('an installed model the app cannot run is FAILED_PRECONDITION, so '
+        'a router does not hide it', () async {
+      runtime.loadError = StateError('No inference engine can handle this');
+      await expectLater(
+        buildModel()(text('hi')),
+        genkitError(StatusCode.failedPrecondition, contains('No inference')),
+      );
+    });
+
+    test('an engine that cannot run here is UNAVAILABLE, so a router can '
+        'fall back', () async {
       runtime.loadError = UnsupportedError('not on this platform');
       await expectLater(
         buildModel()(text('hi')),
-        genkitError(StatusCode.unimplemented),
+        genkitError(StatusCode.unavailable, contains('not on this platform')),
+      );
+    });
+
+    test('a RangeError is a bug, not an INVALID_ARGUMENT', () async {
+      runtime.loadError = RangeError.index(3, [1, 2]);
+      await expectLater(
+        buildModel()(text('hi')),
+        throwsA(
+          isNot(
+            isA<GenkitException>().having(
+              (e) => e.status,
+              'status',
+              StatusCode.invalidArgument,
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('a failure feeding the chat gets a status too', () async {
+      chat.addQueryChunkError = StateError('session closed');
+      await expectLater(
+        buildModel()(text('hi')),
+        genkitError(StatusCode.failedPrecondition, contains('session closed')),
       );
     });
 
@@ -670,7 +1011,7 @@ void main() {
       'a maxTokens that is not a positive integer is INVALID_ARGUMENT',
       () async {
         final middleware = ContextWindowMiddleware();
-        for (final value in ['big', 0, 10.5]) {
+        for (final value in ['big', 0, 10.5, double.infinity]) {
           expect(
             () => middleware.model(
               text('hi', config: {'maxTokens': value}),
@@ -706,6 +1047,38 @@ void main() {
           },
         );
         expect(schemaInstructionsText(schema), written);
+      },
+    );
+
+    test(
+      'a maxOutputTokens larger than the default reserve is held back',
+      () async {
+        final middleware = ContextWindowMiddleware();
+        final old = Message(
+          role: Role.user,
+          content: [TextPart(text: 'a' * 400)], // ~100 tokens
+        );
+        final last = Message(
+          role: Role.user,
+          content: [TextPart(text: 'b' * 200)], // ~50 tokens
+        );
+        Future<int> keptWith(Map<String, dynamic> config) async {
+          var kept = -1;
+          await middleware.model(
+            ModelRequest(messages: [old, last], config: config),
+            ActionFnArg(),
+            (r, c) async {
+              kept = r.messages.length;
+              return ModelResponse(finishReason: FinishReason.stop);
+            },
+          );
+          return kept;
+        }
+
+        // 1024 - 256 leaves room for both; 1024 - 900 leaves room for the last.
+        expect(await keptWith({'maxTokens': 1024}), 2);
+        expect(await keptWith({'maxTokens': 1024, 'maxOutputTokens': 900}), 1);
+        expect(await keptWith({'maxTokens': 1024, 'maxOutputTokens': 100}), 2);
       },
     );
 
@@ -808,7 +1181,9 @@ void main() {
     );
 
     test('no embedder installed is UNAVAILABLE', () async {
-      runtime.loadError = StateError('No active embedding model set.');
+      runtime
+        ..activeEmbedderName = null
+        ..loadError = StateError('No active embedding model set.');
       await expectLater(
         createFlutterEdgeAiEmbedder(
           name: 'flutter-edge-ai/e',
@@ -816,6 +1191,134 @@ void main() {
         )(embedRequest([doc('q')])),
         genkitError(StatusCode.unavailable),
       );
+    });
+
+    test(
+      'a closed embedder, or one no longer active, is loaded again',
+      () async {
+        runtime.embedderToReturn.embeddingsToReturn = [
+          [0.1],
+        ];
+        final embedder = createFlutterEdgeAiEmbedder(
+          name: 'flutter-edge-ai/e',
+          runtime: runtime,
+        );
+        await embedder(embedRequest([doc('q')]));
+        await embedder(embedRequest([doc('q')]));
+        expect(runtime.getActiveEmbedderCallCount, 1);
+
+        runtime.embedderToReturn.isClosed = true;
+        runtime.embedderToReturn = FakeEmbeddingModel()
+          ..embeddingsToReturn = [
+            [0.2],
+          ];
+        final afterClose = await embedder(embedRequest([doc('q')]));
+        expect(runtime.getActiveEmbedderCallCount, 2);
+        expect(afterClose.embeddings.single.embedding, [0.2]);
+
+        runtime.activeEmbedderName = 'another-embedder';
+        await embedder(embedRequest([doc('q')]));
+        expect(runtime.getActiveEmbedderCallCount, 3);
+      },
+    );
+
+    test(
+      'a vector count that does not match the documents is INTERNAL',
+      () async {
+        runtime.embedderToReturn.embeddingsToReturn = [
+          [0.1],
+        ];
+        await expectLater(
+          createFlutterEdgeAiEmbedder(
+            name: 'flutter-edge-ai/e',
+            runtime: runtime,
+          )(embedRequest([doc('a'), doc('b')])),
+          genkitError(StatusCode.internal, contains('1 vectors for 2')),
+        );
+      },
+    );
+  });
+
+  group('model lifecycle', () {
+    test('a model that core closed is loaded again', () async {
+      final model = buildModel();
+      await model(text('hi'));
+      await model(text('hi'));
+      expect(runtime.getActiveModelCallCount, 1);
+
+      // What getActiveModel with other arguments does to the old handle.
+      await inferenceModel.close();
+      await model(text('hi'));
+      expect(runtime.getActiveModelCallCount, 2);
+    });
+
+    test('a newly installed model is used, not the cached one', () async {
+      final model = buildModel();
+      await model(text('hi'));
+
+      final next = FakeInferenceChat()
+        ..blockingResponse = const gemma.TextResponse('from B');
+      runtime
+        ..activeModelName = 'model-b'
+        ..modelToReturn = (FakeInferenceModel()..chatToReturn = next);
+      final response = await model(text('hi'));
+      expect(runtime.getActiveModelCallCount, 2);
+      expect(response.text, 'from B');
+    });
+
+    test('every configured name shares one model and one queue', () async {
+      final plugin = GenkitFlutterEdgeAiPlugin(
+        models: [
+          FlutterEdgeAiModelConfig(
+            name: 'a',
+            modelType: gemma.ModelType.gemmaIt,
+          ),
+          FlutterEdgeAiModelConfig(
+            name: 'b',
+            modelType: gemma.ModelType.gemmaIt,
+          ),
+        ],
+        runtime: runtime,
+      );
+      final a = plugin.resolve(ActionType.model, 'a')! as Model;
+      final b = plugin.resolve(ActionType.model, 'b')! as Model;
+      chat.generationGate = Completer<void>();
+
+      final first = a(text('one'));
+      await pumpEventQueue();
+      final second = b(text('two'));
+      await pumpEventQueue();
+      // b waits for a's generation instead of reaching the native model.
+      expect(inferenceModel.createChatCallCount, 1);
+
+      chat.generationGate!.complete();
+      await Future.wait([first, second]);
+      expect(inferenceModel.createChatCallCount, 2);
+      expect(runtime.getActiveModelCallCount, 1);
+    });
+
+    test('a request that fails preparation fails at once and does not hold '
+        'the queue', () async {
+      final model = buildModel();
+      chat.generationGate = Completer<void>();
+      final first = model(text('one'));
+      await pumpEventQueue();
+
+      var rejected = false;
+      final bad = model(text('two', config: {'maxTokens': 0})).then(
+        (_) {},
+        onError: (Object e) {
+          rejected = true;
+        },
+      );
+      final third = model(text('three'));
+      await pumpEventQueue();
+      // Rejected while the first request is still generating.
+      expect(rejected, isTrue);
+
+      chat.generationGate!.complete();
+      await Future.wait([first, bad, third]);
+      expect(inferenceModel.createChatCallCount, 2);
     });
   });
 }

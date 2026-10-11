@@ -6,6 +6,7 @@ import 'flutter_edge_ai_model.dart';
 import 'flutter_edge_ai_options.dart';
 import 'flutter_edge_ai_runtime.dart';
 import 'middleware/context_window.dart';
+import 'model_slot.dart';
 
 /// Configuration for a single model exposed by [GenkitFlutterEdgeAiPlugin].
 ///
@@ -123,6 +124,12 @@ class GenkitFlutterEdgeAiPlugin extends GenkitPlugin {
   /// Cache for resolved actions to avoid recreating on every resolve() call.
   final Map<String, Action> _resolvedActions = {};
 
+  /// The model every configured name runs: flutter_edge_ai has one active
+  /// model, so the names share its queue and its loaded handle.
+  late final FlutterEdgeAiModelSlot _modelSlot = FlutterEdgeAiModelSlot(
+    runtime,
+  );
+
   @override
   String get name => prefix;
 
@@ -173,6 +180,7 @@ class GenkitFlutterEdgeAiPlugin extends GenkitPlugin {
         modelType: config.modelType,
         fileType: config.fileType,
         runtime: runtime,
+        slot: _modelSlot,
         supportsTools: config.supportsTools,
         supportsMedia: config.supportsMedia,
       );

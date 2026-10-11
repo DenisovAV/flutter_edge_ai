@@ -19,7 +19,6 @@ ModelResponse convertFinalResponse(
   List<gemma.FunctionCallResponse>? functionCalls,
   String? reasoningText,
   double? latencyMs,
-  GenerationUsage? usage,
 }) {
   final content = <Part>[];
 
@@ -47,7 +46,6 @@ ModelResponse convertFinalResponse(
     finishReason: FinishReason.stop,
     message: Message(role: Role.model, content: content),
     latencyMs: latencyMs,
-    usage: usage,
   );
 }
 
@@ -82,13 +80,6 @@ ModelResponseChunk convertStreamChunk(
 
   return ModelResponseChunk(role: Role.model, content: content);
 }
-
-/// The number of tool calls in [chunk].
-int toolCallsIn(gemma.ModelResponse chunk) => switch (chunk) {
-  gemma.FunctionCallResponse() => 1,
-  gemma.ParallelFunctionCallResponse(:final calls) => calls.length,
-  _ => 0,
-};
 
 /// Genkit usage for one generation: the engine's token counts where it
 /// reports them, the media the request carried, and the time to first token

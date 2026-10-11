@@ -55,7 +55,7 @@ Based on Phase 1, decide with the user which new APIs to support. Typical integr
 ### New parameter in `createChat()` / `createSession()`
 1. Add field to `$FlutterEdgeAiModelOptions` in `lib/src/flutter_edge_ai_options.dart`
 2. Regenerate `lib/src/flutter_edge_ai_options.g.dart`: `dart pub global run build_runner build --delete-conflicting-outputs` in `PKG_DIR` (see the package `AGENTS.md`; `dart pub global activate build_runner` once). Never hand-edit it.
-3. Extract from config + pass in `lib/src/flutter_edge_ai_model.dart` (`_executeGeneration`)
+3. Extract from config + pass in `lib/src/flutter_edge_ai_model.dart` (`_prepare` validates and converts; `_generate` passes it to `createChat`)
 4. Update `FakeInferenceModel.createChat()` in `test/src/fake_runtime.dart` (add param, store in `last*` field for assertions)
 
 ### New enum value (e.g. `ModelFileType`)

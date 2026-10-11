@@ -12,8 +12,18 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
     : modelToReturn = model ?? FakeInferenceModel(),
       embedderToReturn = embedder ?? FakeEmbeddingModel();
 
-  final FakeInferenceModel modelToReturn;
-  final FakeEmbeddingModel embedderToReturn;
+  /// What [getActiveModel] returns; a test swaps it to stand for a newly
+  /// built model.
+  FakeInferenceModel modelToReturn;
+
+  /// What [getActiveEmbedder] returns.
+  FakeEmbeddingModel embedderToReturn;
+
+  @override
+  String? activeModelName = 'fake-model';
+
+  @override
+  String? activeEmbedderName = 'fake-embedder';
   int getActiveModelCallCount = 0;
   int getActiveEmbedderCallCount = 0;
 
@@ -71,10 +81,11 @@ class FakeInferenceModel extends gemma.InferenceModel {
   @override
   gemma.PreferredBackend? get activeBackend => null;
 
+  final List<void Function()> _closeListeners = [];
+
   @override
-  void addCloseListener(void Function() listener) {
-    // No-op: the fake holds no native handle to close.
-  }
+  void addCloseListener(void Function() listener) =>
+      _closeListeners.add(listener);
 
   @override
   gemma.InferenceModelSession? get session => null;
@@ -142,8 +153,16 @@ class FakeInferenceModel extends gemma.InferenceModel {
     throw UnimplementedError('FakeInferenceModel.createSession');
   }
 
+  /// Fires the close listeners, as a real model does when core closes it to
+  /// build another.
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    final listeners = [..._closeListeners];
+    _closeListeners.clear();
+    for (final listener in listeners) {
+      listener();
+    }
+  }
 }
 
 /// Fake chat that returns preconfigured responses.
@@ -188,8 +207,12 @@ class FakeInferenceChat extends gemma.InferenceChat {
     bool prefix = false,
   ]) async {
     addQueryChunkCallCount++;
+    if (addQueryChunkError case final error?) throw error;
     receivedMessages.add(message);
   }
+
+  /// When set, [addQueryChunk] fails with it.
+  Object? addQueryChunkError;
 
   /// When set, [generateChatResponse] waits on it, so a test can cancel in
   /// the middle of a generation; [stopGeneration] completes it.
@@ -269,9 +292,9 @@ class FakeEmbeddingModel implements gemma.EmbeddingModel {
   gemma.PreferredBackend? get activeBackend => gemma.PreferredBackend.cpu;
 
   // `implements` does not inherit the interface's default, so this has to
-  // be spelled out. The fake is never closed.
+  // be spelled out.
   @override
-  bool get isClosed => false;
+  bool isClosed = false;
 
   @override
   Future<List<double>> generateEmbedding(
@@ -299,11 +322,11 @@ class FakeEmbeddingModel implements gemma.EmbeddingModel {
 
   @override
   void addCloseListener(void Function() listener) {
-    // No-op: the fake holds no native handle to close.
+    // No-op: the plugin checks isClosed instead.
   }
 
   @override
-  Future<void> close() async {}
+  Future<void> close() async => isClosed = true;
 }
 
 /// A session that only reports its metrics.

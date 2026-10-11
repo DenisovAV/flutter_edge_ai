@@ -12,36 +12,50 @@ import 'file_reader.dart';
 /// The largest media file downloaded from an `http(s)` URL.
 const int kMaxMediaDownloadBytes = 20 * 1024 * 1024;
 
-/// How long an `http(s)` media download may take in all, from the request to
-/// the last byte.
+/// How long a request's `http(s)` media may take to download, all of it
+/// together, counted from the start of the request's conversion.
 const Duration kMediaDownloadTimeout = Duration(seconds: 30);
 
 /// Extracts and concatenates all system messages into a single string.
 ///
 /// Returns `null` if no system messages are present or all contain empty text.
-/// Throws if a system message has content parts but no extractable text
-/// (e.g. only media parts), since flutter_edge_ai only supports text system
-/// instructions.
+/// A system message with a part other than text is an INVALID_ARGUMENT:
+/// flutter_edge_ai takes text system instructions only.
 ///
 /// Used to pass system instructions natively via `createChat(systemInstruction:)`.
 String? extractSystemInstruction(List<Message> messages) {
   final buffer = StringBuffer();
   for (final message in messages) {
     if (message.role == Role.system) {
+      _checkSystemMessage(message);
       final text = _extractText(message.content);
       if (text.isNotEmpty) {
         if (buffer.isNotEmpty) buffer.write('\n');
         buffer.write(text);
-      } else if (message.content.isNotEmpty) {
-        throw GenkitException(
-          'System message contains non-text parts which are not supported '
-          'for system instructions. Only text content is used.',
-          status: StatusCode.invalidArgument,
-        );
       }
     }
   }
   return buffer.isEmpty ? null : buffer.toString();
+}
+
+void _checkSystemMessage(Message message) => _checkParts(
+  message,
+  (part) => part.isText,
+  'System messages take text only.',
+);
+
+/// Throws INVALID_ARGUMENT for the first part of [message] that [allowed]
+/// refuses: a part the model would never see must not vanish quietly.
+void _checkParts(Message message, bool Function(Part) allowed, String rule) {
+  for (final part in message.content) {
+    if (!allowed(part)) {
+      throw GenkitException(
+        'Unsupported part in a ${message.role.value} message: '
+        '${_partKind(part)}. $rule',
+        status: StatusCode.invalidArgument,
+      );
+    }
+  }
 }
 
 /// Converts Genkit [ModelRequest] messages to flutter_edge_ai [gemma.Message] list.
@@ -49,73 +63,125 @@ String? extractSystemInstruction(List<Message> messages) {
 /// Key mapping rules:
 /// - `Role.system` → Skipped (handled via [extractSystemInstruction] + `createChat(systemInstruction:)`)
 /// - `Role.user` → `Message(text: ..., isUser: true, images: ..., audioBytes: ...)`
-/// - `Role.model` → `Message(text: ..., isUser: false)`
+/// - `Role.model` → `Message(text: ..., isUser: false)`, or a tool call;
+///   its reasoning is left out, as models do not read their own back
 /// - `Role.tool` → one `Message.toolResponse(toolName: ..., response: ...)`
 ///   per tool response: Genkit puts every response of a turn in one message.
 ///
 /// Media resolution supports `data:` URIs, `file://` paths, absolute paths,
 /// and `http://`/`https://` URLs (downloaded on the fly, at most
-/// [kMaxMediaDownloadBytes] within [kMediaDownloadTimeout]). A media part
-/// without a `contentType` is typed from its data URI, its file extension or
-/// its bytes. A user message may carry several images and one audio clip; a
-/// part the plugin cannot pass on — video, documents, data or custom parts —
-/// is an INVALID_ARGUMENT rather than silently dropped.
+/// [kMaxMediaDownloadBytes] each and [kMediaDownloadTimeout] for all of
+/// them; [cancel] aborts a download in progress). A media part without a
+/// `contentType` is typed from its data URI, the served Content-Type, its file
+/// extension or its bytes. A user message may carry several images and one
+/// audio clip; a part the plugin cannot pass on — video, documents, data or
+/// custom parts, media outside a user message — and a role it does not know
+/// are an INVALID_ARGUMENT rather than silently dropped.
 Future<List<gemma.Message>> convertMessages(
   List<Message> messages, {
   http.Client? httpClient,
+  CancellationToken? cancel,
   @visibleForTesting Duration downloadTimeout = kMediaDownloadTimeout,
 }) async {
-  final result = <gemma.Message>[];
+  final downloads = _MediaDownloads(
+    client: httpClient,
+    timeout: downloadTimeout,
+    cancel: cancel,
+  );
+  try {
+    final result = <gemma.Message>[];
+    for (final message in messages) {
+      cancel?.throwIfCancelled();
+      final role = message.role;
 
-  for (final message in messages) {
-    final role = message.role;
-
-    if (role == Role.system) {
-      // System messages are handled natively via createChat(systemInstruction:).
-      continue;
-    } else if (role == Role.user) {
-      final text = _extractText(message.content);
-      final media = await _extractMedia(
-        message.content,
-        httpClient,
-        downloadTimeout,
-      );
-      result.add(
-        gemma.Message(
-          text: text,
-          isUser: true,
-          images: media.images,
-          audioBytes: media.audio,
-        ),
-      );
-    } else if (role == Role.model) {
-      final text = _extractText(message.content);
-      final toolCallJson = _extractToolRequest(message.content);
-      if (toolCallJson != null) {
-        result.add(gemma.Message.toolCall(text: toolCallJson));
+      if (role == Role.system) {
+        // Its text goes to createChat(systemInstruction:), see
+        // extractSystemInstruction.
+        _checkSystemMessage(message);
+      } else if (role == Role.user) {
+        final text = _extractText(message.content);
+        final media = await _extractMedia(message.content, downloads);
+        result.add(
+          gemma.Message(
+            text: text,
+            isUser: true,
+            images: media.images,
+            audioBytes: media.audio,
+          ),
+        );
+      } else if (role == Role.model) {
+        _checkParts(
+          message,
+          (part) => part.isText || part.isToolRequest || part.isReasoning,
+          'Model messages take text and tool requests.',
+        );
+        final text = _extractText(message.content);
+        final toolCallJson = _extractToolRequest(message.content);
+        if (toolCallJson != null) {
+          result.add(gemma.Message.toolCall(text: toolCallJson));
+        } else {
+          result.add(gemma.Message(text: text, isUser: false));
+        }
+      } else if (role == Role.tool) {
+        _checkParts(
+          message,
+          (part) => part.isToolResponse,
+          'Tool messages take tool responses only.',
+        );
+        if (message.content.isEmpty) {
+          throw GenkitException(
+            'Tool message contains no ToolResponsePart.',
+            status: StatusCode.invalidArgument,
+          );
+        }
+        for (final part in message.content) {
+          final response = part.toolResponse!;
+          result.add(
+            gemma.Message.toolResponse(
+              toolName: response.name,
+              response: _toolResponseBody(response),
+            ),
+          );
+        }
       } else {
-        result.add(gemma.Message(text: text, isUser: false));
-      }
-    } else if (role == Role.tool) {
-      final responses = _extractToolResponses(message.content);
-      if (responses.isEmpty) {
         throw GenkitException(
-          'Tool message contains no ToolResponsePart.',
+          'Unsupported message role "${role.value}".',
           status: StatusCode.invalidArgument,
         );
       }
-      for (final response in responses) {
-        result.add(
-          gemma.Message.toolResponse(
-            toolName: response.toolName,
-            response: response.response,
-          ),
-        );
-      }
     }
+    cancel?.throwIfCancelled();
+    return result;
+  } finally {
+    downloads.close();
+  }
+}
+
+/// The http(s) downloads of one request: one client, one deadline for all of
+/// them, and the request's cancel.
+class _MediaDownloads {
+  _MediaDownloads({
+    required http.Client? client,
+    required this.timeout,
+    required this.cancel,
+  }) : _given = client;
+
+  final http.Client? _given;
+  http.Client? _own;
+  final Duration timeout;
+  final CancellationToken? cancel;
+  final Stopwatch _clock = Stopwatch()..start();
+
+  http.Client get client => _given ?? (_own ??= http.Client());
+
+  /// What is left of [timeout].
+  Duration get remaining {
+    final left = timeout - _clock.elapsed;
+    return left.isNegative ? Duration.zero : left;
   }
 
-  return result;
+  /// Closes the client this made, if it made one.
+  void close() => _own?.close();
 }
 
 /// Extracts concatenated text from message content parts.
@@ -138,8 +204,7 @@ typedef _UserMedia = ({List<Uint8List> images, Uint8List? audio});
 /// audio. Text is read separately; any other kind of part is rejected.
 Future<_UserMedia> _extractMedia(
   List<Part> parts,
-  http.Client? httpClient,
-  Duration downloadTimeout,
+  _MediaDownloads downloads,
 ) async {
   final images = <Uint8List>[];
   Uint8List? audio;
@@ -153,11 +218,7 @@ Future<_UserMedia> _extractMedia(
       );
     }
     final media = part.media!;
-    final (bytes, servedType) = await _loadMediaBytes(
-      media.url,
-      httpClient,
-      downloadTimeout,
-    );
+    final (bytes, servedType) = await _loadMediaBytes(media.url, downloads);
     final kind = _mediaKind(media, bytes, servedType);
     switch (kind) {
       case 'image':
@@ -191,6 +252,8 @@ Future<_UserMedia> _extractMedia(
 
 /// A short name for a part's kind, for error messages.
 String _partKind(Part part) {
+  if (part.isText) return 'text';
+  if (part.isMedia) return 'media';
   if (part.isToolRequest) return 'tool request';
   if (part.isToolResponse) return 'tool response';
   if (part.isReasoning) return 'reasoning';
@@ -202,14 +265,22 @@ String _partKind(Part part) {
 /// 'image', 'audio', another MIME type, or null when nothing says.
 ///
 /// The declared contentType wins; then a `data:` URI's MIME type; then the
-/// Content-Type an http(s) server sent ([servedType]); then the URL's file
-/// extension; then, when none says or the type is `application/octet-stream`,
-/// the bytes' signature.
+/// Content-Type an http(s) server sent ([servedType]) when it names an image
+/// or audio, since servers label media generically often enough
+/// (`text/plain`, `binary/octet-stream`); then the URL's file extension;
+/// then, when none says or the type is `application/octet-stream`, the bytes'
+/// signature. Types are compared without case.
 String? _mediaKind(Media media, Uint8List bytes, String? servedType) {
+  final served = _mimeType(servedType);
+  final servedMedia =
+      served != null &&
+          (served.startsWith('image/') || served.startsWith('audio/'))
+      ? served
+      : null;
   var type =
-      _nonEmpty(media.contentType) ??
+      _mimeType(media.contentType) ??
       _dataUriType(media.url) ??
-      _nonEmpty(servedType?.split(';').first) ??
+      servedMedia ??
       _extensionType(media.url);
   // A generic binary type says nothing about what the bytes are.
   if (type == null || type == 'application/octet-stream') {
@@ -221,15 +292,19 @@ String? _mediaKind(Media media, Uint8List bytes, String? servedType) {
   return type;
 }
 
-String? _nonEmpty(String? value) =>
-    (value == null || value.trim().isEmpty) ? null : value.trim();
+/// [value]'s media type, lowercase and without parameters, or null when
+/// there is none.
+String? _mimeType(String? value) {
+  final type = value?.split(';').first.trim().toLowerCase();
+  return (type == null || type.isEmpty) ? null : type;
+}
 
 /// The MIME type of a `data:<type>[;base64],...` URI.
 String? _dataUriType(String url) {
   if (!url.startsWith('data:')) return null;
   final end = url.indexOf(RegExp('[;,]'));
   if (end <= 5) return null;
-  return _nonEmpty(url.substring(5, end));
+  return _mimeType(url.substring(5, end));
 }
 
 const _imageExtensions = {
@@ -315,8 +390,7 @@ String? _sniffType(Uint8List bytes) {
 /// sent.
 Future<(Uint8List, String?)> _loadMediaBytes(
   String url,
-  http.Client? httpClient,
-  Duration downloadTimeout,
+  _MediaDownloads downloads,
 ) async {
   // data: URI (base64)
   if (url.startsWith('data:')) {
@@ -362,7 +436,7 @@ Future<(Uint8List, String?)> _loadMediaBytes(
   }
 
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return _download(url, httpClient, downloadTimeout);
+    return _download(url, downloads);
   }
 
   // Unrecognized URL scheme — reject explicitly.
@@ -374,15 +448,13 @@ Future<(Uint8List, String?)> _loadMediaBytes(
   );
 }
 
-/// Downloads an `http(s)` media URL, bounded in size and by one deadline for
-/// the whole transfer: conversion runs under the model's lock, so a server
-/// that keeps sending a byte now and then must not hold every later request.
-/// Errors name the host only: a signed URL's query is a credential.
-Future<(Uint8List, String?)> _download(
-  String url,
-  http.Client? httpClient,
-  Duration timeout,
-) async {
+/// Downloads an `http(s)` media URL within [downloads]' deadline and
+/// [kMaxMediaDownloadBytes]. A cancel, the deadline or an oversized body
+/// aborts the transfer at once: the request may be waiting to reach a model
+/// other requests are queued for, and a server that sends a byte now and then
+/// must not hold them. Errors name the host only: a signed URL's query is a
+/// credential.
+Future<(Uint8List, String?)> _download(String url, _MediaDownloads downloads) {
   final uri = Uri.tryParse(url);
   if (uri == null || uri.host.isEmpty) {
     throw GenkitException(
@@ -391,95 +463,130 @@ Future<(Uint8List, String?)> _download(
     );
   }
   final host = uri.host;
-  final deadline = Stopwatch()..start();
-  Duration remaining() {
-    final left = timeout - deadline.elapsed;
-    return left.isNegative ? Duration.zero : left;
+  final done = Completer<(Uint8List, String?)>();
+  // Completing it aborts the request on the clients that support it, the
+  // dart:io and browser ones among them.
+  final abort = Completer<void>();
+  StreamSubscription<List<int>>? body;
+  Timer? timer;
+  void Function()? detachCancel;
+
+  void finish() {
+    timer?.cancel();
+    detachCancel?.call();
+    if (!abort.isCompleted) abort.complete();
   }
 
-  final client = httpClient ?? http.Client();
-  try {
-    final response = await client
-        .send(http.Request('GET', uri))
-        .timeout(remaining());
-    if (response.statusCode != 200) {
-      // Release the body: on a shared client an unread one keeps its
-      // connection busy.
-      await response.stream.listen(null).cancel();
-      throw GenkitException(
-        'Failed to download media from $host: HTTP ${response.statusCode}',
-        status: StatusCode.unavailable,
-      );
-    }
-    final declared = response.contentLength;
-    if (declared != null && declared > kMaxMediaDownloadBytes) {
-      await response.stream.listen(null).cancel();
-      throw GenkitException(
-        'Media from $host is $declared bytes, over the '
-        '$kMaxMediaDownloadBytes-byte limit.',
-        status: StatusCode.invalidArgument,
-      );
-    }
-    final bytes = await _readBounded(response.stream, host, remaining());
-    return (bytes, response.headers['content-type']);
-  } on GenkitException {
-    rethrow;
-  } on TimeoutException {
-    throw GenkitException(
-      'Downloading media from $host took longer than '
-      '${timeout.inSeconds} s.',
-      status: StatusCode.deadlineExceeded,
-    );
-  } catch (e) {
-    throw GenkitException(
-      'Failed to download media from $host: ${e.runtimeType}',
-      status: StatusCode.unavailable,
-    );
-  } finally {
-    if (httpClient == null) client.close();
-  }
-}
-
-/// Reads [body] to its end within [timeout] and [kMaxMediaDownloadBytes],
-/// cancelling it as soon as either is exceeded.
-Future<Uint8List> _readBounded(
-  Stream<List<int>> body,
-  String host,
-  Duration timeout,
-) {
-  final builder = BytesBuilder(copy: false);
-  final done = Completer<Uint8List>();
-  late final StreamSubscription<List<int>> subscription;
-  void fail(Object error) {
+  void fail(Object error, [StackTrace? stack]) {
     if (done.isCompleted) return;
-    unawaited(subscription.cancel());
-    done.completeError(error);
+    body?.cancel().ignore();
+    finish();
+    done.completeError(error, stack);
   }
 
-  final timer = Timer(timeout, () => fail(TimeoutException(null, timeout)));
-  subscription = body.listen(
-    (chunk) {
-      builder.add(chunk);
-      if (builder.length > kMaxMediaDownloadBytes) {
-        fail(
-          GenkitException(
-            'Media from $host is over the $kMaxMediaDownloadBytes-byte limit.',
-            status: StatusCode.invalidArgument,
-          ),
-        );
-      }
-    },
-    onError: (Object error, StackTrace stack) {
-      if (done.isCompleted) return;
-      done.completeError(error, stack);
-    },
-    onDone: () {
-      if (!done.isCompleted) done.complete(builder.takeBytes());
-    },
-    cancelOnError: true,
+  // Release an unread body: on a shared client it keeps its connection busy.
+  void discard(http.StreamedResponse response) =>
+      response.stream.listen(null).cancel().ignore();
+
+  timer = Timer(
+    downloads.remaining,
+    () => fail(
+      GenkitException(
+        'Downloading the media of this request took longer than '
+        '${downloads.timeout.inSeconds} s (at $host).',
+        status: StatusCode.deadlineExceeded,
+      ),
+    ),
   );
-  return done.future.whenComplete(timer.cancel);
+  final cancel = downloads.cancel;
+  if (cancel != null) {
+    detachCancel = cancel.onCancel(
+      () => fail(CancelledException(reason: cancel.reason, token: cancel)),
+    );
+  }
+  if (done.isCompleted) return done.future;
+
+  downloads.client
+      .send(http.AbortableRequest('GET', uri, abortTrigger: abort.future))
+      .then(
+        (response) {
+          if (done.isCompleted) return discard(response);
+          final status = response.statusCode;
+          if (status != 200) {
+            discard(response);
+            return fail(
+              GenkitException(
+                'Failed to download media from $host: HTTP $status',
+                status: _httpFailureStatus(status),
+              ),
+            );
+          }
+          final declared = response.contentLength;
+          if (declared != null && declared > kMaxMediaDownloadBytes) {
+            discard(response);
+            return fail(
+              GenkitException(
+                'Media from $host is $declared bytes, over the '
+                '$kMaxMediaDownloadBytes-byte limit.',
+                status: StatusCode.invalidArgument,
+              ),
+            );
+          }
+          final builder = BytesBuilder(copy: false);
+          body = response.stream.listen(
+            (chunk) {
+              builder.add(chunk);
+              if (builder.length > kMaxMediaDownloadBytes) {
+                fail(
+                  GenkitException(
+                    'Media from $host is over the '
+                    '$kMaxMediaDownloadBytes-byte limit.',
+                    status: StatusCode.invalidArgument,
+                  ),
+                );
+              }
+            },
+            onError: (Object error, StackTrace stack) =>
+                fail(_transferError(error, host), stack),
+            onDone: () {
+              if (done.isCompleted) return;
+              finish();
+              done.complete((
+                builder.takeBytes(),
+                response.headers['content-type'],
+              ));
+            },
+            cancelOnError: true,
+          );
+        },
+        onError: (Object error, StackTrace stack) =>
+            fail(_transferError(error, host), stack),
+      );
+  return done.future;
 }
+
+/// A server error, a timeout or a rate limit may pass; any other refusal
+/// (not found, forbidden, an expired signed URL) is the URL's.
+StatusCode _httpFailureStatus(int status) =>
+    (status >= 500 || status == 408 || status == 429)
+    ? StatusCode.unavailable
+    : StatusCode.invalidArgument;
+
+/// The error for a transfer that failed: a network failure is UNAVAILABLE,
+/// with the client's message, which does not carry the URL. An [Error] is a
+/// bug and stays one.
+Object _transferError(Object error, String host) => switch (error) {
+  GenkitException() => error,
+  http.ClientException(:final message) => GenkitException(
+    'Failed to download media from $host: $message',
+    status: StatusCode.unavailable,
+  ),
+  Exception() => GenkitException(
+    'Failed to download media from $host: $error',
+    status: StatusCode.unavailable,
+  ),
+  _ => error,
+};
 
 /// Extracts tool requests (function calls) as JSON string from content parts.
 ///
@@ -498,21 +605,42 @@ String? _extractToolRequest(List<Part> parts) {
   return jsonEncode(calls);
 }
 
-/// Every tool response in a tool message, in order.
-List<_ToolResponseData> _extractToolResponses(List<Part> parts) => [
-  for (final part in parts)
-    if (part.isToolResponse)
-      _ToolResponseData(
-        toolName: part.toolResponse!.name,
-        response: switch (part.toolResponse!.output) {
-          final Map<String, dynamic> output => output,
-          final output => {'result': output},
-        },
+/// A tool response as the map the model reads: its output, under `result`
+/// when it is not a map, and the text of its multipart content, if any, under
+/// `content`. Content other than text cannot be passed on.
+Map<String, dynamic> _toolResponseBody(ToolResponse response) {
+  final texts = <String>[];
+  for (final item in response.content ?? const <dynamic>[]) {
+    final part = switch (item) {
+      final Part part => part,
+      final Map<dynamic, dynamic> json => Part.fromJson(
+        Map<String, dynamic>.from(json),
       ),
-];
-
-class _ToolResponseData {
-  const _ToolResponseData({required this.toolName, required this.response});
-  final String toolName;
-  final Map<String, dynamic> response;
+      _ => null,
+    };
+    if (part == null || !part.isText) {
+      throw GenkitException(
+        'The response of tool "${response.name}" carries '
+        '${part == null ? 'content that is not a part' : _partKind(part)}; '
+        'only text content is passed to the model.',
+        status: StatusCode.invalidArgument,
+      );
+    }
+    texts.add(part.text!);
+  }
+  final body = switch (response.output) {
+    final Map<String, dynamic> output => {...output},
+    final output => <String, dynamic>{'result': output},
+  };
+  if (texts.isNotEmpty) {
+    if (body.containsKey('content')) {
+      throw GenkitException(
+        'The response of tool "${response.name}" has both an output with a '
+        '"content" key and multipart content.',
+        status: StatusCode.invalidArgument,
+      );
+    }
+    body['content'] = texts.join('\n');
+  }
+  return body;
 }

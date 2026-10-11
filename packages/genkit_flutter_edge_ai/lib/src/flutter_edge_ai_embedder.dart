@@ -8,8 +8,9 @@ import 'runtime_errors.dart';
 
 /// Creates a Genkit [Embedder] action backed by flutter_edge_ai's embedding model.
 ///
-/// The embedding model is lazily created on first call and cached for reuse.
-/// Texts are embedded as search queries unless the options say
+/// The embedding model is lazily created on first call and cached for reuse
+/// while it is open, was created for the same backend and is still the active
+/// embedder. Texts are embedded as search queries unless the options say
 /// `taskType: 'retrievalDocument'`, which is what documents being indexed
 /// need: EmbeddingGemma prefixes the two differently.
 Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
@@ -18,6 +19,7 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
 }) {
   gemma.EmbeddingModel? cachedEmbedder;
   gemma.PreferredBackend? cachedBackend;
+  String? cachedName;
 
   return Embedder<FlutterEdgeAiEmbedConfig>(
     name: name,
@@ -27,8 +29,10 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
       final options = await _parseEmbedOptions(request.options);
       final backend = parsePreferredBackend(options?.preferredBackend);
       final taskType = switch (options?.taskType) {
+        null || 'retrievalQuery' => gemma.TaskType.retrievalQuery,
         'retrievalDocument' => gemma.TaskType.retrievalDocument,
-        _ => gemma.TaskType.retrievalQuery,
+        // The schema lists the two above; a value it lets through is a bug.
+        final other => throw StateError('Unhandled taskType "$other"'),
       };
 
       // Extract text from each document before loading anything: a document
@@ -38,21 +42,37 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
           _documentText(doc, index),
       ];
 
-      // Get or create embedding model (invalidate on backend change).
-      if (cachedEmbedder == null || cachedBackend != backend) {
-        cachedEmbedder = await withRuntimeErrors(
+      // A closed embedder, one for another backend, or one that is no longer
+      // the active embedder is loaded again.
+      final activeName = runtime.activeEmbedderName;
+      var embedder = cachedEmbedder;
+      if (embedder == null ||
+          embedder.isClosed ||
+          cachedBackend != backend ||
+          cachedName != activeName) {
+        embedder = await withRuntimeErrors<gemma.EmbeddingModel>(
           'Could not load the on-device embedder',
           () => runtime.getActiveEmbedder(preferredBackend: backend),
+          hasActiveModel: () => runtime.activeEmbedderName != null,
         );
+        cachedEmbedder = embedder;
         cachedBackend = backend;
+        cachedName = activeName;
       }
       context.cancel?.throwIfCancelled();
 
-      final vectors = await cachedEmbedder!.generateEmbeddings(
+      final vectors = await embedder.generateEmbeddings(
         texts,
         taskType: taskType,
       );
       context.cancel?.throwIfCancelled();
+      if (vectors.length != texts.length) {
+        throw GenkitException(
+          'The on-device embedder returned ${vectors.length} vectors for '
+          '${texts.length} documents.',
+          status: StatusCode.internal,
+        );
+      }
 
       return EmbedResponse(
         embeddings: [

@@ -2,7 +2,7 @@
 
 ## 0.3.1
 
-- A cancel during an async `accept` ends the cascade instead of returning a success.
+- A cancel ends a cascade before or during its `accept`, never with a success.
 
 ## 0.3.0
 

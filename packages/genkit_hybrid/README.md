@@ -111,7 +111,8 @@ ai.registry.register(smart);
 ```
 
 `accept` may be async (an LLM judge, say). A request cancelled while it runs ends with the
-cancellation, whatever the verdict, and no further branch starts.
+cancellation, whatever the verdict, and no further branch starts. A branch that finishes after a
+cancel is not judged at all.
 
 ## Streaming + fallback
 
@@ -130,7 +131,7 @@ silently re-routed).
 Fallback fires on **transient/availability** failures (network/timeout/OOM, or `GenkitException`
 with `UNAVAILABLE` / `DEADLINE_EXCEEDED` / `RESOURCE_EXHAUSTED` / `INTERNAL`). **Permanent**
 errors (`INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`,
-`NOT_FOUND`) propagate immediately — they would fail the same way on every branch. Note: a branch
+`NOT_FOUND`, `UNIMPLEMENTED`) propagate immediately — they would fail the same way on every branch. Note: a branch
 that throws a `GenkitException` without setting `status` (it defaults to `INTERNAL`) — or any
 non-`GenkitException` error — is treated as transient and retried, so a truly permanent failure
 surfaced that way will be re-attempted on the next branch. After a cancel no other branch is tried:

@@ -193,11 +193,15 @@ embeddings) before using the plugin; without one a request fails with
 See [Getting Started](/docs/getting-started).
 
 Every configured model name runs the model that is active in flutter_edge_ai;
-the name is a label. Set `supportsTools: false` or `supportsMedia: false` on a
-`FlutterEdgeAiModelConfig` whose model takes no tools or media: Genkit sees it,
-and a request that needs them fails with `INVALID_ARGUMENT` instead of reaching
-a model that would ignore them. Options are checked against the schema before
-anything loads, so a bad value is an `INVALID_ARGUMENT` too.
+the name is a label. The names share one loaded model and one queue, and a
+newly installed model is picked up by the next request. Set
+`supportsTools: false` or `supportsMedia: false` on a
+`FlutterEdgeAiModelConfig` whose model takes no tools or media: its `supports`
+metadata says so, and a request that needs them fails with `UNIMPLEMENTED`
+instead of reaching a model that would ignore them. Options are checked before
+anything loads, so a bad value, a `maxOutputTokens` larger than `maxTokens`
+among them, is an `INVALID_ARGUMENT`. An installed model the app cannot run
+(no engine registered for it) is `FAILED_PRECONDITION`, which no router hides.
 
 </Info>
 
@@ -234,11 +238,10 @@ Genkit does not check the reply against the schema, so validate
   enough, because the `4` is extracted: `ai.generate` throws a `TypeError`
   instead of returning a result.
 
-The middleware appends the schema to the first system message, or to the last
-user message when there is none. The plugin uses
-`FlutterEdgeAiModelOptions.systemInstruction` in place of system messages, so
-when you set it together with a `system:` prompt the schema never reaches the
-model; put the instruction in `system:` instead.
+The schema goes into the first system message, or into the last user message
+when there is none. `FlutterEdgeAiModelOptions.systemInstruction` replaces
+system messages; the plugin keeps the schema and appends it to that
+instruction.
 
 ### Context-window trimming
 
@@ -258,7 +261,9 @@ final response = await ai.generate(
 ```
 
 With no arguments the budget is derived from the request's `maxTokens` (the
-model's context window) minus 256 tokens of response headroom.
+model's context window) minus the response headroom: 256 tokens, or the
+request's `maxOutputTokens` when that is larger. A requested output schema is
+held back as well, since it is written into the prompt after the trimmer runs.
 
 ## genkit_hybrid
 
@@ -395,7 +400,7 @@ tried only when the current one **throws**, and only on a transient failure —
 any non-`GenkitException` error (network, timeout, OOM), or a `GenkitException`
 with `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `INTERNAL`.
 Permanent errors — `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`,
-`FAILED_PRECONDITION`, `NOT_FOUND` — propagate immediately, since they would
+`FAILED_PRECONDITION`, `NOT_FOUND`, `UNIMPLEMENTED` — propagate immediately, since they would
 fail the same way on every branch. A `GenkitException` thrown without an
 explicit status defaults to `INTERNAL`, so it *is* retried. After a cancel no
 other branch is tried: the error of the branch that was running is the one

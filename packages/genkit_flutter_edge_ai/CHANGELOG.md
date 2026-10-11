@@ -1,9 +1,11 @@
 ## 0.9.0
-- Every tool response of a turn reaches the model, and tool calls carry `ref`s.
-- Media without `contentType` is typed, several images go through, and parts the model cannot take fail instead of vanishing.
-- `outputSchema` works without `simulateConstrainedGeneration()`; new `maxOutputTokens` option; `response.usage`.
+- **Breaking:** a custom `FlutterEdgeAiRuntime` implements `activeModelName` and `activeEmbedderName`.
+- **Breaking:** bad options and parts the model cannot take fail with a status, not silently.
+- Every tool response reaches the model, and tool calls carry `ref`s.
+- Several images per message; media without `contentType` is typed.
+- `outputSchema` works without middleware; new `maxOutputTokens` option; `response.usage`.
 - Embedder `taskType` option: index documents with `retrievalDocument`.
-- Options are validated by schema before loading; no model installed is `UNAVAILABLE`.
+- All model names share one loaded model and see a newly installed one.
 
 ## 0.8.1
 - Unset `temperature` and `topK` no longer force greedy; the model sampler applies (#572).

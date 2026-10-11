@@ -46,16 +46,15 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   /// active model and the runtime knobs stay the same; see [createModel].
   Completer<InferenceModel>? _initCompleter;
 
-  /// Which model [_initializedModel] was built for: the active model's name,
-  /// with the modelType and fileType it was built as.
-  InferenceModelSpec? _lastActiveInferenceSpec;
+  /// Which model [_initializedModel] was built for.
+  _ModelIdentity? _lastModelIdentity;
 
   /// The runtime knobs [_initializedModel] was built with.
   ActiveModelParams? _lastInferenceParams;
 
   /// What the in-flight build is building, while [_initCompleter] is pending.
   /// Kept in lockstep with [_initCompleter], as on mobile and desktop.
-  ({InferenceModelSpec spec, ActiveModelParams params})? _inFlightRequest;
+  ({_ModelIdentity identity, ActiveModelParams params})? _inFlightRequest;
 
   SpeechRecognizer? _initializedSttModel;
 
@@ -116,9 +115,17 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       );
     }
 
-    // The engines read only modelType and fileType from the spec and resolve
-    // the weights themselves, so those two come from the caller, as they
-    // always have on web, and are part of the reuse key with the name.
+    // The whole active spec is the key, not only its name: a re-install from
+    // another source under the same file name, or a LoRA added or removed,
+    // keeps the name and changes the weights the resolver loads. The engines
+    // read only modelType and fileType from the spec they get and resolve the
+    // weights themselves, so those two come from the caller, as they always
+    // have on web, and are part of the key too.
+    final requestedIdentity = (
+      active: active,
+      modelType: modelType,
+      fileType: fileType,
+    );
     final requestedSpec = InferenceModelSpec(
       name: active.name,
       modelSource: active.modelSource,
@@ -143,11 +150,8 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     // why each step is shaped the way it is.
     if (_initCompleter != null &&
         _initializedModel != null &&
-        _lastActiveInferenceSpec != null) {
-      final modelChange = _modelChange(
-        _lastActiveInferenceSpec!,
-        requestedSpec,
-      );
+        _lastModelIdentity != null) {
+      final modelChange = _modelChange(_lastModelIdentity!, requestedIdentity);
       final baseline = _lastInferenceParams;
       final changedParam = baseline == null
           ? 'unknown — no recorded config for the cached model'
@@ -166,7 +170,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
         _initCompleter = null;
         _inFlightRequest = null;
         _initializedModel = null;
-        _lastActiveInferenceSpec = null;
+        _lastModelIdentity = null;
         _lastInferenceParams = null;
         try {
           await closing?.close();
@@ -191,7 +195,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       final pending = _inFlightRequest;
       final modelChange = pending == null
           ? null
-          : _modelChange(pending.spec, requestedSpec);
+          : _modelChange(pending.identity, requestedIdentity);
       final changedParam = pending?.params.firstDifference(requestedParams);
       if (pending != null && modelChange == null && changedParam == null) {
         return completer.future;
@@ -233,7 +237,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     }
 
     final completer = _initCompleter = Completer<InferenceModel>();
-    _inFlightRequest = (spec: requestedSpec, params: requestedParams);
+    _inFlightRequest = (identity: requestedIdentity, params: requestedParams);
 
     try {
       // Engine selection routes through [EngineRegistry] (probe-chain), as on
@@ -284,11 +288,11 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
         _initializedModel = null;
         _initCompleter = null;
         _inFlightRequest = null;
-        _lastActiveInferenceSpec = null;
+        _lastModelIdentity = null;
         _lastInferenceParams = null;
       });
 
-      _lastActiveInferenceSpec = spec;
+      _lastModelIdentity = requestedIdentity;
       _lastInferenceParams = requestedParams;
       _inFlightRequest = null;
       completer.complete(model);
@@ -297,7 +301,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       _initCompleter = null;
       _inFlightRequest = null;
       _initializedModel = null;
-      _lastActiveInferenceSpec = null;
+      _lastModelIdentity = null;
       _lastInferenceParams = null;
       completer.completeError(e, st);
       // The completer's future, not a throw: one future in flight, none
@@ -307,10 +311,16 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   }
 
   /// How [to] differs from [from] as a model to build, or null if it does
-  /// not: another active model, or the same one asked for as another
+  /// not: another active model, the same name with other weights (another
+  /// source, a LoRA added or removed), or the same model asked for as another
   /// modelType or fileType.
-  static String? _modelChange(InferenceModelSpec from, InferenceModelSpec to) {
-    if (from.name != to.name) return '${from.name} → ${to.name}';
+  static String? _modelChange(_ModelIdentity from, _ModelIdentity to) {
+    if (from.active.name != to.active.name) {
+      return '${from.active.name} → ${to.active.name}';
+    }
+    if (from.active != to.active) {
+      return '${to.active.name} re-installed with another source or LoRA';
+    }
     if (from.modelType != to.modelType) {
       return 'modelType ${from.modelType.name} → ${to.modelType.name}';
     }
@@ -618,3 +628,12 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     );
   }
 }
+
+/// The model a web build is for: the active spec, compared by value (source,
+/// LoRA and file set included), and the modelType and fileType it was asked
+/// for.
+typedef _ModelIdentity = ({
+  InferenceModelSpec active,
+  ModelType modelType,
+  ModelFileType fileType,
+});

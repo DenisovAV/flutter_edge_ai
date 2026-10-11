@@ -25,23 +25,25 @@ import 'package:flutter_edge_ai/web/flutter_edge_ai_web.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-InferenceModelSpec _spec(String name) => InferenceModelSpec(
-  name: name,
-  modelSource: ModelSource.network('https://x/$name.litertlm'),
-  modelType: ModelType.gemmaIt,
-  fileType: ModelFileType.litertlm,
-);
+InferenceModelSpec _spec(String name, {String host = 'x', String? lora}) =>
+    InferenceModelSpec(
+      name: name,
+      modelSource: ModelSource.network('https://$host/$name.litertlm'),
+      loraSource: lora == null ? null : ModelSource.network('https://x/$lora'),
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.litertlm,
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late _CountingEngine engine;
 
-  Future<void> activate(String name) async {
+  Future<void> activate(String name, {String host = 'x', String? lora}) async {
     final manager =
         FlutterEdgeAiPlugin.instance.modelManager as WebModelManager;
     await manager.ensureInitialized();
-    await manager.activateInstalledModel(_spec(name));
+    await manager.activateInstalledModel(_spec(name, host: host, lora: lora));
   }
 
   setUp(() async {
@@ -90,6 +92,23 @@ void main() {
       expect(engine.specNames, ['model-a', 'model-b']);
       expect(second, isNot(same(first)));
       expect((first as _FakeModel).isClosed, isTrue);
+    },
+  );
+
+  test(
+    'the same name from another source, or with LoRA, builds a new model',
+    () async {
+      final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      // Re-installed from another URL under the same file name.
+      await activate('model-a', host: 'y');
+      final second = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      await activate('model-a', host: 'y', lora: 'adapter.bin');
+      final third = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+
+      expect(engine.builds, 3);
+      expect((first as _FakeModel).isClosed, isTrue);
+      expect((second as _FakeModel).isClosed, isTrue);
+      expect(third, isNot(same(second)));
     },
   );
 

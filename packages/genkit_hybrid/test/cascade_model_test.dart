@@ -269,4 +269,47 @@ void main() {
 
     expect(secondCalls, 0);
   });
+
+  test('a branch that finishes despite a cancel is not judged', () async {
+    final running = Completer<void>();
+    final finish = Completer<void>();
+    var judged = 0;
+    final m = cascadeModel(
+      branches: {
+        'a': Model(
+          name: 'a',
+          fn: (request, context) async {
+            running.complete();
+            // Ignores the cancel, as a model that cannot stop does.
+            await finish.future;
+            return ModelResponse(
+              finishReason: FinishReason.stop,
+              message: Message(
+                role: Role.model,
+                content: [TextPart(text: 'A')],
+              ),
+            );
+          },
+        ),
+        'b': _model('b', text: 'B'),
+      },
+      order: ['a', 'b'],
+      accept: (r) {
+        judged++;
+        return true;
+      },
+    );
+    final controller = CancellationController();
+
+    final outcome = expectLater(
+      m(_req(), cancel: controller.token),
+      throwsA(isA<CancelledException>()),
+    );
+    await running.future;
+    controller.cancel();
+    finish.complete();
+    await outcome;
+
+    expect(judged, 0);
+  });
 }

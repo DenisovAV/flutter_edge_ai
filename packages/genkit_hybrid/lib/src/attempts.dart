@@ -54,6 +54,9 @@ Future<ModelResponse> runInOrder(
     // is a caller bug, not a branch failure, and must propagate — never be
     // mistaken for a transient branch error and silently escalate.
     if (isLast || accept == null) return resp;
+    // A branch that finished despite a cancel is not worth judging: the judge
+    // may be a model call of its own.
+    context.cancel?.throwIfCancelled();
     final accepted = await accept(resp);
     // An async judge can outlive a cancel; its verdict must not turn a
     // cancelled request into a success, nor start the next branch.

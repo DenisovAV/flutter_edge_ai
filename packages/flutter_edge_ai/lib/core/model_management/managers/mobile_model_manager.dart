@@ -216,8 +216,17 @@ class MobileModelManager extends ModelFileManager
       return;
     }
 
-    final filePath = await ServiceRegistry.instance.fileSystemService
-        .getTargetPath(filename);
+    // A `fromFile` install is used in place and never copied into core's
+    // directory, so look for it where it was installed from, as the embedding
+    // and TTS restores do.
+    final source = ModelSource.tryDecode(
+      identity?[PreferencesKeys.activeInferenceSource],
+    );
+    final filePath = source is FileSource
+        ? source.path
+        : await ServiceRegistry.instance.fileSystemService.getTargetPath(
+            filename,
+          );
     if (!File(filePath).existsSync()) {
       edgeAiLog(
         '[ModelManager] active model restore: file $filePath missing — skipping',
@@ -557,15 +566,28 @@ class MobileModelManager extends ModelFileManager
     }
 
     final fs = ServiceRegistry.instance.fileSystemService;
+    // `fromFile` files are used in place, never copied into core's directory:
+    // restore them from where they were installed, and never run the legacy
+    // migration on them — it renames files.
+    final modelSource = ModelSource.tryDecode(
+      identity?[PreferencesKeys.activeSttSource],
+    );
+    final tokenizerSource = ModelSource.tryDecode(
+      identity?[PreferencesKeys.activeSttTokenizerSource],
+    );
     // The model weight keeps its plain basename (only companions are
     // namespaced), so only the tokenizer needs a legacy migration.
-    final tokenizerPath = await _migrateLegacyCompanionForRestore(
-      modelId: FileNameUtils.getBaseName(modelFilename),
-      persistedFilename: tokenizerFilename,
-      repoType: repo.ModelType.stt,
-      prefsKey: PreferencesKeys.activeSttTokenizerFilename,
-    );
-    final modelPath = await fs.getReadTargetPath(modelFilename);
+    final tokenizerPath = tokenizerSource is FileSource
+        ? tokenizerSource.path
+        : await _migrateLegacyCompanionForRestore(
+            modelId: FileNameUtils.getBaseName(modelFilename),
+            persistedFilename: tokenizerFilename,
+            repoType: repo.ModelType.stt,
+            prefsKey: PreferencesKeys.activeSttTokenizerFilename,
+          );
+    final modelPath = modelSource is FileSource
+        ? modelSource.path
+        : await fs.getReadTargetPath(modelFilename);
     if (!File(modelPath).existsSync() || !File(tokenizerPath).existsSync()) {
       edgeAiLog('[ModelManager] active STT restore: file missing — skipping');
       return;

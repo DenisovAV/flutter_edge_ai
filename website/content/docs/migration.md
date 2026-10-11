@@ -93,7 +93,7 @@ initializing core.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.2.0
+  flutter_edge_ai: ^2.2.1
   flutter_edge_ai_rag: ^1.0.0
   flutter_edge_ai_sqlite: ^2.0.1 # or flutter_edge_ai_qdrant: ^2.0.1
 ```
@@ -269,7 +269,7 @@ dependencies:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.2.0                 # core — always required
+  flutter_edge_ai: ^2.2.1                 # core — always required
   flutter_edge_ai_litertlm: ^1.12.0        # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.2.0       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.2.2      # add if you compute embeddings (tokenizers; needs a backend, see above)

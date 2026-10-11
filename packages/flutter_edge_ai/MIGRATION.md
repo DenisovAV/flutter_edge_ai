@@ -96,7 +96,7 @@ Update dependencies:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.2.0
+  flutter_edge_ai: ^2.2.1
   flutter_edge_ai_rag: ^1.0.0
   flutter_edge_ai_sqlite: ^2.0.1 # or flutter_edge_ai_qdrant: ^2.0.1
 ```
@@ -303,7 +303,7 @@ dependencies:
 **Current equivalents (2.0):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.2.0                 # core — always required
+  flutter_edge_ai: ^2.2.1                 # core — always required
   flutter_edge_ai_litertlm: ^1.12.0       # .litertlm + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.2.0       # .task / .bin
   flutter_edge_ai_embeddings: ^2.2.2      # tokenizer providers

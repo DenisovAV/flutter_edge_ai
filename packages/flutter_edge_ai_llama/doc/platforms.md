@@ -49,7 +49,13 @@ uses the same production GGUF loader and preserves context size, sampling,
 model-memory assertions, cancellation/retry and all three lifecycle cycles.
 This qualifies that constrained CPU profile; it does not establish default
 thread performance on hosted virtual machines. Omitting the option keeps
-llamadart's automatic thread selection.
+llamadart's automatic thread selection. Apple CPU CI also sets
+`GGML_METAL_DEVICES=0` (through `SIMCTL_CHILD_` for the simulator). The pinned
+monolithic Apple runtime initializes Metal during backend registration; hosted
+macOS thread samples showed its shader compilation exceeding worker startup's
+30-second limit despite CPU selection. Disabling Metal enumeration for these
+CPU tests avoids that work. Application defaults and GPU support are unchanged;
+these lanes qualify CPU behavior only.
 
 Small CPU fixture: `bartowski/SmolLM2-135M-Instruct-GGUF`, revision
 `09816acd5d99df7be770d85ea30822623dab342c`, Q8_0, 144,811,360 bytes,
@@ -297,7 +303,7 @@ replacing a usable legacy session.
 Local macOS ARM64 checks:
 
 - Connector format/analyze: PASS; VM 51, Chrome 50 plus three explicit skips,
-  demo seven, and Python tooling 19 tests passed.
+  demo seven, and Python tooling 20 tests passed.
 - Workspace analysis: PASS with 570 info diagnostics and no warnings/errors.
 - Shipped skills: 46 Dart blocks and 115 inline references compiled without errors.
 - Real macOS CPU facade: PASS for install, generation, two-turn recall,
@@ -315,11 +321,16 @@ An isolated iPhone 17 Pro simulator on iOS 26.4 passed the same three cycles wit
 core 2.2.0 and the unchanged runtime pins. Hosted macOS VM and mobile failures
 are being investigated; the local pass does not establish their cause. The
 packaged smoke now prints each lifecycle stage. Apple CI retains recent app
-thread samples with `--native-diagnostics` to investigate startup stalls;
+thread samples with `--native-diagnostics` to investigate startup stalls, with a simulator screenshot
+for app-launch/debug-connection failures;
 diagnostics do not replace or retry the required smoke.
 The explicit single-thread packaged profile also passed on local macOS (17 s)
 and the isolated iOS simulator (25 s), preserving all three cycles; hosted
-qualification of that profile is pending. The SDK action explicitly enables
+qualification of that profile is pending. The local macOS single-thread smoke
+also passed with Metal enumeration disabled (2 s for all three cycles); the
+isolated iOS simulator passed the same CPU-only environment profile in 6 s.
+Hosted Android x86_64/API 35 passed all three cycles with the explicit
+single-thread profile at `6a5876c`. The SDK action explicitly enables
 SwiftPM for consistent setup, although Flutter 3.47.1 already defaults it on.
 
 Core 2.2.0 is not yet hosted on pub.dev. The default hosted `package` gate

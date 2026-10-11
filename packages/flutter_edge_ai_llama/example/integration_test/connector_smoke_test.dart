@@ -37,10 +37,14 @@ void main() {
         const MaterialApp(home: Scaffold(body: Text('GGUF qualification'))),
       );
       await tester.runAsync(() async {
+        final elapsed = Stopwatch()..start();
+        void logStage(String stage) => debugPrint(
+          'DEVICE_SMOKE: elapsedMs=${elapsed.elapsedMilliseconds} $stage',
+        );
         llama.LlamaLogging.configure(level: llama.LlamaLogLevel.error);
         edge.FlutterEdgeAi.logLevel = edge.EdgeAiLogLevel.none;
         expect(_cpuThreads, greaterThanOrEqualTo(0));
-        debugPrint('DEVICE_SMOKE: stage=initialize cpuThreads=$_cpuThreads');
+        logStage('stage=initialize cpuThreads=$_cpuThreads');
         await edge.FlutterEdgeAi.initialize(
           inferenceEngines: [
             LlamaEngineProvider(
@@ -52,14 +56,14 @@ void main() {
           modelType: edge.ModelType.general,
           fileType: edge.ModelFileType.binary,
         );
-        debugPrint('DEVICE_SMOKE: stage=install');
+        logStage('stage=install');
         if (_modelPath.isNotEmpty) {
           await installation.fromFile(_modelPath).install();
         } else {
           await installation.fromNetwork(_modelUrl).install();
         }
         for (var cycle = 0; cycle < 3; cycle++) {
-          debugPrint('DEVICE_SMOKE: cycle=$cycle stage=load');
+          logStage('cycle=$cycle stage=load');
           final model = await edge.FlutterEdgeAi.getActiveModel(
             maxTokens: 2048,
             preferredBackend: edge.PreferredBackend.cpu,
@@ -67,14 +71,14 @@ void main() {
           try {
             expect(model, isA<LlamaInferenceModel>());
             expect(model.activeBackend, edge.PreferredBackend.cpu);
-            debugPrint('DEVICE_SMOKE: cycle=$cycle stage=chat');
+            logStage('cycle=$cycle stage=chat');
             final chat = await model.openChat(
               systemInstruction:
                   'Follow instructions. Keep your answers short.',
               temperature: 0,
               maxOutputTokens: 64,
             );
-            debugPrint('DEVICE_SMOKE: cycle=$cycle stage=first-response');
+            logStage('cycle=$cycle stage=first-response');
             await chat.addQuery(
               edge.Message.text(
                 text: 'Remember this secret word: orchid. Reply with OK.',
@@ -86,7 +90,7 @@ void main() {
                   .trim(),
               isNotEmpty,
             );
-            debugPrint('DEVICE_SMOKE: cycle=$cycle stage=recall');
+            logStage('cycle=$cycle stage=recall');
             await chat.addQuery(
               edge.Message.text(
                 text: 'What is the secret word? Answer with only that word.',
@@ -125,7 +129,7 @@ void main() {
               },
             );
             try {
-              debugPrint('DEVICE_SMOKE: cycle=$cycle stage=cancel');
+              logStage('cycle=$cycle stage=cancel');
               await first.future.timeout(const Duration(seconds: 60));
               await session.stopGeneration().timeout(
                 const Duration(seconds: 15),
@@ -137,10 +141,10 @@ void main() {
             await session.addQueryChunk(
               edge.Message.text(text: 'Say hello.', isUser: true),
             );
-            debugPrint('DEVICE_SMOKE: cycle=$cycle stage=retry');
+            logStage('cycle=$cycle stage=retry');
             expect((await session.getResponse()).trim(), isNotEmpty);
           } finally {
-            debugPrint('DEVICE_SMOKE: cycle=$cycle stage=close');
+            logStage('cycle=$cycle stage=close');
             await model.close();
           }
         }

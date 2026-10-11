@@ -113,6 +113,9 @@ jobs:
       - name: Required native CPU smoke
         run: |
           if [[ "$RUNNER_OS" == macOS ]]; then
+            # The monolithic Apple runtime otherwise compiles Metal at startup.
+            # This lane qualifies CPU inference on a hosted VM.
+            export GGML_METAL_DEVICES=0
             python tool/verify.py native --model-path tool/fixtures/chat.gguf --cpu-threads 1 --native-diagnostics
           else
             python tool/verify.py native --model-path tool/fixtures/chat.gguf
@@ -146,6 +149,8 @@ jobs:
           python-version: "3.13"
       - uses: ./.github/actions/setup-flutter-llama
       - name: Boot available ARM64 iPhone simulator and exercise packaged runtime
+        env:
+          SIMCTL_CHILD_GGML_METAL_DEVICES: "0"
         run: |
           test "$(uname -m)" = arm64
           simulator_id="$(xcrun simctl list devices available -j | python -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if x["name"].startswith("iPhone")))')"

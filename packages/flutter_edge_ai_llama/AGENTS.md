@@ -25,7 +25,10 @@ requires the exact `flutter_edge_ai 2.2.0` contract (currently unreleased).
   inference passed. Raw Windows Flutter VM inference is unqualified with these pins.
 - Hosted Apple/Android runtime lanes use an explicit single-thread CPU budget
   via `--cpu-threads 1`; keep all semantic/lifecycle assertions intact and record
-  this profile separately from default-thread performance qualification.
+  this profile separately from default-thread performance qualification. Apple
+  CPU CI disables Metal enumeration with the pinned upstream
+  `GGML_METAL_DEVICES=0` (`SIMCTL_CHILD_` for iOS) to avoid cold shader compilation
+  during global backend registration; this is not GPU qualification.
 - Consumer applications select llama.cpp through their own root hook settings;
   the workspace's selection does not propagate to external consumers.
 - Publishing and final package ownership remain separate maintainer decisions.

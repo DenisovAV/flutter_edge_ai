@@ -106,6 +106,19 @@ class ToolingTests(unittest.TestCase):
             samples = [call.args[0] for call in run.call_args_list if call.args[0][0] == "sample"]
             self.assertEqual([command[1] for command in samples], ["456", "789"])
 
+    def test_apple_device_diagnostics_preserve_the_simulator_screen(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stop = MagicMock()
+            stop.wait.side_effect = [False, True]
+            processes = subprocess.CompletedProcess([], 0, stdout="789 /tmp/Runner.app/Runner\n")
+            with patch.object(package_verify.subprocess, "run", side_effect=[
+                processes, subprocess.CompletedProcess([], 0), subprocess.CompletedProcess([], 0),
+            ]) as run:
+                package_verify.sample_native_apps(Path(directory), stop, "test-simulator")
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertIn(["xcrun", "simctl", "io", "test-simulator", "screenshot",
+                           str(Path(directory) / "simulator.png")], commands)
+
     def test_fixture_server_rejects_unverified_model(self):
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "chat.gguf"

@@ -17,8 +17,8 @@ from serve_web_fixture import create_server
 PACKAGE = Path(__file__).resolve().parents[1]
 
 
-def sample_native_apps(directory, stop):
-    """Retain three recent read-only thread samples per Apple test process."""
+def sample_native_apps(directory, stop, simulator_device=None):
+    """Retain recent Apple thread samples and the test simulator screen."""
     directory.mkdir(parents=True, exist_ok=True)
     sequence = {}
     while not stop.wait(5):
@@ -34,6 +34,10 @@ def sample_native_apps(directory, stop):
                     continue
                 slot = sequence.get(pid, 0) % 3
                 sequence[pid] = slot + 1
+                if simulator_device is not None and slot == 0:
+                    subprocess.run(["xcrun", "simctl", "io", simulator_device, "screenshot",
+                                    str(directory / "simulator.png")],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
                 subprocess.run(["sample", pid, "1", "-file", str(directory / f"app-{pid}-{slot}.txt")],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
         except (OSError, subprocess.TimeoutExpired):
@@ -69,7 +73,8 @@ def main():
         monitor = None
         if args.native_diagnostics and len(command) > 1 and command[1] == "test":
             diagnostics = Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())) / "edge-ai-native-diagnostics"
-            monitor = Thread(target=sample_native_apps, args=(diagnostics, stop), daemon=True)
+            simulator = args.device if args.lane == "device" and args.device != "macos" else None
+            monitor = Thread(target=sample_native_apps, args=(diagnostics, stop, simulator), daemon=True)
             monitor.start()
         try:
             subprocess.run([str(x) for x in command], cwd=directory, check=True)

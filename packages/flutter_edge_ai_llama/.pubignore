@@ -1,0 +1,11 @@
+tool/
+.github/
+.flutter-version
+AGENTS.md
+test/
+example/integration_test/
+example/web/webgpu_bridge/
+example/build/
+example/.dart_tool/
+coverage/
+pubspec_overrides.yaml

@@ -1,0 +1,5 @@
+# Checkout-only: exercise this monorepo's core instead of the hosted release.
+# Pub does not publish overrides; standalone validation also excludes this file.
+dependency_overrides:
+  flutter_edge_ai:
+    path: ../../flutter_edge_ai

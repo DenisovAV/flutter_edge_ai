@@ -1,0 +1,20 @@
+name: Pinned Flutter SDK
+description: Install the verified Flutter 3.47.1 Git tag without release-manifest discovery.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        sdk_directory="$RUNNER_TEMP/edge-ai-flutter"
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          sdk_directory="$(cygpath -u "$RUNNER_TEMP")/edge-ai-flutter"
+        fi
+        git clone --depth 1 --branch 3.47.1 https://github.com/flutter/flutter.git "$sdk_directory"
+        test "$(git -C "$sdk_directory" rev-parse HEAD)" = 6655482ec06e547f90abf8ae7590466f4415978d
+        "$sdk_directory/bin/flutter" --version --machine
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          cygpath -w "$sdk_directory/bin" >> "$GITHUB_PATH"
+        else
+          printf '%s\n' "$sdk_directory/bin" >> "$GITHUB_PATH"
+        fi

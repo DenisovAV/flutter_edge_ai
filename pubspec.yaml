@@ -2,7 +2,7 @@ name: flutter_edge_ai_workspace
 publish_to: none
 
 environment:
-  sdk: ">=3.12.0 <4.0.0"
+  sdk: ">=3.13.1 <4.0.0"
 
 # Native Dart pub workspace (Dart 3.6+). Each member opts in with
 # `resolution: workspace` in its own pubspec.yaml.
@@ -12,6 +12,7 @@ workspace:
   - packages/flutter_edge_ai_sqlite
   - packages/flutter_edge_ai_qdrant
   - packages/flutter_edge_ai_litertlm
+  - packages/flutter_edge_ai_llama
   - packages/flutter_edge_ai_embeddings
   - packages/flutter_edge_ai_speech
   - packages/flutter_edge_ai_diagnostics
@@ -21,6 +22,13 @@ workspace:
   - packages/flutter_edge_ai_agent
   - packages/genkit_flutter_edge_ai
   - packages/genkit_hybrid
+
+# Select only the runtime this GGUF adapter uses in workspace test builds.
+# Consumer applications must declare their own hook selection.
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
 
 dev_dependencies:
   melos: ^7.0.0

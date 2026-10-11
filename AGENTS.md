@@ -104,7 +104,7 @@
 | Value | Android | iOS | Web | Desktop |
 |-------|---------|-----|-----|---------|
 | `cpu` | ✅ | ✅ | ✅ ONNX/WASM | ✅ |
-| `gpu` | ✅ | ✅ | ✅ MediaPipe/LiteRT-LM | ✅ |
+| `gpu` | ✅ | ✅ `.litertlm` (not MediaPipe `.task`) | ✅ MediaPipe/LiteRT-LM | ✅ |
 | `npu` | ✅ (.litertlm, app opts in with `qualcomm_npu: true`) | ❌ | ❌ | ✅ Windows (Intel LunarLake/PantherLake); Linux arm64 (Qualcomm, same `qualcomm_npu` opt-in) |
 
 ## SDK Gotchas (Non-Obvious)
@@ -146,7 +146,7 @@ Exception: Migration files may use inline strings for deprecated keys.
 Check `lib/flutter_edge_ai_interface.dart`, implementation files, and `example/` before making changes.
 
 ### ⚠️ MediaPipe LLM Inference is maintenance-only; iOS GPU `.task` does not load
-Google's docs put the LLM Inference API (Android, iOS, Web) in maintenance-only mode, the iOS SDK (0.10.33+) marks every class `deprecated: Migrate to LiteRT LM`, and `mediapipe-samples` removed its iOS/Android LLM samples (2026-08-05). Measured 2026-10-10 on an iPhone 17 Pro, iOS 26.5.2: `gemma3-1b-it-int4.task` (529 MB) on `PreferredBackend.gpu` grows past the 6.6 GB per-process limit inside `LlmInference(options:)` and jetsam kills the app — no `.ips`, only `idevicesyslog` shows it — on 0.10.33 and 0.10.35, with `waitForWeightUploads` true or false, `maxTokens` 1024 or 2048, `sequenceBatchSize` 0 or 1. `gemma-3n-E2B-it-int4.task` fails `ModifyGraphWithDelegate`. CPU works, and the same Gemma 3 1B as `.litertlm` loads on the iPhone GPU in under 1 GB. Point iOS GPU users to `.litertlm`.
+Google's docs put the LLM Inference API (Android, iOS, Web) in maintenance-only mode, with new features and optimizations focused on LiteRT-LM; the iOS SDK (0.10.33+) marks `LlmInference`, `Session` and their `Options` `deprecated: Migrate to LiteRT LM`, and `mediapipe-samples` removed its iOS/Android LLM samples (2026-08-05). Measured 2026-10-10 on an iPhone 17 Pro, iOS 26.5.2: `gemma3-1b-it-int4.task` (529 MB) on `PreferredBackend.gpu` grows ~300 MB/s inside `LlmInference(options:)` to that iPhone's 6655 MB per-process limit (memory entitlements present) and jetsam kills the app — no crash report (`.ips`); `idevicesyslog` shows the jetsam `per-process-limit` kill — on 0.10.33 and 0.10.35, with `waitForWeightUploads` true or false, `maxTokens` 1024 or 2048, `sequenceBatchSize` 0 or 1. `gemma-3n-E2B-it-int4.task` fails `ModifyGraphWithDelegate`. CPU works, and the same Gemma 3 1B as `.litertlm` loads on the iPhone GPU in under 1 GB. Point iOS GPU users to `.litertlm`.
 
 ### ⚠️ Generated pigeon is `flutter_edge_ai_mediapipe/lib/pigeon.g.dart` — DO NOT EDIT MANUALLY
 Core has NO pigeon (dropped at the 1.0 cut; its value types are hand-written in `lib/core/domain/platform_types.dart`). Only `flutter_edge_ai_mediapipe` still uses pigeon (it owns the `PlatformService` HostApi).

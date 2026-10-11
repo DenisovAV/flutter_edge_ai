@@ -6,7 +6,7 @@
 
 MediaPipe (`.task`) on-device inference engine for [`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai). Opt-in package — add it only if you run MediaPipe `.task` models. Android, iOS, and Web.
 
-> **Google moved MediaPipe LLM Inference to maintenance-only.** New models and fixes go to LiteRT-LM, so a new app should use `.litertlm` models with [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm). On iOS, do not load a `.task` model on the GPU: Gemma 3 1B exceeds the app's memory limit while loading and iOS terminates the app ([details](https://flutteredge.ai/docs/mediapipe#backends)).
+> **Google moved MediaPipe LLM Inference to maintenance-only.** New features and optimizations focus on LiteRT-LM, so a new app should use `.litertlm` models with [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm). On iOS, do not load a `.task` model on the GPU: Gemma 3 1B reached the app's memory limit while loading and iOS terminated the app ([details](https://flutteredge.ai/docs/mediapipe#backends)).
 
 ## Teach your AI assistant this package
 

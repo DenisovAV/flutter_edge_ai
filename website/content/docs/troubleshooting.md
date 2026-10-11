@@ -54,6 +54,7 @@ Auth errors (401/403/404) fail fast after one attempt — they are not retried. 
 ## Memory
 
 - **iOS:** ensure `Runner.entitlements` contains the memory entitlements and the deployment target is at least 15.0 (16.0 with `flutter_edge_ai_mediapipe`) — in Xcode on the Runner target under SPM, or in the `Podfile` when one exists. See [Installation → iOS](/docs/installation#ios).
+- **iOS, MediaPipe `.task` on GPU:** the app is terminated while the model loads, with the entitlements present and no crash report. Run `.task` models on `PreferredBackend.cpu` on iOS, or use the `.litertlm` build. See [MediaPipe → Backends](/docs/mediapipe#backends).
 - Reduce `maxTokens` if you hit memory pressure — but **keep it at 1024 or higher for `.litertlm` models** (see "maxTokens vs maxOutputTokens" below). To shorten replies, use `maxOutputTokens`, not a smaller `maxTokens`.
 - Use smaller models (1B-2B parameters) for devices with <6GB RAM. Multimodal models (Gemma 4, Gemma3n) need 8GB+.
 - Close sessions and models when not needed; monitor usage with `sizeInTokens()`.

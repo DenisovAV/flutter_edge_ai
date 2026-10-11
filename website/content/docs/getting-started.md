@@ -177,7 +177,9 @@ await FlutterEdgeAi.installModel(
 
 **MediaPipe alternative:** on mobile you can install the `.task` build of the
 same model instead — drop `fileType` (it defaults to `ModelFileType.task`) and
-register `MediaPipeEngine()` from `flutter_edge_ai_mediapipe`. On Web, use the
+register `MediaPipeEngine()` from `flutter_edge_ai_mediapipe`. On iOS, run the
+`.task` build on `PreferredBackend.cpu`: on the GPU it is killed for memory
+while loading ([details](/docs/mediapipe#backends)). On Web, use the
 `-web.task` build (`gemma3-1b-it-int4-web.task`) with `MediaPipeEngine()`.
 Desktop targets need the `.litertlm` build — `.task` and `.bin` are
 MediaPipe-only.

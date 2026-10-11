@@ -1,6 +1,8 @@
 // Integration test: iOS MediaPipe 0.10.33 features.
 // Tests: text inference, vision, cancel generation.
 // Model: Gemma 3n E2B .task (2.9GB)
+// Runs on CPU: on the GPU this .task fails the Metal delegate on iOS
+// (`ModifyGraphWithDelegate`, iPhone 17 Pro, measured 2026-10-11).
 //
 // Usage:
 //   1. flutter test integration_test/ios_mediapipe_033_test.dart -d <device_id>
@@ -92,7 +94,7 @@ void main() {
       print('\n=== 1. TEXT INFERENCE ===');
       var model = await FlutterEdgeAi.getActiveModel(
         maxTokens: 512,
-        preferredBackend: PreferredBackend.gpu,
+        preferredBackend: PreferredBackend.cpu,
       );
       try {
         final chat = await model.createChat(modelType: ModelType.gemmaIt);
@@ -119,7 +121,7 @@ void main() {
 
       model = await FlutterEdgeAi.getActiveModel(
         maxTokens: 4096,
-        preferredBackend: PreferredBackend.gpu,
+        preferredBackend: PreferredBackend.cpu,
         supportImage: true,
         maxNumImages: 1,
       );
@@ -152,7 +154,7 @@ void main() {
       print('\n=== 3. CANCEL GENERATION ===');
       model = await FlutterEdgeAi.getActiveModel(
         maxTokens: 512,
-        preferredBackend: PreferredBackend.gpu,
+        preferredBackend: PreferredBackend.cpu,
       );
       try {
         final chat = await model.createChat(modelType: ModelType.gemmaIt);

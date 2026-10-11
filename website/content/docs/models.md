@@ -73,7 +73,7 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 
 | Format | Android | iOS | Web | Desktop | Use Case |
 |---|:---:|:---:|:---:|:---:|---|
-| `.task` | ✅ | ✅ | ✅ | ❌ | Older models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) |
+| `.task` | ✅ | ✅ ⁴ | ✅ | ❌ | Older models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) |
 | `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Newer models (Gemma 4, Qwen3, FastVLM + desktop for all) |
 | `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4, Gemma 3 1B and Gemma 3 270M in the current catalog) |
 | `.bin` | ✅ | ✅ | ✅ | ❌ | Manual chat template formatting required |
@@ -95,6 +95,10 @@ MediaPipe `.task` build.
 **Windows** (AI Foundry; Windows 11 25H2+ on Copilot+-class hardware, packaged
 app) — not on Linux. Every platform still gates it at
 runtime: probe with `BuiltInAi.availability()`.
+
+⁴ On iOS run `.task` models on `PreferredBackend.cpu`: on the GPU, MediaPipe is
+killed for memory while loading even Gemma 3 1B. See
+[MediaPipe → Backends](/docs/mediapipe#backends).
 
 ## Model capabilities
 
@@ -241,7 +245,8 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 ```dart
 // Network — .litertlm is the cross-platform default (Android/iOS/Desktop).
 // For mobile-only or web-only apps you can substitute a .task URL — and drop
-// the fileType, which defaults to ModelFileType.task.
+// the fileType, which defaults to ModelFileType.task. On iOS, run a .task
+// model on PreferredBackend.cpu.
 await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
   fileType: ModelFileType.litertlm,

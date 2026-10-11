@@ -13,7 +13,8 @@ description: Use when running .task or .bin models (MediaPipe GenAI, ModelFileTy
 4. There is no desktop support.
 5. `maxTokens` is the real context limit — small values are not raised as they are on `.litertlm`. `maxOutputTokens` is ignored; stop generation with `session.stopGeneration()`.
 6. On Android and iOS, `createChat` inherits the model's audio support but **not** its image support — pass `supportImage: true` to the chat as well, or the image is dropped.
-7. Upstream MediaPipe LLM Inference is maintenance-only; prefer a `.litertlm` model (flutter-edge-ai-inference) for new work. On iOS do not load a `.task` model with `PreferredBackend.gpu`: Gemma 3 1B exceeds the app's memory limit while loading and iOS kills the app with no crash report. Use `.litertlm`, or CPU.
+7. Upstream MediaPipe LLM Inference is maintenance-only; prefer a `.litertlm` model (flutter-edge-ai-inference) for new work.
+8. On iOS, do not load a `.task` model with `PreferredBackend.gpu`: Gemma 3 1B reaches the app's memory limit while loading and iOS kills the app with no crash report. Use `.litertlm`, or `PreferredBackend.cpu`.
 
 ## Setup
 
@@ -52,6 +53,8 @@ Core and the other engines build from iOS 15.0. If the app does not use `.task` 
 
 Large models also need **Extended Virtual Addressing**, **Increased Memory Limit** and **Increased Debugging Memory Limit**, added in Xcode under **Signing & Capabilities**, or the app is killed for memory.
 
+Run `.task` models on `PreferredBackend.cpu` on iOS: on the GPU even Gemma 3 1B is killed for memory while loading, with the entitlements present.
+
 ## Images and audio
 
 ```dart
@@ -64,7 +67,7 @@ await chat.addQueryChunk(
 
 On Android and iOS, a chat without `supportImage: true` drops the image and the model answers the text alone. On web the chat follows the model: an image sent to a model loaded without `supportImage: true` throws `ArgumentError`.
 
-Audio input works on Android and iOS with a model that takes audio, such as Gemma 3n.
+Audio input works on Android and iOS only with a `.task` that carries an audio encoder. The Gemma 3n `.task` files do not, so for audio use a `.litertlm` model (flutter-edge-ai-inference).
 
 ## Bounding output
 

@@ -32,11 +32,11 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('unset sampling sends the family defaults, not greedy', () async {
-    // Gemma's top-k of 64 is held to MediaPipe's ceiling of 40.
+    // Gemma's top-k of 64 is held to MediaPipe's own default of 40.
     expect(await _sentSampler((m) => m.createSession()), [1.0, 1, 40, 0.95]);
   });
 
-  test('a top-k the caller sets is not held to the ceiling', () async {
+  test('a top-k the caller sets is not held to the default', () async {
     expect(await _sentSampler((m) => m.createSession(topK: 64)), [
       1.0,
       1,

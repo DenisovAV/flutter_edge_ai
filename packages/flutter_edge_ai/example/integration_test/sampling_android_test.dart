@@ -167,9 +167,9 @@ void main() {
       await _reply(model, topK: 1);
       try {
         final r = (await _reply(model)).$1;
-        _log('mediapipe gpu ceiling: default after topK 1 OK "${_flat(r)}"');
+        _log('mediapipe gpu: default after topK 1 OK "${_flat(r)}"');
       } on Object catch (e) {
-        _log('mediapipe gpu ceiling: default after topK 1 THREW $e');
+        _log('mediapipe gpu: default after topK 1 THREW $e');
       }
     } finally {
       await model.close();

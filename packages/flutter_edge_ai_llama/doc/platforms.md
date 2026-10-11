@@ -38,7 +38,7 @@ The checked-in workflows provide:
   static analysis, formatting, tooling negative tests and package-content validation.
 - Release builds for Android ARM64, unsigned iOS ARM64, macOS, Windows x64,
   Linux x64 and Web Wasm.
-- Required real desktop CPU facade smokes on macOS/Linux/Windows.
+- Required real desktop CPU facade smokes: Linux VM, macOS/Windows packaged apps.
 - Required packaged Linux/Windows, Android emulator and ARM64 iOS simulator CPU smokes:
   installation, two-turn memory, cancellation/retry, three load/close cycles.
 - Real isolated Chrome worker/Wasm CPU generation from an installed model blob.
@@ -73,8 +73,11 @@ it does not establish hosted consumer resolution. The default `package` lane
 uses hosted dependencies and remains required before publication. Core 2.2.0 is
 not yet published at the time of this compatibility update.
 
-The native lane uses a VM facade smoke on macOS/Linux and the packaged
-three-cycle desktop smoke on Windows. With these published pins,
+The native lane uses a VM facade smoke on Linux and the packaged
+three-cycle desktop smoke on macOS/Windows. A macOS hosted VM smoke timed out
+without identifying its stalled operation; local VM inference passed. The CI
+lane qualifies the application framework layout explicitly instead. That does
+not establish the cause of the VM timeout. With these published pins,
 `flutter_tester.exe` cannot reliably load the split Windows backend modules;
 the app's executable-adjacent DLL layout works without an environment override.
 The Windows lane requires the same fixture and strict memory/cancel/retry/close
@@ -286,7 +289,7 @@ replacing a usable legacy session.
 Local macOS ARM64 checks:
 
 - Connector format/analyze: PASS; VM 51, Chrome 50 plus three explicit skips,
-  demo seven, and Python tooling 13 tests passed.
+  demo seven, and Python tooling 16 tests passed.
 - Workspace analysis: PASS with 570 info diagnostics and no warnings/errors.
 - Shipped skills: 46 Dart blocks and 115 inline references compiled without errors.
 - Real macOS CPU facade: PASS for install, generation, two-turn recall,
@@ -297,6 +300,14 @@ Local macOS ARM64 checks:
   three documented preparation warnings and one explicit development-override hint.
   The archive retains hosted version constraints and excludes the overrides.
 - Workflow lint and published runtime-asset contract checks: PASS.
+
+A separate temporary macOS app identity passed the packaged three-cycle CPU
+smoke with a checksum-verified loopback fixture installed into app-owned storage.
+An isolated iPhone 17 Pro simulator on iOS 26.4 passed the same three cycles with
+core 2.2.0 and the unchanged runtime pins. Hosted macOS VM and mobile failures
+are being investigated; the local pass does not establish their cause. The
+packaged smoke now prints each lifecycle stage. The SDK action explicitly enables
+SwiftPM for consistent setup, although Flutter 3.47.1 already defaults it on.
 
 Core 2.2.0 is not yet hosted on pub.dev. The default hosted `package` gate
 correctly fails dependency resolution until that version is published; local

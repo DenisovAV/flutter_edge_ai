@@ -20,8 +20,9 @@ requires the exact `flutter_edge_ai 2.2.0` contract (currently unreleased).
 - Never patch downloaded SDK, package, model or runtime sources to pass tests.
 - Required model lanes fail if fixtures are missing. Qualification claims require
   the exact model, platform/device and backend evidence in `doc/platforms.md`.
-- Windows model tests use the packaged desktop host; raw Flutter VM inference
-  is unqualified with these pins.
+- macOS/Windows CI model tests use the packaged desktop host to qualify the
+  framework/DLL layout. A hosted macOS VM timeout is unresolved; local macOS VM
+  inference passed. Raw Windows Flutter VM inference is unqualified with these pins.
 - Consumer applications select llama.cpp through their own root hook settings;
   the workspace's selection does not propagate to external consumers.
 - Publishing and final package ownership remain separate maintainer decisions.

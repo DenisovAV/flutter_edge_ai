@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tool"))
 import fetch_test_model
@@ -30,6 +30,54 @@ class ToolingTests(unittest.TestCase):
             self.assertIn("windows", command)
             self.assertIn(f"--dart-define=GGUF_MODEL_PATH={model.resolve()}", command)
             self.assertEqual(run.call_args_list[-1].kwargs["cwd"], package_verify.PACKAGE / "example")
+
+    def test_macos_native_lane_uses_verified_network_fixture_and_closes_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "chat.gguf"
+            model.write_bytes(b"fixture")
+            server = MagicMock(server_address=("127.0.0.1", 8099))
+            with patch.object(sys, "argv", ["verify.py", "native", "--model-path", str(model)]), \
+                 patch.object(sys, "platform", "darwin"), \
+                 patch.object(package_verify, "create_server", return_value=server) as create_server, \
+                 patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+                 patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+                package_verify.main()
+            command = run.call_args_list[-1].args[0]
+            self.assertIn("integration_test/connector_smoke_test.dart", command)
+            self.assertIn("macos", command)
+            self.assertIn("--dart-define=GGUF_MODEL_URL=http://127.0.0.1:8099/chat.gguf", command)
+            self.assertNotIn(f"--dart-define=GGUF_MODEL_PATH={model.resolve()}", command)
+            self.assertEqual(run.call_args_list[-1].kwargs["cwd"], package_verify.PACKAGE / "example")
+            create_server.assert_called_once_with(model.resolve())
+            server.shutdown.assert_called_once()
+            server.server_close.assert_called_once()
+
+    def test_macos_fixture_server_closes_when_the_runtime_smoke_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "chat.gguf"
+            model.write_bytes(b"fixture")
+            server = MagicMock(server_address=("127.0.0.1", 8099))
+            failure = subprocess.CalledProcessError(1, ["flutter", "test"])
+            with patch.object(sys, "argv", ["verify.py", "native", "--model-path", str(model)]), \
+                 patch.object(sys, "platform", "darwin"), \
+                 patch.object(package_verify, "create_server", return_value=server), \
+                 patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+                 patch.object(package_verify.subprocess, "run", side_effect=[
+                     subprocess.CompletedProcess([], 0),
+                     subprocess.CompletedProcess([], 0),
+                     failure,
+                 ]):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    package_verify.main()
+            server.shutdown.assert_called_once()
+            server.server_close.assert_called_once()
+
+    def test_fixture_server_rejects_unverified_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "chat.gguf"
+            model.write_bytes(b"invalid fixture")
+            with self.assertRaisesRegex(ValueError, "pinned size and checksum"):
+                package_verify.create_server(model)
 
     def test_publish_preserves_metadata_outside_enclosing_ignore_rules(self):
         with tempfile.TemporaryDirectory() as directory:

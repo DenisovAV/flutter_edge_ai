@@ -10,16 +10,13 @@ import shutil
 from fetch_test_model import PACKAGE, verify
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model-path", type=Path, required=True)
-    parser.add_argument("--port", type=int, default=8098)
-    args = parser.parse_args()
+def create_server(model_path, port=0):
+    """Bind a loopback fixture server after verifying the immutable model."""
     spec = json.loads((PACKAGE / "tool/test_model.json").read_text())
-    if not verify(args.model_path, spec):
-        parser.error("Web smoke fixture must match the pinned size and checksum")
+    if not verify(model_path, spec):
+        raise ValueError("Smoke fixture must match the pinned size and checksum")
     files = {
-        "/chat.gguf": (args.model_path, "application/octet-stream"),
+        "/chat.gguf": (model_path, "application/octet-stream"),
         "/cache_api.js": (PACKAGE / "example/web/cache_api.js", "text/javascript"),
     }
 
@@ -39,7 +36,18 @@ def main():
             with path.open("rb") as source:
                 shutil.copyfileobj(source, self.wfile)
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model-path", type=Path, required=True)
+    parser.add_argument("--port", type=int, default=8098)
+    args = parser.parse_args()
+    try:
+        server = create_server(args.model_path, args.port)
+    except ValueError as error:
+        parser.error(str(error))
     try:
         server.serve_forever()
     finally:

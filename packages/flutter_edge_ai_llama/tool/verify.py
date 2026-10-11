@@ -10,6 +10,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from threading import Thread
+
+from serve_web_fixture import create_server
 
 PACKAGE = Path(__file__).resolve().parents[1]
 
@@ -78,12 +81,27 @@ def main():
         run([flutter, "test"], PACKAGE / "example")
     elif args.lane == "native":
         fixture = f"--dart-define=GGUF_MODEL_PATH={args.model_path.resolve()}"
-        if sys.platform == "win32":
-            # Flutter's Windows VM host cannot reliably discover/use the split
-            # native modules. Exercise the actual app's DLL layout instead.
-            print("Windows CPU smoke uses the packaged desktop host.", flush=True)
+        if sys.platform in ("win32", "darwin"):
+            # Qualify the application's framework/DLL layout on Apple/Windows.
+            # VM-host behavior is not a substitute for the packaged runtime.
+            platform = "windows" if sys.platform == "win32" else "macos"
+            print(f"{platform} CPU smoke uses the packaged desktop host.", flush=True)
             run([flutter, "pub", "get"], PACKAGE / "example")
-            run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", "windows", fixture], PACKAGE / "example")
+            if platform == "macos":
+                # A CLI path has no file-picker grant in the sandboxed app.
+                # Download the verified fixture into app-owned storage instead.
+                server = create_server(args.model_path.resolve())
+                thread = Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    fixture = f"--dart-define=GGUF_MODEL_URL=http://127.0.0.1:{server.server_address[1]}/chat.gguf"
+                    run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture], PACKAGE / "example")
+                finally:
+                    server.shutdown()
+                    thread.join()
+                    server.server_close()
+            else:
+                run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture], PACKAGE / "example")
         else:
             run([flutter, "test", "test/native_smoke_test.dart", fixture])
     elif args.lane == "web":

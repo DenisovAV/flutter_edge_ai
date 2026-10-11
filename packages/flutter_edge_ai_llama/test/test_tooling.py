@@ -69,7 +69,7 @@ class ToolingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             package = Path(directory) / "connector"
             package.mkdir()
-            source = "name: connector\nresolution: workspace\ndependencies:\n  flutter_edge_ai: 2.1.3\n"
+            source = "name: connector\nresolution: workspace\ndependencies:\n  flutter_edge_ai: 2.2.0\n"
             (package / "pubspec.yaml").write_text(source)
             (package / ".flutter-version").write_text("3.47.1")
             (package / "example").mkdir()
@@ -79,9 +79,10 @@ class ToolingTests(unittest.TestCase):
             def invoke(command, **kwargs):
                 staged = Path(kwargs["cwd"])
                 self.assertFalse((staged / "example/pubspec_overrides.yaml").exists())
+                self.assertFalse((staged / "pubspec_overrides.yaml").exists())
                 pubspec = (staged / "pubspec.yaml").read_text()
                 self.assertNotIn("resolution: workspace", pubspec)
-                self.assertIn("flutter_edge_ai: 2.1.3", pubspec)
+                self.assertIn("flutter_edge_ai: 2.2.0", pubspec)
                 checked.append(command)
                 return subprocess.CompletedProcess(command, 0, stdout="Validating package...\n")
 
@@ -105,6 +106,82 @@ class ToolingTests(unittest.TestCase):
             package_verify.main()
         version.assert_called_once_with([flutter, "--version", "--machine"], text=True)
         self.assertEqual(run.call_args_list[0].args[0], [flutter, "pub", "get"])
+
+    def test_local_core_preparation_retains_hosted_pin_and_excludes_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "connector"
+            core = root / "source_core"
+            package.mkdir()
+            core.mkdir()
+            (package / "pubspec.yaml").write_text("name: connector\nresolution: workspace\ndependencies:\n  flutter_edge_ai: 2.2.0\n")
+            (package / ".flutter-version").write_text("3.47.1")
+            (package / ".pubignore").write_text("pubspec_overrides.yaml\n")
+            (package / "example").mkdir()
+            (package / "example/pubspec.yaml").write_text("name: example\ndependencies:\n  flutter_edge_ai: 2.2.0\n")
+            core_source = "name: flutter_edge_ai\nversion: 2.2.0\nresolution: workspace\n"
+            (core / "pubspec.yaml").write_text(core_source)
+            checked = []
+
+            def invoke(command, **kwargs):
+                staged = Path(kwargs["cwd"])
+                self.assertIn("flutter_edge_ai: 2.2.0", (staged / "pubspec.yaml").read_text())
+                self.assertNotIn("resolution: workspace", (staged / "pubspec.yaml").read_text())
+                override = (staged / "pubspec_overrides.yaml").read_text()
+                self.assertEqual((staged / "example/pubspec_overrides.yaml").read_text(), override)
+                self.assertIn("pubspec_overrides.yaml", (staged / ".pubignore").read_text())
+                staged_core = staged.parent / "core"
+                self.assertFalse(staged_core.is_relative_to(staged))
+                self.assertNotIn("resolution: workspace", (staged_core / "pubspec.yaml").read_text())
+                self.assertIn(str(staged_core), override)
+                checked.append(command)
+                return subprocess.CompletedProcess(command, 0, stdout="Validating package...\n* Non-dev dependencies are overridden in pubspec_overrides.yaml.\n")
+
+            with patch.object(package_verify, "PACKAGE", package), \
+                 patch.object(sys, "argv", ["verify.py", "package", "--core-path", str(core)]), \
+                 patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+                 patch.object(package_verify.subprocess, "run", side_effect=invoke):
+                package_verify.main()
+            self.assertEqual(len(checked), 2)
+            self.assertEqual((core / "pubspec.yaml").read_text(), core_source)
+            self.assertFalse((package / "pubspec_overrides.yaml").exists())
+
+    def test_local_core_preparation_rejects_wrong_package_or_version_before_flutter(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "connector"
+            core = root / "core"
+            package.mkdir()
+            core.mkdir()
+            (package / "pubspec.yaml").write_text("dependencies:\n  flutter_edge_ai: 2.2.0\n")
+            for name, version in [("flutter_edge_ai", "2.1.3"), ("unrelated", "2.2.0")]:
+                (core / "pubspec.yaml").write_text(f"name: {name}\nversion: {version}\n")
+                with patch.object(package_verify, "PACKAGE", package), \
+                     patch.object(sys, "argv", ["verify.py", "package", "--core-path", str(core)]), \
+                     patch.object(package_verify.subprocess, "check_output") as flutter:
+                    with self.assertRaises(SystemExit) as error:
+                        package_verify.main()
+                    self.assertEqual(error.exception.code, 2)
+                    flutter.assert_not_called()
+
+    def test_hosted_package_gate_rejects_a_development_override_hint(self):
+        with patch.object(sys, "argv", ["verify.py", "package"]), \
+             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+             patch.object(package_verify.subprocess, "run", side_effect=[
+                 subprocess.CompletedProcess([], 0),
+                 subprocess.CompletedProcess([], 0, stdout="Validating package...\n* Non-dev dependencies are overridden in pubspec_overrides.yaml.\n"),
+             ]):
+            with self.assertRaisesRegex(RuntimeError, "Unexpected publish-validation"):
+                package_verify.main()
+
+    def test_hosted_resolution_failure_is_not_retried_with_local_core(self):
+        failure = subprocess.CalledProcessError(1, ["flutter", "pub", "get"])
+        with patch.object(sys, "argv", ["verify.py", "package"]), \
+             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+             patch.object(package_verify.subprocess, "run", side_effect=failure) as run:
+            with self.assertRaises(subprocess.CalledProcessError):
+                package_verify.main()
+        self.assertEqual(run.call_count, 1)
 
     def test_required_smokes_reject_missing_fixtures_before_invoking_flutter(self):
         tool = Path(__file__).resolve().parents[1] / "tool/verify.py"

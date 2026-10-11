@@ -26,7 +26,7 @@ unreported offload cannot prove either CPU or GPU execution.
 
 ## Automated gates
 
-All gates use Flutter **3.47.1 / Dart 3.13.1**, `flutter_edge_ai 2.1.3`,
+Current gates use Flutter **3.47.1 / Dart 3.13.1**, `flutter_edge_ai 2.2.0`,
 `llamadart 0.11.1`, Apple runtime companion `0.0.21`, native llama.cpp artifacts `v0.5.0-2`,
 and browser assets
 `v0.1.54`. The browser manifest itself is SHA-256 pinned, and its asset checksums
@@ -51,6 +51,9 @@ absent fixtures instead of producing a successful skipped test suite.
 
 ```sh
 python3 tool/verify.py contracts
+# PR preparation against the matching local core:
+python3 tool/verify.py package --core-path ../flutter_edge_ai
+# Required before publication, after core 2.2.0 is published:
 python3 tool/verify.py package
 python3 tool/fetch_test_model.py
 python3 tool/verify.py native --model-path tool/fixtures/chat.gguf
@@ -62,6 +65,13 @@ python3 tool/verify.py build --platform linux
 python3 tool/verify.py build --platform web
 python3 tool/verify.py device --device <device-id> --model-url <immutable-gguf-url>
 ```
+
+The package preparation lane stages the matching local core outside the archive,
+keeps the exact hosted dependency constraint, and uses an excluded temporary
+override. It validates archive contents and development dependency compatibility;
+it does not establish hosted consumer resolution. The default `package` lane
+uses hosted dependencies and remains required before publication. Core 2.2.0 is
+not yet published at the time of this compatibility update.
 
 The native lane uses a VM facade smoke on macOS/Linux and the packaged
 three-cycle desktop smoke on Windows. With these published pins,
@@ -119,14 +129,14 @@ Native model picking copies files into application-support storage. This needs
 space for the imported model; originals are preserved. The copy avoids a full
 Dart model buffer and removes dependence on a picker permission after restart.
 Multimodal projectors remain app-managed, and LoRA restart identity still needs
-explicit reinstallation or `loraPath` under core 2.1.3.
+explicit reinstallation or `loraPath` under core 2.2.0.
 
 ## Local validation, 2026-10-11
 
-These checks used the pinned dependencies above. The host is macOS ARM64,
+These historical checks used core **2.1.3** and the other pinned dependencies above. The host is macOS ARM64,
 Xcode 27; Chrome is 154. Logs are in the local task directory
 `/tmp/flutter-edge-ai-research/`. Workflow definitions pass `actionlint`; the
-GitHub matrix has not run yet. Runtime smokes exercise the public Edge AI facade.
+initial GitHub matrix stopped at the core-version mismatch before runtime checks. Runtime smokes exercise the public Edge AI facade.
 
 | Platform | Build evidence | Real runtime evidence | Remaining qualification |
 | --- | --- | --- | --- |
@@ -263,6 +273,36 @@ GitHub workflow run and independent review. Previous Android/iOS/GCE evidence
 above is historical; those platforms were not rerun after the move. This
 contribution is not a publication or a claim that every GPU/advanced feature
 combination is qualified.
+
+## Core 2.2.0 compatibility validation, 2026-10-11
+
+The contribution includes upstream main `fb6f38d8b9d9f5345802bf4f9b0c44bf62f1d9e7`
+and targets core 2.2.0 with the unchanged llamadart/runtime/SDK pins above.
+Nullable sampling is resolved through core's shared family/thinking defaults.
+The installed family reaches every session/chat path; chat overrides affect
+sampling while user text remains unchanged. Invalid sampling fails before
+replacing a usable legacy session.
+
+Local macOS ARM64 checks:
+
+- Connector format/analyze: PASS; VM 51, Chrome 50 plus three explicit skips,
+  demo seven, and Python tooling 13 tests passed.
+- Workspace analysis: PASS with 570 info diagnostics and no warnings/errors.
+- Shipped skills: 46 Dart blocks and 115 inline references compiled without errors.
+- Real macOS CPU facade: PASS for install, generation, two-turn recall,
+  cancellation/retry and reload with the immutable SmolLM2 fixture.
+- Documentation snippets, relative links/anchors and a fresh external app using
+  the documented matching-core override: PASS.
+- Package archive preparation against the staged matching core: PASS with the
+  three documented preparation warnings and one explicit development-override hint.
+  The archive retains hosted version constraints and excludes the overrides.
+- Workflow lint and published runtime-asset contract checks: PASS.
+
+Core 2.2.0 is not yet hosted on pub.dev. The default hosted `package` gate
+correctly fails dependency resolution until that version is published; local
+preparation is not publication qualification. Current-head GitHub platform and
+model-backed jobs remain required. The full-workspace test count in the migration
+section and earlier Android/iOS/GCE evidence belong to their stated older bases.
 
 ## Before a production release
 

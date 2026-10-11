@@ -12,7 +12,9 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
 The tested dependencies are Flutter **3.47.1 / Dart 3.13.1**,
-`flutter_edge_ai 2.1.3`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
+`flutter_edge_ai 2.2.0`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
+Core 2.2.0 is currently unreleased; try this contribution through the monorepo
+example, or override core to the matching local checkout as shown below.
 
 ## Try a chat in a few minutes
 
@@ -82,11 +84,16 @@ the path below with the package directory relative to your app's pubspec:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: 2.1.3
+  flutter_edge_ai: 2.2.0
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.0.21
+
+# Until core 2.2.0 is published, use the matching checkout:
+dependency_overrides:
+  flutter_edge_ai:
+    path: ../flutter_edge_ai/packages/flutter_edge_ai
 
 hooks:
   user_defines:
@@ -143,7 +150,7 @@ Future<void> main() async {
 }
 ```
 
-Core 2.1.3 uses `ModelFileType.binary` for GGUF; the connector recognizes the
+Core 2.2.0 uses `ModelFileType.binary` for GGUF; the connector recognizes the
 `.gguf` filename. It does not claim other binary formats. On Web, replace
 `.fromFile(...)` with `.fromNetwork(modelUrl)` and prepare the assets/headers above.
 
@@ -195,6 +202,10 @@ Future<void> main() async {
 Results preserve input order and use normalized vectors. The demo UI shows
 text chat; the API examples here cover embeddings and
 [advanced usage](doc/advanced_usage.md) covers tools, thinking, media and LoRA.
+
+Omitted sampling values use the installed model family's defaults. Set
+`temperature: 0` or `topK: 1` for greedy output; `topK` must be at least 1.
+See [sampling and advanced features](doc/advanced_usage.md#sampling).
 
 ## Troubleshooting
 

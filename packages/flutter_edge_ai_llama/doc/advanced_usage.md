@@ -13,6 +13,20 @@ of its sessions.
 The chat examples below assume an already loaded `model`, as in the quick start.
 Keep it open while using a chat and close it when your feature ends.
 
+## Sampling
+
+Leave `temperature`, `topK`, `topP` and `randomSeed` unset to use core's defaults
+for the installed model family and `enableThinking` mode. Chats may override
+`modelType`; that override also selects their sampling defaults. Unknown families
+use temperature 0.8, top-k 40, top-p 0.95 and seed 1. The pinned llamadart API does
+not expose sampling defaults from the GGUF file itself.
+
+Explicit values override defaults field by field. Use `temperature: 0` or
+`topK: 1` for greedy output. An explicit temperature or top-p with no top-k skips
+a greedy family default, so a request for sampling remains sampling. Non-finite
+or negative temperatures, top-k below 1, and top-p outside `(0, 1]` throw
+`ArgumentError` before a usable legacy session is replaced.
+
 ## Tools and thinking
 
 Pass tools with object JSON Schemas and `ToolChoice.auto`, `required`, or `none`.
@@ -101,7 +115,7 @@ cached embedder. `getDimension()` probes only until the first valid vector exist
 
 ## Compatibility boundaries
 
-Core 2.1.3 has no `ModelFileType.gguf`; only binary specs with a `.gguf` primary
+Core 2.2.0 has no `ModelFileType.gguf`; only binary specs with a `.gguf` primary
 filename are claimed. Other runtimes/formats remain unclaimed. Upstream GGUF
 identity, extension classification, an optional embedding tokenizer slot, and
 projector/LoRA persistence would remove the documented compatibility shims.

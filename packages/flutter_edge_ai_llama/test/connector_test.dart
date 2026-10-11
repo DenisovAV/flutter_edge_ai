@@ -298,13 +298,238 @@ void main() {
     }
     expect(
       () => model.createSession(temperature: double.nan),
-      throwsA(isA<llama.LlamaArgumentException>()),
+      throwsArgumentError,
     );
-    expect(
-      () => model.createSession(topP: 0),
-      throwsA(isA<llama.LlamaArgumentException>()),
-    );
+    expect(() => model.createSession(topP: 0), throwsArgumentError);
   });
+
+  for (final operation in [
+    'createSession',
+    'openSession',
+    'createChat',
+    'openChat',
+  ]) {
+    test(
+      '$operation accepts nullable values and forwards general defaults',
+      () async {
+        final edge.InferenceModel facade = model;
+        final session = switch (operation) {
+          'createSession' => await facade.createSession(
+            temperature: null,
+            topK: null,
+            topP: null,
+            randomSeed: null,
+          ),
+          'openSession' => await facade.openSession(
+            temperature: null,
+            topK: null,
+            topP: null,
+            randomSeed: null,
+          ),
+          'createChat' => (await facade.createChat(
+            temperature: null,
+            topK: null,
+            topP: null,
+            randomSeed: null,
+          )).session,
+          _ => (await facade.openChat(
+            temperature: null,
+            topK: null,
+            topP: null,
+            randomSeed: null,
+          )).session,
+        };
+        await session.addQueryChunk(
+          edge.Message.text(text: 'hello', isUser: true),
+        );
+        await session.getResponse();
+        expect(engine.lastParams!.temp, .8);
+        expect(engine.lastParams!.topK, 40);
+        expect(engine.lastParams!.topP, .95);
+        expect(engine.lastParams!.seed, 1);
+      },
+    );
+  }
+
+  test(
+    'provider retains installed family for sessions and both chat paths',
+    () async {
+      final provider = LlamaEngineProvider(loader: (_, _) async => engine);
+      final loaded = await provider.createModel(
+        _spec('gemma.gguf', edge.ModelFileType.binary, edge.ModelType.gemma4),
+        const RuntimeConfig(modelPath: 'gemma.gguf', maxTokens: 2048),
+      );
+      try {
+        for (final operation in [
+          'createSession',
+          'openSession',
+          'createChat',
+          'openChat',
+        ]) {
+          final session = switch (operation) {
+            'createSession' => await loaded.createSession(),
+            'openSession' => await loaded.openSession(),
+            'createChat' => (await loaded.createChat()).session,
+            _ => (await loaded.openChat()).session,
+          };
+          await session.addQueryChunk(
+            edge.Message.text(text: 'hi', isUser: true),
+          );
+          await session.getResponse();
+          expect(engine.lastParams!.temp, 1);
+          expect(engine.lastParams!.topK, 64);
+          expect(engine.lastParams!.topP, .95);
+        }
+        expect(
+          (loaded as LlamaInferenceModel).modelType,
+          edge.ModelType.gemma4,
+        );
+      } finally {
+        await loaded.close();
+      }
+    },
+  );
+
+  for (final detached in [false, true]) {
+    test(
+      'chat family override and thinking defaults reach runtime (detached: $detached)',
+      () async {
+        for (final thinking in [false, true]) {
+          final chat = detached
+              ? await model.openChat(
+                  modelType: edge.ModelType.qwen3,
+                  enableThinking: thinking,
+                )
+              : await model.createChat(
+                  modelType: edge.ModelType.qwen3,
+                  enableThinking: thinking,
+                );
+          await chat.addQuery(edge.Message.text(text: 'hi', isUser: true));
+          await chat.generateChatResponse();
+          expect(engine.lastParams!.temp, thinking ? .6 : .7);
+          expect(engine.lastParams!.topK, 20);
+          expect(engine.lastParams!.topP, thinking ? .95 : .8);
+          await chat.close();
+        }
+      },
+    );
+  }
+
+  test('session thinking uses installed family and partial overrides keep defaults', () async {
+    final provider = LlamaEngineProvider(loader: (_, _) async => engine);
+    final loaded = await provider.createModel(
+      _spec('qwen.gguf', edge.ModelFileType.binary, edge.ModelType.qwen3),
+      const RuntimeConfig(modelPath: 'qwen.gguf', maxTokens: 2048),
+    );
+    try {
+      for (final session in [
+        await loaded.createSession(enableThinking: true, randomSeed: 42),
+        await loaded.openSession(enableThinking: true, topP: .9),
+      ]) {
+        await session.addQueryChunk(
+          edge.Message.text(text: 'hi', isUser: true),
+        );
+        await session.getResponse();
+        expect(engine.lastParams!.temp, .6);
+        expect(engine.lastParams!.topK, 20);
+        expect(
+          engine.lastParams!.seed,
+          identical(session, loaded.session) ? 42 : 1,
+        );
+        expect(
+          engine.lastParams!.topP,
+          identical(session, loaded.session) ? .95 : .9,
+        );
+      }
+      final explicit = await loaded.openSession(
+        temperature: .2,
+        topK: 12,
+        topP: .75,
+        randomSeed: 7,
+      );
+      await explicit.addQueryChunk(edge.Message.text(text: 'hi', isUser: true));
+      await explicit.getResponse();
+      expect(engine.lastParams!.temp, .2);
+      expect(engine.lastParams!.topK, 12);
+      expect(engine.lastParams!.topP, .75);
+      expect(engine.lastParams!.seed, 7);
+    } finally {
+      await loaded.close();
+    }
+  });
+
+  test(
+    'explicit sampling skips greedy family; explicit greedy remains greedy',
+    () async {
+      for (final create in [model.createChat, model.openChat]) {
+        final chat = await create(
+          modelType: edge.ModelType.phi,
+          temperature: .5,
+        );
+        await chat.addQuery(edge.Message.text(text: 'hi', isUser: true));
+        await chat.generateChatResponse();
+        expect(engine.lastParams!.temp, .5);
+        expect(engine.lastParams!.topK, 40);
+        await chat.close();
+        final topPChat = await create(modelType: edge.ModelType.phi, topP: .7);
+        await topPChat.addQuery(edge.Message.text(text: 'hi', isUser: true));
+        await topPChat.generateChatResponse();
+        expect(engine.lastParams!.temp, .8);
+        expect(engine.lastParams!.topK, 40);
+        expect(engine.lastParams!.topP, .7);
+        await topPChat.close();
+        final greedy = await create(temperature: 0, topK: 64);
+        await greedy.addQuery(edge.Message.text(text: 'hi', isUser: true));
+        await greedy.generateChatResponse();
+        expect(engine.lastParams!.topK, 1);
+        await greedy.close();
+      }
+      for (final create in [model.createSession, model.openSession]) {
+        for (final temperature in [0.0, .5]) {
+          final session = await create(
+            temperature: temperature,
+            topK: temperature == 0 ? 64 : 1,
+          );
+          await session.addQueryChunk(
+            edge.Message.text(text: 'hi', isUser: true),
+          );
+          await session.getResponse();
+          expect(engine.lastParams!.topK, 1);
+          await session.close();
+        }
+      }
+    },
+  );
+
+  test(
+    'invalid sampling on all entry points preserves a usable legacy session',
+    () async {
+      final original = await model.createSession();
+      for (final create in [model.createSession, model.openSession]) {
+        for (final topK in [0, -1]) {
+          expect(() => create(topK: topK), throwsArgumentError);
+        }
+        for (final temperature in [-1.0, double.infinity, double.nan]) {
+          expect(() => create(temperature: temperature), throwsArgumentError);
+        }
+        for (final topP in [0.0, 1.1, double.infinity, double.nan]) {
+          expect(() => create(topP: topP), throwsArgumentError);
+        }
+      }
+      for (final create in [model.createChat, model.openChat]) {
+        await expectLater(create(topK: 0), throwsArgumentError);
+        await expectLater(create(temperature: double.nan), throwsArgumentError);
+        await expectLater(create(topP: 0), throwsArgumentError);
+      }
+      expect(model.session, same(original));
+      await original.addQueryChunk(
+        edge.Message.text(text: 'still usable', isUser: true),
+      );
+      await original.getResponse();
+      expect(engine.requests.single.single.content, 'still usable');
+      expect(model.sessions, [original]);
+    },
+  );
 
   test('Edge AI family heuristics do not alter GGUF user text', () async {
     final chat = await model.createChat(modelType: edge.ModelType.qwen3);
@@ -1101,10 +1326,11 @@ void main() {
 edge.InferenceModelSpec _spec(
   String filename, [
   edge.ModelFileType fileType = edge.ModelFileType.binary,
+  edge.ModelType modelType = edge.ModelType.general,
 ]) => edge.InferenceModelSpec(
   name: filename,
   modelSource: _source('/models/$filename'),
-  modelType: edge.ModelType.general,
+  modelType: modelType,
   fileType: fileType,
 );
 

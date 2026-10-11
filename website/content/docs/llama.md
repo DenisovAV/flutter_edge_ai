@@ -74,16 +74,18 @@ restore the installed GGUF before `getActiveModel`; conversation history starts
 fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers described
 in the package guide.
 
-Core 2.1.3 has no dedicated GGUF file type. Install a `.gguf` with
+Core 2.2.0 has no dedicated GGUF file type. Install a `.gguf` with
 `ModelFileType.binary`; the adapter recognizes its GGUF extension and declines
 other binary formats. Imported-file restoration and Web active identity have
-documented compatibility shims. The adapter currently pins core **2.1.3** and
+documented compatibility shims. The adapter currently pins core **2.2.0** and
 llamadart **0.11.1** until public extension APIs replace those shims.
 
 ## Add the development package
 
 The package is not on pub.dev yet. Use the example or a path dependency on
-`packages/flutter_edge_ai_llama` in your clone; keep `flutter_edge_ai: 2.1.3`.
+`packages/flutter_edge_ai_llama` in your clone. Until core 2.2.0 is published,
+add a `dependency_overrides` entry pointing `flutter_edge_ai` at
+`packages/flutter_edge_ai` in the same checkout too.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
 `llamadart_llama_cpp_flutter: 0.0.21` SwiftPM companion.

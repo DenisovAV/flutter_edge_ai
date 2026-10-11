@@ -23,6 +23,8 @@ def main():
     parser.add_argument("--storage-helper-url")
     parser.add_argument("--platform", choices=("android", "ios", "macos", "windows", "linux", "web"))
     parser.add_argument("--device")
+    parser.add_argument("--core-path", type=Path,
+                        help="Package preparation only: validate against this unreleased core; hosted validation remains required before publishing")
     args = parser.parse_args()
     # Resolve PATHEXT on Windows so CreateProcess receives flutter.bat.
     flutter = shutil.which(args.flutter) or args.flutter
@@ -46,6 +48,19 @@ def main():
         parser.error("build requires --platform")
     if args.lane == "device" and not args.device:
         parser.error("device requires --device")
+
+    if args.core_path is not None:
+        if args.lane != "package":
+            parser.error("--core-path is only supported by the package preparation lane")
+        core_pubspec = args.core_path.resolve() / "pubspec.yaml"
+        if not core_pubspec.is_file():
+            parser.error("--core-path must contain a core pubspec.yaml")
+        core_text = core_pubspec.read_text()
+        name = re.search(r"^name:\s*([^\s#]+)", core_text, re.MULTILINE)
+        version = re.search(r"^version:\s*([^\s#]+)", core_text, re.MULTILINE)
+        pin = re.search(r"^  flutter_edge_ai:\s*([^\s#]+)", (PACKAGE / "pubspec.yaml").read_text(), re.MULTILINE)
+        if not name or name.group(1) != "flutter_edge_ai" or not version or not pin or version.group(1) != pin.group(1):
+            parser.error("--core-path must be flutter_edge_ai at the connector's exact dependency version")
 
     version = json.loads(subprocess.check_output([flutter, "--version", "--machine"], text=True))
     expected = (PACKAGE / ".flutter-version").read_text().strip()
@@ -92,6 +107,19 @@ def main():
             # A published adapter must resolve without its development workspace.
             pubspec = staged / "pubspec.yaml"
             pubspec.write_text(re.sub(r"^resolution: workspace\r?\n", "", pubspec.read_text(), flags=re.MULTILINE))
+            if args.core_path is not None:
+                # Keep the original hosted constraint in the archive. The
+                # temporary override is excluded by .pubignore and never ships.
+                staged_core = Path(directory) / "core"
+                shutil.copytree(args.core_path.resolve(), staged_core,
+                                ignore=shutil.ignore_patterns(".git", ".dart_tool", "build", "coverage", "example", "test", "__pycache__", "pubspec_overrides.yaml"))
+                core_pubspec = staged_core / "pubspec.yaml"
+                core_pubspec.write_text(re.sub(r"^resolution: workspace\r?\n", "", core_pubspec.read_text(), flags=re.MULTILINE))
+                override = "dependency_overrides:\n  flutter_edge_ai:\n    path: " + json.dumps(str(staged_core)) + "\n"
+                (staged / "pubspec_overrides.yaml").write_text(override)
+                if (staged / "example/pubspec.yaml").is_file():
+                    (staged / "example/pubspec_overrides.yaml").write_text(override)
+                print("PACKAGE PREPARATION: using the matching local core. This does not validate hosted consumer resolution.", flush=True)
             run([flutter, "pub", "get"], staged)
             result = subprocess.run([flutter, "pub", "publish", "--dry-run", "--ignore-warnings"], cwd=staged, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         print(result.stdout, flush=True)
@@ -99,6 +127,8 @@ def main():
         allowed = ('Your dependency on "flutter_edge_ai" should allow more than one version.',
                    'Your dependency on "llamadart" should allow more than one version.',
                    "doesn't mention current version")
+        if args.core_path is not None:
+            allowed += ("Non-dev dependencies are overridden in pubspec_overrides.yaml.",)
         warnings = [block for block in result.stdout.split("\n* ")[1:]]
         if any(not any(message in block for message in allowed) for block in warnings):
             raise RuntimeError("Unexpected publish-validation warning")

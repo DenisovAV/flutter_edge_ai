@@ -12,7 +12,7 @@ import 'model_location.dart'
 
 /// Registers GGUF embeddings using the tokenizer embedded in the model.
 ///
-/// Core 2.1.3 still requires a tokenizer companion in its installation spec.
+/// Core 2.2.0 still requires a tokenizer companion in its installation spec.
 /// That companion is installed by core but never used by this runtime.
 class LlamaEmbeddingProvider implements EmbeddingBackendProvider {
   /// Creates a provider; disable task prefixes for models not trained for them.

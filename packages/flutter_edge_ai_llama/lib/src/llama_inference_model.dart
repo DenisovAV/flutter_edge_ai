@@ -8,12 +8,18 @@ import 'llama_inference_chat.dart';
 import 'llama_inference_session.dart';
 
 /// Loaded GGUF weights shared by independently owned logical dialogues.
+///
+/// Unset sampling values use core's family/thinking defaults, then its fallback.
+/// The pinned llamadart API does not expose model-file sampling defaults.
+/// Explicit values take precedence; `topK: 1` or `temperature: 0` is greedy.
+/// Invalid sampling values throw [ArgumentError] before replacing a session.
 class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   /// Takes ownership of [engine] and its optional projector.
   LlamaInferenceModel({
     required this.engine,
     required this.maxTokens,
     required this.activeBackend,
+    this.modelType = edge.ModelType.general,
     this.supportImage = false,
     this.supportAudio = false,
     this.maxNumImages,
@@ -27,6 +33,12 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   final int maxTokens;
   @override
   final edge.PreferredBackend? activeBackend;
+
+  /// Installed model family used when a chat does not override it.
+  ///
+  /// Determines unset sampling values and the chat's family identity. Direct
+  /// construction defaults to [edge.ModelType.general].
+  final edge.ModelType modelType;
 
   /// Whether the loaded projector was qualified for image input.
   final bool supportImage;
@@ -59,9 +71,9 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
 
   @override
   Future<LlamaInferenceChat> createChat({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     int tokenBuffer = 256,
     String? loraPath,
@@ -97,6 +109,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         enableAudioModality: supportAudio,
         systemInstruction: systemInstruction,
         enableThinking: enableThinking,
+        modelType: modelType ?? this.modelType,
         tools: effectiveTools,
         maxOutputTokens: maxOutputTokens,
         toolChoice: llama.ToolChoice.values.byName(toolChoice.name),
@@ -108,7 +121,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
       tools: effectiveTools,
       supportsFunctionCalls: effectiveTools.isNotEmpty,
       enableThinking: enableThinking,
-      modelType: modelType ?? edge.ModelType.general,
+      modelType: modelType ?? this.modelType,
       fileType: fileType,
       toolChoice: toolChoice,
       maxFunctionBufferLength: maxFunctionBufferLength ?? 1024,
@@ -120,9 +133,9 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
 
   @override
   Future<LlamaInferenceChat> openChat({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     int tokenBuffer = 256,
     String? loraPath,
@@ -158,6 +171,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         enableAudioModality: supportAudio,
         systemInstruction: systemInstruction,
         enableThinking: enableThinking,
+        modelType: modelType ?? this.modelType,
         tools: effectiveTools,
         maxOutputTokens: maxOutputTokens,
         toolChoice: llama.ToolChoice.values.byName(toolChoice.name),
@@ -169,7 +183,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
       tools: effectiveTools,
       supportsFunctionCalls: effectiveTools.isNotEmpty,
       enableThinking: enableThinking,
-      modelType: modelType ?? edge.ModelType.general,
+      modelType: modelType ?? this.modelType,
       fileType: fileType,
       toolChoice: toolChoice,
       maxFunctionBufferLength: maxFunctionBufferLength ?? 1024,
@@ -180,9 +194,9 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
 
   @override
   Future<LlamaInferenceSession> createSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -208,9 +222,9 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
 
   @override
   Future<LlamaInferenceSession> openSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -236,9 +250,10 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
 
   Future<LlamaInferenceSession> _makeSession({
     required bool detached,
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    edge.ModelType? modelType,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -262,16 +277,21 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
       );
     }
     final limit = maxOutputTokens ?? 128;
-    if (limit <= 0 ||
-        limit >= maxTokens ||
-        !temperature.isFinite ||
-        temperature < 0 ||
-        topK < 0 ||
-        topP != null && (!topP.isFinite || topP <= 0 || topP > 1)) {
+    if (limit <= 0 || limit >= maxTokens) {
       throw llama.LlamaArgumentException(
-        'Use a positive output limit below context size, nonnegative temperature/topK, and topP in (0, 1].',
+        'Use a positive output limit below context size.',
       );
     }
+    final sampling = edge.SamplingParams.resolve(
+      edge.SamplingParams(
+        temperature: temperature,
+        randomSeed: randomSeed,
+        topK: topK,
+        topP: topP,
+      ),
+      modelType: modelType ?? this.modelType,
+      thinking: enableThinking,
+    );
     final operation = _lifecycle.then((_) async {
       if (_closed) throw llama.LlamaStateException('The model is closed.');
       if (detached &&
@@ -293,10 +313,10 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         queue: _queue,
         contextSize: maxTokens,
         params: llama.GenerationParams(
-          temp: temperature,
-          seed: randomSeed,
-          topK: topK,
-          topP: topP ?? .95,
+          temp: sampling.temperature,
+          seed: sampling.randomSeed,
+          topK: sampling.topK,
+          topP: sampling.topP,
           maxTokens: limit,
         ),
         systemInstruction: systemInstruction,

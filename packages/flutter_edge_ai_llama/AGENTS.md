@@ -2,12 +2,15 @@
 
 This workspace package adapts core's registries to published `llamadart 0.11.1`.
 Core resolves locally in the workspace; standalone consumer/publish validation
-uses the exact published `flutter_edge_ai 2.1.3` contract.
+requires the exact `flutter_edge_ai 2.2.0` contract (currently unreleased).
 
 - Use Flutter 3.47.1, matching `.flutter-version` and the root `.fvmrc`.
 - Run `python3 tool/verify.py contracts` and `python3 tool/verify.py package`
-  from this package. The package lane removes workspace resolution in a staged
-  standalone copy and validates the actual consumer dependency graph.
+  from this package. The default package lane removes workspace resolution and
+  validates hosted consumer dependencies; it fails until the exact core is published.
+  For PR preparation, use `python3 tool/verify.py package --core-path ../flutter_edge_ai`:
+  this checks the archive against a matching staged local core and explicitly does
+  not qualify hosted consumer resolution. The hosted lane is required before release.
 - Root `tool/test_all.sh` discovers this package and its demo automatically.
 - `.github/workflows/llama.yml` owns the model/device and six-platform lanes;
   `.github/actions/setup-flutter-llama` pins the SDK's exact Git revision.

@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Restores an installed GGUF identity after Flutter Edge AI initialization.
 ///
-/// Core 2.1.3's native restart path checks a managed write target even for an
+/// Core 2.2.0's native restart path checks a managed write target even for an
 /// imported file. This fallback restores the persisted source through core's
 /// normal installed-file validation. It never downloads or selects a different
 /// model. Returns false for absent, unrelated, malformed or missing models.

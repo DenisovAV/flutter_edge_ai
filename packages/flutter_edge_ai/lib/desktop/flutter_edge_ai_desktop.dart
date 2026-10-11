@@ -33,6 +33,7 @@ import '../core/model_management/model_specs.dart'
 import '../mobile/flutter_edge_ai_mobile.dart' show MobileModelManager;
 
 import '../core/model_management/constants/preferences_keys.dart';
+
 import 'package:flutter_edge_ai/core/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/core/embedding/embedder_cache.dart';
 
@@ -109,8 +110,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
   // TTS model
   Completer<SpeechSynthesizer>? _initTtsCompleter;
   SpeechSynthesizer? _initializedTtsModel;
-  TtsModelSpec?
-  _lastActiveTtsSpec; // Track which spec was used to create _initializedTtsModel
+  TtsModelSpec? _lastActiveTtsSpec; // Track which spec was used to create _initializedTtsModel
   // The `language` the active singleton was built with, NORMALIZED
   // ([_normalizeTtsLanguage] — defaulted + lowercased) so a same-effective-
   // language request compared raw-to-raw (e.g. null vs. 'english', or
@@ -172,6 +172,17 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
       maxConcurrentSessions: maxConcurrentSessions,
       loraRanks: loraRanks,
     );
+
+    // A cached model whose close has started is going away, and its close
+    // listener fires only once the teardown ends. Forget it now and build
+    // anew; the listener is identity-guarded and will not touch the new one.
+    if (_initializedModel case final cached? when cached.isClosed) {
+      _initCompleter = null;
+      _inFlightRequest = null;
+      _initializedModel = null;
+      _lastActiveInferenceSpec = null;
+      _lastInferenceParams = null;
+    }
 
     // Check if singleton exists and matches active model + runtime params
     if (_initCompleter != null &&

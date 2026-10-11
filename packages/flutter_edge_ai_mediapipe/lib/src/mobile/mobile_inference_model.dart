@@ -125,6 +125,9 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
   final int? maxConcurrentSessions;
 
   bool _isClosed = false;
+
+  @override
+  bool get isClosed => _isClosed;
   MobileInferenceModelSession? _session;
   Completer<InferenceModelSession>? _createCompleter;
 

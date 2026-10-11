@@ -299,6 +299,10 @@ Web follows the same rule since `flutter_edge_ai` 2.2.1. Before that, every
 `getActiveModel` call on web closed the cached model and built a new one,
 identical arguments or not.
 
+A model is closed from the moment its `close()` starts: `model.isClosed` is
+true, and since 2.3.0 a `getActiveModel` call made while the close is still
+running builds a new model instead of returning that one.
+
 <Info>
 
 On native `.litertlm` (except the NPU) a `maxTokens` below 1024 is clamped up to

@@ -146,6 +146,17 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       loraRanks: loraRanks,
     );
 
+    // A cached model whose close has started is going away, and its close
+    // listener fires only once the teardown ends. Forget it now and build
+    // anew; the listener is identity-guarded and will not touch the new one.
+    if (_initializedModel case final cached? when cached.isClosed) {
+      _initCompleter = null;
+      _inFlightRequest = null;
+      _initializedModel = null;
+      _lastModelIdentity = null;
+      _lastInferenceParams = null;
+    }
+
     // The rest mirrors FlutterEdgeAiMobile.createModel, whose comments say
     // why each step is shaped the way it is.
     if (_initCompleter != null &&

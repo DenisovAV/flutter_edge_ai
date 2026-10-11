@@ -93,6 +93,9 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
+  @override
+  bool get isClosed => _isClosed;
+
   static bool _seedNoted = false;
   static bool _topPNoted = false;
 

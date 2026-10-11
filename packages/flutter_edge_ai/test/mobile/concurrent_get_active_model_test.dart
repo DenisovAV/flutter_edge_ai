@@ -29,6 +29,8 @@ import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/core/services/download_service.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/desktop/flutter_edge_ai_desktop.dart';
+import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart';
 
 final _fakeBundleBytes = Uint8List(1024 * 1024 + 16);
 
@@ -76,6 +78,40 @@ void main() {
       modelType: ModelType.gemmaIt,
     ).fromNetwork('https://example.com/model.bin').install();
     return engine;
+  }
+
+  for (final (label, shell) in <(String, FlutterEdgeAiPlugin Function())>[
+    ('mobile', FlutterEdgeAiMobile.new),
+    ('desktop', () => FlutterEdgeAiDesktop.instance),
+  ]) {
+    test(
+      '$label: a call while the cached model is closing builds a new one',
+      () async {
+        // The close listener fires only once the teardown ends, so a call in
+        // between used to pass the reuse check and get the closing model; its
+        // next createSession threw "Model is closed".
+        final previous = FlutterEdgeAiPlugin.instance;
+        FlutterEdgeAiPlugin.instance = shell();
+        addTearDown(() => FlutterEdgeAiPlugin.instance = previous);
+        final engine = await installWithGatedEngine();
+        engine.release();
+
+        final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+        final gate = (first as _FakeInferenceModel).closeGate =
+            Completer<void>();
+        final closing = first.close();
+        final second = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+        gate.complete();
+        await closing;
+
+        expect(engine.createModelCallCount, 2);
+        expect(identical(first, second), isFalse);
+        expect((second as _FakeInferenceModel).isClosed, isFalse);
+        // The superseded model's late close listener left the new one cached.
+        expect(FlutterEdgeAiPlugin.instance.initializedModel, same(second));
+        await second.close();
+      },
+    );
   }
 
   test('loraRanks reaches the comparison, not just the comparator', () async {
@@ -492,10 +528,15 @@ class _FakeInferenceModel with CloseNotifier implements InferenceModel {
   /// the whole close window, so no test here could reach the state a caller
   /// arriving mid-close observes — which is exactly where two of the bugs in
   /// this file lived.
+  /// When set, the teardown waits for it, so a test can hold the model in
+  /// the closing state for as long as it needs.
+  Completer<void>? closeGate;
+
   @override
   Future<void> close() async {
     isClosed = true;
     await Future<void>.delayed(Duration.zero);
+    await closeGate?.future;
     fireCloseListeners();
   }
 

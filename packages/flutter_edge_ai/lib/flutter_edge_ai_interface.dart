@@ -441,6 +441,19 @@ abstract class InferenceModel {
   /// by an engine package. Concrete models satisfy this via [CloseNotifier].
   void addCloseListener(void Function() listener);
 
+  /// Whether [close] has been called — true from the moment it starts, not
+  /// when its teardown ends.
+  ///
+  /// Core's `getActiveModel` cache is the caller that needs this. It evicts on
+  /// the close listener, which fires only once the teardown has finished; a
+  /// call arriving in between would otherwise be handed the model that is
+  /// going away, and its next session would fail. This lets the cache check.
+  ///
+  /// Defaulted to `false`, as [EmbeddingModel.isClosed] is: an implementation
+  /// that does not answer behaves as before. `implements` does not inherit the
+  /// default body, so such an implementation has to declare it.
+  bool get isClosed => false;
+
   Future<void> close();
 }
 

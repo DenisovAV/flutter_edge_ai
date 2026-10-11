@@ -253,7 +253,7 @@ await chat.addQueryChunk(
 
 ## The model is a singleton
 
-`getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working. Load it once, then create and close sessions per conversation.
+`getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working; `model.isClosed` says so from the moment `close()` starts. Load it once, then create and close sessions per conversation.
 
 ## Backends
 

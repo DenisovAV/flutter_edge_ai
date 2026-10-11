@@ -281,7 +281,9 @@ await model.close();
 
 `getActiveModel` returns the same model while the active model and its
 arguments stay the same. Another model, or other arguments, builds a new one
-and closes the previous handle.
+and closes the previous handle. A model is closed from the moment its
+`close()` starts (`model.isClosed`), and `getActiveModel` builds a new one
+rather than return it.
 
 Sampling left unset comes from the model: the sampler a native `.litertlm` file
 ships, else the defaults its family publishes (`SamplingParams.forModelType`),

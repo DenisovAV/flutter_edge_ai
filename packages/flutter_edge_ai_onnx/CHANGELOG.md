@@ -1,3 +1,7 @@
+## 0.5.7
+- The model reports `isClosed` from the moment it starts closing.
+- Require `flutter_edge_ai` ^2.3.0.
+
 ## 0.5.6
 - Sampling values reach ORT-GenAI and Transformers.js; web no longer forces greedy (#572).
 - Require `flutter_edge_ai` ^2.2.0.

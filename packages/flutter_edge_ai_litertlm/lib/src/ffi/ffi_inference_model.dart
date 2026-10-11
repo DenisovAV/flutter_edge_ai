@@ -51,6 +51,9 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
+  @override
+  bool get isClosed => _isClosed;
+
   /// Sessions opened via [openSession] — detached from the legacy [_session]
   /// singleton. Each owns its own conversation handle.
   final Set<FfiInferenceModelSession> _openSessions = {};

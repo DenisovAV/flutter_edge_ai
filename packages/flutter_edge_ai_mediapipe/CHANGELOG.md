@@ -1,3 +1,7 @@
+## 1.2.1
+- The model reports `isClosed` from the moment it starts closing.
+- Require `flutter_edge_ai` ^2.3.0.
+
 ## 1.2.0
 - Unset sampling uses the model family defaults, top-k at most 40, instead of greedy (#572).
 - Require `flutter_edge_ai` ^2.2.0.

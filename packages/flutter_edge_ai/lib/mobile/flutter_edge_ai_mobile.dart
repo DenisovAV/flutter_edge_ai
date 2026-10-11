@@ -30,8 +30,10 @@ import '../core/registry/stt_backend_provider.dart';
 import '../core/registry/tts_registry.dart';
 import '../core/registry/runtime_config.dart';
 import '../core/model_management/model_specs.dart';
+
 import 'package:flutter_edge_ai/core/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/core/embedding/embedder_cache.dart';
+
 // Re-export the spec value types so existing importers of this library (tests,
 // example, and any external code that imported the mobile lib directly) keep
 // seeing InferenceModelSpec/EmbeddingModelSpec/etc. — they used to be `part`s
@@ -61,8 +63,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
   Completer<InferenceModel>? _initCompleter;
   InferenceModel? _initializedModel;
 
-  InferenceModelSpec?
-  _lastActiveInferenceSpec; // Track which spec was used to create _initializedModel
+  InferenceModelSpec? _lastActiveInferenceSpec; // Track which spec was used to create _initializedModel
 
   /// Runtime knobs the cached model was built with. Compared on every
   /// getActiveModel so a request that differs rebuilds instead of silently
@@ -87,13 +88,11 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
 
   Completer<SpeechRecognizer>? _initSttCompleter;
   SpeechRecognizer? _initializedSttModel;
-  SttModelSpec?
-  _lastActiveSttSpec; // Track which spec was used to create _initializedSttModel
+  SttModelSpec? _lastActiveSttSpec; // Track which spec was used to create _initializedSttModel
 
   Completer<SpeechSynthesizer>? _initTtsCompleter;
   SpeechSynthesizer? _initializedTtsModel;
-  TtsModelSpec?
-  _lastActiveTtsSpec; // Track which spec was used to create _initializedTtsModel
+  TtsModelSpec? _lastActiveTtsSpec; // Track which spec was used to create _initializedTtsModel
   // The `language` the active singleton was built with, NORMALIZED
   // ([_normalizeTtsLanguage] — defaulted + lowercased) so a same-effective-
   // language request compared raw-to-raw (e.g. null vs. 'english', or
@@ -161,6 +160,17 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
       maxConcurrentSessions: maxConcurrentSessions,
       loraRanks: loraRanks,
     );
+
+    // A cached model whose close has started is going away, and its close
+    // listener fires only once the teardown ends. Forget it now and build
+    // anew; the listener is identity-guarded and will not touch the new one.
+    if (_initializedModel case final cached? when cached.isClosed) {
+      _initCompleter = null;
+      _inFlightRequest = null;
+      _initializedModel = null;
+      _lastActiveInferenceSpec = null;
+      _lastInferenceParams = null;
+    }
 
     // Check if singleton exists and matches the active model
     if (_initCompleter != null &&

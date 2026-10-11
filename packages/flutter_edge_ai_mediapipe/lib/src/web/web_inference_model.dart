@@ -64,6 +64,9 @@ class AudioPromptPart extends PromptPart {
 class WebInferenceModel extends InferenceModel with CloseNotifier {
   final VoidCallback onClose;
   bool _isClosed = false;
+
+  @override
+  bool get isClosed => _isClosed;
   @override
   final int maxTokens;
 

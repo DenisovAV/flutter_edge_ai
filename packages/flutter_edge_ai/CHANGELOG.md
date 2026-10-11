@@ -1,3 +1,6 @@
+## 2.3.0
+- `InferenceModel.isClosed`; `getActiveModel` no longer returns a model that is closing.
+
 ## 2.2.1
 - Web reuses the loaded model when the active model and arguments are unchanged.
 

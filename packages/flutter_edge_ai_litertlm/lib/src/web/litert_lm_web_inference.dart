@@ -86,6 +86,9 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
+  @override
+  bool get isClosed => _isClosed;
+
   /// Guards [_ensureEngine] against concurrent calls. Without it, two
   /// overlapping openSession/createSession calls both see `_engine == null`
   /// and both call `Engine.create`, leaking the first engine (JS/WASM + GPU

@@ -1,3 +1,7 @@
+## 1.12.1
+- The model reports `isClosed` from the moment it starts closing.
+- Require `flutter_edge_ai` ^2.3.0.
+
 ## 1.12.0
 - Unset sampling uses the `.litertlm` sampler; web applies the values you pass (#572).
 - Require `flutter_edge_ai` ^2.2.0.

@@ -159,6 +159,9 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
   LocalAiModel get localAiModel => _model;
 
   bool _isClosed = false;
+
+  @override
+  bool get isClosed => _isClosed;
   BuiltInAiSession? _session;
   final List<BuiltInAiSession> _openSessions = [];
 

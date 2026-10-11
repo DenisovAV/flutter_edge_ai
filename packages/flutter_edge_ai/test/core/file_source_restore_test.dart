@@ -119,6 +119,37 @@ void main() {
               .install())
           .spec;
 
+  /// What a `fromFile` install leaves for [file] under [filename]: its record
+  /// and its registration.
+  Future<void> installedInPlace(
+    String filename,
+    File file,
+    repo.ModelType type,
+  ) async {
+    await saveRecord(filename, FileSource(file.path), type: type);
+    final registry = ServiceRegistry.instance.protectedFilesRegistry;
+    await registry.protect(filename);
+    await registry.registerExternalPath(filename, file.path);
+  }
+
+  /// The per-field STT identity of a release before the tokenizer names were
+  /// namespaced.
+  Future<void> writeLegacySttIdentity() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      PreferencesKeys.activeSttFilename,
+      'picked-stt.tflite',
+    );
+    await prefs.setString(
+      PreferencesKeys.activeSttTokenizerFilename,
+      'tokenizer.json',
+    );
+    await prefs.setString(
+      PreferencesKeys.activeSttModelType,
+      SttModelType.moonshine.name,
+    );
+  }
+
   Future<void> expectForgotten(String filename) async {
     final registry = ServiceRegistry.instance.protectedFilesRegistry;
     expect(await registry.getExternalPath(filename), isNull, reason: filename);
@@ -148,19 +179,22 @@ void main() {
       expect((await restart()).activeInferenceModel, isNull);
     });
 
-    test(
-      'a fromFile model the app can no longer read restores nothing',
-      () async {
-        final model = userFile('picked-model.task', _modelBytes);
-        await installTask(model);
-        // Stat still works, open does not: a revoked sandbox grant or
-        // shared-storage permission looks like this.
-        Process.runSync('chmod', ['000', model.path]);
+    test('a fromFile model the app can no longer read is still restored, so '
+        'opening it reports why', () async {
+      final model = userFile('picked-model.task', _modelBytes);
+      await installTask(model);
+      // Stat still works, open does not: a revoked sandbox grant or
+      // shared-storage permission looks like this. It is not "no model".
+      Process.runSync('chmod', ['000', model.path]);
+      addTearDown(() => Process.runSync('chmod', ['644', model.path]));
 
-        expect((await restart()).activeInferenceModel, isNull);
-      },
-      skip: Platform.isWindows ? 'POSIX permissions' : false,
-    );
+      final restarted = await restart();
+      final spec = restarted.activeInferenceModel as InferenceModelSpec?;
+
+      expect(spec, isNotNull);
+      expect(spec!.modelSource, FileSource(model.path));
+      expect(await restarted.isModelInstalled(spec), isTrue);
+    }, skip: Platform.isWindows ? 'POSIX permissions' : false);
 
     test('an uninstalled fromFile model is not restored', () async {
       final model = userFile('picked-model.task', _modelBytes);
@@ -218,20 +252,19 @@ void main() {
       },
     );
 
-    test('a fromFile model whose recorded path moved is found by its name in '
-        'core\'s directory', () async {
-      // iOS moves the app container on an update: a model the app kept in its
-      // Documents (core's directory) keeps its name, not its absolute path.
-      final file = await coreDirFile('picked-model.task', _modelBytes);
-      final oldPath =
-          '${userDir.path}/OldContainer/Documents/picked-model.task';
-      await saveRecord('picked-model.task', FileSource(oldPath));
-      await writeInferenceIdentity('picked-model.task', FileSource(oldPath));
+    test('a file with the same name elsewhere does not stand in for a '
+        'fromFile model that is gone', () async {
+      final model = userFile('picked-model.task', _modelBytes);
+      await installTask(model);
+      model.deleteSync();
+      // Core's directory, and the Documents core used on desktop before
+      // 0.15.1: neither file is the one the app installed.
+      await coreDirFile('picked-model.task', _modelBytes);
+      File(
+        '${fakeDocuments.path}/picked-model.task',
+      ).writeAsBytesSync(_modelBytes);
 
-      final spec =
-          (await restart()).activeInferenceModel as InferenceModelSpec?;
-
-      expect(spec?.modelSource, FileSource(file.path));
+      expect((await restart()).activeInferenceModel, isNull);
     });
   });
 
@@ -261,43 +294,42 @@ void main() {
       expect((await restart()).activeSttModel, isNull);
     });
 
-    test(
-      'an app\'s tokenizer named the old way is used in place, not renamed',
-      () async {
-        // Releases before the tokenizer names were namespaced recorded the plain
-        // name. Migrating renames the file — never one the app owns.
-        final model = await coreDirFile('picked-stt.tflite', _modelBytes);
-        final tokenizer = await coreDirFile('tokenizer.json', _tokenizerBytes);
-        await saveRecord(
-          'picked-stt.tflite',
-          FileSource(model.path),
-          type: repo.ModelType.stt,
-        );
-        await saveRecord(
-          'tokenizer.json',
-          FileSource(tokenizer.path),
-          type: repo.ModelType.stt,
-        );
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(
-          PreferencesKeys.activeSttFilename,
-          'picked-stt.tflite',
-        );
-        await prefs.setString(
-          PreferencesKeys.activeSttTokenizerFilename,
-          'tokenizer.json',
-        );
-        await prefs.setString(
-          PreferencesKeys.activeSttModelType,
-          SttModelType.moonshine.name,
-        );
+    test('an app\'s tokenizer named the old way is used in place, not '
+        'renamed, and is installed under its new name', () async {
+      // Releases before the tokenizer names were namespaced recorded the plain
+      // name. Migrating renames core's copy — never a file the app owns; only
+      // its record and registration move to the new name.
+      final model = await coreDirFile('picked-stt.tflite', _modelBytes);
+      final tokenizer = await coreDirFile('tokenizer.json', _tokenizerBytes);
+      await installedInPlace('picked-stt.tflite', model, repo.ModelType.stt);
+      await installedInPlace('tokenizer.json', tokenizer, repo.ModelType.stt);
+      await writeLegacySttIdentity();
 
-        final spec = (await restart()).activeSttModel as SttModelSpec?;
+      final restarted = await restart();
+      final spec = restarted.activeSttModel as SttModelSpec?;
 
-        expect(tokenizer.existsSync(), isTrue, reason: 'not renamed');
-        expect(spec?.tokenizerSource, FileSource(tokenizer.path));
-      },
-    );
+      expect(tokenizer.existsSync(), isTrue, reason: 'not renamed');
+      expect(spec, isNotNull);
+      expect(spec!.tokenizerSource, FileSource(tokenizer.path));
+      expect(await restarted.isModelInstalled(spec), isTrue);
+      final registry = ServiceRegistry.instance.protectedFilesRegistry;
+      expect(
+        await registry.getExternalPath('picked-stt__tokenizer.json'),
+        tokenizer.path,
+      );
+      await expectForgotten('tokenizer.json');
+
+      await restarted.deleteModel(spec);
+
+      expect(tokenizer.existsSync(), isTrue);
+      final repository = ServiceRegistry.instance.modelRepository;
+      expect(await repository.isInstalled('tokenizer.json'), isFalse);
+      expect(
+        await repository.isInstalled('picked-stt__tokenizer.json'),
+        isFalse,
+      );
+      await expectForgotten('picked-stt__tokenizer.json');
+    });
 
     test('a downloaded tokenizer migrated to its new name is still core\'s: '
         'an uninstall deletes it', () async {
@@ -329,9 +361,131 @@ void main() {
 
       expect(migrated.existsSync(), isFalse);
     });
+
+    test(
+      'a tokenizer with no record is neither renamed nor restored',
+      () async {
+        await coreDirFile('picked-stt.tflite', _modelBytes);
+        final tokenizer = await coreDirFile('tokenizer.json', _tokenizerBytes);
+        await writeLegacySttIdentity();
+
+        final restarted = await restart();
+
+        expect(restarted.activeSttModel, isNull);
+        expect(tokenizer.existsSync(), isTrue, reason: 'not renamed');
+        expect(
+          await ServiceRegistry.instance.modelRepository.loadModel(
+            'picked-stt__tokenizer.json',
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test('a migration an earlier launch left half done is finished without '
+        'rewriting its record', () async {
+      // The record was moved to the new name, the persisted name was not.
+      final source = NetworkSource('https://example.com/stt');
+      await coreDirFile('picked-stt.tflite', _modelBytes);
+      final tokenizer = await coreDirFile(
+        'picked-stt__tokenizer.json',
+        _tokenizerBytes,
+      );
+      await saveRecord('picked-stt.tflite', source, type: repo.ModelType.stt);
+      await saveRecord(
+        'picked-stt__tokenizer.json',
+        source,
+        type: repo.ModelType.stt,
+      );
+      await writeLegacySttIdentity();
+
+      final spec = (await restart()).activeSttModel as SttModelSpec?;
+
+      expect(spec?.tokenizerSource, FileSource(tokenizer.path));
+      expect(
+        (await ServiceRegistry.instance.modelRepository.loadModel(
+          'picked-stt__tokenizer.json',
+        ))?.source,
+        source,
+        reason: 'core\'s download stays core\'s',
+      );
+      expect(
+        (await SharedPreferences.getInstance()).getString(
+          PreferencesKeys.activeSttTokenizerFilename,
+        ),
+        'picked-stt__tokenizer.json',
+      );
+    });
   });
 
   group('embedding restore', () {
+    test('a tokenizer the app installed before the names were namespaced is '
+        'used in place, on this launch and the next', () async {
+      final model = await coreDirFile('embedder.tflite', _modelBytes);
+      final tokenizer = await coreDirFile(
+        'sentencepiece.model',
+        _tokenizerBytes,
+      );
+      await installedInPlace(
+        'embedder.tflite',
+        model,
+        repo.ModelType.embedding,
+      );
+      await installedInPlace(
+        'sentencepiece.model',
+        tokenizer,
+        repo.ModelType.embedding,
+      );
+      // The per-field identity releases before the one-key record wrote.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        PreferencesKeys.activeEmbeddingFilename,
+        'embedder.tflite',
+      );
+      await prefs.setString(
+        PreferencesKeys.activeEmbeddingTokenizerFilename,
+        'sentencepiece.model',
+      );
+      await prefs.setString(
+        PreferencesKeys.activeEmbeddingSource,
+        FileSource(model.path).encode(),
+      );
+      await prefs.setString(
+        PreferencesKeys.activeEmbeddingTokenizerSource,
+        FileSource(tokenizer.path).encode(),
+      );
+
+      final first =
+          (await restart()).activeEmbeddingModel as EmbeddingModelSpec?;
+
+      expect(tokenizer.existsSync(), isTrue, reason: 'not renamed');
+      expect(first?.tokenizerSource, FileSource(tokenizer.path));
+
+      final next =
+          (await restart()).activeEmbeddingModel as EmbeddingModelSpec?;
+
+      expect(next?.modelSource, FileSource(model.path));
+      expect(next?.tokenizerSource, FileSource(tokenizer.path));
+    });
+
+    test('a legacy embedder whose records are gone is not restored', () async {
+      // An older release's per-field identity, its files still in core's
+      // directory, its records gone: an uninstall that kept the files.
+      await coreDirFile('embedder.tflite', _modelBytes);
+      await coreDirFile('embedder__sentencepiece.model', _tokenizerBytes);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        PreferencesKeys.activeEmbeddingFilename,
+        'embedder.tflite',
+      );
+      await prefs.setString(
+        PreferencesKeys.activeEmbeddingTokenizerFilename,
+        'embedder__sentencepiece.model',
+      );
+
+      expect((await restart()).activeEmbeddingModel, isNull);
+    });
+
     test('an uninstalled fromFile embedder is not restored', () async {
       final model = userFile('embedder.tflite', _modelBytes);
       final tokenizer = userFile('sentencepiece.model', _tokenizerBytes);
@@ -346,6 +500,114 @@ void main() {
 
       expect((await restart()).activeEmbeddingModel, isNull);
     });
+
+    test('the identity\'s sources are not followed; the files\' records '
+        'decide', () async {
+      File pickedIn(String dir, String name, Uint8List bytes) =>
+          File('${userDir.path}/$dir/$name')
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(bytes);
+      final installation = await FlutterEdgeAi.installEmbedder()
+          .modelFromFile(pickedIn('old', 'embedder.tflite', _modelBytes).path)
+          .tokenizerFromFile(
+            pickedIn('old', 'sentencepiece.model', _tokenizerBytes).path,
+          )
+          .install();
+      // The records say where the files are installed; the identity still
+      // names the old copies, which are there too.
+      final model = pickedIn('new', 'embedder.tflite', _modelBytes);
+      final tokenizer = pickedIn('new', 'sentencepiece.model', _tokenizerBytes);
+      final [modelFile, tokenizerFile] = installation.spec.files;
+      await saveRecord(
+        modelFile.filename,
+        FileSource(model.path),
+        type: repo.ModelType.embedding,
+      );
+      await saveRecord(
+        tokenizerFile.filename,
+        FileSource(tokenizer.path),
+        type: repo.ModelType.embedding,
+      );
+
+      final spec =
+          (await restart()).activeEmbeddingModel as EmbeddingModelSpec?;
+
+      expect(spec?.modelSource, FileSource(model.path));
+      expect(spec?.tokenizerSource, FileSource(tokenizer.path));
+    });
+  });
+
+  group('a file picked anew under the same name', () {
+    File pickedIn(String dir, String name, Uint8List bytes) =>
+        File('${userDir.path}/$dir/$name')
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(bytes);
+
+    test('is the inference model after a restart, not the old one', () async {
+      final old = pickedIn('old', 'picked-model.task', _modelBytes);
+      final picked = pickedIn('new', 'picked-model.task', _modelBytes);
+      await installTask(old);
+      await installTask(picked);
+
+      final spec =
+          (await restart()).activeInferenceModel as InferenceModelSpec?;
+
+      expect(spec?.modelSource, FileSource(picked.path));
+    });
+
+    test('is the STT model after a restart', () async {
+      await installStt(
+        pickedIn('old', 'picked-stt.tflite', _modelBytes),
+        pickedIn('old', 'tokenizer.json', _tokenizerBytes),
+      );
+      final model = pickedIn('new', 'picked-stt.tflite', _modelBytes);
+      final tokenizer = pickedIn('new', 'tokenizer.json', _tokenizerBytes);
+      await installStt(model, tokenizer);
+
+      final spec = (await restart()).activeSttModel as SttModelSpec?;
+
+      expect(spec?.modelSource, FileSource(model.path));
+      expect(spec?.tokenizerSource, FileSource(tokenizer.path));
+    });
+
+    test('is the embedder after a restart', () async {
+      Future<void> install(File model, File tokenizer) =>
+          FlutterEdgeAi.installEmbedder()
+              .modelFromFile(model.path)
+              .tokenizerFromFile(tokenizer.path)
+              .install();
+      await install(
+        pickedIn('old', 'embedder.tflite', _modelBytes),
+        pickedIn('old', 'sentencepiece.model', _tokenizerBytes),
+      );
+      final model = pickedIn('new', 'embedder.tflite', _modelBytes);
+      final tokenizer = pickedIn('new', 'sentencepiece.model', _tokenizerBytes);
+      await install(model, tokenizer);
+
+      final spec =
+          (await restart()).activeEmbeddingModel as EmbeddingModelSpec?;
+
+      expect(spec?.modelSource, FileSource(model.path));
+      expect(spec?.tokenizerSource, FileSource(tokenizer.path));
+    });
+
+    test('leaves the LoRA installed with the model alone', () async {
+      final lora = pickedIn('lora', 'adapter.bin', _tokenizerBytes);
+      Future<void> install(File model) => FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromFile(model.path).withLoraFromFile(lora.path).install();
+      await install(pickedIn('old', 'picked-model.task', _modelBytes));
+      final repository = ServiceRegistry.instance.modelRepository;
+      final loraId = (await repository.listInstalled())
+          .singleWhere((m) => m.source == FileSource(lora.path))
+          .id;
+      final before = (await repository.loadModel(loraId))!.installedAt;
+
+      await install(pickedIn('new', 'picked-model.task', _modelBytes));
+
+      expect((await repository.loadModel(loraId))!.installedAt, before);
+    });
   });
 
   group('uninstall keeps the app\'s files and forgets them', () {
@@ -354,8 +616,10 @@ void main() {
       final tokenizer = userFile('tokenizer.json', _tokenizerBytes);
       final installed = await installStt(model, tokenizer);
       final restarted = await restart();
+      final active = restarted.activeSttModel;
+      expect(active, isNotNull);
 
-      await restarted.deleteModel(restarted.activeSttModel!);
+      await restarted.deleteModel(active!);
 
       expect(model.existsSync(), isTrue);
       expect(tokenizer.existsSync(), isTrue);
@@ -406,9 +670,10 @@ void main() {
         final model = await coreDirFile('staged.task', _modelBytes);
         await installTask(model);
         final manager = FlutterEdgeAiPlugin.instance.modelManager;
-        final spec = manager.activeInferenceModel!;
+        final spec = manager.activeInferenceModel;
+        expect(spec, isNotNull);
 
-        await manager.deleteModel(spec);
+        await manager.deleteModel(spec!);
         // A retry, or the same call after a restart, finds no record.
         await manager.deleteModel(spec);
 
@@ -419,8 +684,12 @@ void main() {
     test('core\'s download is deleted although an older uninstall left the '
         'name registered as the app\'s', () async {
       // Releases up to 2.2.0 never unregistered a fromFile install.
-      await ServiceRegistry.instance.protectedFilesRegistry
-          .registerExternalPath('model.task', '${userDir.path}/model.task');
+      final registry = ServiceRegistry.instance.protectedFilesRegistry;
+      await registry.protect('model.task');
+      await registry.registerExternalPath(
+        'model.task',
+        '${userDir.path}/model.task',
+      );
       final download = await coreDirFile('model.task', _modelBytes);
       final source = NetworkSource('https://example.com/model.task');
       await saveRecord('model.task', source);
@@ -437,18 +706,26 @@ void main() {
       await expectForgotten('model.task');
     });
 
-    test('the file delete every cleanup goes through keeps the app\'s file '
-        'and deletes core\'s', () async {
-      // Uninstall, a replace-policy switch and the resume checker all delete
-      // through deleteModelFile.
+    test('the file delete cleanups go through keeps the app\'s file and '
+        'deletes core\'s', () async {
+      // A replace-policy switch's task cleanup and the resume checker delete
+      // through deleteModelFile; it decides by the record, like an uninstall.
       final appFile = await coreDirFile('picked-model.task', _modelBytes);
       await installTask(appFile);
+      // Recorded in a container iOS has since moved; the file is here now.
+      final moved = await coreDirFile('moved.task', _modelBytes);
+      await saveRecord(
+        'moved.task',
+        FileSource('${userDir.path}/OldContainer/Documents/moved.task'),
+      );
       final partial = await coreDirFile('partial.task', _modelBytes);
 
-      await ModelFileSystemManager.deleteModelFile('picked-model.task');
-      await ModelFileSystemManager.deleteModelFile('partial.task');
+      for (final name in ['picked-model.task', 'moved.task', 'partial.task']) {
+        await ModelFileSystemManager.deleteModelFile(name);
+      }
 
       expect(appFile.existsSync(), isTrue);
+      expect(moved.existsSync(), isTrue);
       expect(partial.existsSync(), isFalse);
     });
   });

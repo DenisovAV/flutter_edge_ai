@@ -366,7 +366,7 @@ identity so it isn't auto-restored on the next launch. Files you installed with
 `fromFile` are yours: they are uninstalled but stay where they are.
 
 ```dart
-await FlutterEdgeAi.uninstallEmbedder(); // deletes model + tokenizer, clears identity
+await FlutterEdgeAi.uninstallEmbedder(); // model + tokenizer, clears identity
 await FlutterEdgeAi.uninstallStt();
 await FlutterEdgeAi.uninstallTts();
 ```
@@ -378,7 +378,7 @@ and clear the active inference identity if you removed the active one:
 // Free in-memory handles first if the model is loaded.
 await model.close();
 
-// Delete the files + metadata.
+// Delete the downloaded file + metadata (a fromFile file stays).
 await FlutterEdgeAi.uninstallModel('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm');
 
 // Clear the persisted "active model" identity so it isn't auto-restored.

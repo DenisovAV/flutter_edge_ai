@@ -435,8 +435,14 @@ class InferenceInstallationBuilder {
     final files = spec.files;
     final namespacedModelFilename = files[0].filename;
 
-    // Check if model is already installed
-    final isInstalled = await repository.isInstalled(namespacedModelFilename);
+    // Check if model is already installed — from this source: a `fromFile`
+    // pick from a new path under the same name is installed again.
+    final wasInstalled = await repository.isInstalled(namespacedModelFilename);
+    final isInstalled = await isInstalledFrom(
+      repository,
+      namespacedModelFilename,
+      source,
+    );
 
     if (isInstalled) {
       edgeAiLog(
@@ -462,15 +468,23 @@ class InferenceInstallationBuilder {
         );
       }
 
-      // Install LoRA if provided
+      // Install LoRA if provided — not again when only the model was picked
+      // anew and this LoRA is the one already installed.
       if (_loraSource != null) {
         final namespacedLoraFilename = files[1].filename;
-        final loraHandler = handlerRegistry.getHandler(_loraSource!);
-        await loraHandler!.install(
-          _loraSource!,
-          cancelToken: _cancelToken,
-          targetFilename: namespacedLoraFilename,
-        );
+        if (!wasInstalled ||
+            !await isInstalledFrom(
+              repository,
+              namespacedLoraFilename,
+              _loraSource!,
+            )) {
+          final loraHandler = handlerRegistry.getHandler(_loraSource!);
+          await loraHandler!.install(
+            _loraSource!,
+            cancelToken: _cancelToken,
+            targetFilename: namespacedLoraFilename,
+          );
+        }
       }
     }
 

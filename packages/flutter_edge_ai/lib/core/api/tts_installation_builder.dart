@@ -53,7 +53,7 @@ class TtsInstallationBuilder {
 
   /// Absolute directory on disk holding the bundle, laid out as for
   /// [fromAsset]. The files are used where they are, not copied, so the app
-  /// must be allowed to read them — and uninstalling the model deletes them.
+  /// must be allowed to read them; uninstalling the model leaves them there.
   TtsInstallationBuilder fromFile(String directory) {
     _base = TtsFileBase(directory);
     return this;

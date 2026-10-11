@@ -382,18 +382,7 @@ void main() {
           fileSystemService: _AlwaysExistingFileSystemService(),
         );
         // A is installed: its files exist (the fake says so) and are recorded.
-        for (final file in first.files) {
-          await ServiceRegistry.instance.modelRepository.saveModel(
-            repo.ModelInfo(
-              id: file.filename,
-              source: file.source,
-              installedAt: DateTime(2026),
-              sizeBytes: 1,
-              type: repo.ModelType.embedding,
-              hasLoraWeights: false,
-            ),
-          );
-        }
+        await _recordInstalled(first);
         final freshManager = MobileModelManager(
           activeEmbeddingIdentityPersistence:
               _ScriptedEmbeddingIdentityPersistence(backing),
@@ -413,6 +402,8 @@ void main() {
           ).encode();
         final fileSystem = _SuspendingFileSystemService();
         await ServiceRegistry.initialize(fileSystemService: fileSystem);
+        // Installed, so only the lease decides whether the restore publishes.
+        await _recordInstalled(oldSpec);
         final restoringManager = MobileModelManager(
           activeEmbeddingIdentityPersistence: persistence,
         );
@@ -448,6 +439,8 @@ void main() {
           ).encode();
         final fileSystem = _SuspendingFileSystemService();
         await ServiceRegistry.initialize(fileSystemService: fileSystem);
+        // Installed, so only the lease decides whether the restore publishes.
+        await _recordInstalled(oldSpec);
         final restoringManager = MobileModelManager(
           activeEmbeddingIdentityPersistence: persistence,
         );
@@ -1635,6 +1628,22 @@ final class _ScriptedEmbeddingIdentityPersistence
         backing.durableRecord = encodedRecord;
         return true;
     }
+  }
+}
+
+/// Records [spec]'s files the way an install does.
+Future<void> _recordInstalled(EmbeddingModelSpec spec) async {
+  for (final file in spec.files) {
+    await ServiceRegistry.instance.modelRepository.saveModel(
+      repo.ModelInfo(
+        id: file.filename,
+        source: file.source,
+        installedAt: DateTime(2026),
+        sizeBytes: 1,
+        type: repo.ModelType.embedding,
+        hasLoraWeights: false,
+      ),
+    );
   }
 }
 

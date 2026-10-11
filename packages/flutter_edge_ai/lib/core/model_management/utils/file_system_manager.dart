@@ -295,21 +295,22 @@ class ModelFileSystemManager {
   /// Safely deletes core's copy of a model file, in core's directory.
   ///
   /// Only that one path is ever deleted, never a path a `fromFile` install
-  /// points at. A file the app installed with `fromFile` right at that path
-  /// (an app's Documents is core's directory on Android and iOS) is the app's
-  /// own and is kept, here and in every cleanup that goes through this. Whose
+  /// points at. A name the app installed with `fromFile` is the app's, and
+  /// nothing is deleted for it — not even a file of that name in core's
+  /// directory, which is where an app on Android and iOS keeps one in its
+  /// Documents, and where iOS finds it after moving the app's container. Whose
   /// file it is comes from its repository record, not from the external-path
   /// registry, which releases up to 2.2.0 left behind after every uninstall.
   static Future<void> deleteModelFile(String filename) async {
     try {
-      final filePath = await getModelFilePath(filename);
       final source = (await ServiceRegistry.instance.modelRepository.loadModel(
         filename,
       ))?.source;
-      if (source is FileSource && path.equals(source.path, filePath)) {
-        edgeAiLog('Kept the app\'s own file: $filePath');
+      if (source is FileSource) {
+        edgeAiLog('Kept $filename: the app installed it with fromFile');
         return;
       }
+      final filePath = await getModelFilePath(filename);
       final file = File(filePath);
 
       if (await file.exists()) {

@@ -110,11 +110,7 @@ class SharedPreferencesProtectedRegistry implements ProtectedFilesRegistry {
     Set<String> files,
   ) async {
     final json = jsonEncode(files.toList());
-    // The cache already holds the new value, so a write that did not persist
-    // would look done for this session and come back at the next launch.
-    if (!await prefs.setString(_protectedKey, json)) {
-      throw StateError('Failed to persist the protected files.');
-    }
+    await prefs.setString(_protectedKey, json);
   }
 
   /// Gets map of external paths
@@ -138,8 +134,6 @@ class SharedPreferencesProtectedRegistry implements ProtectedFilesRegistry {
     Map<String, String> paths,
   ) async {
     final json = jsonEncode(paths);
-    if (!await prefs.setString(_externalPathsKey, json)) {
-      throw StateError('Failed to persist the external model paths.');
-    }
+    await prefs.setString(_externalPathsKey, json);
   }
 }

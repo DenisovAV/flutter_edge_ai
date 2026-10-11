@@ -177,10 +177,17 @@ class SttInstallationBuilder {
     final modelFilename = files[0].filename;
     final tokenizerFilename = files[1].filename;
 
-    // Check if both model and tokenizer are already installed
-    final isModelInstalled = await repository.isInstalled(modelFilename);
-    final isTokenizerInstalled = await repository.isInstalled(
+    // Check if both model and tokenizer are already installed — from these
+    // sources: a `fromFile` pick from a new path is installed again.
+    final isModelInstalled = await isInstalledFrom(
+      repository,
+      modelFilename,
+      _modelSource!,
+    );
+    final isTokenizerInstalled = await isInstalledFrom(
+      repository,
       tokenizerFilename,
+      effectiveTokenizerSource,
     );
 
     if (isModelInstalled && isTokenizerInstalled) {

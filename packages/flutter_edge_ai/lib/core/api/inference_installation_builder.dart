@@ -435,22 +435,17 @@ class InferenceInstallationBuilder {
     final files = spec.files;
     final namespacedModelFilename = files[0].filename;
 
-    // Check if model is already installed — from this source: a `fromFile`
-    // pick from a new path under the same name is installed again.
-    final wasInstalled = await repository.isInstalled(namespacedModelFilename);
-    final isInstalled = await isInstalledFrom(
-      repository,
-      namespacedModelFilename,
-      source,
-    );
-
-    if (isInstalled) {
+    // Each file is installed unless its record says it is installed from
+    // this source (see isInstalledFrom) — a LoRA too, by its own record: one
+    // picked anew is installed again, one added to an installed model now.
+    final handlerRegistry = registry.sourceHandlerRegistry;
+    final modelRecord = await repository.loadModel(namespacedModelFilename);
+    if (await isInstalledFrom(modelRecord, source)) {
       edgeAiLog(
         'ℹ️  Model already installed: $namespacedModelFilename (skipping download)',
       );
     } else {
       // Install model file
-      final handlerRegistry = registry.sourceHandlerRegistry;
       final handler = handlerRegistry.getHandler(source);
       if (_onProgress != null) {
         await for (final progress in handler!.installWithProgress(
@@ -467,24 +462,26 @@ class InferenceInstallationBuilder {
           targetFilename: namespacedModelFilename,
         );
       }
+      await deleteReplacedCopy(namespacedModelFilename, modelRecord, source);
+    }
 
-      // Install LoRA if provided — not again when only the model was picked
-      // anew and this LoRA is the one already installed.
-      if (_loraSource != null) {
-        final namespacedLoraFilename = files[1].filename;
-        if (!wasInstalled ||
-            !await isInstalledFrom(
-              repository,
-              namespacedLoraFilename,
-              _loraSource!,
-            )) {
-          final loraHandler = handlerRegistry.getHandler(_loraSource!);
-          await loraHandler!.install(
-            _loraSource!,
-            cancelToken: _cancelToken,
-            targetFilename: namespacedLoraFilename,
-          );
-        }
+    if (_loraSource != null) {
+      final namespacedLoraFilename = files[1].filename;
+      final loraRecord = await repository.loadModel(namespacedLoraFilename);
+      if (await isInstalledFrom(loraRecord, _loraSource!)) {
+        edgeAiLog('ℹ️  LoRA already installed: $namespacedLoraFilename');
+      } else {
+        final loraHandler = handlerRegistry.getHandler(_loraSource!);
+        await loraHandler!.install(
+          _loraSource!,
+          cancelToken: _cancelToken,
+          targetFilename: namespacedLoraFilename,
+        );
+        await deleteReplacedCopy(
+          namespacedLoraFilename,
+          loraRecord,
+          _loraSource!,
+        );
       }
     }
 

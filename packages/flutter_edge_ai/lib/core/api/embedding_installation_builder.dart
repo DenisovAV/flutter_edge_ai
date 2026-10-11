@@ -216,14 +216,11 @@ class EmbeddingInstallationBuilder {
 
     // Check if both model and tokenizer are already installed — from these
     // sources: a `fromFile` pick from a new path is installed again.
-    final isModelInstalled = await isInstalledFrom(
-      repository,
-      modelFilename,
-      _modelSource!,
-    );
+    final modelRecord = await repository.loadModel(modelFilename);
+    final tokenizerRecord = await repository.loadModel(tokenizerFilename);
+    final isModelInstalled = await isInstalledFrom(modelRecord, _modelSource!);
     final isTokenizerInstalled = await isInstalledFrom(
-      repository,
-      tokenizerFilename,
+      tokenizerRecord,
       effectiveTokenizerSource,
     );
 
@@ -255,6 +252,7 @@ class EmbeddingInstallationBuilder {
             modelType: repo.ModelType.embedding,
           );
         }
+        await deleteReplacedCopy(modelFilename, modelRecord, _modelSource!);
       } else {
         edgeAiLog('ℹ️  Embedding model file already installed: $modelFilename');
       }
@@ -282,6 +280,11 @@ class EmbeddingInstallationBuilder {
             modelType: repo.ModelType.embedding,
           );
         }
+        await deleteReplacedCopy(
+          tokenizerFilename,
+          tokenizerRecord,
+          effectiveTokenizerSource,
+        );
       } else {
         edgeAiLog('ℹ️  Tokenizer file already installed: $tokenizerFilename');
       }

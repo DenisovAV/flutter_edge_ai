@@ -20,7 +20,10 @@ import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/domain/model_source.dart';
 import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
+    show TtsModelTypeManifest;
 import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
+import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager, ModelFileSystemManager;
@@ -179,8 +182,8 @@ void main() {
       expect((await restart()).activeInferenceModel, isNull);
     });
 
-    test('a fromFile model the app can no longer read is still restored, so '
-        'opening it reports why', () async {
+    test('a fromFile model the app can no longer read is still restored, '
+        'for the engine\'s open to report', () async {
       final model = userFile('picked-model.task', _modelBytes);
       await installTask(model);
       // Stat still works, open does not: a revoked sandbox grant or
@@ -365,8 +368,10 @@ void main() {
     test(
       'a tokenizer with no record is neither renamed nor restored',
       () async {
-        await coreDirFile('picked-stt.tflite', _modelBytes);
+        final model = await coreDirFile('picked-stt.tflite', _modelBytes);
         final tokenizer = await coreDirFile('tokenizer.json', _tokenizerBytes);
+        // The model is installed; only the tokenizer's record is gone.
+        await installedInPlace('picked-stt.tflite', model, repo.ModelType.stt);
         await writeLegacySttIdentity();
 
         final restarted = await restart();
@@ -384,7 +389,8 @@ void main() {
 
     test('a migration an earlier launch left half done is finished without '
         'rewriting its record', () async {
-      // The record was moved to the new name, the persisted name was not.
+      // The record was copied to the new name; the old one and the persisted
+      // name were not changed yet.
       final source = NetworkSource('https://example.com/stt');
       await coreDirFile('picked-stt.tflite', _modelBytes);
       final tokenizer = await coreDirFile(
@@ -392,6 +398,7 @@ void main() {
         _tokenizerBytes,
       );
       await saveRecord('picked-stt.tflite', source, type: repo.ModelType.stt);
+      await saveRecord('tokenizer.json', source, type: repo.ModelType.stt);
       await saveRecord(
         'picked-stt__tokenizer.json',
         source,
@@ -402,18 +409,58 @@ void main() {
       final spec = (await restart()).activeSttModel as SttModelSpec?;
 
       expect(spec?.tokenizerSource, FileSource(tokenizer.path));
+      final repository = ServiceRegistry.instance.modelRepository;
       expect(
-        (await ServiceRegistry.instance.modelRepository.loadModel(
-          'picked-stt__tokenizer.json',
-        ))?.source,
+        (await repository.loadModel('picked-stt__tokenizer.json'))?.source,
         source,
         reason: 'core\'s download stays core\'s',
       );
+      expect(await repository.isInstalled('tokenizer.json'), isFalse);
       expect(
         (await SharedPreferences.getInstance()).getString(
           PreferencesKeys.activeSttTokenizerFilename,
         ),
         'picked-stt__tokenizer.json',
+      );
+    });
+
+    test('a newer install under the new name is not overwritten by the old '
+        'record', () async {
+      // The app's old tokenizer is still recorded under the plain name; a
+      // newer download of this model was installed under the new name and
+      // the app stopped before activating it.
+      final appTokenizer = userFile('tokenizer.json', _tokenizerBytes);
+      await installedInPlace(
+        'tokenizer.json',
+        appTokenizer,
+        repo.ModelType.stt,
+      );
+      final download = NetworkSource('https://example.com/stt-v2');
+      await coreDirFile('picked-stt.tflite', _modelBytes);
+      final newer = await coreDirFile(
+        'picked-stt__tokenizer.json',
+        _tokenizerBytes,
+      );
+      await saveRecord('picked-stt.tflite', download, type: repo.ModelType.stt);
+      await saveRecord(
+        'picked-stt__tokenizer.json',
+        download,
+        type: repo.ModelType.stt,
+      );
+      await writeLegacySttIdentity();
+
+      final spec = (await restart()).activeSttModel as SttModelSpec?;
+
+      expect(spec?.tokenizerSource, FileSource(newer.path));
+      final repository = ServiceRegistry.instance.modelRepository;
+      expect(
+        (await repository.loadModel('picked-stt__tokenizer.json'))?.source,
+        download,
+      );
+      expect(
+        (await repository.loadModel('tokenizer.json'))?.source,
+        FileSource(appTokenizer.path),
+        reason: 'the older install\'s record is not this migration\'s',
       );
     });
   });
@@ -537,11 +584,60 @@ void main() {
     });
   });
 
+  group('tts restore', () {
+    /// A bundle of [type] in core's directory, and its active identity.
+    Future<List<String>> placeBundle(TtsModelType type) async {
+      final names = [
+        for (final fn in type.manifest) FileNameUtils.namespaced(type.name, fn),
+      ];
+      for (final name in names) {
+        await coreDirFile(name, _tokenizerBytes);
+      }
+      await ActiveIdentityStore.write(
+        await SharedPreferences.getInstance(),
+        ActiveIdentityKind.tts,
+        {
+          PreferencesKeys.activeTtsName: 'voice',
+          PreferencesKeys.activeTtsModelType: type.name,
+        },
+      );
+      return names;
+    }
+
+    test('a downloaded bundle is restored', () async {
+      final type = TtsModelType.values.first;
+      for (final name in await placeBundle(type)) {
+        await saveRecord(
+          name,
+          NetworkSource('https://example.com/$name'),
+          type: repo.ModelType.tts,
+        );
+      }
+
+      expect((await restart()).activeTtsModel, isNotNull);
+    });
+
+    test('a bundle whose records are gone is not restored', () async {
+      await placeBundle(TtsModelType.values.first);
+
+      expect((await restart()).activeTtsModel, isNull);
+    });
+  });
+
   group('a file picked anew under the same name', () {
     File pickedIn(String dir, String name, Uint8List bytes) =>
         File('${userDir.path}/$dir/$name')
           ..createSync(recursive: true)
           ..writeAsBytesSync(bytes);
+
+    /// Installs [model] with [lora] and returns the LoRA's record name.
+    Future<String> installWithLora(File model, File lora) async {
+      final installation = await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromFile(model.path).withLoraFromFile(lora.path).install();
+      return installation.spec.files[1].filename;
+    }
 
     test('is the inference model after a restart, not the old one', () async {
       final old = pickedIn('old', 'picked-model.task', _modelBytes);
@@ -591,23 +687,188 @@ void main() {
       expect(spec?.tokenizerSource, FileSource(tokenizer.path));
     });
 
+    test(
+      'through ensureModelReadyFromSpec is the model after a restart',
+      () async {
+        final manager = FlutterEdgeAiPlugin.instance.modelManager;
+        Future<void> ready(File model) => manager.ensureModelReadyFromSpec(
+          InferenceModelSpec(
+            name: 'picked-model',
+            modelSource: FileSource(model.path),
+            modelType: ModelType.gemmaIt,
+          ),
+        );
+        await ready(pickedIn('old', 'picked-model.task', _modelBytes));
+        final picked = pickedIn('new', 'picked-model.task', _modelBytes);
+
+        await ready(picked);
+
+        final spec =
+            (await restart()).activeInferenceModel as InferenceModelSpec?;
+        expect(spec?.modelSource, FileSource(picked.path));
+      },
+    );
+
     test('leaves the LoRA installed with the model alone', () async {
       final lora = pickedIn('lora', 'adapter.bin', _tokenizerBytes);
-      Future<void> install(File model) => FlutterEdgeAi.installModel(
-        modelType: ModelType.gemmaIt,
-        fileType: ModelFileType.task,
-      ).fromFile(model.path).withLoraFromFile(lora.path).install();
-      await install(pickedIn('old', 'picked-model.task', _modelBytes));
-      final repository = ServiceRegistry.instance.modelRepository;
-      final loraId = (await repository.listInstalled())
-          .singleWhere((m) => m.source == FileSource(lora.path))
-          .id;
-      final before = (await repository.loadModel(loraId))!.installedAt;
+      final loraId = await installWithLora(
+        pickedIn('old', 'picked-model.task', _modelBytes),
+        lora,
+      );
+      // Installed again, the record would take the new size.
+      lora.writeAsBytesSync(Uint8List(_tokenizerBytes.length * 2));
 
-      await install(pickedIn('new', 'picked-model.task', _modelBytes));
+      await installWithLora(
+        pickedIn('new', 'picked-model.task', _modelBytes),
+        lora,
+      );
 
-      expect((await repository.loadModel(loraId))!.installedAt, before);
+      final record = await ServiceRegistry.instance.modelRepository.loadModel(
+        loraId,
+      );
+      expect(record?.sizeBytes, _tokenizerBytes.length);
     });
+
+    test('is the LoRA, when only the LoRA is picked anew', () async {
+      final model = pickedIn('model', 'picked-model.task', _modelBytes);
+      await installWithLora(
+        model,
+        pickedIn('old', 'adapter.bin', _tokenizerBytes),
+      );
+      final lora = pickedIn('new', 'adapter.bin', _tokenizerBytes);
+
+      final loraId = await installWithLora(model, lora);
+
+      final record = await ServiceRegistry.instance.modelRepository.loadModel(
+        loraId,
+      );
+      expect(record?.source, FileSource(lora.path));
+    });
+
+    test('replaces core\'s download, which is deleted', () async {
+      final download = await coreDirFile('picked-model.task', _modelBytes);
+      await saveRecord(
+        'picked-model.task',
+        NetworkSource('https://example.com/picked-model.task'),
+      );
+      final picked = pickedIn('new', 'picked-model.task', _modelBytes);
+
+      await installTask(picked);
+
+      expect(download.existsSync(), isFalse, reason: 'nothing else frees it');
+      expect(picked.existsSync(), isTrue);
+      expect(
+        (await ServiceRegistry.instance.modelRepository.loadModel(
+          'picked-model.task',
+        ))?.source,
+        FileSource(picked.path),
+      );
+    });
+
+    test(
+      'replaces the STT and embedder downloads, which are deleted',
+      () async {
+        Future<List<File>> downloaded(
+          List<String> names,
+          repo.ModelType type,
+        ) => Future.wait([
+          for (final name in names)
+            () async {
+              final file = await coreDirFile(name, _modelBytes);
+              await saveRecord(
+                name,
+                NetworkSource('https://example.com/$name'),
+                type: type,
+              );
+              return file;
+            }(),
+        ]);
+        final copies = [
+          ...await downloaded([
+            'picked-stt.tflite',
+            'picked-stt__tokenizer.json',
+          ], repo.ModelType.stt),
+          ...await downloaded([
+            'embedder.tflite',
+            'embedder__sentencepiece.model',
+          ], repo.ModelType.embedding),
+        ];
+
+        await installStt(
+          pickedIn('new', 'picked-stt.tflite', _modelBytes),
+          pickedIn('new', 'tokenizer.json', _tokenizerBytes),
+        );
+        await FlutterEdgeAi.installEmbedder()
+            .modelFromFile(pickedIn('new', 'embedder.tflite', _modelBytes).path)
+            .tokenizerFromFile(
+              pickedIn('new', 'sentencepiece.model', _tokenizerBytes).path,
+            )
+            .install();
+
+        for (final copy in copies) {
+          expect(copy.existsSync(), isFalse, reason: copy.path);
+        }
+      },
+    );
+
+    test('replaces a downloaded LoRA, which is deleted', () async {
+      final model = pickedIn('model', 'picked-model.task', _modelBytes);
+      final loraId = await installWithLora(
+        model,
+        pickedIn('old', 'adapter.bin', _tokenizerBytes),
+      );
+      final download = await coreDirFile(loraId, _tokenizerBytes);
+      await saveRecord(loraId, NetworkSource('https://example.com/a.bin'));
+
+      await installWithLora(
+        model,
+        pickedIn('new', 'adapter.bin', _tokenizerBytes),
+      );
+
+      expect(download.existsSync(), isFalse);
+    });
+
+    test('keeps core\'s download when the app picks that very file', () async {
+      final download = await coreDirFile('picked-model.task', _modelBytes);
+      await saveRecord(
+        'picked-model.task',
+        NetworkSource('https://example.com/picked-model.task'),
+      );
+
+      await installTask(download);
+
+      expect(download.existsSync(), isTrue);
+    });
+
+    test('at the same path, after the file is gone, says so', () async {
+      final picked = pickedIn('old', 'picked-model.task', _modelBytes);
+      await installTask(picked);
+      picked.deleteSync();
+
+      await expectLater(installTask(picked), throwsA(anything));
+    });
+  });
+
+  group('storage cleanup', () {
+    test(
+      'never counts an installed app file in core\'s directory as an orphan',
+      () async {
+        // Its record has the namespaced name, the file keeps its own.
+        final model = await coreDirFile('picked-stt.tflite', _modelBytes);
+        final tokenizer = await coreDirFile('tokenizer.json', _tokenizerBytes);
+        await installedInPlace('picked-stt.tflite', model, repo.ModelType.stt);
+        await installedInPlace('tokenizer.json', tokenizer, repo.ModelType.stt);
+        await writeLegacySttIdentity();
+        final restarted = await restart();
+
+        final orphans = await restarted.getOrphanedFiles();
+
+        expect(orphans.map((orphan) => orphan.filename), isEmpty);
+      },
+      // An unprotected file reaches the downloader, which does not answer on
+      // a test host: a regression shows up as this timeout.
+      timeout: const Timeout(Duration(seconds: 10)),
+    );
   });
 
   group('uninstall keeps the app\'s files and forgets them', () {

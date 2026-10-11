@@ -239,10 +239,12 @@ class MobileModelManager extends ModelFileManager
   /// when it is not installed or not there.
   ///
   /// A file the app installed with `fromFile` is used in place, where it was
-  /// recorded; every other file is core's, in core's directory. Nothing else
-  /// is tried: a file with the same name somewhere else is not this one. A
-  /// file that is there but cannot be read still counts, so the engine's open
-  /// reports why instead of the model quietly not being active.
+  /// recorded (on iOS, in the app's current container); every other file is
+  /// core's, in core's directory. Nothing else is tried: a file with the same
+  /// name somewhere else is not this one. A file that is there but cannot be
+  /// read still counts, so the engine's open reports why instead of the model
+  /// quietly not being active — as long as it can be seen at all: one in a
+  /// directory the app may no longer list reads as not there.
   Future<String?> _installedFileLocation(String filename) async {
     final record = await ServiceRegistry.instance.modelRepository.loadModel(
       filename,
@@ -265,7 +267,9 @@ class MobileModelManager extends ModelFileManager
       (await getApplicationDocumentsDirectory()).path,
     );
     final now = rebaseIntoAppContainer(recordedPath, container);
-    if (now != recordedPath) {
+    // `/private/var/…` from a file picker is this container, not a move.
+    if (now != recordedPath &&
+        !recordedPath.contains(path.basename(container))) {
       edgeAiLog(
         '[ModelManager] $recordedPath was recorded in an earlier app '
         'container; using $now',
@@ -356,10 +360,14 @@ class MobileModelManager extends ModelFileManager
   /// pre-refactor collision meant only the last-installed (= the active) model's
   /// tokenizer could exist on disk under the plain name.
   ///
-  /// The repository record under the plain name says what to do:
-  /// - none: nothing to migrate — unless an earlier launch re-keyed it and
-  ///   stopped before the persisted name was rewritten, which this finishes
-  ///   without touching the record that launch left;
+  /// The repository records say what to do:
+  /// - one under the namespaced name already — left by an earlier launch that
+  ///   stopped before the persisted name was rewritten, or by a newer install
+  ///   of this model: it is the current one and is never overwritten from the
+  ///   plain one. A plain record with the same source is that earlier
+  ///   launch's leftover and goes; one with another source belongs to an
+  ///   older install and stays;
+  /// - none under the plain name: nothing to migrate;
   /// - a `fromFile` file: the app's, used in place — only the record and its
   ///   registration move to the namespaced name, the file is never renamed;
   /// - anything else: core's copy, renamed to the namespaced name, keeping
@@ -382,12 +390,17 @@ class MobileModelManager extends ModelFileManager
     final repository = ServiceRegistry.instance.modelRepository;
     final prefs = await SharedPreferences.getInstance();
     final original = await repository.loadModel(persistedFilename);
-    if (original == null) {
-      if (await repository.isInstalled(namespaced)) {
-        await prefs.setString(prefsKey, namespaced);
+    final current = await repository.loadModel(namespaced);
+    if (current != null) {
+      if (original != null &&
+          original.source.encode() == current.source.encode()) {
+        await ModelFileSystemManager.forgetExternalFile(persistedFilename);
+        await repository.deleteModel(persistedFilename);
       }
+      await prefs.setString(prefsKey, namespaced);
       return;
     }
+    if (original == null) return;
 
     final source = original.source;
     if (source is FileSource) {
@@ -663,9 +676,11 @@ class MobileModelManager extends ModelFileManager
     final paths = <String, String>{};
     for (final fn in ttsModelType.manifest) {
       final namespacedFn = FileNameUtils.namespaced(ttsModelType.name, fn);
-      final String p;
+      final String? p;
       try {
+        // No record, not installed — whatever is left at its path.
         p = switch ((await repository.loadModel(namespacedFn))?.source) {
+          null => null,
           FileSource(:final path) => await _whereAppFileIsNow(path),
           BundledSource(:final resourceName) => await fs.getBundledResourcePath(
             resourceName,
@@ -675,6 +690,12 @@ class MobileModelManager extends ModelFileManager
       } catch (e) {
         edgeAiLog(
           '[ModelManager] active TTS restore: cannot resolve $namespacedFn ($e) — skipping',
+        );
+        return;
+      }
+      if (p == null) {
+        edgeAiLog(
+          '[ModelManager] active TTS restore: $namespacedFn is not installed — skipping',
         );
         return;
       }
@@ -718,6 +739,8 @@ class MobileModelManager extends ModelFileManager
     edgeAiLog('🔍 Ensuring model ready: ${spec.name}');
     edgeAiLog('🔍 Model source type: ${spec.files.first.source.runtimeType}');
 
+    await _registerFilesPickedAnew(spec);
+
     // Check if already installed
     final installed = await _isModelInstalled(spec);
     edgeAiLog('🔍 isModelInstalled returned: $installed');
@@ -734,6 +757,28 @@ class MobileModelManager extends ModelFileManager
 
     // Route to ServiceRegistry handlers
     await _routeModelBySource(spec);
+  }
+
+  /// A file the app picks with `fromFile` from a new path, under a name
+  /// already installed, is registered from that path — as the installers do
+  /// (see [isInstalledFrom]) — so that a restart restores the file the app
+  /// picked last. Nothing is downloaded; any other file is left as it is.
+  Future<void> _registerFilesPickedAnew(ModelSpec spec) async {
+    final repository = ServiceRegistry.instance.modelRepository;
+    for (final file in spec.files) {
+      final source = file.source;
+      if (source is! FileSource) continue;
+      final record = await repository.loadModel(file.filename);
+      if (record == null || await isInstalledFrom(record, source)) continue;
+      await ServiceRegistry.instance.sourceHandlerRegistry
+          .getHandler(source)!
+          .install(
+            source,
+            targetFilename: file.filename,
+            modelType: _toRepoType(spec.type),
+          );
+      await deleteReplacedCopy(file.filename, record, source);
+    }
   }
 
   /// Routes model handling to Modern API handlers via ServiceRegistry
@@ -1238,12 +1283,23 @@ class MobileModelManager extends ModelFileManager
   }
 
   /// Get all protected files from ModelRepository
+  ///
+  /// Names as the cleanup scans see files on disk: each record's name, and
+  /// for a file the app installed with `fromFile` also the name the file has.
+  /// An app's tokenizer in its Documents (core's directory on Android and
+  /// iOS) keeps its own name while its record has the namespaced one, and
+  /// must never be swept as an orphan.
   Future<List<String>> _getAllProtectedFiles() async {
     final registry = ServiceRegistry.instance;
     final repository = registry.modelRepository;
 
     final allModels = await repository.listInstalled();
-    return allModels.map((info) => info.id).toList();
+    return [
+      for (final info in allModels) ...[
+        info.id,
+        if (info.source case FileSource(path: final file)) path.basename(file),
+      ],
+    ];
   }
 
   /// Validates all files for a model specification

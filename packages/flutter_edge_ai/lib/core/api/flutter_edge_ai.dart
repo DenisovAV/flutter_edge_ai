@@ -997,9 +997,10 @@ class FlutterEdgeAi {
     await manager.clearActiveEmbeddingIdentity();
   }
 
-  /// Uninstall the active STT model — deletes all its files and clears the
-  /// active-STT identity. No-op if none active. A file installed with
-  /// `fromFile` is the app's own and stays where it is.
+  /// Uninstall the active STT model — uninstalls ALL its files and clears
+  /// the active-STT identity. No-op if none active. Core's copies are
+  /// deleted; a file installed with `fromFile` is the app's own and stays
+  /// where it is.
   static Future<void> uninstallStt() async {
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final spec = manager.activeSttModel;
@@ -1008,9 +1009,10 @@ class FlutterEdgeAi {
     await manager.clearActiveSttIdentity();
   }
 
-  /// Uninstall the active TTS model — deletes all its files and clears the
-  /// active-TTS identity. No-op if none active. A file installed with
-  /// `fromFile` is the app's own and stays where it is.
+  /// Uninstall the active TTS model — uninstalls ALL its files and clears
+  /// the active-TTS identity. No-op if none active. Core's copies are
+  /// deleted; a file installed with `fromFile` is the app's own and stays
+  /// where it is.
   static Future<void> uninstallTts() async {
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final spec = manager.activeTtsModel;

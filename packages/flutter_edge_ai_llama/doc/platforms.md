@@ -94,7 +94,7 @@ Applications select llama.cpp in their own `hooks.user_defines.llamadart` map;
 package-local hook settings are not a replacement for consumer settings.
 For pub workspaces, these settings belong in the workspace root pubspec.
 Use `llamadart_native_runtimes: [llama_cpp]`, as shown in the
-[integration guide](../README.md#integration). Without an app selection,
+[integration guide](../README.md#add-it-to-your-app). Without an app selection,
 published llamadart defaults to llama.cpp plus LiteRT-LM wherever available;
 registering the GGUF provider does not remove native assets at build time.
 The pinned Flutter Edge AI core itself bundles no inference runtime, but
@@ -138,9 +138,9 @@ GitHub matrix has not run yet. Runtime smokes exercise the public Edge AI facade
 | Linux | GCE x64 release bundle PASS, 50.3 MB | Ubuntu 24.04 x64, Xeon CPU: public facade plus packaged GTK/Xvfb three-cycle memory/cancel/retry/close PASS | Other distributions/architectures, GPUs and advanced model families |
 
 CPU chat fixture is the immutable SmolLM2 model above. Native tools/thinking use
-Qwen3-0.6B-Q8_0; embeddings use BGE-small-en-v1.5-Q8_0 (SHA in README); LoRA uses
+Qwen3-0.6B-Q8_0; embeddings use BGE-small-en-v1.5-Q8_0 (SHA in `development.md`); LoRA uses
 stories15M_MOE-Q8_0 with moe_shakespeare15M. Media model evidence from the
-original POC remains in README; audio/vision were not rerun in this pass.
+original POC remains in [contributor checks](development.md); audio/vision were not rerun in this pass.
 
 Current contract suite: 41 VM passes; 40 Chrome passes with three explicit skips
 (two native LoRA tests and the separately required real Web fixture smoke);
@@ -247,6 +247,11 @@ metadata, example dependency resolution, tooling, CI and documentation.
   removes workspace resolution and checkout-only example overrides before
   resolving hosted consumer dependencies, so sibling paths cannot mask errors.
 - New workflow `actionlint`, SDK action YAML and relative package doc links: PASS.
+- User-guide polish: relative links/anchors and chat/embedding/tools/projector
+  snippets pass analysis; a fresh external app resolves the documented local
+  dependency setup. The pinned Jaspr 0.23.1 build generated all 25 pages,
+  including `/docs/llama`; its content and browser layout were checked.
+  Package-content validation retained only the three documented warnings.
 
 Root formatting reports 100 files that are byte-identical to upstream HEAD;
 none belongs to this contribution. The existing workflow treats its full-root
@@ -267,7 +272,7 @@ combination is qualified.
    permission/restart behavior and the CPU/GPU combinations being advertised.
 3. Run model-backed tools, thinking, embeddings, vision, audio and LoRA checks
    for each platform/backend combination claimed as qualified. Native macOS
-   has the original model-specific evidence in README; other combinations need
+   has the original model-specific evidence in `development.md`; other combinations need
    their own evidence. Web hardware WebGPU and advanced families are open.
 4. Review exact-pin compatibility shims against core's public extension APIs;
    retain bounded dependencies until the restore/identity/projector/tokenizer

@@ -1,6 +1,6 @@
 ---
 title: llama.cpp
-description: GGUF inference and embeddings through llamadart, with explicit runtime packaging and platform qualification.
+description: Run local GGUF chat and embedding models with Flutter Edge AI and llamadart.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -15,11 +15,16 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 Use Flutter **3.47.1 / Dart 3.13.1**. From the repository root:
 
-```sh
+```
 cd packages/flutter_edge_ai_llama/example
+python3 ../tool/fetch_test_model.py
 flutter pub get
 flutter run -d macos
 ```
+
+Click **Choose model**, select `packages/flutter_edge_ai_llama/tool/fixtures/chat.gguf`,
+and wait for **Ready**. Send “Say hello in one sentence.” The verified download
+is about 145 MB; this small model is for trying the integration.
 
 The example also has Android, iOS, Linux, Windows and Web runners. Native model
 import copies a `.gguf` file into app-owned storage and restores its identity
@@ -28,18 +33,46 @@ layout. See the
 [package README](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md)
 for the Web asset preparation and hosting headers.
 
-## Register providers
+## Stream a chat response
 
 ```dart
+import 'package:flutter/widgets.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 
-await FlutterEdgeAi.initialize(
-  inferenceEngines: const [LlamaEngineProvider()],
-  embeddingBackends: const [LlamaEmbeddingProvider()],
-);
-await restoreInstalledLlamaModel();
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await FlutterEdgeAi.initialize(
+    inferenceEngines: const [LlamaEngineProvider()],
+  );
+
+  await FlutterEdgeAi.installModel(
+    modelType: ModelType.general,
+    fileType: ModelFileType.binary,
+  ).fromFile('/absolute/path/to/chat.gguf').install();
+
+  final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
+  try {
+    final chat = await model.openChat(maxOutputTokens: 128);
+    await chat.addQuery(Message.text(text: 'Hello!', isUser: true));
+    await for (final response in chat.generateChatResponseAsync()) {
+      if (response is TextResponse) print(response.token);
+    }
+  } finally {
+    await model.close();
+  }
+}
 ```
+
+Replace the file path with your downloaded instruction-tuned GGUF.
+`maxTokens` is the whole conversation context; `maxOutputTokens` limits one
+response. Stop a stream with `await chat.session.stopGeneration()` and start
+a new chat when the context fills. Interrupted turns are discarded.
+
+On restart, call `await restoreInstalledLlamaModel()` after initialization to
+restore the installed GGUF before `getActiveModel`; conversation history starts
+fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers described
+in the package guide.
 
 Core 2.1.3 has no dedicated GGUF file type. Install a `.gguf` with
 `ModelFileType.binary`; the adapter recognizes its GGUF extension and declines
@@ -47,11 +80,19 @@ other binary formats. Imported-file restoration and Web active identity have
 documented compatibility shims. The adapter currently pins core **2.1.3** and
 llamadart **0.11.1** until public extension APIs replace those shims.
 
+## Add the development package
+
+The package is not on pub.dev yet. Use the example or a path dependency on
+`packages/flutter_edge_ai_llama` in your clone; keep `flutter_edge_ai: 2.1.3`.
+The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
+shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
+`llamadart_llama_cpp_flutter: 0.0.21` SwiftPM companion.
+
 ## Select llama.cpp only
 
 Put this in the **consuming application's** pubspec, or its workspace root:
 
-```yaml
+```
 hooks:
   user_defines:
     llamadart:
@@ -65,6 +106,16 @@ does not suppress another engine package's independently owned runtime.
 Apple Flutter apps add `llamadart_llama_cpp_flutter 0.0.21` directly and enable
 SwiftPM, as in this package's example. To keep an app llama.cpp only, omit the
 separate LiteRT-LM engine and companion dependencies.
+
+## Generate embeddings
+
+Register `LlamaEmbeddingProvider` through `embeddingBackends`, install a trained
+embedding GGUF, await `FlutterEdgeAi.getActiveEmbedder()`, then call
+`embedder.generateEmbeddings(...)`. Use `useTaskPrefixes: false` for BGE models. Core currently
+requires a tokenizer companion at installation even though llama.cpp uses the
+GGUF's embedded tokenizer. See the
+[complete embedding example](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#generate-embeddings),
+including model cleanup.
 
 ## Capabilities and qualification
 

@@ -374,6 +374,9 @@ Future<Uint8List> _download(
         .send(http.Request('GET', uri))
         .timeout(remaining());
     if (response.statusCode != 200) {
+      // Release the body: on a shared client an unread one keeps its
+      // connection busy.
+      await response.stream.listen(null).cancel();
       throw GenkitException(
         'Failed to download media from $host: HTTP ${response.statusCode}',
         status: StatusCode.unavailable,
@@ -381,6 +384,7 @@ Future<Uint8List> _download(
     }
     final declared = response.contentLength;
     if (declared != null && declared > kMaxMediaDownloadBytes) {
+      await response.stream.listen(null).cancel();
       throw GenkitException(
         'Media from $host is $declared bytes, over the '
         '$kMaxMediaDownloadBytes-byte limit.',

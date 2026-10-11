@@ -11,8 +11,8 @@ import 'package:schemantic/schemantic.dart' show SchemaFlatten;
 ///
 /// Genkit describes a tool whose input is a named `@Schema` type as a `$ref`
 /// into `$defs`. Nothing between here and the model resolves references, so
-/// the schema is flattened first; a recursive one cannot be, and is an
-/// INVALID_ARGUMENT.
+/// the schema is flattened first. One that cannot be, recursive or referring
+/// to another document, is an INVALID_ARGUMENT.
 List<gemma.Tool> convertTools(List<ToolDefinition>? tools) {
   if (tools == null || tools.isEmpty) return const [];
 
@@ -28,14 +28,25 @@ List<gemma.Tool> convertTools(List<ToolDefinition>? tools) {
 Map<String, dynamic> _withoutRefs(String tool, Map<String, dynamic>? schema) {
   if (schema == null) return const {};
   if (!_hasRefs(schema)) return schema;
+  final Map<String, dynamic> flat;
   try {
-    return Map<String, dynamic>.from(schema.flatten());
+    flat = Map<String, dynamic>.from(schema.flatten());
   } on FormatException catch (e) {
     throw GenkitException(
       'The input schema of tool "$tool" cannot be flattened: ${e.message}',
       status: StatusCode.invalidArgument,
     );
   }
+  // flatten() resolves references into the schema's own `$defs` and leaves
+  // any other (another document's URL, say) in place.
+  if (_hasRefs(flat)) {
+    throw GenkitException(
+      'The input schema of tool "$tool" refers to a schema outside itself; '
+      'inline it, the on-device model cannot resolve references.',
+      status: StatusCode.invalidArgument,
+    );
+  }
+  return flat;
 }
 
 bool _hasRefs(Object? node) => switch (node) {

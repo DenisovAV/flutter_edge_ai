@@ -263,6 +263,17 @@ void main() {
       expect(
         () => convertTools([
           ToolDefinition(
+            name: 'remote',
+            description: 'd',
+            inputSchema: {r'$ref': 'https://example.com/args.json'},
+          ),
+        ]),
+        genkitError(StatusCode.invalidArgument, contains('remote')),
+      );
+
+      expect(
+        () => convertTools([
+          ToolDefinition(
             name: 'loop',
             description: 'd',
             inputSchema: {
@@ -406,6 +417,24 @@ void main() {
         ),
       );
       expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+    });
+
+    test('a rejected response releases its body', () async {
+      var cancelled = false;
+      final body = StreamController<List<int>>(
+        onCancel: () => cancelled = true,
+      );
+      final client = MockClient.streaming(
+        (request, _) async => http.StreamedResponse(body.stream, 404),
+      );
+      await expectLater(
+        convertMessages(
+          urlMessage('https://media.example/missing.png'),
+          httpClient: client,
+        ),
+        genkitError(StatusCode.unavailable, contains('404')),
+      );
+      expect(cancelled, isTrue);
     });
 
     test('a body over the size limit fails without reading it', () async {

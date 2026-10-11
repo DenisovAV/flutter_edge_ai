@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:genkit/plugin.dart';
 import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
+import 'package:genkit_flutter_edge_ai/src/converters/request_converter.dart';
 import 'package:genkit_flutter_edge_ai/src/converters/tool_converter.dart';
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_embedder.dart';
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_model.dart';
@@ -362,6 +366,62 @@ void main() {
         genkitError(StatusCode.invalidArgument, contains('supportsMedia')),
       );
       expect(runtime.getActiveModelCallCount, 0);
+    });
+  });
+
+  group('media downloads', () {
+    List<Message> urlMessage(String url) => [
+      Message(
+        role: Role.user,
+        content: [
+          TextPart(text: 'x'),
+          MediaPart(
+            media: Media(url: url, contentType: 'image/png'),
+          ),
+        ],
+      ),
+    ];
+
+    test('one deadline bounds the whole transfer, not each chunk', () async {
+      // A byte every 20 ms never trips a per-chunk timer of 200 ms.
+      final client = MockClient.streaming((request, _) async {
+        final drip = Stream<List<int>>.periodic(
+          const Duration(milliseconds: 20),
+          (_) => [0],
+        );
+        return http.StreamedResponse(drip, 200);
+      });
+      final watch = Stopwatch()..start();
+      await expectLater(
+        convertMessages(
+          urlMessage('https://media.example/img.png?token=secret'),
+          httpClient: client,
+          downloadTimeout: const Duration(milliseconds: 200),
+        ),
+        throwsA(
+          isA<GenkitException>()
+              .having((e) => e.status, 'status', StatusCode.deadlineExceeded)
+              .having((e) => e.message, 'message', isNot(contains('secret'))),
+        ),
+      );
+      expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+    });
+
+    test('a body over the size limit fails without reading it', () async {
+      final client = MockClient.streaming(
+        (request, _) async => http.StreamedResponse(
+          const Stream<List<int>>.empty(),
+          200,
+          contentLength: kMaxMediaDownloadBytes + 1,
+        ),
+      );
+      await expectLater(
+        convertMessages(
+          urlMessage('https://media.example/big.png'),
+          httpClient: client,
+        ),
+        genkitError(StatusCode.invalidArgument, contains('limit')),
+      );
     });
   });
 

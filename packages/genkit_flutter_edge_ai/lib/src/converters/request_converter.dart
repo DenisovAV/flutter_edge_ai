@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit/plugin.dart';
 import 'package:http/http.dart' as http;
@@ -11,7 +12,8 @@ import 'file_reader.dart';
 /// The largest media file downloaded from an `http(s)` URL.
 const int kMaxMediaDownloadBytes = 20 * 1024 * 1024;
 
-/// How long an `http(s)` media download may take.
+/// How long an `http(s)` media download may take in all, from the request to
+/// the last byte.
 const Duration kMediaDownloadTimeout = Duration(seconds: 30);
 
 /// Extracts and concatenates all system messages into a single string.
@@ -61,6 +63,7 @@ String? extractSystemInstruction(List<Message> messages) {
 Future<List<gemma.Message>> convertMessages(
   List<Message> messages, {
   http.Client? httpClient,
+  @visibleForTesting Duration downloadTimeout = kMediaDownloadTimeout,
 }) async {
   final result = <gemma.Message>[];
 
@@ -72,7 +75,11 @@ Future<List<gemma.Message>> convertMessages(
       continue;
     } else if (role == Role.user) {
       final text = _extractText(message.content);
-      final media = await _extractMedia(message.content, httpClient);
+      final media = await _extractMedia(
+        message.content,
+        httpClient,
+        downloadTimeout,
+      );
       result.add(
         gemma.Message(
           text: text,
@@ -132,6 +139,7 @@ typedef _UserMedia = ({List<Uint8List> images, Uint8List? audio});
 Future<_UserMedia> _extractMedia(
   List<Part> parts,
   http.Client? httpClient,
+  Duration downloadTimeout,
 ) async {
   final images = <Uint8List>[];
   Uint8List? audio;
@@ -145,7 +153,7 @@ Future<_UserMedia> _extractMedia(
       );
     }
     final media = part.media!;
-    final bytes = await _loadMediaBytes(media.url, httpClient);
+    final bytes = await _loadMediaBytes(media.url, httpClient, downloadTimeout);
     final kind = _mediaKind(media, bytes);
     switch (kind) {
       case 'image':
@@ -276,7 +284,11 @@ String? _sniffType(Uint8List bytes) {
 
 /// Reads a media part's bytes from a `data:` URI, a `file://` URI, an
 /// absolute path or an `http(s)` URL.
-Future<Uint8List> _loadMediaBytes(String url, http.Client? httpClient) async {
+Future<Uint8List> _loadMediaBytes(
+  String url,
+  http.Client? httpClient,
+  Duration downloadTimeout,
+) async {
   // data: URI (base64)
   if (url.startsWith('data:')) {
     final commaIndex = url.indexOf(',');
@@ -321,7 +333,7 @@ Future<Uint8List> _loadMediaBytes(String url, http.Client? httpClient) async {
   }
 
   if (url.startsWith('http://') || url.startsWith('https://')) {
-    return _download(url, httpClient);
+    return _download(url, httpClient, downloadTimeout);
   }
 
   // Unrecognized URL scheme — reject explicitly.
@@ -333,9 +345,15 @@ Future<Uint8List> _loadMediaBytes(String url, http.Client? httpClient) async {
   );
 }
 
-/// Downloads an `http(s)` media URL, bounded in size and time. Errors name the
-/// host only: a signed URL's query is a credential.
-Future<Uint8List> _download(String url, http.Client? httpClient) async {
+/// Downloads an `http(s)` media URL, bounded in size and by one deadline for
+/// the whole transfer: conversion runs under the model's lock, so a server
+/// that keeps sending a byte now and then must not hold every later request.
+/// Errors name the host only: a signed URL's query is a credential.
+Future<Uint8List> _download(
+  String url,
+  http.Client? httpClient,
+  Duration timeout,
+) async {
   final uri = Uri.tryParse(url);
   if (uri == null || uri.host.isEmpty) {
     throw GenkitException(
@@ -344,11 +362,17 @@ Future<Uint8List> _download(String url, http.Client? httpClient) async {
     );
   }
   final host = uri.host;
+  final deadline = Stopwatch()..start();
+  Duration remaining() {
+    final left = timeout - deadline.elapsed;
+    return left.isNegative ? Duration.zero : left;
+  }
+
   final client = httpClient ?? http.Client();
   try {
     final response = await client
         .send(http.Request('GET', uri))
-        .timeout(kMediaDownloadTimeout);
+        .timeout(remaining());
     if (response.statusCode != 200) {
       throw GenkitException(
         'Failed to download media from $host: HTTP ${response.statusCode}',
@@ -363,23 +387,13 @@ Future<Uint8List> _download(String url, http.Client? httpClient) async {
         status: StatusCode.invalidArgument,
       );
     }
-    final builder = BytesBuilder(copy: false);
-    await for (final chunk in response.stream.timeout(kMediaDownloadTimeout)) {
-      builder.add(chunk);
-      if (builder.length > kMaxMediaDownloadBytes) {
-        throw GenkitException(
-          'Media from $host is over the $kMaxMediaDownloadBytes-byte limit.',
-          status: StatusCode.invalidArgument,
-        );
-      }
-    }
-    return builder.takeBytes();
+    return await _readBounded(response.stream, host, remaining());
   } on GenkitException {
     rethrow;
   } on TimeoutException {
     throw GenkitException(
       'Downloading media from $host took longer than '
-      '${kMediaDownloadTimeout.inSeconds} s.',
+      '${timeout.inSeconds} s.',
       status: StatusCode.deadlineExceeded,
     );
   } catch (e) {
@@ -390,6 +404,47 @@ Future<Uint8List> _download(String url, http.Client? httpClient) async {
   } finally {
     if (httpClient == null) client.close();
   }
+}
+
+/// Reads [body] to its end within [timeout] and [kMaxMediaDownloadBytes],
+/// cancelling it as soon as either is exceeded.
+Future<Uint8List> _readBounded(
+  Stream<List<int>> body,
+  String host,
+  Duration timeout,
+) {
+  final builder = BytesBuilder(copy: false);
+  final done = Completer<Uint8List>();
+  late final StreamSubscription<List<int>> subscription;
+  void fail(Object error) {
+    if (done.isCompleted) return;
+    unawaited(subscription.cancel());
+    done.completeError(error);
+  }
+
+  final timer = Timer(timeout, () => fail(TimeoutException(null, timeout)));
+  subscription = body.listen(
+    (chunk) {
+      builder.add(chunk);
+      if (builder.length > kMaxMediaDownloadBytes) {
+        fail(
+          GenkitException(
+            'Media from $host is over the $kMaxMediaDownloadBytes-byte limit.',
+            status: StatusCode.invalidArgument,
+          ),
+        );
+      }
+    },
+    onError: (Object error, StackTrace stack) {
+      if (done.isCompleted) return;
+      done.completeError(error, stack);
+    },
+    onDone: () {
+      if (!done.isCompleted) done.complete(builder.takeBytes());
+    },
+    cancelOnError: true,
+  );
+  return done.future.whenComplete(timer.cancel);
 }
 
 /// Extracts tool requests (function calls) as JSON string from content parts.

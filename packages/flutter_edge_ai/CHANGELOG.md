@@ -1,3 +1,6 @@
+## 2.2.1
+- Web reuses the loaded model when the active model and arguments are unchanged.
+
 ## 2.2.0
 - **Breaking:** unset sampling values come from the model file, then its family, not greedy `topK: 1` (#572).
 

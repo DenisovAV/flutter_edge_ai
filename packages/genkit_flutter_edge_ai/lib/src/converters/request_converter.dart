@@ -153,8 +153,12 @@ Future<_UserMedia> _extractMedia(
       );
     }
     final media = part.media!;
-    final bytes = await _loadMediaBytes(media.url, httpClient, downloadTimeout);
-    final kind = _mediaKind(media, bytes);
+    final (bytes, servedType) = await _loadMediaBytes(
+      media.url,
+      httpClient,
+      downloadTimeout,
+    );
+    final kind = _mediaKind(media, bytes, servedType);
     switch (kind) {
       case 'image':
         images.add(bytes);
@@ -198,12 +202,14 @@ String _partKind(Part part) {
 /// 'image', 'audio', another MIME type, or null when nothing says.
 ///
 /// The declared contentType wins; then a `data:` URI's MIME type; then the
-/// URL's file extension; then, when none says or the type is
-/// `application/octet-stream`, the bytes' signature.
-String? _mediaKind(Media media, Uint8List bytes) {
+/// Content-Type an http(s) server sent ([servedType]); then the URL's file
+/// extension; then, when none says or the type is `application/octet-stream`,
+/// the bytes' signature.
+String? _mediaKind(Media media, Uint8List bytes, String? servedType) {
   var type =
       _nonEmpty(media.contentType) ??
       _dataUriType(media.url) ??
+      _nonEmpty(servedType?.split(';').first) ??
       _extensionType(media.url);
   // A generic binary type says nothing about what the bytes are.
   if (type == null || type == 'application/octet-stream') {
@@ -279,12 +285,35 @@ String? _sniffType(Uint8List bytes) {
   if (_startsWith(bytes, ascii.encode('ID3'))) return 'audio/mpeg';
   if (_startsWith(bytes, ascii.encode('fLaC'))) return 'audio/flac';
   if (_startsWith(bytes, ascii.encode('OggS'))) return 'audio/ogg';
+  // An MPEG audio frame or an ADTS AAC header: eleven set sync bits. JPEG's
+  // FF D8 does not match (D8 has the third bit clear).
+  if (bytes.length >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) {
+    return (bytes[1] & 0xF6) == 0xF0 ? 'audio/aac' : 'audio/mpeg';
+  }
+  // ISO base media (`ftyp` box): the brand says HEIF image, M4A audio, or
+  // something else (mp4 video, typically).
+  if (_startsWith(bytes, ascii.encode('ftyp'), 4) && bytes.length >= 12) {
+    final brand = ascii.decode(bytes.sublist(8, 12), allowInvalid: true);
+    if (const {
+      'heic',
+      'heix',
+      'heim',
+      'heis',
+      'mif1',
+      'msf1',
+    }.contains(brand)) {
+      return 'image/heif';
+    }
+    if (const {'M4A ', 'M4B '}.contains(brand)) return 'audio/mp4';
+    return 'video/mp4';
+  }
   return null;
 }
 
 /// Reads a media part's bytes from a `data:` URI, a `file://` URI, an
-/// absolute path or an `http(s)` URL.
-Future<Uint8List> _loadMediaBytes(
+/// absolute path or an `http(s)` URL, with the Content-Type an http(s) server
+/// sent.
+Future<(Uint8List, String?)> _loadMediaBytes(
   String url,
   http.Client? httpClient,
   Duration downloadTimeout,
@@ -299,7 +328,7 @@ Future<Uint8List> _loadMediaBytes(
       );
     }
     try {
-      return base64Decode(url.substring(commaIndex + 1));
+      return (base64Decode(url.substring(commaIndex + 1)), null);
     } on FormatException catch (e) {
       throw GenkitException(
         'Invalid base64 in media data URI: $e',
@@ -324,12 +353,12 @@ Future<Uint8List> _loadMediaBytes(
         status: StatusCode.invalidArgument,
       );
     }
-    return readFileBytes(path);
+    return (await readFileBytes(path), null);
   }
 
   // Absolute path (starts with /)
   if (url.startsWith('/')) {
-    return readFileBytes(url);
+    return (await readFileBytes(url), null);
   }
 
   if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -349,7 +378,7 @@ Future<Uint8List> _loadMediaBytes(
 /// the whole transfer: conversion runs under the model's lock, so a server
 /// that keeps sending a byte now and then must not hold every later request.
 /// Errors name the host only: a signed URL's query is a credential.
-Future<Uint8List> _download(
+Future<(Uint8List, String?)> _download(
   String url,
   http.Client? httpClient,
   Duration timeout,
@@ -391,7 +420,8 @@ Future<Uint8List> _download(
         status: StatusCode.invalidArgument,
       );
     }
-    return await _readBounded(response.stream, host, remaining());
+    final bytes = await _readBounded(response.stream, host, remaining());
+    return (bytes, response.headers['content-type']);
   } on GenkitException {
     rethrow;
   } on TimeoutException {

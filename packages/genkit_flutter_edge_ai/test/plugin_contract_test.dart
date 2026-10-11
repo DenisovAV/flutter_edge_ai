@@ -326,6 +326,57 @@ void main() {
       }
     });
 
+    test('HEIF, M4A, MP3 and AAC bytes are recognised; mp4 video is not '
+        'taken', () async {
+      Uint8List ftyp(String brand) => Uint8List.fromList([
+        0,
+        0,
+        0,
+        24,
+        ...ascii.encode('ftyp'),
+        ...ascii.encode(brand),
+        0,
+        0,
+      ]);
+      final cases = <Uint8List, String>{
+        ftyp('heic'): 'image',
+        ftyp('M4A '): 'audio',
+        Uint8List.fromList([0xFF, 0xFB, 0x90, 0x00]): 'audio', // MP3 frame
+        Uint8List.fromList([0xFF, 0xF1, 0x50, 0x80]): 'audio', // ADTS AAC
+      };
+      for (final MapEntry(key: bytes, value: kind) in cases.entries) {
+        final messages = await convertMessages([
+          Message(
+            role: Role.user,
+            content: [
+              MediaPart(
+                media: Media(url: 'data:;base64,${base64Encode(bytes)}'),
+              ),
+            ],
+          ),
+        ]);
+        final message = messages.single;
+        expect(
+          kind == 'image' ? message.images : [?message.audioBytes],
+          hasLength(1),
+          reason: '$bytes',
+        );
+      }
+      await expectLater(
+        convertMessages([
+          Message(
+            role: Role.user,
+            content: [
+              MediaPart(
+                media: Media(url: 'data:;base64,${base64Encode(ftyp('isom'))}'),
+              ),
+            ],
+          ),
+        ]),
+        genkitError(StatusCode.invalidArgument, contains('video/mp4')),
+      );
+    });
+
     test('several images and an audio clip go together', () async {
       await buildModel()(
         request(
@@ -428,6 +479,26 @@ void main() {
         ),
       );
       expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+    });
+
+    test('an extension-less URL is typed by the Content-Type it is served '
+        'with', () async {
+      final client = MockClient(
+        (request) async => http.Response.bytes(
+          [1, 2, 3],
+          200,
+          headers: {'content-type': 'audio/mp4; codecs=mp4a'},
+        ),
+      );
+      final messages = await convertMessages([
+        Message(
+          role: Role.user,
+          content: [
+            MediaPart(media: Media(url: 'https://media.example/clip?sig=1')),
+          ],
+        ),
+      ], httpClient: client);
+      expect(messages.single.audioBytes, isNotNull);
     });
 
     test('a rejected response releases its body', () async {

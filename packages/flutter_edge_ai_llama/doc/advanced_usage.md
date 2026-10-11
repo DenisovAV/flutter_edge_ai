@@ -125,4 +125,3 @@ backend identity remains unknown. Runtime usage drives metrics; output tokens ar
 reported. Throughput includes prefill. The demo labels missing output counts as unavailable. Native termination is available as
 `LlamaInferenceSession.lastFinishReason`. Only completed turns commit history;
 cancellation/error removes pending input and partial output.
-

@@ -5,7 +5,7 @@
 > changes. `FlutterGemmaDiagnostics` is now `FlutterEdgeAiDiagnostics` (0.2.0 drops the old
 > name); `dart fix --apply` renames it. See the [migration guide](https://flutteredge.ai/docs/migration).
 
-Opt-in memory diagnostics for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) apps, read from the OS on Android and iOS.
+Opt-in memory diagnostics for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) apps, read from the OS on Android, iOS and macOS.
 
 ## Why not the memory number your profiler shows?
 
@@ -44,11 +44,12 @@ Take a snapshot before loading a model, after loading it, and during generation.
 
 ## What each field means
 
-| Field | iOS | Android |
+| Field | iOS and macOS | Android |
 |---|---|---|
-| `anonymousBytes` | `phys_footprint` from `task_info(TASK_VM_INFO)`: the value jetsam enforces, including IOKit/GPU (Metal) allocations and compressed memory | `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`. GPU memory (KGSL, Mali, dmabuf) is mostly outside it; on Adreno most of it is in `fileBackedBytes` instead |
-| `fileBackedBytes` | null: not read on iOS yet | `Private_Clean + Shared_Clean` from `/proc/self/smaps_rollup`: resident clean pages (mapped files on a CPU backend, plus GPU driver buffers on some GPU backends, see below). Counts shared pages in full |
-| `availableBytes` | `os_proc_available_memory()`: headroom before **this app** hits its limit | `MemAvailable` from `/proc/meminfo`: available on **the whole device**, an optimistic upper bound |
+| `anonymousBytes` | `phys_footprint` from `task_info(TASK_VM_INFO)`: on iOS the value jetsam enforces, including IOKit/GPU (Metal) allocations and compressed memory; on macOS the figure Activity Monitor calls "Memory", with no kill limit behind it | `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`. GPU memory (KGSL, Mali, dmabuf) is mostly outside it; on Adreno most of it is in `fileBackedBytes` instead |
+| `fileBackedBytes` | null: not read on iOS or macOS yet | `Private_Clean + Shared_Clean` from `/proc/self/smaps_rollup`: resident clean pages (mapped files on a CPU backend, plus GPU driver buffers on some GPU backends, see below). Counts shared pages in full |
+| `anonymousPeakBytes` | `ledger_phys_footprint_peak` from the same `task_info` reply: the highest `phys_footprint` since the process started (a lifetime mark, never reset) | null: the kernel keeps no anonymous-only peak |
+| `availableBytes` | iOS: `os_proc_available_memory()`, headroom before **this app** hits its limit; null on macOS, which has no per-app limit | `MemAvailable` from `/proc/meminfo`: available on **the whole device**, an optimistic upper bound |
 
 On Android, clean does not mean exclusively file-backed. `Private_Clean` can include anonymous pages read back from zram and not written since, and `MADV_FREE` pages. On zram's skip-swapcache path, a page can lose its swap slot and leave `SwapPss`. Loading a model under memory pressure can therefore move cold heap memory from `anonymousBytes` into `fileBackedBytes`; the delta is not an exact count of mapped weights.
 
@@ -70,11 +71,11 @@ The platforms enforce memory differently, and the numbers reflect it:
   - `fileBackedBytes` on iOS: the package does not read a corresponding value yet;
   - `availableBytes` on iOS when the call returns 0. Apple returns 0 both when no limit applies (the simulator) and when the limit is already exceeded, and the two cannot be told apart.
 - **`MemoryReadException`** means the value should exist and the read failed: a kernel error, a permission or I/O error, or a file that lacks a field it always carries.
-- **`UnsupportedError`** is thrown by `memorySnapshot()` off Android and iOS, rather than returning empty values.
+- **`UnsupportedError`** is thrown by `memorySnapshot()` off Android, iOS and macOS, rather than returning empty values.
 
 ## Platforms
 
-Android and iOS. Everything is read through `dart:io` and `dart:ffi`, so the package has no Kotlin, Swift, Gradle or podspec, and no dependency on `flutter_edge_ai` itself: it measures the process, whichever engine runs in it.
+Android, iOS and macOS. Everything is read through `dart:io` and `dart:ffi`, so the package has no Kotlin, Swift, Gradle or podspec, and no dependency on `flutter_edge_ai` itself: it measures the process, whichever engine runs in it.
 
 The Linux host test writes and flushes a 64 MiB file on the checkout's filesystem, then maps and reads it: `fileBackedBytes` rises without a comparable rise in `anonymousBytes`. The Android integration test checks the field is positive; its iOS null assertion has not been run for this change.
 
@@ -102,4 +103,4 @@ Installs the agent skills `flutter_edge_ai` bundles — this package does not de
 
 ## Roadmap
 
-Planned in follow-up releases: `anonymousPeakBytes` (iOS), `anonymousBytes` on macOS, and an experimental `gpuBytes`.
+Planned in a follow-up release: an experimental `gpuBytes`.

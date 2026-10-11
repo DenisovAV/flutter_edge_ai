@@ -7,8 +7,9 @@
 /// `FlutterEdgeAi.initialize(...)`.
 ///
 /// **Inference (`OnnxEngine`)** — see [OnnxEngine]'s doc comment.
-/// - **Native** (macOS/Linux/Windows/Android/iOS): text-only, greedy
-///   decoding, one session at a time, over ORT-GenAI via `dart:ffi`
+/// - **Native** (macOS/Linux/Windows/Android/iOS): text-only, one session at
+///   a time, sampling as the caller sets it, else as the model's
+///   `genai_config.json` does, over ORT-GenAI via `dart:ffi`
 ///   (`GenAiFfiClient`, a long-lived worker isolate — no FFI handle ever
 ///   crosses an isolate boundary).
 /// - **Web**: text generation via Transformers.js v4

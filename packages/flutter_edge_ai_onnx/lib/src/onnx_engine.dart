@@ -1,3 +1,4 @@
+import 'dart:convert' show jsonDecode;
 import 'dart:ffi' show Abi;
 import 'dart:io';
 
@@ -22,8 +23,9 @@ import 'onnx_inference_model.dart';
 ///
 /// **macOS/Linux/Windows/Android arm + iOS arm64 (hardened plan Phase 3,
 /// design §11 D2).** [createModel] productionizes the ORT-GenAI FFI path
-/// (`GenAiFfiClient` → `OnnxInferenceModel`/`OnnxSession`) — text-only,
-/// greedy decoding, one session at a time. macOS/Linux/Windows/Android arm64
+/// (`GenAiFfiClient` → `OnnxInferenceModel`/`OnnxSession`) — text-only, one
+/// session at a time, sampling as the caller sets it, else as the model's
+/// `genai_config.json` does. macOS/Linux/Windows/Android arm64
 /// are device-verified — Android on FTL (Pixel 8 Pro, 2026-08-19: ~10.4
 /// tok/s, ~3.74 GB peak RSS, flat-APK co-location with no ORT_LIB_PATH fix
 /// needed, via `onnx_inference_smoke_test.dart`), the D2 throughput/RAM
@@ -162,6 +164,7 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       );
     }
 
+    final configTopK = _configTopK(configFile);
     final client = _clientFactory();
     await client.load(modelDir, contextWindow: config.maxTokens);
 
@@ -182,7 +185,22 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       // this — "the platform runtime does not expose a final backend".
       activeBackend: null,
       fileType: spec.fileType,
+      configTopK: configTopK,
       onClose: () {},
     );
+  }
+
+  /// `search.top_k` in [configFile], or null when it sets none. A config that
+  /// does not parse is left to ORT-GenAI, which fails the load with its own
+  /// error.
+  static int? _configTopK(File configFile) {
+    try {
+      final config = jsonDecode(configFile.readAsStringSync());
+      final search = config is Map ? config['search'] : null;
+      final topK = search is Map ? search['top_k'] : null;
+      return topK is num ? topK.toInt() : null;
+    } on FormatException {
+      return null;
+    }
   }
 }

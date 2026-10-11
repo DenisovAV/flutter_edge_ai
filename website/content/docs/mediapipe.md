@@ -17,6 +17,14 @@ model carries no template: flutter_edge_ai adds the turn markers itself from the
 `ModelType` you install it with — as it does for FunctionGemma `.task`, whose
 bundle has none either.
 
+> **MediaPipe LLM Inference is in maintenance mode.** Google moved the LLM
+> Inference API (Android, iOS and Web) to maintenance-only: new features and
+> optimizations focus on [LiteRT-LM](/docs/litertlm), and the iOS SDK marks
+> `LlmInference`, `Session` and their options deprecated. For a new app, use
+> `.litertlm` models with `flutter_edge_ai_litertlm`; keep this engine for
+> `.task` and `.bin` models you already ship, and on web for models published
+> only as `-web.task`.
+
 ## Platforms
 
 | Platform | Support | Runtime |
@@ -105,14 +113,23 @@ needed as well — see [Installation → Web](/docs/installation#web).
 | `PreferredBackend` | Android | iOS | Web |
 |--------------------|---------|-----|-----|
 | `cpu` | ✅ | ✅ | ignored — runs on GPU |
-| `gpu` | ✅ | ✅ | ✅ (always) |
+| `gpu` | ✅ | ⚠️ see below | ✅ (always) |
+
+> **iOS GPU: use `.litertlm`.** Google lists Gemma 3 1B and Gemma 3n for
+> Android and Web only. On an iPhone 17 Pro (iOS 26.5.2, MediaPipe 0.10.33 and
+> 0.10.35), `gemma3-1b-it-int4.task` on `PreferredBackend.gpu` reached that
+> iPhone's 6655 MB per-process memory limit while loading (memory entitlements
+> present), and iOS terminated the app without a crash report;
+> `gemma-3n-E2B-it-int4.task` failed to initialize the GPU delegate. The same
+> Gemma 3 1B `.task` runs on CPU, and `gemma3-1b-it-int4.litertlm` runs on the
+> iPhone GPU through LiteRT-LM in under 1 GB.
 
 Pass the backend when you open the model:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 4096,
-  preferredBackend: PreferredBackend.gpu,
+  preferredBackend: PreferredBackend.gpu, // on iOS: PreferredBackend.cpu
 );
 ```
 

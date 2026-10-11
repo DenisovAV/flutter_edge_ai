@@ -73,12 +73,14 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Sampling temperature. Higher values increase randomness. Defaults to 0.8.
+  /// Sampling temperature. Higher values increase randomness. Unset, the
+  /// model's own sampler or its family's default applies.
   double? get temperature {
     return (_json['temperature'] as num?)?.toDouble();
   }
 
-  /// Sampling temperature. Higher values increase randomness. Defaults to 0.8.
+  /// Sampling temperature. Higher values increase randomness. Unset, the
+  /// model's own sampler or its family's default applies.
   set temperature(double? value) {
     if (value == null) {
       _json.remove('temperature');
@@ -87,12 +89,14 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Top-K sampling parameter. Defaults to 1.
+  /// Top-K sampling parameter; 1 is greedy decoding. Unset, the model's own
+  /// sampler or its family's default applies.
   int? get topK {
     return (_json['topK'] as num?)?.toInt();
   }
 
-  /// Top-K sampling parameter. Defaults to 1.
+  /// Top-K sampling parameter; 1 is greedy decoding. Unset, the model's own
+  /// sampler or its family's default applies.
   set topK(int? value) {
     if (value == null) {
       _json.remove('topK');
@@ -101,12 +105,14 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Top-P (nucleus) sampling parameter.
+  /// Top-P (nucleus) sampling parameter. Unset, the model's own sampler or
+  /// its family's default applies.
   double? get topP {
     return (_json['topP'] as num?)?.toDouble();
   }
 
-  /// Top-P (nucleus) sampling parameter.
+  /// Top-P (nucleus) sampling parameter. Unset, the model's own sampler or
+  /// its family's default applies.
   set topP(double? value) {
     if (value == null) {
       _json.remove('topP');
@@ -161,12 +167,12 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Random seed for deterministic output. Defaults to 1.
+  /// Random seed for sampling. Unset, 1; ONNX leaves it to the model config.
   int? get randomSeed {
     return (_json['randomSeed'] as num?)?.toInt();
   }
 
-  /// Random seed for deterministic output. Defaults to 1.
+  /// Random seed for sampling. Unset, 1; ONNX leaves it to the model config.
   set randomSeed(int? value) {
     if (value == null) {
       _json.remove('randomSeed');

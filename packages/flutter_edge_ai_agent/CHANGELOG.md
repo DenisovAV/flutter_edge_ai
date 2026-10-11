@@ -1,3 +1,7 @@
+## 0.2.8
+- Unset sampling values reach the engine unset (#572).
+- Require `flutter_edge_ai` ^2.2.0.
+
 ## 0.2.7
 - Bundled SKILL.md files now ship; `AssetSkillSource.load()` throws when one is missing.
 - Require `flutter_edge_ai` 2.x.

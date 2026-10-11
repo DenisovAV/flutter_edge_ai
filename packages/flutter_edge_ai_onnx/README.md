@@ -103,8 +103,14 @@ profile, not of the output's name, and should move there.
 
 ## Inference — `OnnxEngine`
 
-Text-only, greedy decoding, one session at a time (v1). No vision, no audio,
-no LoRA. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
+Text-only, one session at a time (v1). No vision, no audio, no LoRA. Sampling
+follows the model's `genai_config.json` (greedy unless it sets `do_sample`);
+the `temperature`, `topK`, `topP` and `randomSeed` you pass override it, and
+`temperature: 0` or `topK: 1` keeps decoding greedy. Natively, a temperature
+or `topP` without `topK` over a config with `top_k: 1` also gets a top-k (the
+family's, else 40), so it samples. On web the seed is not applied yet and
+`topP` is ignored (Transformers.js samples with top-k only); each is said once
+when set. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
 template (`OgaTokenizerApplyChatTemplate`) — the engine never builds turn
 markers itself.
 
@@ -234,7 +240,6 @@ are native-only. See [Web setup](#web-setup).
 
 - No vision, no audio, no multimodal input on the inference arm — text only.
 - No LoRA.
-- Greedy decoding only (no sampling parameters exposed yet).
 - One inference session at a time (`createSession` closes any live session
   before opening a new one, same as every other engine in this monorepo).
 

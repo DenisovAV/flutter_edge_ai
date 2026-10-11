@@ -1,3 +1,7 @@
+## 1.12.0
+- Unset sampling uses the `.litertlm` sampler; web applies the values you pass (#572).
+- Require `flutter_edge_ai` ^2.2.0.
+
 ## 1.11.3
 - Web setup pins `@litert-lm/core` 0.18.0.
 - Web: image or audio sent to a `.litertlm` LLM throws instead of being dropped.

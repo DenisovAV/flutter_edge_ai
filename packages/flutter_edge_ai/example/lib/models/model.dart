@@ -876,8 +876,21 @@ enum Model implements InferenceModelInterface {
   final bool needsAuth;
   @override
   final bool localModel;
+  // Raw backend from the enum literal. The public [preferredBackend] getter
+  // runs a MediaPipe `.task` on CPU on iOS: on the GPU an iPhone 17 Pro killed
+  // the app for memory while loading Gemma 3 1B (jetsam per-process limit),
+  // and the Gemma 3n `.task` failed the Metal delegate (/docs/mediapipe#backends).
+  final PreferredBackend _preferredBackendRaw;
+
   @override
-  final PreferredBackend preferredBackend;
+  PreferredBackend get preferredBackend =>
+      _iosTaskGpuBlocked ? PreferredBackend.cpu : _preferredBackendRaw;
+
+  bool get _iosTaskGpuBlocked =>
+      !kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.iOS &&
+      fileType == ModelFileType.task &&
+      _preferredBackendRaw == PreferredBackend.gpu;
   @override
   final ModelType modelType;
   @override
@@ -957,7 +970,7 @@ enum Model implements InferenceModelInterface {
     required this.licenseUrl,
     required this.needsAuth,
     this.localModel = false,
-    required this.preferredBackend,
+    required PreferredBackend preferredBackend,
     required this.modelType,
     required this.temperature,
     required this.topK,
@@ -972,7 +985,8 @@ enum Model implements InferenceModelInterface {
     this.fileType = ModelFileType.task,
     this.foregroundDownload,
     this.hfRepo,
-  }) : _supportImageRaw = supportImage,
+  }) : _preferredBackendRaw = preferredBackend,
+       _supportImageRaw = supportImage,
        _supportAudioRaw = supportAudio;
 
   // BaseModel interface implementation

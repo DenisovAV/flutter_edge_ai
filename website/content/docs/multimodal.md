@@ -125,12 +125,13 @@ final response = await chat.generateChatResponse();
 
 <Warning>
 
-Audio input needs a model that includes the audio adapter: `.litertlm` on
-Android, iOS and desktop, or a MediaPipe `.task` such as Gemma 3n on Android and
-iOS. Neither web engine takes audio. On macOS, Gemma 3n audio
-runs roughly 2× faster on GPU than on CPU — but the audio encoder defaults to
-CPU, so pass `preferredAudioBackend: PreferredBackend.gpu` (as above) to get that
-speedup; `preferredBackend` alone only moves the text decoder.
+Audio input needs a model that includes the audio encoder: `.litertlm` on
+Android, iOS and desktop. The Gemma 3n MediaPipe `.task` files carry none
+(`TF_LITE_AUDIO_ENCODER`), and neither web engine takes audio. On macOS,
+Gemma 3n audio runs roughly 2× faster on GPU than on CPU — but the audio
+encoder defaults to CPU, so pass `preferredAudioBackend: PreferredBackend.gpu`
+(as above) to get that speedup; `preferredBackend` alone only moves the text
+decoder.
 
 </Warning>
 

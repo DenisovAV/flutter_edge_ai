@@ -6,6 +6,7 @@ import 'package:mutex/mutex.dart';
 import 'package:flutter_edge_ai/core/chat.dart';
 import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
 import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/core/sampling.dart';
 import 'package:flutter_edge_ai/core/tool.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
@@ -19,6 +20,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
     show PreferredBackend;
 
+import '../mediapipe_sampling.dart';
 import 'mobile_inference_session.dart';
 
 class MobileInferenceModel extends InferenceModel with CloseNotifier {
@@ -39,11 +41,28 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
   final ModelType modelType;
   @override
   final ModelFileType fileType;
+  ResolvedSampling _resolveSampling({
+    required double? temperature,
+    required int? topK,
+    required double? topP,
+    required int? randomSeed,
+    required bool thinking,
+  }) => resolveMediaPipeSampling(
+    SamplingParams(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+    ),
+    modelType: modelType,
+    thinking: thinking,
+  );
+
   @override
   Future<InferenceChat> createChat({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     int tokenBuffer = 256,
     String? loraPath,
@@ -132,9 +151,9 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceModelSession> createSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -178,6 +197,17 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     }
     final completer = _createCompleter = Completer<InferenceModelSession>();
     try {
+      // Resolved first: values it rejects must not cost the live session. A
+      // `.task` file carries no sampler, so an unset field comes from the
+      // family defaults rather than MediaPipe's own (topK 40, temperature 0.8).
+      final sampling = _resolveSampling(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        randomSeed: randomSeed,
+        thinking: enableThinking,
+      );
+
       // Close any prior singleton session before creating the next so its
       // Dart-side resources (event subscription, stream controller) are
       // released and stray calls on the old wrapper throw `Model is
@@ -193,10 +223,10 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       final resolvedLoraPath = loraPath;
 
       await platformService.createSession(
-        randomSeed: randomSeed,
-        temperature: temperature,
-        topK: topK,
-        topP: topP,
+        randomSeed: sampling.randomSeed,
+        temperature: sampling.temperature,
+        topK: sampling.topK,
+        topP: sampling.topP,
         loraPath: resolvedLoraPath,
         // Enable vision modality if the model supports it
         enableVisionModality: enableVisionModality ?? supportImage,
@@ -244,9 +274,9 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   Future<InferenceModelSession> openSession({
-    double temperature = .8,
-    int randomSeed = 1,
-    int topK = 1,
+    double? temperature,
+    int? randomSeed,
+    int? topK,
     double? topP,
     String? loraPath,
     bool? enableVisionModality,
@@ -274,12 +304,19 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     // an independent native session with its own KV cache. No singleton
     // overwrite; generation is serialized via [_generationMutex] on the
     // session objects, not here.
-    await platformService.createSessionForId(
-      sessionId: id,
-      randomSeed: randomSeed,
+    final sampling = _resolveSampling(
       temperature: temperature,
       topK: topK,
       topP: topP,
+      randomSeed: randomSeed,
+      thinking: enableThinking,
+    );
+    await platformService.createSessionForId(
+      sessionId: id,
+      randomSeed: sampling.randomSeed,
+      temperature: sampling.temperature,
+      topK: sampling.topK,
+      topP: sampling.topP,
       loraPath: loraPath,
       enableVisionModality: enableVisionModality ?? supportImage,
       enableAudioModality: enableAudioModality ?? supportAudio,

@@ -498,6 +498,41 @@ void main() {
       });
     }
 
+    // flutter_edge_ai throws an ArgumentError for these; outside the parse try
+    // it escaped untyped, so a hybrid router quietly sent the request on.
+    for (final (field, value) in [
+      ('topK', 0),
+      ('topP', 1.5),
+      ('temperature', -0.1),
+    ]) {
+      test('$field: $value is INVALID_ARGUMENT before a model loads', () async {
+        final model = buildModel();
+
+        await expectLater(
+          model(
+            ModelRequest(
+              messages: [
+                Message(
+                  role: Role.user,
+                  content: [TextPart(text: 'Hi')],
+                ),
+              ],
+              config: {field: value},
+            ),
+          ),
+          throwsA(
+            isA<GenkitException>().having(
+              (e) => e.status,
+              'status',
+              StatusCode.invalidArgument,
+            ),
+          ),
+        );
+        expect(runtime.getActiveModelCallCount, 0);
+        expect(fakeModel.lastSampling, isNull);
+      });
+    }
+
     for (final field in [
       'maxTokens',
       'topK',
@@ -752,6 +787,44 @@ void main() {
       );
 
       expect(fakeModel.lastSystemInstruction, 'Be concise.');
+    });
+
+    test('leaves unset sampling unset for the model to fill', () async {
+      fakeChat.blockingResponse = const gemma.TextResponse('ok');
+      final model = buildModel();
+
+      await model(simpleRequest());
+
+      expect(fakeModel.lastSampling, (
+        temperature: null,
+        topK: null,
+        topP: null,
+        randomSeed: null,
+      ));
+    });
+
+    test('passes the sampling the request sets', () async {
+      fakeChat.blockingResponse = const gemma.TextResponse('ok');
+      final model = buildModel();
+
+      await model(
+        ModelRequest(
+          messages: [
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Hi')],
+            ),
+          ],
+          config: {'temperature': 0.3, 'topK': 7, 'topP': 0.5, 'randomSeed': 9},
+        ),
+      );
+
+      expect(fakeModel.lastSampling, (
+        temperature: 0.3,
+        topK: 7,
+        topP: 0.5,
+        randomSeed: 9,
+      ));
     });
 
     test('extracts systemInstruction from system messages', () async {

@@ -1,3 +1,6 @@
+## 2.2.0
+- **Breaking:** unset sampling values come from the model file, then its family, not greedy `topK: 1` (#572).
+
 ## 2.1.3
 - Closing an embedder mid-batch no longer leaks its native model.
 - An embedder that fails to load releases its native handles.

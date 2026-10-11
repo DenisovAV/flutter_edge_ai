@@ -42,6 +42,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:mutex/mutex.dart';
 
+import '../onnx_sampling.dart';
 import 'gen_ai_protocol.dart';
 import 'gen_ai_worker.dart';
 import 'ort_genai_bindings.g.dart';
@@ -65,6 +66,7 @@ class GenAiTurn {
     this.systemInstruction,
     this.isFirstTurn = false,
     this.maxOutputTokens,
+    this.searchOptions = const {},
   });
 
   /// Raw user-turn content (tool responses are already folded into plain
@@ -85,6 +87,12 @@ class GenAiTurn {
   /// context-window `max_length`, which is set once when the generator is
   /// created (see [GenAiClient.load]'s `contextWindow`).
   final int? maxOutputTokens;
+
+  /// Sampling search options (`do_sample`, `temperature`, `top_k`, `top_p`,
+  /// `random_seed`) the caller set, from `onnxSearchOptions`. Applied when a
+  /// fresh generator is created, so a session's first turn decides them; an
+  /// option left out keeps the model's `genai_config.json` value.
+  final Map<String, Object> searchOptions;
 }
 
 /// Prompt/decode counters for the most recently completed [GenAiClient.generate]
@@ -946,7 +954,8 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     try {
       if (turn.isFirstTurn) resetGenerator();
 
-      final generator = _generator ?? _createGenerator(oga, model);
+      final generator =
+          _generator ?? _createGenerator(oga, model, turn.searchOptions);
       _generator = generator;
 
       // --- Chat template (SDK-owns-templates, Task 3) ----------------------
@@ -1103,6 +1112,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   ffi.Pointer<OgaGenerator> _createGenerator(
     OrtGenAiBindings oga,
     ffi.Pointer<OgaModel> model,
+    Map<String, Object> searchOptions,
   ) {
     final paramsOut = pkg_ffi.calloc<ffi.Pointer<OgaGeneratorParams>>();
     final ffi.Pointer<OgaGeneratorParams> params;
@@ -1124,6 +1134,30 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
           _init.contextWindow.toDouble(),
         ),
         'OgaGeneratorParamsSetSearchNumber(max_length)',
+      );
+      void set(
+        String name,
+        ffi.Pointer<OgaResult> Function(ffi.Pointer<ffi.Char> name) call,
+      ) {
+        final nameC = name.toNativeUtf8();
+        try {
+          _check(call(nameC.cast()), 'OgaGeneratorParamsSetSearch($name)');
+        } finally {
+          pkg_ffi.calloc.free(nameC);
+        }
+      }
+
+      applySearchOptions(
+        searchOptions,
+        setBool: (name, value) => set(
+          name,
+          (nameC) => oga.OgaGeneratorParamsSetSearchBool(params, nameC, value),
+        ),
+        setNumber: (name, value) => set(
+          name,
+          (nameC) =>
+              oga.OgaGeneratorParamsSetSearchNumber(params, nameC, value),
+        ),
       );
       final genOut = pkg_ffi.calloc<ffi.Pointer<OgaGenerator>>();
       try {

@@ -7,11 +7,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:flutter_edge_ai/core/extensions.dart';
 import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/core/sampling.dart';
 import 'package:flutter_edge_ai/core/message.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
 
 import 'ffi/gen_ai_client.dart';
+import 'onnx_sampling.dart';
 
 /// `InferenceModelSession` over ORT-GenAI. Buffers query chunks (raw text —
 /// Task 3 routes onnx through the SDK-owns-templates path, so no manual turn
@@ -28,6 +30,7 @@ class OnnxSession extends InferenceModelSession {
     required this.fileType,
     this.systemInstruction,
     this.maxOutputTokens,
+    this.sampling = const SamplingParams(),
     required this.onClose,
   });
 
@@ -36,6 +39,9 @@ class OnnxSession extends InferenceModelSession {
   final ModelFileType fileType;
   final String? systemInstruction;
   final int? maxOutputTokens;
+
+  /// What the caller set; unset fields keep the model's `genai_config.json`.
+  final SamplingParams sampling;
   final VoidCallback onClose;
 
   final StringBuffer _queryBuffer = StringBuffer();
@@ -106,6 +112,7 @@ class OnnxSession extends InferenceModelSession {
       systemInstruction: startFresh ? systemInstruction : null,
       isFirstTurn: startFresh,
       maxOutputTokens: maxOutputTokens,
+      searchOptions: onnxSearchOptions(sampling),
     );
     _isFirstTurn = false;
     _forceResetOnNextTurn = false;

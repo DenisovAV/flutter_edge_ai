@@ -192,9 +192,9 @@ If you need to generate individual responses without maintaining a conversation 
 
 ```dart
 final session = await inferenceModel.createSession(
-  temperature: 1.0, // Optional, default: 0.8
-  randomSeed: 1, // Optional, default: 1
-  topK: 1, // Optional, default: 1
+  temperature: 1.0, // Optional; unset: the model's own (2.2.0+)
+  randomSeed: 1, // Optional; unset: 1
+  topK: 1, // Optional; 1 is greedy, unset: the model's own (2.2.0+)
   // topP: 0.9, // Optional nucleus sampling parameter
   // loraPath: 'path/to/lora.bin', // Optional LoRA weights path
   // enableVisionModality: true, // Enable vision for multimodal models
@@ -256,9 +256,9 @@ For chat-based applications, you can create a chat instance. Unlike sessions, th
 **Text-Only Chat:**
 ```dart
 final chat = await inferenceModel.createChat(
-  temperature: 0.8, // Controls response randomness, default: 0.8
-  randomSeed: 1, // Ensures reproducibility, default: 1
-  topK: 1, // Limits vocabulary scope, default: 1
+  temperature: 0.8, // Controls response randomness; unset: the model's own
+  randomSeed: 1, // Ensures reproducibility; unset: 1
+  topK: 1, // Limits vocabulary scope; 1 is greedy, unset: the model's own
   // topP: 0.9, // Optional nucleus sampling parameter
   // tokenBuffer: 256, // Token buffer size, default: 256
   // loraPath: 'path/to/lora.bin', // Optional LoRA weights path

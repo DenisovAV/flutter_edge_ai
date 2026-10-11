@@ -23,7 +23,8 @@
 //   3. what an app shows through InferenceChat.generateChatResponse.
 // With the fix in place all three match between the two variants.
 //
-// Sampling is greedy (topK defaults to 1), so a difference is the prompt's doing.
+// Sampling is greedy (topK: 1 on both calls), so a difference is the prompt's
+// doing.
 //
 // Stage a bundle (macOS App Sandbox redirects $HOME, so the on-disk location is
 // double-nested while the path computed below is what the app sees):
@@ -101,7 +102,7 @@ Future<void> _variant(InferenceModel model, {required bool asIOS}) async {
 
     InferenceModelSession? session;
     try {
-      session = await model.createSession();
+      session = await model.createSession(topK: 1);
       await session.addQueryChunk(message);
       final raw = await session.getResponse();
       final counts = _markerCounts(raw);
@@ -115,7 +116,7 @@ Future<void> _variant(InferenceModel model, {required bool asIOS}) async {
 
     InferenceChat? chat;
     try {
-      chat = await model.createChat();
+      chat = await model.createChat(topK: 1);
       await chat.addQueryChunk(message);
       final response = await chat.generateChatResponse();
       final visible = response is TextResponse ? response.token : '$response';

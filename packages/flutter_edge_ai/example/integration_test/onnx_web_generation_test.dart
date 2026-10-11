@@ -89,7 +89,9 @@ void main() {
     testWidgets('stopGeneration and a cancelled subscription leave the '
         'session usable', (tester) async {
       final model = await _ensureModel();
-      final session = await model.createSession();
+      // Greedy: the `paris` check below stands for "the generation lock is
+      // free again", so the answer must not depend on sampling.
+      final session = await model.createSession(topK: 1);
       try {
         await session.addQueryChunk(
           const Message(

@@ -113,9 +113,10 @@ Use 4096 or more with images or audio — one image costs hundreds of tokens.
 - Fix: `Message(text: prompt, isUser: true)`.
 
 **Same reply every time**
-- Symptom: identical output for identical input. `createSession` and `createChat` default to `topK: 1`, which is greedy decoding.
-- Fix: pass `topK` (e.g. 40) and a `temperature`. Set them on the first session after `getActiveModel` — on `.litertlm` the first session's sampler settings can stay in effect for later ones.
-- Exception: decoding stays greedy whatever you pass on `.litertlm` running on the NPU (`activeBackend == PreferredBackend.npu`) and on ONNX, native and web. Those ignore the sampling parameters; only a debug log says so on the NPU.
+- Symptom: identical output for identical input.
+- Causes: `topK: 1` is passed somewhere (greedy; it was the default up to `flutter_edge_ai` 2.1); the model's family decodes greedily by default (`ModelType.phi`, `ModelType.hammer`); or the seed is fixed — an unset `randomSeed` is 1 (or the `.litertlm` bundle's own), so a freshly loaded model repeats its first sampled answer.
+- Fix: leave `temperature`, `topK` and `topP` unset to get the model's own sampler or its family's defaults (`SamplingParams.forModelType`), or pass a `temperature` — with no `topK`, a greedy family or bundle then contributes no `topK: 1`. Set them on the first session after `getActiveModel`: on `.litertlm` the sampler of the first generation stays in effect for later sessions (a one-time warning says so when a later session asks for other values), and its random state carries on, so a new chat already gets a new answer. MediaPipe starts each session from its seed: vary `randomSeed` there for a different answer to the same prompt.
+- Exception: decoding stays greedy whatever you pass on `.litertlm` running on the NPU (`activeBackend == PreferredBackend.npu`); a one-time warning says so when you set any of them. ONNX follows the model's `genai_config.json`, which is greedy unless it sets `do_sample`; values you pass override it.
 
 **`Session is closed`**
 - Symptom: `StateError: Session is closed` from a session or chat that is still in use.
@@ -125,9 +126,8 @@ Use 4096 or more with images or audio — one image costs hundreds of tokens.
 ## Generate
 
 ```dart
+// Sampling left unset: the model's own sampler, else its family's defaults.
 final InferenceModelSession session = await model.createSession(
-  temperature: 0.8,
-  topK: 40,
   maxOutputTokens: 256,
 );
 try {
@@ -155,8 +155,6 @@ To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()`
 ```dart
 final InferenceChat chat = await model.createChat(
   systemInstruction: 'You are a concise assistant.',
-  temperature: 0.8,
-  topK: 40,
   maxOutputTokens: 512,
 );
 try {
@@ -273,7 +271,7 @@ print(model.activeBackend); // what actually loaded
 | `npu` | NPU, GPU, CPU on Windows, and on Qualcomm Android and Qualcomm Linux arm64 when the app sets `qualcomm_npu`; GPU, CPU everywhere else |
 | `cpu` | CPU only |
 
-Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android) or Intel Lunar/Panther Lake (Windows) and a model compiled for that NPU; `PreferredBackend.cpu` never falls back. The iOS Simulator is CPU-only. On web, MediaPipe is GPU-only.
+Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android) or Intel Lunar/Panther Lake (Windows) and a model compiled for that NPU; `PreferredBackend.cpu` never falls back. The iOS Simulator is CPU-only. On an iOS device a MediaPipe `.task` on the GPU is killed for memory while loading, before any fallback can run: pass `PreferredBackend.cpu` for it (flutter-edge-ai-mediapipe). On web, MediaPipe is GPU-only.
 
 On NPU, run a **Gemma 4** bundle. A Gemma 3 bundle on either vendor's NPU drops every prefill chunk after the first — no error, no log line, and a fluent reply that answers from the opening of the prompt and ignores the rest (LiteRT-LM#3508). `maxTokens` is also not clamped up to 1024 on the NPU attempt the way it is on CPU and GPU, because the safe context is baked into the compiled bundle: pass the `cache_length` it was built for. Requesting `PreferredBackend.npu` does not guarantee the NPU runs — the engine falls back to GPU then CPU, and the floor applies to those attempts, so a fallback is clamped rather than crashed. The NPU candidate is attempted only on Windows and on Android phones with Qualcomm FastRPC; on other Android phones, macOS, Linux and iOS it is skipped, because nothing there can run it — and on macOS the native runtime was measured accepting `npu` anyway, which made `activeBackend` report an NPU the machine does not have. On Windows the check is per OS, so a PC without an Intel NPU still attempts it, and `activeBackend` can then report `npu` while the model runs elsewhere.
 

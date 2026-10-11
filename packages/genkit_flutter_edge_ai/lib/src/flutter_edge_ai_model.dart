@@ -194,10 +194,10 @@ Future<ModelResponse> _executeGeneration({
   // hybrid router treats as transient and quietly hands to the next branch.
   final configMap = request.config;
   final int maxTokens;
-  final double temperature;
-  final int topK;
+  final double? temperature;
+  final int? topK;
   final double? topP;
-  final int randomSeed;
+  final int? randomSeed;
   final bool supportImage;
   final bool supportAudio;
   final bool enableThinking;
@@ -214,10 +214,20 @@ Future<ModelResponse> _executeGeneration({
         ? FlutterEdgeAiModelOptions.fromJson(configMap)
         : null;
     maxTokens = config?.maxTokens ?? 1024;
-    temperature = config?.temperature ?? 0.8;
-    topK = config?.topK ?? 1;
+    // Unset sampling stays unset: flutter_edge_ai fills it from the model's
+    // own sampler or its family's defaults.
+    temperature = config?.temperature;
+    topK = config?.topK;
     topP = config?.topP;
-    randomSeed = config?.randomSeed ?? 1;
+    randomSeed = config?.randomSeed;
+    // Here, before a model loads: a value no engine can sample with is the
+    // caller's error, not a transient one a hybrid router would hand on.
+    gemma.SamplingParams(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+    ).validate();
     supportImage = config?.supportImage ?? false;
     supportAudio = config?.supportAudio ?? false;
     enableThinking = config?.enableThinking ?? false;

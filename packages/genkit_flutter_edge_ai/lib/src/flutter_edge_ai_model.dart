@@ -288,6 +288,9 @@ Future<ModelResponse> _executeGeneration({
   // Converted before a model loads: a part the model cannot take, or media
   // the configuration does not enable, fails without loading anything.
   final gemmaMessages = await convertMessages(request.messages);
+  // A media download can take a while; a caller who gave up meanwhile should
+  // not pay for loading the model.
+  context.cancel?.throwIfCancelled();
   if (gemmaMessages.isEmpty) {
     throw GenkitException(
       'No convertible messages in request. System messages alone are not '

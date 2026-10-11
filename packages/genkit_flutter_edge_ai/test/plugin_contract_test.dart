@@ -263,6 +263,17 @@ void main() {
       expect(
         () => convertTools([
           ToolDefinition(
+            name: 'bad',
+            description: 'd',
+            inputSchema: {r'$ref': 1},
+          ),
+        ]),
+        genkitError(StatusCode.invalidArgument, contains('bad')),
+      );
+
+      expect(
+        () => convertTools([
+          ToolDefinition(
             name: 'remote',
             description: 'd',
             inputSchema: {r'$ref': 'https://example.com/args.json'},

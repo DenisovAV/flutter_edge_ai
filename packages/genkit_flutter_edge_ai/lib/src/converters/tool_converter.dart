@@ -36,6 +36,13 @@ Map<String, dynamic> _withoutRefs(String tool, Map<String, dynamic>? schema) {
       'The input schema of tool "$tool" cannot be flattened: ${e.message}',
       status: StatusCode.invalidArgument,
     );
+  } on Error catch (e) {
+    // A malformed reference (`"$ref": 1`, say) fails as a cast, not a
+    // FormatException; it is the caller's schema all the same.
+    throw GenkitException(
+      'The input schema of tool "$tool" is malformed: $e',
+      status: StatusCode.invalidArgument,
+    );
   }
   // flatten() resolves references into the schema's own `$defs` and leaves
   // any other (another document's URL, say) in place.

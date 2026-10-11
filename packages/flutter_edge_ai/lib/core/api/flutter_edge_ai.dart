@@ -947,7 +947,8 @@ class FlutterEdgeAi {
 
   /// Uninstall a model
   ///
-  /// Removes model metadata and files (if not protected).
+  /// Removes the model's metadata and core's copy of its file. A file the app
+  /// installed with `fromFile` is the app's own and stays where it is.
   ///
   /// Parameters:
   /// - [modelId]: Model filename to uninstall
@@ -970,18 +971,20 @@ class FlutterEdgeAi {
       await fileSystem.deleteFile(targetPath);
     }
 
+    // Forget what a fromFile install registered — or what an older release
+    // left registered after an uninstall — while the record still exists, so
+    // a failure here leaves the uninstall retryable.
+    await registry.protectedFilesRegistry.unprotect(modelId);
+    await registry.protectedFilesRegistry.unregisterExternalPath(modelId);
+
     // Delete metadata last.
     await repository.deleteModel(modelId);
-    // A FileSource file stays where it is; forget what its install registered.
-    if (modelInfo.source is FileSource) {
-      await registry.protectedFilesRegistry.unregisterExternalPath(modelId);
-      await registry.protectedFilesRegistry.unprotect(modelId);
-    }
   }
 
-  /// Uninstall the active embedding model — deletes ALL its files (model +
+  /// Uninstall the active embedding model — uninstalls ALL its files (model +
   /// tokenizer) and clears the active-embedder identity. No-op if none active.
-  /// A file installed with `fromFile` is the app's own and stays where it is.
+  /// Core's copies are deleted; a file installed with `fromFile` is the app's
+  /// own and stays where it is.
   static Future<void> uninstallEmbedder() async {
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final spec = manager.activeEmbeddingModel;

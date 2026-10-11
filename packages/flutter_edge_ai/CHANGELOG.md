@@ -1,6 +1,6 @@
 ## 2.2.1
 - A model or STT model installed with `fromFile` is active again after a restart.
-- Uninstalling an embedder, STT or TTS model no longer deletes the app's `fromFile` files.
+- Uninstalling a model no longer deletes the app's own `fromFile` files.
 
 ## 2.2.0
 - **Breaking:** unset sampling values come from the model file, then its family, not greedy `topK: 1` (#572).

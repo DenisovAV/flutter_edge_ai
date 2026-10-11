@@ -18,7 +18,8 @@ abstract class ModelFileManager {
   /// Downloads a model without progress tracking
   Future<void> downloadModel(ModelSpec spec, {String? token});
 
-  /// Deletes a model and all its files.
+  /// Deletes a model and all its files. A file the app installed with
+  /// `fromFile` is the app's own and stays where it is.
   ///
   /// This is a storage operation only. The caller that owns an active-model
   /// lifecycle is responsible for clearing its identity after deletion.

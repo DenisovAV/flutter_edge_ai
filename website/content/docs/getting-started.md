@@ -362,7 +362,8 @@ If you only ever have one conversation at a time, stick with the simpler
 
 For the **active** embedder / STT / TTS model, one call deletes every file it
 owns (e.g. an embedder's model *and* tokenizer) and clears its persisted
-identity so it isn't auto-restored on the next launch:
+identity so it isn't auto-restored on the next launch. Files you installed with
+`fromFile` are yours: they are uninstalled but stay where they are.
 
 ```dart
 await FlutterEdgeAi.uninstallEmbedder(); // deletes model + tokenizer, clears identity

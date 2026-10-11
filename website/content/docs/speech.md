@@ -235,8 +235,8 @@ await FlutterEdgeAi.installTts()
 - An incomplete bundle fails, naming every missing file, before it replaces the
   voice you have. If a switch fails partway (a lost connection), the voice stays
   inactive until `install()` is run again, rather than mixing two bundles.
-- `fromFile` uses your files in place, so `uninstallTts()` deletes them.
-  Installing from another source later leaves them where they are.
+- `fromFile` uses your files in place, and they stay yours: `uninstallTts()`
+  leaves them where they are, and so does installing from another source later.
 - **App updates.** A bundled voice is current after an update: Android copies
   it again from the new APK, iOS reads the bundle. An asset install of the same
   directory is kept as it was, so ship a changed voice in a new asset directory.

@@ -90,10 +90,10 @@ class PreferencesKeys {
   // ============================================================================
 
   /// Encoded source for the active inference model. Format: `<kind>|<value>`
-  /// where kind ∈ {`network`,`asset`,`bundled`} and value is the URL / asset
-  /// path / bundle resource name. `file` is not encoded — Mobile uses a
-  /// resolved `FileSource(filePath)` reconstructed from
-  /// [activeInferenceFilename] directly.
+  /// where kind ∈ {`network`,`asset`,`bundled`,`file`} and value is the URL /
+  /// asset path / bundle resource name / file path. The mobile restore does
+  /// not follow it: it resolves [activeInferenceFilename] through that file's
+  /// own repository record.
   static const String activeInferenceSource = 'active_inference_source';
 
   /// Same encoding as [activeInferenceSource], for the embedding model file.

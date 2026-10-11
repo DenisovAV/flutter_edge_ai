@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:genkit/plugin.dart';
@@ -16,6 +17,11 @@ const _kDefaultContextWindow = 1024;
 /// Tokens held back from the context window for the model's response when the
 /// input budget is derived rather than given explicitly.
 const _kDefaultReserveOutputTokens = 256;
+
+/// The words Genkit writes around a schema it puts in the prompt
+/// ("Output should be in JSON format and conform to the following schema:"
+/// and the code fence), in tokens.
+const _kSchemaInstructionsTokens = 32;
 
 /// Flat per-media-part token estimate (images/audio don't have a text length to
 /// measure; this keeps a long multimodal turn from being counted as ~free).
@@ -110,15 +116,26 @@ class ContextWindowMiddleware extends GenerateMiddleware {
         status: StatusCode.invalidArgument,
       );
     }
-    final budget = maxInputTokens ?? (contextWindow - reserveOutputTokens);
+    // A constrained request still carrying its schema gets the schema written
+    // into the prompt downstream (by the model, or a later
+    // simulateConstrainedGeneration), after this trims: hold room for it.
+    final output = request.output;
+    final schema = output?.schema;
+    final schemaTokens = output?.constrained == true && schema != null
+        ? (jsonEncode(schema).length / 4).ceil() + _kSchemaInstructionsTokens
+        : 0;
+    final budget =
+        (maxInputTokens ?? (contextWindow - reserveOutputTokens)) -
+        schemaTokens;
     if (budget <= 0) {
-      // Only reachable via the derived path: reserveOutputTokens >= the
-      // model's context window. Surfacing this beats silently deleting the
-      // whole history down to the last turn.
+      // The reserves for the reply and the output schema take the whole
+      // context window. Surfacing this beats silently deleting the whole
+      // history down to the last turn.
       throw GenkitException(
-        'Context-window trimmer: input budget is <= 0 (reserveOutputTokens '
-        '$reserveOutputTokens >= context window $contextWindow). Lower '
-        'reserveOutputTokens or set maxInputTokens explicitly.',
+        'Context-window trimmer: input budget is <= 0 (context window '
+        '$contextWindow, maxInputTokens $maxInputTokens, reserveOutputTokens '
+        '$reserveOutputTokens, output schema ~$schemaTokens tokens). Lower '
+        'reserveOutputTokens, raise maxTokens or set maxInputTokens.',
         status: StatusCode.invalidArgument,
       );
     }

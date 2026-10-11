@@ -258,8 +258,9 @@ Future<ModelResponse> _executeGeneration({
   final gemmaToolChoice = parseToolChoice(
     request.toolChoice?.value ?? configToolChoice,
   );
-  final systemInstruction =
-      configSystemInstruction ?? extractSystemInstruction(request.messages);
+  final systemInstruction = configSystemInstruction == null
+      ? extractSystemInstruction(request.messages)
+      : _withOutputInstructions(configSystemInstruction, request.messages);
   final preferredBackend = parsePreferredBackend(
     configPreferredBackend,
     field: 'preferredBackend',
@@ -445,6 +446,24 @@ Future<ModelResponse> _executeGeneration({
       inputAudioFiles: inputAudioFiles,
     ),
   );
+}
+
+/// [systemInstruction] with the output-schema instructions Genkit's
+/// constrained-output simulation wrote into the request's system messages. A
+/// configured system instruction replaces those messages, and without this
+/// the schema would go with them.
+String _withOutputInstructions(
+  String systemInstruction,
+  List<Message> messages,
+) {
+  final instructions = [
+    for (final message in messages)
+      if (message.role == Role.system)
+        for (final part in message.content)
+          if (part.isText && part.metadata?['purpose'] == 'output') part.text!,
+  ];
+  if (instructions.isEmpty) return systemInstruction;
+  return [systemInstruction, ...instructions].join('\n');
 }
 
 /// The chat's token counts and speed for the generation that just ended, or

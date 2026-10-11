@@ -6,6 +6,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:genkit/genkit.dart' show Genkit;
 import 'package:genkit/plugin.dart';
 import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
 import 'package:genkit_flutter_edge_ai/src/converters/request_converter.dart';
@@ -507,6 +508,49 @@ void main() {
     );
   });
 
+  group('structured output', () {
+    test(
+      'a configured system instruction keeps the schema instructions',
+      () async {
+        final ai = Genkit(
+          plugins: [
+            GenkitFlutterEdgeAiPlugin(
+              models: [
+                FlutterEdgeAiModelConfig(
+                  name: 'm',
+                  modelType: gemma.ModelType.gemmaIt,
+                ),
+              ],
+              runtime: runtime,
+            ),
+          ],
+        );
+        chat.blockingResponse = const gemma.TextResponse('{"taskType": "x"}');
+        await ai.generate(
+          model: flutterEdgeAi.model('m'),
+          messages: [
+            Message(
+              role: Role.system,
+              content: [TextPart(text: 'Be terse.')],
+            ),
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Pick one.')],
+            ),
+          ],
+          config: FlutterEdgeAiModelOptions(
+            systemInstruction: 'You are a bot.',
+          ),
+          outputSchema: FlutterEdgeAiEmbedConfig.$schema,
+        );
+        final instruction = inferenceModel.lastSystemInstruction!;
+        expect(instruction, startsWith('You are a bot.'));
+        expect(instruction, contains('conform to the following schema'));
+        expect(instruction, isNot(contains('Be terse.')));
+      },
+    );
+  });
+
   group('trimContext', () {
     test(
       'a maxTokens that is not a positive integer is INVALID_ARGUMENT',
@@ -525,6 +569,42 @@ void main() {
         }
       },
     );
+
+    test('room is held for an output schema the model will add', () async {
+      final middleware = ContextWindowMiddleware(maxInputTokens: 200);
+      final old = Message(
+        role: Role.user,
+        content: [TextPart(text: 'a' * 400)], // ~100 tokens
+      );
+      final last = Message(
+        role: Role.user,
+        content: [TextPart(text: 'b' * 200)], // ~50 tokens
+      );
+      Future<int> keptWith(OutputConfig? output) async {
+        var kept = -1;
+        await middleware.model(
+          ModelRequest(messages: [old, last], output: output),
+          ActionFnArg(),
+          (r, c) async {
+            kept = r.messages.length;
+            return ModelResponse(finishReason: FinishReason.stop);
+          },
+        );
+        return kept;
+      }
+
+      expect(await keptWith(null), 2);
+      final schema = {
+        'type': 'object',
+        'properties': {
+          for (var i = 0; i < 20; i++) 'field$i': {'type': 'string'},
+        },
+      };
+      expect(
+        await keptWith(OutputConfig(constrained: true, schema: schema)),
+        1,
+      );
+    });
   });
 
   group('embedder', () {
@@ -570,6 +650,10 @@ void main() {
               ),
             ]),
           ),
+          genkitError(StatusCode.invalidArgument, contains('no text part')),
+        );
+        await expectLater(
+          embedder(embedRequest([DocumentData(content: [])])),
           genkitError(StatusCode.invalidArgument, contains('no text part')),
         );
         await expectLater(

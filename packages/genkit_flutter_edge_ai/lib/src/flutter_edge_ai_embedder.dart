@@ -84,9 +84,9 @@ Future<FlutterEdgeAiEmbedConfig?> _parseEmbedOptions(
   return FlutterEdgeAiEmbedConfig.fromJson(options);
 }
 
-/// The text of a document, its text parts joined by spaces. A document whose
-/// parts are all something else (an image, say) is an INVALID_ARGUMENT: it
-/// would be embedded as an empty string, and the embedder takes text only.
+/// The text of a document, its text parts joined by spaces. A document with
+/// no text part, empty or all images, say, is an INVALID_ARGUMENT: it would
+/// be embedded as an empty string, and the embedder takes text only.
 String _documentText(DocumentData doc, int index) {
   final buffer = StringBuffer();
   var hasText = false;
@@ -97,7 +97,7 @@ String _documentText(DocumentData doc, int index) {
       hasText = true;
     }
   }
-  if (!hasText && doc.content.isNotEmpty) {
+  if (!hasText) {
     throw GenkitException(
       'Document $index has no text part; the on-device embedder takes text '
       'only.',

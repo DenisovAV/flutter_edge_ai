@@ -152,7 +152,8 @@ final session = await AgentSession.fromModel(
     JsSkillExecutor(sourceFor: source.jsSkillSourceFor),
     NativeIntentExecutor(),
     // McpSkillExecutor(clients: [...], permissionHook: ...) for remote MCP
-    // tools — every call is denied unless the hook allows it.
+    // tools — a call is denied unless the hook allows it or the tool is
+    // marked `alwaysAllow`, which skips the hook.
   ],
 );
 

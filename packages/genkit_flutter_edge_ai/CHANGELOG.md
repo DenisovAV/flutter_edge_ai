@@ -1,3 +1,10 @@
+## 0.9.0
+- Every tool response of a turn reaches the model, and tool calls carry `ref`s.
+- Media without `contentType` is typed, several images go through, and parts the model cannot take fail instead of vanishing.
+- `outputSchema` works without `simulateConstrainedGeneration()`; new `maxOutputTokens` option; `response.usage`.
+- Embedder `taskType` option: index documents with `retrievalDocument`.
+- Options are validated by schema before loading; no model installed is `UNAVAILABLE`.
+
 ## 0.8.1
 - Unset `temperature` and `topK` no longer force greedy; the model sampler applies (#572).
 - Require `flutter_edge_ai` ^2.2.0.

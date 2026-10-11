@@ -19,6 +19,9 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
 
   bool? lastEnableSpeculativeDecoding;
   gemma.PreferredBackend? lastPreferredBackend;
+
+  /// When set, [getActiveModel] and [getActiveEmbedder] throw it.
+  Object? loadError;
   gemma.PreferredBackend? lastPreferredVisionBackend;
   gemma.PreferredBackend? lastPreferredAudioBackend;
 
@@ -33,6 +36,7 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
     gemma.PreferredBackend? preferredAudioBackend,
   }) async {
     getActiveModelCallCount++;
+    if (loadError case final error?) throw error;
     modelToReturn._maxTokens = maxTokens;
     lastEnableSpeculativeDecoding = enableSpeculativeDecoding;
     lastPreferredBackend = preferredBackend;
@@ -46,6 +50,7 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
     gemma.PreferredBackend? preferredBackend,
   }) async {
     getActiveEmbedderCallCount++;
+    if (loadError case final error?) throw error;
     lastPreferredBackend = preferredBackend;
     return embedderToReturn;
   }
@@ -83,6 +88,7 @@ class FakeInferenceModel extends gemma.InferenceModel {
   gemma.ToolChoice? lastToolChoice;
   String? lastSystemInstruction;
   int? lastMaxFunctionBufferLength;
+  int? lastMaxOutputTokens;
   ({double? temperature, int? topK, double? topP, int? randomSeed})?
   lastSampling;
 
@@ -109,6 +115,7 @@ class FakeInferenceModel extends gemma.InferenceModel {
     lastToolChoice = toolChoice;
     lastSystemInstruction = systemInstruction;
     lastMaxFunctionBufferLength = maxFunctionBufferLength;
+    lastMaxOutputTokens = maxOutputTokens;
     lastSampling = (
       temperature: temperature,
       topK: topK,
@@ -158,6 +165,16 @@ class FakeInferenceChat extends gemma.InferenceChat {
   final List<gemma.Message> receivedMessages = [];
 
   int addQueryChunkCallCount = 0;
+
+  /// What the chat's session reports after a generation; without it the
+  /// session is unset, as on an engine that reports nothing.
+  gemma.SessionMetrics? sessionMetrics;
+
+  @override
+  gemma.InferenceModelSession get session => switch (sessionMetrics) {
+    final metrics? => _MetricsSession(metrics),
+    null => throw StateError('FakeInferenceChat has no session'),
+  };
 
   @override
   Future<void> initSession() async {
@@ -244,6 +261,7 @@ class FakeEmbeddingModel implements gemma.EmbeddingModel {
   int generateEmbeddingCallCount = 0;
   int generateEmbeddingsCallCount = 0;
   List<String> lastTexts = [];
+  gemma.TaskType? lastTaskType;
 
   /// `implements` does not inherit the interface's default, so this has to be
   /// spelled out. CPU matches every real embedder.
@@ -272,6 +290,7 @@ class FakeEmbeddingModel implements gemma.EmbeddingModel {
   }) async {
     generateEmbeddingsCallCount++;
     lastTexts = texts;
+    lastTaskType = taskType;
     return embeddingsToReturn;
   }
 
@@ -285,4 +304,18 @@ class FakeEmbeddingModel implements gemma.EmbeddingModel {
 
   @override
   Future<void> close() async {}
+}
+
+/// A session that only reports its metrics.
+class _MetricsSession implements gemma.InferenceModelSession {
+  _MetricsSession(this.metrics);
+
+  final gemma.SessionMetrics metrics;
+
+  @override
+  gemma.SessionMetrics getSessionMetrics() => metrics;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('_MetricsSession: ${invocation.memberName}');
 }

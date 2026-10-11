@@ -7,7 +7,7 @@ is an ordinary `Model` — your app still calls a single `ai.generate`.
 ```yaml
 dependencies:
   genkit: ^1.0.0
-  genkit_hybrid: ^0.3.0
+  genkit_hybrid: ^0.3.1
 ```
 
 ```dart
@@ -18,6 +18,8 @@ final ai = Genkit();
 
 // onDeviceModel and cloudModel are ordinary Genkit Models you already have —
 // e.g. from genkit_flutter_edge_ai (on-device) and genkit_google_genai (cloud).
+// A plugin hands out its Model by name:
+//   final onDeviceModel = edgeAiPlugin.model('gemma-3-1b');
 final smart = hybridModelOnDeviceCloud(
   onDevice: onDeviceModel,
   cloud: cloudModel,
@@ -107,6 +109,9 @@ final smart = cascadeModel(
 );
 ai.registry.register(smart);
 ```
+
+`accept` may be async (an LLM judge, say). A request cancelled while it runs ends with the
+cancellation, whatever the verdict, and no further branch starts.
 
 ## Streaming + fallback
 

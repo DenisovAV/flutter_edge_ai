@@ -23,7 +23,7 @@ with the on-device model exactly as it would with any cloud provider.
 ```
 dependencies:
   genkit: ^1.0.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.8.1
+  genkit_flutter_edge_ai: ^0.9.0
   flutter_edge_ai: ^2.2.0
   # Add the inference engine(s) you need:
   flutter_edge_ai_litertlm: ^1.12.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
@@ -131,17 +131,21 @@ final embeddings = await ai.embed(
 );
 ```
 
-<Warning>
+Texts are embedded as search queries. EmbeddingGemma prefixes queries and
+documents differently, so embed what you index as documents:
 
-The Genkit embedder always embeds with flutter_edge_ai's default
-`TaskType.retrievalQuery` prefix — `FlutterEdgeAiEmbedConfig` has no `taskType`
-option. For RAG **indexing**, where documents must be embedded with
-`TaskType.retrievalDocument`, call
-`FlutterEdgeAi.getActiveEmbedder().generateEmbeddings(..., taskType: ...)`
-directly. Mixing the two prefixes is the cross-prefix drift that #264 fixed at
-the core level. See [Embeddings & RAG](/docs/embeddings-and-rag).
+```dart
+final documentVectors = await ai.embed(
+  embedder: flutterEdgeAi.embedder('embedding-gemma-300m'),
+  documents: chunks,
+  options: FlutterEdgeAiEmbedConfig(taskType: 'retrievalDocument'),
+);
+```
 
-</Warning>
+Index with `retrievalDocument` and search with the default
+`retrievalQuery`; see [Embeddings & RAG](/docs/embeddings-and-rag). The
+embedder takes text only: a document with no text part is an
+`INVALID_ARGUMENT`.
 
 ### Configuration options
 
@@ -153,6 +157,7 @@ final response = await ai.generate(
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,                // context window (input + output), not reply length
+    maxOutputTokens: 256,           // cap on the reply (.litertlm; MediaPipe ignores it)
     temperature: 0.5,
     topK: 40,
     supportImage: true,
@@ -183,24 +188,34 @@ a tool call, `'none'` forbids one. An unrecognized value is an
 
 The plugin does **not** manage model installation. Call
 `FlutterEdgeAi.installModel()` (and `FlutterEdgeAi.installEmbedder()` for
-embeddings) before using the plugin. See [Getting Started](/docs/getting-started).
+embeddings) before using the plugin; without one a request fails with
+`UNAVAILABLE`, which a `genkit_hybrid` router treats as a reason to fall back.
+See [Getting Started](/docs/getting-started).
+
+Every configured model name runs the model that is active in flutter_edge_ai;
+the name is a label. Set `supportsTools: false` or `supportsMedia: false` on a
+`FlutterEdgeAiModelConfig` whose model takes no tools or media: Genkit sees it,
+and a request that needs them fails with `INVALID_ARGUMENT` instead of reaching
+a model that would ignore them. Options are checked against the schema before
+anything loads, so a bad value is an `INVALID_ARGUMENT` too.
 
 </Info>
 
 ### Structured (JSON) output
 
-The plugin advertises `output: ['text', 'json']`. On-device Gemma has no native
-schema-constrained decoder, and Genkit does not put the schema into the prompt
-on its own: add the `simulateConstrainedGeneration()` middleware, which writes
-it into the prompt as instructions. The plugin returns the raw model text and
-Genkit's `extractJson` populates `response.output`:
+The plugin advertises `output: ['text', 'json']`. Genkit asks for constrained
+output whenever you pass an `outputSchema`. No on-device engine can constrain
+decoding to a schema, so the plugin writes the schema into the prompt as
+instructions, the way Genkit's `simulateConstrainedGeneration()` middleware
+does (adding the middleware as well is harmless: the schema is written once).
+It returns the raw model text and Genkit's `extractJson` populates
+`response.output`. Pass `outputConstrained: false` to leave the prompt alone.
 
 ```dart
 final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
-  use: [simulateConstrainedGeneration()], // the schema reaches the model
 );
 
 final Recipe? recipe = response.output;
@@ -258,7 +273,7 @@ flutter_edge_ai and works with **any** pair of Genkit models.
 
 ```
 dependencies:
-  genkit_hybrid: ^0.3.0
+  genkit_hybrid: ^0.3.1
   genkit: ^1.0.0
 ```
 
@@ -420,7 +435,8 @@ re-routed.
 escalates to the next one only when your `accept` predicate rejects the
 response — "try the cheap on-device model; go to the cloud only if the answer
 isn't good enough". `accept` is any check you like (a length or regex test, a
-JSON-parses check) and may be async, e.g. an LLM-as-judge.
+JSON-parses check) and may be async, e.g. an LLM-as-judge. A request cancelled
+while an async `accept` runs ends with the cancellation, whatever the verdict.
 
 ```dart
 import 'package:genkit_hybrid/genkit_hybrid.dart';

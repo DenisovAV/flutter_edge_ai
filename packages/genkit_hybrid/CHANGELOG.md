@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- A cancel during an async `accept` ends the cascade instead of returning a success.
+
 ## 0.3.0
 
 - **Breaking:** require `genkit` ^1.0.0; each branch runs in its own trace span and honours cancellation.

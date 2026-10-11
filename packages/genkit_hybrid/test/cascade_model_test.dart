@@ -234,4 +234,39 @@ void main() {
 
     expect(fallbackCalls, 0);
   });
+
+  test('a cancel while an async accept runs wins over its verdict', () async {
+    final judging = Completer<void>();
+    final verdict = Completer<bool>();
+    var secondCalls = 0;
+    final m = cascadeModel(
+      branches: {
+        'a': _model('a', text: 'A'),
+        'b': Model(
+          name: 'b',
+          fn: (request, context) async {
+            secondCalls++;
+            return ModelResponse(finishReason: FinishReason.stop);
+          },
+        ),
+      },
+      order: ['a', 'b'],
+      accept: (r) {
+        judging.complete();
+        return verdict.future;
+      },
+    );
+    final controller = CancellationController();
+
+    final outcome = expectLater(
+      m(_req(), cancel: controller.token),
+      throwsA(isA<CancelledException>()),
+    );
+    await judging.future;
+    controller.cancel();
+    verdict.complete(true);
+    await outcome;
+
+    expect(secondCalls, 0);
+  });
 }

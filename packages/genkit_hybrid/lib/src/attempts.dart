@@ -53,7 +53,12 @@ Future<ModelResponse> runInOrder(
     // accept is evaluated OUTSIDE the branch-error catch: a throwing predicate
     // is a caller bug, not a branch failure, and must propagate — never be
     // mistaken for a transient branch error and silently escalate.
-    if (isLast || accept == null || await accept(resp)) return resp;
+    if (isLast || accept == null) return resp;
+    final accepted = await accept(resp);
+    // An async judge can outlive a cancel; its verdict must not turn a
+    // cancelled request into a success, nor start the next branch.
+    context.cancel?.throwIfCancelled();
+    if (accepted) return resp;
     // accepted == false and not last -> escalate to the next branch.
   }
   throw StateError('unreachable'); // loop always returns or rethrows.

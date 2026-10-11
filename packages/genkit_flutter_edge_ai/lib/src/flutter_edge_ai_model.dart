@@ -1,7 +1,8 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
+import 'package:genkit/genkit.dart'
+    show SimulateConstrainedGenerationMiddleware;
 import 'package:genkit/plugin.dart';
 
 import 'backend_parse.dart';
@@ -10,16 +11,13 @@ import 'converters/response_converter.dart';
 import 'converters/tool_converter.dart';
 import 'flutter_edge_ai_options.dart';
 import 'flutter_edge_ai_runtime.dart';
+import 'model_options_parse.dart';
+import 'runtime_errors.dart';
 import 'tool_choice_parse.dart';
 
-/// Capabilities a flutter_edge_ai model advertises to Genkit. Shared by the
-/// plugin's `list()` metadata AND the resolved [Model]'s `metadata` so the two
-/// never drift (the resolved action previously carried no metadata, leaving its
-/// supports empty at generate time). `constrained: false` — on-device Gemma has
-/// no native schema-constrained decoder. Genkit never adds the schema to the
-/// prompt by itself; the caller opts in with
-/// `use: [simulateConstrainedGeneration()]`. We return the raw model text and
-/// the framework's `extractJson` populates `response.output`.
+/// Capabilities a flutter_edge_ai model advertises to Genkit, for a model
+/// configured with tools and media on (the defaults). See
+/// [flutterEdgeAiModelSupports].
 const Map<String, dynamic> kFlutterEdgeAiModelSupports = {
   'multiturn': true,
   'media': true,
@@ -28,6 +26,26 @@ const Map<String, dynamic> kFlutterEdgeAiModelSupports = {
   'systemRole': true,
   'constrained': false,
   'output': ['text', 'json'],
+};
+
+/// Capabilities a flutter_edge_ai model advertises to Genkit. Shared by the
+/// plugin's `list()` metadata AND the resolved [Model]'s `metadata` so the two
+/// never drift. [tools] and [media] come from the model's configuration; a
+/// request that needs one the model was configured without is rejected.
+///
+/// `constrained: false`: no engine has a schema-constrained decoder. A request
+/// that asks for `constrained: true` output gets the schema written into the
+/// prompt, as Genkit's `simulateConstrainedGeneration()` middleware does, and
+/// Genkit extracts the JSON from the reply. The reply is not validated against
+/// the schema.
+Map<String, dynamic> flutterEdgeAiModelSupports({
+  bool tools = true,
+  bool media = true,
+}) => {
+  ...kFlutterEdgeAiModelSupports,
+  'tools': tools,
+  'toolChoice': tools,
+  'media': media,
 };
 
 /// Creates a Genkit [Model] action backed by flutter_edge_ai inference.
@@ -39,11 +57,17 @@ const Map<String, dynamic> kFlutterEdgeAiModelSupports = {
 /// 4. Converts Genkit messages → flutter_edge_ai messages
 /// 5. Generates response (streaming or non-streaming)
 /// 6. Converts response back to Genkit format
+///
+/// [supportsTools] and [supportsMedia] declare what the installed model can
+/// take; a request with tools or media it cannot take is an INVALID_ARGUMENT
+/// instead of reaching a model that would ignore them.
 Model createFlutterEdgeAiModel({
   required String name,
   required gemma.ModelType modelType,
   required gemma.ModelFileType fileType,
   required FlutterEdgeAiRuntime runtime,
+  bool supportsTools = true,
+  bool supportsMedia = true,
 }) {
   // Cache the inference model to avoid recreating on every call.
   gemma.InferenceModel? cachedModel;
@@ -59,103 +83,110 @@ Model createFlutterEdgeAiModel({
   // only one generation runs at a time against the native model.
   Future<void> lock = Future.value();
 
-  return Model(
-    name: name,
-    metadata: {
-      'model': {'supports': kFlutterEdgeAiModelSupports},
-    },
-    fn: (request, context) async {
-      final prev = lock;
-      final completer = Completer<void>();
-      lock = completer.future;
+  Future<ModelResponse> run(
+    ModelRequest request,
+    ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
+  ) async {
+    final prev = lock;
+    final completer = Completer<void>();
+    lock = completer.future;
 
-      // A request cancelled while queued returns at once, but its place in the
-      // chain is held until the turn ahead of it ends, so nothing queued
-      // behind it overtakes the generation in progress.
-      final cancel = context.cancel;
-      if (cancel == null) {
-        await prev;
-      } else {
-        // onCancel, not whenCancelled: a token reused for a whole chat would
-        // keep one listener per call on a future that can never be detached.
-        final turn = Completer<void>();
-        final detachWait = cancel.onCancel(() {
+    // A request cancelled while queued returns at once, but its place in the
+    // chain is held until the turn ahead of it ends, so nothing queued
+    // behind it overtakes the generation in progress.
+    final cancel = context.cancel;
+    if (cancel == null) {
+      await prev;
+    } else {
+      // onCancel, not whenCancelled: a token reused for a whole chat would
+      // keep one listener per call on a future that can never be detached.
+      final turn = Completer<void>();
+      final detachWait = cancel.onCancel(() {
+        if (!turn.isCompleted) turn.complete();
+      });
+      unawaited(
+        prev.then((_) {
           if (!turn.isCompleted) turn.complete();
-        });
-        unawaited(
-          prev.then((_) {
-            if (!turn.isCompleted) turn.complete();
-          }),
-        );
-        await turn.future;
-        detachWait();
-        if (cancel.isCancelled) {
-          unawaited(prev.whenComplete(completer.complete));
-          cancel.throwIfCancelled();
-        }
+        }),
+      );
+      await turn.future;
+      detachWait();
+      if (cancel.isCancelled) {
+        unawaited(prev.whenComplete(completer.complete));
+        cancel.throwIfCancelled();
       }
+    }
 
-      try {
-        return await _executeGeneration(
-          request: request,
-          context: context,
-          modelType: modelType,
-          runtime: runtime,
-          cachedModel: cachedModel,
-          cachedMaxTokens: cachedMaxTokens,
-          cachedSupportImage: cachedSupportImage,
-          cachedSupportAudio: cachedSupportAudio,
-          cachedEnableSpeculativeDecoding: cachedEnableSpeculativeDecoding,
-          cachedPreferredBackend: cachedPreferredBackend,
-          cachedPreferredVisionBackend: cachedPreferredVisionBackend,
-          cachedPreferredAudioBackend: cachedPreferredAudioBackend,
-          onModelCached:
-              (
-                model,
-                maxTokens,
-                supportImage,
-                supportAudio,
-                enableSpeculativeDecoding,
-                preferredBackend,
-                preferredVisionBackend,
-                preferredAudioBackend,
-              ) {
-                cachedModel = model;
-                cachedMaxTokens = maxTokens;
-                cachedSupportImage = supportImage;
-                cachedSupportAudio = supportAudio;
-                cachedEnableSpeculativeDecoding = enableSpeculativeDecoding;
-                cachedPreferredBackend = preferredBackend;
-                cachedPreferredVisionBackend = preferredVisionBackend;
-                cachedPreferredAudioBackend = preferredAudioBackend;
-              },
-        );
-      } finally {
-        completer.complete();
-      }
-    },
-  );
-}
-
-/// The options the schema declares as integers. Their generated getters read
-/// any JSON number and truncate it (`(json as num?)?.toInt()`), so
-/// `maxTokens: 0.9` would reach the runtime as 0.
-final Set<String> _integerOptions = {
-  for (final MapEntry(:key, :value)
-      in ((FlutterEdgeAiModelOptions.$schema.jsonSchema()['properties']
-                  as Map<String, Object?>?) ??
-              const <String, Object?>{})
-          .entries)
-    if (value case {'type': 'integer'}) key,
-};
-
-/// Rejects a non-integral number for an integer option; `1024.0` passes.
-void _rejectFractionalIntegers(Map<String, dynamic> config) {
-  for (final key in _integerOptions) {
-    if (config[key] case final num value when value != value.roundToDouble()) {
-      throw FormatException('$key must be an integer, got $value');
+    try {
+      return await _executeGeneration(
+        request: request,
+        context: context,
+        modelType: modelType,
+        runtime: runtime,
+        supportsTools: supportsTools,
+        supportsMedia: supportsMedia,
+        cachedModel: cachedModel,
+        cachedMaxTokens: cachedMaxTokens,
+        cachedSupportImage: cachedSupportImage,
+        cachedSupportAudio: cachedSupportAudio,
+        cachedEnableSpeculativeDecoding: cachedEnableSpeculativeDecoding,
+        cachedPreferredBackend: cachedPreferredBackend,
+        cachedPreferredVisionBackend: cachedPreferredVisionBackend,
+        cachedPreferredAudioBackend: cachedPreferredAudioBackend,
+        onModelCached:
+            (
+              model,
+              maxTokens,
+              supportImage,
+              supportAudio,
+              enableSpeculativeDecoding,
+              preferredBackend,
+              preferredVisionBackend,
+              preferredAudioBackend,
+            ) {
+              cachedModel = model;
+              cachedMaxTokens = maxTokens;
+              cachedSupportImage = supportImage;
+              cachedSupportAudio = supportAudio;
+              cachedEnableSpeculativeDecoding = enableSpeculativeDecoding;
+              cachedPreferredBackend = preferredBackend;
+              cachedPreferredVisionBackend = preferredVisionBackend;
+              cachedPreferredAudioBackend = preferredAudioBackend;
+            },
+      );
+    } finally {
+      completer.complete();
     }
   }
+
+  return Model<FlutterEdgeAiModelOptions>(
+    name: name,
+    customOptions: FlutterEdgeAiModelOptions.$schema,
+    metadata: {
+      'model': {
+        'supports': flutterEdgeAiModelSupports(
+          tools: supportsTools,
+          media: supportsMedia,
+        ),
+      },
+    },
+    fn: (request, context) {
+      final output = request.output;
+      // No engine can constrain decoding to a schema, so a request that asks
+      // for it gets the schema in the prompt, the way Genkit's
+      // simulateConstrainedGeneration() middleware writes it. When the caller
+      // already added that middleware, it has set `constrained` to false and
+      // this does nothing.
+      if (output?.constrained == true && output?.schema != null) {
+        return SimulateConstrainedGenerationMiddleware().model(
+          request,
+          context,
+          run,
+        );
+      }
+      return run(request, context);
+    },
+  );
 }
 
 /// Executes the generation logic, extracted for readability.
@@ -164,6 +195,8 @@ Future<ModelResponse> _executeGeneration({
   required ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
   required gemma.ModelType modelType,
   required FlutterEdgeAiRuntime runtime,
+  required bool supportsTools,
+  required bool supportsMedia,
   required gemma.InferenceModel? cachedModel,
   required int? cachedMaxTokens,
   required bool? cachedSupportImage,
@@ -188,59 +221,32 @@ Future<ModelResponse> _executeGeneration({
   // that gave up meanwhile should not pay for loading a model.
   context.cancel?.throwIfCancelled();
 
-  // Parse config from the untyped Map. Every option is read inside the try:
-  // the generated getters cast lazily, so a value of the wrong type ('0.7' for
-  // temperature) throws here. Read later, it escaped as a TypeError, which a
-  // hybrid router treats as transient and quietly hands to the next branch.
-  final configMap = request.config;
-  final int maxTokens;
-  final double? temperature;
-  final int? topK;
-  final double? topP;
-  final int? randomSeed;
-  final bool supportImage;
-  final bool supportAudio;
-  final bool enableThinking;
-  final bool? enableSpeculativeDecoding;
-  final String? configToolChoice;
-  final String? configSystemInstruction;
-  final int? maxFunctionBufferLength;
-  final String? configPreferredBackend;
-  final String? configPreferredVisionBackend;
-  final String? configPreferredAudioBackend;
-  try {
-    if (configMap != null) _rejectFractionalIntegers(configMap);
-    final config = configMap != null
-        ? FlutterEdgeAiModelOptions.fromJson(configMap)
-        : null;
-    maxTokens = config?.maxTokens ?? 1024;
-    // Unset sampling stays unset: flutter_edge_ai fills it from the model's
-    // own sampler or its family's defaults.
-    temperature = config?.temperature;
-    topK = config?.topK;
-    topP = config?.topP;
-    randomSeed = config?.randomSeed;
-    // Here, before a model loads: a value no engine can sample with is the
-    // caller's error, not a transient one a hybrid router would hand on.
-    gemma.SamplingParams(
-      temperature: temperature,
-      topK: topK,
-      topP: topP,
-      randomSeed: randomSeed,
-    ).validate();
-    supportImage = config?.supportImage ?? false;
-    supportAudio = config?.supportAudio ?? false;
-    enableThinking = config?.enableThinking ?? false;
-    enableSpeculativeDecoding = config?.enableSpeculativeDecoding;
-    configToolChoice = config?.toolChoice;
-    configSystemInstruction = config?.systemInstruction;
-    maxFunctionBufferLength = config?.maxFunctionBufferLength;
-    configPreferredBackend = config?.preferredBackend;
-    configPreferredVisionBackend = config?.preferredVisionBackend;
-    configPreferredAudioBackend = config?.preferredAudioBackend;
-  } catch (e) {
+  // Validated before a model loads: a bad value is the caller's error, not a
+  // transient one a hybrid router would hand to its next branch.
+  final config = await parseModelOptions(request.config);
+  final maxTokens = config?.maxTokens ?? 1024;
+  final maxOutputTokens = config?.maxOutputTokens;
+  // Unset sampling stays unset: flutter_edge_ai fills it from the model's own
+  // sampler or its family's defaults.
+  final temperature = config?.temperature;
+  final topK = config?.topK;
+  final topP = config?.topP;
+  final randomSeed = config?.randomSeed;
+  final supportImage = config?.supportImage ?? false;
+  final supportAudio = config?.supportAudio ?? false;
+  final enableThinking = config?.enableThinking ?? false;
+  final enableSpeculativeDecoding = config?.enableSpeculativeDecoding;
+  final configToolChoice = config?.toolChoice;
+  final configSystemInstruction = config?.systemInstruction;
+  final maxFunctionBufferLength = config?.maxFunctionBufferLength;
+  final configPreferredBackend = config?.preferredBackend;
+  final configPreferredVisionBackend = config?.preferredVisionBackend;
+  final configPreferredAudioBackend = config?.preferredAudioBackend;
+
+  if (!supportsTools && (request.tools?.isNotEmpty ?? false)) {
     throw GenkitException(
-      'Invalid model config: $e',
+      'This model is configured without tools (supportsTools: false), but '
+      'the request declares ${request.tools!.length}.',
       status: StatusCode.invalidArgument,
     );
   }
@@ -278,16 +284,57 @@ Future<ModelResponse> _executeGeneration({
       cachedPreferredVisionBackend != preferredVisionBackend ||
       cachedPreferredAudioBackend != preferredAudioBackend;
 
+  // Converted before a model loads: a part the model cannot take, or media
+  // the configuration does not enable, fails without loading anything.
+  final gemmaMessages = await convertMessages(request.messages);
+  if (gemmaMessages.isEmpty) {
+    throw GenkitException(
+      'No convertible messages in request. System messages alone are not '
+      'sufficient — at least one user or model message is required.',
+      status: StatusCode.invalidArgument,
+    );
+  }
+  var inputImages = 0;
+  var inputAudioFiles = 0;
+  for (final message in gemmaMessages) {
+    inputImages += message.images.length + (message.imageBytes == null ? 0 : 1);
+    if (message.audioBytes != null) inputAudioFiles++;
+  }
+  if ((inputImages > 0 || inputAudioFiles > 0) && !supportsMedia) {
+    throw GenkitException(
+      'This model is configured without media (supportsMedia: false), but '
+      'the request carries an image or audio.',
+      status: StatusCode.invalidArgument,
+    );
+  }
+  if (inputImages > 0 && !supportImage) {
+    throw GenkitException(
+      'The request carries an image, but the config does not set '
+      'supportImage: true, so the model would never see it.',
+      status: StatusCode.invalidArgument,
+    );
+  }
+  if (inputAudioFiles > 0 && !supportAudio) {
+    throw GenkitException(
+      'The request carries audio, but the config does not set '
+      'supportAudio: true, so the model would never hear it.',
+      status: StatusCode.invalidArgument,
+    );
+  }
+
   gemma.InferenceModel model;
   if (needsNewModel) {
-    model = await runtime.getActiveModel(
-      maxTokens: maxTokens,
-      supportImage: supportImage,
-      supportAudio: supportAudio,
-      enableSpeculativeDecoding: enableSpeculativeDecoding,
-      preferredBackend: preferredBackend,
-      preferredVisionBackend: preferredVisionBackend,
-      preferredAudioBackend: preferredAudioBackend,
+    model = await withRuntimeErrors(
+      'Could not load the on-device model',
+      () => runtime.getActiveModel(
+        maxTokens: maxTokens,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+        enableSpeculativeDecoding: enableSpeculativeDecoding,
+        preferredBackend: preferredBackend,
+        preferredVisionBackend: preferredVisionBackend,
+        preferredAudioBackend: preferredAudioBackend,
+      ),
     );
     onModelCached(
       model,
@@ -308,31 +355,26 @@ Future<ModelResponse> _executeGeneration({
   final supportsFunctionCalls = gemmaTools.isNotEmpty;
 
   // Create chat session.
-  final chat = await model.createChat(
-    temperature: temperature,
-    randomSeed: randomSeed,
-    topK: topK,
-    topP: topP,
-    supportImage: supportImage,
-    supportAudio: supportAudio,
-    tools: gemmaTools,
-    supportsFunctionCalls: supportsFunctionCalls,
-    enableThinking: enableThinking,
-    modelType: modelType,
-    toolChoice: gemmaToolChoice,
-    systemInstruction: systemInstruction,
-    maxFunctionBufferLength: maxFunctionBufferLength,
+  final chat = await withRuntimeErrors(
+    'Could not open a chat on the on-device model',
+    () => model.createChat(
+      temperature: temperature,
+      randomSeed: randomSeed,
+      topK: topK,
+      topP: topP,
+      supportImage: supportImage,
+      supportAudio: supportAudio,
+      tools: gemmaTools,
+      supportsFunctionCalls: supportsFunctionCalls,
+      enableThinking: enableThinking,
+      modelType: modelType,
+      toolChoice: gemmaToolChoice,
+      systemInstruction: systemInstruction,
+      maxFunctionBufferLength: maxFunctionBufferLength,
+      maxOutputTokens: maxOutputTokens,
+    ),
   );
 
-  // Convert and add messages.
-  final gemmaMessages = await convertMessages(request.messages);
-  if (gemmaMessages.isEmpty) {
-    throw GenkitException(
-      'No convertible messages in request. System messages alone are not '
-      'sufficient — at least one user or model message is required.',
-      status: StatusCode.invalidArgument,
-    );
-  }
   for (final msg in gemmaMessages) {
     await chat.addQueryChunk(msg);
   }
@@ -378,14 +420,16 @@ Future<ModelResponse> _executeGeneration({
   detach?.call();
   final stopFailure = await stopped;
   if (failure != null) {
-    // The generation's own error is the one reported; a stop that failed as
-    // well is logged rather than lost.
-    if (stopFailure case (final error, final stack)) {
-      developer.log(
-        'stopGeneration failed after the generation failed',
-        name: 'genkit_flutter_edge_ai',
-        error: error,
-        stackTrace: stack,
+    // The generation's own error is the one reported. A stop that failed as
+    // well goes into it: the engine may still be decoding, which the caller
+    // needs to know, and a log line is invisible in a release build.
+    if (stopFailure case (final stopError, _)) {
+      throw GenkitException(
+        '$failure; stopping the generation also failed: $stopError. The '
+        'on-device engine may still be decoding.',
+        status: failure is GenkitException ? failure.status : null,
+        cause: failure,
+        stackTrace: failureStack,
       );
     }
     Error.throwWithStackTrace(failure, failureStack!);
@@ -394,7 +438,38 @@ Future<ModelResponse> _executeGeneration({
     Error.throwWithStackTrace(error, stack);
   }
   cancel?.throwIfCancelled();
-  return response!;
+  return response!.withUsage(
+    convertUsage(
+      _sessionMetrics(chat),
+      inputImages: inputImages,
+      inputAudioFiles: inputAudioFiles,
+    ),
+  );
+}
+
+/// The chat's token counts and speed for the generation that just ended, or
+/// null where the engine cannot report them.
+gemma.SessionMetrics? _sessionMetrics(gemma.InferenceChat chat) {
+  try {
+    return chat.session.getSessionMetrics();
+  } on Object {
+    return null;
+  }
+}
+
+extension on ModelResponse {
+  /// This response with [usage], when there is any.
+  ModelResponse withUsage(GenerationUsage? usage) {
+    if (usage == null) return this;
+    return ModelResponse(
+      finishReason: finishReason,
+      finishMessage: finishMessage,
+      message: message,
+      latencyMs: latencyMs,
+      usage: usage,
+      custom: custom,
+    );
+  }
 }
 
 /// Generates a blocking (non-streaming) response.
@@ -449,7 +524,9 @@ Future<ModelResponse> _generateStreaming(
   await for (final chunk in chat.generateChatResponseAsync()) {
     if (cancel?.isCancelled ?? false) break;
     try {
-      sendChunk(convertStreamChunk(chunk));
+      sendChunk(
+        convertStreamChunk(chunk, firstToolCallIndex: functionCalls.length),
+      );
     } catch (_) {
       onSendChunkFailure();
       rethrow;

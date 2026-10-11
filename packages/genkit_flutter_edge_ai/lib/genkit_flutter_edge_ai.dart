@@ -78,12 +78,14 @@ class FlutterEdgeAiPluginHandle {
   ModelRef<FlutterEdgeAiModelOptions> model(String name) =>
       modelRef<FlutterEdgeAiModelOptions>(
         '${GenkitFlutterEdgeAiPlugin.prefix}/$name',
+        customOptions: FlutterEdgeAiModelOptions.$schema,
       );
 
   /// Returns an [EmbedderRef] for the given embedder name registered by this plugin.
   EmbedderRef<FlutterEdgeAiEmbedConfig> embedder(String name) =>
       embedderRef<FlutterEdgeAiEmbedConfig>(
         '${GenkitFlutterEdgeAiPlugin.prefix}/$name',
+        customOptions: FlutterEdgeAiEmbedConfig.$schema,
       );
 }
 

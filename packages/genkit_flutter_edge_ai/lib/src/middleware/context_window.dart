@@ -91,9 +91,25 @@ class ContextWindowMiddleware extends GenerateMiddleware {
     )
     next,
   ) {
-    final contextWindow =
-        (request.config?['maxTokens'] as num?)?.toInt() ??
-        _kDefaultContextWindow;
+    // Only maxTokens is read: the middleware can sit in front of a model that
+    // is not this plugin's, whose other options are not ours to judge. A
+    // value that is not a positive integer fails as the model would fail it,
+    // not as a TypeError a hybrid router would take for a transient error.
+    final rawContextWindow = request.config?['maxTokens'];
+    final int contextWindow;
+    if (rawContextWindow == null) {
+      contextWindow = _kDefaultContextWindow;
+    } else if (rawContextWindow is num &&
+        rawContextWindow == rawContextWindow.roundToDouble() &&
+        rawContextWindow >= 1) {
+      contextWindow = rawContextWindow.toInt();
+    } else {
+      throw GenkitException(
+        'Context-window trimmer: maxTokens must be a positive integer, got '
+        '$rawContextWindow.',
+        status: StatusCode.invalidArgument,
+      );
+    }
     final budget = maxInputTokens ?? (contextWindow - reserveOutputTokens);
     if (budget <= 0) {
       // Only reachable via the derived path: reserveOutputTokens >= the

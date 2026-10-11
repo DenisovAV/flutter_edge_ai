@@ -25,10 +25,9 @@ import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/web/web_model_source.dart';
 
 import 'litert_lm_web.dart';
+import '../ffi/engine_sampler_latch.dart';
 import '../thinking_context.dart';
-
-/// `SamplerType.TOP_P` in `@litert-lm/core`.
-const _samplerTypeTopP = 2;
+import 'litert_lm_web_session_config.dart';
 
 /// Web `.litertlm` inference via the upstream `@litert-lm/core` early-preview
 /// JS API (`@litert-lm/core` 0.18.0 on web through WebGPU/WASM).
@@ -227,13 +226,13 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     _noteModalityRequested(enableVisionModality, enableAudioModality);
     // Resolved before anything loads: values it rejects must not load the
     // engine.
-    final sampling = _resolveSampling(
+    final explicit = SamplingParams(
       temperature: temperature,
       topK: topK,
       topP: topP,
       randomSeed: randomSeed,
-      thinking: enableThinking,
     );
+    final sampling = _resolveSampling(explicit, thinking: enableThinking);
 
     if (_createCompleter case Completer<InferenceModelSession> completer) {
       return completer.future;
@@ -256,6 +255,8 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         modelType: modelType,
         fileType: fileType,
         generationMutex: generationMutex,
+        onGeneration: () =>
+            _noteGeneration(sampling, explicit: !explicit.isEmpty),
         onClose: () {
           _session = null;
           _createCompleter = null;
@@ -313,13 +314,13 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
     // Resolved before anything loads: values it rejects must not load the
     // engine.
-    final sampling = _resolveSampling(
+    final explicit = SamplingParams(
       temperature: temperature,
       topK: topK,
       topP: topP,
       randomSeed: randomSeed,
-      thinking: enableThinking,
     );
+    final sampling = _resolveSampling(explicit, thinking: enableThinking);
     await _ensureEngine();
     final conversation = await _buildConversation(
       sampling: sampling,
@@ -336,6 +337,8 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       modelType: modelType,
       fileType: fileType,
       generationMutex: generationMutex,
+      onGeneration: () =>
+          _noteGeneration(sampling, explicit: !explicit.isEmpty),
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
@@ -346,22 +349,39 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   /// the family defaults; the models published for web (Gemma 4, Gemma 3n)
   /// ship no sampler of their own. Throws an [ArgumentError] for a value no
   /// engine can sample with.
-  ResolvedSampling _resolveSampling({
-    required double? temperature,
-    required int? topK,
-    required double? topP,
-    required int? randomSeed,
+  ResolvedSampling _resolveSampling(
+    SamplingParams explicit, {
     required bool thinking,
   }) => SamplingParams.resolve(
-    SamplingParams(
-      temperature: temperature,
-      topK: topK,
-      topP: topP,
-      randomSeed: randomSeed,
-    ),
+    explicit,
     modelType: modelType,
     thinking: thinking,
   );
+
+  /// The web engine runs the same LiteRT-LM runtime, so it too keeps the
+  /// sampler of its first generation (google-ai-edge/LiteRT-LM#2080).
+  final _samplerLatch = EngineSamplerLatch();
+
+  /// Reports what LiteRT-LM#2080 means for a generation with [sampling], as
+  /// the native client does.
+  void _noteGeneration(ResolvedSampling sampling, {required bool explicit}) {
+    final note = _samplerLatch.onGeneration(sampling, explicit: explicit);
+    if (note == null) return;
+    if (!note.warn) {
+      edgeAiLog(
+        '[LiteRtLmWebInferenceModel] ${note.message}',
+        level: EdgeAiLogLevel.verbose,
+      );
+      return;
+    }
+    // A release build is where a wrong sampler gets reported, and edgeAiLog
+    // is silent there.
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] WARNING: ${note.message} Shown once per '
+      'engine.',
+    );
+  }
 
   /// Says, in debug builds, that a requested vision/audio modality will not be
   /// honoured. The session still opens: a text-only conversation is valid,
@@ -390,32 +410,11 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   }) async {
     await _ensureEngine();
 
-    // Build SessionConfig matching upstream TS:
-    //   { samplerParams?, maxOutputTokens? }
-    // Vision/audio modality intentionally not set: with either flag on,
-    // `createConversation` throws, because the engine has no vision or audio
-    // executor (see createSession).
-    //
-    // `maxOutputTokens` has been in `SessionConfig` since at least 0.14.0 — the
-    // web path was simply never wired to set it, and logged that it ignored the
-    // argument. Nothing upstream was blocking it. Upstream counts thinking
-    // tokens against the same budget on models that emit them, matching the
-    // native FFI behaviour.
-    //
-    // The sampler goes with an explicit `type`. Without one the config stays
-    // TYPE_UNSPECIFIED and the engine replaces the whole sampler with the
-    // bundle's, or with greedy when the bundle has none, so the values below
-    // were silently ignored.
-    final sessionConfigMap = <String, Object>{
-      'samplerParams': <String, Object>{
-        'type': _samplerTypeTopP,
-        'temperature': sampling.temperature,
-        'k': sampling.topK,
-        'p': sampling.topP,
-        'seed': sampling.randomSeed,
-      },
-      if (maxOutputTokens != null) 'maxOutputTokens': maxOutputTokens,
-    };
+    // Build SessionConfig matching upstream TS (see [webSessionConfig]).
+    final sessionConfigMap = webSessionConfig(
+      sampling,
+      maxOutputTokens: maxOutputTokens,
+    );
     final sessionConfigJs = sessionConfigMap.jsify() as JSObject?;
 
     // Build Preface matching upstream TS:
@@ -525,6 +524,7 @@ class LiteRtLmWebSession extends InferenceModelSession
     required this.fileType,
     required this.generationMutex,
     required this.onClose,
+    this.onGeneration,
   });
 
   final LiteRtLmConversation conversation;
@@ -536,6 +536,9 @@ class LiteRtLmWebSession extends InferenceModelSession
   /// duration of a getResponse(Async) call.
   final Mutex generationMutex;
   final VoidCallback onClose;
+
+  /// Called after each message is sent, for the owning model's sampler latch.
+  final VoidCallback? onGeneration;
 
   final StringBuffer _queryBuffer = StringBuffer();
   bool _isClosed = false;
@@ -693,6 +696,7 @@ class LiteRtLmWebSession extends InferenceModelSession
 
     void startPump() {
       final raw = conversation.sendMessageStreaming(messageArg);
+      onGeneration?.call();
       final asyncIterSym = globalContext
           .getProperty<JSObject>('Symbol'.toJS)
           .getProperty<JSAny>('asyncIterator'.toJS);

@@ -13,10 +13,12 @@ model. The four parameters are nullable, and an unset one comes from:
 3. `temperature: 0.8, topK: 40, topP: 0.95, randomSeed: 1`.
 
 Output that was greedy is now sampled on LiteRT-LM and MediaPipe, except for
-the families whose publishers decode greedily (Phi, Hammer). ONNX follows the
-model's config as before, and built-in AI keeps `temperature: 0.8, topK: 1`.
-Pass `topK: 1` or `temperature: 0` to keep it greedy; values you pass are used
-as before, and a value no engine can sample with (a negative temperature,
+the families whose publishers decode greedily (Phi, Hammer). ONNX leaves unset
+values to the model's config, on web too, where it used to decode greedily
+whatever the config said; built-in AI keeps `temperature: 0.8, topK: 1`. Pass
+`topK: 1` or `temperature: 0` to keep it greedy. Values you pass now also reach
+ONNX and web `.litertlm`, which used to drop them, and a value no engine can
+sample with (a negative temperature,
 `topK` below 1, `topP` outside (0, 1]) throws an `ArgumentError`. `.litertlm`
 keeps the sampler of an engine's first generation for every later conversation
 (google-ai-edge/LiteRT-LM#2080): close and reload the model to change it.

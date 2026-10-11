@@ -352,7 +352,7 @@ Linux too.
 on that same engine keeps those values, whatever it asks for. This is an
 upstream defect ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/issues/2080),
 open) and it reproduces on every version we have measured — v0.14.0, v0.15.0 and
-v0.16.0 on CPU as well as GPU, and v0.17.0 (checked on CPU).
+v0.16.0 on CPU as well as GPU, v0.17.0 (checked on CPU) and v0.18.0 (macOS).
 
 So the common shape is: an app loads a model, runs one generation with the
 defaults (the model's own sampler, else its family's), and from then on the

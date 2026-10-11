@@ -775,6 +775,17 @@ class LiteRtLmFfiClient {
           ? _prepareLinuxNpuDispatchDir()
           : null;
 
+      // The bundle's own sampler: the container header and its LlmMetadata
+      // section, a few KB read before the engine exists. A bad or unreadable
+      // file is reported, not thrown (see acceptBundleSamplerRead); a bug in the
+      // reader throws, so it is read before the settings it would leak.
+      final readSw = Stopwatch()..start();
+      final samplerRead = await tryReadBundleSampler(modelPath);
+      edgeAiLog(
+        '[LiteRtLmFfi/perf] bundle sampler read: ${readSw.elapsedMilliseconds}ms',
+        level: EdgeAiLogLevel.verbose,
+      );
+
       final settingsCreateStart = initSw.elapsedMilliseconds;
       final settings = b.litert_lm_engine_settings_create(
         modelPathPtr.cast(),
@@ -903,15 +914,6 @@ class LiteRtLmFfiClient {
       edgeAiLog(
         '[LiteRtLmFfi/perf] === START litert_lm_engine_create (native — model load + accelerator init + KV cache prefill) ===',
       );
-      // The bundle's own sampler: the container header and its LlmMetadata
-      // section, a few KB read before the engine exists. A failed read is
-      // reported, not thrown (see _reportBundleSampler).
-      final readSw = Stopwatch()..start();
-      final samplerRead = await tryReadBundleSampler(modelPath);
-      edgeAiLog(
-        '[LiteRtLmFfi/perf] bundle sampler read: ${readSw.elapsedMilliseconds}ms',
-        level: EdgeAiLogLevel.verbose,
-      );
       final settingsAddr = settings.address;
       final sw = Stopwatch()..start();
       // Snapshot the log level so the spawned isolate (a fresh copy of the
@@ -987,8 +989,7 @@ class LiteRtLmFfiClient {
       }
 
       _isInitialized = true;
-      _bundleSamplerRead = samplerRead;
-      _reportBundleSampler();
+      acceptBundleSamplerRead(samplerRead);
       edgeAiLog(
         '[LiteRtLmFfi/perf] initialize() total: ${initSw.elapsedMilliseconds}ms',
       );
@@ -1009,12 +1010,13 @@ class LiteRtLmFfiClient {
     }
   }
 
-  /// Says what the bundle-sampler read gave. A failed read is not thrown: the
-  /// engine works, and sessions still get the family defaults. It is printed,
-  /// because a release build is where a wrong sampler gets reported and
-  /// edgeAiLog is silent there.
-  void _reportBundleSampler() {
-    final read = _bundleSamplerRead;
+  /// Keeps the bundle-sampler [read] for the engine just created and says what
+  /// it gave. A failed read is not thrown: the engine works, and sessions
+  /// still get the family defaults. It is printed, because a release build is
+  /// where a wrong sampler gets reported and edgeAiLog is silent there.
+  @visibleForTesting
+  void acceptBundleSamplerRead(BundleSamplerRead read) {
+    _bundleSamplerRead = read;
     final error = read.error;
     if (error == null) {
       final sampler = read.sampler;

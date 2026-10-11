@@ -6,6 +6,8 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_edge_ai/core/tool.dart' show Tool;
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
     show RuntimeConfig;
@@ -61,6 +63,34 @@ void main() {
       expect(host.sessions.single.temperature, 0.3);
       expect(host.sessions.single.topK, 5);
       expect(host.sessions.single.topP, 0.9);
+    });
+
+    test('temperature 0 is greedy whatever topK is set', () async {
+      final model = await newModel();
+      await model.createSession(temperature: 0, topK: 5);
+      expect(host.sessions.single.temperature, 0);
+      expect(host.sessions.single.topK, 1);
+    });
+
+    test('says once that topP is ignored off Windows', () async {
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final model = await newModel();
+      final lines = <String>[];
+      Future<void> open(TargetPlatform platform) async {
+        debugDefaultTargetPlatformOverride = platform;
+        await runZoned(
+          () => model.openSession(topK: 5, topP: 0.9),
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, line) => lines.add(line),
+          ),
+        );
+      }
+
+      await open(TargetPlatform.windows);
+      expect(lines.where((l) => l.contains('topP is ignored')), isEmpty);
+      await open(TargetPlatform.android);
+      await open(TargetPlatform.iOS);
+      expect(lines.where((l) => l.contains('topP is ignored')), hasLength(1));
     });
 
     test('an invalid value throws before the live session is closed', () async {

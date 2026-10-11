@@ -28,6 +28,9 @@ import 'package:flutter_edge_ai/web/web_model_source.dart';
 import '../mediapipe_sampling.dart';
 import 'llm_inference_web.dart';
 
+/// Whether the "topP is ignored" warning was printed in this isolate.
+bool _topPIgnoredWarned = false;
+
 /// Base class for prompt parts (text, image, audio)
 abstract class PromptPart {}
 
@@ -159,8 +162,15 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       ),
       modelType: modelType,
     );
-    if (topP != null) {
-      edgeAiLog('[MediaPipe web] topP is ignored: MediaPipe web has no top-p.');
+    if (topP != null && !_topPIgnoredWarned) {
+      _topPIgnoredWarned = true;
+      // Printed, because a release build is where it gets reported and
+      // edgeAiLog is silent there.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_mediapipe] WARNING: topP is ignored: MediaPipe web '
+        'has no top-p. Shown once.',
+      );
     }
 
     if (_initCompleter case Completer<InferenceModelSession> completer) {

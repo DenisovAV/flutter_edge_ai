@@ -48,3 +48,24 @@ Map<String, Object> onnxSearchOptions(SamplingParams sampling) {
     if (sampling.randomSeed case final seed?) 'random_seed': seed,
   };
 }
+
+/// Hands each of [searchOptions] to the ORT-GenAI setter for its type: a bool
+/// to `OgaGeneratorParamsSetSearchBool` ([setBool]), a number, as a double, to
+/// `OgaGeneratorParamsSetSearchNumber` ([setNumber]). Throws an
+/// [ArgumentError] for any other value.
+void applySearchOptions(
+  Map<String, Object> searchOptions, {
+  required void Function(String name, bool value) setBool,
+  required void Function(String name, double value) setNumber,
+}) {
+  for (final MapEntry(:key, :value) in searchOptions.entries) {
+    switch (value) {
+      case final bool b:
+        setBool(key, b);
+      case final num n:
+        setNumber(key, n.toDouble());
+      default:
+        throw ArgumentError.value(value, key, 'not a bool or a number');
+    }
+  }
+}

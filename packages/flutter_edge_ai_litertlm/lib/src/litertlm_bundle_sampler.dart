@@ -31,11 +31,19 @@ Future<SamplingParams> readBundleSampler(String modelPath) async {
   }
 }
 
-/// [readBundleSampler], with any failure returned instead of thrown.
+/// [readBundleSampler], with a file it cannot read or parse returned instead
+/// of thrown: a [FileSystemException], a [FormatException], or an
+/// [ArgumentError] (a [RangeError], or a value no engine can sample with).
+/// Any other error is a bug in this reader and is thrown.
 Future<BundleSamplerRead> tryReadBundleSampler(String modelPath) async {
   try {
     return BundleSamplerRead(await readBundleSampler(modelPath));
   } on Object catch (e, st) {
+    if (e is! FileSystemException &&
+        e is! FormatException &&
+        e is! ArgumentError) {
+      rethrow;
+    }
     return BundleSamplerRead.failed('${e.runtimeType}: $e\n$st');
   }
 }

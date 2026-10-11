@@ -416,7 +416,7 @@ on `getActiveModel(...)`.
 on that same engine keeps those values, whatever it asks for. Upstream defect
 ([LiteRT-LM #2080](https://github.com/google-ai-edge/LiteRT-LM/issues/2080),
 open), reproducing on v0.14.0, v0.15.0 and v0.16.0 on CPU as well as GPU, and on
-v0.17.0 (checked on CPU); not re-checked on v0.18.0.
+v0.17.0 (checked on CPU) and v0.18.0 (macOS).
 
 </Warning>
 

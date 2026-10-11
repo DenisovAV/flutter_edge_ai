@@ -162,7 +162,7 @@ final response = await ai.generate(
 | `supportImage` | `bool?` | false | Enable multimodal image input |
 | `supportAudio` | `bool?` | false | Enable audio input (Gemma 4, Gemma3n) |
 | `enableThinking` | `bool?` | false | Enable thinking mode (Gemma 4, DeepSeek, Qwen3) |
-| `randomSeed` | `int?` | 1 (ONNX: model's own) | Random seed for sampling |
+| `randomSeed` | `int?` | 1 (ONNX, or a `.litertlm` that ships one: the model's own) | Random seed for sampling |
 | `toolChoice` | `String?` | `'auto'` | Tool calling mode: `'auto'`, `'required'`, `'none'` |
 | `systemInstruction` | `String?` | null | System-level instruction (overrides system-role messages) |
 | `maxFunctionBufferLength` | `int?` | null | Max token buffer for streaming tool-call arguments (increase for large payloads) |

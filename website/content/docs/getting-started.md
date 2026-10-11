@@ -243,11 +243,12 @@ wins, field by field. Pass `topK: 1` or `temperature: 0` for greedy decoding.
   you set either sampler. A new chat on the same model still gets a new answer
   to the same prompt, and a freshly loaded model repeats its first answer for
   the same seed.
-- **What an engine ignores** is printed once: built-in AI takes no seed, ONNX
-  web applies neither the seed nor top-p, and the NPU decodes greedily
-  whatever you set. `randomSeed` is 1 when unset, except on ONNX, which leaves
-  it to the model config. Built-in AI sends `temperature: 0.8, topK: 1` for
-  unset values, as it always has.
+- **What an engine ignores** is printed once: built-in AI takes no seed and
+  applies top-p only on Windows, MediaPipe web takes no top-p, ONNX web
+  applies neither the seed nor top-p, and the NPU decodes greedily whatever
+  you set. `randomSeed` is 1 when unset, unless a `.litertlm` bundle ships
+  one; ONNX leaves it to the model config. Built-in AI sends
+  `temperature: 0.8, topK: 1` for unset values, as it always has.
 
 ### System Instructions
 

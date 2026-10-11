@@ -42,6 +42,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:mutex/mutex.dart';
 
+import '../onnx_sampling.dart';
 import 'gen_ai_protocol.dart';
 import 'gen_ai_worker.dart';
 import 'ort_genai_bindings.g.dart';
@@ -1134,27 +1135,30 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
         ),
         'OgaGeneratorParamsSetSearchNumber(max_length)',
       );
-      for (final MapEntry(:key, :value) in searchOptions.entries) {
-        final nameC = key.toNativeUtf8();
+      void set(
+        String name,
+        ffi.Pointer<OgaResult> Function(ffi.Pointer<ffi.Char> name) call,
+      ) {
+        final nameC = name.toNativeUtf8();
         try {
-          _check(
-            value is bool
-                ? oga.OgaGeneratorParamsSetSearchBool(
-                    params,
-                    nameC.cast(),
-                    value,
-                  )
-                : oga.OgaGeneratorParamsSetSearchNumber(
-                    params,
-                    nameC.cast(),
-                    (value as num).toDouble(),
-                  ),
-            'OgaGeneratorParamsSetSearch($key)',
-          );
+          _check(call(nameC.cast()), 'OgaGeneratorParamsSetSearch($name)');
         } finally {
           pkg_ffi.calloc.free(nameC);
         }
       }
+
+      applySearchOptions(
+        searchOptions,
+        setBool: (name, value) => set(
+          name,
+          (nameC) => oga.OgaGeneratorParamsSetSearchBool(params, nameC, value),
+        ),
+        setNumber: (name, value) => set(
+          name,
+          (nameC) =>
+              oga.OgaGeneratorParamsSetSearchNumber(params, nameC, value),
+        ),
+      );
       final genOut = pkg_ffi.calloc<ffi.Pointer<OgaGenerator>>();
       try {
         _check(

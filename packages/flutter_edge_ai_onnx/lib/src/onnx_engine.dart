@@ -23,8 +23,9 @@ import 'onnx_inference_model.dart';
 ///
 /// **macOS/Linux/Windows/Android arm + iOS arm64 (hardened plan Phase 3,
 /// design §11 D2).** [createModel] productionizes the ORT-GenAI FFI path
-/// (`GenAiFfiClient` → `OnnxInferenceModel`/`OnnxSession`) — text-only,
-/// greedy decoding, one session at a time. macOS/Linux/Windows/Android arm64
+/// (`GenAiFfiClient` → `OnnxInferenceModel`/`OnnxSession`) — text-only, one
+/// session at a time, sampling as the caller sets it, else as the model's
+/// `genai_config.json` does. macOS/Linux/Windows/Android arm64
 /// are device-verified — Android on FTL (Pixel 8 Pro, 2026-08-19: ~10.4
 /// tok/s, ~3.74 GB peak RSS, flat-APK co-location with no ORT_LIB_PATH fix
 /// needed, via `onnx_inference_smoke_test.dart`), the D2 throughput/RAM

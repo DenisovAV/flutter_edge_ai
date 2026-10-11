@@ -101,4 +101,31 @@ void main() {
       }
     });
   });
+
+  group('applySearchOptions', () {
+    test('a bool goes to the bool setter, a number as a double', () {
+      final bools = <String, bool>{};
+      final numbers = <String, double>{};
+      applySearchOptions(
+        onnxSearchOptions(
+          const SamplingParams(temperature: 0.7, topK: 20, randomSeed: 3),
+        ),
+        setBool: (name, value) => bools[name] = value,
+        setNumber: (name, value) => numbers[name] = value,
+      );
+      expect(bools, {'do_sample': true});
+      expect(numbers, {'temperature': 0.7, 'top_k': 20.0, 'random_seed': 3.0});
+    });
+
+    test('any other value throws', () {
+      expect(
+        () => applySearchOptions(
+          {'top_k': '20'},
+          setBool: (_, _) {},
+          setNumber: (_, _) {},
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
 }

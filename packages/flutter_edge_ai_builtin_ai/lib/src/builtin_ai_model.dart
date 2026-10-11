@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter_edge_ai/core/chat.dart'
     show InferenceChat, defaultMaxFunctionBufferLength;
 import 'package:flutter_edge_ai/core/domain/platform_types.dart'
@@ -48,11 +49,13 @@ const _localAiTopK = 1;
 
 bool _greedyTopKWarned = false;
 bool _seedIgnoredWarned = false;
+bool _topPIgnoredWarned = false;
 
 @visibleForTesting
 void resetSamplingWarnings() {
   _greedyTopKWarned = false;
   _seedIgnoredWarned = false;
+  _topPIgnoredWarned = false;
 }
 
 /// Throws for a value no engine can sample with, before anything is closed or
@@ -77,6 +80,17 @@ void _checkSampling({
       '[flutter_edge_ai_builtin_ai] WARNING: a temperature or topP was set '
       'without topK, so the OS model gets topK $_localAiTopK and decodes '
       'greedily. Pass a topK above 1 to sample. Shown once.',
+    );
+  }
+  final topPApplies =
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+  if (topP != null && !topPApplies && !_topPIgnoredWarned) {
+    _topPIgnoredWarned = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_builtin_ai] WARNING: topP is ignored: only Windows '
+      "applies it; Android and Chrome drop it, and Apple's sampler takes the "
+      'top-k first. Shown once.',
     );
   }
   if (randomSeed != null && !_seedIgnoredWarned) {
@@ -201,7 +215,11 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       // `BuiltInAiSession.localAiSession`.
       final inner = await _model.openSession(
         temperature: temperature ?? _localAiTemperature,
-        topK: topK ?? _localAiTopK,
+        // temperature 0 is greedy on every engine, whatever top-k comes with
+        // it; what the OS models make of a temperature of 0 is unknown.
+        topK: SamplingParams(temperature: temperature, topK: topK).isGreedy
+            ? 1
+            : topK ?? _localAiTopK,
         topP: topP,
         maxOutputTokens: maxOutputTokens,
         systemInstruction: systemInstruction ?? this.systemInstruction,

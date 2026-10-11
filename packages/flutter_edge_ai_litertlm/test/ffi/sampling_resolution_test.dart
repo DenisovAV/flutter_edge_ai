@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_edge_ai/core/message.dart';
 import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai/core/sampling.dart';
@@ -200,6 +202,40 @@ void main() {
         bundleSamplerFrom(type: 1, temperature: 1.0, topK: 40, topP: 0),
         const SamplingParams(temperature: 1.0, topK: 40, topP: 1.0),
       );
+    });
+  });
+
+  group('the bundle read the client keeps', () {
+    test('a failed read leaves no sampler and warns once in one line', () {
+      final client = LiteRtLmFfiClient();
+      final lines = <String>[];
+      runZoned(
+        () => client.acceptBundleSamplerRead(
+          const BundleSamplerRead.failed(
+            'FormatException: truncated\n#0 stack',
+          ),
+        ),
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => lines.add(line),
+        ),
+      );
+      expect(client.bundleSampler.isEmpty, isTrue);
+      expect(client.bundleSamplerError, startsWith('FormatException'));
+      final warnings = lines.where((l) => l.contains('WARNING')).toList();
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('FormatException: truncated'));
+      expect(warnings.single, isNot(contains('#0 stack')));
+    });
+
+    test('a read sampler is kept until shutdown', () async {
+      final client = LiteRtLmFfiClient();
+      const sampler = SamplingParams(temperature: 0.6, topP: 0.95);
+      client.acceptBundleSamplerRead(const BundleSamplerRead(sampler));
+      expect(client.bundleSampler, sampler);
+      expect(client.bundleSamplerError, isNull);
+
+      await client.shutdown();
+      expect(client.bundleSampler.isEmpty, isTrue);
     });
   });
 }

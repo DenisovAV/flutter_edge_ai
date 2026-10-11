@@ -23,6 +23,9 @@ requires the exact `flutter_edge_ai 2.2.0` contract (currently unreleased).
 - macOS/Windows CI model tests use the packaged desktop host to qualify the
   framework/DLL layout. A hosted macOS VM timeout is unresolved; local macOS VM
   inference passed. Raw Windows Flutter VM inference is unqualified with these pins.
+- Hosted Apple/Android runtime lanes use an explicit single-thread CPU budget
+  via `--cpu-threads 1`; keep all semantic/lifecycle assertions intact and record
+  this profile separately from default-thread performance qualification.
 - Consumer applications select llama.cpp through their own root hook settings;
   the workspace's selection does not propagate to external consumers.
 - Publishing and final package ownership remain separate maintainer decisions.

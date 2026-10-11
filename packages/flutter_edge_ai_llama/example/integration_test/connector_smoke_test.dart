@@ -9,6 +9,18 @@ import 'package:llamadart/llamadart.dart' as llama;
 
 const _modelPath = String.fromEnvironment('GGUF_MODEL_PATH');
 const _modelUrl = String.fromEnvironment('GGUF_MODEL_URL');
+const _cpuThreads = int.fromEnvironment('GGUF_CPU_THREADS');
+
+Future<llama.LlamaEngine> _loadWithThreadBudget(
+  String path,
+  llama.ModelParams params,
+) => loadGgufEngine(
+  path,
+  params.copyWith(
+    numberOfThreads: _cpuThreads,
+    numberOfThreadsBatch: _cpuThreads,
+  ),
+);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -27,9 +39,14 @@ void main() {
       await tester.runAsync(() async {
         llama.LlamaLogging.configure(level: llama.LlamaLogLevel.error);
         edge.FlutterEdgeAi.logLevel = edge.EdgeAiLogLevel.none;
-        debugPrint('DEVICE_SMOKE: stage=initialize');
+        expect(_cpuThreads, greaterThanOrEqualTo(0));
+        debugPrint('DEVICE_SMOKE: stage=initialize cpuThreads=$_cpuThreads');
         await edge.FlutterEdgeAi.initialize(
-          inferenceEngines: const [LlamaEngineProvider()],
+          inferenceEngines: [
+            LlamaEngineProvider(
+              loader: _cpuThreads > 0 ? _loadWithThreadBudget : null,
+            ),
+          ],
         );
         final installation = edge.FlutterEdgeAi.installModel(
           modelType: edge.ModelType.general,

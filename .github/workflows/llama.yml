@@ -113,7 +113,7 @@ jobs:
       - name: Required native CPU smoke
         run: |
           if [[ "$RUNNER_OS" == macOS ]]; then
-            python tool/verify.py native --model-path tool/fixtures/chat.gguf --native-diagnostics
+            python tool/verify.py native --model-path tool/fixtures/chat.gguf --cpu-threads 1 --native-diagnostics
           else
             python tool/verify.py native --model-path tool/fixtures/chat.gguf
           fi
@@ -152,7 +152,7 @@ jobs:
           xcrun simctl boot "$simulator_id"
           xcrun simctl bootstatus "$simulator_id" -b
           trap 'xcrun simctl shutdown "$simulator_id"' EXIT
-          python tool/verify.py device --device "$simulator_id" --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --native-diagnostics
+          python tool/verify.py device --device "$simulator_id" --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --cpu-threads 1 --native-diagnostics
 
       - name: Preserve iOS runtime thread samples
         if: always()
@@ -189,4 +189,4 @@ jobs:
           ram-size: 4096M
           disk-size: 4096M
           disable-animations: true
-          script: cd "$PACKAGE_DIRECTORY" && python tool/verify.py device --device emulator-5554 --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf
+          script: cd "$PACKAGE_DIRECTORY" && python tool/verify.py device --device emulator-5554 --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --cpu-threads 1

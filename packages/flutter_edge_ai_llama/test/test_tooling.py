@@ -72,6 +72,25 @@ class ToolingTests(unittest.TestCase):
             server.shutdown.assert_called_once()
             server.server_close.assert_called_once()
 
+    def test_packaged_cpu_budget_is_passed_to_the_real_device_smoke(self):
+        with patch.object(sys, "argv", ["verify.py", "device", "--device", "emulator-5554", "--model-url", "https://example.test/model.gguf", "--cpu-threads", "1"]), \
+             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+             patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            package_verify.main()
+        command = run.call_args_list[-1].args[0]
+        self.assertIn("integration_test/connector_smoke_test.dart", command)
+        self.assertIn("--dart-define=GGUF_CPU_THREADS=1", command)
+
+    def test_invalid_cpu_budgets_fail_before_flutter(self):
+        for arguments in (["device", "--device", "ios", "--model-url", "https://example.test/model.gguf", "--cpu-threads", "0"],
+                          ["contracts", "--cpu-threads", "1"]):
+            with patch.object(sys, "argv", ["verify.py", *arguments]), \
+                 patch.object(package_verify.subprocess, "check_output") as flutter:
+                with self.assertRaises(SystemExit) as error:
+                    package_verify.main()
+                self.assertEqual(error.exception.code, 2)
+                flutter.assert_not_called()
+
     def test_native_sampler_targets_only_test_apps_and_stops(self):
         with tempfile.TemporaryDirectory() as directory:
             stop = MagicMock()

@@ -43,6 +43,14 @@ The checked-in workflows provide:
   installation, two-turn memory, cancellation/retry, three load/close cycles.
 - Real isolated Chrome worker/Wasm CPU generation from an installed model blob.
 
+Hosted macOS, iOS simulator and Android emulator smokes explicitly budget one
+CPU thread for generation and prompt batching via `--cpu-threads 1`. The test
+uses the same production GGUF loader and preserves context size, sampling,
+model-memory assertions, cancellation/retry and all three lifecycle cycles.
+This qualifies that constrained CPU profile; it does not establish default
+thread performance on hosted virtual machines. Omitting the option keeps
+llamadart's automatic thread selection.
+
 Small CPU fixture: `bartowski/SmolLM2-135M-Instruct-GGUF`, revision
 `09816acd5d99df7be770d85ea30822623dab342c`, Q8_0, 144,811,360 bytes,
 SHA-256 `5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83`.
@@ -289,7 +297,7 @@ replacing a usable legacy session.
 Local macOS ARM64 checks:
 
 - Connector format/analyze: PASS; VM 51, Chrome 50 plus three explicit skips,
-  demo seven, and Python tooling 17 tests passed.
+  demo seven, and Python tooling 19 tests passed.
 - Workspace analysis: PASS with 570 info diagnostics and no warnings/errors.
 - Shipped skills: 46 Dart blocks and 115 inline references compiled without errors.
 - Real macOS CPU facade: PASS for install, generation, two-turn recall,
@@ -308,7 +316,10 @@ core 2.2.0 and the unchanged runtime pins. Hosted macOS VM and mobile failures
 are being investigated; the local pass does not establish their cause. The
 packaged smoke now prints each lifecycle stage. Apple CI retains recent app
 thread samples with `--native-diagnostics` to investigate startup stalls;
-diagnostics do not replace or retry the required smoke. The SDK action explicitly enables
+diagnostics do not replace or retry the required smoke.
+The explicit single-thread packaged profile also passed on local macOS (17 s)
+and the isolated iOS simulator (25 s), preserving all three cycles; hosted
+qualification of that profile is pending. The SDK action explicitly enables
 SwiftPM for consistent setup, although Flutter 3.47.1 already defaults it on.
 
 Core 2.2.0 is not yet hosted on pub.dev. The default hosted `package` gate

@@ -51,6 +51,8 @@ def main():
     parser.add_argument("--storage-helper-url")
     parser.add_argument("--platform", choices=("android", "ios", "macos", "windows", "linux", "web"))
     parser.add_argument("--device")
+    parser.add_argument("--cpu-threads", type=int,
+                        help="Packaged runtime smoke: explicit CPU generation/batch thread budget")
     parser.add_argument("--native-diagnostics", action="store_true",
                         help="Apple runtime lanes: retain recent app thread samples in RUNNER_TEMP")
     parser.add_argument("--core-path", type=Path,
@@ -89,6 +91,12 @@ def main():
         parser.error("build requires --platform")
     if args.lane == "device" and not args.device:
         parser.error("device requires --device")
+
+    if args.cpu_threads is not None and (args.cpu_threads < 1 or
+            not (args.lane == "device" or args.lane == "native" and sys.platform in ("win32", "darwin"))):
+        parser.error("--cpu-threads requires a positive budget and a packaged native/device smoke")
+    thread_defines = ([] if args.cpu_threads is None else
+                      [f"--dart-define=GGUF_CPU_THREADS={args.cpu_threads}"])
 
     if args.native_diagnostics and (sys.platform != "darwin" or args.lane not in ("native", "device")):
         parser.error("--native-diagnostics requires an Apple native/device runtime lane")
@@ -135,13 +143,13 @@ def main():
                 thread.start()
                 try:
                     fixture = f"--dart-define=GGUF_MODEL_URL=http://127.0.0.1:{server.server_address[1]}/chat.gguf"
-                    run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture], PACKAGE / "example")
+                    run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture, *thread_defines], PACKAGE / "example")
                 finally:
                     server.shutdown()
                     thread.join()
                     server.server_close()
             else:
-                run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture], PACKAGE / "example")
+                run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture, *thread_defines], PACKAGE / "example")
         else:
             run([flutter, "test", "test/native_smoke_test.dart", fixture])
     elif args.lane == "web":
@@ -194,7 +202,7 @@ def main():
         fixture = (f"--dart-define=GGUF_MODEL_PATH={args.model_path.resolve()}" if args.model_path
                    else f"--dart-define=GGUF_MODEL_URL={args.model_url}")
         run([flutter, "pub", "get"], PACKAGE / "example")
-        run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", args.device, fixture], PACKAGE / "example")
+        run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", args.device, fixture, *thread_defines], PACKAGE / "example")
     elif args.lane == "build":
         run([flutter, "pub", "get"], PACKAGE / "example")
         target = "apk" if args.platform == "android" else args.platform

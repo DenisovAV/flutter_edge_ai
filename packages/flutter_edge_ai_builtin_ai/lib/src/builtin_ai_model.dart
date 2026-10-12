@@ -393,19 +393,34 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
     return chat!;
   }
 
+  /// The teardown in progress, shared by every caller of [close]: a second
+  /// call waits for it instead of returning at once, so core can tell when
+  /// the model is really gone before it builds the next one.
+  Future<void>? _closeFuture;
+
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() {
+    final teardown = _closeFuture;
+    if (teardown != null) return teardown;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // The first caller gets the teardown's own outcome; every later caller
+    // gets `settled`, which completes normally once the teardown has ended.
+    return _close().whenComplete(settled.complete);
+  }
+
+  Future<void> _close() async {
     _isClosed = true;
-    // Release the model and reset core's singleton bookkeeping even if a
-    // session's close throws — otherwise a phantom model lingers in the
-    // registry with the OS resource leaked.
+    // Release the model and reset core's singleton bookkeeping even if its
+    // close throws — otherwise a phantom model lingers in the registry. The
+    // OS model goes first: core builds the next model once the listeners
+    // fire.
     try {
       _session = null;
       _openSessions.clear();
+      await _model.close();
     } finally {
       fireCloseListeners();
-      await _model.close();
     }
   }
 }

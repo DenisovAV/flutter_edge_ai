@@ -1,5 +1,5 @@
 ## 0.3.4
-- The model reports `isClosed` from the moment it starts closing.
+- `close()` sets `isClosed` at once and releases the OS model before its listeners fire.
 - Require `flutter_edge_ai` ^2.3.0.
 
 ## 0.3.3

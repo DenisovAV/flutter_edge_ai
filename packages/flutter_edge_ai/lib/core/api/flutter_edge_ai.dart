@@ -387,6 +387,10 @@ class FlutterEdgeAi {
   ///
   /// Throws:
   /// - [StateError] if no active inference model is set
+  /// - `TimeoutException` if the previous model is still closing after 60 s;
+  ///   its close keeps running, and a later call succeeds once it ends. A
+  ///   model closing when this is called (`isClosed` is true) is waited for,
+  ///   never returned.
   ///
   /// Example:
   /// ```dart

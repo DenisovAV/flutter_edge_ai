@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -41,6 +42,9 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   EmbeddingModel? get initializedEmbeddingModel => _embedderCache.model;
 
   InferenceModel? _initializedModel;
+
+  /// Holds builds back while a previous model is still closing.
+  final ModelCloseGate _closeGate = ModelCloseGate();
 
   /// The pending or completed build of [_initializedModel]. Reused while the
   /// active model and the runtime knobs stay the same; see [createModel].
@@ -146,15 +150,21 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       loraRanks: loraRanks,
     );
 
+    // No model is built while another is still closing: two native models
+    // must not be resident at once (see [ModelCloseGate]).
+    if (_closeGate.isClosing) await _closeGate.wait();
+
     // A cached model whose close has started is going away, and its close
-    // listener fires only once the teardown ends. Forget it now and build
-    // anew; the listener is identity-guarded and will not touch the new one.
+    // listener fires only once the teardown ends. Forget it, wait for that
+    // teardown, then build anew; the listener is identity-guarded and will
+    // not touch the new model.
     if (_initializedModel case final cached? when cached.isClosed) {
       _initCompleter = null;
       _inFlightRequest = null;
       _initializedModel = null;
       _lastModelIdentity = null;
       _lastInferenceParams = null;
+      await _closeGate.closeAndWait(cached, label: requestedSpec.name);
     }
 
     // The rest mirrors FlutterEdgeAiMobile.createModel, whose comments say
@@ -183,13 +193,10 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
         _initializedModel = null;
         _lastModelIdentity = null;
         _lastInferenceParams = null;
-        try {
-          await closing?.close();
-        } catch (e) {
-          edgeAiLog(
-            '[FlutterEdgeAiWeb] Old model close() failed, continuing with '
-            'rebuild: $e',
-          );
+        // Through the gate, so a caller arriving during this close waits for
+        // it instead of building; a failed close is logged, not passed on.
+        if (closing != null) {
+          await _closeGate.closeAndWait(closing, label: requestedSpec.name);
         }
       } else {
         edgeAiLog(

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
 
 import 'dart:io';
 
@@ -63,7 +64,11 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
   Completer<InferenceModel>? _initCompleter;
   InferenceModel? _initializedModel;
 
-  InferenceModelSpec? _lastActiveInferenceSpec; // Track which spec was used to create _initializedModel
+  /// Holds builds back while a previous model is still closing.
+  final ModelCloseGate _closeGate = ModelCloseGate();
+
+  InferenceModelSpec?
+  _lastActiveInferenceSpec; // Track which spec was used to create _initializedModel
 
   /// Runtime knobs the cached model was built with. Compared on every
   /// getActiveModel so a request that differs rebuilds instead of silently
@@ -88,11 +93,13 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
 
   Completer<SpeechRecognizer>? _initSttCompleter;
   SpeechRecognizer? _initializedSttModel;
-  SttModelSpec? _lastActiveSttSpec; // Track which spec was used to create _initializedSttModel
+  SttModelSpec?
+  _lastActiveSttSpec; // Track which spec was used to create _initializedSttModel
 
   Completer<SpeechSynthesizer>? _initTtsCompleter;
   SpeechSynthesizer? _initializedTtsModel;
-  TtsModelSpec? _lastActiveTtsSpec; // Track which spec was used to create _initializedTtsModel
+  TtsModelSpec?
+  _lastActiveTtsSpec; // Track which spec was used to create _initializedTtsModel
   // The `language` the active singleton was built with, NORMALIZED
   // ([_normalizeTtsLanguage] — defaulted + lowercased) so a same-effective-
   // language request compared raw-to-raw (e.g. null vs. 'english', or
@@ -161,15 +168,21 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
       loraRanks: loraRanks,
     );
 
+    // No model is built while another is still closing: two native models
+    // must not be resident at once (see [ModelCloseGate]).
+    if (_closeGate.isClosing) await _closeGate.wait();
+
     // A cached model whose close has started is going away, and its close
-    // listener fires only once the teardown ends. Forget it now and build
-    // anew; the listener is identity-guarded and will not touch the new one.
+    // listener fires only once the teardown ends. Forget it, wait for that
+    // teardown, then build anew; the listener is identity-guarded and will
+    // not touch the new model.
     if (_initializedModel case final cached? when cached.isClosed) {
       _initCompleter = null;
       _inFlightRequest = null;
       _initializedModel = null;
       _lastActiveInferenceSpec = null;
       _lastInferenceParams = null;
+      await _closeGate.closeAndWait(cached, label: requestedSpec.name);
     }
 
     // Check if singleton exists and matches the active model
@@ -232,10 +245,10 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
         _initializedModel = null;
         _lastActiveInferenceSpec = null;
         _lastInferenceParams = null;
-        try {
-          await closing?.close();
-        } catch (e) {
-          edgeAiLog('Old model close() failed, continuing with rebuild: $e');
+        // Through the gate, so a caller arriving during this close waits for
+        // it instead of building; a failed close is logged, not passed on.
+        if (closing != null) {
+          await _closeGate.closeAndWait(closing, label: requestedSpec.name);
         }
       } else {
         // Same model - return existing singleton

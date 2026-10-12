@@ -112,19 +112,26 @@ void main() {
     },
   );
 
-  test('a call while the cached model is closing builds a new one', () async {
-    final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-    final gate = (first as _FakeModel).closeGate = Completer<void>();
-    final closing = first.close();
-    final second = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-    gate.complete();
-    await closing;
+  test(
+    'a call while the cached model is closing waits, then builds a new one',
+    () async {
+      final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      final gate = (first as _FakeModel).closeGate = Completer<void>();
+      final closing = first.close();
 
-    expect(engine.builds, 2);
-    expect(second, isNot(same(first)));
-    expect((second as _FakeModel).isClosed, isFalse);
-    expect(FlutterEdgeAiPlugin.instance.initializedModel, same(second));
-  });
+      final pending = FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      await pumpEventQueue();
+      expect(engine.builds, 1, reason: 'nothing is built while it closes');
+
+      gate.complete();
+      final second = await pending;
+      await closing;
+      expect(engine.builds, 2);
+      expect(second, isNot(same(first)));
+      expect((second as _FakeModel).isClosed, isFalse);
+      expect(FlutterEdgeAiPlugin.instance.initializedModel, same(second));
+    },
+  );
 
   test('a caller racing a build for other knobs gets its own model', () async {
     final results = await Future.wait([
@@ -186,8 +193,13 @@ class _FakeModel with CloseNotifier implements InferenceModel {
   /// the closing state for as long as it needs.
   Completer<void>? closeGate;
 
+  Future<void>? _closing;
+
+  /// Every caller gets the one teardown, as the real models' `close()` does.
   @override
-  Future<void> close() async {
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     isClosed = true;
     await Future<void>.delayed(Duration.zero);
     await closeGate?.future;

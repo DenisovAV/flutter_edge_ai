@@ -138,6 +138,18 @@ void main() {
       await closing;
     });
 
+    test('the OS model is released before the close listeners fire', () async {
+      // Core builds the next model once the listeners fire.
+      final model = await newModel();
+      bool? releasedFirst;
+      model.addCloseListener(
+        () => releasedFirst = host.calls.contains('closeModel'),
+      );
+
+      await model.close();
+      expect(releasedFirst, isTrue);
+    });
+
     test('createSession replaces and closes the previous singleton', () async {
       final model = await newModel();
 

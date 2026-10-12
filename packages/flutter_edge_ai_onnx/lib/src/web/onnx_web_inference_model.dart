@@ -297,9 +297,23 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
     return completer.future;
   }
 
+  /// The teardown in progress, shared by every caller of [close]: a second
+  /// call waits for it instead of returning at once, so core can tell when
+  /// the model is really gone before it builds the next one.
+  Future<void>? _closeFuture;
+
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() {
+    final teardown = _closeFuture;
+    if (teardown != null) return teardown;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // The first caller gets the teardown's own outcome; every later caller
+    // gets `settled`, which completes normally once the teardown has ended.
+    return _close().whenComplete(settled.complete);
+  }
+
+  Future<void> _close() async {
     _isClosed = true;
     try {
       await _session?.close();

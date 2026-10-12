@@ -342,18 +342,41 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     return session;
   }
 
+  /// The teardown in progress, shared by every caller of [close]: a second
+  /// call waits for it instead of returning at once, so core can tell when
+  /// the model is really gone before it builds the next one.
+  Future<void>? _closeFuture;
+
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() {
+    final teardown = _closeFuture;
+    if (teardown != null) return teardown;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // The first caller gets the teardown's own outcome; every later caller
+    // gets `settled`, which completes normally once the teardown has ended.
+    return _close().whenComplete(settled.complete);
+  }
+
+  Future<void> _close() async {
     _isClosed = true;
-    await _session?.close();
-    // Copy because close() mutates _openSessions via the onClose callback.
-    for (final s in _openSessions.toList()) {
-      await s.close();
+    try {
+      await _session?.close();
+      // Copy because close() mutates _openSessions via the onClose callback.
+      for (final s in _openSessions.toList()) {
+        await s.close();
+      }
+      _openSessions.clear();
+    } finally {
+      try {
+        // Before the listeners, not after: core builds the next model once
+        // they fire, and the native side holds one model, so a close that
+        // lands after that build would take the new model down with it.
+        await platformService.closeModel();
+      } finally {
+        onClose();
+        fireCloseListeners();
+      }
     }
-    _openSessions.clear();
-    onClose();
-    fireCloseListeners();
-    await platformService.closeModel();
   }
 }

@@ -1,5 +1,5 @@
 ## 1.12.1
-- The model reports `isClosed` from the moment it starts closing.
+- `close()` sets `isClosed` at once; a second call waits for the teardown.
 - Require `flutter_edge_ai` ^2.3.0.
 
 ## 1.12.0

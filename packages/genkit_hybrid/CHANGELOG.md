@@ -3,6 +3,7 @@
 ## 0.3.1
 
 - A cancel ends a cascade before or during its `accept`, never with a success.
+- `UNIMPLEMENTED` falls back to the next branch: another model may have the capability.
 
 ## 0.3.0
 

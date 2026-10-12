@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:genkit/genkit.dart';
 
-/// Whether [error] is a transient/availability failure that justifies trying
-/// the next branch. Permanent errors (bad request, bad auth) must NOT trigger
-/// fallback — the next branch would get the same bad request and also fail,
-/// masking the real cause. Non-GenkitException throwables (network, timeout,
-/// OOM) are treated as transient.
+/// Whether [error] justifies trying the next branch: a transient or
+/// availability failure, or a capability this branch's model lacks
+/// (UNIMPLEMENTED) — the next branch is another model, which may have it.
+/// Permanent errors (bad request, bad auth) must NOT trigger fallback — the
+/// next branch would get the same bad request and also fail, masking the real
+/// cause. Non-GenkitException throwables (network, timeout, OOM) are treated
+/// as transient.
 bool isTransient(Object error) {
   if (error is! GenkitException) return true;
   switch (error.status) {
@@ -14,6 +16,7 @@ bool isTransient(Object error) {
     case StatusCode.deadlineExceeded:
     case StatusCode.resourceExhausted:
     case StatusCode.internal:
+    case StatusCode.unimplemented:
       return true;
     default:
       return false;

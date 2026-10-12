@@ -398,9 +398,11 @@ hybridModel(
 Fallback is error-driven: the strategy picks an order, and the next branch is
 tried only when the current one **throws**, and only on a transient failure —
 any non-`GenkitException` error (network, timeout, OOM), or a `GenkitException`
-with `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `INTERNAL`.
-Permanent errors — `INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`,
-`FAILED_PRECONDITION`, `NOT_FOUND`, `UNIMPLEMENTED` — propagate immediately, since they would
+with `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `INTERNAL` —
+or on `UNIMPLEMENTED`: a capability one model lacks (tools, images, audio on
+this platform) another branch's model may have. Permanent errors —
+`INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`,
+`FAILED_PRECONDITION`, `NOT_FOUND` — propagate immediately, since they would
 fail the same way on every branch. A `GenkitException` thrown without an
 explicit status defaults to `INTERNAL`, so it *is* retried. After a cancel no
 other branch is tried: the error of the branch that was running is the one

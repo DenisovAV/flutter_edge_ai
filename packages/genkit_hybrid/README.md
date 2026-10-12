@@ -129,9 +129,11 @@ silently re-routed).
 ## Error policy
 
 Fallback fires on **transient/availability** failures (network/timeout/OOM, or `GenkitException`
-with `UNAVAILABLE` / `DEADLINE_EXCEEDED` / `RESOURCE_EXHAUSTED` / `INTERNAL`). **Permanent**
-errors (`INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`,
-`NOT_FOUND`, `UNIMPLEMENTED`) propagate immediately — they would fail the same way on every branch. Note: a branch
+with `UNAVAILABLE` / `DEADLINE_EXCEEDED` / `RESOURCE_EXHAUSTED` / `INTERNAL`), and on
+`UNIMPLEMENTED`: a capability one model lacks — tools, images, audio on this platform — another
+branch's model may have. **Permanent** errors (`INVALID_ARGUMENT`, `PERMISSION_DENIED`,
+`UNAUTHENTICATED`, `FAILED_PRECONDITION`, `NOT_FOUND`) propagate immediately — they would fail
+the same way on every branch. Note: a branch
 that throws a `GenkitException` without setting `status` (it defaults to `INTERNAL`) — or any
 non-`GenkitException` error — is treated as transient and retried, so a truly permanent failure
 surfaced that way will be re-attempted on the next branch. After a cancel no other branch is tried:

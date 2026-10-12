@@ -1,8 +1,8 @@
 # Flutter Edge AI llama.cpp engine
 
-Run local GGUF chat and embedding models through Flutter Edge AI, powered by
+Run local GGUF chat models through Flutter Edge AI, powered by
 [llamadart](https://pub.dev/packages/llamadart). Register the providers, install
-a model, then use the usual Edge AI chat or embedding API.
+a model, then use the usual Edge AI chat API.
 
 The package has runners for Android, iOS, macOS, Windows, Linux and Web.
 Tools, thinking, images/audio and native LoRA require compatible models and
@@ -12,9 +12,9 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
 The tested dependencies are Flutter **3.47.1 / Dart 3.13.1**,
-`flutter_edge_ai 2.2.0`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
-Core 2.2.0 is currently unreleased; try this contribution through the monorepo
-example, or override core to the matching local checkout as shown below.
+`flutter_edge_ai 2.2.1`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
+Core 2.2.1 is published. This draft contribution targets its inference APIs;
+GGUF embeddings are deferred to a separate contribution against the new core SPI.
 
 ## Try a chat in a few minutes
 
@@ -84,16 +84,11 @@ the path below with the package directory relative to your app's pubspec:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: 2.2.0
+  flutter_edge_ai: '>=2.2.1 <2.3.0'
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.0.21
-
-# Until core 2.2.0 is published, use the matching checkout:
-dependency_overrides:
-  flutter_edge_ai:
-    path: ../flutter_edge_ai/packages/flutter_edge_ai
 
 hooks:
   user_defines:
@@ -150,62 +145,29 @@ Future<void> main() async {
 }
 ```
 
-Core 2.2.0 uses `ModelFileType.binary` for GGUF; the connector recognizes the
+Core 2.2.1 uses `ModelFileType.binary` for GGUF; the connector recognizes the
 `.gguf` filename. It does not claim other binary formats. On Web, replace
 `.fromFile(...)` with `.fromNetwork(modelUrl)` and prepare the assets/headers above.
 
-To reuse an imported model after restart, call
-`await restoreInstalledLlamaModel()` after initialization, then load with
-`getActiveModel`. It returns `false` if no saved GGUF can be restored.
-It restores the installed model, not the previous conversation.
+Core 2.2.1 restores the installed imported model during initialization. Load it
+with `getActiveModel`; conversation history starts fresh. No connector-specific
+restore call is needed.
 
 `maxTokens` is the whole context budget (prompt, history and response).
 `maxOutputTokens` limits one response. Stop with
 `await chat.session.stopGeneration()`; an interrupted turn is discarded so the
 conversation can continue. Close the model when your feature is finished.
 
-### Generate embeddings
+## Contribution scope
 
-Download the verified [BGE-small-en-v1.5 GGUF](https://huggingface.co/ggml-org/bge-small-en-v1.5-Q8_0-GGUF/resolve/f2068edd9b54f2a369549ccc71f70ed273a2a801/bge-small-en-v1.5-q8_0.gguf)
-and the original model's [tokenizer.json](https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/main/tokenizer.json).
-Replace both file paths below with your downloaded files. Core currently requires the companion file at installation even
-though llama.cpp uses the tokenizer embedded in the GGUF. For BGE, disable
-EmbeddingGemma task prefixes as shown below.
+This contribution provides inference only. GGUF embeddings are preserved for a
+[follow-up](doc/deferred_embeddings.md) against core's new embedding SPI.
 
-```dart
-import 'package:flutter/widgets.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await FlutterEdgeAi.initialize(
-    embeddingBackends: const [
-      LlamaEmbeddingProvider(useTaskPrefixes: false, contextSize: 512),
-    ],
-  );
-  await FlutterEdgeAi.installEmbedder()
-      .modelFromFile('/absolute/path/to/bge-small-en-v1.5-q8_0.gguf')
-      .tokenizerFromFile('/absolute/path/to/tokenizer.json')
-      .install();
-
-  final embedder = await FlutterEdgeAi.getActiveEmbedder();
-  try {
-    final vectors = await embedder.generateEmbeddings(['cat', 'dog']);
-    print('${vectors.length} vectors, ${await embedder.getDimension()} dimensions');
-  } finally {
-    await embedder.close();
-  }
-}
-```
-
-Results preserve input order and use normalized vectors. The demo UI shows
-text chat; the API examples here cover embeddings and
-[advanced usage](doc/advanced_usage.md) covers tools, thinking, media and LoRA.
-
-Omitted sampling values use the installed model family's defaults. Set
-`temperature: 0` or `topK: 1` for greedy output; `topK` must be at least 1.
-See [sampling and advanced features](doc/advanced_usage.md#sampling).
+The current core range accepts 2.2.x patches and requires its imported-file
+restore fix. The upcoming 2.3.0 API move is intentionally excluded until the
+connector switches to `engine.dart` / `engine_web.dart` and a dedicated GGUF
+file type. Until then, register the llama provider alone for GGUF; MediaPipe
+also claims binary models at the same priority. This draft is not release-ready.
 
 ## Troubleshooting
 

@@ -1,6 +1,6 @@
 # Advanced GGUF usage
 
-Start with the [chat and embedding quick start](../README.md). This guide
+Start with the [chat quick start](../README.md). This guide
 covers model-specific features and session behavior.
 
 `createSession`/`createChat` replace and close the previous legacy session.
@@ -101,27 +101,13 @@ Web LoRA operations are unavailable in llamadart 0.11.1 and remain unsupported.
 Core does not persist the inference LoRA companion in its restart identity;
 after restart, reinstall the paired spec or pass `loraPath` explicitly.
 
-## Embedding behavior
-
-See the [complete embedding example](../README.md#generate-embeddings) for
-registration, installation and cleanup. Use a trained embedding GGUF. Core
-requires a tokenizer companion, but this runtime uses its embedded tokenizer.
-Disable Edge AI's EmbeddingGemma-specific prefixes for BGE/MiniLM-like models.
-
-Single/batch results preserve order, are normalized by llamadart, and are
-checked for empty/nonfinite/all-zero vectors and changing dimensions.
-Embedding calls serialize with safe shutdown; close notifications evict core's
-cached embedder. `getDimension()` probes only until the first valid vector exists.
-
 ## Compatibility boundaries
 
-Core 2.2.0 has no `ModelFileType.gguf`; only binary specs with a `.gguf` primary
-filename are claimed. Other runtimes/formats remain unclaimed. Upstream GGUF
-identity, extension classification, an optional embedding tokenizer slot, and
-projector/LoRA persistence would remove the documented compatibility shims.
-`restoreInstalledLlamaModel()` compensates for core's imported-file restore path
-through its pinned identity and activation libraries; it never downloads or
-activates a different saved source. Missing or malformed identities return false.
+Core 2.2.1 has no `ModelFileType.gguf`; only binary specs with a `.gguf` primary
+filename are claimed. Do not register another binary provider for these models.
+Core now owns imported-file restart restoration; the connector has no preference
+reader or activation workaround. The remaining Web shim and engine imports will
+move to public core libraries after the 2.3.0 API train lands.
 
 Core Web probes a synthetic `web-active` / `active.bin` spec. The connector
 recovers the active installed identity for that exact probe before selecting

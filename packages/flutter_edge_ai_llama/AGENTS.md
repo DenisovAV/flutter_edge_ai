@@ -1,21 +1,23 @@
 # llama.cpp adapter maintenance
 
 This workspace package adapts core's registries to published `llamadart 0.11.1`.
-Core resolves locally in the workspace; standalone consumer/publish validation
-requires the exact `flutter_edge_ai 2.2.0` contract (currently unreleased).
+Core resolves locally in the workspace. Hosted consumer validation currently
+requires core `>=2.2.1 <2.3.0`: patch updates include its imported-file restore
+fix, while the pending 2.3.0 public-engine API migration remains outside the
+current draft. GGUF embeddings are deferred; see `doc/deferred_embeddings.md`.
 
 - Use Flutter 3.47.1, matching `.flutter-version` and the root `.fvmrc`.
 - Run `python3 tool/verify.py contracts` and `python3 tool/verify.py package`
-  from this package. The default package lane removes workspace resolution and
-  validates hosted consumer dependencies; it fails until the exact core is published.
-  For PR preparation, use `python3 tool/verify.py package --core-path ../flutter_edge_ai`:
-  this checks the archive against a matching staged local core and explicitly does
-  not qualify hosted consumer resolution. The hosted lane is required before release.
+  from this package. The package lane removes workspace resolution and validates
+  published dependencies. The optional `--core-path ../flutter_edge_ai` lane
+  prepares against the dependency's minimum core version and never qualifies
+  hosted resolution.
 - Root `tool/test_all.sh` discovers this package and its demo automatically.
 - `.github/workflows/llama.yml` owns the model/device and six-platform lanes;
   `.github/actions/setup-flutter-llama` pins the SDK's exact Git revision.
 - Keep Flutter lanes sequential in one checkout; separate CI jobs are isolated.
-- Keep exact dependency pins until public core APIs replace the restore/Web shims.
+- Keep core below 2.3.0 until engine imports and Web resolution use its public SPI.
+  Move GGUF routing to a dedicated core file type before release.
 - Runtime source ownership stays in llamadart-native / llama-web-bridge.
 - Never patch downloaded SDK, package, model or runtime sources to pass tests.
 - Required model lanes fail if fixtures are missing. Qualification claims require

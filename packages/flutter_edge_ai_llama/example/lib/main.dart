@@ -16,7 +16,6 @@ Future<void> main() async {
   await edge.FlutterEdgeAi.initialize(
     inferenceEngines: const [LlamaEngineProvider()],
   );
-  await restoreInstalledLlamaModel();
   runApp(
     MaterialApp(
       title: 'GGUF Lab',

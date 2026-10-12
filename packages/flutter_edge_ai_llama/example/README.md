@@ -50,7 +50,7 @@ output limit or missing usage rather than inventing a count. For longer chats,
 start a new conversation when the context is full.
 
 This UI intentionally demonstrates text chat. Copyable
-[chat and embedding API examples](../README.md#stream-a-response) and
+[chat API examples](../README.md#stream-a-response) and
 [tools, thinking, media and LoRA examples](../doc/advanced_usage.md) show the
 other features. See the [qualification matrix](../doc/platforms.md) for tested
 devices/backends and open release checks.

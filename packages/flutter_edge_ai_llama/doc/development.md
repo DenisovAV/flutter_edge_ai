@@ -20,8 +20,7 @@ python3 tool/run_web_smoke.py --model-url https://your-host/model.gguf \
 flutter test test/native_smoke_test.dart \
   --dart-define=GGUF_MODEL_PATH=/absolute/chat.gguf
 flutter test test/native_capabilities_test.dart \
-  --dart-define=GGUF_TOOL_MODEL_PATH=/absolute/qwen.gguf \
-  --dart-define=GGUF_EMBEDDING_MODEL_PATH=/absolute/bge.gguf
+  --dart-define=GGUF_TOOL_MODEL_PATH=/absolute/qwen.gguf
 python3 tool/fetch_web_assets.py
 cd example
 flutter test
@@ -34,8 +33,8 @@ python3 tool/validate_web_build.py
 Native capabilities have independent opt-in defines for audio model/projector/
 WAV, vision model/projector/PNG, LoRA base/adapter and GPU model. See
 `test/native_capabilities_test.dart`. Unconfigured model tests skip. To test
-embedding install/restart with the facade smoke, also supply
-`GGUF_EMBEDDING_MODEL_PATH` and `GGUF_TOKENIZER_PATH`.
+imported-file restart with the facade smoke, supply `GGUF_MODEL_PATH`;
+core 2.2.1 restores it without a connector helper.
 
 The real Web smoke runner requires a POSIX host (Linux or macOS) and uses Chrome and Flutter's Wasm test mode. Flutter
 3.47.1 omits COEP on test worker scripts even with `--cross-origin-isolation`;
@@ -45,7 +44,8 @@ with the test. It does not change the installed SDK or browser settings. Supply
 `--flutter`/`--chrome` when their executables are not at the defaults. Core's
 storage helper URL defaults to `cache_api.js` next to the model URL.
 
-Recorded macOS arm64 evidence with the pinned SDK:
+Historical macOS arm64 evidence from the original inference-and-embedding
+revision (`a4b84603`), before the inference-only split:
 
 - 32 VM contract tests and 31 Chrome contracts (including Web identity routing);
   Chrome omits the two native LoRA tests.
@@ -97,8 +97,7 @@ advanced model families have independent qualification requirements.
 
 The package-content dry-run removes workspace resolution in a clean standalone
 copy so workspace configuration or enclosing archive exclusions cannot hide
-consumer resolution problems or metadata. It does not publish. It reports two
-intentional exact-pin warnings and a changelog-version warning while this work is unreleased;
+consumer resolution problems or metadata. It does not publish. It permits only a changelog-version warning while this work is unreleased;
 `tool/verify.py package` rejects any other warning or validation error. A release
 must choose repository metadata and a version, cut the changelog, complete the
 platform matrix and run independent review before publication.

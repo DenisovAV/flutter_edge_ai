@@ -47,8 +47,8 @@ jobs:
           python-version: "3.13"
       - uses: ./.github/actions/setup-flutter-llama
       - run: python tool/verify.py contracts
-      - name: Package archive against local core (hosted validation required before publication)
-        run: python tool/verify.py package --core-path ../flutter_edge_ai
+      - name: Package archive and hosted consumer dependencies
+        run: python tool/verify.py package
       - name: Fetch immutable CPU smoke fixture
         run: python tool/fetch_test_model.py
       - name: Real Web CPU smoke

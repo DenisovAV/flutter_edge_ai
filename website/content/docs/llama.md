@@ -1,13 +1,13 @@
 ---
 title: llama.cpp
-description: Run local GGUF chat and embedding models with Flutter Edge AI and llamadart.
+description: Run local GGUF chat models with Flutter Edge AI and llamadart.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
 
 `flutter_edge_ai_llama` is an **unreleased contribution** providing optional
-inference and embedding engines powered by
+an inference engine powered by
 [llamadart](https://pub.dev/packages/llamadart). The adapter registers through
 core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
@@ -69,23 +69,19 @@ Replace the file path with your downloaded instruction-tuned GGUF.
 response. Stop a stream with `await chat.session.stopGeneration()` and start
 a new chat when the context fills. Interrupted turns are discarded.
 
-On restart, call `await restoreInstalledLlamaModel()` after initialization to
-restore the installed GGUF before `getActiveModel`; conversation history starts
-fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers described
-in the package guide.
+Core 2.2.1 restores installed models during initialization; conversation history
+starts fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers
+described in the package guide.
 
-Core 2.2.0 has no dedicated GGUF file type. Install a `.gguf` with
-`ModelFileType.binary`; the adapter recognizes its GGUF extension and declines
-other binary formats. Imported-file restoration and Web active identity have
-documented compatibility shims. The adapter currently pins core **2.2.0** and
-llamadart **0.11.1** until public extension APIs replace those shims.
+This draft uses core 2.2.x and `ModelFileType.binary` for GGUF. Register the llama
+provider alone for GGUF until core adds its dedicated file type. Migration to
+core's 2.3.0 public engine libraries remains pending.
 
 ## Add the development package
 
 The package is not on pub.dev yet. Use the example or a path dependency on
-`packages/flutter_edge_ai_llama` in your clone. Until core 2.2.0 is published,
-add a `dependency_overrides` entry pointing `flutter_edge_ai` at
-`packages/flutter_edge_ai` in the same checkout too.
+`packages/flutter_edge_ai_llama` in your clone. Core 2.2.1 is published and
+requires no local-core override.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
 `llamadart_llama_cpp_flutter: 0.0.21` SwiftPM companion.
@@ -109,23 +105,15 @@ Apple Flutter apps add `llamadart_llama_cpp_flutter 0.0.21` directly and enable
 SwiftPM, as in this package's example. To keep an app llama.cpp only, omit the
 separate LiteRT-LM engine and companion dependencies.
 
-## Generate embeddings
-
-Register `LlamaEmbeddingProvider` through `embeddingBackends`, install a trained
-embedding GGUF, await `FlutterEdgeAi.getActiveEmbedder()`, then call
-`embedder.generateEmbeddings(...)`. Use `useTaskPrefixes: false` for BGE models. Core currently
-requires a tokenizer companion at installation even though llama.cpp uses the
-GGUF's embedded tokenizer. See the
-[complete embedding example](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#generate-embeddings),
-including model cleanup.
+GGUF embeddings are deferred to a separate contribution against core's new
+embedding SPI.
 
 ## Capabilities and qualification
 
 The adapter implements tools, thinking, independent histories, native LoRA,
-GGUF embeddings and projector-backed image/audio input. Each requires a
+and projector-backed image/audio input. Each requires a
 compatible model, template and runtime; unsupported combinations fail clearly.
-GGUF embedding models use their embedded tokenizer, though core's installation
-API currently still requires a tokenizer companion. Projector installation and
+Projector installation and
 pairing remain application-owned. NPU and Web LoRA are unsupported.
 
 Historical CPU chat/lifecycle evidence covers macOS, Linux/Windows GCE,

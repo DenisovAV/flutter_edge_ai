@@ -13,7 +13,7 @@ and release approval remain pending.
 | CPU inference | Baseline qualification lane | Baseline browser lane |
 | GPU inference | Runtime/backend/driver dependent; explicit CPU fallback rejected | Browser/device dependent; unknown offload remains unknown |
 | Tools and thinking | Implemented; compatible model/template required | Implemented; compatible template/grammar required |
-| Embeddings | Implemented; trained embedding GGUF required | Implemented; bridge embedding capability required |
+| Embeddings | Deferred to a separate contribution | Deferred to a separate contribution |
 | Images/audio | Matching app-owned projector and capability probe required | Same; bridge/device memory constraints apply |
 | LoRA | Implemented, exclusive turn ownership and fail-closed cleanup | Unsupported by pinned llamadart API |
 | OPFS model handles | Not applicable | Unsupported; use cacheApi or network URLs |
@@ -26,7 +26,7 @@ unreported offload cannot prove either CPU or GPU execution.
 
 ## Automated gates
 
-Current gates use Flutter **3.47.1 / Dart 3.13.1**, `flutter_edge_ai 2.2.0`,
+Current gates use Flutter **3.47.1 / Dart 3.13.1**, `flutter_edge_ai 2.2.1`,
 `llamadart 0.11.1`, Apple runtime companion `0.0.21`, native llama.cpp artifacts `v0.5.0-2`,
 and browser assets
 `v0.1.54`. The browser manifest itself is SHA-256 pinned, and its asset checksums
@@ -65,9 +65,9 @@ absent fixtures instead of producing a successful skipped test suite.
 
 ```sh
 python3 tool/verify.py contracts
-# PR preparation against the matching local core:
+# Optional development preparation against the matching local core:
 python3 tool/verify.py package --core-path ../flutter_edge_ai
-# Required before publication, after core 2.2.0 is published:
+# Required hosted validation before publication:
 python3 tool/verify.py package
 python3 tool/fetch_test_model.py
 python3 tool/verify.py native --model-path tool/fixtures/chat.gguf
@@ -80,12 +80,9 @@ python3 tool/verify.py build --platform web
 python3 tool/verify.py device --device <device-id> --model-url <immutable-gguf-url>
 ```
 
-The package preparation lane stages the matching local core outside the archive,
-keeps the exact hosted dependency constraint, and uses an excluded temporary
-override. It validates archive contents and development dependency compatibility;
-it does not establish hosted consumer resolution. The default `package` lane
-uses hosted dependencies and remains required before publication. Core 2.2.0 is
-not yet published at the time of this compatibility update.
+The default package lane validates hosted dependency resolution and the
+standalone archive. Core 2.2.1 is published. The optional local-core lane remains
+for development preparation and is not a substitute for hosted validation.
 
 The native lane uses a VM facade smoke on Linux and the packaged
 three-cycle desktop smoke on macOS/Windows. A macOS hosted VM smoke timed out
@@ -146,7 +143,7 @@ Native model picking copies files into application-support storage. This needs
 space for the imported model; originals are preserved. The copy avoids a full
 Dart model buffer and removes dependence on a picker permission after restart.
 Multimodal projectors remain app-managed, and LoRA restart identity still needs
-explicit reinstallation or `loraPath` under core 2.2.0.
+explicit reinstallation or `loraPath` under core 2.2.x.
 
 ## Local validation, 2026-10-11
 
@@ -333,11 +330,32 @@ Hosted Android x86_64/API 35 passed all three cycles with the explicit
 single-thread profile at `6a5876c`. The SDK action explicitly enables
 SwiftPM for consistent setup, although Flutter 3.47.1 already defaults it on.
 
-Core 2.2.0 is not yet hosted on pub.dev. The default hosted `package` gate
-correctly fails dependency resolution until that version is published; local
-preparation is not publication qualification. Current-head GitHub platform and
+At the time of that 2026-10-11 run, core 2.2.0 was not yet hosted on pub.dev.
+Its hosted package gate failed as expected; local preparation did not establish
+hosted qualification. Core 2.2.1 is now published and the current gate uses it. Current-head GitHub platform and
 model-backed jobs remain required. The full-workspace test count in the migration
 section and earlier Android/iOS/GCE evidence belong to their stated older bases.
+
+## Inference-only review revision, 2026-10-12
+
+This revision includes upstream core 2.2.1 (`90f98fd`) and removes the embedding
+provider, its current examples and its tests. Historical embedding evidence above
+belongs to the preserved `a4b84603` source; the follow-up design is recorded in
+[deferred embeddings](deferred_embeddings.md).
+
+Local Flutter 3.47.1 checks passed analysis and formatting, 47 inference VM
+contracts, 46 Chrome contracts with three explicit skips, seven demo tests,
+22 tooling tests, workflow lint and relative documentation links. The real
+macOS CPU facade passed install, two-turn recall, cancellation/retry and reload.
+A fresh core manager restored the installed GGUF and generated again without
+any connector preference reader or activation helper. The native test used the
+immutable SmolLM2 fixture and disabled Metal enumeration for CPU qualification.
+
+The standalone hosted package gate passed, with only the documented Unreleased
+changelog warning. Core 2.2.x patches are accepted; 2.3.0 is excluded until the
+public engine SPI migration. Dedicated GGUF routing and public Web resolution
+remain pending upstream API work. This draft is not release-ready; the full
+GitHub matrix must pass on the branch before full review.
 
 ## Before a production release
 
@@ -345,7 +363,7 @@ section and earlier Android/iOS/GCE evidence belong to their stated older bases.
    definitions as passing platform evidence.
 2. Qualify real Android/iOS devices for lifecycle, storage, memory pressure,
    permission/restart behavior and the CPU/GPU combinations being advertised.
-3. Run model-backed tools, thinking, embeddings, vision, audio and LoRA checks
+3. Run model-backed tools, thinking, vision, audio and LoRA checks
    for each platform/backend combination claimed as qualified. Native macOS
    has the original model-specific evidence in `development.md`; other combinations need
    their own evidence. Web hardware WebGPU and advanced families are open.

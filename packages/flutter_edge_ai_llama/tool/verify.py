@@ -114,9 +114,10 @@ def main():
         core_text = core_pubspec.read_text()
         name = re.search(r"^name:\s*([^\s#]+)", core_text, re.MULTILINE)
         version = re.search(r"^version:\s*([^\s#]+)", core_text, re.MULTILINE)
-        pin = re.search(r"^  flutter_edge_ai:\s*([^\s#]+)", (PACKAGE / "pubspec.yaml").read_text(), re.MULTILINE)
-        if not name or name.group(1) != "flutter_edge_ai" or not version or not pin or version.group(1) != pin.group(1):
-            parser.error("--core-path must be flutter_edge_ai at the connector's exact dependency version")
+        pin = re.search(r"^  flutter_edge_ai:\s*([^\n#]+)", (PACKAGE / "pubspec.yaml").read_text(), re.MULTILINE)
+        minimum = re.search(r"\d+\.\d+\.\d+", pin.group(1)) if pin else None
+        if not name or name.group(1) != "flutter_edge_ai" or not version or not minimum or version.group(1) != minimum.group(0):
+            parser.error("--core-path must be flutter_edge_ai at the connector's minimum dependency version")
 
     version = json.loads(subprocess.check_output([flutter, "--version", "--machine"], text=True))
     expected = (PACKAGE / ".flutter-version").read_text().strip()
@@ -164,9 +165,8 @@ def main():
             command += ["--storage-helper-url", args.storage_helper_url]
         run(command)
     elif args.lane == "package":
-        # The adapter uses pinned core implementation APIs. Keep exact bounds
-        # until public extension APIs replace the shims. Publication/versioning
-        # remains separate; this validates the source archive only.
+        # Validate the standalone archive and hosted consumer resolution.
+        # A local override is explicitly development-only; it never ships.
         # An enclosing repository's .pubignore can hide this entire package.
         # Validate the standalone artifact without inheriting that root rule.
         with tempfile.TemporaryDirectory(prefix="edge-llama-publish-") as directory:
@@ -195,9 +195,7 @@ def main():
             result = subprocess.run([flutter, "pub", "publish", "--dry-run", "--ignore-warnings"], cwd=staged, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         print(result.stdout, flush=True)
         result.check_returncode()
-        allowed = ('Your dependency on "flutter_edge_ai" should allow more than one version.',
-                   'Your dependency on "llamadart" should allow more than one version.',
-                   "doesn't mention current version")
+        allowed = ("doesn't mention current version",)
         if args.core_path is not None:
             allowed += ("Non-dev dependencies are overridden in pubspec_overrides.yaml.",)
         warnings = [block for block in result.stdout.split("\n* ")[1:]]

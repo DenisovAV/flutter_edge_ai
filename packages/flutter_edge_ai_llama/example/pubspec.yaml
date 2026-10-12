@@ -11,8 +11,8 @@ dependencies:
     sdk: flutter
   flutter_edge_ai_llama:
     path: ..
-  flutter_edge_ai: 2.2.0
-  llamadart: 0.11.1
+  flutter_edge_ai: '>=2.2.1 <2.3.0'
+  llamadart: ^0.11.1
   llamadart_llama_cpp_flutter: 0.0.21
   file_selector: ^1.0.4
   path_provider: ^2.1.4

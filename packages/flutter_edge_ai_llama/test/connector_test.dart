@@ -87,26 +87,6 @@ void main() {
         throwsA(isA<llama.LlamaUnsupportedException>()),
       );
       expect(engine.disposals, 1);
-      final embeddingEngine = _FakeEngine();
-      final embedder = LlamaEmbeddingProvider(
-        loader: (_, _) async => embeddingEngine,
-      );
-      await expectLater(
-        embedder.createModel(
-          edge.EmbeddingModelSpec(
-            name: 'embed',
-            modelSource: _source('/models/embed.gguf'),
-            tokenizerSource: _source('/models/tokenizer.json'),
-          ),
-          const RuntimeConfig(
-            modelPath: 'embed.gguf',
-            maxTokens: 0,
-            preferredBackend: edge.PreferredBackend.gpu,
-          ),
-        ),
-        throwsA(isA<llama.LlamaUnsupportedException>()),
-      );
-      expect(embeddingEngine.disposals, 1);
     },
   );
 
@@ -945,22 +925,6 @@ void main() {
     },
   );
 
-  test(
-    'concurrent dimension requests perform exactly one embedding probe',
-    () async {
-      final embedder = LlamaEmbeddingModel(
-        engine: engine,
-        activeBackend: edge.PreferredBackend.cpu,
-      );
-      expect(
-        await Future.wait(List.generate(20, (_) => embedder.getDimension())),
-        everyElement(3),
-      );
-      expect(engine.embeddingInputs, hasLength(1));
-      await embedder.close();
-    },
-  );
-
   test('tool support is capability probed', () async {
     engine.toolSupport = false;
     await expectLater(
@@ -1205,122 +1169,6 @@ void main() {
     },
     skip: kIsWeb,
   );
-
-  test('GGUF embeddings preserve task prefixes, batch order, dimension and lifecycle', () async {
-    final provider = LlamaEmbeddingProvider(
-      loader: (_, params) async {
-        expect(params.device, llama.ComputeDevice.cpu);
-        return engine;
-      },
-    );
-    final spec = edge.EmbeddingModelSpec(
-      name: 'embed',
-      modelSource: _source('/models/embed.gguf'),
-      tokenizerSource: _source('/models/tokenizer.json'),
-    );
-    expect(provider.canHandle(spec), isTrue);
-    final embedder = await provider.createModel(
-      spec,
-      const RuntimeConfig(
-        modelPath: 'embed.gguf',
-        maxTokens: 0,
-        preferredBackend: edge.PreferredBackend.cpu,
-      ),
-    );
-    final vector = await embedder.generateEmbedding('question');
-    expect(vector, [1.0, 2.0, 3.0]);
-    expect(
-      engine.embeddingInputs.last,
-      '${edge.TaskType.retrievalQuery.prefix}question',
-    );
-    expect(await embedder.getDimension(), 3);
-    expect(
-      await embedder.generateEmbeddings([
-        'a',
-        'b',
-      ], taskType: edge.TaskType.retrievalDocument),
-      [
-        [1.0, 2.0, 3.0],
-        [1.0, 2.0, 3.0],
-      ],
-    );
-    expect(
-      engine.embeddingInputs.last,
-      '${edge.TaskType.retrievalDocument.prefix}b',
-    );
-    var closes = 0;
-    embedder.addCloseListener(() => closes++);
-    await embedder.close();
-    await embedder.close();
-    expect(closes, 1);
-    expect(embedder.isClosed, isTrue);
-    await expectLater(
-      embedder.getDimension(),
-      throwsA(isA<llama.LlamaStateException>()),
-    );
-  });
-
-  test(
-    'queued embedding batches own a snapshot of their caller input',
-    () async {
-      final embedder = LlamaEmbeddingModel(
-        engine: engine,
-        activeBackend: edge.PreferredBackend.cpu,
-        useTaskPrefixes: false,
-      );
-      final inputs = ['original'];
-      final request = embedder.generateEmbeddings(inputs);
-      inputs[0] = 'mutated';
-      inputs.add('extra');
-      expect(await request, hasLength(1));
-      expect(engine.embeddingInputs, ['original']);
-      await embedder.close();
-    },
-  );
-
-  test(
-    'embedding corruption and unsupported runtimes fail explicitly',
-    () async {
-      final embedder = LlamaEmbeddingModel(
-        engine: engine,
-        activeBackend: edge.PreferredBackend.cpu,
-        useTaskPrefixes: false,
-      );
-      engine.embeddingVector = [0, 0];
-      await expectLater(
-        embedder.generateEmbedding('raw'),
-        throwsA(isA<llama.LlamaInferenceException>()),
-      );
-      expect(engine.embeddingInputs.single, 'raw');
-      engine.embeddingVector = [double.nan];
-      await expectLater(
-        embedder.generateEmbedding('raw'),
-        throwsA(isA<llama.LlamaInferenceException>()),
-      );
-      engine.embeddingVector = [1, 2];
-      await embedder.generateEmbedding('raw');
-      engine.embeddingVector = [1, 2, 3];
-      await expectLater(
-        embedder.generateEmbedding('raw'),
-        throwsA(isA<llama.LlamaInferenceException>()),
-      );
-      await embedder.close();
-      engine.embeddingSupport = false;
-      final provider = LlamaEmbeddingProvider(loader: (_, _) async => engine);
-      final spec = edge.EmbeddingModelSpec(
-        name: 'embed',
-        modelSource: _source('/models/embed.gguf'),
-        tokenizerSource: _source('/models/tokenizer.json'),
-      );
-      await expectLater(
-        provider.createModel(
-          spec,
-          const RuntimeConfig(modelPath: 'embed.gguf', maxTokens: 0),
-        ),
-        throwsA(isA<llama.LlamaUnsupportedException>()),
-      );
-    },
-  );
 }
 
 edge.InferenceModelSpec _spec(
@@ -1354,13 +1202,10 @@ class _FakeEngine extends llama.LlamaEngine {
   bool failLoraCleanup = false;
   bool toolSupport = true;
   bool visionSupport = true;
-  bool embeddingSupport = true;
   String? projector;
   String? activeAdapter;
   final List<String?> adaptersAtGeneration = [];
   final List<String> loraEvents = [];
-  final List<String> embeddingInputs = [];
-  List<double> embeddingVector = [1, 2, 3];
   List<llama.ToolDefinition> lastTools = [];
   List<llama.ToolDefinition> lastTemplateTools = [];
   int active = 0;
@@ -1373,7 +1218,6 @@ class _FakeEngine extends llama.LlamaEngine {
         supportsToolCalling: toolSupport,
         supportsVision: visionSupport,
         supportsAudio: true,
-        supportsEmbeddings: embeddingSupport,
       );
   @override
   Future<void> loadMultimodalProjectorSource(
@@ -1402,21 +1246,6 @@ class _FakeEngine extends llama.LlamaEngine {
     if (failLoraCleanup) throw llama.LlamaInferenceException('cleanup failed');
     loraEvents.add('remove:${source.path}');
     activeAdapter = null;
-  }
-
-  @override
-  Future<List<double>> embed(String text, {bool normalize = true}) async {
-    embeddingInputs.add(text);
-    return embeddingVector;
-  }
-
-  @override
-  Future<List<List<double>>> embedBatch(
-    List<String> texts, {
-    bool normalize = true,
-  }) async {
-    embeddingInputs.addAll(texts);
-    return [for (final _ in texts) embeddingVector];
   }
 
   Completer<void>? _release;

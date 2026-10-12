@@ -241,6 +241,36 @@ class ToolingTests(unittest.TestCase):
             self.assertEqual((core / "pubspec.yaml").read_text(), core_source)
             self.assertFalse((package / "pubspec_overrides.yaml").exists())
 
+    def test_local_core_preparation_accepts_caret_and_bounded_minimum(self):
+        for constraint in ["^2.2.1", "'>=2.2.1 <2.3.0'"]:
+            with self.subTest(constraint=constraint), tempfile.TemporaryDirectory() as directory:
+                package = Path(directory) / "connector"
+                core = Path(directory) / "core"
+                package.mkdir()
+                core.mkdir()
+                (package / "pubspec.yaml").write_text(f"dependencies:\n  flutter_edge_ai: {constraint}\n")
+                (package / ".flutter-version").write_text("3.47.1")
+                (core / "pubspec.yaml").write_text("name: flutter_edge_ai\nversion: 2.2.1\n")
+                with patch.object(package_verify, "PACKAGE", package), \
+                     patch.object(sys, "argv", ["verify.py", "package", "--core-path", str(core)]), \
+                     patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+                     patch.object(package_verify.subprocess, "run", side_effect=[
+                         subprocess.CompletedProcess([], 0),
+                         subprocess.CompletedProcess([], 0, stdout="Validating package...\n"),
+                     ]) as run:
+                    package_verify.main()
+                self.assertEqual(run.call_count, 2)
+
+    def test_publish_gate_rejects_exact_dependency_warning(self):
+        with patch.object(sys, "argv", ["verify.py", "package"]), \
+             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+             patch.object(package_verify.subprocess, "run", side_effect=[
+                 subprocess.CompletedProcess([], 0),
+                 subprocess.CompletedProcess([], 0, stdout='Validating package...\n* Your dependency on "flutter_edge_ai" should allow more than one version.\n'),
+             ]):
+            with self.assertRaisesRegex(RuntimeError, "Unexpected publish-validation"):
+                package_verify.main()
+
     def test_local_core_preparation_rejects_wrong_package_or_version_before_flutter(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

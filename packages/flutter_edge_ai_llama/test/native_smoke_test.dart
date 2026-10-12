@@ -10,8 +10,6 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _modelPath = String.fromEnvironment('GGUF_MODEL_PATH');
-const _embeddingPath = String.fromEnvironment('GGUF_EMBEDDING_MODEL_PATH');
-const _tokenizerPath = String.fromEnvironment('GGUF_TOKENIZER_PATH');
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -28,10 +26,8 @@ void main() {
       llama.LlamaLogging.configure(level: llama.LlamaLogLevel.error);
       edge.FlutterEdgeAi.logLevel = edge.EdgeAiLogLevel.none;
       edge.InferenceModel? loaded;
-      edge.EmbeddingModel? embedder;
       addTearDown(() async {
         await loaded?.close();
-        await embedder?.close();
         PathProviderPlatform.instance = originalPaths;
         await scratch.delete(recursive: true);
       });
@@ -43,9 +39,6 @@ void main() {
       );
       await edge.FlutterEdgeAi.initialize(
         inferenceEngines: const [LlamaEngineProvider()],
-        embeddingBackends: const [
-          LlamaEmbeddingProvider(useTaskPrefixes: false, contextSize: 512),
-        ],
       );
       await edge.FlutterEdgeAi.installModel(
         modelType: edge.ModelType.general,
@@ -122,7 +115,6 @@ void main() {
       // Fresh plugin/manager rehydrates the active identity from persisted prefs.
       FlutterEdgeAiDesktop.registerWith();
       await edge.FlutterEdgeAiPlugin.instance.modelManager.ensureInitialized();
-      expect(await restoreInstalledLlamaModel(), isTrue);
       expect(
         (edge.FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel
                 as edge.InferenceModelSpec)
@@ -154,32 +146,6 @@ void main() {
         edge.Message.text(text: 'Say hello.', isUser: true),
       );
       expect((await fresh.getResponse()).trim(), isNotEmpty);
-      // This output is evidence from actual inference, not a golden assertion.
-      if (_embeddingPath.isNotEmpty && _tokenizerPath.isNotEmpty) {
-        await edge.FlutterEdgeAi.installEmbedder()
-            .modelFromFile(_embeddingPath)
-            .tokenizerFromFile(_tokenizerPath)
-            .install();
-        embedder = await edge.FlutterEdgeAi.getActiveEmbedder(
-          preferredBackend: edge.PreferredBackend.cpu,
-        );
-        expect(await embedder.getDimension(), 384);
-        expect(
-          await embedder.generateEmbedding('A cat sleeps on the sofa.'),
-          hasLength(384),
-        );
-        await embedder.close();
-        FlutterEdgeAiDesktop.registerWith();
-        await edge.FlutterEdgeAiPlugin.instance.modelManager
-            .ensureInitialized();
-        embedder = await edge.FlutterEdgeAi.getActiveEmbedder(
-          preferredBackend: edge.PreferredBackend.cpu,
-        );
-        expect(
-          await embedder.generateEmbedding('A cat rests on a couch.'),
-          hasLength(384),
-        );
-      }
       // ignore: avoid_print
       print(
         'NATIVE_SMOKE: backend=${reloaded.activeBackend?.name} '

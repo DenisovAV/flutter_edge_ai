@@ -2,4 +2,4 @@
 
 ## Unreleased
 
-- Add llama.cpp-powered GGUF inference and embeddings through llamadart.
+- Add llama.cpp-powered GGUF inference through llamadart.

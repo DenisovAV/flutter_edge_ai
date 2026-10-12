@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 
 const _toolModel = String.fromEnvironment('GGUF_TOOL_MODEL_PATH');
-const _embeddingModel = String.fromEnvironment('GGUF_EMBEDDING_MODEL_PATH');
 const _audioModel = String.fromEnvironment('GGUF_AUDIO_MODEL_PATH');
 const _audioProjector = String.fromEnvironment('GGUF_AUDIO_PROJECTOR_PATH');
 const _audioFile = String.fromEnvironment('GGUF_AUDIO_FILE_PATH');
@@ -94,53 +93,6 @@ void main() {
     },
     skip: _toolModel.isEmpty,
     timeout: const Timeout(Duration(minutes: 4)),
-  );
-
-  test(
-    'native GGUF embedder produces normalized 384-dimensional vectors',
-    () async {
-      final spec = edge.EmbeddingModelSpec(
-        name: 'bge-small',
-        modelSource: edge.ModelSource.file(_embeddingModel),
-        tokenizerSource: edge.ModelSource.file('/unused/tokenizer.json'),
-      );
-      final embedder =
-          await const LlamaEmbeddingProvider(
-            useTaskPrefixes: false,
-            contextSize: 512,
-          ).createModel(
-            spec,
-            RuntimeConfig(
-              modelPath: _embeddingModel,
-              maxTokens: 0,
-              preferredBackend: edge.PreferredBackend.cpu,
-            ),
-          );
-      addTearDown(embedder.close);
-      final vectors = await embedder.generateEmbeddings([
-        'The cat sleeps on the sofa.',
-        'A cat is resting on a couch.',
-        'The rocket orbits Mars.',
-      ]);
-      expect(await embedder.getDimension(), 384);
-      expect(vectors, hasLength(3));
-      for (final vector in vectors) {
-        expect(vector, hasLength(384));
-        expect(vector.every((x) => x.isFinite), isTrue);
-        expect(
-          vector.fold<double>(0, (sum, x) => sum + x * x),
-          closeTo(1, .001),
-        );
-      }
-      double dot(List<double> a, List<double> b) =>
-          List.generate(a.length, (i) => a[i] * b[i]).fold(0, (a, b) => a + b);
-      expect(
-        dot(vectors[0], vectors[1]),
-        greaterThan(dot(vectors[0], vectors[2])),
-      );
-    },
-    skip: _embeddingModel.isEmpty,
-    timeout: const Timeout(Duration(minutes: 2)),
   );
 
   test(

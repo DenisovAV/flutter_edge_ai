@@ -17,7 +17,7 @@ typedef LlamaEngineLoader = Future<llama.LlamaEngine> Function(
 
 /// Resolves the projector paired with the selected model, natively or on Web.
 ///
-/// Core 2.2.0 has no GGUF projector install slot. The app must install/cache the
+/// Core 2.2.x has no GGUF projector install slot. The app must install/cache the
 /// projector and return its local path or browser URL through this resolver.
 typedef LlamaProjectorResolver = Future<llama.ModelSource?> Function(
   edge.InferenceModelSpec spec,

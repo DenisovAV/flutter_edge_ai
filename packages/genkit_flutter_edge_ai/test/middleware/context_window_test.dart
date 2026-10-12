@@ -355,5 +355,28 @@ void main() {
 
       expect(fakeChat.receivedMessages.length, 9);
     });
+
+    test('a middleware config that is not a whole number fails instead of '
+        'being truncated', () async {
+      for (final value in [20.5, '20']) {
+        Object? outcome;
+        try {
+          final response = await ai.generate(
+            model: flutterEdgeAi.model('m'),
+            messages: longHistory(),
+            use: [
+              middlewareRef<Map<String, dynamic>>(
+                name: kContextWindowMiddlewareName,
+                config: {'maxInputTokens': value},
+              ),
+            ],
+          );
+          outcome = response.finishReason;
+        } catch (e) {
+          outcome = e;
+        }
+        expect(outcome, isNot(FinishReason.stop), reason: '$value');
+      }
+    });
   });
 }

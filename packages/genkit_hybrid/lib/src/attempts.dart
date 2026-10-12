@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:genkit/genkit.dart';
 
-/// Whether [error] is a transient/availability failure that justifies trying
-/// the next branch. Permanent errors (bad request, bad auth) must NOT trigger
-/// fallback — the next branch would get the same bad request and also fail,
-/// masking the real cause. Non-GenkitException throwables (network, timeout,
-/// OOM) are treated as transient.
+/// Whether [error] justifies trying the next branch: a transient or
+/// availability failure, or a capability this branch's model lacks
+/// (UNIMPLEMENTED) — the next branch is another model, which may have it.
+/// Permanent errors (bad request, bad auth) must NOT trigger fallback — the
+/// next branch would get the same bad request and also fail, masking the real
+/// cause. Non-GenkitException throwables (network, timeout, OOM) are treated
+/// as transient.
 bool isTransient(Object error) {
   if (error is! GenkitException) return true;
   switch (error.status) {
@@ -14,6 +16,7 @@ bool isTransient(Object error) {
     case StatusCode.deadlineExceeded:
     case StatusCode.resourceExhausted:
     case StatusCode.internal:
+    case StatusCode.unimplemented:
       return true;
     default:
       return false;
@@ -53,7 +56,15 @@ Future<ModelResponse> runInOrder(
     // accept is evaluated OUTSIDE the branch-error catch: a throwing predicate
     // is a caller bug, not a branch failure, and must propagate — never be
     // mistaken for a transient branch error and silently escalate.
-    if (isLast || accept == null || await accept(resp)) return resp;
+    if (isLast || accept == null) return resp;
+    // A branch that finished despite a cancel is not worth judging: the judge
+    // may be a model call of its own.
+    context.cancel?.throwIfCancelled();
+    final accepted = await accept(resp);
+    // An async judge can outlive a cancel; its verdict must not turn a
+    // cancelled request into a success, nor start the next branch.
+    context.cancel?.throwIfCancelled();
+    if (accepted) return resp;
     // accepted == false and not last -> escalate to the next branch.
   }
   throw StateError('unreachable'); // loop always returns or rethrows.

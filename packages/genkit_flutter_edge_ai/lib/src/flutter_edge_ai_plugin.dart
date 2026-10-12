@@ -6,13 +6,21 @@ import 'flutter_edge_ai_model.dart';
 import 'flutter_edge_ai_options.dart';
 import 'flutter_edge_ai_runtime.dart';
 import 'middleware/context_window.dart';
+import 'model_slot.dart';
 
 /// Configuration for a single model exposed by [GenkitFlutterEdgeAiPlugin].
+///
+/// The name is a label for Genkit: every configured name runs the model that
+/// is active in flutter_edge_ai (the one installed or selected last). Install
+/// or switch models with `FlutterEdgeAi.installModel()`; [modelType] tells the
+/// plugin how to talk to that model.
 class FlutterEdgeAiModelConfig {
   FlutterEdgeAiModelConfig({
     required this.name,
     required this.modelType,
     this.fileType = gemma.ModelFileType.task,
+    this.supportsTools = true,
+    this.supportsMedia = true,
   }) {
     if (name.isEmpty) {
       throw ArgumentError.value(name, 'name', 'Model name must not be empty');
@@ -28,6 +36,15 @@ class FlutterEdgeAiModelConfig {
 
   /// The model file format (.task, .binary, or .litertlm).
   final gemma.ModelFileType fileType;
+
+  /// Whether the model can call tools. Advertised as Genkit's `tools` and
+  /// `toolChoice` support; false rejects a request that declares tools.
+  final bool supportsTools;
+
+  /// Whether the model takes images or audio. Advertised as Genkit's `media`
+  /// support; false rejects a request that carries media. A model that takes
+  /// them still needs `supportImage` / `supportAudio` in the request config.
+  final bool supportsMedia;
 }
 
 /// Configuration for an embedder exposed by [GenkitFlutterEdgeAiPlugin].
@@ -107,6 +124,12 @@ class GenkitFlutterEdgeAiPlugin extends GenkitPlugin {
   /// Cache for resolved actions to avoid recreating on every resolve() call.
   final Map<String, Action> _resolvedActions = {};
 
+  /// The model every configured name runs: flutter_edge_ai has one active
+  /// model, so the names share its queue and its loaded handle.
+  late final FlutterEdgeAiModelSlot _modelSlot = FlutterEdgeAiModelSlot(
+    runtime,
+  );
+
   @override
   String get name => prefix;
 
@@ -116,44 +139,27 @@ class GenkitFlutterEdgeAiPlugin extends GenkitPlugin {
   List<GenerateMiddlewareDef> middleware() => [contextWindowMiddlewareDef()];
 
   @override
-  Future<List<ActionMetadata>> list() async {
-    final metadata = <ActionMetadata>[];
-
-    for (final config in models) {
-      metadata.add(
-        ActionMetadata(
-          actionType: ActionType.model,
-          name: '$prefix/${config.name}',
-          metadata: {
-            'model': {
-              'label': config.name,
-              'customOptions': FlutterEdgeAiModelOptions.$schema.jsonSchema(),
-              // Shared with the resolved Model's metadata so list() and the live
-              // action never diverge (see kFlutterEdgeAiModelSupports).
-              'supports': kFlutterEdgeAiModelSupports,
-            },
-          },
+  Future<List<ActionMetadata>> list() async => [
+    for (final config in models)
+      modelMetadata(
+        '$prefix/${config.name}',
+        info: ModelInfo(
+          label: config.name,
+          // Shared with the resolved Model's metadata so list() and the live
+          // action never diverge.
+          supports: flutterEdgeAiModelSupports(
+            tools: config.supportsTools,
+            media: config.supportsMedia,
+          ),
         ),
-      );
-    }
-
-    for (final config in embedders) {
-      metadata.add(
-        ActionMetadata(
-          actionType: ActionType.embedder,
-          name: '$prefix/${config.name}',
-          metadata: {
-            'embedder': {
-              'label': config.name,
-              'customOptions': FlutterEdgeAiEmbedConfig.$schema.jsonSchema(),
-            },
-          },
-        ),
-      );
-    }
-
-    return metadata;
-  }
+        customOptions: FlutterEdgeAiModelOptions.$schema,
+      ),
+    for (final config in embedders)
+      embedderMetadata(
+        '$prefix/${config.name}',
+        customOptions: FlutterEdgeAiEmbedConfig.$schema,
+      ),
+  ];
 
   @override
   Action? resolve(ActionType actionType, String name) {
@@ -174,6 +180,9 @@ class GenkitFlutterEdgeAiPlugin extends GenkitPlugin {
         modelType: config.modelType,
         fileType: config.fileType,
         runtime: runtime,
+        slot: _modelSlot,
+        supportsTools: config.supportsTools,
+        supportsMedia: config.supportsMedia,
       );
       _resolvedActions[cacheKey] = action;
       return action;

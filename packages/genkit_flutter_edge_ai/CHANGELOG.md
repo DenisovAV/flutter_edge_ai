@@ -1,3 +1,12 @@
+## 0.9.0
+- **Breaking:** bad options and parts the model cannot take fail with a status, not silently.
+- Every tool response reaches the model, and tool calls carry `ref`s.
+- Several images per message; media without `contentType` is typed.
+- `outputSchema` works without middleware; new `maxOutputTokens` option; `response.usage`.
+- Embedder `taskType` option: index documents with `retrievalDocument`.
+- Model names share one queue; every request gets the active model, a new one after an install.
+- Require `flutter_edge_ai` ^2.2.1.
+
 ## 0.8.1
 - Unset `temperature` and `topK` no longer force greedy; the model sampler applies (#572).
 - Require `flutter_edge_ai` ^2.2.0.

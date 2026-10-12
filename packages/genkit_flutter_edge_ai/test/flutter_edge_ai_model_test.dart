@@ -98,16 +98,22 @@ void main() {
       expect(response.message!.content.first.toolRequest!.name, 'search');
     });
 
-    test('caches model when config is unchanged', () async {
-      fakeChat.blockingResponse = const gemma.TextResponse('ok');
-      final model = buildModel();
+    test(
+      'asks flutter_edge_ai for the model on every call, which reuses it',
+      () async {
+        fakeChat.blockingResponse = const gemma.TextResponse('ok');
+        final model = buildModel();
 
-      await model(simpleRequest('first'));
-      await model(simpleRequest('second'));
+        await model(simpleRequest('first'));
+        await model(simpleRequest('second'));
 
-      expect(runtime.getActiveModelCallCount, 1);
-      expect(fakeModel.createChatCallCount, 2);
-    });
+        // flutter_edge_ai keeps the loaded model and builds a new one when the
+        // arguments or the active model change; a handle cached here would miss
+        // both.
+        expect(runtime.getActiveModelCallCount, 2);
+        expect(fakeModel.createChatCallCount, 2);
+      },
+    );
 
     test('recreates model when config changes', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:genkit/plugin.dart';
@@ -16,6 +17,13 @@ const _kDefaultContextWindow = 1024;
 /// Tokens held back from the context window for the model's response when the
 /// input budget is derived rather than given explicitly.
 const _kDefaultReserveOutputTokens = 256;
+
+/// The text Genkit writes into the prompt for an output [schema]: its
+/// `jsonSchemaInstructions`, which the constrained-output simulation uses. It
+/// is not exported, so it is rebuilt here; a test pins the two together.
+String schemaInstructionsText(Map<String, dynamic> schema) =>
+    'Output should be in JSON format and conform to the following '
+    'schema:\n\n```\n${const JsonEncoder.withIndent('  ').convert(schema)}\n```\n';
 
 /// Flat per-media-part token estimate (images/audio don't have a text length to
 /// measure; this keeps a long multimodal turn from being counted as ~free).
@@ -75,7 +83,9 @@ class ContextWindowMiddleware extends GenerateMiddleware {
   }
 
   /// Explicit input-token budget; when null the budget is derived per request
-  /// from `maxTokens` (the context window) minus [reserveOutputTokens].
+  /// from `maxTokens` (the context window) minus the response headroom: the
+  /// request's `maxOutputTokens` or [reserveOutputTokens], whichever is
+  /// larger.
   final int? maxInputTokens;
 
   /// Response headroom used only when [maxInputTokens] is null.
@@ -91,18 +101,41 @@ class ContextWindowMiddleware extends GenerateMiddleware {
     )
     next,
   ) {
+    // Only maxTokens and maxOutputTokens, which Genkit's common config has
+    // too, are read: the middleware can sit in front of a model that is not
+    // this plugin's, whose other options are not ours to judge. A value that
+    // is not a positive integer fails as the model would fail it, not as a
+    // TypeError a hybrid router would take for a transient error.
     final contextWindow =
-        (request.config?['maxTokens'] as num?)?.toInt() ??
+        _positiveIntConfig(request.config, 'maxTokens') ??
         _kDefaultContextWindow;
-    final budget = maxInputTokens ?? (contextWindow - reserveOutputTokens);
+    final maxOutputTokens = _positiveIntConfig(
+      request.config,
+      'maxOutputTokens',
+    );
+    final reserve =
+        maxOutputTokens != null && maxOutputTokens > reserveOutputTokens
+        ? maxOutputTokens
+        : reserveOutputTokens;
+    // A constrained request still carrying its schema gets the schema written
+    // into the prompt downstream (by the model, or a later
+    // simulateConstrainedGeneration), after this trims: hold room for it.
+    final output = request.output;
+    final schema = output?.schema;
+    final schemaTokens = output?.constrained == true && schema != null
+        ? (schemaInstructionsText(schema).length / 4).ceil()
+        : 0;
+    final budget = (maxInputTokens ?? (contextWindow - reserve)) - schemaTokens;
     if (budget <= 0) {
-      // Only reachable via the derived path: reserveOutputTokens >= the
-      // model's context window. Surfacing this beats silently deleting the
-      // whole history down to the last turn.
+      // The reserves for the reply and the output schema take the whole
+      // context window. Surfacing this beats silently deleting the whole
+      // history down to the last turn.
       throw GenkitException(
-        'Context-window trimmer: input budget is <= 0 (reserveOutputTokens '
-        '$reserveOutputTokens >= context window $contextWindow). Lower '
-        'reserveOutputTokens or set maxInputTokens explicitly.',
+        'Context-window trimmer: input budget is <= 0 (context window '
+        '$contextWindow, maxInputTokens $maxInputTokens, reserved for the '
+        'response $reserve, output schema ~$schemaTokens tokens). Lower '
+        'reserveOutputTokens or maxOutputTokens, raise maxTokens or set '
+        'maxInputTokens.',
         status: StatusCode.invalidArgument,
       );
     }
@@ -203,6 +236,34 @@ class ContextWindowMiddleware extends GenerateMiddleware {
   }
 }
 
+/// [config]'s [key] as a positive integer, or null when it is not set. A
+/// whole double (`1024.0`, as JSON may deliver it) is accepted.
+int? _positiveIntConfig(Map<String, dynamic>? config, String key) {
+  final value = config?[key];
+  if (value == null) return null;
+  if (value is num &&
+      value.isFinite &&
+      value == value.roundToDouble() &&
+      value >= 1) {
+    return value.toInt();
+  }
+  throw GenkitException(
+    'Context-window trimmer: $key must be a positive integer, got $value.',
+    status: StatusCode.invalidArgument,
+  );
+}
+
+/// [config]'s [key] as an integer, or null when it is not set. The
+/// constructor judges its range.
+int? _intMiddlewareConfig(Map<String, dynamic>? config, String key) {
+  final value = config?[key];
+  if (value == null) return null;
+  if (value is num && value.isFinite && value == value.roundToDouble()) {
+    return value.toInt();
+  }
+  throw ArgumentError.value(value, key, 'must be an integer');
+}
+
 /// The middleware definition to register from the plugin's
 /// [GenkitPlugin.middleware] hook.
 ///
@@ -218,8 +279,8 @@ GenerateMiddlewareDef<Map<String, dynamic>> contextWindowMiddlewareDef() {
   return generateMiddleware<Map<String, dynamic>>(
     name: kContextWindowMiddlewareName,
     create: (config, ctx) => ContextWindowMiddleware(
-      maxInputTokens: (config?['maxInputTokens'] as num?)?.toInt(),
-      reserveOutputTokens: (config?['reserveOutputTokens'] as num?)?.toInt(),
+      maxInputTokens: _intMiddlewareConfig(config, 'maxInputTokens'),
+      reserveOutputTokens: _intMiddlewareConfig(config, 'reserveOutputTokens'),
     ),
   );
 }
@@ -235,7 +296,10 @@ GenerateMiddlewareDef<Map<String, dynamic>> contextWindowMiddlewareDef() {
 /// ```
 ///
 /// With no arguments the budget is derived from the request's `maxTokens`
-/// (the model's context window) minus 256 tokens of response headroom.
+/// (the model's context window) minus the response headroom: 256 tokens, or
+/// the request's `maxOutputTokens` when that is larger. An output schema the
+/// request asks for is held back as well, since it is written into the
+/// prompt after the trimmer runs.
 GenerateMiddlewareRef<Map<String, dynamic>> trimContext({
   int? maxInputTokens,
   int? reserveOutputTokens,

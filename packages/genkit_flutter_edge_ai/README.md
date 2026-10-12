@@ -17,14 +17,15 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Wraps `flutter_edge_ai` as a Genkit model provider
 - Supports text generation (blocking and streaming)
 - Embeddings — register a `FlutterEdgeAiEmbedderConfig`, reference it with `flutterEdgeAi.embedder(...)`
-- Multimodal input (images, audio) — supports `data:` URIs, `file://` paths, and `http(s)://` URLs
+- Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (at most 20 MiB each, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
-- Parallel tool calls — multiple function calls in a single model response
-- Structured JSON output — pass an `outputSchema` with `use: [simulateConstrainedGeneration()]`, read the parsed object from `response.output`
+- Parallel tool calls — several calls in one response, each with a `ref`, and every tool response goes back to the model
+- Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
 - Thinking mode (Gemma 4, DeepSeek, Qwen3)
-- Generation latency tracking via `latencyMs` in responses
-- Configurable via `@Schema()`-annotated options
+- `latencyMs`, and token usage in `response.usage` where the engine counts tokens, with time to first token and tokens/s under `usage.custom`. A single-turn model's chat (FunctionGemma) opens a fresh session after each answer and reports none
+- Configurable via `@Schema()`-annotated options, validated before a model loads
+- Errors a router can act on: a bad request is `INVALID_ARGUMENT`; no model installed is `UNAVAILABLE`; tools or media on a model configured without them, or an engine that cannot do this here, are `UNIMPLEMENTED` — `genkit_hybrid` hands both to its next branch; an installed model the app cannot run (no engine registered for it) is `FAILED_PRECONDITION`
 
 ## Supported Model Architectures
 
@@ -59,7 +60,7 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 # pubspec.yaml (your app)
 dependencies:
   genkit: ^1.0.0
-  genkit_flutter_edge_ai: ^0.8.1
+  genkit_flutter_edge_ai: ^0.9.0
   flutter_edge_ai: ^2.2.0
   flutter_edge_ai_litertlm: ^1.12.0  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.2.2  # the tokenizers an embedding backend needs
@@ -155,7 +156,8 @@ final response = await ai.generate(
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `maxTokens` | `int?` | 1024 | **Context window** (input + output), not reply length — it goes straight into `getActiveModel(maxTokens:)`. To shorten replies, trim the prompt or use the context-window middleware; lowering this shrinks the KV cache. |
+| `maxTokens` | `int?` | 1024 | **Context window** (input + output), not reply length — it goes straight into `getActiveModel(maxTokens:)`; lowering it shrinks the KV cache. Cap the reply with `maxOutputTokens`. |
+| `maxOutputTokens` | `int?` | null | Cap on the tokens generated for one reply (`createChat(maxOutputTokens:)`). `.litertlm` honours it; MediaPipe ignores it. |
 | `temperature` | `double?` | model's own | Sampling temperature |
 | `topK` | `int?` | model's own | Top-K sampling; `1` is greedy |
 | `topP` | `double?` | model's own | Top-P (nucleus) sampling |
@@ -170,6 +172,12 @@ final response = await ai.generate(
 | `preferredBackend` | `String?` | null | Text-decoder backend: `'cpu'`, `'gpu'`, `'npu'` (null = engine default) |
 | `preferredVisionBackend` | `String?` | null | Vision-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; ignored by MediaPipe) |
 | `preferredAudioBackend` | `String?` | null | Audio-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; set `'gpu'` for faster audio; ignored by MediaPipe) |
+
+Every option is checked before a model loads: a value of the wrong type, a
+fraction for an integer, a `maxTokens`, `maxOutputTokens`, `topK` or
+`maxFunctionBufferLength` below 1, a negative `temperature`, a `topP` outside
+(0, 1], a `maxOutputTokens` larger than `maxTokens`, or a `toolChoice` or
+backend not listed above is an `INVALID_ARGUMENT`.
 
 "Model's own" is the sampler a native `.litertlm` file ships, else the defaults
 its family publishes (`SamplingParams.forModelType` in `flutter_edge_ai`). On
@@ -210,19 +218,20 @@ Write it as `toolChoice: .none`: genkit 1.0 and `flutter_edge_ai` both export a
 
 ## Structured Output
 
-The plugin advertises `output: ['text', 'json']`. On-device Gemma has no native
-schema-constrained decoder, and Genkit does not put the schema into the prompt
-on its own: pass an `outputSchema` (a `schemantic` type) together with the
-`simulateConstrainedGeneration()` middleware, which writes the schema into the
-prompt as instructions. The plugin returns the raw model text and Genkit's
-`extractJson` populates `response.output`:
+The plugin advertises `output: ['text', 'json']`. Genkit asks for constrained
+output whenever you pass an `outputSchema` (a `schemantic` type). No on-device
+engine can constrain decoding to a schema, so the plugin writes the schema into
+the prompt as instructions, the way Genkit's `simulateConstrainedGeneration()`
+middleware does (adding the middleware as well is harmless: the schema is
+written once). It returns the raw model text and Genkit's `extractJson`
+populates `response.output`. Pass `outputConstrained: false` to leave the
+prompt alone.
 
 ```dart
 final response = await ai.generate(
   model: flutterEdgeAi.model('gemma-3-1b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
-  use: [simulateConstrainedGeneration()], // the schema reaches the model
 );
 
 final Recipe? recipe = response.output;
@@ -241,10 +250,9 @@ Genkit does not check the reply against the schema, so validate
   enough, because the `4` is extracted: `ai.generate` throws a `TypeError`
   instead of returning a result.
 
-The middleware appends the schema to the first system message, or to the last
-user message when there is none. The plugin uses the `systemInstruction` option
-in place of system messages, so when you set it together with a `system:` prompt
-the schema never reaches the model; put the instruction in `system:` instead.
+The schema goes into the first system message, or into the last user message
+when there is none. The `systemInstruction` option replaces system messages;
+the plugin keeps the schema and appends it to that instruction.
 
 ## Context-Window Trimming
 
@@ -264,9 +272,11 @@ final response = await ai.generate(
 ```
 
 With no arguments the budget is derived from the request's `maxTokens` (the
-model's context window) minus 256 tokens of response headroom. Token counts are
-estimated with a `chars / 4` heuristic; a contiguous suffix of recent turns is
-kept, never a gap.
+model's context window) minus the response headroom: 256 tokens, or the
+request's `maxOutputTokens` when that is larger. A requested output schema is
+held back as well, since it is written into the prompt after the trimmer runs.
+Token counts are estimated with a `chars / 4` heuristic; a contiguous suffix of
+recent turns is kept, never a gap.
 
 ## Embeddings
 
@@ -292,9 +302,25 @@ for (final embedding in embeddings) {
 }
 ```
 
+Texts are embedded as search queries. EmbeddingGemma prefixes queries and
+documents differently, so embed what you index as documents:
+
+```dart
+final documentVectors = await ai.embed(
+  embedder: flutterEdgeAi.embedder('embedding-gemma-300m'),
+  documents: chunks,
+  options: FlutterEdgeAiEmbedConfig(taskType: 'retrievalDocument'),
+);
+```
+
+The embedder takes text only: a document with no text part is an
+`INVALID_ARGUMENT`.
+
 ## Known Limitations
 
 - **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
-- **Model installation**: The plugin does NOT manage model installation. The host app must install models via `FlutterEdgeAi.installModel()` and embedders via `FlutterEdgeAi.installEmbedder()` before using the plugin.
+- **Model installation**: The plugin does NOT manage model installation. The host app must install models via `FlutterEdgeAi.installModel()` and embedders via `FlutterEdgeAi.installEmbedder()` before using the plugin. Without one, a request fails with `UNAVAILABLE`.
+- **Model names are labels**: every configured `FlutterEdgeAiModelConfig` runs the model that is active in flutter_edge_ai, the one installed or selected last; `modelType` tells the plugin how to talk to it. The names share one queue, so generations run one at a time in the order they arrive. Each request asks flutter_edge_ai for the active model, which reuses the loaded one while nothing changed; a newly installed model, or other runtime arguments, give the next request a new one. Set `supportsTools: false` or `supportsMedia: false` on a config whose model takes no tools or media: its `supports` metadata says so, and a request that needs them fails with `UNIMPLEMENTED` instead of reaching a model that would ignore them.
 - **System role**: System messages are passed natively via `createChat(systemInstruction:)`. Only text content is supported in system messages. The capability first shipped under the old package name in `flutter_gemma` 0.13.0.
+- **Web**: media from `file://` URIs and paths is `UNIMPLEMENTED`, a `blob:` URL is refused, and `http(s)` media needs CORS headers on its server. The web engines report no token counts, so `response.usage` carries the media counts only.
 - **Thinking mode**: DeepSeek `.task` exposes thinking on Android/iOS; Gemma 4 exposes it through `.litertlm` engines, native and Web. Qwen3's emitted `<think>` tags are parsed by core platform-independently, including Web. MediaPipe Web has no thinking API, ONNX Web ignores `enableThinking`, and the catalog has no DeepSeek Web entry.

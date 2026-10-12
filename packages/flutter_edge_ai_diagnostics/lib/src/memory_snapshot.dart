@@ -34,7 +34,8 @@ final class MemorySnapshot {
   ///   clean anonymous pages and `Shared_Dirty` are not included.
   ///   This is not a kill threshold: lmkd decides from device-wide pressure
   ///   and process priority. GPU memory (KGSL, Mali, dmabuf) is mostly outside
-  ///   smaps, so memory a model holds on the GPU is largely not counted here.
+  ///   smaps, so memory a model holds on the GPU is largely not counted here;
+  ///   on Adreno most of it is counted in [fileBackedBytes] instead.
   ///
   /// Null only on an Android kernel without `smaps_rollup`. Vendor kernels
   /// may backport it. On iOS it is never null.
@@ -57,7 +58,8 @@ final class MemorySnapshot {
   /// and the two cannot be told apart. On Android it is never null.
   final int? availableBytes;
 
-  /// Resident clean pages, mostly mapped files.
+  /// Resident clean pages: mostly mapped files on a CPU backend, and GPU
+  /// driver buffers too on some GPU backends (see below).
   ///
   /// - **Android:** `Private_Clean + Shared_Clean` from
   ///   `/proc/self/smaps_rollup`. A mapped model appears as its clean pages
@@ -72,6 +74,18 @@ final class MemorySnapshot {
   ///   [anonymousBytes] into this field. A delta is therefore not an exact
   ///   measure of mapped model weights. Singly mapped dirty file pages are
   ///   in `Private_Dirty` ([anonymousBytes]); `Shared_Dirty` is in neither.
+  ///
+  ///   GPU backends: on Adreno, the driver's buffers are mapped through
+  ///   `/dev/kgsl-3d0` and are mostly clean pages, so they are counted here.
+  ///   In one run on a vivo 1933 (Adreno 616, kernel 4.9) a Gemma 4 E2B GPU
+  ///   load raised that mapping from 6 to 981 MiB, and 988 MiB after one
+  ///   prompt, matching `dumpsys meminfo`'s Gfx dev. About 115 MiB of it was
+  ///   dirty (that part is in [anonymousBytes]); all file mappings together
+  ///   (model, libraries, others) were about 260 MiB (Pss). With a GPU
+  ///   backend this is not a model-file figure: compare with a CPU run of the
+  ///   same app, or subtract the clean pages of the `/dev/kgsl*` mappings of
+  ///   `/proc/self/smaps`. One device and one run each; other GPU drivers
+  ///   (Mali) were not measured.
   ///
   ///   Reclaimable file pages are not a kill threshold, but are not free:
   ///   weights read on every token must be read back from storage if dropped.

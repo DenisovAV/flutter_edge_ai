@@ -17,7 +17,7 @@ The first "memory used" number people reach for is usually **RSS**, the *residen
 
 In RSS the two look the same. Mapped weights and weights copied into the heap can show similar RSS while producing different footprint readings. A mapped model still needs a working set that fits the device to avoid repeated storage reads. On iOS, jetsam enforces its per-app limit on the footprint rather than RSS.
 
-This package reports `anonymousBytes` (the platform's footprint or `Private_Dirty + SwapPss`), `fileBackedBytes` on Android (resident clean pages, mostly mapped files), and `availableBytes` (headroom on iOS, a device-wide estimate on Android). Take readings before loading, after loading, and during generation. Their changes help explain the model's memory cost, with the limits below.
+This package reports `anonymousBytes` (the platform's footprint or `Private_Dirty + SwapPss`), `fileBackedBytes` on Android (resident clean pages: mapped files on a CPU backend, plus GPU driver buffers on some GPU backends), and `availableBytes` (headroom on iOS, a device-wide estimate on Android). Take readings before loading, after loading, and during generation. Their changes help explain the model's memory cost, with the limits below.
 
 ## Usage
 
@@ -46,11 +46,13 @@ Take a snapshot before loading a model, after loading it, and during generation.
 
 | Field | iOS | Android |
 |---|---|---|
-| `anonymousBytes` | `phys_footprint` from `task_info(TASK_VM_INFO)`: the value jetsam enforces, including IOKit/GPU (Metal) allocations and compressed memory | `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`. GPU memory (KGSL, Mali, dmabuf) is mostly outside it |
-| `fileBackedBytes` | null: not read on iOS yet | `Private_Clean + Shared_Clean` from `/proc/self/smaps_rollup`: resident clean pages, mostly mapped files. Counts shared pages in full |
+| `anonymousBytes` | `phys_footprint` from `task_info(TASK_VM_INFO)`: the value jetsam enforces, including IOKit/GPU (Metal) allocations and compressed memory | `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`. GPU memory (KGSL, Mali, dmabuf) is mostly outside it; on Adreno most of it is in `fileBackedBytes` instead |
+| `fileBackedBytes` | null: not read on iOS yet | `Private_Clean + Shared_Clean` from `/proc/self/smaps_rollup`: resident clean pages (mapped files on a CPU backend, plus GPU driver buffers on some GPU backends, see below). Counts shared pages in full |
 | `availableBytes` | `os_proc_available_memory()`: headroom before **this app** hits its limit | `MemAvailable` from `/proc/meminfo`: available on **the whole device**, an optimistic upper bound |
 
 On Android, clean does not mean exclusively file-backed. `Private_Clean` can include anonymous pages read back from zram and not written since, and `MADV_FREE` pages. On zram's skip-swapcache path, a page can lose its swap slot and leave `SwapPss`. Loading a model under memory pressure can therefore move cold heap memory from `anonymousBytes` into `fileBackedBytes`; the delta is not an exact count of mapped weights.
+
+**GPU backends.** On a GPU backend on Adreno, the driver's buffers are mapped through `/dev/kgsl-3d0` and are mostly clean pages, so they are counted here too. In one run on the vivo 1933 (Adreno 616, kernel 4.9) a Gemma 4 E2B GPU load raised that mapping from 6 to 981 MiB (988 after one prompt), matching `dumpsys meminfo`'s Gfx dev (989 MiB); about 115 MiB of it was dirty, which is in `anonymousBytes`, and all file mappings together (model, libraries, others) were about 260 MiB (Pss). With a GPU backend `fileBackedBytes` is therefore not a model-file figure: compare with a run of the same app on CPU, or subtract the clean pages of the `/dev/kgsl*` mappings of `/proc/self/smaps`. One device and one run each; other GPU drivers (Mali) were not measured.
 
 The baseline includes every clean mapped file the process has touched. Take a reading before loading and subtract, while interpreting both counters together. Singly mapped dirty file pages count in `Private_Dirty` (inside `anonymousBytes`); `Shared_Dirty` is in neither field. Clean pages and dirty pages do not form a complete split of anonymous and file-backed memory.
 

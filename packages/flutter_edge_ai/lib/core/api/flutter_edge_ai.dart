@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+import 'package:flutter_edge_ai/core/domain/no_active_model_error.dart';
 import 'package:flutter_edge_ai/core/api/inference_installation_builder.dart';
 import 'package:flutter_edge_ai/core/api/embedding_installation_builder.dart';
 import 'package:flutter_edge_ai/core/api/stt_installation_builder.dart';
@@ -432,7 +433,7 @@ class FlutterEdgeAi {
     final activeSpec = manager.activeInferenceModel;
 
     if (activeSpec == null) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active inference model set. Use FlutterEdgeAi.installModel() first.',
       );
     }
@@ -472,7 +473,8 @@ class FlutterEdgeAi {
     // them to createSession finds out, instead of a reasoning model silently
     // truncating mid-<think>.
     if (defaults != null &&
-        (defaults.thinkingDeclared != null || defaults.minOutputTokens != null)) {
+        (defaults.thinkingDeclared != null ||
+            defaults.minOutputTokens != null)) {
       edgeAiLog(
         '[flutter_edge_ai] getActiveModel: manifest defaults carry session-level '
         'fields (thinkingDeclared/minOutputTokens) that getActiveModel does not apply '
@@ -686,7 +688,7 @@ class FlutterEdgeAi {
     final activeSpec = manager.activeEmbeddingModel;
 
     if (activeSpec == null) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active embedding model set. Use FlutterEdgeAi.installEmbedder() first.',
       );
     }

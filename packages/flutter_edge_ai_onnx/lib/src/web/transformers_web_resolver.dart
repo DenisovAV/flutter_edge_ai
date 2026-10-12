@@ -3,6 +3,7 @@
 // `dart:js_interop` — but see this file's class doc for why it is still
 // NOT VM-testable in isolation (transitively depends on `WebModelManager`,
 // which is web-only).
+import 'package:flutter_edge_ai/core/domain/no_active_model_error.dart';
 import 'package:flutter_edge_ai/core/domain/model_source.dart';
 import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
@@ -48,7 +49,7 @@ class TransformersWebResolver {
     await _modelManager.ensureInitialized();
     final active = _modelManager.activeInferenceModel;
     if (active == null) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active inference model set. Use FlutterEdgeAi.installModel() first.',
       );
     }

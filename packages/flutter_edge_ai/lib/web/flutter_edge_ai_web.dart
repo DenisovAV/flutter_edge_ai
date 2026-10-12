@@ -114,7 +114,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     await manager.ensureInitialized();
     final active = manager.activeInferenceModel;
     if (active is! InferenceModelSpec) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active inference model set. Use `FlutterEdgeAi.installModel()` first',
       );
     }
@@ -395,7 +395,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
 
       // No active embedding model - user must set one first
       if (activeModel == null) {
-        throw StateError(
+        throw NoActiveModelError(
           'No active embedding model set. Use `FlutterEdgeAi.installEmbedder()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
       }

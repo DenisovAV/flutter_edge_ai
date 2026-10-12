@@ -166,6 +166,27 @@ void main() {
     });
   }
 
+  test('nothing installed is a NoActiveModelError, from the facade and the '
+      'shell', () async {
+    // Typed, so a caller can tell "nothing installed yet" from a model that
+    // is installed and cannot run; still a StateError for code catching that.
+    final previous = FlutterEdgeAiPlugin.instance;
+    FlutterEdgeAiPlugin.instance = FlutterEdgeAiMobile();
+    addTearDown(() => FlutterEdgeAiPlugin.instance = previous);
+    await ServiceRegistry.initialize(
+      downloadService: _FixtureDownloadService(_fakeBundleBytes),
+    );
+
+    await expectLater(
+      FlutterEdgeAi.getActiveModel(),
+      throwsA(isA<NoActiveModelError>()),
+    );
+    await expectLater(
+      FlutterEdgeAiPlugin.instance.createModel(modelType: ModelType.gemmaIt),
+      throwsA(isA<NoActiveModelError>()),
+    );
+  });
+
   test('loraRanks reaches the comparison, not just the comparator', () async {
     // Found by review. ActiveModelParams gained loraRanks as its tenth knob
     // and runtime_config_test proves the COMPARATOR handles it — but both

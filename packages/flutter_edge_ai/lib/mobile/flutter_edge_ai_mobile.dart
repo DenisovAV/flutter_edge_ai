@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
+import 'package:flutter_edge_ai/core/domain/no_active_model_error.dart';
 
 import 'dart:io';
 
@@ -143,7 +144,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
 
     // No active inference model - user must set one first
     if (activeModel == null) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active inference model set. Use `FlutterEdgeAi.installModel()` or `modelManager.ensureModelReadyFromSpec()` first',
       );
     }
@@ -511,7 +512,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
 
       // No active embedding model - user must set one first
       if (activeModel == null) {
-        throw StateError(
+        throw NoActiveModelError(
           'No active embedding model set. Use `FlutterEdgeAi.installEmbedder()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
       }

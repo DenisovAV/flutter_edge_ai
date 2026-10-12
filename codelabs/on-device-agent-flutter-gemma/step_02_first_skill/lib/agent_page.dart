@@ -116,6 +116,10 @@ class _AgentPageState extends State<AgentPage> {
         );
       case ToolCallEvent(:final toolName, :final args):
         reply.steps.add('🔧 $toolName $args');
+        // What streamed before a tool call is not the answer: the model
+        // thinking aloud, or the call itself in raw form. The answer comes
+        // after the result, so start the text over.
+        reply.text = '';
       case ToolResultEvent(:final result):
         reply.steps.add('↩️ ${_describe(result)}');
       case TextChunkEvent(:final text):

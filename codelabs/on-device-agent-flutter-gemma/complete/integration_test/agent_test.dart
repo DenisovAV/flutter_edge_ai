@@ -51,6 +51,20 @@ Future<List<AgentEvent>> _ask(InferenceModel model, String request) async {
 String _answer(List<AgentEvent> events) =>
     events.whereType<DoneEvent>().map((e) => e.text).join();
 
+/// The text of every successful result [tool] returned.
+///
+/// A turn may also contain errors: a 2B model sometimes calls the wrong tool
+/// first, reads the error — which lists what it should have called — and
+/// tries again. That recovery is the agent working, so the test asks for the
+/// successful call, not for a turn without a single mistake.
+String _results(List<AgentEvent> events, String tool) => events
+    .whereType<ToolResultEvent>()
+    .where((e) => e.toolName == tool)
+    .map((e) => e.result)
+    .whereType<TextResult>()
+    .map((r) => r.text)
+    .join();
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -68,11 +82,7 @@ void main() {
     try {
       // A native intent: the time comes from the device, not the weights.
       final time = await _ask(model, 'What time is it right now?');
-      expect(time.whereType<AgentErrorEvent>(), isEmpty);
-      expect(
-        time.whereType<ToolCallEvent>().map((e) => e.toolName),
-        contains(AgentToolNames.runIntent),
-      );
+      expect(_results(time, AgentToolNames.runIntent), isNotEmpty);
       expect(_answer(time), isNotEmpty);
 
       // This app's JS skill: 84 + 15% = 96.60, a third of it 32.20.
@@ -80,25 +90,13 @@ void main() {
         model,
         'Split a bill of 84 dollars between 3 people with a 15% tip.',
       );
-      expect(split.whereType<AgentErrorEvent>(), isEmpty);
-      final splitResults = split.whereType<ToolResultEvent>().map(
-        (e) => e.result,
-      );
-      expect(
-        splitResults.whereType<TextResult>().map((r) => r.text).join(),
-        contains('32.20'),
-      );
+      expect(_results(split, AgentToolNames.runSkill), contains('32.20'));
+      expect(_answer(split), contains('32.2'));
 
       // A JS skill the package bundles. SHA-1 of "hello".
       final hash = await _ask(model, 'Calculate the hash of the text: hello');
-      expect(hash.whereType<AgentErrorEvent>(), isEmpty);
       expect(
-        hash
-            .whereType<ToolResultEvent>()
-            .map((e) => e.result)
-            .whereType<TextResult>()
-            .map((r) => r.text)
-            .join(),
+        _results(hash, AgentToolNames.runSkill),
         contains('aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d'),
       );
     } finally {

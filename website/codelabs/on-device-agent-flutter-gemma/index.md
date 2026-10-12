@@ -282,6 +282,7 @@ void _apply(_Turn reply, AgentEvent event) {
       );
     case ToolCallEvent(:final toolName, :final args):
       reply.steps.add('🔧 $toolName $args');
+      reply.text = '';
     case ToolResultEvent(:final result):
       reply.steps.add('↩️ ${_describe(result)}');
     case TextChunkEvent(:final text):
@@ -299,6 +300,11 @@ void _apply(_Turn reply, AgentEvent event) {
 `AgentEvent` is sealed, so the switch is exhaustive: a new kind of event in a
 later version of the package is a compile error here, not a step that goes
 missing from the screen.
+
+Two lines deserve a word. Text that streams in before a tool call is not the
+answer — it is the model thinking aloud, or the call itself in raw form — so
+a `ToolCallEvent` starts the text over. And `DoneEvent` carries the final
+answer whole, which the bubble prefers to whatever streamed.
 
 Point the gate in `lib/main.dart` at `AgentPage` instead of `ChatPage`, and
 run. Then ask:
@@ -403,6 +409,15 @@ The steps under each reply show the skill loading and the `runIntent` call
 with its arguments. The answer to the first question is now the device's
 time, not a guess. The second and third open the editor and the composer, and
 wait for you.
+
+Watch the steps closely and you will likely see a wrong turn. In our runs on
+a Mac, Gemma 4 E2B loaded `get-current-time` and then called `runSkill` with
+the skill's name, twice, instead of `runIntent` with the intent. The tool answered with an error that
+lists the allowed intents; the model read it and called
+`runIntent get_current_date_and_time` on its next try. Errors go back to the
+model as results, and recovering from them is part of the loop — which is
+also why the agent stops after `maxIterations` (10 by default) rather than
+trying forever.
 
 ## Step 4: Write a JavaScript skill
 Duration: 14

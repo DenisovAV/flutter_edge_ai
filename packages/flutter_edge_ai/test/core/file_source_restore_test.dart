@@ -897,6 +897,20 @@ void main() {
   });
 
   group('storage cleanup', () {
+    test('counts a .gguf file in core\'s directory', () async {
+      // Protected, so the orphan scan inside getStorageInfo skips it without
+      // asking the downloader, which does not answer on a test host. The
+      // extension filter that would drop the file comes first either way.
+      await coreDirFile('model.gguf', _modelBytes);
+
+      final stats = await ModelFileSystemManager.getStorageInfo(
+        protectedFiles: ['model.gguf'],
+      );
+
+      expect(stats.totalFiles, 1);
+      expect(stats.totalSizeBytes, _modelBytes.length);
+    });
+
     test(
       'never counts an installed app file in core\'s directory as an orphan',
       () async {

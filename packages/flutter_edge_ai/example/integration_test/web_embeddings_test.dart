@@ -3,7 +3,8 @@
 /// through `FlutterEdgeAi.getActiveEmbedder()` on core's inline host, with
 /// `WebStorageMode.cacheApi` (the default). The `WebStorageMode.streaming`
 /// cases are web_embeddings_streaming_test.dart: the storage mode is fixed for
-/// the life of the page.
+/// the life of the page. EmbeddingGemma 2 (`.litertlm`, accepted on the web
+/// since flutter_edge_ai_litertlm 1.13.1) is web_eg2_test.dart.
 ///
 /// GCE VM only (never a local browser). Run from packages/flutter_edge_ai/example:
 ///   chromedriver --port=4444 &
@@ -43,7 +44,6 @@ const _tests = [
   'EG1 overflow',
   'EG1 close and recreate',
   'stale bundle',
-  '.litertlm refused',
   'MiniLM vectors',
   'MiniLM close and recreate',
 ];
@@ -305,30 +305,6 @@ void main() {
       }
       expect((await FlutterEdgeAi.getActiveEmbedder()).dimension, 768);
     });
-  });
-
-  testWidgets('a .litertlm embedder is refused at install, before any '
-      'download', (tester) async {
-    _start('.litertlm refused');
-    await ensureInitialized(WebStorageMode.cacheApi);
-    final activeBefore = FlutterEdgeAi.activeEmbedderSpec?.name;
-    final watch = Stopwatch()..start();
-    await expectLater(
-      FlutterEdgeAi.installEmbedder()
-          // Port 9 (discard): a download attempt would fail as a network
-          // error, never as the UnsupportedError below.
-          .modelFromNetwork('http://127.0.0.1:9/embeddinggemma-2.litertlm')
-          .install(),
-      throwsA(
-        isA<UnsupportedError>().having(
-          (e) => e.message,
-          'message',
-          contains('No registered embedding backend can run'),
-        ),
-      ),
-    );
-    report('litertlm_refused_ms', watch.elapsedMilliseconds);
-    expect(FlutterEdgeAi.activeEmbedderSpec?.name, activeBefore);
   });
 
   group('all-MiniLM-L6-v2 on ONNX Runtime Web', () {

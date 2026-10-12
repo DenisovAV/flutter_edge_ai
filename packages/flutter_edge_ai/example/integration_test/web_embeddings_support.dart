@@ -165,19 +165,23 @@ Map<String, Object?> bundleAccelerator() => {
 };
 
 /// Records every object URL the page creates and revokes from now on, so a
-/// test can see a pass release the `blob:` URLs it made for `opfs://` paths.
+/// test can see a pass release the `blob:` URLs it made for `opfs://` paths —
+/// and what each was made from ([objectUrlsMadeFrom]).
 void installObjectUrlSpy() {
   globalContext.callMethod<JSAny?>(
     'eval'.toJS,
     '''
     (function () {
       if (window.__objectUrlSpy) return;
-      const spy = window.__objectUrlSpy = { created: [], revoked: [] };
+      const spy = window.__objectUrlSpy =
+          { created: [], madeFrom: [], revoked: [] };
       const create = URL.createObjectURL.bind(URL);
       const revoke = URL.revokeObjectURL.bind(URL);
       URL.createObjectURL = function (o) {
         const url = create(o);
         spy.created.push(url);
+        spy.madeFrom.push(o instanceof File
+            ? 'File ' + o.name : 'Blob ' + (o && o.size));
         return url;
       };
       URL.revokeObjectURL = function (url) {
@@ -197,6 +201,11 @@ List<String> _spyList(String name) {
 
 List<String> get objectUrlsCreated => _spyList('created');
 List<String> get objectUrlsRevoked => _spyList('revoked');
+
+/// What each of [objectUrlsCreated] was made from, index for index:
+/// `File <name>` (an OPFS file itself) or `Blob <size>` (a copy, or any other
+/// Blob).
+List<String> get objectUrlsMadeFrom => _spyList('madeFrom');
 
 // ── Vectors ─────────────────────────────────────────────────────────────────
 

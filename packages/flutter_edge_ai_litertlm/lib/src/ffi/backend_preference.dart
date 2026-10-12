@@ -181,6 +181,14 @@ String npuUnavailableReason(String operatingSystem, {String? fastRpcError}) =>
       _ => 'no NPU dispatch stack ships for $operatingSystem',
     };
 
+/// Why this host cannot run its NPU stack, from the probe [hostShipsNpuDispatch]
+/// ran (read it after that getter). For the EmbeddingGemma 2 refusal, which
+/// words the same reason as the LLM path's fallback notice.
+String get hostNpuUnavailableReason => npuUnavailableReason(
+  Platform.operatingSystem,
+  fastRpcError: Platform.isLinux ? _linuxNpuProbeError : _fastRpcProbeError,
+);
+
 /// The backends to try, in order, for a [preferredBackend] request.
 ///
 /// [npuDispatchAvailable] overrides [hostShipsNpuDispatch] — tests need both

@@ -16,6 +16,10 @@ It is reverse-engineered from
 and is **Gallery-compatible**: their `SKILL.md` catalog parses unmodified, and
 their JavaScript skills run as-is.
 
+To build an agent step by step — a text-only skill, native intents and your
+own JavaScript skill — follow the
+[On-Device Agents codelab](/codelabs/on-device-agent-flutter-gemma).
+
 <Info>
 
 Agent skills build on function calling, so they need a function-calling-capable
@@ -43,9 +47,9 @@ used below).
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.3.0
+  flutter_edge_ai: ^2.3.1
   flutter_edge_ai_agent: ^0.2.9
-  flutter_edge_ai_litertlm: ^1.13.0   # an inference engine (LiteRtLmEngine)
+  flutter_edge_ai_litertlm: ^1.13.1   # an inference engine (LiteRtLmEngine)
 ```
 
 The agent is **not supported on Web** — never verified end-to-end, and the example app disables it. See the note below.

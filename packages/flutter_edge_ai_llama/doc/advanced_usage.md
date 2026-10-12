@@ -98,13 +98,15 @@ LoRA companions are resolved through core's file manager and used by default.
 If applying/removing an adapter fails, the shared runtime is invalidated:
 close/reload the model before any peer can infer with uncertain adapter state.
 Web LoRA operations are unavailable in llamadart 0.11.1 and remain unsupported.
-Core does not persist the inference LoRA companion in its restart identity;
-after restart, reinstall the paired spec or pass `loraPath` explicitly.
+Core restores the model and its paired LoRA after restart. If the adapter is
+missing, it restores neither rather than silently loading the base model.
+GGUF adapter filenames use `model__adapter.gguf`. This requires the merged
+core #649 changes described in the [development setup](../README.md#add-it-to-your-app).
 
 ## Compatibility boundaries
 
-Core 2.3.0 has no `ModelFileType.gguf`; only binary specs with a `.gguf` primary
-filename are claimed. Do not register another binary provider for these models.
+Declare `ModelFileType.gguf`; the connector selects by type rather than filename.
+MediaPipe does not claim this type, so provider registration order is irrelevant.
 Core now owns imported-file restart restoration; the connector has no preference
 reader or activation workaround. Engine contracts use `engine.dart`, and Web URL resolution uses
 `engine_web.dart`. Shipped code imports no core internals.

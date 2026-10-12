@@ -44,15 +44,19 @@ abstract base class EmbeddingModel {
   /// `InferenceModel.activeBackend`, and the answer to
   /// `getActiveEmbedder(preferredBackend:)` that survives a release build.
   ///
-  /// Every native backend answers [PreferredBackend.cpu] whatever was asked:
-  /// LiteRT because its GPU delegate returns all-zero vectors for
-  /// EmbeddingGemma's int4 weights, ONNX because it appends no execution
-  /// provider. So a caller who passed `gpu` can read here that it did not
-  /// happen, instead of learning it from a debug-only log line.
+  /// Native backends answer [PreferredBackend.cpu], except an EmbeddingGemma 2
+  /// per-SoC `.litertlm` bundle, which runs on the NPU and answers
+  /// [PreferredBackend.npu]. LiteRT `.tflite` stays on CPU because its GPU
+  /// delegate returns all-zero vectors for EmbeddingGemma's int4 weights, ONNX
+  /// because it appends no execution provider. So a caller who passed `gpu`
+  /// can read here that it did not happen, instead of learning it from a
+  /// debug-only log line.
   ///
-  /// Null on web, where the runtime picks for itself and does not report
-  /// back. Null also means "this engine did not say". Treat null as unknown,
-  /// never as CPU.
+  /// On web, EmbeddingGemma 2 `.litertlm` reports [PreferredBackend.gpu]: it
+  /// runs on WebGPU or refuses to load. Other web embedders report null,
+  /// because their runtime picks the accelerator and does not report back.
+  /// Null also means "this engine did not say". Treat null as unknown, never
+  /// as CPU.
   PreferredBackend? get activeBackend => null;
 
   /// Whether [close] has been called, or the model can no longer be used

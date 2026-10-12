@@ -14,7 +14,7 @@ final _spec = InferenceModelSpec(
   name: 'weights',
   modelSource: AssetSource('weights'),
   modelType: ModelType.gemma4,
-  fileType: ModelFileType.binary,
+  fileType: ModelFileType.gguf,
 );
 const _config = RuntimeConfig(modelPath: '', maxTokens: 512);
 

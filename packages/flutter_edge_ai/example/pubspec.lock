@@ -241,7 +241,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "2.3.0"
+    version: "2.3.1"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
@@ -276,7 +276,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.13.0"
+    version: "1.13.1"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:

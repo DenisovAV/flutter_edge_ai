@@ -97,9 +97,10 @@ class _EmbeddingTestScreenState extends State<EmbeddingTestScreen> {
       }
 
       // Get active embedding model
+      // npu for a per-SoC NPU bundle, which runs nowhere else; the default
+      // (CPU) for every other embedder.
       _embeddingModel = await FlutterEdgeAi.getActiveEmbedder(
-        preferredBackend:
-            PreferredBackend.gpu, // Use GPU mode for better performance
+        preferredBackend: widget.model.embedderBackend,
       );
 
       if (kDebugMode) {

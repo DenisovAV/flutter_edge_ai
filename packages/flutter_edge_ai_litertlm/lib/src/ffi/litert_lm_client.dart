@@ -739,9 +739,9 @@ class LiteRtLmFfiClient {
       final npuDispatchDir = backend != 'npu'
           ? null
           : Platform.isAndroid
-          ? await _prepareAndroidNpuDispatchDir()
+          ? await prepareAndroidNpuDispatchDir()
           : Platform.isLinux
-          ? _prepareLinuxNpuDispatchDir()
+          ? prepareLinuxNpuDispatchDir()
           : null;
 
       // The bundle's own sampler: the container header and its LlmMetadata
@@ -2143,14 +2143,17 @@ String _activationName(int value) => switch (value) {
   _ => 'type $value',
 };
 
-/// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Android.
+/// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Android —
+/// for the LLM engine and the EmbeddingGemma 2 embedding pass alike (the pass
+/// asks from `LiteRtEmbeddingBackend.describe()`, on the caller's isolate:
+/// this goes through a platform channel, which core's worker cannot reach).
 ///
 /// LiteRT opendir()-scans it for libLiteRtDispatch_*.so and the QNN libraries,
 /// so they must exist as files. The core plugin returns a directory holding
 /// exactly the stack this build bundled — nativeLibraryDir when the installer
 /// extracted them, else a copy taken from the base APK or its config split (a
 /// Play install). The list comes from here because the build decides it.
-Future<String> _prepareAndroidNpuDispatchDir() async {
+Future<String> prepareAndroidNpuDispatchDir() async {
   const bundledChannel = MethodChannel('flutter_gemma_bundled');
   final String? dir;
   try {
@@ -2178,7 +2181,9 @@ Future<String> _prepareAndroidNpuDispatchDir() async {
 }
 
 /// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Linux arm64,
-/// after loading what QNN cannot find on its own.
+/// after loading what QNN cannot find on its own. Shared with the
+/// EmbeddingGemma 2 pass; the libraries it loads are process-wide, so loading
+/// them from the caller's isolate serves the embedding worker too.
 ///
 /// Native Assets puts the whole stack in the bundle's `lib/`. From there the
 /// dispatch loads libQnnHtp and libQnnSystem by full path, and prepends the
@@ -2189,7 +2194,7 @@ Future<String> _prepareAndroidNpuDispatchDir() async {
 /// change after the process started. A library already loaded under that
 /// SONAME is matched first, so the Stubs are loaded here by full path, after
 /// the libcdsprpc.so shim they NEED.
-String _prepareLinuxNpuDispatchDir() {
+String prepareLinuxNpuDispatchDir() {
   final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
   final missing = [
     for (final n in qualcommNpuLibsLinux)

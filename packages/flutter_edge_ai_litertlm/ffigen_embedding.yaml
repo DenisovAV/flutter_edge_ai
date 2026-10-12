@@ -7,7 +7,7 @@
 # Input: native/litert_lm/include/c/, upstream LiteRT-LM's `c/` headers copied
 # verbatim at the pinned commit b2f686e2 (= v0.18.0, the source of
 # native-v0.18.0-e), plus the two response getters patch_c_api.sh section 14
-# adds (declared in embedding_engine.h; not bound until the pass calls them).
+# adds (declared in embedding_engine.h; the pass reads both for every request).
 # Every LiteRT-LM pin bump replaces them, re-adds section 14, and regenerates.
 #
 # Regenerate (from this directory; ffigen is no dependency of the workspace,

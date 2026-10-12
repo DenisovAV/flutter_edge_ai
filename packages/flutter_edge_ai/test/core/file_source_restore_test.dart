@@ -170,7 +170,47 @@ void main() {
       expect(spec!.modelSource, FileSource(model.path));
       expect(spec.modelType, ModelType.gemmaIt);
       expect(spec.fileType, ModelFileType.task);
+      expect(spec.loraSource, isNull);
       expect(await restarted.isModelInstalled(spec), isTrue);
+    });
+
+    test(
+      'a model installed with a LoRA has it again after a restart',
+      () async {
+        final model = userFile('picked-model.task', _modelBytes);
+        final lora = userFile('adapter.bin', _modelBytes);
+        final installed = (await FlutterEdgeAi.installModel(
+          modelType: ModelType.gemmaIt,
+          fileType: ModelFileType.task,
+        ).fromFile(model.path).withLoraFromFile(lora.path).install()).spec;
+
+        final restarted = await restart();
+
+        final spec = restarted.activeInferenceModel as InferenceModelSpec?;
+        expect(spec, isNotNull);
+        // Without it the model loads with no adapter and says nothing.
+        expect(spec!.loraSource, isNotNull, reason: 'the LoRA was dropped');
+        expect(
+          spec.files.map((f) => f.filename),
+          installed.files.map((f) => f.filename),
+        );
+        final paths = await restarted.getModelFilePaths(spec);
+        expect(paths?[PreferencesKeys.installedLoraFileName], lora.path);
+        expect(await restarted.isModelInstalled(spec), isTrue);
+      },
+    );
+
+    test('a model whose LoRA file is gone restores nothing, rather than '
+        'the model without it', () async {
+      final model = userFile('picked-model.task', _modelBytes);
+      final lora = userFile('adapter.bin', _modelBytes);
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromFile(model.path).withLoraFromFile(lora.path).install();
+      lora.deleteSync();
+
+      expect((await restart()).activeInferenceModel, isNull);
     });
 
     test('a fromFile model whose file is gone restores nothing', () async {
@@ -856,6 +896,20 @@ void main() {
   });
 
   group('storage cleanup', () {
+    test('counts a .gguf file in core\'s directory', () async {
+      // Protected, so the orphan scan inside getStorageInfo skips it without
+      // asking the downloader, which does not answer on a test host. The
+      // extension filter that would drop the file comes first either way.
+      await coreDirFile('model.gguf', _modelBytes);
+
+      final stats = await ModelFileSystemManager.getStorageInfo(
+        protectedFiles: ['model.gguf'],
+      );
+
+      expect(stats.totalFiles, 1);
+      expect(stats.totalSizeBytes, _modelBytes.length);
+    });
+
     test(
       'never counts an installed app file in core\'s directory as an orphan',
       () async {

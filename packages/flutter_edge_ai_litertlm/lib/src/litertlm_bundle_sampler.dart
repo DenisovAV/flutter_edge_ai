@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 
+import 'litertlm_flatbuffer.dart';
+
 /// The sampler a `.litertlm` bundle ships, read from the file itself: the
 /// container header and its `LlmMetadata` section, a few kilobytes.
 ///
@@ -103,7 +105,7 @@ int litertlmHeaderEnd(Uint8List preamble) {
 /// header flatbuffer, or null when the bundle has none.
 (int, int)? llmMetadataRange(Uint8List header) {
   try {
-    final fb = _FlatBuffer(header);
+    final fb = LitertlmFlatBuffer(header);
     final root = fb.root();
     final sectionMetadata = fb.table(root, 1);
     if (sectionMetadata == null) return null;
@@ -231,53 +233,6 @@ Future<Uint8List> _readExactly(
     );
   }
   return bytes;
-}
-
-/// Just enough of the FlatBuffers wire format to walk the header: tables,
-/// vectors of tables and scalar fields, little-endian. Out-of-range offsets
-/// throw [RangeError].
-final class _FlatBuffer {
-  _FlatBuffer(Uint8List bytes) : _data = ByteData.sublistView(bytes);
-
-  final ByteData _data;
-
-  int root() => _ref(0);
-
-  /// Position of field [index]'s value in [table], or null when absent.
-  int? _field(int table, int index) {
-    final vtable = table - _data.getInt32(table, Endian.little);
-    final vtableSize = _data.getUint16(vtable, Endian.little);
-    final slot = 4 + 2 * index;
-    if (slot >= vtableSize) return null;
-    final offset = _data.getUint16(vtable + slot, Endian.little);
-    return offset == 0 ? null : table + offset;
-  }
-
-  int _ref(int position) => position + _data.getUint32(position, Endian.little);
-
-  int? table(int table, int index) {
-    final at = _field(table, index);
-    return at == null ? null : _ref(at);
-  }
-
-  int? vector(int table, int index) => this.table(table, index);
-
-  int length(int vector) => _data.getUint32(vector, Endian.little);
-
-  int element(int vector, int i) {
-    if (i >= length(vector)) throw RangeError.index(i, vector);
-    return _ref(vector + 4 + 4 * i);
-  }
-
-  int uint8(int table, int index) {
-    final at = _field(table, index);
-    return at == null ? 0 : _data.getUint8(at);
-  }
-
-  int uint64(int table, int index) {
-    final at = _field(table, index);
-    return at == null ? 0 : _data.getUint64(at, Endian.little);
-  }
 }
 
 typedef _ProtoField = ({

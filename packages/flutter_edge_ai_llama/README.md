@@ -12,9 +12,11 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
 The tested dependencies are Flutter **3.47.1 / Dart 3.13.1**,
-`flutter_edge_ai 2.3.0`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
-Core 2.3.0 is published. This draft contribution targets its inference APIs;
-GGUF embeddings are deferred to a separate contribution against the new core SPI.
+`flutter_edge_ai` from merged core #649, `llamadart 0.11.1` and the Apple companion `0.0.21`.
+This draft requires the merged GGUF/LoRA changes from core #649. They are not
+in hosted core 2.3.1 yet. The checked-in example resolves core from this workspace;
+external apps need the development override below until the next core patch is
+published. GGUF embeddings are deferred to a separate contribution.
 
 ## Try a chat in a few minutes
 
@@ -84,7 +86,7 @@ the path below with the package directory relative to your app's pubspec:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.3.0
+  flutter_edge_ai: ^2.3.1
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
@@ -95,6 +97,19 @@ hooks:
     llamadart:
       llamadart_native_runtimes: [llama_cpp]
 ```
+
+Until the core patch containing #649 is published, add this development-only
+`pubspec_overrides.yaml` beside your app's pubspec, pointing at the same clone:
+
+```yaml
+dependency_overrides:
+  flutter_edge_ai:
+    path: ../flutter_edge_ai/packages/flutter_edge_ai
+```
+
+Hosted core **2.3.1 does not contain `ModelFileType.gguf`**. The release dependency
+floor and hosted consumer gate will be updated when that patch is available.
+The checked-in workspace example needs no override.
 
 Merge the hook settings into your **application's** pubspec. In a pub workspace,
 put them in the workspace root. Dependency settings do not propagate: without
@@ -129,7 +144,7 @@ Future<void> main() async {
 
   await FlutterEdgeAi.installModel(
     modelType: ModelType.general,
-    fileType: ModelFileType.binary,
+    fileType: ModelFileType.gguf,
   ).fromFile('/absolute/path/to/chat.gguf').install();
 
   final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
@@ -145,11 +160,15 @@ Future<void> main() async {
 }
 ```
 
-Core 2.3.0 uses `ModelFileType.binary` for GGUF; the connector recognizes the
-`.gguf` filename. It does not claim other binary formats. On Web, replace
+Declare `ModelFileType.gguf`; routing uses the declared type, including for
+extensionless paths or URLs. Other file types are handled by their own engines.
+On Web, replace
 `.fromFile(...)` with `.fromNetwork(modelUrl)` and prepare the assets/headers above.
 
-Core 2.3.0 restores the installed imported model during initialization. Load it
+Models installed by an earlier draft as `binary` must be installed again with
+`ModelFileType.gguf`; the connector no longer claims binary specs.
+
+Core restores the installed imported model during initialization. Load it
 with `getActiveModel`; conversation history starts fresh. No connector-specific
 restore call is needed.
 
@@ -164,17 +183,16 @@ This contribution provides inference only. GGUF embeddings are preserved for a
 [follow-up](doc/deferred_embeddings.md) against core's new embedding SPI.
 
 The connector uses core 2.3's public `engine.dart` / `engine_web.dart` APIs.
-GGUF still uses the binary file type until upstream adds its dedicated identity;
-register the llama provider alone for GGUF because MediaPipe also claims binary
-models at the same priority. The GGUF identity and LoRA restart changes in
-upstream #649 must land in a published core release before this draft is ready
-for full review. No local-core override is needed for the current code.
+Dedicated GGUF identity removes the routing conflict with MediaPipe. Core restores
+paired LoRA adapters after restart and refuses restoration if an adapter is missing.
+These changes are merged upstream but await a published core patch; this PR
+remains a development contribution until hosted validation passes.
 
 ## Troubleshooting
 
 | What you see | What to check |
 | --- | --- |
-| No engine handles the model | Use an instruction-tuned `.gguf` and `ModelFileType.binary`. |
+| No engine handles the model | Declare `ModelFileType.gguf` and register `LlamaEngineProvider`. |
 | Model loading fails | Check the model path, available memory, and that the file is a complete, compatible GGUF. |
 | Context budget exceeded | Start a new chat, shorten the prompt, or increase `maxTokens` if memory permits. There is no automatic context compaction. |
 | Reply ends early | Increase `maxOutputTokens`; the demo reports when its output limit is reached. |

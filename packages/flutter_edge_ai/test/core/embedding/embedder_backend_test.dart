@@ -38,25 +38,54 @@ void main() {
   );
 
   group('ActiveEmbedderParams', () {
-    test(
-      'a different backend is NOT a difference — it builds the same model',
-      () {
-        // The whole point of normalizing to CPU: asking for GPU must not unload
-        // and reload a bit-identical embedder. If this goes red, the
-        // normalization line was dropped and every backend change costs a
-        // 570-780 ms recompile for nothing.
-        expect(
-          params(
-            backend: PreferredBackend.gpu,
-          ).firstDifference(params(backend: PreferredBackend.cpu)),
-          isNull,
-        );
-        expect(
-          params().firstDifference(params(backend: PreferredBackend.npu)),
-          isNull,
-        );
-      },
-    );
+    test('gpu is NOT a difference — it builds the same model as cpu', () {
+      // The whole point of normalizing gpu to CPU: asking for GPU must not
+      // unload and reload a bit-identical embedder. If this goes red, the
+      // normalization line was dropped and every backend change costs a
+      // 570-780 ms recompile for nothing.
+      expect(
+        params(
+          backend: PreferredBackend.gpu,
+        ).firstDifference(params(backend: PreferredBackend.cpu)),
+        isNull,
+      );
+      expect(
+        params().firstDifference(params(backend: PreferredBackend.gpu)),
+        isNull,
+      );
+    });
+
+    test('npu IS a difference: an embedder cached for one side never serves '
+        'the other', () {
+      // An EmbeddingGemma 2 per-SoC bundle runs on the NPU, and its vectors
+      // are not the CPU bundle's. If npu keyed as cpu, a cached CPU embedder
+      // would answer an npu request (and an NPU one a request without npu)
+      // without the backend ever being asked — a silent switch of vector
+      // space.
+      expect(
+        params().firstDifference(params(backend: PreferredBackend.npu)),
+        'activeBackend',
+      );
+      expect(
+        params(
+          backend: PreferredBackend.cpu,
+        ).firstDifference(params(backend: PreferredBackend.npu)),
+        'activeBackend',
+      );
+      expect(
+        params(backend: PreferredBackend.npu).activeBackend,
+        PreferredBackend.npu,
+      );
+      expect(
+        params(backend: PreferredBackend.gpu).activeBackend,
+        PreferredBackend.cpu,
+      );
+      expect(
+        params(backend: PreferredBackend.npu).withMedia(const {}).activeBackend,
+        PreferredBackend.npu,
+        reason: 'a widened rebuild keeps the backend it was built for',
+      );
+    });
 
     test('paths are differences, and the changed one is named', () {
       expect(
@@ -101,21 +130,25 @@ void main() {
       expect(() => ActiveEmbedderParams(modelPath: ''), throwsArgumentError);
     });
 
-    test('isIgnoredBackend is true only for something CPU is not', () {
-      expect(ActiveEmbedderParams.isIgnoredBackend(null), isFalse);
-      expect(
-        ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.cpu),
-        isFalse,
-      );
-      expect(
-        ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.gpu),
-        isTrue,
-      );
-      expect(
-        ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.npu),
-        isTrue,
-      );
-    });
+    test(
+      'isIgnoredBackend is true only for gpu, which no embedder runs on',
+      () {
+        expect(ActiveEmbedderParams.isIgnoredBackend(null), isFalse);
+        expect(
+          ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.cpu),
+          isFalse,
+        );
+        expect(
+          ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.gpu),
+          isTrue,
+        );
+        expect(
+          ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.npu),
+          isFalse,
+          reason: 'an EmbeddingGemma 2 per-SoC bundle runs on it',
+        );
+      },
+    );
   });
 
   group('noticeEmbedderBackendIgnored', () {
@@ -167,13 +200,41 @@ void main() {
 
     test('says it once, and a reset lets it speak again', () {
       noticeEmbedderBackendIgnored(PreferredBackend.gpu);
-      noticeEmbedderBackendIgnored(PreferredBackend.npu);
+      noticeEmbedderBackendIgnored(PreferredBackend.gpu);
       expect(printed, hasLength(1), reason: 'once per isolate, not per call');
 
       resetEmbedderBackendNotice();
-      noticeEmbedderBackendIgnored(PreferredBackend.npu);
+      noticeEmbedderBackendIgnored(PreferredBackend.gpu);
       expect(printed, hasLength(2));
-      expect(printed.last, contains('npu'));
+      expect(printed.last, contains('gpu'));
+    });
+
+    test('npu is not called ignored before the backend has answered', () {
+      noticeEmbedderBackendIgnored(PreferredBackend.npu);
+      expect(
+        printed,
+        isEmpty,
+        reason:
+            'an NPU bundle runs on it; "Embeddings run on CPU" would be '
+            'false for it',
+      );
+    });
+
+    test('npu not applied: said when the built embedder is not on the NPU, '
+        'silent when it is or when npu was not asked for', () {
+      noticeEmbedderNpuNotApplied(PreferredBackend.npu, PreferredBackend.npu);
+      noticeEmbedderNpuNotApplied(null, PreferredBackend.cpu);
+      noticeEmbedderNpuNotApplied(PreferredBackend.gpu, PreferredBackend.cpu);
+      expect(printed, isEmpty);
+
+      noticeEmbedderNpuNotApplied(PreferredBackend.npu, PreferredBackend.cpu);
+      expect(printed, hasLength(1));
+      expect(printed.single, contains('npu is not applied'));
+      expect(printed.single, contains('cpu'));
+      expect(printed.single, contains('activeBackend'));
+
+      noticeEmbedderNpuNotApplied(PreferredBackend.npu, PreferredBackend.cpu);
+      expect(printed, hasLength(1), reason: 'the same one shot');
     });
 
     test('on web every requested backend is reported as not applied, cpu '

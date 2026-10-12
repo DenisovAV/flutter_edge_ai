@@ -26,8 +26,9 @@ abstract base class EmbeddingPass {
   /// `EmbeddingPassInfo.dimension`.
   ///
   /// Core guarantees before calling: [load] succeeded; `input.modalities` is a
-  /// subset of the model's modalities; it has one modality unless
-  /// `EmbeddingPassInfo.combinedInputs`; every media part's sniffed format is
+  /// subset of the model's modalities; it has one part (one text, one image or
+  /// one audio clip) unless `EmbeddingPassInfo.combinedInputs`; every media
+  /// part's sniffed format is
   /// in `EmbeddingPassInfo.imageFormats` / `audioFormats`; one call at a time.
   ///
   /// The pass owns tokenization and the prefix: text parts get
@@ -75,7 +76,8 @@ final class EmbeddingPassInfo {
   /// [EmbeddingModality.audio] is in [modalities].
   final Set<EncodedMediaFormat> audioFormats;
 
-  /// Whether one input may carry several modalities (text with images, …).
+  /// Whether one input may carry several parts: several modalities (text with
+  /// an image, …) or several images.
   final bool combinedInputs;
 
   @override

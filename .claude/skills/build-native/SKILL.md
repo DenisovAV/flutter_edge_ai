@@ -465,23 +465,45 @@ nm -gU packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLite
 Run `nm -gU | grep -c '_litert_lm_'` — expect ~50 symbols (matches `bindings.dart` lookupFunction count).
 
 **EmbeddingEngine exports (EmbeddingGemma 2).** `verify_tarball_manifest.sh` runs
-`check_embedding_exports.py` on every tarball: `libLiteRtLm` must export the 27
+`check_embedding_exports.py` on every tarball: `libLiteRtLm` must export the 33
 EmbeddingEngine / ModelInfo / error-reporter functions the `.litertlm` embedding
 pass calls (`liteRtLmEmbeddingSymbols` in `lib/src/embedding/litert_lm_embedding_pass.dart`;
-a VM test keeps the two lists equal). They leave through visibility attributes,
-not the Windows `.def`, and no LLM check calls them — a dropped one fails only
-an EG2 load on that platform. On a **LiteRT-LM pin bump** also:
+a VM test keeps the two lists equal); three are the dispatch-directory setters
+the NPU path calls for the main, vision and audio executors. Two are ours, not
+upstream's:
+`litert_lm_embedding_response_get_input_length` / `_get_truncated_length`
+(`patch_c_api.sh` §14, from `native-v0.18.0-e`) — litertlm 1.13.1 refuses every
+EG2 load on a library without them, so a release that drops §14 breaks EG2
+text too. They leave through visibility attributes, not the Windows `.def`, and
+no LLM check calls them — a dropped one fails only an EG2 load on that
+platform. On a **LiteRT-LM pin bump** also:
 - replace `native/litert_lm/include/c/*.h` with upstream's `c/` headers at the new
-  pin, verbatim, and regenerate `lib/src/ffi/litert_lm_embedding_bindings.dart`:
+  pin, verbatim — then re-add §14's two getter declarations — and regenerate
+  `lib/src/ffi/litert_lm_embedding_bindings.dart`:
   `dart pub global activate ffigen 20.1.1`, then in `packages/flutter_edge_ai_litertlm`
   `dart pub global run ffigen --config ffigen_embedding.yaml` (ffigen is no
   dependency of the workspace; upstream `main` after v0.18.0 already changed the
   embedding setters to return status codes);
-- re-check R5 §4.8's enumeration: under `kError`, status 3 (InvalidArgument) from
-  `compute_embedding` on one well-formed text part must still mean overflow and
-  nothing else (`embedding_litert_compiled_model_executor.cc`, `embedding_engine_impl.cc`,
-  `c/embedding_engine.cc`). If another InvalidArgument became reachable, the pass's
-  overflow mapping is wrong for that pin.
+- re-check R5 §4.8 against `embedding_litert_compiled_model_executor.cc`: the pass
+  sends overflow strategy kTruncate on every request and refuses a response
+  whose `truncated_length` is > 0 (or whose `input_length` exceeds 1024) as
+  `EmbeddingInputTooLongException(maxInputTokens: truncated_length,
+  actualTokens: input_length)`. That holds only while `truncated_length` is set
+  on the truncate branch alone (to the largest signature, 1024) and
+  `input_length` is counted before truncation with media tokens included
+  (measured at v0.18.0: text 11509, a 60 s clip 1504, a 954-token text plus one
+  image 1086 — the wheel's kError counts). A NULL response is never an overflow;
+- on an IMAGE request, status 3 must still mean the image failed to decode
+  (stb, `stb_image_preprocessor.cc`: a corrupt or truncated file) — the pass maps
+  it to `EmbeddingEngineException(nativeCode: 3)`. Re-check too that the
+  bundles' vision signatures are still `[70, 140]` and that 200/280 still fail
+  (`LiteRtEmbeddingBackend` accepts only 140 and 70);
+- on an AUDIO request, status 2 must still mean miniaudio could not open the
+  clip (`audio_preprocessor_miniaudio.cc`; WAV/MP3/FLAC open, Ogg and M4A do
+  not — `liteRtLmAudioFormats`), and the audio tower must still be a
+  `TFLiteModel` section whose `model_type` starts with `tf_lite_audio_encoder`
+  (`litertlm_container.dart`; ModelInfo claims audio on the 270m and the 440m,
+  which have none).
 
 ### 7. **Real `pub get` smoke test in a fresh project**
 

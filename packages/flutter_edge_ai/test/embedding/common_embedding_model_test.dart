@@ -30,6 +30,16 @@ final _png = Uint8List.fromList([
   0x0A,
 ]);
 final _garbage = Uint8List.fromList([1, 2, 3, 4, 5]);
+final _wav = Uint8List.fromList([
+  ...'RIFF'.codeUnits,
+  0,
+  0,
+  0,
+  0,
+  ...'WAVE'.codeUnits,
+  ...'fmt '.codeUnits,
+]);
+final _ogg = Uint8List.fromList([...'OggS'.codeUnits, 0, 2, 0, 0, 0, 0]);
 
 final class _Call {
   _Call(this.input, this.taskType);
@@ -185,10 +195,7 @@ void main() {
         '(the D17 gate)', () async {
       final fake = _imageHost();
       final model = CommonEmbeddingModel.withHost(fake);
-      final combined = debugCombinedEmbeddingInput(
-        text: 'a cat',
-        images: [_garbage],
-      );
+      final combined = EmbeddingInput(text: 'a cat', images: [_garbage]);
 
       await expectLater(
         model.embed(combined, taskType: TaskType.none),
@@ -203,6 +210,55 @@ void main() {
       expect(fake.calls, isEmpty);
     });
 
+    test('several images and nothing else are a combined input too: refused '
+        'on an engine without combinedInputs, alone and in embedAll, before '
+        'anything is sent', () async {
+      final fake = _imageHost();
+      final model = CommonEmbeddingModel.withHost(fake);
+      final twoImages = EmbeddingInput(images: [_jpeg, _jpeg]);
+
+      await expectLater(
+        model.embed(twoImages, taskType: TaskType.none),
+        throwsA(
+          isA<UnsupportedEmbeddingCombinationException>()
+              .having((e) => e.requested, 'requested', {
+                EmbeddingModality.image,
+              })
+              .having((e) => e.message, 'message', contains('2 images')),
+        ),
+      );
+      await expectLater(
+        model.embedAll([
+          EmbeddingInput.image(_jpeg),
+          twoImages,
+        ], taskType: TaskType.none),
+        throwsA(isA<UnsupportedEmbeddingCombinationException>()),
+      );
+      expect(fake.calls, isEmpty);
+
+      // One image is one part: it passes.
+      await model.embed(EmbeddingInput.image(_jpeg), taskType: TaskType.none);
+      expect(fake.calls, hasLength(1));
+    });
+
+    test('several images pass the gate when the engine combines', () async {
+      final fake = _FakeHost(
+        info: EmbeddingPassInfo(
+          dimension: 2,
+          modalities: const {EmbeddingModality.text, EmbeddingModality.image},
+          imageFormats: {EncodedMediaFormat.jpeg},
+          combinedInputs: true,
+        ),
+        modalities: const {EmbeddingModality.text, EmbeddingModality.image},
+      );
+      final model = CommonEmbeddingModel.withHost(fake);
+      await model.embed(
+        EmbeddingInput(images: [_jpeg, _jpeg]),
+        taskType: TaskType.none,
+      );
+      expect(fake.calls, hasLength(1));
+    });
+
     test('a combined input passes the gate when the engine combines', () async {
       final fake = _FakeHost(
         info: EmbeddingPassInfo(
@@ -215,8 +271,54 @@ void main() {
       );
       final model = CommonEmbeddingModel.withHost(fake);
       await model.embed(
-        debugCombinedEmbeddingInput(text: 'a cat', images: [_jpeg]),
+        EmbeddingInput(text: 'a cat', images: [_jpeg]),
         taskType: TaskType.none,
+      );
+      expect(fake.calls, hasLength(1));
+    });
+
+    test('text, an image and audio in one input reach a combining engine '
+        'whole', () async {
+      final fake = _FakeHost(
+        info: EmbeddingPassInfo(
+          dimension: 2,
+          modalities: const {
+            EmbeddingModality.text,
+            EmbeddingModality.image,
+            EmbeddingModality.audio,
+          },
+          imageFormats: {EncodedMediaFormat.jpeg},
+          audioFormats: {EncodedMediaFormat.wav},
+          combinedInputs: true,
+        ),
+        modalities: const {
+          EmbeddingModality.text,
+          EmbeddingModality.image,
+          EmbeddingModality.audio,
+        },
+      );
+      final model = CommonEmbeddingModel.withHost(fake);
+      await model.embed(
+        EmbeddingInput(text: 'a cat', images: [_jpeg], audio: _wav),
+        taskType: TaskType.none,
+      );
+      final sent = fake.calls.single.input;
+      expect(sent.text, 'a cat');
+      expect(sent.images.single, _jpeg);
+      expect(sent.audio, _wav);
+
+      // Each part is still checked: an Ogg clip next to accepted text and a
+      // JPEG is refused for its audio, before anything is sent.
+      await expectLater(
+        model.embed(
+          EmbeddingInput(text: 'a cat', images: [_jpeg], audio: _ogg),
+          taskType: TaskType.none,
+        ),
+        throwsA(
+          isA<EmbeddingFormatNotSupportedException>()
+              .having((e) => e.modality, 'modality', EmbeddingModality.audio)
+              .having((e) => e.detected, 'detected', EncodedMediaFormat.ogg),
+        ),
       );
       expect(fake.calls, hasLength(1));
     });

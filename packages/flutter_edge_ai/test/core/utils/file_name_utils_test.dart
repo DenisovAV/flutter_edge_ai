@@ -96,6 +96,10 @@ void main() {
         expect(FileNameUtils.getBaseName('tokenizer.model'), 'tokenizer');
       });
 
+      test('removes .gguf extension', () {
+        expect(FileNameUtils.getBaseName('model.gguf'), 'model');
+      });
+
       test('removes .litertlm extension', () {
         expect(FileNameUtils.getBaseName('model.litertlm'), 'model');
       });
@@ -131,10 +135,11 @@ void main() {
         expect(FileNameUtils.supportedExtensions, contains('.json'));
         expect(FileNameUtils.supportedExtensions, contains('.model'));
         expect(FileNameUtils.supportedExtensions, contains('.litertlm'));
+        expect(FileNameUtils.supportedExtensions, contains('.gguf'));
       });
 
       test('has correct count', () {
-        expect(FileNameUtils.supportedExtensions.length, 6);
+        expect(FileNameUtils.supportedExtensions.length, 7);
       });
     });
 
@@ -157,6 +162,7 @@ void main() {
         expect(regex.hasMatch('config.json'), true);
         expect(regex.hasMatch('tokenizer.model'), true);
         expect(regex.hasMatch('file.litertlm'), true);
+        expect(regex.hasMatch('file.gguf'), true);
       });
 
       test('pattern rejects invalid extensions', () {

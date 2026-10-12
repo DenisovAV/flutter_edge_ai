@@ -1,3 +1,11 @@
+## 1.13.1
+- EmbeddingGemma 2 image embeddings on native platforms.
+- Web: EmbeddingGemma 2 text and image embeddings on WebGPU via @litert-lm/core 0.18.0.
+- EmbeddingGemma 2 audio (WAV, MP3, FLAC) and combined-input embeddings on native platforms.
+- Over-long EmbeddingGemma 2 inputs report their exact token count.
+- EmbeddingGemma 2 per-SoC bundles run on Qualcomm NPUs (Android, Linux arm64).
+- Require `flutter_edge_ai` ^2.3.1.
+
 ## 1.13.0
 - Run EmbeddingGemma 2 (`.litertlm`) text embeddings on Android, iOS, macOS, Linux and Windows.
 - Web EmbeddingGemma uses the same prefixes and token ids as native for every `TaskType` (re-copy `litert_embeddings.js`).

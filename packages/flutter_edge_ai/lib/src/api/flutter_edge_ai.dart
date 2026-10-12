@@ -654,14 +654,21 @@ class FlutterEdgeAi {
   ///   `EmbeddingModalityNotLoadedException`. The embedder already loaded is
   ///   reused when it covers the request; otherwise it is rebuilt with the
   ///   UNION of what it had and what is asked, so declarations only widen.
-  /// - [preferredBackend]: accepted for symmetry with [getActiveModel], and
-  ///   **not applied**. On native every backend runs the forward pass on CPU:
-  ///   LiteRT's GPU delegate returns all-zero vectors for EmbeddingGemma's
-  ///   int4 weights, and the ONNX client appends no execution provider. On web
-  ///   the runtime chooses for itself and the argument is equally ignored.
-  ///   Passing anything other than [PreferredBackend.cpu] logs a line once per
-  ///   isolate in debug builds; read [EmbeddingModel.activeBackend] for the
-  ///   backend in use, which is available in release builds too.
+  /// - [preferredBackend]: [PreferredBackend.npu] runs an EmbeddingGemma 2
+  ///   per-SoC `.litertlm` bundle on the NPU (flutter_edge_ai_litertlm, on
+  ///   Qualcomm Android and Qualcomm Linux arm64). Such a bundle runs nowhere
+  ///   else, and its vectors are not the CPU bundle's, so the backend refuses
+  ///   rather than switches: an NPU bundle without `npu`, `npu` with the
+  ///   generic bundle, and `npu` where no NPU can run it are
+  ///   `EmbeddingLoadException`s, and an embedder cached for one side is never
+  ///   handed to a request for the other. Every other embedder runs on CPU on
+  ///   native — LiteRT's GPU delegate returns all-zero vectors for
+  ///   EmbeddingGemma's int4 weights, and the ONNX client appends no execution
+  ///   provider — so `gpu` is **not applied**, and neither is `npu` for them.
+  ///   On web the runtime chooses for itself. A request that is not applied
+  ///   logs a line once per isolate in debug builds; read
+  ///   [EmbeddingModel.activeBackend] for the backend in use, which is
+  ///   available in release builds too.
   ///
   /// Fails (as a failed future) with:
   /// - [StateError] if no active embedding model is set
@@ -686,7 +693,8 @@ class FlutterEdgeAi {
   /// );
   ///
   /// // Where the backend matters, ask — do not assume the argument took.
-  /// // Native answers PreferredBackend.cpu; web answers null.
+  /// // Native answers PreferredBackend.cpu (npu for an NPU bundle); on web
+  /// // EmbeddingGemma 2 answers gpu and other embedders null.
   /// debugPrint('embedding on ${embedder.activeBackend}');
   /// ```
   static Future<EmbeddingModel> getActiveEmbedder({

@@ -92,8 +92,9 @@ without anyone touching this repo, and the nightly run is what notices.
 ## Integration tests
 
 Some codelabs carry an `integration_test/` suite that downloads a real model
-and runs inference. Those need a device and several hundred MB, so they are
-**not** part of the CI gate. Run one by hand:
+and runs inference. Those need a device and a download of several hundred MB
+to a few GB (the agent suite's Gemma 4 E2B is 2.59 GB), so they are **not**
+part of the CI gate. Run one by hand:
 
 ```bash
 cd codelabs/getting-started-flutter-gemma/complete
@@ -107,6 +108,9 @@ flutter test integration_test/multimodal_test.dart -d <device-id>
 
 cd codelabs/function-calling-flutter-gemma/complete
 flutter test integration_test/function_calling_test.dart -d <device-id>
+
+cd codelabs/on-device-agent-flutter-gemma/complete
+flutter test integration_test/agent_test.dart -d <device-id>
 
 cd codelabs/hybrid-ai-flutter-genkit/complete
 flutter test integration_test/smoke_test.dart -d <device-id> \

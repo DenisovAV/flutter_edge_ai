@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- JS skills run in a webview that loads their page from a server inside
+     the app, on http://127.0.0.1. Android blocks cleartext HTTP by default;
+     this allows it for the loopback address only, and nowhere else. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

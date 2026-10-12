@@ -1,7 +1,5 @@
 import 'dart:typed_data';
 
-import 'package:meta/meta.dart' show visibleForTesting;
-
 import 'embedding_modality.dart';
 
 /// One thing to embed, shaped like `Message`: optional text plus media.
@@ -26,6 +24,36 @@ final class EmbeddingInput {
          if (images.isNotEmpty) EmbeddingModality.image,
          if (audio != null) EmbeddingModality.audio,
        });
+
+  /// Several parts in one vector: optional [text], any [images] and an
+  /// optional [audio] clip — for example a photo with its caption.
+  ///
+  /// Throws [ArgumentError] for an input with no part, or for an empty byte
+  /// array among [images] or in [audio]. Empty text is valid, as in
+  /// [EmbeddingInput.text].
+  ///
+  /// The order of the parts within the vector is fixed — text, then the
+  /// images in order, then the audio — whatever order the arguments are
+  /// written in. An input with more than one part — several modalities, or
+  /// several images — is a combined input: a model whose engine embeds one
+  /// part per vector refuses it with
+  /// `UnsupportedEmbeddingCombinationException`, before anything is sent.
+  /// Which engines combine parts is engine-defined (EmbeddingGemma 2 through
+  /// flutter_edge_ai_litertlm does, on native platforms).
+  factory EmbeddingInput({
+    String? text,
+    List<Uint8List> images = const [],
+    Uint8List? audio,
+  }) {
+    if (text == null && images.isEmpty && audio == null) {
+      throw ArgumentError('An EmbeddingInput needs at least one part.');
+    }
+    for (final image in images) {
+      _requireBytes(image, 'images');
+    }
+    if (audio != null) _requireBytes(audio, 'audio');
+    return EmbeddingInput._(text: text, images: images, audio: audio);
+  }
 
   /// Text to embed. Empty text is valid: it embeds the task prefix and the
   /// model's terminators only.
@@ -78,27 +106,4 @@ final class EmbeddingInput {
     ];
     return 'EmbeddingInput(${parts.join(', ')})';
   }
-}
-
-/// An input carrying several modalities at once.
-///
-/// The public constructor for this arrives with core 2.4.0 (R5 §2.1, P3); the
-/// 2.3.0 facade already refuses such an input unless the engine declared
-/// `combinedInputs` (D17), and this is how that refusal is tested before
-/// then. Not exported by any public library. Same rules as the 2.4.0
-/// constructor: at least one part, no empty byte array.
-@visibleForTesting
-EmbeddingInput debugCombinedEmbeddingInput({
-  String? text,
-  List<Uint8List> images = const [],
-  Uint8List? audio,
-}) {
-  if (text == null && images.isEmpty && audio == null) {
-    throw ArgumentError('An EmbeddingInput needs at least one part.');
-  }
-  for (final image in images) {
-    EmbeddingInput._requireBytes(image, 'images');
-  }
-  if (audio != null) EmbeddingInput._requireBytes(audio, 'audio');
-  return EmbeddingInput._(text: text, images: images, audio: audio);
 }

@@ -10,6 +10,8 @@ import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart' as rag;
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 
+import 'models/embedding_model.dart' show kExampleVisionTokensPerImage;
+
 /// The opt-in inference engines the example registers. Single source of truth —
 /// used by [bootstrapGemma] and by the diagnostics screen so the two never
 /// drift. The example ships both formats (`.litertlm` + `.task`). The element
@@ -29,8 +31,11 @@ const kExampleInferenceEngines = [
 /// `flutter_edge_ai_onnx` barrel split (ONNX web PR, `feat/onnx-web`): this
 /// single, unbranched registration list compiles for both native
 /// (dart:ffi ORT) and web (onnxruntime-web) builds.
+///
+/// The vision budget is spelled out because image index profile ids carry it
+/// (`imageIndexProfileId`): change one, change both.
 const kExampleEmbeddingBackends = [
-  LiteRtEmbeddingBackend(),
+  LiteRtEmbeddingBackend(visionTokensPerImage: kExampleVisionTokensPerImage),
   OnnxEmbeddingBackend(),
 ];
 

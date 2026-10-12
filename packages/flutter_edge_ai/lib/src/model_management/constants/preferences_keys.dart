@@ -61,6 +61,12 @@ class PreferencesKeys {
   /// not a single filename, so we need a dedicated active-pointer.
   static const String activeInferenceFilename = 'active_inference_filename';
 
+  /// Filename of the LoRA installed with the active inference model, absent
+  /// when it has none. Without it a restart restored the model alone, and it
+  /// loaded with no adapter and no error.
+  static const String activeInferenceLoraFilename =
+      'active_inference_lora_filename';
+
   /// Filename of the currently active embedding model.
   static const String activeEmbeddingFilename = 'active_embedding_filename';
 
@@ -95,6 +101,11 @@ class PreferencesKeys {
   /// not follow it: it resolves [activeInferenceFilename] through that file's
   /// own repository record.
   static const String activeInferenceSource = 'active_inference_source';
+
+  /// Same encoding as [activeInferenceSource], for the LoRA named by
+  /// [activeInferenceLoraFilename].
+  static const String activeInferenceLoraSource =
+      'active_inference_lora_source';
 
   /// Same encoding as [activeInferenceSource], for the embedding model file.
   static const String activeEmbeddingSource = 'active_embedding_source';

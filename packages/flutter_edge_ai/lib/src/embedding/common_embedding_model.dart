@@ -181,10 +181,19 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
       }
     }
     final info = _host.info;
-    if (input.modalities.length > 1 && !info.combinedInputs) {
+    // D17: more than one PART — several modalities, or several images — is a
+    // combined input, and only an engine that combines parts receives one.
+    final parts =
+        (input.text != null ? 1 : 0) +
+        input.images.length +
+        (input.audio != null ? 1 : 0);
+    if (parts > 1 && !info.combinedInputs) {
       return UnsupportedEmbeddingCombinationException(
-        '$_engine embeds one modality per vector; the input carries '
-        '${_names(input.modalities)}.',
+        input.modalities.length > 1
+            ? '$_engine embeds one part per vector; the input carries '
+                  '${_names(input.modalities)}.'
+            : '$_engine embeds one part per vector; the input carries '
+                  '${input.images.length} images.',
         requested: input.modalities,
       );
     }

@@ -155,7 +155,7 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
       _model = null;
       final installation = edge.FlutterEdgeAi.installModel(
         modelType: edge.ModelType.general,
-        fileType: edge.ModelFileType.binary,
+        fileType: edge.ModelFileType.gguf,
       );
       if (kIsWeb) {
         await installation.fromNetwork(_path.text.trim()).install();

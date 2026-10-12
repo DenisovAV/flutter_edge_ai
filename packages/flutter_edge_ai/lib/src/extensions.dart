@@ -90,6 +90,11 @@ _ChatFormatMode _chatFormatModeFor(
     return _ChatFormatMode.raw;
   }
 
+  // .gguf files — llama.cpp applies the chat template stored in the file.
+  if (fileType == ModelFileType.gguf) {
+    return _ChatFormatMode.raw;
+  }
+
   // .bin/.tflite files - always manual formatting based on model type.
   return _ChatFormatMode.manual;
 }
@@ -468,7 +473,9 @@ class ModelThinkingFilter {
       return cleaned.trim();
     }
 
-    // For .bin/.tflite files, apply model-specific cleaning
+    // For .bin/.tflite and .gguf files, apply model-specific cleaning. llama.cpp
+    // stops before the end-of-turn token, but a template that renders it as
+    // text must not hand it to the user.
     switch (modelType) {
       case ModelType.general:
         // General models - no special cleaning needed

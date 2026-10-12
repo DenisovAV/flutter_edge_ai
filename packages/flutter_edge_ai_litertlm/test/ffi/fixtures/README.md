@@ -16,3 +16,21 @@ section (16536 and 16498 bytes here):
 ```bash
 head -c 16536 Qwen3-0.6B.litertlm > qwen3_0_6b_prefix.litertlm
 ```
+
+## EmbeddingGemma 2 container headers
+
+The first bytes of the three EmbeddingGemma 2 bundles, cut at their header end
+(the uint64 at offset 24): the 32-byte preamble and the header flatbuffer with
+the section table, no section data. `litertlm_container_test.dart` reads the
+`model_type` of their `TFLiteModel` sections — how the `.litertlm` embedding
+pass tells a bundle with an audio encoder (R5 D23).
+
+| File | Source (`litert-community/…`, revision) | Bundle sha256 | Header end |
+|---|---|---|---|
+| `embeddinggemma2_270m_header.litertlm` | `embeddinggemma-2-text-270m-litert-lm` @ `9be6e8b9`, `embeddinggemma-2-text-270m.litertlm` | `2d079ee2…6fb` | 880 |
+| `embeddinggemma2_440m_header.litertlm` | `embeddinggemma-2-text-vision-440m-litert-lm` @ `e301f74d`, `embeddinggemma-2-text-vision-440m.litertlm` | `92dcbea1…2eb0` | 1552 |
+| `embeddinggemma2_740m_header.litertlm` | `embeddinggemma-2-740m-litert-lm` @ `24d962e9`, `embeddinggemma-2-740m.litertlm` | `e7a8a220…7f4c` | 2176 |
+
+```bash
+head -c 2176 embeddinggemma-2-740m.litertlm > embeddinggemma2_740m_header.litertlm
+```

@@ -25,7 +25,7 @@ typedef LlamaProjectorResolver = Future<llama.ModelSource?> Function(
 
 /// Registers GGUF inference with Flutter Edge AI on native and Web runtimes.
 ///
-/// Only binary specs ending in `.gguf` are claimed until core adds GGUF identity.
+/// Models are selected by the declared [edge.ModelFileType.gguf] type.
 class LlamaEngineProvider implements InferenceEngineProvider {
   /// Creates a provider, optionally resolving model-specific projectors.
   const LlamaEngineProvider({this.loader, this.projectorResolver});
@@ -42,8 +42,7 @@ class LlamaEngineProvider implements InferenceEngineProvider {
   int get priority => 0;
   @override
   bool canHandle(edge.InferenceModelSpec spec) {
-    return spec.fileType == edge.ModelFileType.binary &&
-        spec.files.first.filename.toLowerCase().endsWith('.gguf');
+    return spec.fileType == edge.ModelFileType.gguf;
   }
 
   @override
@@ -53,7 +52,7 @@ class LlamaEngineProvider implements InferenceEngineProvider {
   ) async {
     if (!canHandle(spec)) {
       throw llama.LlamaUnsupportedException(
-        'Declare a .gguf model as ModelFileType.binary.',
+        'Declare the model as ModelFileType.gguf.',
       );
     }
     if (config.maxTokens <= 0) {

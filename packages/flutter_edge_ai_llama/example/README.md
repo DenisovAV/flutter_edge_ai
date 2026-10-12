@@ -6,7 +6,11 @@ Windows, Linux and Web runners.
 
 ## First run
 
-Use Flutter **3.47.1**. From `packages/flutter_edge_ai_llama/`:
+Use Flutter **3.47.1**. The example resolves core from this workspace, including the merged GGUF/LoRA
+changes in #649. Hosted core 2.3.1 lacks them; external apps need the
+[development override](../README.md#add-it-to-your-app) until the next patch.
+
+From `packages/flutter_edge_ai_llama/`:
 
 ```sh
 python3 tool/fetch_test_model.py

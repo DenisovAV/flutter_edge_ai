@@ -1,5 +1,13 @@
 # Contributor checks
 
+Current development uses merged core #649 from the workspace. For standalone
+archive preparation, run `python3 tool/verify.py package --core-path ../flutter_edge_ai`.
+This checks the archive with a local core override, not hosted resolution.
+`python3 tool/verify.py package` remains the release gate after the core patch is
+published and the dependency floor is updated. Native/browser identity contracts
+cover paired GGUF restoration and missing adapters; these use deterministic
+storage fixtures, not a real LoRA generation model.
+
 For app setup, use the [package README](../README.md). For current platform
 evidence and release gates, use the [qualification matrix](platforms.md).
 The model-specific evidence below includes the original POC and must be read
@@ -34,7 +42,7 @@ Native capabilities have independent opt-in defines for audio model/projector/
 WAV, vision model/projector/PNG, LoRA base/adapter and GPU model. See
 `test/native_capabilities_test.dart`. Unconfigured model tests skip. To test
 imported-file restart with the facade smoke, supply `GGUF_MODEL_PATH`;
-core 2.3.0 restores it without a connector helper.
+core restores it without a connector helper.
 
 The real Web smoke runner requires a POSIX host (Linux or macOS) and uses Chrome and Flutter's Wasm test mode. Flutter
 3.47.1 omits COEP on test worker scripts even with `--cross-origin-isolation`;

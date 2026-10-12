@@ -48,7 +48,7 @@ Future<void> main() async {
 
   await FlutterEdgeAi.installModel(
     modelType: ModelType.general,
-    fileType: ModelFileType.binary,
+    fileType: ModelFileType.gguf,
   ).fromFile('/absolute/path/to/chat.gguf').install();
 
   final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
@@ -69,20 +69,21 @@ Replace the file path with your downloaded instruction-tuned GGUF.
 response. Stop a stream with `await chat.session.stopGeneration()` and start
 a new chat when the context fills. Interrupted turns are discarded.
 
-Core 2.3.0 restores installed models during initialization; conversation history
+Core restores installed models during initialization; conversation history
 starts fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers
 described in the package guide.
 
-This draft uses core 2.3.0 and `ModelFileType.binary` for GGUF. Register the llama
-provider alone for GGUF until core adds its dedicated file type. Engine imports
-and Web URL resolution use core's public engine libraries.
-Dedicated GGUF identity and LoRA restart restoration await upstream #649.
+This draft selects `ModelFileType.gguf` by its declared type. MediaPipe does not
+claim that type. Engine imports and Web URL resolution use core's public engine
+libraries. Core restores the paired LoRA after restart and refuses restoration
+if its adapter is missing; Web LoRA execution remains unsupported.
 
 ## Add the development package
 
 The package is not on pub.dev yet. Use the example or a path dependency on
-`packages/flutter_edge_ai_llama` in your clone. Core 2.3.0 is published and
-requires no local-core override.
+`packages/flutter_edge_ai_llama` in your clone. The merged GGUF/LoRA changes in core #649 await the next published patch;
+hosted 2.3.1 lacks them. The workspace example uses local core. External apps
+need the development override shown in the package README.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
 `llamadart_llama_cpp_flutter: 0.0.21` SwiftPM companion.

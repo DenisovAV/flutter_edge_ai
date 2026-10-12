@@ -54,7 +54,7 @@ void main() {
         );
         final installation = edge.FlutterEdgeAi.installModel(
           modelType: edge.ModelType.general,
-          fileType: edge.ModelFileType.binary,
+          fileType: edge.ModelFileType.gguf,
         );
         logStage('stage=install');
         if (_modelPath.isNotEmpty) {

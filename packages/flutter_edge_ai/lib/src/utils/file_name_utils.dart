@@ -70,6 +70,7 @@ class FileNameUtils {
     '.json', // Config/tokenizer files (metadata)
     '.model', // SentencePiece tokenizers (embedding models)
     '.litertlm', // LiteRT model files (newer format)
+    '.gguf', // llama.cpp model files (ModelFileType.gguf)
   ];
 
   /// Removes all supported extensions from filename to get base name

@@ -807,6 +807,9 @@ core API is the entry point to everything else the plugin does:
   models that accept them: [Multimodal Inference](/codelabs/multimodal-flutter-gemma)
 * **let the model call your Dart functions** — tools and the call/response loop:
   [Function Calling](/codelabs/function-calling-flutter-gemma)
+* **give it skills that act on the device** — `SKILL.md` skills that read the
+  clock, open the calendar or run your JavaScript:
+  [On-Device Agents](/codelabs/on-device-agent-flutter-gemma)
 * **ground answers in your own documents** — embeddings and on-device vector
   search: [On-Device RAG](/codelabs/on-device-rag-flutter-gemma)
 * **run it as a voice loop** — speech-to-text in, text-to-speech out:

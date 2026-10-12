@@ -182,25 +182,292 @@ final eg2Index = await rag.open(
 );
 ```
 
-- Native only with `flutter_edge_ai_litertlm` 1.13.0: Android, iOS, macOS,
-  Linux, Windows. On Web `install()` refuses the `.litertlm` embedder with an
-  `UnsupportedError` before downloading anything.
-- Text only for now: `getActiveEmbedder(supportImage: true)` or
-  `supportAudio: true` throws `EmbeddingLoadException` (images arrive in
-  1.14.0, audio in 1.16.0).
+- Android, iOS, macOS, Linux, Windows (`flutter_edge_ai_litertlm` 1.13.0 for
+  text, 1.13.1 for images), and Web from 1.13.1 (text and images, on WebGPU
+  through `@litert-lm/core`'s EmbeddingEngine). The Web page needs
+  `window.EmbeddingEngine = m.EmbeddingEngine;` next to `window.Engine =
+  m.Engine;` in its `@litert-lm/core` module script; without it the load fails
+  with an `EmbeddingLoadException` naming that line. The browser needs WebGPU:
+  the CPU (WebAssembly) path of `@litert-lm/core` 0.18.0 cannot read these
+  bundles' external weights, so there is no CPU fallback, and a browser
+  without WebGPU (no `navigator.gpu`, or no adapter) fails the load with an
+  `EmbeddingLoadException` that says so.
+- The 270m is text only: `getActiveEmbedder(supportImage: true)` throws
+  `EmbeddingLoadException` naming the 440m bundle — natively before any engine
+  or cache is made (below); on Web only after the bundle was read, when the
+  runtime refuses to create the engine. `supportAudio: true` needs the 740m
+  bundle (below): on the 270m and the 440m it throws `EmbeddingLoadException`
+  naming the 740m, and on Web it is refused on every bundle.
 - `maxInputTokens` is 1024 — task prefix, BOS and EOS included. Keep chunks at
   512 tokens or fewer: memory grows with the input length. A longer text throws
-  `EmbeddingInputTooLongException` whose `actualTokens` is null — LiteRT-LM
-  reports the overflow without a count.
-- It runs on CPU (`activeBackend` is `PreferredBackend.cpu`) and keeps a weight
-  cache of about 71 MB, on top of the 165 MB bundle, in the app's cache
-  directory: never backed up, and rebuilt at the next load if the OS clears
-  it.
+  `EmbeddingInputTooLongException` with the exact `actualTokens` (natively
+  from `flutter_edge_ai_litertlm` 1.13.1, from a truncated run; on Web read
+  after the engine ran the whole input in 1024-token windows). Either way an
+  over-long chunk still costs a full embedding before it is refused: split
+  before embedding.
+- It runs on CPU natively (`activeBackend` is `PreferredBackend.cpu`) and on
+  WebGPU on Web (`PreferredBackend.gpu`), and refuses `PreferredBackend.npu`:
+  the NPU runs the per-SoC bundles (next section). Web vectors therefore
+  differ slightly from native ones — measured min cos about 0.995 for text and
+  0.998 for images against the native CPU vectors — and retrieval across
+  platforms holds: web queries find natively embedded images and native
+  queries find web-embedded images, top-1 10/10 on the example's ten scenes.
+  Natively it keeps a weight cache of about 71 MB, on top of the 165 MB
+  bundle, in the app's cache directory: never backed up, and rebuilt at the
+  next load if the OS clears it. Web keeps no weight cache.
 - EmbeddingGemma 1 and 2 both produce 768-d vectors but are different spaces:
   give each its own location and profile ID — the dimension check alone cannot
   tell them apart. `FlutterEdgeAiActiveEmbedder.forActiveModel` already gives
   them different ids (different file names); the explicit id above is for one
   text store shared by the three EmbeddingGemma 2 bundles.
+
+### EmbeddingGemma 2 on a Qualcomm NPU (`flutter_edge_ai_litertlm` 1.13.1)
+
+The same repos hold each bundle compiled for one SoC's NPU
+(`embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm`,
+`embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275.litertlm`, …). It runs on
+Qualcomm Android (arm64) and Qualcomm Linux arm64, in an app whose pubspec sets
+`hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true` (the flag
+the LLM NPU path uses), loaded with `preferredBackend: PreferredBackend.npu`:
+
+```dart
+const eg2Revision = '9be6e8b90982095dc05c2bd162e4b954ee4dbac7';
+// Its own id: NPU vectors are not the CPU bundle's. Shared by the SoC's 270m
+// and 440m (byte-identical text towers).
+const npuProfileId =
+    'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850';
+
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-270m-litert-lm/resolve/$eg2Revision/'
+      'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm',
+    )
+    .install();
+final npu = await FlutterEdgeAi.getActiveEmbedder(
+  preferredBackend: PreferredBackend.npu,
+);
+assert(npu.activeBackend == PreferredBackend.npu);
+
+final rag = FlutterEdgeAiRag(providers: const [SqliteVectorStoreProvider()]);
+final npuIndex = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      'knowledge-embeddinggemma2-npu-sm8850.db',
+    ),
+  ),
+  // The adapter loads the embedder per operation: pass npu here too.
+  embedder: FlutterEdgeAiActiveEmbedder(
+    profileId: npuProfileId,
+    preferredBackend: PreferredBackend.npu,
+  ),
+);
+```
+
+- Verified SoCs: SM8850, SM8650 and QCS8275. Google also publishes SM8550,
+  SM8750 (load, not verified by us), Tensor G5/G6, MediaTek MT6991/MT6993 and
+  Intel PTL (refused). What a bundle targets is read from the bundle.
+- Its vectors are close to the CPU bundle's, not equal (SM8650: cosine
+  0.79–0.86 for a few words, 0.99 from about 200 words; images 0.86–0.88), so
+  never compare NPU vectors with CPU ones; within the NPU space retrieval
+  holds (text → image 10/10).
+- Nothing falls back: a per-SoC bundle without `npu`, the generic bundle with
+  `npu`, `npu` on iOS/macOS/Windows/Linux x64/Web, a build without
+  `qualcomm_npu`, a device without a reachable Qualcomm NPU, and a bundle the
+  NPU cannot run (another SoC's) each throw `EmbeddingLoadException` with the
+  fix. A loaded embedder is never reused for the other backend.
+- Give an NPU index its own profile id (above); never open a CPU index with an
+  NPU embedder or the reverse. `FlutterEdgeAiActiveEmbedder.forActiveModel`
+  keys on the file name, so it separates them by itself.
+
+### EmbeddingGemma 2 images (440m; `flutter_edge_ai_litertlm` 1.13.1 native, 1.13.1 Web)
+
+The 440m bundle adds a vision encoder to the same text tower, so one model
+embeds both and a text finds photos. Install it like the 270m (ungated):
+
+```dart
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+const visionRevision = 'e301f74d5551b0c2641bd5cb4652a76239d5c5f8';
+// The text id of the 270m section; image vectors also depend on the vision
+// budget, so image indexes add it.
+const photosProfileId =
+    'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-vis140';
+
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-vision-440m-litert-lm/resolve/$visionRevision/'
+      'embeddinggemma-2-text-vision-440m.litertlm',
+      filename: 'embeddinggemma-2-text-vision-440m__rev-e301f74d5551.litertlm',
+    )
+    .install();
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
+final photos = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      'photos-embeddinggemma2-vis140.db',
+    ),
+    documents: EmbeddingModality.image,
+  ),
+  embedder: FlutterEdgeAiActiveEmbedder(
+    profileId: photosProfileId,
+    supportImage: true,
+  ),
+);
+await photos.add(
+  id: 'photo-1',
+  document: EmbeddingInput.image(bytes), // upright, ≤ 1024 px: see below
+  content: path, // a reference to the photo, never its bytes
+);
+final hits = await photos.search(query: EmbeddingInput.text('a red bicycle'));
+```
+
+Pass upright, downscaled images. The engine decodes the file itself, ignores
+EXIF orientation — a portrait phone photo, stored sideways with an orientation
+tag, is embedded lying on its side (measured cos 0.89 against the upright
+picture) — and decodes at full size, which a 12 MP photo pays for. Decode with
+Flutter first: it applies the orientation and decodes straight to the target
+size:
+
+```dart
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
+final codec = await ui.instantiateImageCodecWithSize(
+  await ui.ImmutableBuffer.fromUint8List(bytes), // the photo as picked
+  getTargetSize: (w, h) => math.max(w, h) <= 1024
+      ? const ui.TargetImageSize()
+      : w >= h
+      ? const ui.TargetImageSize(width: 1024)
+      : const ui.TargetImageSize(height: 1024),
+);
+final image = (await codec.getNextFrame()).image;
+final png = await image.toByteData(format: ui.ImageByteFormat.png);
+image.dispose();
+codec.dispose();
+final upright = EmbeddingInput.image(png!.buffer.asUint8List());
+```
+
+This also converts what Flutter decodes and the engine does not (WebP; HEIC on
+Android). Keep the original for display; give the model the result. The same
+code runs on Web (CanvasKit and skwasm decode through the browser), on the
+page itself: there are no isolates there.
+
+- Formats the engine decodes: JPEG, PNG, GIF and BMP. HEIC, WebP, TIFF and
+  AVIF throw `EmbeddingFormatNotSupportedException` (with `detected` and
+  `accepted`) before anything is sent — decode them as above. A corrupt or
+  truncated file of an accepted type reaches the model and fails with
+  `EmbeddingEngineException` (`nativeCode` 3 on native; on Web the message
+  carries the runtime's reason); the model keeps working.
+- Vision budget: 140 tokens per image by default (closest to the reference
+  model, min cos 0.985 on our test images);
+  `LiteRtEmbeddingBackend(visionTokensPerImage: 70)` — what the model card and
+  Google AI Edge Gallery use — is about twice as fast with slightly lower
+  fidelity (min cos 0.970); give its image indexes their own id (`…-vis70`). Any other value throws `EmbeddingLoadException`. Text vectors
+  do not depend on it. `forActiveModel` ids follow file names only, so an app
+  that changes the budget puts it in the namespace (`'photos-vis70'`).
+- On Web the vision encoder does not fit next to a loaded `.litertlm` LLM:
+  the page's `@litert-lm/core` module has 4 GB of WebAssembly memory, and the
+  440m's vision engine (about 3.3 GB) and Gemma 4 E2B do not share it —
+  whichever loads second fails, the embedder with an `EmbeddingLoadException`
+  that says to close the LLM first. Text-only embedding loads next to the LLM.
+- Cost (CPU, measured): 388 MB on disk plus a 218 MB vision weight cache
+  written every time the model loads — also when it only embeds text. The
+  first image adds RAM: about 385 MB on an M4 Pro Mac, about 500 MB on a
+  Pixel 8. Per image at 140 tokens: about 0.35 s on an Apple-silicon Mac,
+  about 2 s on an Android flagship (Pixel 8 Pro 1.8 s, Pixel 8a 2.3 s), more
+  on mid-range phones and rising under sustained load as the phone heats up;
+  70 tokens takes about half. A 440m loaded for text alone still loads its
+  vision tower: apps that embed only text use the 270m. LiteRT-LM's thread
+  setting reaches the text tower only. Close the embedder after a large photo
+  ingest on low-RAM devices.
+- A text query over an image index is sent raw (`TaskType.none`): measured,
+  the retrieval-query prefix found the same photos with a smaller margin. Do
+  not set `queryTask` for it: that applies to text documents only.
+
+### EmbeddingGemma 2 audio and combined inputs (740m; `flutter_edge_ai_litertlm` 1.13.1, native)
+
+The 740m bundle (`litert-community/embeddinggemma-2-740m-litert-lm`, revision
+`24d962e906c7d332c6428e71c9676855024569e2`, ungated, 485 MB) has the 440m's
+text and vision towers — the same text and image vectors, so the same profile
+ids — plus an audio encoder. Audio and combined inputs are native-only: on
+Web `supportAudio: true` is refused.
+
+```dart
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
+final clips = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: path, // its own location: one modality per location
+    documents: EmbeddingModality.audio,
+  ),
+  embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(
+    namespace: 'clips',
+    supportAudio: true,
+  ),
+);
+await clips.add(
+  id: 'memo-1',
+  document: EmbeddingInput.audio(bytes), // encoded WAV, MP3 or FLAC bytes
+  content: 'file:///memos/1.wav',
+);
+final hits = await clips.search(
+  query: EmbeddingInput.text('turn off the kitchen lights'),
+);
+
+// Several parts in one vector (flutter_edge_ai 2.3.1), outside an index:
+final embedder = await FlutterEdgeAi.getActiveEmbedder(
+  supportImage: true,
+  supportAudio: true,
+);
+final vector = await embedder.embed(
+  EmbeddingInput(text: 'kitchen', audio: bytes),
+  taskType: TaskType.retrievalDocument,
+);
+```
+
+- Formats: WAV, MP3 and FLAC, any rate and channel count (the engine mixes
+  down to mono and resamples to 16 kHz). Ogg and M4A throw
+  `EmbeddingFormatNotSupportedException` before anything is sent; a corrupt
+  file of an accepted type throws `EmbeddingEngineException` (`nativeCode` 2)
+  and the model keeps working. One clip per vector.
+- Length: about 25 tokens per second, so up to about 40 seconds fit the
+  1024-token cap; a 60-second clip throws `EmbeddingInputTooLongException`
+  with `actualTokens` 1504. Split long recordings.
+- `EmbeddingInput(text:, images:, audio:)` puts the text (with its task
+  prefix), then the images in order, then the audio into one vector, whatever
+  order the arguments are written in. Declare every medium it carries. Any
+  input with more than one part — several modalities, or several images — is
+  a combined input: an engine that embeds one part per vector (every other one
+  here, and EmbeddingGemma 2 on Web) refuses it with
+  `UnsupportedEmbeddingCombinationException` before anything is sent.
+- An audio index keeps the text profile id: audio vectors do not depend on the
+  vision budget, and the store's `documents` modality keeps it apart from a
+  text store. A text query over it is sent raw (`TaskType.none`).
+- Audio vectors are not bit-portable: the audio encoder quantizes activations
+  to 8 bits, so another CPU kernel can move a clip's vector by up to cos 0.05
+  (text and image vectors do not move that way). Retrieval holds: every test
+  sentence was found by its text query on every build measured.
+- Cost (CPU, M4 Pro Mac): 385 MB of weight caches written at every load (text
+  71 MB, vision 218 MB, audio 95 MB), also for text-only use; about 0.2–0.3 s
+  per 3-second clip. Use the 270m for text, the 440m for text and images.
 
 ## Index and search
 
@@ -301,12 +568,14 @@ await photos.add(
 final matches = await photos.search(query: EmbeddingInput.text('a red bicycle'));
 ```
 
-The embedders bundled with this release embed text only:
-`getActiveEmbedder(supportImage: true)` — and therefore `open()` of an image
-index with the active embedder — fails with `EmbeddingLoadException`. A custom
-`RagEmbedder` can embed media today. A text index and an image index can share
-one installed model: each adapter declares what it needs, and core reloads
-the embedder once with both.
+The active embedder embeds images with the EmbeddingGemma 2 440m bundle
+(above; on Web from `flutter_edge_ai_litertlm` 1.13.1). With any other model —
+the 270m, EmbeddingGemma 1, ONNX — `getActiveEmbedder(supportImage: true)`,
+and therefore `open()` of an image index with the active embedder, fails with
+`EmbeddingLoadException`. A
+custom `RagEmbedder` can embed media with any model. A text index and an image
+index can share one installed model: each adapter declares what it needs, and
+core reloads the embedder once with both.
 
 Cross-modal scores are not on one scale, so mixed corpora use one index per
 modality and the app merges results. Text locations open in both directions
@@ -576,6 +845,12 @@ location.
   `flutter_edge_ai_litertlm/web/` when that runtime is used, and copy them
   again after upgrading it: a stale `litert_embeddings.js` fails
   `getActiveEmbedder()` with an `EmbeddingLoadException` that names the file.
+  EmbeddingGemma 2 (`.litertlm`) needs none of those files, only
+  `window.EmbeddingEngine = m.EmbeddingEngine;` in the `@litert-lm/core`
+  module script of `web/index.html`, and a browser with WebGPU.
+- `EmbeddingLoadException` starting "EmbeddingGemma 2 on the web needs
+  WebGPU": the browser has no `navigator.gpu` or no GPU adapter. There is no
+  CPU path for these bundles on Web; use a browser with WebGPU enabled.
 - `ArgumentError` naming an undeclared filter field: add it to `filterSchema`.
   SQLite names must match `^[A-Za-z][A-Za-z0-9_]*$` and avoid reserved columns.
 - `StateError: Vector store "…" is bound to …, not …`: the location belongs to
@@ -587,10 +862,15 @@ location.
 - `EmbeddingInputTooLongException` from `add` or `search`: the text is longer
   than the embedder's `maxInputTokens`. Split it into smaller chunks; older
   releases truncated it silently. With EmbeddingGemma 2 its `actualTokens` is
-  null.
-- `EmbeddingLoadException` from `open()` of an image or audio index: the
-  installed model, or every embedder bundled with this release, embeds text
-  only.
+  the exact count (natively from `flutter_edge_ai_litertlm` 1.13.1).
+- `EmbeddingLoadException` from `open()` of an image index: the installed
+  model has no vision encoder — "has no vision encoder; install
+  embeddinggemma-2-text-vision-440m" on the 270m — or is not an EmbeddingGemma
+  2 bundle. From an audio index: "has no audio encoder; install
+  embeddinggemma-2-740m" on the 270m and the 440m; on Web every bundle refuses
+  audio.
+- `EmbeddingFormatNotSupportedException` from `add` or `search` on an image
+  index: HEIC, WebP, TIFF or AVIF; convert to JPEG or PNG.
 - `VectorStoreException` "… is not a valid embedding profile" on open: the
   location was bound by flutter_edge_ai_rag 1.0 to an id with a control
   character, which 1.1 refuses; this version cannot open it.

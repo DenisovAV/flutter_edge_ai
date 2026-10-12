@@ -21,7 +21,7 @@ edge.InferenceModelSpec _spec(String path) => edge.InferenceModelSpec(
   name: 'native',
   modelSource: edge.ModelSource.file(path),
   modelType: edge.ModelType.general,
-  fileType: edge.ModelFileType.binary,
+  fileType: edge.ModelFileType.gguf,
 );
 
 void main() {

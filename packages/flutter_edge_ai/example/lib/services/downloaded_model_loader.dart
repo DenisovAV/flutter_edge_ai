@@ -108,7 +108,7 @@ class DownloadedModelLoader {
     await builder.install();
     await persistVerifiedEmbeddingCatalogSelection(model);
     await FlutterEdgeAi.getActiveEmbedder(
-      preferredBackend: PreferredBackend.gpu,
+      preferredBackend: model.embedderBackend,
     );
 
     if (kDebugMode) {

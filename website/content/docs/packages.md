@@ -42,7 +42,7 @@ is on the [Capabilities](/docs/capabilities) page.
 - **Probe-chain registry.** Engines and backends are pure factories that declare
   `canHandle(spec)` + a priority. The registry selects a provider per model by
   declared `ModelFileType` — `task` / `binary` → MediaPipe, `litertlm` → LiteRT-LM,
-  `onnx` → Onnx, `builtIn` → BuiltInAi.
+  `onnx` → Onnx, `builtIn` → BuiltInAi, `gguf` → a llama.cpp engine.
 - **One app can run both formats.** Register both `LiteRtLmEngine()` and
   `MediaPipeEngine()`, and the registry routes each model to the engine that
   handles its declared `ModelFileType` — not its file extension.
@@ -61,7 +61,9 @@ is on the [Capabilities](/docs/capabilities) page.
 | Run `.task` / `.bin` models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) | `flutter_edge_ai_mediapipe` |
 | Run the OS system model with no download (Gemini Nano / Apple FM / Windows AI Foundry) | `flutter_edge_ai_builtin_ai` |
 | Run ONNX models — ORT-GenAI (native) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
-| Generate text embeddings with EmbeddingGemma 2 (`.litertlm`, native) | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) alone |
+| Generate text embeddings with EmbeddingGemma 2 (`.litertlm`) | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
+| Embed images with EmbeddingGemma 2 (the 440m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
+| Embed audio, or several parts in one vector, with EmbeddingGemma 2 (the 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) with `flutter_edge_ai` 2.3.1; native platforms |
 | Generate text embeddings with EmbeddingGemma 1 / Gecko (`.tflite`) | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
 | On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |

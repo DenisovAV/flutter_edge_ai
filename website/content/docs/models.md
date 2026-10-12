@@ -64,8 +64,9 @@ name. `installModel` defaults it to `ModelFileType.task`, so declare it
 explicitly: `ModelFileType.litertlm` for `.litertlm` files (omitting it routes the
 model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 `.task`, `ModelFileType.binary` for `.bin` and `.tflite`, `ModelFileType.onnx`
-for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
-`ModelFileType.builtIn` for OS-provided models.
+for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), `ModelFileType.gguf` for
+`.gguf` files, which a llama.cpp engine runs, and `ModelFileType.builtIn` for
+OS-provided models.
 
 </Info>
 
@@ -74,7 +75,7 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 | Format | Android | iOS | Web | Desktop | Use Case |
 |---|:---:|:---:|:---:|:---:|---|
 | `.task` | ✅ | ✅ ⁴ | ✅ | ❌ | Older models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) |
-| `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Newer models (Gemma 4, Qwen3, FastVLM + desktop for all); EmbeddingGemma 2 embeddings (native only) |
+| `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Newer models (Gemma 4, Qwen3, FastVLM + desktop for all); EmbeddingGemma 2 embeddings (every platform; web from litertlm 1.13.1) |
 | `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4, Gemma 3 1B and Gemma 3 270M in the current catalog) |
 | `.bin` | ✅ | ✅ | ✅ | ❌ | Manual chat template formatting required |
 | `.tflite` | ✅ | ✅ | ✅ | ✅ | LLM via `ModelFileType.binary` (MediaPipe, mobile and web), and LiteRT embedding models (EmbeddingGemma, Gecko) on every platform |
@@ -470,7 +471,9 @@ the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 
 | Model | Parameters | Dimensions | Max Seq Length | Size | Auth Required |
 |---|---|---|---|---|---|
-| **[EmbeddingGemma 2 text](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm)** (`.litertlm`, native only) | 270M | 768D | 1024 tokens | 165MB + 71MB weight cache | ❌ |
+| **[EmbeddingGemma 2 text](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm)** (`.litertlm`; web from litertlm 1.13.1) | 270M | 768D | 1024 tokens | 165MB + 71MB weight cache (native) | ❌ |
+| **[EmbeddingGemma 2 text + vision](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm)** (`.litertlm`, text and images; web from litertlm 1.13.1) | 440M | 768D | 1024 tokens | 388MB + 71MB + 218MB weight caches (native) | ❌ |
+| **[EmbeddingGemma 2 text + vision + audio](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm)** (`.litertlm`, text, images and audio; audio native only, from litertlm 1.13.1) | 740M | 768D | 1024 tokens | 485MB + 385MB weight caches (native) | ❌ |
 | **[Gecko 64](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 64 tokens | 110MB | ❌ |
 | **[Gecko 256](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 256 tokens | 114MB | ❌ |
 | **[Gecko 512](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 512 tokens | 116MB | ❌ |
@@ -480,9 +483,25 @@ the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 | **[EmbeddingGemma 2048](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
 
 EmbeddingGemma 2 is one `.litertlm` file with its own tokenizer (no
-`tokenizerFrom…()`), runs on CPU on Android, iOS, macOS, Linux and Windows,
-and embeds text only in `flutter_edge_ai_litertlm` 1.13.0. Keep chunks at 512
-tokens or fewer; see [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
+`tokenizerFrom…()`) and runs on CPU on Android, iOS, macOS, Linux and Windows,
+and in the browser on WebGPU since `flutter_edge_ai_litertlm` 1.13.1 (the
+browser needs WebGPU: the CPU path of `@litert-lm/core` 0.18.0 cannot load
+these bundles).
+All three bundles embed text (`flutter_edge_ai_litertlm` 1.13.0, identical text
+vectors); the 440m and the 740m also embed JPEG, PNG, GIF and BMP images
+(1.13.1; per image about 0.35 s on an Apple-silicon Mac and about 2 s on an
+Android flagship, and about 400–500 MB more RAM from the first image); the 740m
+also embeds WAV, MP3 and FLAC audio of up to about 40 seconds, natively (1.13.1;
+about 0.2–0.3 s per 3-second clip on an Apple-silicon Mac), and any of them
+together in one vector. Keep chunks at
+512 tokens or fewer, and use the 270m when you embed only text; see
+[Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
+The same repositories hold each bundle compiled for one SoC's NPU
+(`…_Qualcomm_SM8850.litertlm`, `…_Qualcomm_SM8650.litertlm`,
+`…_Qualcomm_QCS8275.litertlm`, 202–466 MB),
+which `flutter_edge_ai_litertlm` 1.13.1 runs on Qualcomm Android and Qualcomm
+Linux arm64 with `preferredBackend: PreferredBackend.npu`; see
+[EmbeddingGemma 2 on a Qualcomm NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-qualcomm-npu).
 Every other row is a `.tflite` model plus a tokenizer file.
 
 **Performance (Android Pixel 8):**

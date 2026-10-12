@@ -2,9 +2,9 @@
 
 This workspace package adapts core's registries to published `llamadart 0.11.1`.
 Core resolves locally in the workspace; hosted consumer validation requires
-published core `^2.3.0`. Shipped code uses only core's public engine libraries.
-GGUF still uses binary routing until upstream #649 lands in a published core
-release. GGUF embeddings are deferred; see `doc/deferred_embeddings.md`.
+the next published core patch containing #649. Shipped code uses only core's public engine libraries.
+GGUF routes by its dedicated type from merged core #649. Hosted 2.3.1 lacks
+that enum; this is development preparation until the patch is published. GGUF embeddings are deferred; see `doc/deferred_embeddings.md`.
 
 - Use Flutter 3.47.1, matching `.flutter-version` and the root `.fvmrc`.
 - Run `python3 tool/verify.py contracts` and `python3 tool/verify.py package`
@@ -18,7 +18,8 @@ release. GGUF embeddings are deferred; see `doc/deferred_embeddings.md`.
 - Keep Flutter lanes sequential in one checkout; separate CI jobs are isolated.
 - Use `engine.dart` and the conditional Web-only `engine_web.dart`; never ship
   core `src/` imports. Test fixtures must annotate justified private imports.
-  Move GGUF routing to its dedicated core file type after #649 is published.
+  Keep dedicated GGUF routing; replace preparation validation with hosted
+  validation and set its published dependency floor once #649 is released.
 - Runtime source ownership stays in llamadart-native / llama-web-bridge.
 - Never patch downloaded SDK, package, model or runtime sources to pass tests.
 - Required model lanes fail if fixtures are missing. Qualification claims require

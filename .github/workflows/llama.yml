@@ -47,8 +47,12 @@ jobs:
           python-version: "3.13"
       - uses: ./.github/actions/setup-flutter-llama
       - run: python tool/verify.py contracts
-      - name: Package archive and hosted consumer dependencies
-        run: python tool/verify.py package
+      # Core #649 is merged but absent from hosted 2.3.1. Restore the hosted
+      # package gate and update the dependency floor when that patch ships.
+      - name: Package archive preparation against merged core (not hosted validation)
+        run: |
+          echo "::warning::Hosted consumer validation awaits the core patch containing #649."
+          python tool/verify.py package --core-path ../flutter_edge_ai
       - name: Fetch immutable CPU smoke fixture
         run: python tool/fetch_test_model.py
       - name: Real Web CPU smoke

@@ -108,22 +108,81 @@ void main() {
       expect(echoed.modalities, {EmbeddingModality.image});
     });
 
-    test('the combined-input helper keeps the 2.4.0 constructor rules', () {
-      final combined = debugCombinedEmbeddingInput(
+    test('the combined constructor carries every part it is given', () {
+      final combined = EmbeddingInput(
         text: 'a cat',
         images: [
           Uint8List.fromList([1]),
+          Uint8List.fromList([2, 3]),
         ],
+        audio: Uint8List.fromList([4]),
       );
+      expect(combined.text, 'a cat');
+      expect(combined.images, [
+        [1],
+        [2, 3],
+      ]);
+      expect(combined.audio, [4]);
       expect(combined.modalities, {
         EmbeddingModality.text,
         EmbeddingModality.image,
+        EmbeddingModality.audio,
       });
-      expect(() => debugCombinedEmbeddingInput(), throwsArgumentError);
+      expect(EmbeddingInput(text: '').modalities, {EmbeddingModality.text});
       expect(
-        () => debugCombinedEmbeddingInput(images: [Uint8List(0)]),
+        EmbeddingInput(
+          images: [
+            Uint8List.fromList([1]),
+          ],
+        ).modalities,
+        {EmbeddingModality.image},
+      );
+      expect(EmbeddingInput(audio: Uint8List.fromList([1])).modalities, {
+        EmbeddingModality.audio,
+      });
+    });
+
+    test('the combined constructor refuses an input with no part', () {
+      expect(() => EmbeddingInput(), throwsArgumentError);
+      expect(() => EmbeddingInput(images: const []), throwsArgumentError);
+    });
+
+    test('the combined constructor refuses an empty byte array', () {
+      expect(
+        () => EmbeddingInput(text: 'x', images: [Uint8List(0)]),
         throwsArgumentError,
       );
+      expect(
+        () => EmbeddingInput(
+          images: [
+            Uint8List.fromList([1]),
+            Uint8List(0),
+          ],
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => EmbeddingInput(text: 'x', audio: Uint8List(0)),
+        throwsArgumentError,
+      );
+    });
+
+    test('the combined constructor copies every part (D19)', () {
+      final buffer = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
+      final input = EmbeddingInput(
+        text: 't',
+        images: [Uint8List.sublistView(buffer, 0, 2)],
+        audio: Uint8List.sublistView(buffer, 4, 6),
+      );
+      buffer
+        ..[0] = 99
+        ..[4] = 99;
+      expect(input.images.single, [1, 2]);
+      expect(input.audio, [5, 6]);
+      expect(input.images.single.buffer.lengthInBytes, 2);
+      expect(input.audio!.buffer.lengthInBytes, 2);
+      expect(() => input.audio![0] = 7, throwsUnsupportedError);
+      expect(() => input.images.add(Uint8List(1)), throwsUnsupportedError);
     });
   });
 

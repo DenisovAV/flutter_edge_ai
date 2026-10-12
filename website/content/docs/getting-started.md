@@ -48,6 +48,21 @@ only the engines, stores and features your app uses — see
   from one `.litertlm` bundle with its own tokenizer, on Android, iOS, macOS,
   Linux and Windows; up to 1024 tokens per input. See
   [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
+- **EmbeddingGemma 2 audio and combined inputs** (`flutter_edge_ai_litertlm`
+  1.13.1, `flutter_edge_ai` 2.3.1): the 740m bundle embeds WAV, MP3 and FLAC
+  clips on native platforms, and `EmbeddingInput(text:, images:, audio:)` puts
+  several parts in one vector; an over-long input reports its exact token
+  count. See
+  [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-audio-and-combined-inputs).
+- **EmbeddingGemma 2 on the Web** (`flutter_edge_ai_litertlm` 1.13.1): text
+  and images in the browser through `@litert-lm/core`, on WebGPU (the
+  browser needs it); add `window.EmbeddingEngine = m.EmbeddingEngine;` to
+  `web/index.html`. See
+  [Installation → Web](/docs/installation#web).
+- **EmbeddingGemma 2 images** (`flutter_edge_ai_litertlm` 1.13.1): the 440m
+  bundle embeds JPEG, PNG, GIF and BMP photos next to text, for text-to-image
+  and image-to-image search in a RAG image index. See
+  [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-images).
 - **A new embedding API** (breaking): `embed(EmbeddingInput.text(t), taskType: …)`
   and `embedAll` replace `generateEmbedding(s)`, `dimension` replaces
   `getDimension()`, `TaskType` has nine values, errors are typed

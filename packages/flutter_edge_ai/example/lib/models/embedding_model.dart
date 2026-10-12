@@ -1,4 +1,16 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart' show PreferredBackend;
+
 import 'base_model.dart';
+
+/// Vision tokens per EmbeddingGemma 2 image in this app: the
+/// `LiteRtEmbeddingBackend` default, registered in gemma_bootstrap.dart.
+const kExampleVisionTokensPerImage = 140;
+
+/// The profile id of an image index over [textProfileId]'s embedding space:
+/// image vectors also depend on the vision budget (R5 §5.6).
+String imageIndexProfileId(String textProfileId) =>
+    '$textProfileId-vis$kExampleVisionTokensPerImage';
 
 enum EmbeddingModel implements EmbeddingModelInterface {
   // EmbeddingGemma-300M models (all generate 768D embeddings)
@@ -99,10 +111,10 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   ),
 
   // EmbeddingGemma 2 text (270M): ONE self-contained `.litertlm` bundle that
-  // carries its own tokenizer, so there is no tokenizer file. Ungated. Native
-  // only (Android, iOS, macOS, Linux, Windows) until the web EG2 engine lands;
-  // the list screen hides it on web. Input cap 1024 tokens (prefix, BOS and
-  // EOS included) — keep RAG chunks at 512 or below.
+  // carries its own tokenizer, so there is no tokenizer file. Ungated.
+  // Android, iOS, macOS, Linux, Windows (CPU), and the web (WebGPU, since
+  // flutter_edge_ai_litertlm 1.13.1; no CPU path there). Input cap 1024 tokens
+  // (prefix, BOS and EOS included) — keep RAG chunks at 512 or below.
   embeddingGemma2Text270m(
     url:
         'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm',
@@ -118,6 +130,167 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     // identical text vectors, so one id serves all three. Never shared with
     // EmbeddingGemma 1 or an ONNX export of EG2.
     ragProfileId: 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1',
+  ),
+
+  // EmbeddingGemma 2 Text + Vision (440M): the 270M's text tower (the same
+  // bytes, so the same text vectors and the same text profile id) plus a
+  // vision encoder, so it embeds images too — the Image Search screen needs
+  // it. Ungated; every platform, the web included. What the images cost over
+  // the 270M (macOS figures): 388 MB on disk instead of 165, a 218 MB vision
+  // weight cache written at every load, even for text-only use (native; the
+  // web keeps no weight cache), and about 385 MB more RAM from the first image
+  // on. For text alone the 270M is the better choice.
+  embeddingGemma2TextVision440m(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m.litertlm',
+    filename: 'embeddinggemma-2-text-vision-440m__rev-e301f74d5551.litertlm',
+    displayName: 'EmbeddingGemma 2 Text + Vision (440M)',
+    size: '388MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '92dcbea108899e5d6e30d919b0744f90d9967e80c67a4ab5503ac16d54f62eb0',
+    // Text vectors are identical to the 270M's, so text stores share its id.
+    // An image index uses imageRagProfileId.
+    ragProfileId: 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1',
+    embedsImages: true,
+  ),
+
+  // EmbeddingGemma 2 (740M): the 440M's text and vision towers (the same
+  // bytes, so the same text and image vectors and the same profile ids) plus
+  // an audio encoder, so it also embeds audio (WAV, MP3, FLAC; about 25
+  // tokens per second, so a clip of up to about 40 s fits the 1024-token cap)
+  // and combinations — a photo with its caption, a clip with a note — in one
+  // vector; both native-only (the web refuses supportAudio). Ungated. On top
+  // of the 440M (macOS figures): 485 MB on disk, a further 95 MB audio weight
+  // cache written at every load (385 MB of caches in all, even for text-only
+  // use), and more RAM on the first clip. Audio vectors do not depend on the
+  // vision budget, so an audio index keeps the text id.
+  embeddingGemma2TextVisionAudio740m(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/resolve/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m.litertlm',
+    filename: 'embeddinggemma-2-740m__rev-24d962e906c7.litertlm',
+    displayName: 'EmbeddingGemma 2 Text + Vision + Audio (740M)',
+    size: '485MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: 'e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c',
+    ragProfileId: 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1',
+    embedsImages: true,
+    embedsAudio: true,
+  ),
+
+  // EmbeddingGemma 2 compiled for one Qualcomm NPU (Google's per-SoC
+  // bundles, same repos and revisions as above). They run ONLY on that SoC's
+  // NPU — `getActiveEmbedder(preferredBackend: PreferredBackend.npu)` on
+  // Qualcomm Android or Qualcomm Linux arm64, in an app built with
+  // `qualcomm_npu: true` (this one is) — and are refused everywhere else, so
+  // the list shows them on Android and Linux only. SM8850 (Snapdragon 8 Elite
+  // Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (VENTUNO Q) are the ones
+  // verified; Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
+  // MT6991/MT6993 and Intel PTL builds. Their vectors are not the CPU
+  // bundle's: each SoC has its own profile id — the CPU text id plus
+  // `-npu-<soc>`. The 270m and the 440m of one SoC carry byte-identical text
+  // towers (sha256 prefix aaae57a31475 for SM8850, d6db62a3616b for SM8650,
+  // 685619825c4e for QCS8275), so they share it, as the generic bundles do.
+  embeddingGemma2Text270mSm8850(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm',
+    filename:
+        'embeddinggemma-2-text-270m_Qualcomm_SM8850__rev-9be6e8b90982.litertlm',
+    displayName: 'EmbeddingGemma 2 Text (270M) · Qualcomm SM8850 NPU',
+    size: '202MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '72992b649c812ae9e30ffa9ad88fc662e649f7b643500d28051fbd457ad0d22a',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850',
+    npuSoc: 'SM8850',
+  ),
+
+  embeddingGemma2TextVision440mSm8850(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Qualcomm_SM8850.litertlm',
+    filename:
+        'embeddinggemma-2-text-vision-440m_Qualcomm_SM8850__rev-e301f74d5551.litertlm',
+    displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Qualcomm SM8850 NPU',
+    size: '463MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '661369235aa9fc23cf04a213d4e445c4634073832279f5a261ed22650a8ebc5b',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850',
+    embedsImages: true,
+    npuSoc: 'SM8850',
+  ),
+
+  embeddingGemma2Text270mSm8650(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Qualcomm_SM8650.litertlm',
+    filename:
+        'embeddinggemma-2-text-270m_Qualcomm_SM8650__rev-9be6e8b90982.litertlm',
+    displayName: 'EmbeddingGemma 2 Text (270M) · Qualcomm SM8650 NPU',
+    size: '208MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '7dabcb17eed982d6de4435aaf29cc56147a627f6ab20a1e37aadd7af5399457b',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650',
+    npuSoc: 'SM8650',
+  ),
+
+  embeddingGemma2TextVision440mSm8650(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Qualcomm_SM8650.litertlm',
+    filename:
+        'embeddinggemma-2-text-vision-440m_Qualcomm_SM8650__rev-e301f74d5551.litertlm',
+    displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Qualcomm SM8650 NPU',
+    size: '466MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: 'ec7d2ee513830337343567409f32fea4a3e4f8f7b94facd0a20f3d3523cd7480',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650',
+    embedsImages: true,
+    npuSoc: 'SM8650',
+  ),
+
+  embeddingGemma2Text270mQcs8275(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Qualcomm_QCS8275.litertlm',
+    filename:
+        'embeddinggemma-2-text-270m_Qualcomm_QCS8275__rev-9be6e8b90982.litertlm',
+    displayName: 'EmbeddingGemma 2 Text (270M) · Qualcomm QCS8275 NPU',
+    size: '208MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '128c32151613a5bbf8b5695b2d9ae271057338febbf06e3aeebf29e1353cb51d',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275',
+    npuSoc: 'QCS8275',
+  ),
+
+  embeddingGemma2TextVision440mQcs8275(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275.litertlm',
+    filename:
+        'embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275__rev-e301f74d5551.litertlm',
+    displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Qualcomm QCS8275 NPU',
+    size: '466MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: 'ce8ccce80a12f6bc9acfe664b76c3cc46a698f0da81ae857f706b06b9a4c7d38',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275',
+    embedsImages: true,
+    npuSoc: 'QCS8275',
   ),
 
   // Gecko-110m models (generate 768D embeddings)
@@ -207,6 +380,30 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   /// it.
   final String? sha256;
 
+  /// Whether the model embeds images (a bundle with a vision encoder).
+  final bool embedsImages;
+
+  /// Whether the model embeds audio (a bundle with an audio encoder; native
+  /// platforms only).
+  final bool embedsAudio;
+
+  /// The Qualcomm SoC a per-SoC EmbeddingGemma 2 bundle is compiled for, or
+  /// null for a model that runs on CPU.
+  final String? npuSoc;
+
+  /// What to pass `getActiveEmbedder(preferredBackend:)` for this model: npu
+  /// for a per-SoC bundle (it runs nowhere else), null — the default, CPU —
+  /// for every other.
+  PreferredBackend? get embedderBackend =>
+      npuSoc == null ? null : PreferredBackend.npu;
+
+  /// The profile of an IMAGE index built with this model, or null when it
+  /// embeds no images: the text id plus the vision budget the example
+  /// registers (`-vis140`). Image vectors depend on that budget, text vectors
+  /// do not, so text stores keep [ragProfileId].
+  String? get imageRagProfileId =>
+      embedsImages ? imageIndexProfileId(ragProfileId) : null;
+
   /// Constructor
   const EmbeddingModel({
     required this.url,
@@ -220,6 +417,9 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     required this.needsAuth,
     required this.ragProfileId,
     this.sha256,
+    this.embedsImages = false,
+    this.embedsAudio = false,
+    this.npuSoc,
     this.sourceType = ModelSourceType
         .network, // Default to network for backward compatibility
   }) : assert(
@@ -240,4 +440,31 @@ enum EmbeddingModel implements EmbeddingModelInterface {
 
   @override
   String? get licenseUrl => null; // Most embedding models don't have specific license URLs
+}
+
+/// Whether this platform can run the per-SoC NPU bundles at all: Qualcomm
+/// Android and Qualcomm Linux arm64. On a Linux or Android device without a
+/// Qualcomm NPU they are listed and refused at load, with the reason.
+bool get npuEmbeddersListed =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.linux);
+
+/// The catalog models this platform lists.
+List<EmbeddingModel> get listedEmbeddingModels => [
+  for (final model in EmbeddingModel.values)
+    if (model.npuSoc == null || npuEmbeddersListed) model,
+];
+
+/// The backend to load the embedder of a RAG profile with: npu when
+/// [profileId] (a text id or an image id) belongs to a per-SoC bundle, else
+/// null.
+PreferredBackend? embedderBackendForProfile(String profileId) {
+  for (final model in EmbeddingModel.values) {
+    if (model.ragProfileId == profileId ||
+        model.imageRagProfileId == profileId) {
+      return model.embedderBackend;
+    }
+  }
+  return null;
 }

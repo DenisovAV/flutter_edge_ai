@@ -10,6 +10,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_exceptions.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_input.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_modality.dart';
@@ -312,6 +314,116 @@ void main() {
     });
   });
 
+  group('an embedder cached for one backend never serves the other', () {
+    for (final shell in shells) {
+      test('${shell.name}: an embedder with no NPU path asked for npu runs on '
+          'CPU, says so once, and reports cpu', () async {
+        final backend = _DescribingBackend();
+        EmbeddingRegistry.instance.registerAll([backend]);
+        final plugin = shell.create();
+        await fixture.activate(plugin, model: 'a.tflite', tokenizer: 'a.json');
+        resetEmbedderBackendNotice();
+        final printed = <String>[];
+        final original = debugPrint;
+        debugPrint = (String? message, {int? wrapWidth}) {
+          if (message != null) printed.add(message);
+        };
+        try {
+          final model = await plugin.createEmbeddingModel(
+            preferredBackend: PreferredBackend.npu,
+          );
+          expect(model.activeBackend, PreferredBackend.cpu);
+          expect(
+            printed.where((l) => l.contains('npu is not applied')),
+            hasLength(1),
+          );
+          await model.close();
+        } finally {
+          debugPrint = original;
+          resetEmbedderBackendNotice();
+        }
+      });
+
+      test(
+        '${shell.name}: a CPU embedder is not handed to an npu request; '
+        'the backend refuses it and the CPU embedder keeps serving',
+        () async {
+          // The generic EmbeddingGemma 2 bundle's rule: it has no NPU graph.
+          final backend = _DescribingBackend(
+            refuseWhen: (config) =>
+                config.preferredBackend == PreferredBackend.npu,
+          );
+          EmbeddingRegistry.instance.registerAll([backend]);
+          final plugin = shell.create();
+          await fixture.activate(plugin, model: 'eg2.litertlm');
+
+          final cpu = await plugin.createEmbeddingModel();
+          await expectLater(
+            plugin.createEmbeddingModel(preferredBackend: PreferredBackend.npu),
+            throwsA(isA<EmbeddingLoadException>()),
+          );
+          expect(
+            backend.configs,
+            hasLength(2),
+            reason: 'the npu request reached describe() instead of the cache',
+          );
+          expect(backend.configs.last.preferredBackend, PreferredBackend.npu);
+          expect(cpu.isClosed, isFalse);
+          expect(plugin.initializedEmbeddingModel, same(cpu));
+
+          // gpu reaches no embedder: it is served by the CPU one, unasked.
+          final gpu = await plugin.createEmbeddingModel(
+            preferredBackend: PreferredBackend.gpu,
+          );
+          expect(gpu, same(cpu));
+          expect(backend.configs, hasLength(2));
+          await cpu.close();
+        },
+      );
+
+      test(
+        '${shell.name}: an NPU embedder is not handed to a request without '
+        'npu; the backend refuses it and the NPU embedder keeps serving',
+        () async {
+          // A per-SoC bundle's rule: it runs on the NPU or not at all.
+          final backend = _NpuOnlyBackend();
+          EmbeddingRegistry.instance.registerAll([backend]);
+          final plugin = shell.create();
+          await fixture.activate(plugin, model: 'eg2_npu.litertlm');
+
+          final npu = await plugin.createEmbeddingModel(
+            preferredBackend: PreferredBackend.npu,
+          );
+          expect(npu.activeBackend, PreferredBackend.npu);
+          for (final other in [
+            null,
+            PreferredBackend.cpu,
+            PreferredBackend.gpu,
+          ]) {
+            await expectLater(
+              plugin.createEmbeddingModel(preferredBackend: other),
+              throwsA(isA<EmbeddingLoadException>()),
+              reason: '$other',
+            );
+          }
+          expect(backend.described, [
+            PreferredBackend.npu,
+            null,
+            PreferredBackend.cpu,
+            PreferredBackend.gpu,
+          ]);
+          expect(npu.isClosed, isFalse);
+          final again = await plugin.createEmbeddingModel(
+            preferredBackend: PreferredBackend.npu,
+          );
+          expect(again, same(npu), reason: 'the NPU embedder still serves npu');
+          expect(backend.described, hasLength(4));
+          await npu.close();
+        },
+      );
+    }
+  });
+
   group('reuse, rebuild and concurrency (each shell serialises its entry)', () {
     late _CountingBackend backend;
 
@@ -578,6 +690,38 @@ final class _CountingBackend extends EmbeddingBackendProvider {
       factory: _buildPass,
       config: _PassConfig(imageCapable: false, audioCapable: false),
       activeBackend: PreferredBackend.cpu,
+    );
+  }
+}
+
+/// A backend that runs only on the NPU and refuses every other request, as
+/// the LiteRT-LM backend does for an EmbeddingGemma 2 per-SoC bundle.
+final class _NpuOnlyBackend extends EmbeddingBackendProvider {
+  final described = <PreferredBackend?>[];
+
+  @override
+  String get name => 'NpuOnly';
+
+  @override
+  bool canHandle(EmbeddingModelSpec spec) => true;
+
+  @override
+  Future<EmbeddingPassDescriptor<Object>> describe(
+    EmbeddingModelSpec spec,
+    RuntimeConfig config,
+  ) async {
+    described.add(config.preferredBackend);
+    if (config.preferredBackend != PreferredBackend.npu) {
+      throw const EmbeddingLoadException(
+        'compiled for an NPU; ask for PreferredBackend.npu',
+        engine: 'NpuOnly',
+      );
+    }
+    return const EmbeddingPassDescriptor<_PassConfig>(
+      engineTag: 'NpuOnly',
+      factory: _buildPass,
+      config: _PassConfig(imageCapable: false, audioCapable: false),
+      activeBackend: PreferredBackend.npu,
     );
   }
 }

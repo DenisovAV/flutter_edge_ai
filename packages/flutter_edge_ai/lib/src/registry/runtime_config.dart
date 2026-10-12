@@ -318,11 +318,12 @@ class ActiveEmbedderParams {
   /// the model has a text tower, so it is never listed here.
   final Set<EmbeddingModality> media;
 
-  /// What the embedder actually runs on, which is CPU whatever was asked — ON
-  /// NATIVE. The web shell builds this object too, and there it still holds
-  /// `cpu` while `EmbeddingModel.activeBackend` is null and the runtime may be
-  /// on WebGPU. That is harmless because this field is a cache KEY: it is a
-  /// constant, so it can never trigger a rebuild. Read the model's own
+  /// The backend the embedder is built for: `npu` when that was asked for,
+  /// `cpu` for every other request — ON NATIVE. The web shell builds this
+  /// object too, and there it holds `cpu` or `npu` (which the web `.litertlm`
+  /// arm refuses, and the other web backends ignore) while
+  /// `EmbeddingModel.activeBackend` may be null and the runtime on WebGPU.
+  /// That is harmless because this field is a cache KEY. Read the model's own
   /// `activeBackend` for the answer; do not read this one.
   ///
   /// Named for the answer, not the request — deliberately unlike the
@@ -333,27 +334,36 @@ class ActiveEmbedderParams {
   /// `EmbeddingModel.activeBackend`, which is where the value surfaces.
   final PreferredBackend activeBackend;
 
-  /// The single place the "embeddings run on CPU" fact is written.
+  /// The single place the "which backend does an embedder run on" fact is
+  /// written: `npu` when asked for, `cpu` otherwise.
   ///
-  ///   * LiteRT is CPU-only by decision, not by omission — the GPU delegate
-  ///     compiles and then returns all-zero vectors for EmbeddingGemma's int4
-  ///     weights (removed in `ab3df2bf`).
+  /// NPU is a key of its own because one backend honours it — the LiteRT-LM
+  /// pass runs an EmbeddingGemma 2 per-SoC bundle on a Qualcomm NPU — and its
+  /// vectors live in another space than the CPU bundle's. A cached embedder
+  /// must therefore never answer a request for the other side: a CPU embedder
+  /// handed to an `npu` caller, or an NPU one to a caller who did not ask for
+  /// it, is a silent switch of vector space. With the backend in the key, such
+  /// a request goes to the backend's `describe()`, which refuses what it cannot
+  /// run and leaves the cached embedder serving its own callers.
+  ///
+  /// Everything else still runs on CPU:
+  ///   * LiteRT `.tflite` is CPU-only by decision, not by omission — the GPU
+  ///     delegate compiles and then returns all-zero vectors for
+  ///     EmbeddingGemma's int4 weights (removed in `ab3df2bf`).
   ///   * ONNX never appends an execution provider, so it runs ORT's default
   ///     CPU provider.
+  ///   * `gpu` reaches no embedder, so it keys as `cpu`: a request differing
+  ///     only by it builds the same model and must NOT rebuild — a rebuild
+  ///     would unload and reload a bit-identical model at the 570-780 ms
+  ///     compile measured in `docs/issue-299-embedding-ui-isolate.md`.
   ///
-  /// Two requests differing only in the requested backend therefore build the
-  /// same model and must NOT rebuild — a rebuild would unload and reload a
-  /// bit-identical model at the 570-780 ms compile measured in
-  /// `docs/issue-299-embedding-ui-isolate.md`.
-  ///
-  /// The day a backend honours the value, THREE things change together and this
-  /// is only the first: return `requested ?? PreferredBackend.cpu` here (never
-  /// the raw value — null and an explicit `cpu` are the same request, which is
-  /// why the neighbour normalises its encoder backends the same way), thread the
-  /// value into the backend that now reads it, and drop [isIgnoredBackend] so
-  /// callers stop being told it did nothing.
+  /// A `.tflite` or ONNX embedder asked for `npu` is built under the `npu` key
+  /// and reports `cpu` in `EmbeddingModel.activeBackend`; the loader says so
+  /// once in debug builds (`noticeEmbedderNpuNotApplied`).
   static PreferredBackend _resolvedBackend(PreferredBackend? requested) =>
-      PreferredBackend.cpu;
+      requested == PreferredBackend.npu
+      ? PreferredBackend.npu
+      : PreferredBackend.cpu;
 
   /// Name of the first field that differs from [other], or null when the cached
   /// embedder can be reused. No normalisation step to forget: the constructor
@@ -379,12 +389,13 @@ class ActiveEmbedderParams {
         media: media,
       );
 
-  /// True when [requested] asks for something other than what an embedder
-  /// actually uses, so a caller can be told once that it changed nothing.
+  /// True when [requested] asks for something no embedder runs on — `gpu` —
+  /// so a caller can be told once that it changed nothing. `npu` is not
+  /// "ignored" here: whether it ran is the backend's answer, read from the
+  /// built model's `activeBackend` (`noticeEmbedderNpuNotApplied`).
   ///
-  /// Derived from [_resolvedBackend] rather than repeating the CPU constant, so
-  /// the fact still has exactly one site: the day that method returns the
-  /// request, this stops speaking on its own.
+  /// Derived from [_resolvedBackend] rather than repeating the constant, so
+  /// the fact still has exactly one site.
   static bool isIgnoredBackend(PreferredBackend? requested) =>
       requested != null && _resolvedBackend(requested) != requested;
 

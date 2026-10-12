@@ -42,12 +42,12 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.3.0`,
-`flutter_edge_ai_litertlm: ^1.13.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.3.1`,
+`flutter_edge_ai_litertlm: ^1.13.1`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
-> **1.13.0 needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
+> **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
 > flutter_edge_ai package upgraded together:** `flutter_edge_ai_embeddings`
 > 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 · `flutter_edge_ai_mediapipe` 1.2.2 ·
 > `flutter_edge_ai_builtin_ai` 0.3.5 · `flutter_edge_ai_speech` 0.5.6 ·
@@ -140,7 +140,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, one `.litertlm` | Android, iOS, macOS, Linux, Windows | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (text and images); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -181,10 +181,12 @@ future (`EmbeddingException` and its subclasses).
 
 ### EmbeddingGemma 2
 
-EmbeddingGemma 2 text ships as one `.litertlm` bundle that carries its own
+EmbeddingGemma 2 ships as one `.litertlm` bundle that carries its own
 tokenizer, so it installs without `tokenizerFrom…()` and needs neither
-`flutter_edge_ai_embeddings` nor `embeddingTokenizers:`. The repository is not
-gated:
+`flutter_edge_ai_embeddings` nor `embeddingTokenizers:`. The text-only 270m
+bundle is the one for text; the 440m adds images ([below](#embeddinggemma-2-images))
+and the 740m adds audio ([below](#embeddinggemma-2-audio-and-combined-inputs)).
+The repositories are not gated:
 
 ```dart
 const revision = '9be6e8b90982095dc05c2bd162e4b954ee4dbac7';
@@ -206,40 +208,303 @@ final vector = await embedder.embed(
 );
 ```
 
-- **Native only:** Android, iOS, macOS, Linux and Windows. On web `install()`
-  refuses a `.litertlm` embedder with an `UnsupportedError` before downloading
-  anything.
-- **Text only in 1.13.0.** `getActiveEmbedder(supportImage: true)` or
-  `supportAudio: true` fails with `EmbeddingLoadException`; images arrive in
-  1.14.0 and audio in 1.16.0.
+- **Android, iOS, macOS, Linux and Windows, and the web (1.13.1).** On the web
+  the bundle runs through `@litert-lm/core`'s `EmbeddingEngine` on WebGPU,
+  which needs one more line in `web/index.html` — see
+  [Web setup](#web-setup-early-preview) — and a browser with WebGPU.
+- **Text on every bundle; images on the 440m and the 740m (native and
+  web); audio on the 740m, natively (all 1.13.1).** On the 270m,
+  `getActiveEmbedder(supportImage: true)` fails with `EmbeddingLoadException`
+  naming the 440m bundle, and on the 270m and the 440m `supportAudio: true`
+  fails naming the 740m — natively before any engine or cache is made. On the
+  web `supportAudio: true` fails on every bundle.
 - **At most 1024 tokens per input**, task prefix, BOS and EOS included
   (`maxInputTokens == 1024`). Keep chunks at 512 tokens or fewer: memory grows
   with the input length (on an M4 Pro Mac about +170 MB at 128 tokens, +340 MB
   at 512 and +560 MB at 1024). A longer input fails with
-  `EmbeddingInputTooLongException` whose `actualTokens` is null — LiteRT-LM
-  reports the overflow without a count.
-- **CPU.** `activeBackend` is `PreferredBackend.cpu`; `preferredBackend` is not
-  applied.
+  `EmbeddingInputTooLongException` whose `actualTokens` is the exact count.
+  Natively (from 1.13.1) the engine reports it from a truncated run; on the web
+  it reports it after running the whole input in 1024-token windows (WebGPU
+  averages them instead of truncating; the averaged vector is never returned).
+  Either way an over-long input costs a full embedding before it is refused.
+  Split before embedding.
+- **CPU natively, WebGPU on the web.** `activeBackend` is
+  `PreferredBackend.cpu` on Android, iOS and desktop and
+  `PreferredBackend.gpu` on the web; `preferredBackend` is not applied — except
+  `npu`, which this bundle refuses: the NPU runs the per-SoC bundles
+  ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
+  these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0
+  cannot read their external weights, so a browser without WebGPU (no
+  `navigator.gpu`, or no GPU adapter) fails `getActiveEmbedder()` with an
+  `EmbeddingLoadException` that says so, before any engine is created. Web
+  vectors come from WebGPU and differ slightly from the native CPU ones:
+  measured min cos about 0.995 for text and 0.998 for images (Chrome 155,
+  Tesla T4). Retrieval across platforms holds: web text queries find natively
+  embedded images and native queries find web-embedded images, top-1 10/10 on
+  the example's ten scenes.
 - **Disk:** the 165 MB bundle plus a 71 MB weight cache the engine writes at
   its first load. The 440m bundle adds a 218 MB vision cache and the 740m
   bundle writes 385 MB of caches in total, even for text-only use. The cache
   lives in
   the app's cache directory: it is never backed up, and if the OS clears it the
-  next load writes it again.
+  next load writes it again. On the web there is no weight cache: the bundle
+  sits in the browser's storage and the engine rebuilds its weights at every
+  load.
 - EmbeddingGemma 1 and 2 both produce 768-dimensional vectors in different
   embedding spaces: never mix them in one vector store.
 
-`EmbeddingModel.activeBackend` is `cpu` on native, the only backend this
-package's embedder uses, so `preferredBackend` is not applied. On web it is
-`null` and LiteRT.js picks: `window.getLiteRtEmbeddingAccelerator()` names where
+### EmbeddingGemma 2 images
+
+The 440m bundle carries the 270m's text tower (the same text vectors) plus a
+vision encoder, so one model embeds text and images and a text can find a
+photo. Declare images when you get the embedder:
+
+```dart
+const visionRevision = 'e301f74d5551b0c2641bd5cb4652a76239d5c5f8';
+
+await FlutterEdgeAi.initialize(
+  embeddingBackends: const [LiteRtEmbeddingBackend()],
+);
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-vision-440m-litert-lm/resolve/$visionRevision/'
+      'embeddinggemma-2-text-vision-440m.litertlm',
+    )
+    .install();
+final embedder = await FlutterEdgeAi.getActiveEmbedder(supportImage: true);
+final photo = await embedder.embed(
+  EmbeddingInput.image(await uprightAndSmall(photoBytes)), // below
+  taskType: TaskType.retrievalDocument, // prefixes reach text only
+);
+final query = await embedder.embed(
+  EmbeddingInput.text('a red bicycle'),
+  taskType: TaskType.none, // a text query over images works best raw
+);
+```
+
+**Pass upright, downscaled images.** LiteRT-LM decodes the file itself and
+ignores EXIF orientation, so a portrait photo from a phone camera — stored
+sideways with an orientation tag — is embedded lying on its side (measured: cos
+0.89 against the same picture upright). It also decodes at full size, which a
+12 MP photo pays for in time and memory the model does not need: it scales
+every image down to its vision budget anyway. Flutter's codec fixes both:
+
+```dart
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+/// [photo] upright (Flutter applies the EXIF orientation) and at most
+/// 1024 px on its long side, as PNG.
+Future<Uint8List> uprightAndSmall(Uint8List photo) async {
+  final codec = await ui.instantiateImageCodecWithSize(
+    await ui.ImmutableBuffer.fromUint8List(photo),
+    getTargetSize: (w, h) => math.max(w, h) <= 1024
+        ? const ui.TargetImageSize()
+        : w >= h
+        ? const ui.TargetImageSize(width: 1024)
+        : const ui.TargetImageSize(height: 1024),
+  );
+  final image = (await codec.getNextFrame()).image;
+  final png = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  codec.dispose();
+  return png!.buffer.asUint8List();
+}
+```
+
+It also converts what Flutter decodes and the engine does not (WebP; HEIC on
+Android). The example app writes BMP instead of PNG — cheaper to write and to
+read back — and gets the camera photo's vector within cos 0.998 of the upright
+one. The same code runs on the web (the browser decodes, through CanvasKit or
+skwasm); there are no isolates there, so the example writes its BMP on the
+page.
+
+- **Formats the engine decodes:** JPEG, PNG, GIF and BMP. HEIC, WebP, TIFF and
+  AVIF fail with `EmbeddingFormatNotSupportedException` (which names the
+  detected and the accepted formats) before anything is sent. A corrupt or
+  truncated file of an accepted type fails with `EmbeddingEngineException`
+  (`nativeCode` 3 natively; on the web the message carries the runtime's
+  reason) and the embedder keeps working. One image per vector, unless you
+  send several as one combined input (natively, from 1.13.1;
+  [below](#embeddinggemma-2-audio-and-combined-inputs)).
+- **Vision budget:** 140 tokens per image by default, the closest to the
+  reference model (min cos 0.985 on our test images).
+  `LiteRtEmbeddingBackend(visionTokensPerImage: 70)` — what the model card and
+  Google AI Edge Gallery use — is about twice as fast with slightly lower
+  fidelity (min cos 0.970). Any other value fails with
+  `EmbeddingLoadException`. Text vectors do not depend on it. Image vectors
+  do, so give an image store an id that names the budget: the text profile id
+  plus `-vis140` (or `-vis70`).
+- **Next to an LLM on the web** the vision encoder does not fit: see
+  [Web setup](#web-setup-early-preview). Close the `.litertlm` LLM before
+  loading the 440m with images, or embed text only.
+- **Cost** (CPU, measured): a 388 MB bundle; at every load the engine writes a
+  218 MB vision weight cache next to the 71 MB text cache in the app's cache
+  directory, also when you only embed text. The first image adds about 385 MB
+  of RAM on an M4 Pro Mac and about 500 MB on a Pixel 8. Per image at 140
+  tokens: about 0.35 s on an Apple-silicon Mac, about 2 s on an Android flagship
+  (Pixel 8 Pro 1.8 s, Pixel 8a 2.3 s), more on mid-range phones and rising
+  under sustained load; 70 tokens takes about half. On the web (WebGPU, Tesla
+  T4) an image takes about 0.33 s and a short text about 0.12 s. LiteRT-LM's
+  thread setting reaches the text tower only; images run with its default
+  threads. A 440m loaded for text alone still loads its vision tower: for
+  text use the 270m.
+- The example app's **Image Search** screen indexes photos (or ten bundled
+  sample pictures) in a RAG image index and searches them by text and by
+  photo; choose "EmbeddingGemma 2 Text + Vision (440M)" under Embedding Models
+  first.
+
+### EmbeddingGemma 2 audio and combined inputs
+
+The 740m bundle carries the 440m's text and vision towers (the same text and
+image vectors) plus an audio encoder, so a text can find a spoken sentence or a
+sound, and one vector can hold several parts — a photo with its caption, a clip
+with a note. Audio and combined inputs are native-only: on the web
+`supportAudio: true` is refused. Declare what you send when you get the
+embedder:
+
+```dart
+const audioRevision = '24d962e906c7d332c6428e71c9676855024569e2';
+
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-740m-litert-lm/resolve/$audioRevision/'
+      'embeddinggemma-2-740m.litertlm',
+    )
+    .install();
+final embedder = await FlutterEdgeAi.getActiveEmbedder(supportAudio: true);
+final clip = await embedder.embed(
+  EmbeddingInput.audio(wavBytes),
+  taskType: TaskType.retrievalDocument, // prefixes reach text only
+);
+final query = await embedder.embed(
+  EmbeddingInput.text('turn off the kitchen lights'),
+  taskType: TaskType.none, // a text query over media, as rag sends it
+);
+
+// Several parts, one vector (flutter_edge_ai 2.3.1):
+final note = await embedder.embed(
+  EmbeddingInput(text: 'kitchen', audio: wavBytes),
+  taskType: TaskType.retrievalDocument,
+);
+```
+
+- **Formats the engine decodes:** WAV, MP3 and FLAC, any sample rate and
+  channel count — the engine mixes down to mono and resamples to 16 kHz. Ogg
+  and M4A fail with `EmbeddingFormatNotSupportedException` before anything is
+  sent; a corrupt file of an accepted type fails with
+  `EmbeddingEngineException` (`nativeCode` 2) and the embedder keeps working.
+  One clip per vector.
+- **Length:** about 25 tokens per second of audio, so a clip of up to about
+  40 seconds fits the 1024-token cap; a 60-second clip fails with
+  `EmbeddingInputTooLongException(maxInputTokens: 1024, actualTokens: 1504)`.
+  Split long recordings.
+- **Combined inputs:** `EmbeddingInput(text:, images:, audio:)` puts the text
+  (with its task prefix), then the images in order, then the audio into one
+  vector — that order whatever order you write the arguments in. Several
+  images in one input are a combined input too. Declare every medium you send
+  (`supportImage: true, supportAudio: true`); the cap counts all parts
+  together (about 140 tokens per image). On the web, where each vector holds
+  one part, any input with more than one part fails with
+  `UnsupportedEmbeddingCombinationException` before anything is sent.
+- **Cost** (CPU, measured on an M4 Pro Mac): a 485 MB bundle; at every load the
+  engine writes 385 MB of weight caches (text 71 MB, vision 218 MB, audio
+  95 MB) in the app's cache directory, also when you only embed text; about
+  0.2–0.3 s per 3-second clip. For text use the 270m, for text and images the
+  440m.
+- **Index ids:** audio vectors do not depend on the vision budget, so an audio
+  store keeps the text profile id (rag tells the stores apart by their
+  `documents` modality).
+- **Audio vectors are not bit-portable.** The audio encoder quantizes its
+  activations to 8 bits, so a difference in the last bit of a float — another
+  CPU kernel, or one sample of the clip changed by 1 — can move a clip's
+  vector by up to cos 0.05. Text and image vectors do not move that way. Our
+  native build and Google's `litert-lm` Python wheel give identical text
+  vectors and audio vectors within cos 0.97 (the wheel even varies by thread
+  scheduling run to run); one build is deterministic on one platform. What
+  holds across builds is retrieval: a text finds its clip on every build we
+  measured.
+
+`EmbeddingModel.activeBackend` is `cpu` on native and `gpu` for EmbeddingGemma
+2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Qualcomm
+NPU ([below](#embeddinggemma-2-on-a-qualcomm-npu)); any other
+`preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
+picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and
 `window.getLiteRtEmbeddingFullyAccelerated()` says whether the graph landed
 entirely on the requested accelerator — `false` also when LiteRT silently
 recompiled a WebGPU request for WASM.
 
+### EmbeddingGemma 2 on a Qualcomm NPU
+
+Google publishes every EmbeddingGemma 2 bundle a second time, compiled for one
+SoC's NPU, in the same repositories:
+`embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm`,
+`embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275.litertlm`, and so on. Such
+a bundle runs only on that SoC's NPU. This package runs it on **Qualcomm
+Android (arm64) and Qualcomm Linux arm64**:
+
+```dart
+const revision = '9be6e8b90982095dc05c2bd162e4b954ee4dbac7';
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-270m-litert-lm/resolve/$revision/'
+      'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm',
+    )
+    .install();
+final embedder = await FlutterEdgeAi.getActiveEmbedder(
+  preferredBackend: PreferredBackend.npu,
+);
+assert(embedder.activeBackend == PreferredBackend.npu);
+```
+
+- **Opt in to the Qualcomm stack**, as for the LLM NPU path:
+  `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`
+  ([Qualcomm NPU](#qualcomm-npu-on-android-and-linux-arm64-opt-in)).
+- **Pick the bundle for the device's SoC.** Verified on device: SM8850
+  (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
+  VENTUNO Q). Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
+  MT6991/MT6993 and Intel PTL builds; the Qualcomm ones load here but are not
+  verified by us, and the others are refused (no dispatch for them ships). What
+  a bundle is compiled for is read from the bundle itself, not from its name.
+- **Fast, and close to — not equal to — the CPU vectors.** Measured on an
+  SM8650 (Galaxy S24): a text in about 9 ms (53 ms on its CPU), an image in
+  about 0.31 s, the 270m loaded in 0.85 s. Against the CPU bundle, the cosine is
+  0.79–0.86 for sentences of a few words, 0.92 at about 50 words and 0.99 from
+  about 200; images 0.86–0.88. Retrieval within the NPU's own space holds: ten
+  of ten captions find their picture, every query its document.
+- **Nothing switches backend.** NPU and CPU vectors are not interchangeable,
+  so every mismatch is an `EmbeddingLoadException` that says what to do: a
+  per-SoC bundle without `PreferredBackend.npu`; the generic bundle with `npu`;
+  `npu` on iOS, macOS, Windows, Linux x64 or the web; an app built without
+  `qualcomm_npu`; a device without a reachable Qualcomm NPU; a bundle the NPU
+  cannot run (another SoC's — the load embeds one test text to find out). A
+  loaded embedder is never handed to a request for the other backend.
+- **Give an NPU index its own profile id.** Vectors from the SM8850 bundle and
+  from the generic bundle live in different spaces, so a RAG store built with
+  one never takes the other's queries. The example app uses the CPU text id
+  plus `-npu-<soc>` (`embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850`,
+  and `…-vis140` for an image index); the 270m and the 440m of one SoC share
+  it, because their text towers are byte-identical.
+  `FlutterEdgeAiActiveEmbedder.forActiveModel` keys on the installed file name,
+  so it separates them by itself.
+- Text up to 1024 tokens (the bundles carry no longer signature), and images
+  on the 440m, as on CPU. The 740m's per-SoC bundles are not verified.
+- On Linux the NPU calls run with SIGPROF blocked, as the LLM engine's create
+  does: QNN does not survive the debug VM's profiler signal. Linux needs
+  native-v0.18.0-e or newer, which reads the bundles' external weights by path.
+
 ## Embeddings on web
 
-On web, `flutter_edge_ai_litertlm`'s embedding backend runs via LiteRT.js. Copy
+EmbeddingGemma 2 (`.litertlm`) on the web needs no files from this package —
+only the `window.EmbeddingEngine` line in [Web setup](#web-setup-early-preview).
+The rest of this section is about EmbeddingGemma 1 and Gecko (`.tflite`).
+
+On web, `flutter_edge_ai_litertlm`'s `.tflite` embedding backend runs via LiteRT.js. Copy
 all four files from this package's `web/` into your app's `web/`, next to
 `index.html` — `litert_embeddings.js` imports the other three by relative path,
 so they have to sit together:
@@ -338,10 +603,29 @@ assign window globals and module scripts are deferred, so Dart awaits
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
   window.Engine = m.Engine;
+  window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
 })();
 </script>
 ```
+
+`window.EmbeddingEngine` (1.13.1) is what EmbeddingGemma 2 `.litertlm`
+embedders run on, text and images, on WebGPU. A page without that line fails
+the embedder's load with an `EmbeddingLoadException` that names it; so does a
+browser without WebGPU, which has no fallback here (the CPU path of
+`@litert-lm/core` 0.18.0 cannot read these bundles' external weights). The LLM
+engine does not need the line.
+
+An LLM and an EmbeddingGemma 2 embedder on the same page share one WebAssembly
+module and one WebGPU device, so they take turns and their GPU memory adds up:
+an embedding, or an embedder's load, waits while a reply is being generated
+(until its stream ends, even if you stopped listening), and a reply waits for
+an embedding in progress. The module has 4 GB of memory (WebAssembly is
+32-bit), and the 440m's vision encoder does not fit in it next to Gemma 4 E2B
+(measured: the vision engine alone takes about 3.3 GB): whichever loads
+second fails, the embedder with an `EmbeddingLoadException` that says to close
+the LLM first. A text-only embedder — the 270m, or the 440m without
+`supportImage` — loads next to the LLM.
 
 Native platforms need no web setup.
 
@@ -353,7 +637,7 @@ Native platforms need no web setup.
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
-| Web      | ⚠️ early preview via `@litert-lm/core` (CDN, text-only) |
+| Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text and images on WebGPU) |
 
 The native library (`native-v0.18.0-e`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
@@ -373,6 +657,13 @@ elsewhere.
 Run a Gemma 4 bundle on the NPU: a Gemma 3 bundle drops every prefill chunk
 after the first, with no error, and answers from the start of the prompt alone
 ([LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508)).
+
+On macOS, App Nap throttles an app that is in the background: after about a
+minute, generation and embedding run several times slower (measured: an
+EmbeddingGemma 2 image went from 0.35 s to 2–7 s). An app that embeds or
+generates while in the background should hold an activity for the duration —
+`ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: …)` in
+Swift, ended with `endActivity` when the work is done.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 
@@ -442,6 +733,12 @@ Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
 `npu` falls back to GPU, then CPU, and the log names what to fix. Use the model
 compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
 x64 build ignores the flag.
+
+**Embeddings.** The same flag runs EmbeddingGemma 2 per-SoC bundles on the NPU
+([EmbeddingGemma 2 on a Qualcomm NPU](#embeddinggemma-2-on-a-qualcomm-npu)).
+Unlike the LLM path, an embedder never falls back: when the NPU cannot run the
+bundle, `getActiveEmbedder` fails with `EmbeddingLoadException` and the reason,
+because CPU vectors would land in another space.
 
 ## Troubleshooting
 

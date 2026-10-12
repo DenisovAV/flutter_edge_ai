@@ -1176,6 +1176,7 @@ you tuned yourself, if you spent the CPU time.
 * **`flutter_edge_ai_agent`** builds on exactly this loop — skills written as
   Markdown, JavaScript or native intents, driven by the same
   function-calling machinery
+  ([On-Device Agents in Flutter](/codelabs/on-device-agent-flutter-gemma))
 * **Multimodal** ([Vision and Audio on Device](/codelabs/multimodal-flutter-gemma))
   is the other thing a session flag switches on, and the codelab where the flag
   really does have to go in two places

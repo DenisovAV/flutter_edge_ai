@@ -146,9 +146,28 @@ class WebModelManager extends ModelFileManager
       return;
     }
 
+    // The LoRA is part of what was activated, as on mobile: restoring the
+    // model without it would load it with no adapter and no error.
+    final loraFilename = identity?[PreferencesKeys.activeInferenceLoraFilename];
+    ModelSource? loraSource;
+    if (loraFilename != null) {
+      final loraEncoded = identity?[PreferencesKeys.activeInferenceLoraSource];
+      loraSource = loraEncoded == null
+          ? null
+          : ModelSource.tryDecode(loraEncoded);
+      if (loraSource == null || !await repo.isInstalled(loraFilename)) {
+        edgeAiLog(
+          '[WebModelManager] active model restore: the LoRA of $filename '
+          '($loraFilename) is not installed — skipping',
+        );
+        return;
+      }
+    }
+
     _activeInferenceModel = InferenceModelSpec(
       name: filename,
       modelSource: source,
+      loraSource: loraSource,
       modelType: modelType,
       fileType: fileType,
     );
@@ -1006,6 +1025,9 @@ class WebModelManager extends ModelFileManager
             (f) => f.prefsKey == PreferencesKeys.installedModelFileName,
           )
           .filename;
+      final lora = spec.files
+          .where((f) => f.prefsKey == PreferencesKeys.installedLoraFileName)
+          .firstOrNull;
       final prefs = await SharedPreferences.getInstance();
       // One setString, so no reader can see half of it (#468: readers on any
       // manager instance share one preferences cache) and no crash can leave
@@ -1015,6 +1037,10 @@ class WebModelManager extends ModelFileManager
         PreferencesKeys.activeInferenceFileType: spec.fileType.name,
         PreferencesKeys.activeInferenceFilename: filename,
         PreferencesKeys.activeInferenceSource: spec.modelSource.encode(),
+        if (lora != null) ...{
+          PreferencesKeys.activeInferenceLoraFilename: lora.filename,
+          PreferencesKeys.activeInferenceLoraSource: lora.source.encode(),
+        },
       });
     } catch (e, stackTrace) {
       edgeAiLog('[WebModelManager] persistActiveInferenceIdentity failed: $e');

@@ -15,8 +15,10 @@ use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time
 **Native Assets** (SHA256-verified, from the `native-v0.18.0-e` GitHub release), so
 there's no manual native setup.
 
-The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 text
-from one `.litertlm` bundle (native, since 1.13.0) and EmbeddingGemma 1 / Gecko
+The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 from
+one `.litertlm` bundle (native: text since 1.13.0, images from the 440m bundle
+since 1.13.1, audio and combined inputs from the 740m bundle; Web:
+text and images, on WebGPU, also since 1.13.1) and EmbeddingGemma 1 / Gecko
 `.tflite` models through the LiteRT C API (and LiteRT.js on web) — see
 [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
 
@@ -160,7 +162,11 @@ x64 build ignores the flag.
 
 <Warning>
 
-**NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
+**EmbeddingGemma 2 on the NPU** uses the same flag on Qualcomm Android and
+Linux arm64, with the per-SoC bundles, and never falls back: see
+[Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-on-a-qualcomm-npu).
+
+**For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
 those work on both vendors. The **Gemma 3** family does not, and it fails
 silently — the model answers from the first prefill chunk alone, fluently,
 with no error and nothing in the log:
@@ -222,10 +228,24 @@ awaits `window.litertLmReady` (which resolves to the `Engine` constructor):
 window.litertLmReady = (async () => {
   const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
   window.Engine = m.Engine;
+  window.EmbeddingEngine = m.EmbeddingEngine;
   return m.Engine;
 })();
 </script>
 ```
+
+`window.EmbeddingEngine` (1.13.1) is what EmbeddingGemma 2 embedders run on in
+the browser — text and images, on WebGPU. A page without it fails the
+embedder's load with an `EmbeddingLoadException` naming the line, and so does a
+browser without WebGPU: there is no CPU fallback, because the CPU (WebAssembly)
+path of `@litert-lm/core` 0.18.0 cannot read these bundles' external weights.
+An LLM and an embedder on the same page share one WebAssembly module and one
+WebGPU device, and take turns: an embedding waits while a reply is being
+generated, and a reply waits for an embedding in progress. The module has 4 GB
+of memory, and the 440m's vision encoder does not fit in it next to Gemma 4
+E2B (measured): whichever loads second fails. Close the LLM before loading the
+440m with images, or embed text only — the 270m, or the 440m without images,
+loads next to the LLM.
 
 Native platforms need no web setup.
 

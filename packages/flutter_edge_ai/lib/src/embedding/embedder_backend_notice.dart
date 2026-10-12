@@ -28,6 +28,10 @@ bool _warned = false;
 /// is the only correct answer, because LiteRT's GPU delegate returns all-zero
 /// vectors for EmbeddingGemma's int4 weights and the ONNX client appends no
 /// execution provider. What was wrong was accepting the argument in silence.
+///
+/// `npu` is not said here: an EmbeddingGemma 2 per-SoC bundle runs on it, so
+/// whether it was applied is known only once the embedder exists — see
+/// [noticeEmbedderNpuNotApplied].
 void noticeEmbedderBackendIgnored(PreferredBackend? requested) {
   if (!ActiveEmbedderParams.isIgnoredBackend(requested) || _warned) return;
   // Spend the one shot only on a line that can actually appear. `gemmaLog`
@@ -41,6 +45,32 @@ void noticeEmbedderBackendIgnored(PreferredBackend? requested) {
     'ℹ️  Embeddings run on CPU: preferredBackend ${requested!.name} is not '
     'applied. Read EmbeddingModel.activeBackend for the backend in use — it '
     'is available in release builds, where this line is not.',
+  );
+}
+
+/// Says once that `getActiveEmbedder(preferredBackend: npu)` returned an
+/// embedder that does not run on the NPU — a `.tflite` or ONNX embedder, which
+/// have no NPU path and run on CPU as before. Called by the loader with the
+/// model it returns (built or reused), because only the backend knows whether
+/// it honoured the request. An EmbeddingGemma 2 `.litertlm` bundle never gets
+/// here: the LiteRT-LM backend runs a per-SoC bundle on the NPU or refuses.
+void noticeEmbedderNpuNotApplied(
+  PreferredBackend? requested,
+  PreferredBackend? active,
+) {
+  if (requested != PreferredBackend.npu ||
+      active == PreferredBackend.npu ||
+      _warned) {
+    return;
+  }
+  if (!kDebugMode || edgeAiLogLevel == EdgeAiLogLevel.none) return;
+  _warned = true;
+  edgeAiLog(
+    'ℹ️  preferredBackend npu is not applied: this embedder runs on '
+    '${active?.name ?? 'the accelerator its runtime picks'}. Only '
+    'EmbeddingGemma 2 per-SoC .litertlm bundles run on the NPU. Read '
+    'EmbeddingModel.activeBackend for the backend in use — it is available in '
+    'release builds, where this line is not.',
   );
 }
 
@@ -60,7 +90,9 @@ void noticeWebEmbedderBackendIgnored(PreferredBackend? requested) {
   edgeAiLog(
     'ℹ️  preferredBackend ${requested.name} is not applied to embeddings on '
     'web: the runtime picks the accelerator (WebGPU first, WASM as the '
-    'fallback). EmbeddingModel.activeBackend is null on web; with LiteRT, '
+    'fallback; EmbeddingGemma 2 .litertlm runs on WebGPU only). Read '
+    'EmbeddingModel.activeBackend: gpu for EmbeddingGemma 2, null when the '
+    'runtime does not report one; with LiteRT.js, '
     'window.getLiteRtEmbeddingAccelerator() names it after the first '
     'embedding.',
   );

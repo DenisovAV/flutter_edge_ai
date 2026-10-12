@@ -650,6 +650,38 @@ class LiteRtLmEmbeddingBindings {
             )
           >();
 
+  int litert_lm_embedding_response_get_input_length(
+    ffi.Pointer<LiteRtLmEmbeddingResponse> response,
+  ) {
+    return _litert_lm_embedding_response_get_input_length(response);
+  }
+
+  late final _litert_lm_embedding_response_get_input_lengthPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<LiteRtLmEmbeddingResponse>)
+        >
+      >('litert_lm_embedding_response_get_input_length');
+  late final _litert_lm_embedding_response_get_input_length =
+      _litert_lm_embedding_response_get_input_lengthPtr
+          .asFunction<int Function(ffi.Pointer<LiteRtLmEmbeddingResponse>)>();
+
+  int litert_lm_embedding_response_get_truncated_length(
+    ffi.Pointer<LiteRtLmEmbeddingResponse> response,
+  ) {
+    return _litert_lm_embedding_response_get_truncated_length(response);
+  }
+
+  late final _litert_lm_embedding_response_get_truncated_lengthPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<LiteRtLmEmbeddingResponse>)
+        >
+      >('litert_lm_embedding_response_get_truncated_length');
+  late final _litert_lm_embedding_response_get_truncated_length =
+      _litert_lm_embedding_response_get_truncated_lengthPtr
+          .asFunction<int Function(ffi.Pointer<LiteRtLmEmbeddingResponse>)>();
+
   ffi.Pointer<LiteRtLmEmbeddingEngine> litert_lm_embedding_engine_create(
     ffi.Pointer<LiteRtLmEmbeddingEngineSettings> settings,
   ) {

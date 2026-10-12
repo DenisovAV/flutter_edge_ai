@@ -13,18 +13,59 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_parts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _file = 'eg2.litertlm';
-const _textOnly =
-    'flutter_edge_ai_litertlm 1.13.0 embeds text only; images arrive in '
-    '1.14.0, audio in 1.16.0';
+const _noAudioEncoder =
+    '$_file has no audio encoder; install embeddinggemma-2-740m';
 const _allSignatures = [128, 256, 512, 1024, 2048, 8192];
+
+/// What a per-SoC bundle declares (measured: 128-1024, no 2048/8192).
+const _npuSignatures = [128, 256, 512, 1024];
+const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+const _dispatchDir = '/data/app/code_cache/litert_npu';
+
+/// What LiteRT-LM's stb decoder handles (X3, measured on our dylib).
+final _imageFormats = {
+  EncodedMediaFormat.jpeg,
+  EncodedMediaFormat.png,
+  EncodedMediaFormat.gif,
+  EncodedMediaFormat.bmp,
+};
+
+/// What LiteRT-LM's miniaudio decoder handles (measured on the 740m).
+final _audioFormats = {
+  EncodedMediaFormat.wav,
+  EncodedMediaFormat.mp3,
+  EncodedMediaFormat.flac,
+};
+
+/// The container headers of real bundles (test/ffi/fixtures/README.md): the
+/// pass reads the section table for audio support (D23).
+const _header440m = 'test/ffi/fixtures/embeddinggemma2_440m_header.litertlm';
+const _header740m = 'test/ffi/fixtures/embeddinggemma2_740m_header.litertlm';
+
+/// The start of a WAV file: not valid UTF-8 past the header, so a pass that
+/// sent it as text would fail loudly in the fake.
+final _wav = Uint8List.fromList([
+  ...'RIFF'.codeUnits, 0x24, 0, 0, 0, ...'WAVE'.codeUnits, //
+  0xFF, 0xFE, 0x80, 0x81,
+]);
+
+/// The start of a PNG: enough for the sniff, and not valid UTF-8, so a pass
+/// that sent it as text would fail loudly in the fake.
+final _png = Uint8List.fromList([
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+  0x00, 0x00, 0x00, 0x0D, 0xFF, 0xFE, 0x80, 0x81,
+]);
 
 void main() {
   late Directory root;
@@ -52,14 +93,19 @@ void main() {
   LiteRtLmEmbeddingPass pass({
     Set<EmbeddingModality> declaredMedia = const {},
     int? numThreads,
+    int visionTokensPerImage = 140,
     LiteRtLmEmbeddingBindings Function()? openBindings,
     DateTime Function()? clock,
+    LiteRtLmNpuTarget? npuTarget,
   }) => LiteRtLmEmbeddingPass(
     LiteRtLmEmbeddingConfig(
       modelPath: modelPath,
       cacheBase: cacheBase,
       declaredMedia: declaredMedia,
       numThreads: numThreads,
+      visionTokensPerImage: visionTokensPerImage,
+      npuTarget: npuTarget,
+      npuDispatchDir: npuTarget == null ? null : _dispatchDir,
     ),
     openBindings: openBindings ?? () => native,
     allocator: allocator,
@@ -94,7 +140,11 @@ void main() {
         expect(info.maxInputTokens, 1024);
         expect(info.imageFormats, isEmpty);
         expect(info.audioFormats, isEmpty);
-        expect(info.combinedInputs, isFalse);
+        expect(
+          info.combinedInputs,
+          isTrue,
+          reason: 'one vector may carry text, images and audio together',
+        );
 
         expect(native.loadedPath, modelPath);
         expect(
@@ -137,14 +187,14 @@ void main() {
       },
     );
 
-    test('options: normalize and special tokens on, overflow kError, no '
-        'output size', () async {
+    test('options: normalize and special tokens on, overflow kTruncate (the '
+        'P3 gate: exact counts from the response), no output size', () async {
       await pass().load();
       expect(native.normalize, isTrue);
       expect(native.insertSpecialTokens, isTrue);
       expect(
         native.overflowStrategy,
-        LiteRtLmInputOverflowStrategy.kLiteRtLmInputOverflowStrategyError,
+        LiteRtLmInputOverflowStrategy.kLiteRtLmInputOverflowStrategyTruncate,
       );
       expect(native.order, isNot(contains('options_set_output_size')));
     });
@@ -255,9 +305,13 @@ void main() {
     group('capabilities come from the vision signatures (D23)', () {
       Future<void> expectMediaRefusal(
         Set<EmbeddingModality> declared,
-        Object message,
-      ) async {
-        final p = pass(declaredMedia: declared);
+        Object message, {
+        int visionTokensPerImage = 140,
+      }) async {
+        final p = pass(
+          declaredMedia: declared,
+          visionTokensPerImage: visionTokensPerImage,
+        );
         await expectLater(
           p.load(),
           throwsA(
@@ -271,6 +325,11 @@ void main() {
           0,
           reason: 'refused from ModelInfo: no engine, so no tower cache',
         );
+        expect(
+          Directory(cacheBase).existsSync(),
+          isFalse,
+          reason: 'refused before the cache directory exists',
+        );
         expectNothingLeaked();
         await p.close();
       }
@@ -283,25 +342,171 @@ void main() {
           '$_file has no vision encoder; install '
           'embeddinggemma-2-text-vision-440m',
         );
+        native.visionSignatures = const []; // an empty list: no tower either
+        await expectMediaRefusal({
+          EmbeddingModality.image,
+        }, contains('has no vision encoder'));
       });
 
-      test(
-        'images on a bundle with vision: 1.13.0 still embeds text only',
-        () async {
-          native.visionSignatures = const [70, 140];
-          await expectMediaRefusal({EmbeddingModality.image}, _textOnly);
-        },
-      );
-
-      test('audio: 1.13.0 embeds text only', () async {
-        await expectMediaRefusal({EmbeddingModality.audio}, _textOnly);
-      });
-
-      test('no media declared: text, whatever the bundle carries', () async {
+      test('images on a bundle with vision: text and images, the formats '
+          'stb decodes, and the budget handed to the settings', () async {
         native.visionSignatures = const [70, 140];
+        final info = await pass(
+          declaredMedia: {EmbeddingModality.image},
+        ).load();
+        expect(info.modalities, {
+          EmbeddingModality.text,
+          EmbeddingModality.image,
+        });
+        expect(info.imageFormats, _imageFormats);
+        expect(info.audioFormats, isEmpty);
+        expect(info.combinedInputs, isTrue);
+        expect(native.visionTokensPerImage, 140);
+        expect(
+          native.order,
+          containsAllInOrder([
+            'settings_create',
+            'settings_set_vision_tokens_per_image',
+            'engine_create',
+          ]),
+          reason: 'the budget is a setting the engine copies at create',
+        );
+        expect(native.towerBackendsNull, isTrue, reason: 'D26: NULL towers');
+      });
+
+      test('70 is the opt-in budget', () async {
+        native.visionSignatures = const [70, 140];
+        await pass(
+          declaredMedia: {EmbeddingModality.image},
+          visionTokensPerImage: 70,
+        ).load();
+        expect(native.visionTokensPerImage, 70);
+      });
+
+      test('a budget the bundle has no vision signature for is refused from '
+          'ModelInfo, naming the ones it has', () async {
+        native.visionSignatures = const [140];
+        await expectMediaRefusal(
+          {EmbeddingModality.image},
+          allOf(contains(_file), contains('70'), contains('140')),
+          visionTokensPerImage: 70,
+        );
+      });
+
+      test('audio on a bundle without an audio encoder (the 440m container, '
+          'whose ModelInfo claims audio) names the 740m bundle', () async {
+        File(_header440m).copySync(modelPath);
+        native.visionSignatures = const [70, 140];
+        await expectMediaRefusal({EmbeddingModality.audio}, _noAudioEncoder);
+        await expectMediaRefusal({
+          EmbeddingModality.image,
+          EmbeddingModality.audio,
+        }, _noAudioEncoder);
+      });
+
+      test('audio on a bundle with an audio encoder (the 740m container): '
+          'text, images and audio, the formats miniaudio decodes, combined '
+          'inputs', () async {
+        File(_header740m).copySync(modelPath);
+        native.visionSignatures = const [70, 140];
+        final info = await pass(
+          declaredMedia: {EmbeddingModality.image, EmbeddingModality.audio},
+        ).load();
+        expect(info.modalities, {
+          EmbeddingModality.text,
+          EmbeddingModality.image,
+          EmbeddingModality.audio,
+        });
+        expect(info.imageFormats, _imageFormats);
+        expect(info.audioFormats, _audioFormats);
+        expect(info.combinedInputs, isTrue);
+        expect(native.towerBackendsNull, isTrue, reason: 'D26: NULL towers');
+
+        native.dispose();
+        native = _FakeLiteRtLm()..visionSignatures = const [70, 140];
+        final audioOnly = await pass(
+          declaredMedia: {EmbeddingModality.audio},
+        ).load();
+        expect(audioOnly.modalities, {
+          EmbeddingModality.text,
+          EmbeddingModality.image,
+          EmbeddingModality.audio,
+        });
+        expect(
+          native.order,
+          isNot(contains('settings_set_vision_tokens_per_image')),
+          reason: 'images were not declared',
+        );
+      });
+
+      test('a container it cannot read, with audio declared, is a load '
+          'failure — never "no audio" — before anything is created', () async {
+        // modelPath holds 37 bytes of 7s: ModelInfo is faked, the container
+        // is real and has no LITERTLM magic.
+        await expectMediaRefusal(
+          {EmbeddingModality.audio},
+          allOf(
+            contains('could not read the container of $_file'),
+            contains('LITERTLM'),
+          ),
+        );
+      });
+
+      test('the container is read only when audio is declared: a text or '
+          'image load never depends on it', () async {
+        // The same unreadable container as above.
+        native.visionSignatures = const [70, 140];
+        final info = await pass(
+          declaredMedia: {EmbeddingModality.image},
+        ).load();
+        expect(info.modalities, {
+          EmbeddingModality.text,
+          EmbeddingModality.image,
+        });
+        expect(info.audioFormats, isEmpty);
+      });
+
+      test('the audio formats are the ones measured decoding: Ogg and M4A '
+          'fail in miniaudio, so core refuses them before sending', () {
+        expect(liteRtLmAudioFormats, _audioFormats);
+        expect(liteRtLmAudioFormats, isNot(contains(EncodedMediaFormat.ogg)));
+        expect(liteRtLmAudioFormats, isNot(contains(EncodedMediaFormat.m4a)));
+      });
+
+      test('a vision bundle used for text only: the engine still reports '
+          'images (core keeps the model at what was declared), and the budget '
+          'is not set', () async {
+        native.visionSignatures = const [70, 140];
+        final info = await pass().load();
+        expect(info.modalities, {
+          EmbeddingModality.text,
+          EmbeddingModality.image,
+        });
+        expect(info.imageFormats, _imageFormats);
+        expect(
+          native.order,
+          isNot(contains('settings_set_vision_tokens_per_image')),
+        );
+      });
+
+      test('a text-only bundle reports text, and no formats', () async {
+        native.visionSignatures = null;
         final info = await pass().load();
         expect(info.modalities, {EmbeddingModality.text});
         expect(info.imageFormats, isEmpty);
+      });
+
+      test('the formats are the ones X3 measured decoding: WebP, TIFF and '
+          'HEIC are not among them, so core refuses them before sending', () {
+        expect(liteRtLmImageFormats, _imageFormats);
+        for (final refused in [
+          EncodedMediaFormat.webp,
+          EncodedMediaFormat.tiff,
+          EncodedMediaFormat.heic,
+          EncodedMediaFormat.avif,
+        ]) {
+          expect(liteRtLmImageFormats, isNot(contains(refused)));
+        }
       });
     });
 
@@ -661,30 +866,103 @@ void main() {
       },
     );
 
-    test('code 3 is overflow: EmbeddingInputTooLongException(1024, null), and '
-        'the engine keeps working', () async {
-      native.failCompute = (
-        code: 3,
-        message:
-            'Input sequence length (1025) exceeds maximum supported '
-            'signature length (1024).',
-      );
+    test('a truncated response is EmbeddingInputTooLongException with the '
+        'exact counts the response reports; the vector is never returned, '
+        'the response is deleted and the engine keeps working', () async {
+      native
+        ..responseInputLength = 2402
+        ..responseTruncatedLength = 1024;
       await expectLater(
         p.embed(EmbeddingInput.text('long'), TaskType.retrievalDocument),
         throwsA(
           isA<EmbeddingInputTooLongException>()
               .having((e) => e.maxInputTokens, 'maxInputTokens', 1024)
-              .having((e) => e.actualTokens, 'actualTokens', isNull),
+              .having((e) => e.actualTokens, 'actualTokens', 2402)
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(contains('2402'), contains('1024'), contains(_file)),
+              ),
         ),
       );
+      expect(
+        native.order,
+        containsAllInOrder([
+          'compute_embedding',
+          'response_get_input_length',
+          'response_get_truncated_length',
+          'response_delete',
+        ]),
+      );
+      expect(native.order, isNot(contains('response_get_values')));
       expect(native.live.keys, unorderedEquals(['engine', 'options']));
       expect(allocator.live, 0);
 
-      native.failCompute = null;
+      native
+        ..responseInputLength = 12
+        ..responseTruncatedLength = 0;
       expect(
         await p.embed(EmbeddingInput.text('short'), TaskType.retrievalQuery),
         native.lastVector,
       );
+    });
+
+    test('code 3 is no longer an overflow (kTruncate returns a response for '
+        'one): EmbeddingEngineException(nativeCode 3)', () async {
+      native.failCompute = (code: 3, message: 'Some structural problem');
+      await expectLater(
+        p.embed(EmbeddingInput.text('x'), TaskType.retrievalDocument),
+        throwsA(
+          isA<EmbeddingEngineException>()
+              .having((e) => e.nativeCode, 'nativeCode', 3)
+              .having(
+                (e) => e.message,
+                'message',
+                contains('Some structural problem'),
+              ),
+        ),
+      );
+      expect(allocator.live, 0);
+    });
+
+    test('a count past the limit with nothing reported truncated is still an '
+        'overflow, against the limit read at load — never a vector', () async {
+      native
+        ..responseInputLength = 1500
+        ..responseTruncatedLength = 0;
+      await expectLater(
+        p.embed(EmbeddingInput.text('x'), TaskType.retrievalQuery),
+        throwsA(
+          isA<EmbeddingInputTooLongException>()
+              .having((e) => e.maxInputTokens, 'maxInputTokens', 1024)
+              .having((e) => e.actualTokens, 'actualTokens', 1500),
+        ),
+      );
+      native.responseInputLength = 1024; // exactly the limit: embedded
+      expect(
+        await p.embed(EmbeddingInput.text('x'), TaskType.retrievalQuery),
+        native.lastVector,
+      );
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+    });
+
+    test('a response without token counts (-1) is an engine failure, never '
+        'a vector', () async {
+      native.responseInputLength = -1;
+      await expectLater(
+        p.embed(EmbeddingInput.text('x'), TaskType.retrievalQuery),
+        throwsA(isA<EmbeddingEngineException>()),
+      );
+      native
+        ..responseInputLength = 12
+        ..responseTruncatedLength = -1;
+      await expectLater(
+        p.embed(EmbeddingInput.text('x'), TaskType.retrievalQuery),
+        throwsA(isA<EmbeddingEngineException>()),
+      );
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
     });
 
     test('any other code is EmbeddingEngineException(nativeCode) with the '
@@ -743,6 +1021,16 @@ void main() {
       expect(allocator.live, 0);
     });
 
+    test('an image on a pass loaded without images never reaches the engine '
+        '(core refuses it first; reaching the pass is a host bug)', () async {
+      await expectLater(
+        p.embed(EmbeddingInput.image(_png), TaskType.none),
+        throwsA(isA<EmbeddingEngineException>()),
+      );
+      expect(native.order, isNot(contains('input_data_create')));
+      expect(allocator.live, 0);
+    });
+
     test('a vector of the wrong size fails, and the response is still '
         'deleted', () async {
       native.responseSize = 3;
@@ -752,6 +1040,339 @@ void main() {
       );
       expect(native.live.keys, unorderedEquals(['engine', 'options']));
       expect(allocator.live, 0);
+    });
+  });
+
+  group('embed an image', () {
+    late LiteRtLmEmbeddingPass p;
+
+    setUp(() async {
+      native.visionSignatures = const [70, 140];
+      p = pass(declaredMedia: {EmbeddingModality.image});
+      await p.load();
+    });
+
+    tearDown(() => p.close());
+
+    test('sends the encoded bytes as ONE image part, never a prefix, for '
+        'every TaskType', () async {
+      for (final taskType in TaskType.values) {
+        final vector = await p.embed(EmbeddingInput.image(_png), taskType);
+        expect(vector, native.lastVector);
+        expect(native.lastPartTypes, [
+          LiteRtLmInputDataType.kLiteRtLmInputDataTypeImage,
+        ]);
+        expect(native.lastParts.single, _png);
+      }
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+    });
+
+    test('text still works on the same pass', () async {
+      await p.embed(EmbeddingInput.text('a red circle'), TaskType.none);
+      expect(native.lastPartTypes, [
+        LiteRtLmInputDataType.kLiteRtLmInputDataTypeText,
+      ]);
+      expect(native.lastTexts, ['a red circle']);
+    });
+
+    test('code 3 on an image is a decode failure, never an overflow: '
+        'EmbeddingEngineException(nativeCode 3), and the engine keeps '
+        'working', () async {
+      native.failCompute = (code: 3, message: 'Failed to decode image');
+      await expectLater(
+        p.embed(EmbeddingInput.image(_png), TaskType.retrievalDocument),
+        throwsA(
+          isA<EmbeddingEngineException>()
+              .having((e) => e.engine, 'engine', 'LiteRT-LM')
+              .having((e) => e.nativeCode, 'nativeCode', 3)
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(contains('decode'), contains('Failed to decode image')),
+              ),
+        ),
+      );
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+
+      native.failCompute = null;
+      expect(
+        await p.embed(EmbeddingInput.image(_png), TaskType.none),
+        native.lastVector,
+      );
+    });
+
+    test('any other code on an image is EmbeddingEngineException with that '
+        'code', () async {
+      native.failCompute = (code: 13, message: 'Vision executor missing');
+      await expectLater(
+        p.embed(EmbeddingInput.image(_png), TaskType.none),
+        throwsA(
+          isA<EmbeddingEngineException>()
+              .having((e) => e.nativeCode, 'nativeCode', 13)
+              .having(
+                (e) => e.message,
+                'message',
+                contains('Vision executor missing'),
+              ),
+        ),
+      );
+      expect(allocator.live, 0);
+    });
+
+    test('input_data_create returning NULL for an image: an engine failure '
+        'without a code, nothing computed', () async {
+      native.failInputData = true;
+      await expectLater(
+        p.embed(EmbeddingInput.image(_png), TaskType.none),
+        throwsA(
+          isA<EmbeddingEngineException>().having(
+            (e) => e.nativeCode,
+            'nativeCode',
+            isNull,
+          ),
+        ),
+      );
+      expect(native.order, isNot(contains('compute_embedding')));
+      expect(allocator.live, 0);
+    });
+
+    test('audio never reaches the engine (core refuses it first; reaching '
+        'the pass is a host bug)', () async {
+      await expectLater(
+        p.embed(
+          EmbeddingInput.audio(Uint8List.fromList([1, 2, 3])),
+          TaskType.none,
+        ),
+        throwsA(isA<EmbeddingEngineException>()),
+      );
+      expect(native.order, isNot(contains('input_data_create')));
+      expect(allocator.live, 0);
+    });
+  });
+
+  group('embed audio and combined inputs (the 740m)', () {
+    late LiteRtLmEmbeddingPass p;
+
+    setUp(() async {
+      File(_header740m).copySync(modelPath);
+      native.visionSignatures = const [70, 140];
+      p = pass(
+        declaredMedia: {EmbeddingModality.image, EmbeddingModality.audio},
+      );
+      await p.load();
+    });
+
+    tearDown(() => p.close());
+
+    test('sends the encoded clip as ONE audio part, never a prefix, for '
+        'every TaskType', () async {
+      for (final taskType in TaskType.values) {
+        final vector = await p.embed(EmbeddingInput.audio(_wav), taskType);
+        expect(vector, native.lastVector);
+        expect(native.lastPartTypes, [
+          LiteRtLmInputDataType.kLiteRtLmInputDataTypeAudio,
+        ]);
+        expect(native.lastParts.single, _wav);
+      }
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+    });
+
+    test('a combined input is ONE request: the prefixed text, the images in '
+        'order, then the audio', () async {
+      final second = Uint8List.fromList([..._png, 1]);
+      for (final taskType in TaskType.values) {
+        await p.embed(
+          EmbeddingInput(text: 'a cat', images: [_png, second], audio: _wav),
+          taskType,
+        );
+        expect(native.lastPartTypes, [
+          LiteRtLmInputDataType.kLiteRtLmInputDataTypeText,
+          LiteRtLmInputDataType.kLiteRtLmInputDataTypeImage,
+          LiteRtLmInputDataType.kLiteRtLmInputDataTypeImage,
+          LiteRtLmInputDataType.kLiteRtLmInputDataTypeAudio,
+        ]);
+        expect(native.lastTexts, ['${taskType.prefix}a cat']);
+        expect(native.lastParts.sublist(1), [_png, second, _wav]);
+      }
+      expect(native.created('input_data'), native.deleted('input_data'));
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+    });
+
+    test('an overflow with media reports the exact counts, media tokens '
+        'included', () async {
+      native
+        ..responseInputLength = 1504
+        ..responseTruncatedLength = 1024;
+      await expectLater(
+        p.embed(EmbeddingInput.audio(_wav), TaskType.none),
+        throwsA(
+          isA<EmbeddingInputTooLongException>()
+              .having((e) => e.maxInputTokens, 'maxInputTokens', 1024)
+              .having((e) => e.actualTokens, 'actualTokens', 1504),
+        ),
+      );
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+    });
+
+    test('status 2 on audio is miniaudio refusing the file: '
+        'EmbeddingEngineException(nativeCode 2) naming the audio; the engine '
+        'keeps working', () async {
+      native.failCompute = (
+        code: 2,
+        message: 'Failed to initialize miniaudio decoder, error code: -10',
+      );
+      await expectLater(
+        p.embed(EmbeddingInput.audio(_wav), TaskType.none),
+        throwsA(
+          isA<EmbeddingEngineException>()
+              .having((e) => e.nativeCode, 'nativeCode', 2)
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('could not decode the audio'),
+                  contains('miniaudio'),
+                ),
+              ),
+        ),
+      );
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+      native.failCompute = null;
+      expect(
+        await p.embed(EmbeddingInput.audio(_wav), TaskType.none),
+        native.lastVector,
+      );
+    });
+
+    test('status 3 on a combined input with an image is the image decode '
+        'failure', () async {
+      native.failCompute = (code: 3, message: 'Failed to decode image');
+      await expectLater(
+        p.embed(
+          EmbeddingInput(text: 'x', images: [_png], audio: _wav),
+          TaskType.none,
+        ),
+        throwsA(
+          isA<EmbeddingEngineException>()
+              .having((e) => e.nativeCode, 'nativeCode', 3)
+              .having(
+                (e) => e.message,
+                'message',
+                contains('could not decode an image'),
+              ),
+        ),
+      );
+      expect(native.created('input_data'), 3);
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+    });
+
+    test('input_data_create returning NULL for a later part: the parts made '
+        'before it are deleted, nothing is computed', () async {
+      native.failInputDataAt = 2; // text and image made, the audio fails
+      await expectLater(
+        p.embed(
+          EmbeddingInput(text: 'x', images: [_png], audio: _wav),
+          TaskType.none,
+        ),
+        throwsA(
+          isA<EmbeddingEngineException>().having(
+            (e) => e.message,
+            'message',
+            contains('audio part'),
+          ),
+        ),
+      );
+      expect(native.created('input_data'), 2);
+      expect(native.deleted('input_data'), 2);
+      expect(native.order, isNot(contains('compute_embedding')));
+      expect(native.live.keys, unorderedEquals(['engine', 'options']));
+      expect(allocator.live, 0);
+    });
+  });
+
+  group('a pass loaded without audio', () {
+    test('audio never reaches the engine, alone or combined (core refuses '
+        'it first; reaching the pass is a host bug)', () async {
+      native.visionSignatures = const [70, 140];
+      final p = pass(declaredMedia: {EmbeddingModality.image});
+      await p.load();
+      for (final input in [
+        EmbeddingInput.audio(_wav),
+        EmbeddingInput(text: 'x', audio: _wav),
+      ]) {
+        await expectLater(
+          p.embed(input, TaskType.none),
+          throwsA(isA<EmbeddingEngineException>()),
+        );
+      }
+      expect(native.order, isNot(contains('input_data_create')));
+      expect(allocator.live, 0);
+      await p.close();
+    });
+  });
+
+  group('embeddingParts', () {
+    test('a combined input: text with its prefix, then the images in order, '
+        'then the audio — whatever order the arguments were given in', () {
+      final first = Uint8List.fromList([1]);
+      final second = Uint8List.fromList([2]);
+      final clip = Uint8List.fromList([3]);
+      final parts = embeddingParts(
+        EmbeddingInput(audio: clip, images: [first, second], text: 'hi'),
+        TaskType.retrievalQuery,
+      );
+      expect(
+        [for (final part in parts) part.kind],
+        [
+          EmbeddingPartKind.text,
+          EmbeddingPartKind.image,
+          EmbeddingPartKind.image,
+          EmbeddingPartKind.audio,
+        ],
+      );
+      expect(
+        utf8.decode(parts[0].bytes),
+        '${TaskType.retrievalQuery.prefix}hi',
+      );
+      expect(
+        [for (final part in parts.skip(1)) part.bytes],
+        [first, second, clip],
+      );
+    });
+
+    test('a text input is one text part: the task prefix, then the text', () {
+      for (final taskType in TaskType.values) {
+        final parts = embeddingParts(EmbeddingInput.text('héllo'), taskType);
+        expect(parts, hasLength(1));
+        expect(parts.single.kind, EmbeddingPartKind.text);
+        expect(utf8.decode(parts.single.bytes), '${taskType.prefix}héllo');
+      }
+    });
+
+    test('an image input is one image part with its bytes: no prefix', () {
+      for (final taskType in TaskType.values) {
+        final parts = embeddingParts(EmbeddingInput.image(_png), taskType);
+        expect(parts, hasLength(1));
+        expect(parts.single.kind, EmbeddingPartKind.image);
+        expect(parts.single.bytes, _png);
+      }
+    });
+
+    test('an audio input is one audio part with its bytes: no prefix', () {
+      final clip = Uint8List.fromList([82, 73, 70, 70]);
+      final parts = embeddingParts(
+        EmbeddingInput.audio(clip),
+        TaskType.retrievalQuery,
+      );
+      expect(parts.single.kind, EmbeddingPartKind.audio);
+      expect(parts.single.bytes, clip);
     });
   });
 
@@ -788,7 +1409,7 @@ void main() {
                 allOf(
                   contains('libLiteRtLm.so'),
                   contains('litert_lm_embedding_engine_create'),
-                  contains('native-v0.18.0-d'),
+                  contains('native-v0.18.0-e'),
                 ),
               ),
         ),
@@ -800,20 +1421,204 @@ void main() {
     });
 
     test('covers every native function the pass calls', () async {
-      final p = pass();
+      native.visionSignatures = const [70, 140];
+      final p = pass(declaredMedia: {EmbeddingModality.image});
       await p.load();
       await p.embed(EmbeddingInput.text('x'), TaskType.retrievalQuery);
-      native.failCompute = (code: 3, message: 'too long');
+      await p.embed(EmbeddingInput.image(_png), TaskType.none);
+      native.failCompute = (code: 3, message: 'bad image');
       await expectLater(
-        p.embed(EmbeddingInput.text('x'), TaskType.retrievalQuery),
-        throwsA(isA<EmbeddingInputTooLongException>()),
+        p.embed(EmbeddingInput.image(_png), TaskType.none),
+        throwsA(isA<EmbeddingEngineException>()),
       );
       await p.close();
+      expect(
+        native.symbolsCalled,
+        containsAll([
+          'litert_lm_embedding_response_get_input_length',
+          'litert_lm_embedding_response_get_truncated_length',
+        ]),
+      );
+      expect(
+        native.symbolsCalled,
+        contains(
+          'litert_lm_embedding_engine_settings_set_vision_tokens_per_image',
+        ),
+      );
       expect(
         liteRtLmEmbeddingSymbols,
         containsAll(native.symbolsCalled),
         reason: 'the gate must check every symbol the pass looks up',
       );
+    });
+  });
+
+  group('a per-SoC bundle on the NPU', () {
+    setUp(() => native.textSignatures = _npuSignatures);
+
+    test('settings on "npu", towers NULL, the dispatch directory handed to '
+        'every executor, and a probe embedding before load returns', () async {
+      native.visionSignatures = const [70, 140];
+      final p = pass(
+        npuTarget: _sm8850,
+        declaredMedia: {EmbeddingModality.image},
+      );
+      final info = await p.load();
+      expect(native.settingsBackend, 'npu');
+      expect(native.towerBackendsNull, isTrue);
+      expect(native.dispatchDirs, {
+        'main': _dispatchDir,
+        'vision': _dispatchDir,
+        'audio': _dispatchDir,
+      });
+      // The dispatch directories are set before the engine exists.
+      expect(
+        native.order.indexOf('settings_set_litert_dispatch_lib_dir'),
+        lessThan(native.order.indexOf('engine_create')),
+      );
+      // engine_create does not run the graph: the load embeds once itself.
+      final probe = native.order.indexOf('compute_embedding');
+      expect(probe, greaterThan(native.order.indexOf('options_create')));
+      expect(native.lastTexts, ['task: search result | query: probe']);
+      expect(native.created('response'), 1);
+      expect(native.deleted('response'), 1);
+      expect(info.dimension, 4);
+      expect(info.maxInputTokens, 1024);
+      expect(info.modalities, {
+        EmbeddingModality.text,
+        EmbeddingModality.image,
+      });
+
+      final vector = await p.embed(
+        EmbeddingInput.text('hello'),
+        TaskType.retrievalQuery,
+      );
+      expect(vector, hasLength(4));
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test(
+      'the CPU path is unchanged: "cpu", no dispatch directory, no probe',
+      () async {
+        native.textSignatures = _allSignatures;
+        final p = pass();
+        await p.load();
+        expect(native.settingsBackend, 'cpu');
+        expect(native.dispatchDirs, isEmpty);
+        expect(native.order, isNot(contains('compute_embedding')));
+        await p.close();
+        expectNothingLeaked();
+      },
+    );
+
+    test('a probe the NPU cannot run fails the load, naming the SoC, and '
+        'frees the engine', () async {
+      // What macOS gives an SM8850 bundle: create succeeds, then the graph
+      // cannot be prepared.
+      native.failCompute = (
+        code: 2,
+        message: 'Failed to invoke the compiled model',
+      );
+      final p = pass(npuTarget: _sm8850);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>()
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('could not run $_file on the NPU'),
+                  contains('Failed to invoke the compiled model'),
+                  contains('compiled for Qualcomm SM8850'),
+                ),
+              )
+              .having((e) => e.nativeCode, 'nativeCode', 2),
+        ),
+      );
+      expect(native.deleted('engine'), 1);
+      expect(native.deleted('options'), 1);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    for (final (name, vector) in [
+      ('a NaN', [0.5, double.nan, 0.1, 0.2]),
+      ('an all-zero vector', [0.0, 0.0, 0.0, 0.0]),
+      ('an infinity', [0.5, double.infinity, 0.1, 0.2]),
+    ]) {
+      test('a probe that returns $name fails the load', () async {
+        native.vectorOverride = vector;
+        final p = pass(npuTarget: _sm8850);
+        await expectLater(
+          p.load(),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('Qualcomm SM8850 NPU returned'),
+                contains('not used'),
+              ),
+            ),
+          ),
+        );
+        await p.close();
+        expectNothingLeaked();
+      });
+    }
+
+    test('a probe of the wrong size fails the load', () async {
+      native.responseSize = 3;
+      final p = pass(npuTarget: _sm8850);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains('3 values for dimension 4'),
+          ),
+        ),
+      );
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('an NPU engine create that fails names the NPU, not the cache '
+        'directory, whatever the code', () async {
+      native.failEngine = (code: 3, message: 'dispatch init failed');
+      final p = pass(npuTarget: _sm8850);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('on the Qualcomm SM8850 NPU'),
+              contains('dispatch init failed'),
+              isNot(contains('cache directory')),
+            ),
+          ),
+        ),
+      );
+      expectNothingLeaked();
+    });
+
+    test('the symbol gate covers what an NPU load calls', () async {
+      final p = pass(npuTarget: _sm8850);
+      await p.load();
+      await p.close();
+      expect(liteRtLmEmbeddingSymbols, containsAll(native.symbolsCalled));
+      for (final setter in [
+        'litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir',
+        'litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir',
+        'litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir',
+      ]) {
+        expect(native.symbolsCalled, contains(setter));
+      }
     });
   });
 
@@ -875,11 +1680,26 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   _Failure? failCompute;
   bool failOptions = false;
   bool failInputData = false;
+
+  /// Fail only the input_data_create call with this index (0-based).
+  int? failInputDataAt;
+  int _inputDataCalls = 0;
+
+  /// What every response reports (section 14 getters): the whole input.
+  int responseInputLength = 12;
+  int responseTruncatedLength = 0;
   bool silentNullCompute = false;
   bool silentNullEngine = false;
   bool writeCacheOnCreate = true;
   _Failure? errorFromSetter;
   int? responseSize;
+
+  /// When set, every response holds these values instead of the counting
+  /// ones (a NaN, all zeros, …).
+  List<double>? vectorOverride;
+
+  /// The dispatch directory handed to each executor: main, vision, audio.
+  final dispatchDirs = <String, String>{};
 
   final order = <String>[];
   final symbolsCalled = <String>{};
@@ -897,8 +1717,10 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   bool? normalize;
   bool? insertSpecialTokens;
   LiteRtLmInputOverflowStrategy? overflowStrategy;
-  final _inputs = <int, (LiteRtLmInputDataType, String)>{};
+  int? visionTokensPerImage;
+  final _inputs = <int, (LiteRtLmInputDataType, Uint8List)>{};
   List<String> lastTexts = const [];
+  List<Uint8List> lastParts = const [];
   List<LiteRtLmInputDataType> lastPartTypes = const [];
   List<double> lastVector = const [];
   final _vectors = <int, Pointer<Float>>{};
@@ -1106,6 +1928,18 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
+  void litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
+    Pointer<LiteRtLmEmbeddingEngineSettings> settings,
+    int vision_tokens_per_image,
+  ) {
+    _call(
+      'settings_set_vision_tokens_per_image',
+      'litert_lm_embedding_engine_settings_set_vision_tokens_per_image',
+    );
+    visionTokensPerImage = vision_tokens_per_image;
+  }
+
+  @override
   void litert_lm_embedding_engine_settings_set_num_threads(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     int num_threads,
@@ -1115,6 +1949,42 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_num_threads',
     );
     numThreads = num_threads;
+  }
+
+  @override
+  void litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir(
+    Pointer<LiteRtLmEmbeddingEngineSettings> settings,
+    Pointer<Char> lib_dir,
+  ) {
+    _call(
+      'settings_set_litert_dispatch_lib_dir',
+      'litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir',
+    );
+    dispatchDirs['main'] = _string(lib_dir);
+  }
+
+  @override
+  void litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir(
+    Pointer<LiteRtLmEmbeddingEngineSettings> settings,
+    Pointer<Char> lib_dir,
+  ) {
+    _call(
+      'settings_set_vision_litert_dispatch_lib_dir',
+      'litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir',
+    );
+    dispatchDirs['vision'] = _string(lib_dir);
+  }
+
+  @override
+  void litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
+    Pointer<LiteRtLmEmbeddingEngineSettings> settings,
+    Pointer<Char> lib_dir,
+  ) {
+    _call(
+      'settings_set_audio_litert_dispatch_lib_dir',
+      'litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir',
+    );
+    dispatchDirs['audio'] = _string(lib_dir);
   }
 
   // ── engine ──
@@ -1198,9 +2068,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   ) {
     _call('input_data_create', 'litert_lm_input_data_create');
     if (failInputData) return nullptr; // sets no error, as upstream
-    final text = utf8.decode(data.cast<Uint8>().asTypedList(size));
+    if (_inputDataCalls++ == failInputDataAt) return nullptr;
+    // Copied, as upstream does: the pass frees its buffer right after.
+    final bytes = Uint8List.fromList(data.cast<Uint8>().asTypedList(size));
     final handle = _create<LiteRtLmInputData>('input_data');
-    _inputs[handle.address] = (type, text);
+    _inputs[handle.address] = (type, bytes);
     return handle;
   }
 
@@ -1230,7 +2102,13 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       for (var i = 0; i < num_inputs; i++) _inputs[inputs[i].address]!,
     ];
     lastPartTypes = [for (final (type, _) in parts) type];
-    lastTexts = [for (final (_, text) in parts) text];
+    lastParts = [for (final (_, bytes) in parts) bytes];
+    // A text part must be valid UTF-8: decoding throws otherwise.
+    lastTexts = [
+      for (final (type, bytes) in parts)
+        if (type == LiteRtLmInputDataType.kLiteRtLmInputDataTypeText)
+          utf8.decode(bytes),
+    ];
     final failure = failCompute;
     if (failure != null) return _fail(failure);
     if (silentNullCompute) return nullptr;
@@ -1239,7 +2117,7 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     final values = calloc<Float>(n);
     final vector = <double>[];
     for (var i = 0; i < n; i++) {
-      values[i] = (i + 1) * 0.25 + lastTexts.first.length;
+      values[i] = vectorOverride?[i] ?? (i + 1) * 0.25 + lastParts.first.length;
       vector.add(values[i]);
     }
     lastVector = vector;
@@ -1253,6 +2131,28 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   ) {
     _call('response_get_size', 'litert_lm_embedding_response_get_size');
     return responseSize ?? dimension;
+  }
+
+  @override
+  int litert_lm_embedding_response_get_input_length(
+    Pointer<LiteRtLmEmbeddingResponse> response,
+  ) {
+    _call(
+      'response_get_input_length',
+      'litert_lm_embedding_response_get_input_length',
+    );
+    return responseInputLength;
+  }
+
+  @override
+  int litert_lm_embedding_response_get_truncated_length(
+    Pointer<LiteRtLmEmbeddingResponse> response,
+  ) {
+    _call(
+      'response_get_truncated_length',
+      'litert_lm_embedding_response_get_truncated_length',
+    );
+    return responseTruncatedLength;
   }
 
   @override

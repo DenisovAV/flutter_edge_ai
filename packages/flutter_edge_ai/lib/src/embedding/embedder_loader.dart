@@ -18,6 +18,7 @@ import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 import 'common_embedding_model.dart';
+import 'embedder_backend_notice.dart' show noticeEmbedderNpuNotApplied;
 import 'embedder_cache.dart';
 import 'embedding_exceptions.dart';
 import 'embedding_modality.dart';
@@ -119,7 +120,10 @@ Future<EmbeddingModel> loadActiveEmbedder({
     },
   );
   final reused = decision.reuse;
-  if (reused != null) return reused;
+  if (reused != null) {
+    noticeEmbedderNpuNotApplied(preferredBackend, reused.activeBackend);
+    return reused;
+  }
   final build = decision.build;
   final descriptor =
       described ??
@@ -143,6 +147,7 @@ Future<EmbeddingModel> loadActiveEmbedder({
     // Core owns the lifecycle: the cache tracks the model, forgets it when it
     // closes (identity-guarded) and records what it was built from.
     await cache.adopt(model, build);
+    noticeEmbedderNpuNotApplied(preferredBackend, model.activeBackend);
     return model;
   } catch (_) {
     // FIX #170: leave no bookkeeping behind, so a retry is a fresh decision

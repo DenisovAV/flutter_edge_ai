@@ -26,7 +26,7 @@ unreported offload cannot prove either CPU or GPU execution.
 
 ## Automated gates
 
-Current gates use Flutter **3.47.1 / Dart 3.13.1**, `flutter_edge_ai 2.3.0`,
+Current gates use Flutter **3.47.1 / Dart 3.13.1**, merged core #649 from the workspace,
 `llamadart 0.11.1`, Apple runtime companion `0.0.21`, native llama.cpp artifacts `v0.5.0-2`,
 and browser assets
 `v0.1.54`. The browser manifest itself is SHA-256 pinned, and its asset checksums
@@ -405,6 +405,48 @@ Local Flutter 3.47.1 / Dart 3.13.1 validation passed:
 Current-head GitHub platform checks remain required; earlier platform evidence
 above belongs to its stated revision. This contribution remains draft pending
 GGUF identity, LoRA restart validation and final independent blocking review.
+
+## Merged GGUF identity and LoRA restoration, 2026-10-12
+
+The branch includes upstream main `639d5ec`, including #649 (`63fd82e`). The
+provider and loaded model report `ModelFileType.gguf`; filenames no longer decide
+routing. An earlier draft's installed binary specs need reinstalling as GGUF.
+
+Hosted core 2.3.1 was published before #649 and lacks its enum/restoration changes.
+The current `^2.3.1` constraint describes the development baseline, not a released
+compatible floor. Workspace examples resolve local core; external apps require a
+matching path/git override. CI's archive preparation lane uses `--core-path` and
+explicitly does not qualify hosted consumers. Before full review, set the floor
+to the actual published patch and restore the no-override hosted package gate.
+
+Local validation with the unchanged SDK/runtime/model pins passed:
+
+- Formatting and analysis; 52 VM contracts (including two fresh-manager storage
+  tests), 56 Chrome contracts with three explicit skips, seven demo tests and
+  22 Python tooling tests.
+- Native and browser identity fixtures preserve the paired adapter, reject a
+  missing adapter, and use `model__adapter.gguf`. The restored native adapter
+  resolves to the provider's default path; generation contracts apply it and
+  clean it up. Web LoRA fails before runtime loading. These are deterministic
+  storage/runtime contracts, not new real-model LoRA qualification.
+- Real macOS VM CPU SmolLM2 generation, two-turn recall, cancellation/retry and
+  reload after a genuinely fresh core shell reads persisted identity.
+- Real browser worker/Wasm generation through the public source resolver.
+- Packaged iPhone 17 Pro / iOS 26.4 simulator CPU lifecycle: three cycles passed
+  with one CPU thread and Metal enumeration disabled. The new disposable
+  simulator was shut down and deleted afterward.
+- Standalone package archive preparation against merged core; public-import and
+  Web-graph guards; workflow lint and relative documentation links. The pinned
+  Jaspr build rendered the updated GGUF documentation page successfully.
+- Removing the provider's declared-type guard failed the routing assertion;
+  the exact source bytes were restored afterward.
+
+The earlier 2.3.0 smoke re-registered the desktop singleton, so it did not prove
+fresh-manager restoration despite that earlier description. The fixture now
+constructs a fresh core shell, and the current real-model result above supersedes
+that claim. The new missing-adapter test exposed and corrected this test weakness.
+Current-head CI still must complete; previous green builds/runtime lanes belong
+to their recorded revisions. Final independent blocking review remains pending.
 
 ## Before a production release
 

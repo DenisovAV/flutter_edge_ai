@@ -43,29 +43,87 @@ void main() {
           throw sentinel;
         },
       );
-      for (final filename in ['model.gguf', 'other.bin', 'other.task']) {
+      for (final type in edge.ModelFileType.values) {
         final spec = edge.InferenceModelSpec(
-          name: filename,
-          modelSource: edge.NetworkSource('https://example.test/$filename'),
+          name: 'model',
+          modelSource: edge.NetworkSource('https://example.test/model.gguf'),
           modelType: edge.ModelType.general,
-          fileType: edge.ModelFileType.binary,
+          fileType: type,
         );
-        expect(provider.canHandle(spec), filename.endsWith('.gguf'));
+        expect(provider.canHandle(spec), type == edge.ModelFileType.gguf);
         await expectLater(
           provider.createModel(
             spec,
-            RuntimeConfig(
-              modelPath: 'https://example.test/$filename',
+            const RuntimeConfig(
+              modelPath: 'https://example.test/model.gguf',
               maxTokens: 512,
             ),
           ),
-          filename.endsWith('.gguf')
+          type == edge.ModelFileType.gguf
               ? throwsA(same(sentinel))
               : throwsA(isA<llama.LlamaUnsupportedException>()),
         );
       }
     },
   );
+
+  for (final adapterInstalled in [true, false]) {
+    test(
+      'Web GGUF identity restores only with its adapter ($adapterInstalled)',
+      () async {
+        SharedPreferences.setMockInitialValues({});
+        ServiceRegistry.reset();
+        addTearDown(ServiceRegistry.reset);
+        await ServiceRegistry.initialize();
+        final spec = edge.InferenceModelSpec(
+          name: 'model',
+          modelSource: edge.NetworkSource('https://example.test/model.gguf'),
+          loraSource: edge.NetworkSource('https://example.test/adapter.gguf'),
+          modelType: edge.ModelType.general,
+          fileType: edge.ModelFileType.gguf,
+        );
+        final files = adapterInstalled ? spec.files : [spec.files.first];
+        for (final file in files) {
+          await ServiceRegistry.instance.modelRepository.saveModel(
+            repository.ModelInfo(
+              id: file.filename,
+              source: file.source,
+              installedAt: DateTime(2026),
+              sizeBytes: 2048,
+              type: repository.ModelType.inference,
+              hasLoraWeights: false,
+            ),
+          );
+        }
+        await WebModelManager().activateInstalledModel(spec);
+        final restarted = WebModelManager();
+        await restarted.ensureInitialized();
+        final restored =
+            restarted.activeInferenceModel as edge.InferenceModelSpec?;
+        if (!adapterInstalled) {
+          expect(restored, isNull);
+          return;
+        }
+        expect(restored, isNotNull);
+        expect(restored!.fileType, edge.ModelFileType.gguf);
+        expect(restored.loraSource, spec.loraSource);
+        expect(restored.files[1].filename, 'model__adapter.gguf');
+        final provider = LlamaEngineProvider(
+          loader: (_, _) async => fail('Web LoRA must be rejected before load'),
+        );
+        await expectLater(
+          provider.createModel(
+            restored,
+            const RuntimeConfig(
+              modelPath: 'https://example.test/model.gguf',
+              maxTokens: 512,
+            ),
+          ),
+          throwsA(isA<llama.LlamaUnsupportedException>()),
+        );
+      },
+    );
+  }
 
   test(
     'Web facade reuses a model and waits for app-initiated close before reload',
@@ -99,7 +157,7 @@ void main() {
         name: 'model.gguf',
         modelSource: edge.NetworkSource('https://example.test/model.gguf'),
         modelType: edge.ModelType.general,
-        fileType: edge.ModelFileType.binary,
+        fileType: edge.ModelFileType.gguf,
       );
       final services = ServiceRegistry.instance;
       await services.modelRepository.saveModel(
@@ -216,7 +274,7 @@ void main() {
           );
           await edge.FlutterEdgeAi.installModel(
             modelType: edge.ModelType.general,
-            fileType: edge.ModelFileType.binary,
+            fileType: edge.ModelFileType.gguf,
           ).fromNetwork(_modelUrl).install();
           // ignore: avoid_print
           print('WEB_SMOKE: installed model URL');

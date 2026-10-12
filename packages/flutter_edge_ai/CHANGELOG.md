@@ -1,3 +1,6 @@
+## 2.3.1
+- Combined text, image and audio inputs: `EmbeddingInput(text:, images:, audio:)`.
+
 ## 2.3.0
 - **Breaking:** EmbeddingGemma 2 embedding API (`embed`, `EmbeddingInput`); see MIGRATION.md for minimum versions.
 - **Breaking:** over-long embedding inputs throw `EmbeddingInputTooLongException` instead of truncating.

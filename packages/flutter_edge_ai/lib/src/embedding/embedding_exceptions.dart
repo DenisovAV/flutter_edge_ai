@@ -63,8 +63,9 @@ final class EmbeddingModalityNotLoadedException extends EmbeddingException {
   final Set<EmbeddingModality> loaded;
 }
 
-/// The input carries several modalities ([requested]) and the engine embeds
-/// one modality per vector.
+/// The input carries several parts — several modalities, or several images
+/// ([requested] names its modalities) — and the engine embeds one part per
+/// vector.
 final class UnsupportedEmbeddingCombinationException
     extends EmbeddingException {
   const UnsupportedEmbeddingCombinationException(

@@ -55,7 +55,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   /// Installed model-level LoRA, used unless a session supplies another adapter.
   final String? defaultLoraPath;
   @override
-  edge.ModelFileType get fileType => edge.ModelFileType.binary;
+  edge.ModelFileType get fileType => edge.ModelFileType.gguf;
 
   final EngineQueue _queue = EngineQueue();
   final Set<LlamaInferenceSession> _detached = {};

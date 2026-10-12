@@ -58,7 +58,7 @@ longer compiles, and `isClosed` is no longer defaulted.
 file that carries its own tokenizer, so it installs without
 `tokenizerFrom…()` and needs no `flutter_edge_ai_embeddings`. Native only
 (Android, iOS, macOS, Linux, Windows), CPU, at most 1024 input tokens — keep
-chunks at 512 or fewer. Images arrive in litertlm 1.14.0, audio in 1.16.0. See
+chunks at 512 or fewer. Images and audio arrive in litertlm 1.13.1. See
 the [litertlm README](https://pub.dev/packages/flutter_edge_ai_litertlm) for
 the install snippet and its disk and memory cost.
 

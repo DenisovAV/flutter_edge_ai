@@ -206,7 +206,6 @@ Future<String?> resolveActiveEmbeddingCatalogProfile({
   final model = _catalogModelForRecord(record, entries);
   final valid =
       model != null &&
-      record == _EmbeddingCatalogProvenance.fromCatalog(model) &&
       _filesAre(activeSpec, record.modelFilename, record.tokenizerFilename);
   if (!valid) {
     await clearEmbeddingCatalogProvenance(storage: target);
@@ -275,12 +274,15 @@ String _catalogSource(String location, ModelSourceType sourceType) =>
       ModelSourceType.bundled => ModelSource.bundled(location).encode(),
     };
 
+/// The catalog entry [record] was written for, matched on every field: two
+/// entries may share a profile id (the EmbeddingGemma 2 bundles share one text
+/// space), so the id alone does not say which was installed.
 EmbeddingCatalogEntry? _catalogModelForRecord(
   _EmbeddingCatalogProvenance record,
   List<EmbeddingCatalogEntry> entries,
 ) {
   for (final model in entries) {
-    if (model.profileId == record.profileId) return model;
+    if (_EmbeddingCatalogProvenance.fromCatalog(model) == record) return model;
   }
   return null;
 }

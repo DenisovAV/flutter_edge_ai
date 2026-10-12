@@ -44,5 +44,12 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- The send-email skill asks url_launcher whether a mail app can
+             open a mailto: link before opening it. On Android 11 and newer
+             that answer is "no" unless the scheme is declared here. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="mailto"/>
+        </intent>
     </queries>
 </manifest>

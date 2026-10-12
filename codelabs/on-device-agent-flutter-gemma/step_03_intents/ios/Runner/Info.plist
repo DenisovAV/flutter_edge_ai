@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>mailto</string>
+	</array>
 	<key>NSCalendarsUsageDescription</key>
 	<string>The agent opens the calendar's event editor for events you ask it to create.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>

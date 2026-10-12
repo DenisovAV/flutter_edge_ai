@@ -387,9 +387,30 @@ On iOS the calendar editor needs a usage description. Add to
 <string>The agent opens the calendar's event editor for events you ask it to create.</string>
 ```
 
-On Android, iOS and the desktops the mail composer opens through a `mailto:`
-link. On macOS and Windows the calendar event opens as a Google Calendar
-template in the browser, since there is no system event editor to call.
+The mail composer opens through a `mailto:` link, and the agent first asks
+whether any app can open one. On Android 11 and newer, and on iOS, that
+answer is "no" unless the app declares the scheme — the skill would report
+that no mail app is installed. In `android/app/src/main/AndroidManifest.xml`,
+inside `<queries>`:
+
+```xml
+<intent>
+    <action android:name="android.intent.action.VIEW"/>
+    <data android:scheme="mailto"/>
+</intent>
+```
+
+and in `ios/Runner/Info.plist`:
+
+```xml
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>mailto</string>
+</array>
+```
+
+On macOS and Windows the calendar event opens as a Google Calendar template in
+the browser, since there is no system event editor to call.
 
 ### Try it
 

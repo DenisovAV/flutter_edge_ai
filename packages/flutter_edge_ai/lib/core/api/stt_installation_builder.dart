@@ -1,6 +1,6 @@
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/core/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/core/model_management/model_activation.dart';
 import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -136,8 +136,13 @@ class SttInstallationBuilder {
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure
   ///
-  /// Note: This method is idempotent - calling install() on an already-installed
-  /// model will skip download and just set it as active.
+  /// Note: This method is idempotent - a file already installed from the same
+  /// source is skipped and the spec is just (re-)set as active. One installed
+  /// from another source is installed again: a download from another URL (its
+  /// query and token aside), or a file the app picked from another path. Once
+  /// the new file is active, core's earlier copy of it is deleted — never a
+  /// file the app installed with `fromFile`; a download that would land on
+  /// such a file throws a [ModelStorageException] instead.
   Future<SttInstallation> install() async {
     // Check cancellation before starting
     _cancelToken?.throwIfCancelled();
@@ -168,94 +173,19 @@ class SttInstallationBuilder {
       replacePolicy: ModelReplacePolicy.keep,
     );
 
-    final registry = ServiceRegistry.instance;
-    final repository = registry.modelRepository;
-
-    // spec.files is [modelFile, tokenizerFile] in that fixed order (see
-    // SttModelSpec.files) — reuse the already-namespaced identity.
-    final files = spec.files;
-    final modelFilename = files[0].filename;
-    final tokenizerFilename = files[1].filename;
-
-    // Check if both model and tokenizer are already installed — from these
-    // sources: a `fromFile` pick from a new path is installed again.
-    final modelRecord = await repository.loadModel(modelFilename);
-    final tokenizerRecord = await repository.loadModel(tokenizerFilename);
-    final isModelInstalled = await isInstalledFrom(modelRecord, _modelSource!);
-    final isTokenizerInstalled = await isInstalledFrom(
-      tokenizerRecord,
-      effectiveTokenizerSource,
+    // The model, then its tokenizer, each by its own record (see
+    // install_rule.dart).
+    final release = await installPlanned(
+      await planInstall(spec.files),
+      modelType: repo.ModelType.stt,
+      cancelToken: _cancelToken,
+      progress: [_onModelProgress, _onTokenizerProgress],
     );
-
-    if (isModelInstalled && isTokenizerInstalled) {
-      edgeAiLog(
-        'ℹ️  STT model already installed: $modelFilename + $tokenizerFilename (skipping download)',
-      );
-    } else {
-      final handlerRegistry = registry.sourceHandlerRegistry;
-
-      if (!isModelInstalled) {
-        edgeAiLog('📥 Installing STT model...');
-        final modelHandler = handlerRegistry.getHandler(_modelSource!);
-        if (_onModelProgress != null) {
-          await for (final progress in modelHandler!.installWithProgress(
-            _modelSource!,
-            cancelToken: _cancelToken,
-            targetFilename: modelFilename,
-            modelType: repo.ModelType.stt,
-          )) {
-            _onModelProgress!(progress);
-          }
-        } else {
-          await modelHandler!.install(
-            _modelSource!,
-            cancelToken: _cancelToken,
-            targetFilename: modelFilename,
-            modelType: repo.ModelType.stt,
-          );
-        }
-        await deleteReplacedCopy(modelFilename, modelRecord, _modelSource!);
-      } else {
-        edgeAiLog('ℹ️  STT model file already installed: $modelFilename');
-      }
-
-      if (!isTokenizerInstalled) {
-        edgeAiLog('📥 Installing STT tokenizer...');
-        final tokenizerHandler = handlerRegistry.getHandler(
-          effectiveTokenizerSource,
-        );
-        if (_onTokenizerProgress != null) {
-          await for (final progress in tokenizerHandler!.installWithProgress(
-            effectiveTokenizerSource,
-            cancelToken: _cancelToken,
-            targetFilename: tokenizerFilename,
-            modelType: repo.ModelType.stt,
-          )) {
-            _onTokenizerProgress!(progress);
-          }
-        } else {
-          await tokenizerHandler!.install(
-            effectiveTokenizerSource,
-            cancelToken: _cancelToken,
-            targetFilename: tokenizerFilename,
-            modelType: repo.ModelType.stt,
-          );
-        }
-        await deleteReplacedCopy(
-          tokenizerFilename,
-          tokenizerRecord,
-          effectiveTokenizerSource,
-        );
-      } else {
-        edgeAiLog(
-          'ℹ️  STT tokenizer file already installed: $tokenizerFilename',
-        );
-      }
-    }
 
     // AUTO-SET as active STT model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     await activateInstalledModel(manager, spec);
+    await release.run(manager, spec);
 
     edgeAiLog('✅ STT model installed and set as active: ${spec.name}');
 

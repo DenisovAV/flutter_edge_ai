@@ -155,6 +155,14 @@ class PreferencesKeys {
   static const String activeTtsIdentity = 'active_tts_identity';
 
   // ============================================================================
+  // Install
+  // ============================================================================
+
+  /// Core's copies an install replaced and has not deleted yet, as a JSON
+  /// list of `{name, path, size, modifiedMs}` (see install_rule.dart).
+  static const String pendingCopyReleases = 'pending_copy_releases';
+
+  // ============================================================================
   // Path mappings (dynamic keys with filename)
   // ============================================================================
 

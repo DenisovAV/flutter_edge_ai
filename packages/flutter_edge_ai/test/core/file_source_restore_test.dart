@@ -838,6 +838,13 @@ void main() {
       await installTask(download);
 
       expect(download.existsSync(), isTrue);
+      expect(
+        (await ServiceRegistry.instance.modelRepository.loadModel(
+          'picked-model.task',
+        ))?.source,
+        isA<NetworkSource>(),
+        reason: 'core\'s copy handed back stays core\'s',
+      );
     });
 
     test('at the same path, after the file is gone, says so', () async {

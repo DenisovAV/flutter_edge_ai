@@ -29,6 +29,9 @@ class MobileModelManager extends ModelFileManager
   Future<void> ensureInitialized() => initialize();
 
   Future<void> _doInit() async {
+    // Copies an earlier install replaced and could not delete yet; before any
+    // restore, so none of them is in use. Never throws.
+    await releasePendingCopies();
     try {
       await _restoreActiveInferenceModel();
       await _restoreActiveEmbeddingModel();
@@ -252,30 +255,10 @@ class MobileModelManager extends ModelFileManager
     if (record == null) return null;
     final fs = ServiceRegistry.instance.fileSystemService;
     final location = switch (record.source) {
-      FileSource(:final path) => await _whereAppFileIsNow(path),
+      FileSource(:final path) => await appFileLocationNow(path),
       _ => await fs.getReadTargetPath(filename),
     };
     return await fs.fileExists(location) ? location : null;
-  }
-
-  /// Where a file the app recorded with `fromFile` is in this run: on iOS a
-  /// path inside the app's container is moved into the current container,
-  /// which an update or a restore from a backup can relocate.
-  static Future<String> _whereAppFileIsNow(String recordedPath) async {
-    if (!Platform.isIOS) return recordedPath;
-    final container = path.dirname(
-      (await getApplicationDocumentsDirectory()).path,
-    );
-    final now = rebaseIntoAppContainer(recordedPath, container);
-    // `/private/var/…` from a file picker is this container, not a move.
-    if (now != recordedPath &&
-        !recordedPath.contains(path.basename(container))) {
-      edgeAiLog(
-        '[ModelManager] $recordedPath was recorded in an earlier app '
-        'container; using $now',
-      );
-    }
-    return now;
   }
 
   /// Restores a DIRECTORY (ORT-GenAI) active model from the repository records
@@ -681,7 +664,7 @@ class MobileModelManager extends ModelFileManager
         // No record, not installed — whatever is left at its path.
         p = switch ((await repository.loadModel(namespacedFn))?.source) {
           null => null,
-          FileSource(:final path) => await _whereAppFileIsNow(path),
+          FileSource(:final path) => await appFileLocationNow(path),
           BundledSource(:final resourceName) => await fs.getBundledResourcePath(
             resourceName,
           ),
@@ -716,15 +699,17 @@ class MobileModelManager extends ModelFileManager
     edgeAiLog('[ModelManager] restored active TTS model: $name');
   }
 
-  /// Internal method for ModelSpec-based operations
-  Future<void> _ensureModelReadySpec(ModelSpec spec) async {
+  /// Internal method for ModelSpec-based operations. Returns what releases
+  /// the copies the install replaced; run it once [spec] is active.
+  Future<CopyRelease> _ensureModelReadySpec(ModelSpec spec) async {
     await _ensureInitialized();
 
     edgeAiLog('UnifiedModelManager: Ensuring model ready - ${spec.name}');
 
     try {
-      await _ensureModelReady(spec);
+      final release = await _ensureModelReady(spec);
       edgeAiLog('UnifiedModelManager: Model ${spec.name} is ready');
+      return release;
     } catch (e) {
       edgeAiLog(
         'UnifiedModelManager: Failed to ensure model ready - ${spec.name}: $e',
@@ -733,88 +718,19 @@ class MobileModelManager extends ModelFileManager
     }
   }
 
-  /// Ensures a model is ready, applying replace policy
-  /// Delegates to Modern API handlers via ServiceRegistry
-  Future<void> _ensureModelReady(ModelSpec spec) async {
+  /// Installs [spec]'s files by the rule every installer follows (see
+  /// install_rule.dart), applying the replace policy first when anything is
+  /// to be installed.
+  Future<CopyRelease> _ensureModelReady(ModelSpec spec) async {
     edgeAiLog('🔍 Ensuring model ready: ${spec.name}');
-    edgeAiLog('🔍 Model source type: ${spec.files.first.source.runtimeType}');
-
-    await _registerFilesPickedAnew(spec);
-
-    // Check if already installed
-    final installed = await _isModelInstalled(spec);
-    edgeAiLog('🔍 isModelInstalled returned: $installed');
-
-    if (installed) {
-      edgeAiLog('✅ Model ${spec.name} already ready (skipping installation)');
-      return;
+    var steps = await planInstall(spec.files);
+    if (spec.replacePolicy == ModelReplacePolicy.replace &&
+        steps.any((step) => step.installs)) {
+      await _handleModelSwitching(spec);
+      // The switch uninstalls every model of the type, this one's files too.
+      steps = await planInstall(spec.files);
     }
-
-    edgeAiLog('📥 Model not installed, proceeding with installation...');
-
-    // Handle model switching with replace policy
-    await _handleModelSwitching(spec);
-
-    // Route to ServiceRegistry handlers
-    await _routeModelBySource(spec);
-  }
-
-  /// A file the app picks with `fromFile` from a new path, under a name
-  /// already installed, is registered from that path — as the installers do
-  /// (see [isInstalledFrom]) — so that a restart restores the file the app
-  /// picked last. Nothing is downloaded; any other file is left as it is.
-  Future<void> _registerFilesPickedAnew(ModelSpec spec) async {
-    final repository = ServiceRegistry.instance.modelRepository;
-    for (final file in spec.files) {
-      final source = file.source;
-      if (source is! FileSource) continue;
-      final record = await repository.loadModel(file.filename);
-      if (record == null || await isInstalledFrom(record, source)) continue;
-      await ServiceRegistry.instance.sourceHandlerRegistry
-          .getHandler(source)!
-          .install(
-            source,
-            targetFilename: file.filename,
-            modelType: _toRepoType(spec.type),
-          );
-      await deleteReplacedCopy(file.filename, record, source);
-    }
-  }
-
-  /// Routes model handling to Modern API handlers via ServiceRegistry
-  Future<void> _routeModelBySource(ModelSpec spec) async {
-    // Install ALL files from spec (important for multi-file models like embedding)
-    final registry = ServiceRegistry.instance;
-    final handlerRegistry = registry.sourceHandlerRegistry;
-
-    for (final file in spec.files) {
-      edgeAiLog(
-        '🔀 Routing file: ${file.filename}, source type: ${file.source.runtimeType}',
-      );
-
-      try {
-        final handler = handlerRegistry.getHandler(file.source);
-
-        if (handler == null) {
-          throw ModelStorageException(
-            'No handler registered for source type: ${file.source.runtimeType}',
-            null,
-            '_routeModelBySource',
-          );
-        }
-
-        await handler.install(file.source, modelType: _toRepoType(spec.type));
-        edgeAiLog(
-          '✅ File installed: ${file.filename} via Modern handler: ${file.source.runtimeType}',
-        );
-      } catch (e) {
-        throw ModelStorageException(
-          'Failed to install file ${file.filename} via Modern handler',
-          e,
-          '_routeModelBySource',
-        );
-      }
-    }
+    return installPlanned(steps, modelType: _toRepoType(spec.type));
   }
 
   /// Handles model switching according to replace policy
@@ -926,10 +842,11 @@ class MobileModelManager extends ModelFileManager
       await _activateModel(spec);
       return;
     }
-    await _ensureModelReadySpec(spec);
+    final release = await _ensureModelReadySpec(spec);
 
     // Set as active model (automatically routes by type)
     await _activateModel(spec);
+    await release.run(this, spec);
   }
 
   /// Legacy API: Ensures a model is ready for use
@@ -941,9 +858,10 @@ class MobileModelManager extends ModelFileManager
       name: filename,
       modelUrl: url,
     );
-    await _ensureModelReadySpec(spec);
+    final release = await _ensureModelReadySpec(spec);
     // Set as active inference model after ensuring it's ready
     await _activateModel(spec);
+    await release.run(this, spec);
   }
 
   /// Downloads a model with progress tracking
@@ -1528,8 +1446,9 @@ class MobileModelManager extends ModelFileManager
       loraUrl: loraPath != null ? 'file://$loraPath' : null,
     );
 
-    await _ensureModelReadySpec(spec);
+    final release = await _ensureModelReadySpec(spec);
     await _activateModel(spec);
+    await release.run(this, spec);
   }
 
   @override
@@ -1761,8 +1680,9 @@ class MobileModelManager extends ModelFileManager
       replacePolicy: current.replacePolicy,
     );
 
-    await _ensureModelReadySpec(updatedSpec);
+    final release = await _ensureModelReadySpec(updatedSpec);
     await _activateModel(updatedSpec);
+    await release.run(this, updatedSpec);
   }
 
   @override
@@ -1782,8 +1702,9 @@ class MobileModelManager extends ModelFileManager
       replacePolicy: current.replacePolicy,
     );
 
-    await _ensureModelReadySpec(updatedSpec);
+    final release = await _ensureModelReadySpec(updatedSpec);
     await _activateModel(updatedSpec);
+    await release.run(this, updatedSpec);
   }
 
   // === Legacy Model Management Implementation ===

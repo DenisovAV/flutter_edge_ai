@@ -54,7 +54,13 @@ abstract class ModelFileManager {
   /// Returns number of deleted files
   Future<int> cleanupStorage();
 
-  /// Modern API: Ensures a model spec is ready for use
+  /// Modern API: Ensures a model spec is ready for use, and makes it active.
+  ///
+  /// Each file is installed unless it is installed from the same source
+  /// already, as the installers do: a file picked from another path, or a
+  /// download from another URL, is installed again, and core's earlier copy
+  /// is deleted once [spec] is active — never a file the app installed with
+  /// `fromFile`.
   Future<void> ensureModelReadyFromSpec(ModelSpec spec);
 
   /// Legacy API: Ensures a model is ready for use, handling all necessary operations

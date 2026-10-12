@@ -15,8 +15,10 @@ Duration: 3
 An assistant that runs on the device and does things instead of only talking
 about them. It reads the time from the device clock, opens your calendar with
 an event filled in, drafts an email, splits a restaurant bill exactly and
-draws a QR code. The model is Gemma 4 E2B, it runs locally, and nothing is
-sent to a server.
+draws a QR code. The model is Gemma 4 E2B and it runs locally: no server sees
+your requests or writes the answers. The model is downloaded once, and a skill
+that hands off to another app — the browser, on desktop, for a calendar
+event — passes it what you asked for.
 
 The assistant is an **agent**: a model in a loop that can use **skills**. A
 skill is a folder with a `SKILL.md` — a name, a one-line description and

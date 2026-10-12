@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/core/domain/model_source.dart';
+import 'package:flutter_edge_ai/core/domain/platform_types.dart';
 import 'package:flutter_edge_ai/core/lifecycle/inference_model_cache.dart';
+import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
 import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
     show InferenceModelSpec;
@@ -32,7 +34,6 @@ void main() {
   }) => (
     identity: _identity(name),
     params: ActiveModelParams(maxTokens: maxTokens),
-    label: name,
     build:
         build ??
         () async {
@@ -99,22 +100,224 @@ void main() {
     await second;
     expect(built, ['a/1024', 'b/2048']);
   });
+
+  test('two callers asking for the same model share one build', () async {
+    final cache = InferenceModelCache();
+    final first = cache.obtain(() => request('a'));
+    final second = cache.obtain(() => request('a'));
+    expect(await second, same(await first));
+    expect(built, ['a/1024']);
+  });
+
+  test('a caller asking for other knobs waits for the build in flight, then '
+      'replaces it', () async {
+    final cache = InferenceModelCache();
+    final gate = Completer<void>();
+    final firstBuild = cache.obtain(
+      () => request(
+        'a',
+        build: () async {
+          await gate.future;
+          built.add('a/1024');
+          return _Model();
+        },
+      ),
+    );
+    final secondBuild = cache.obtain(() => request('a', maxTokens: 2048));
+    await pumpEventQueue();
+    expect(built, isEmpty);
+
+    gate.complete();
+    final first = await firstBuild;
+    final second = await secondBuild;
+    // The first caller gets the model it asked for, and the second closes it:
+    // the cache holds one model.
+    expect(built, ['a/1024', 'a/2048']);
+    expect(first.isClosed, isTrue);
+    expect(cache.model, same(second));
+  });
+
+  test('a failed build in flight fails its callers, and a caller with other '
+      'knobs builds its own', () async {
+    final cache = InferenceModelCache();
+    final gate = Completer<void>();
+    final failing = cache.obtain(
+      () => request(
+        'a',
+        build: () async {
+          await gate.future;
+          throw StateError('no engine');
+        },
+      ),
+    );
+    final sharing = cache.obtain(() => request('a'));
+    final other = cache.obtain(() => request('a', maxTokens: 2048));
+    await pumpEventQueue();
+
+    gate.complete();
+    await expectLater(failing, throwsStateError);
+    await expectLater(sharing, throwsStateError);
+    expect(await other, same(cache.model));
+    expect(built, ['a/2048']);
+  });
+
+  test('a model closed by its owner is built again once its close has '
+      'finished', () async {
+    final cache = InferenceModelCache();
+    final teardown = Completer<void>();
+    final first = await cache.obtain(
+      () => request(
+        'a',
+        build: () async {
+          built.add('a/1024');
+          return _Model(onClose: () => teardown.future);
+        },
+      ),
+    );
+    // The app closes it without awaiting; its listener fires only at the end.
+    unawaited(first.close());
+
+    final next = cache.obtain(() => request('a'));
+    await pumpEventQueue();
+    expect(built, ['a/1024'], reason: 'no build while the model is closing');
+
+    teardown.complete();
+    expect(await next, isNot(same(first)));
+    expect(built, ['a/1024', 'a/1024']);
+  });
+
+  test('a close that outlives its deadline fails the request with the name '
+      'of the model still closing, and builds nothing', () async {
+    final cache = InferenceModelCache(
+      ModelCloseGate(const Duration(milliseconds: 50)),
+    );
+    final teardown = Completer<void>();
+    await cache.obtain(
+      () => request(
+        'a',
+        build: () async {
+          built.add('a/1024');
+          return _Model(onClose: () => teardown.future);
+        },
+      ),
+    );
+
+    await expectLater(
+      cache.obtain(() => request('b')),
+      throwsA(
+        isA<TimeoutException>().having(
+          (e) => e.message,
+          'message',
+          contains('(a)'),
+        ),
+      ),
+    );
+    expect(built, ['a/1024']);
+    expect(cache.model, isNull);
+    teardown.complete();
+  });
+
+  test('a caller that waited for a close resolves its request again', () async {
+    final cache = InferenceModelCache();
+    final teardown = Completer<void>();
+    await cache.obtain(
+      () => request(
+        'a',
+        build: () async {
+          built.add('a/1024');
+          return _Model(onClose: () => teardown.future);
+        },
+      ),
+    );
+
+    // Another model is active: the cache closes 'a' first. While it waits for
+    // that close, a third model becomes active.
+    var active = 'b';
+    final next = cache.obtain(() => request(active));
+    await pumpEventQueue();
+    active = 'c';
+
+    teardown.complete();
+    await next;
+    expect(built, ['a/1024', 'c/1024']);
+  });
+
+  test('every knob the cache compares reaches the engine', () {
+    // Each set to something other than its default, so a knob left out of
+    // runtimeConfigFor reads back as the default and fails here.
+    const params = ActiveModelParams(
+      maxTokens: 4096,
+      preferredBackend: PreferredBackend.gpu,
+      preferredVisionBackend: PreferredBackend.cpu,
+      preferredAudioBackend: PreferredBackend.npu,
+      supportImage: true,
+      supportAudio: true,
+      maxNumImages: 3,
+      enableSpeculativeDecoding: true,
+      activationDataType: ActivationDataType.float32,
+      maxConcurrentSessions: 2,
+      loraRanks: [4, 8],
+    );
+    final config = runtimeConfigFor(params, modelPath: '/m.litertlm');
+    expect(config.modelPath, '/m.litertlm');
+    expect(config.maxTokens, 4096);
+    expect(config.preferredBackend, PreferredBackend.gpu);
+    expect(config.preferredVisionBackend, PreferredBackend.cpu);
+    expect(config.preferredAudioBackend, PreferredBackend.npu);
+    expect(config.supportImage, isTrue);
+    expect(config.supportAudio, isTrue);
+    expect(config.maxNumImages, 3);
+    expect(config.enableSpeculativeDecoding, isTrue);
+    expect(config.activationDataType, ActivationDataType.float32);
+    expect(config.maxConcurrentSessions, 2);
+    expect(config.loraRanks, [4, 8]);
+  });
+
+  test('a model the cache cannot watch is closed, not leaked', () async {
+    final cache = InferenceModelCache();
+    final model = _Model(listenerError: UnsupportedError('no listeners'));
+    await expectLater(
+      cache.obtain(() => request('a', build: () async => model)),
+      throwsUnsupportedError,
+    );
+    expect(model.closes, 1);
+    expect(cache.model, isNull);
+
+    await cache.obtain(() => request('a'));
+    expect(built, ['a/1024']);
+  });
 }
 
 class _Model implements InferenceModel {
+  _Model({this.onClose, this.listenerError});
+
+  /// The teardown [close] waits for, when the test holds one open.
+  final Future<void> Function()? onClose;
+
+  /// Thrown by [addCloseListener], as a third-party model might.
+  final Object? listenerError;
+
   final _listeners = <void Function()>[];
   bool _closed = false;
+  int closes = 0;
 
   @override
   bool get isClosed => _closed;
 
   @override
-  void addCloseListener(void Function() listener) => _listeners.add(listener);
+  void addCloseListener(void Function() listener) {
+    if (listenerError case final error?) throw error;
+    _listeners.add(listener);
+  }
 
   /// Closes without firing the listeners, as an engine whose listener fires
   /// late would.
   @override
-  Future<void> close() async => _closed = true;
+  Future<void> close() async {
+    _closed = true;
+    closes++;
+    await onClose?.call();
+  }
 
   void fireLate() {
     for (final listener in [..._listeners]) {

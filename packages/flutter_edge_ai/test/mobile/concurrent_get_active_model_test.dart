@@ -53,11 +53,11 @@ void main() {
   });
 
   tearDown(() async {
-    // FlutterEdgeAiMobile is a singleton: its _initCompleter / _initializedModel
-    // / _inFlightRequest outlive a test, and FlutterEdgeAi.reset() deliberately
-    // does NOT touch them (it resets the DI registry, and documents that the
-    // active inference model survives). Closing the cached model is what fires
-    // the close listener that clears them. Without this, the first test's
+    // FlutterEdgeAiMobile is a singleton: its InferenceModelCache outlives a
+    // test, and FlutterEdgeAi.reset() deliberately does NOT touch it (it
+    // resets the DI registry, and documents that the active inference model
+    // survives). Closing the cached model is what fires the close listener
+    // that clears it. Without this, the first test's
     // leftover in-flight build reappeared inside the second one, which then
     // reported a config difference no test in it had asked for.
     await FlutterEdgeAiPlugin.instance.initializedModel?.close();

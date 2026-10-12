@@ -132,12 +132,10 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
         );
       }
 
-      // Hoisted out of the reuse check below: the in-flight race also
-      // needs it, and that runs when the reuse check does not.
       final requestedSpec = activeModel as InferenceModelSpec;
 
-      // Captured once: compared against the cached model below, and recorded
-      // as the new baseline after a successful build.
+      // What the cache compares, and what the engine gets: the config is
+      // built from this object (`runtimeConfigFor`), so the two cannot drift.
       final requestedParams = ActiveModelParams(
         maxTokens: maxTokens,
         preferredBackend: preferredBackend,
@@ -159,7 +157,6 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
           fileType: requestedSpec.fileType,
         ),
         params: requestedParams,
-        label: requestedSpec.name,
         build: () async {
           // The pre-build checks THROW rather than settle anything themselves:
           // the cache's one catch resets its state for every failure (#170),
@@ -208,19 +205,9 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
           // (track + reset on close); the selected engine builds the model.
 
           final spec = requestedSpec;
-          final config = RuntimeConfig(
-            maxTokens: maxTokens,
+          final config = runtimeConfigFor(
+            requestedParams,
             modelPath: modelPath,
-            preferredBackend: preferredBackend,
-            preferredVisionBackend: preferredVisionBackend,
-            preferredAudioBackend: preferredAudioBackend,
-            supportImage: supportImage,
-            supportAudio: supportAudio,
-            maxNumImages: maxNumImages,
-            enableSpeculativeDecoding: enableSpeculativeDecoding,
-            activationDataType: activationDataType,
-            maxConcurrentSessions: maxConcurrentSessions,
-            loraRanks: loraRanks,
           );
           final engine = EngineRegistry.instance.findFor(spec);
           if (engine == null) {

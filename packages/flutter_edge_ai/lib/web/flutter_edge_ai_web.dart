@@ -43,6 +43,10 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
 
   SpeechRecognizer? _initializedSttModel;
 
+  /// The cached inference model and the rules for reusing it, shared with the
+  /// mobile and desktop shells.
+  final InferenceModelCache _modelCache = InferenceModelCache();
+
   /// The cached embedder and the rule for reusing it, shared with the mobile
   /// and desktop shells.
   ///
@@ -133,7 +137,6 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       return (
         identity: (spec: active, modelType: modelType, fileType: fileType),
         params: requestedParams,
-        label: requestedSpec.name,
         build: () async {
           // Engine selection routes through [EngineRegistry] (probe-chain), as on
           // mobile and desktop: .task → MediaPipe, .litertlm → LiteRT-LM, from
@@ -142,20 +145,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
           // WebModelSourceResolver. Web has no resolved file path, so the
           // RuntimeConfig's modelPath is empty.
           final spec = requestedSpec;
-          final config = RuntimeConfig(
-            maxTokens: maxTokens,
-            modelPath: '',
-            preferredBackend: preferredBackend,
-            preferredVisionBackend: preferredVisionBackend,
-            preferredAudioBackend: preferredAudioBackend,
-            supportImage: supportImage,
-            supportAudio: supportAudio,
-            maxNumImages: maxNumImages,
-            enableSpeculativeDecoding: enableSpeculativeDecoding,
-            activationDataType: activationDataType,
-            maxConcurrentSessions: maxConcurrentSessions,
-            loraRanks: loraRanks,
-          );
+          final config = runtimeConfigFor(requestedParams, modelPath: '');
           final engine = EngineRegistry.instance.findFor(spec);
           if (engine == null) {
             throw StateError(
@@ -176,10 +166,6 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       );
     });
   }
-
-  /// The cached inference model and the rules for reusing it, shared with the
-  /// mobile and desktop shells.
-  final InferenceModelCache _modelCache = InferenceModelCache();
 
   // === EmbeddingModel Methods - Web Implementation ===
 

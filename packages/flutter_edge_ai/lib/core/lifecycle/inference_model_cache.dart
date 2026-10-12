@@ -6,7 +6,7 @@ import 'package:flutter_edge_ai/core/model.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
     show InferenceModelSpec;
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
-    show ActiveModelParams;
+    show ActiveModelParams, RuntimeConfig;
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
     show InferenceModel;
@@ -23,14 +23,34 @@ typedef InferenceModelIdentity = ({
 });
 
 /// One `getActiveModel` request, resolved by the shell: which model, with
-/// which knobs, how to build it, and the name logs and a close-wait timeout
-/// use. Resolving it may throw (`NoActiveModelError`).
+/// which knobs, and how to build it. Resolving it may throw
+/// (`NoActiveModelError`).
 typedef InferenceModelRequest = ({
   InferenceModelIdentity identity,
   ActiveModelParams params,
   Future<InferenceModel> Function() build,
-  String label,
 });
+
+/// The engine config for a model built with [params] from [modelPath]: every
+/// knob the cache compares, listed once, so what the cache compares is what
+/// the engine gets. Desktop once compared `loraRanks` and did not forward it.
+RuntimeConfig runtimeConfigFor(
+  ActiveModelParams params, {
+  required String modelPath,
+}) => RuntimeConfig(
+  maxTokens: params.maxTokens,
+  modelPath: modelPath,
+  preferredBackend: params.preferredBackend,
+  preferredVisionBackend: params.preferredVisionBackend,
+  preferredAudioBackend: params.preferredAudioBackend,
+  supportImage: params.supportImage,
+  supportAudio: params.supportAudio,
+  maxNumImages: params.maxNumImages,
+  enableSpeculativeDecoding: params.enableSpeculativeDecoding,
+  activationDataType: params.activationDataType,
+  maxConcurrentSessions: params.maxConcurrentSessions,
+  loraRanks: params.loraRanks,
+);
 
 /// The shells' cached inference model, and the rules for reusing it — shared
 /// by the mobile, desktop and web shells, as `EmbedderCache` is for the
@@ -48,168 +68,182 @@ class InferenceModelCache {
 
   final ModelCloseGate _closeGate;
 
-  /// The build of [_model] — pending while it is in flight, completed once it
-  /// is the cached model. Kept on success on purpose: it IS the cache.
-  Completer<InferenceModel>? _completer;
+  /// The cached model and what it was built for. One field, so "a model with
+  /// no record of what it was built for" is not a state this class can be in.
+  ({
+    InferenceModel model,
+    InferenceModelIdentity identity,
+    ActiveModelParams params,
+  })?
+  _cached;
 
-  InferenceModel? _model;
-
-  /// What [_model] was built for, and with which knobs.
-  InferenceModelIdentity? _identity;
-  ActiveModelParams? _params;
-
-  /// What the IN-FLIGHT build is building, while [_completer] is pending.
-  /// Separate from [_identity]/[_params], which describe the model that
-  /// already exists: "cached model" vs "model being built" is exactly the
-  /// distinction the race in [obtain] turns on. Set where [_completer] is
-  /// created, cleared everywhere it is cleared.
-  ({InferenceModelIdentity identity, ActiveModelParams params})? _inFlight;
+  /// The build in flight and what it is building. Never set together with
+  /// [_cached]: a build starts only once nothing is cached, so the cache holds
+  /// one model.
+  ({
+    Completer<InferenceModel> completer,
+    InferenceModelIdentity identity,
+    ActiveModelParams params,
+  })?
+  _building;
 
   /// The cached model, or null.
-  InferenceModel? get model => _model;
+  InferenceModel? get model => _cached?.model;
 
   /// The model for the request [resolve] describes: the cached one when it
   /// fits, otherwise the one its `build` returns.
   ///
-  /// [resolve] runs again whenever the cache has waited for a build in flight
-  /// and starts over, so a model installed meanwhile is the one built.
+  /// [resolve] runs again after every wait — for a close, or for a build in
+  /// flight — so a model activated meanwhile is the one built.
+  ///
+  /// A caller that gets a model has no claim on it: a later caller asking
+  /// for other knobs closes it and builds its own, because the cache holds
+  /// one model. Not reentrant: a `build` that calls back into [obtain] waits
+  /// for its own build forever.
   Future<InferenceModel> obtain(
     InferenceModelRequest Function() resolve,
   ) async {
-    final (:identity, :params, :build, :label) = resolve();
+    while (true) {
+      final (:identity, :params, :build) = resolve();
 
-    // No model is built while another is still closing: two native models
-    // must not be resident at once.
-    if (_closeGate.isClosing) await _closeGate.wait();
+      // No model is built while another is still closing: two native models
+      // must not be resident at once.
+      if (_closeGate.isClosing) {
+        await _closeGate.wait();
+        continue;
+      }
 
-    // A cached model whose close has started is going away, and its close
-    // listener fires only once the teardown ends. Forget it, wait for that
-    // teardown, then build anew; the listener is identity-guarded and will
-    // not touch the new model.
-    if (_model case final cached? when cached.isClosed) {
-      _reset();
-      await _closeGate.closeAndWait(cached, label: label);
+      if (_cached case final cached?) {
+        // A model whose close has started is going away, even before its
+        // close listener fires — that happens only once the teardown ends.
+        final reason = cached.model.isClosed
+            ? 'closed by its owner'
+            : _whyRebuild(cached.identity, cached.params, identity, params);
+        if (reason == null) {
+          edgeAiLog(
+            'ℹ️  Reusing existing model instance for ${_name(identity)}',
+          );
+          return cached.model;
+        }
+        edgeAiLog('⚠️  Rebuilding the model: $reason');
+        // Forgotten BEFORE the close is awaited: a caller arriving during the
+        // close must not get the closing model, and it waits at the gate.
+        // The close listener is identity-guarded and will not touch whatever
+        // is cached next.
+        _cached = null;
+        await _closeGate.closeAndWait(
+          cached.model,
+          label: _name(cached.identity),
+        );
+        continue;
+      }
+
+      // A build already in flight is shared only with a caller asking for the
+      // same model and knobs. Anyone else waits for it and builds their own:
+      // handing them the in-flight build gave a GPU request the CPU model.
+      if (_building case final building?) {
+        final reason = _whyRebuild(
+          building.identity,
+          building.params,
+          identity,
+          params,
+        );
+        if (reason == null) return building.completer.future;
+        edgeAiLog('⏳ Waiting for the build in flight ($reason)');
+        try {
+          await building.completer.future;
+        } catch (e) {
+          // Its own callers get that error; this caller builds for itself.
+          edgeAiLog(
+            'The build in flight failed ($e); building for this request',
+          );
+        }
+        continue;
+      }
+
+      return _build(identity, params, build);
     }
+  }
 
-    if (_completer != null && _model != null && _identity != null) {
-      final modelChange = _describeChange(_identity!, identity);
-      // A MISSING baseline means rebuild, not reuse: "no record of what this
-      // model was built with" must not read as "built with exactly this".
-      // Guessing "rebuild" reloads weights that were right; guessing "reuse"
-      // hands back a model configured for something else and says nothing.
-      final baseline = _params;
-      final changedParam = baseline == null
-          ? 'unknown — no recorded config for the cached model'
-          : baseline.firstDifference(params);
-
-      if (modelChange == null && changedParam == null) {
-        edgeAiLog('ℹ️  Reusing existing model instance for $label');
-        return _completer!.future;
-      }
-      edgeAiLog(
-        modelChange != null
-            ? '⚠️  Active model changed ($modelChange) — rebuilding the model'
-            : '⚠️  Runtime config changed ($changedParam) for $label — '
-                  'rebuilding the model',
-      );
-      // State cleared BEFORE the close is awaited: a caller arriving during
-      // the close must not pass the reuse check and get the closing model,
-      // and two callers with different params must not both install builds.
-      // The close goes through the gate, so a caller arriving meanwhile waits
-      // for it; a failed close is logged, not passed on.
-      final closing = _model;
-      _reset();
-      if (closing != null) {
-        await _closeGate.closeAndWait(closing, label: label);
-      }
-    }
-
-    // A build already in flight is shared only with a caller asking for the
-    // same model and knobs. Anyone else waits for it and builds their own:
-    // handing them the in-flight build gave a GPU request the CPU model.
-    if (_completer case final completer?) {
-      final pending = _inFlight;
-      final modelChange = pending == null
-          ? null
-          : _describeChange(pending.identity, identity);
-      final changedParam = pending?.params.firstDifference(params);
-      if (pending != null && modelChange == null && changedParam == null) {
-        return completer.future;
-      }
-      edgeAiLog(
-        '⏳ A model build is already in flight with a different request '
-        '(${modelChange ?? 'config $changedParam'}) — waiting for it, then '
-        'rebuilding',
-      );
-      var inFlightFailed = false;
-      try {
-        await completer.future;
-      } catch (_) {
-        // Its own caller gets that error; this caller builds fresh.
-        inFlightFailed = true;
-        edgeAiLog('In-flight build failed; building fresh for this request');
-      }
-      if (inFlightFailed && identical(_completer, completer)) {
-        // Do not recurse into the same dead completer forever.
-        _completer = null;
-        _inFlight = null;
-      }
-      // Re-enter rather than tear down mid-build: the first caller gets the
-      // model it asked for; the reuse check then sees other params and does
-      // the ordinary close-and-rebuild.
-      return obtain(resolve);
-    }
-
-    final completer = _completer = Completer<InferenceModel>();
-    _inFlight = (identity: identity, params: params);
+  Future<InferenceModel> _build(
+    InferenceModelIdentity identity,
+    ActiveModelParams params,
+    Future<InferenceModel> Function() build,
+  ) async {
+    final completer = Completer<InferenceModel>();
+    _building = (completer: completer, identity: identity, params: params);
+    final InferenceModel model;
     try {
-      final model = await build();
-      _model = model;
-      // Identity-guarded: a late close of a superseded model must not clear a
-      // newer, live one, whose next caller would then reload its weights.
-      model.addCloseListener(() {
-        if (identical(_model, model)) _reset();
-      });
-      _identity = identity;
-      _params = params;
-      _inFlight = null;
-      completer.complete(model);
-      return model;
+      model = await build();
     } catch (e, st) {
-      // Reset so a later call can build; the completer's future, not a
-      // rethrow, so one future is in flight and none is orphaned (#394).
-      _reset();
-      completer.completeError(e, st);
-      return completer.future;
+      return _fail(completer, e, st);
     }
+    try {
+      // Identity-guarded: a late close of a superseded model must not clear
+      // a newer, live one, whose next caller would then reload its weights.
+      model.addCloseListener(() {
+        if (identical(_cached?.model, model)) _cached = null;
+      });
+    } catch (e, st) {
+      // A model the cache cannot watch is one it cannot hold: it would never
+      // learn the model went away. Close it rather than leave its weights
+      // resident with no owner, then fail the request with the reason.
+      try {
+        await _closeGate.closeAndWait(model, label: _name(identity));
+      } on TimeoutException {
+        // The close keeps running and the gate holds the next caller until
+        // it ends; this caller's error is the listener's, not the wait's.
+      }
+      return _fail(completer, e, st);
+    }
+    _cached = (model: model, identity: identity, params: params);
+    _building = null;
+    completer.complete(model);
+    return model;
   }
 
-  void _reset() {
-    _completer = null;
-    _inFlight = null;
-    _model = null;
-    _identity = null;
-    _params = null;
-  }
-
-  /// How [to] differs from [from] as a model to build, or null if it does
-  /// not.
-  static String? _describeChange(
-    InferenceModelIdentity from,
-    InferenceModelIdentity to,
+  /// Ends [completer]'s build with [error] and frees the slot, so a later
+  /// call builds again (#170). Returns the completer's future rather than
+  /// rethrowing, so one future carries the error and none is orphaned (#394).
+  Future<InferenceModel> _fail(
+    Completer<InferenceModel> completer,
+    Object error,
+    StackTrace stackTrace,
   ) {
-    if (from.spec.name != to.spec.name) {
-      return '${from.spec.name} → ${to.spec.name}';
+    _building = null;
+    completer.completeError(error, stackTrace);
+    return completer.future;
+  }
+
+  static String _name(InferenceModelIdentity identity) => identity.spec.name;
+
+  /// Why a model built for [fromIdentity] and [fromParams] does not serve
+  /// [identity] and [params], or null when it does.
+  static String? _whyRebuild(
+    InferenceModelIdentity fromIdentity,
+    ActiveModelParams fromParams,
+    InferenceModelIdentity identity,
+    ActiveModelParams params,
+  ) {
+    final from = fromIdentity.spec;
+    final to = identity.spec;
+    if (from.name != to.name) return 'active model ${from.name} → ${to.name}';
+    if (fromIdentity.modelType != identity.modelType) {
+      return 'modelType ${fromIdentity.modelType.name} → '
+          '${identity.modelType.name}';
     }
-    if (from.spec != to.spec) {
-      return '${to.spec.name} re-installed with another source or LoRA';
+    if (fromIdentity.fileType != identity.fileType) {
+      return 'fileType ${fromIdentity.fileType.name} → '
+          '${identity.fileType.name}';
     }
-    if (from.modelType != to.modelType) {
-      return 'modelType ${from.modelType.name} → ${to.modelType.name}';
+    // Spec equality covers the rest: the source, the LoRA, the install
+    // options. On mobile and desktop it also covers modelType and fileType,
+    // which is why those are named first.
+    if (from != to) {
+      return '${to.name} re-installed with another source, LoRA or options';
     }
-    if (from.fileType != to.fileType) {
-      return 'fileType ${from.fileType.name} → ${to.fileType.name}';
-    }
+    final changed = fromParams.firstDifference(params);
+    if (changed != null) return 'runtime config changed ($changed)';
     return null;
   }
 }

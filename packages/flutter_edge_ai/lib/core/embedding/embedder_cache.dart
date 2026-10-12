@@ -230,7 +230,7 @@ class EmbedderCache {
   /// Reported on its own terms, not as the new caller's failure. They asked for
   /// a different embedder; handing them the old one's teardown error would name
   /// neither model, and the rebuild they asked for would never happen. The
-  /// inference lane in the shells does the same (see `createModel`). Nothing
+  /// inference lane does the same (see `ModelCloseGate`). Nothing
   /// depends on this succeeding — the bookkeeping is already cleared.
   Future<void> _closeReportingFailure(
     EmbeddingModel model,

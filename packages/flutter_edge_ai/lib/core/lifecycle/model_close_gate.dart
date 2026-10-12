@@ -3,14 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../flutter_edge_ai_interface.dart';
-import '../utils/edge_ai_log.dart';
 
 /// Keeps the shells from building an inference model while the previous one
 /// is still closing.
 ///
 /// Two native models must not be resident at once, and an engine with one
 /// native slot (MediaPipe) would let the old close take the new model down
-/// with it. The shells' close listeners fire only once a teardown has ended,
+/// with it. The cache's close listener fires only once a teardown has ended,
 /// but a model can be closed by someone else — the app, often without
 /// awaiting — and a caller arriving meanwhile has to wait for that teardown,
 /// not race it.
@@ -33,20 +32,41 @@ class ModelCloseGate {
 
   /// Closes [model] and waits for its teardown — joining it if one is
   /// already running, since `close()` hands every caller the teardown in
-  /// progress. A close that fails is logged, not passed on: the caller asked
-  /// for a new model, and the old one's error names neither.
+  /// progress. [label] names [model]. A close that fails is reported, not
+  /// passed on: the caller asked for a new model, and the old one's error
+  /// names neither.
   Future<void> closeAndWait(InferenceModel model, {required String label}) {
     final pending = _PendingClose(label);
     pending.done = Future.sync(model.close).then<void>(
       (_) {},
-      onError: (Object e) {
-        edgeAiLog('Closing the previous model ($label) failed: $e');
+      onError: (Object e, StackTrace st) {
+        // `print`, not `edgeAiLog`, as in `EmbedderCache`: edgeAiLog is
+        // silent in release, and release is where a model left resident gets
+        // debugged. It fires only in an abnormal state. Worded neutrally: the
+        // throw may come from the native teardown, or from a close listener
+        // the app registered, which leaves nothing behind.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai] WARNING: closing the previous model ($label) '
+          'threw. If the error is from its native teardown, its weights may '
+          'still be resident; if it is from a close listener, nothing was '
+          'left behind: $e\n$st',
+        );
       },
     );
     _pending = pending;
     unawaited(
       pending.done.whenComplete(() {
         if (identical(_pending, pending)) _pending = null;
+        if (pending.timedOutACaller) {
+          // The callers it held were told to retry; say when that works.
+          // ignore: avoid_print
+          print(
+            '[flutter_edge_ai] the previous model ($label) finished closing '
+            'after ${_seconds(pending.elapsed)}, past the ${_seconds(_limit)} '
+            'wait; models can be built again.',
+          );
+        }
       }),
     );
     return wait();
@@ -62,10 +82,10 @@ class ModelCloseGate {
       if (remaining <= Duration.zero) throw TimeoutException(null);
       await pending.done.timeout(remaining);
     } on TimeoutException {
+      pending.timedOutACaller = true;
       throw TimeoutException(
         'The previous model (${pending.label}) has not finished closing after '
-        '${(_limit.inMilliseconds / 1000).toStringAsFixed(1)} s, so no new '
-        'model is built: two native models '
+        '${_seconds(_limit)}, so no new model is built: two native models '
         'must not be resident at once. Its close keeps running, and a request '
         'made after it finishes will succeed.',
         _limit,
@@ -74,12 +94,19 @@ class ModelCloseGate {
   }
 }
 
+String _seconds(Duration d) =>
+    '${(d.inMilliseconds / 1000).toStringAsFixed(1)} s';
+
 class _PendingClose {
   _PendingClose(this.label);
 
   final String label;
   final Stopwatch _clock = Stopwatch()..start();
   late final Future<void> done;
+
+  /// Whether a caller gave up on this close, and so wants to hear when it
+  /// ends.
+  bool timedOutACaller = false;
 
   Duration get elapsed => _clock.elapsed;
 }

@@ -38,7 +38,7 @@ lib/core/
 ├─ services/         # core storage/download contracts
 ├─ infrastructure/   # core-owned service implementations
 ├─ handlers/         # Network/Asset/Bundled/File source installation
-├─ lifecycle/        # CloseNotifier ownership seam
+├─ lifecycle/        # CloseNotifier, the inference model cache and close gate
 ├─ model_management/ # persisted model specs and platform managers
 └─ parsing/           # function-call wire formats and response parsing
 ```

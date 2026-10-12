@@ -77,7 +77,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
   late final MobileModelManager _modelManager = MobileModelManager();
 
   /// The cached inference model and the rules for reusing it, shared with the
-  /// desktop and web shells.
+  /// mobile and web shells.
   final InferenceModelCache _modelCache = InferenceModelCache();
 
   // Embedding model: one shared cache instead of a completer, a model and a
@@ -142,12 +142,10 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
         );
       }
 
-      // Hoisted out of the reuse check below: the in-flight race also
-      // needs it, and that runs when the reuse check does not.
       final requestedSpec = activeModel as InferenceModelSpec;
 
-      // Captured once: compared against the cached model below, and recorded as
-      // the new baseline after a successful build.
+      // What the cache compares, and what the engine gets: the config is
+      // built from this object (`runtimeConfigFor`), so the two cannot drift.
       final requestedParams = ActiveModelParams(
         maxTokens: maxTokens,
         preferredBackend: preferredBackend,
@@ -169,7 +167,6 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
           fileType: requestedSpec.fileType,
         ),
         params: requestedParams,
-        label: requestedSpec.name,
         build: () async {
           final isBuiltIn = requestedSpec.fileType == ModelFileType.builtIn;
 
@@ -208,25 +205,9 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
           // below fires. Desktop is litertlm-only; a `.task` request would simply
           // find no matching engine.
           final spec = requestedSpec;
-          final config = RuntimeConfig(
-            maxTokens: maxTokens,
+          final config = runtimeConfigFor(
+            requestedParams,
             modelPath: modelPath,
-            preferredBackend: preferredBackend,
-            preferredVisionBackend: preferredVisionBackend,
-            preferredAudioBackend: preferredAudioBackend,
-            supportImage: supportImage,
-            supportAudio: supportAudio,
-            maxNumImages: maxNumImages,
-            enableSpeculativeDecoding: enableSpeculativeDecoding,
-            activationDataType: activationDataType,
-            maxConcurrentSessions: maxConcurrentSessions,
-            // Forwarded, not merely compared. ActiveModelParams treats loraRanks as
-            // a rebuild trigger and its dartdoc says the engine receives it — but
-            // desktop compared it and then dropped it here, so a changed rank tore
-            // down multi-gigabyte weights and handed the engine a byte-identical
-            // config. Comparing a value the engine never sees is its own kind of
-            // lie. Mobile and web already forwarded it.
-            loraRanks: loraRanks,
           );
           final engine = EngineRegistry.instance.findFor(spec);
           if (engine == null) {

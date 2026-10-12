@@ -16,14 +16,15 @@ An assistant that runs on the device and does things instead of only talking
 about them. It reads the time from the device clock, opens your calendar with
 an event filled in, drafts an email, splits a restaurant bill exactly and
 draws a QR code. The model is Gemma 4 E2B and it runs locally: no server sees
-your requests or writes the answers. The model is downloaded once, and a skill
-that hands off to another app — the browser, on desktop, for a calendar
-event — passes it what you asked for.
+your requests or writes the answers. Three things do reach the network: the
+model is downloaded once, a skill that hands off to another app passes it what
+you asked for — the browser, on desktop, for a calendar event — and the bundled
+QR skill loads its drawing library from a CDN.
 
 The assistant is an **agent**: a model in a loop that can use **skills**. A
 skill is a folder with a `SKILL.md` — a name, a one-line description and
 instructions — and, for some kinds, a little code. You will write two skills
-of your own and use four that `flutter_edge_ai_agent` bundles.
+of your own and use five that `flutter_edge_ai_agent` bundles.
 
 ### What you'll learn
 
@@ -39,15 +40,18 @@ of your own and use four that `flutter_edge_ai_agent` bundles.
 
 * Flutter 3.44 or newer
 * A device to run on, with about 3 GB free for the model:
-  * an Android phone with 6 GB of RAM or more, Android 11 (API 30) or newer
-  * an iPhone, a Mac with Apple Silicon, or a Windows PC
+  * an Android phone with 6 GB of RAM or more, Android 11 (API 30) or newer —
+    a phone, not an x86 emulator: the runtime ships for arm64 only
+  * an iPhone, with an Apple Developer team to sign it (Step 1)
+  * a Mac with Apple Silicon
+  * a Windows PC on x86_64, with the NuGet CLI (Step 2)
 * The [Function Calling codelab](/codelabs/function-calling-flutter-gemma)
   helps: an agent is a function-calling loop. It is not required.
 
 `flutter_edge_ai_agent` runs on Android, iOS, macOS and Windows. On Linux the
-text, intent and MCP skills work and JavaScript skills do not. It does not run
-on the web; the app in this codelab builds for the web and says so instead of
-starting an agent.
+text, intent and MCP skills work and JavaScript skills do not. It is not
+supported on the web, and the model this codelab downloads is a native one;
+the app builds for the web and says so instead of downloading it.
 
 ### Get the code
 
@@ -80,6 +84,17 @@ flutter run
 The first screen downloads Gemma 4 E2B, 2.59 GB, from Hugging Face. The
 repository is ungated, so no token is needed. It happens once: the next launch
 finds the file and goes straight to the chat.
+
+On an iPhone, open `ios/Runner.xcworkspace` in Xcode first. Under **Signing &
+Capabilities** pick your own team and change the bundle identifier: the one
+the app ships with, `dev.fluttergemma.agent`, can be registered to one team
+only. The app also carries `ios/Runner/Runner.entitlements`, which lifts the
+memory ceiling iOS puts on an app; 2.6 GB of weights do not fit under the
+default one.
+
+On Android the app needs Android 11 (API 30) or newer:
+`android/app/build.gradle.kts` sets `minSdk = 30`, because the LiteRT-LM
+runtime calls C library functions older versions of Android do not have.
 
 The chat is the plain one from the getting-started codelab. `lib/chat_page.dart`
 opens the model and a chat:
@@ -214,25 +229,37 @@ AGP 9 rejects, in `android/gradle.properties`:
 android.r8.proguardAndroidTxt.disallowed=false
 ```
 
+On Windows, that webview package downloads the WebView2 SDK at build time with
+the NuGet CLI, which Visual Studio does not put on the `PATH`. Install it
+(`winget install Microsoft.NuGet`) and open a new terminal, or the build stops
+with `Nuget is not installed!`.
+
 ### Load your skills and open the agent
 
 Create `lib/skills.dart`. The package loads the skills it bundles itself;
 skills your app ships are read with the same parser:
 
 ```dart
+import 'package:flutter/services.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
+
 const appSkillNames = ['packing-list'];
 
 Future<List<Skill>> loadAppSkills({AssetBundle? bundle}) async {
   final assets = bundle ?? rootBundle;
   final skills = <Skill>[];
   for (final name in appSkillNames) {
-    final skill = parseSkillMd(
-      await assets.loadString('assets/skills/$name/SKILL.md'),
-    );
+    final path = 'assets/skills/$name/SKILL.md';
+    final Skill skill;
+    try {
+      skill = parseSkillMd(await assets.loadString(path));
+    } catch (error) {
+      throw StateError('$path could not be read: $error');
+    }
     if (skill.name != name) {
       throw StateError(
-        'assets/skills/$name/SKILL.md is named "${skill.name}"; '
-        'the name must match the folder.',
+        '$path is named "${skill.name}"; the name must match the folder.',
       );
     }
     skills.add(skill);
@@ -240,14 +267,17 @@ Future<List<Skill>> loadAppSkills({AssetBundle? bundle}) async {
   return skills;
 }
 
-Future<AgentSession> openAgent(InferenceModel model) async {
+Future<AgentSession> openAgent(
+  InferenceModel model, {
+  required ModelType modelType,
+}) async {
   final registry = SkillRegistry()
     ..addAll(await loadAppSkills(), selected: true);
   return AgentSession.fromModel(
     model,
     registry: registry,
     executors: [TextSkillExecutor()],
-    modelType: Models.gemma4.modelType,
+    modelType: modelType,
     maxOutputTokens: 512,
   );
 }
@@ -260,37 +290,48 @@ Three objects:
 * An **executor** runs one kind of skill. `TextSkillExecutor` answers for
   text-only skills. The next steps add more.
 * `AgentSession.fromModel` opens a chat on the model with the agent's tools
-  and the skill list in the system prompt.
+  and the skill list in the system prompt. `modelType` is the model's family —
+  it decides how tool calls are written and read — so pass the one of the
+  model you loaded.
 
 ### Show what the agent does
 
 `AgentSession.ask` does not return text. It returns a stream of events,
 because an agent's turn is several things in a row: it loads a skill, calls a
 tool, reads the result and answers. `lib/agent_page.dart` replaces the chat
-page and folds each event into the reply bubble:
+page. Most of it is the chat page over again — loading, the composer, the
+bubbles, closing what it opened — so copy it from
+`step_02_first_skill/lib/agent_page.dart` and read the parts that are new.
+
+The page sends a question and folds each event into the reply bubble:
 
 ```dart
-await for (final event in agent.ask(text)) {
+await for (final event in agent.ask(text, isCancelled: () => !mounted)) {
+  if (!mounted) return;
   setState(() => _apply(reply, event));
 }
 ```
 
+`isCancelled` stops the loop at its next step once the page is gone, instead
+of letting it run a tool — open a mail composer — for nobody.
+
 ```dart
 void _apply(_Turn reply, AgentEvent event) {
+  if (event is! TextChunkEvent && event is! DoneEvent) reply.text = '';
   switch (event) {
     case SkillLoadEvent(:final skillName, :final found):
-      reply.steps.add(
-        found ? '📖 loaded skill $skillName' : '❓ no skill named $skillName',
-      );
+      if (found) reply.steps.add('📖 loaded skill $skillName');
     case ToolCallEvent(:final toolName, :final args):
       reply.steps.add('🔧 $toolName $args');
-      reply.text = '';
     case ToolResultEvent(:final result):
-      reply.steps.add('↩️ ${_describe(result)}');
+      if (result is! ErrorResult) reply.steps.add('↩️ ${_describe(result)}');
     case TextChunkEvent(:final text):
       reply.text += text;
     case DoneEvent(:final text):
-      if (text.isNotEmpty) reply.text = text;
+      reply.text = text;
+      if (text.trim().isEmpty) {
+        reply.steps.add('∅ the model ended the turn without an answer');
+      }
     case MaxIterationsEvent(:final iterations):
       reply.steps.add('⏹ stopped after $iterations steps');
     case AgentErrorEvent(:final message):
@@ -303,10 +344,34 @@ void _apply(_Turn reply, AgentEvent event) {
 later version of the package is a compile error here, not a step that goes
 missing from the screen.
 
-Two lines deserve a word. Text that streams in before a tool call is not the
-answer — it is the model thinking aloud, or the call itself in raw form — so
-a `ToolCallEvent` starts the text over. And `DoneEvent` carries the final
-answer whole, which the bubble prefers to whatever streamed.
+Three rules shape it:
+
+* **Every event but text is a step.** Loading a skill, calling a tool, reading
+  its result: text that streamed in before one of them was the model working
+  toward that step — or the call itself in raw form — not the answer, so the
+  text starts over.
+* **`DoneEvent` is the answer.** It carries the text after the last step,
+  whole. When it is empty, the bubble says so instead of sitting there blank.
+* **One line per failure.** A skill that is not found, or a tool that fails,
+  is followed by an `AgentErrorEvent`; the bubble shows that one and skips
+  the duplicate.
+
+The page keeps one session for the whole conversation, so a skill can ask a
+follow-up question and get the answer. Everything stays in its context window,
+though — each loaded skill, each tool result — and a few skill turns fill 4096
+tokens. A **New conversation** button starts over without reloading the model:
+
+```dart
+Future<void> _newConversation() async {
+  final agent = _agent;
+  if (agent == null || _busy) return;
+  await agent.chat.clearHistory();
+  if (mounted) setState(_turns.clear);
+}
+```
+
+Closing an `AgentSession` closes only its chat; the model is the page's, so
+the page closes both, the agent first.
 
 Point the gate in `lib/main.dart` at `AgentPage` instead of `ChatPage`, and
 run. Then ask:
@@ -344,6 +409,10 @@ how to run on each platform:
 | `schedule_notification` | schedules a local notification |
 | `read_calendar_events` | answers only if you inject a handler for it |
 
+This app sets up the three its skills use. `send_text` needs the `sms` scheme
+declared the way `mailto` is below, and `schedule_notification` needs
+`flutter_local_notifications`' own platform setup.
+
 An intent that changes something opens an OS screen and stops there. The
 model fills in the event or the email; the user presses Save or Send. An
 agent that can draft is useful; one that can send in your name without asking
@@ -360,7 +429,10 @@ const packageSkillNames = [
   'send-email',
 ];
 
-Future<AgentSession> openAgent(InferenceModel model) async {
+Future<AgentSession> openAgent(
+  InferenceModel model, {
+  required ModelType modelType,
+}) async {
   final bundled = AssetSkillSource(names: packageSkillNames);
   final registry = SkillRegistry()
     ..addAll(await loadAppSkills(), selected: true)
@@ -369,7 +441,7 @@ Future<AgentSession> openAgent(InferenceModel model) async {
     model,
     registry: registry,
     executors: [TextSkillExecutor(), NativeIntentExecutor()],
-    modelType: Models.gemma4.modelType,
+    modelType: modelType,
     maxOutputTokens: 512,
   );
 }
@@ -381,8 +453,9 @@ throws and says which.
 
 ### Platform setup
 
-On iOS the calendar editor needs a usage description. Add to
-`ios/Runner/Info.plist`:
+On iOS 15 and 16 the calendar editor asks for calendar access first, and iOS
+stops an app that asks without a usage description. (From iOS 17 the editor
+opens without asking.) Add to `ios/Runner/Info.plist`:
 
 ```xml
 <key>NSCalendarsUsageDescription</key>
@@ -392,13 +465,22 @@ On iOS the calendar editor needs a usage description. Add to
 The mail composer opens through a `mailto:` link, and the agent first asks
 whether any app can open one. On Android 11 and newer, and on iOS, that
 answer is "no" unless the app declares the scheme — the skill would report
-that no mail app is installed. In `android/app/src/main/AndroidManifest.xml`,
-inside `<queries>`:
+that no mail app is installed. The calendar works the same way on Android:
+the editor opens only if the app can see a calendar that inserts events. In
+`android/app/src/main/AndroidManifest.xml`, inside `<queries>`:
 
 ```xml
 <intent>
     <action android:name="android.intent.action.VIEW"/>
     <data android:scheme="mailto"/>
+</intent>
+<intent>
+    <action android:name="android.intent.action.INSERT"/>
+    <data android:mimeType="vnd.android.cursor.dir/event"/>
+</intent>
+<intent>
+    <action android:name="android.intent.action.INSERT"/>
+    <data android:mimeType="vnd.android.cursor.item/event"/>
 </intent>
 ```
 
@@ -411,8 +493,9 @@ and in `ios/Runner/Info.plist`:
 </array>
 ```
 
-On macOS and Windows the calendar event opens as a Google Calendar template in
-the browser, since there is no system event editor to call.
+On desktop — macOS, Windows and Linux — the calendar event opens as a Google
+Calendar template in the browser, since there is no system event editor to
+call.
 
 ### Try it
 
@@ -433,11 +516,11 @@ with its arguments. The answer to the first question is now the device's
 time, not a guess. The second and third open the editor and the composer, and
 wait for you.
 
-Watch the steps closely and you will likely see a wrong turn. In our runs on
+Watch the steps closely and you will likely see a wrong turn. In test runs on
 a Mac, Gemma 4 E2B loaded `get-current-time` and then called `runSkill` with
-the skill's name, twice, instead of `runIntent` with the intent. The tool answered with an error that
-lists the allowed intents; the model read it and called
-`runIntent get_current_date_and_time` on its next try. Errors go back to the
+the skill's name, twice, instead of `runIntent` with the intent. The tool
+answered with an error that lists the allowed intents; the model read it and
+called `runIntent get_current_date_and_time` on its next try. Errors go back to the
 model as results, and recovering from them is part of the loop — which is
 also why the agent stops after `maxIterations` (10 by default) rather than
 trying forever.
@@ -464,9 +547,14 @@ window['ai_edge_gallery_get_result'] = async (data, secret) => { ... };
 with exactly one of:
 
 * `result` — text the model reads and answers from
-* `image` — a base64 image, shown to the user
-* `webview` — a URL to show
+* `image` — `{"base64": "data:image/png;base64,…"}`, shown to the user
+* `webview` — `{"url": "https://…", "iframe": true}`, a page to show
 * `error` — what went wrong, which the model reads too
+
+The package tells a JS skill from a text-only one by its instructions: they
+have to say `run_js`. A `SKILL.md` that names the tool `runSkill` instead —
+the name the steps under a reply show — loads as text-only, and its script
+never runs.
 
 The name is the one Google's AI Edge Gallery uses, so its skills run here
 unmodified.
@@ -497,6 +585,7 @@ Never do the arithmetic yourself. Call the `run_js` tool with:
   - total: the bill before tip, as a number
   - people: how many people share it, as a whole number
   - tip_percent: the tip in percent, as a number; 0 if the user gave none
+  - no other fields
 
 Then tell the user what each person pays, using the numbers the tool returned.
 ```
@@ -526,33 +615,64 @@ and `assets/skills/tip-split/scripts/index.js`:
 window['ai_edge_gallery_get_result'] = async (data) => {
   try {
     const input = JSON.parse(data);
-    const total = Number(input.total);
-    const people = Number(input.people);
-    const tipPercent = Number(input.tip_percent ?? 0);
-    if (!(total > 0) || !Number.isInteger(people) || people < 1 ||
-        !(tipPercent >= 0)) {
-      return JSON.stringify({
-        error: 'Need a positive total, a whole number of people (1 or more) ' +
-          'and a tip of 0 or more.',
-      });
+    const extra = Object.keys(input).filter(
+      (key) => !['total', 'people', 'tip_percent'].includes(key));
+    if (extra.length > 0) {
+      return fail(`unexpected field ${extra.join(', ')}; the fields are ` +
+        'total, people and tip_percent');
     }
-    const tip = total * tipPercent / 100;
-    const withTip = total + tip;
-    const each = withTip / people;
-    return JSON.stringify({
-      result: `Each of ${people} pays ${each.toFixed(2)} ` +
-        `(bill ${total.toFixed(2)} + tip ${tip.toFixed(2)} = ${withTip.toFixed(2)}).`,
-    });
+    const total = toNumber(input.total);
+    const people = toNumber(input.people);
+    const tipPercent = toNumber(input.tip_percent);
+    if (!(total > 0 && total < 1e9)) {
+      return fail('"total" must be a number above 0 and below 1000000000');
+    }
+    if (!Number.isInteger(people) || people < 1 || people > 1000) {
+      return fail('"people" must be a whole number from 1 to 1000');
+    }
+    if (!(tipPercent >= 0 && tipPercent <= 100)) {
+      return fail('"tip_percent" must be a number from 0 to 100; send 0 ' +
+        'when the user gave no tip');
+    }
+    const billCents = Math.round(total * 100);
+    const totalCents = Math.round(total * (100 + tipPercent));
+    const eachCents = Math.floor(totalCents / people);
+    const extraCents = totalCents - eachCents * people;
+    let result = `Each of ${people} pays ${money(eachCents)} ` +
+      `(bill ${money(billCents)} + tip ${money(totalCents - billCents)} = ` +
+      `${money(totalCents)}).`;
+    if (extraCents > 0) {
+      result += extraCents === 1
+        ? ' One of them pays one cent more.'
+        : ` ${extraCents} of them pay one cent more.`;
+    }
+    return JSON.stringify({result});
   } catch (e) {
-    return JSON.stringify({error: `Could not split the bill: ${e.message}`});
+    return fail(`could not split the bill: ${e.message}`);
   }
 };
+
+function toNumber(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim() !== '') return Number(value);
+  return NaN;
+}
+
+function money(cents) {
+  return (cents / 100).toFixed(2);
+}
+
+function fail(message) {
+  return JSON.stringify({error: message});
+}
 ```
 
-`Number(...)` rather than trusting the types: the model may send `"84"` as a
-string. A bad input — a total of zero, 2.5 people — comes back as an `error`,
-which the model reads and can explain, instead of a `NaN` it would repeat or
-a rounded party size that gives a plausible wrong answer.
+Nothing is guessed. A tip sent under another key and read as 0, or 2.5 people
+rounded to 3, is a plausible wrong answer the model would pass on with
+confidence; instead the `error` names the field, and the model calls again.
+Numbers sent as strings — `"84"` — are accepted. The money is counted in
+cents, so the shares add up to the bill, and a cent that does not divide
+evenly is said, not rounded away.
 
 List both folders in `pubspec.yaml` — asset folders are not recursive:
 
@@ -604,15 +724,20 @@ a result arrives and draw them in the bubble:
 
 ```dart
 case ToolResultEvent(:final result):
-  reply.steps.add('↩️ ${_describe(result)}');
+  if (result is! ErrorResult) reply.steps.add('↩️ ${_describe(result)}');
   if (result is ImageResult) reply.images.add(result.bytes);
 ```
+
+The `images` list on `_Turn` and the `Image.memory` loop in the bubble are in
+`complete/lib/agent_page.dart`.
 
 ### Platform setup
 
 The executor serves the skill's page from a small HTTP server inside the
-app, on `127.0.0.1`, and the webview loads it from there. Nothing leaves the
-device, but two platforms need to be told this is allowed.
+app, on `127.0.0.1`, and the webview loads it from there. That traffic stays
+on the device — what the page then fetches is up to the page: the bundled
+`qr-code` loads its QR library from cdnjs, so it needs the network. Two
+platforms need to be told the loopback server is allowed.
 
 **Android** blocks cleartext HTTP by default. Allow it for the loopback
 address only. Create `android/app/src/main/res/xml/network_security_config.xml`:
@@ -645,8 +770,8 @@ to `macos/Runner/Release.entitlements` as well:
 <true/>
 ```
 
-**Windows** needs the WebView2 runtime, which Windows 11 has. **iOS** needs
-nothing.
+**Windows** needs the WebView2 runtime: Windows 11 has it, and on Windows 10
+install Microsoft's Evergreen runtime. **iOS** needs nothing.
 
 ### Try it
 
@@ -664,13 +789,16 @@ Make a QR code for https://flutteredge.ai
 
 The first answer says 32.20 each, and the steps show `runSkill` with the JSON
 the model wrote and the line your script returned. The QR code appears in the
-bubble.
+bubble — when the device is online, since its library comes from a CDN.
 
 A JS skill can also need an API key — a weather service, say. Its `SKILL.md`
 declares `require-secret: true` under `metadata`. The app stores the key with
 `SecretStore.set(skillName, key)` (`SecretEditorDialog` asks the user for it)
 and passes the store to `AgentSession.fromModel(secretStore: ...)`; the agent
-hands the key to your function as `secret`. It never goes into the prompt.
+hands the key to your function as `secret`. It never goes into the prompt. In
+0.2.8 it does go into the page the loopback server sends to the webview, and
+that server does not check who asks while the skill runs: treat such a key as
+one another app on the same device could read.
 
 ## Step 5: Skills on a server, with MCP
 Duration: 5
@@ -705,6 +833,8 @@ final mcp = McpSkillExecutor(
 
 and a `SKILL.md` whose instructions tell the model to call `run_mcp` with the
 server's tool name and the input it expects. Add `mcp` to the executors.
+Closing the agent does not close the client, which holds its own HTTP
+connection: call `client.close()` where the page closes the agent.
 
 Mind the `permissionHook`. Without one, the executor **denies every call**:
 a tool on a server can change things outside the device, and the default is

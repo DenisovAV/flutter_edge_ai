@@ -33,7 +33,9 @@ class _ChatPageState extends State<ChatPage> {
   InferenceModel? _inference;
   InferenceChat? _chat;
   bool _busy = false;
+  bool _removing = false;
   Object? _loadError;
+  Object? _removeError;
 
   @override
   void initState() {
@@ -129,31 +131,30 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  /// Frees the disk. Close the runtime first — the file is mapped while a
-  /// model is open, and deleting it underneath the engine is a crash waiting
-  /// to happen.
+  /// Frees the disk. Takes the runtime off the page first, so nothing can
+  /// send to it — or delete twice — while it closes; then closes it, since the
+  /// file is mapped while a model is open, and deleting it underneath the
+  /// engine is a crash waiting to happen. Closing the model closes its chat.
   Future<void> _removeModel() async {
+    final inference = _inference;
+    setState(() {
+      _removing = true;
+      _inference = null;
+      _chat = null;
+      _loadError = null;
+      _removeError = null;
+    });
     try {
-      await _inference?.close();
-      // Inside `setState`: dropping the chat has to repaint, or the screen
-      // keeps showing an enabled composer over a runtime that is gone.
-      if (mounted) {
-        setState(() {
-          _inference = null;
-          _chat = null;
-        });
-      }
+      await inference?.close();
       await FlutterEdgeAi.uninstallModel(widget.model.fileName);
       if (mounted) widget.onModelRemoved();
     } catch (error) {
       // Deleting can fail too — a missing install record, a file the OS still
-      // holds. Show it the way a failed load is shown, and drop the chat with
-      // it: a `close()` that threw leaves `_chat` non-null, and "The model did
-      // not load." over a working composer is a lie.
+      // holds. Say so, and offer the delete again, not a reload.
       if (mounted) {
         setState(() {
-          _chat = null;
-          _loadError = error;
+          _removing = false;
+          _removeError = error;
         });
       }
     }
@@ -162,9 +163,9 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void dispose() {
     // Sessions and models hold native memory — always close them. `dispose`
-    // cannot await, so the future is dropped on purpose, and caught so a
-    // failing native teardown does not escape as an unhandled async error.
-    _inference?.close().catchError((Object _) {});
+    // cannot await, so the close runs on its own, and a failure is reported
+    // rather than dropped: a model that did not close may still hold memory.
+    _inference?.close().catchError(_reportCloseError);
     _input.dispose();
     super.dispose();
   }
@@ -173,6 +174,7 @@ class _ChatPageState extends State<ChatPage> {
   Widget build(BuildContext context) {
     final ready = _chat != null;
     final error = _loadError;
+    final removeError = _removeError;
 
     return Scaffold(
       appBar: AppBar(
@@ -183,15 +185,27 @@ class _ChatPageState extends State<ChatPage> {
             // Not while the model is still opening: deleting the file
             // underneath an in-flight `getActiveModel()` is the crash the
             // comment on `_removeModel` warns about.
-            onPressed: _busy || (!ready && error == null) ? null : _removeModel,
+            onPressed: _busy || _removing || (!ready && error == null)
+                ? null
+                : _removeModel,
             icon: const Icon(Icons.delete_outline),
           ),
         ],
       ),
       body: Column(
         children: [
-          if (error != null)
-            _LoadFailed(error: error, onRetry: _retryLoad)
+          if (removeError != null)
+            _Failed(
+              title: 'The model was not deleted.',
+              error: removeError,
+              onRetry: _removeModel,
+            )
+          else if (error != null)
+            _Failed(
+              title: 'The model did not load.',
+              error: error,
+              onRetry: _retryLoad,
+            )
           else if (!ready)
             const LinearProgressIndicator(),
           Expanded(
@@ -214,7 +228,7 @@ class _ChatPageState extends State<ChatPage> {
                       decoration: InputDecoration(
                         hintText: ready
                             ? 'Ask something'
-                            : error != null
+                            : error != null || removeError != null
                             ? 'No model loaded'
                             : 'Loading the model…',
                         border: const OutlineInputBorder(),
@@ -236,10 +250,28 @@ class _ChatPageState extends State<ChatPage> {
   }
 }
 
-/// Shown in place of the loading bar when the model could not be opened.
-class _LoadFailed extends StatelessWidget {
-  const _LoadFailed({required this.error, required this.onRetry});
+/// Reports a close that failed in `dispose`, where nothing can await it.
+void _reportCloseError(Object error, StackTrace stack) {
+  FlutterError.reportError(
+    FlutterErrorDetails(
+      exception: error,
+      stack: stack,
+      library: 'on_device_agent',
+      context: ErrorDescription('while closing the model'),
+    ),
+  );
+}
 
+/// Shown in place of the loading bar when loading or deleting the model
+/// failed, with a button that tries that again.
+class _Failed extends StatelessWidget {
+  const _Failed({
+    required this.title,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final String title;
   final Object error;
   final VoidCallback onRetry;
 
@@ -249,7 +281,7 @@ class _LoadFailed extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          Text('The model did not load.\n$error', textAlign: TextAlign.center),
+          Text('$title\n$error', textAlign: TextAlign.center),
           const SizedBox(height: 8),
           FilledButton(onPressed: onRetry, child: const Text('Try again')),
         ],

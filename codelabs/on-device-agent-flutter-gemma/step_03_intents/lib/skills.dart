@@ -2,8 +2,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 
-import 'model.dart';
-
 /// The skills this app ships in its own assets, one folder each:
 /// `assets/skills/<name>/SKILL.md`, listed in `pubspec.yaml`.
 const appSkillNames = ['packing-list'];
@@ -31,13 +29,17 @@ Future<List<Skill>> loadAppSkills({AssetBundle? bundle}) async {
   final assets = bundle ?? rootBundle;
   final skills = <Skill>[];
   for (final name in appSkillNames) {
-    final skill = parseSkillMd(
-      await assets.loadString('assets/skills/$name/SKILL.md'),
-    );
+    final path = 'assets/skills/$name/SKILL.md';
+    final Skill skill;
+    try {
+      skill = parseSkillMd(await assets.loadString(path));
+    } catch (error) {
+      // Name the file: "missing field" alone does not say which skill.
+      throw StateError('$path could not be read: $error');
+    }
     if (skill.name != name) {
       throw StateError(
-        'assets/skills/$name/SKILL.md is named "${skill.name}"; '
-        'the name must match the folder.',
+        '$path is named "${skill.name}"; the name must match the folder.',
       );
     }
     skills.add(skill);
@@ -51,7 +53,13 @@ Future<List<Skill>> loadAppSkills({AssetBundle? bundle}) async {
 /// description only. When a request fits one, the model calls `loadSkill`
 /// to read its full instructions, and only then follows them — so twenty
 /// skills cost twenty lines of prompt, not twenty documents.
-Future<AgentSession> openAgent(InferenceModel model) async {
+///
+/// [modelType] is the model's family: it decides how tool calls are written
+/// and read, so the wrong one turns every turn into plain text.
+Future<AgentSession> openAgent(
+  InferenceModel model, {
+  required ModelType modelType,
+}) async {
   final bundled = AssetSkillSource(names: packageSkillNames);
   final registry = SkillRegistry()
     ..addAll(await loadAppSkills(), selected: true)
@@ -63,7 +71,7 @@ Future<AgentSession> openAgent(InferenceModel model) async {
     // instructions say `run_intent` is routed to NativeIntentExecutor; a
     // text-only one to TextSkillExecutor.
     executors: [TextSkillExecutor(), NativeIntentExecutor()],
-    modelType: Models.gemma4.modelType,
+    modelType: modelType,
     maxOutputTokens: 512,
   );
 }

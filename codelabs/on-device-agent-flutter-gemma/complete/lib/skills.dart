@@ -2,18 +2,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 
-import 'model.dart';
-
 /// The skills this app ships in its own assets, one folder each:
 /// `assets/skills/<name>/SKILL.md`, listed in `pubspec.yaml`.
 const appSkillNames = ['packing-list', 'tip-split'];
 
 /// Skills `flutter_edge_ai_agent` bundles, picked by name.
 ///
-/// Each is a SKILL.md whose instructions tell the model to call `runIntent`
-/// with one of the package's fixed intents. The intent opens an OS surface —
-/// the calendar's event editor, the mail composer — and the user confirms it
-/// there: the model fills the form, it never presses Send.
+/// The first three tell the model to call `runIntent` with one of the
+/// package's fixed intents, which opens an OS surface — the calendar's event
+/// editor, the mail composer — where the user confirms: the model fills the
+/// form, it never presses Send. The last two run JavaScript (`runSkill`).
 const packageSkillNames = [
   'get-current-time',
   'create-calendar-event',
@@ -33,13 +31,17 @@ Future<List<Skill>> loadAppSkills({AssetBundle? bundle}) async {
   final assets = bundle ?? rootBundle;
   final skills = <Skill>[];
   for (final name in appSkillNames) {
-    final skill = parseSkillMd(
-      await assets.loadString('assets/skills/$name/SKILL.md'),
-    );
+    final path = 'assets/skills/$name/SKILL.md';
+    final Skill skill;
+    try {
+      skill = parseSkillMd(await assets.loadString(path));
+    } catch (error) {
+      // Name the file: "missing field" alone does not say which skill.
+      throw StateError('$path could not be read: $error');
+    }
     if (skill.name != name) {
       throw StateError(
-        'assets/skills/$name/SKILL.md is named "${skill.name}"; '
-        'the name must match the folder.',
+        '$path is named "${skill.name}"; the name must match the folder.',
       );
     }
     skills.add(skill);
@@ -53,7 +55,13 @@ Future<List<Skill>> loadAppSkills({AssetBundle? bundle}) async {
 /// description only. When a request fits one, the model calls `loadSkill`
 /// to read its full instructions, and only then follows them — so twenty
 /// skills cost twenty lines of prompt, not twenty documents.
-Future<AgentSession> openAgent(InferenceModel model) async {
+///
+/// [modelType] is the model's family: it decides how tool calls are written
+/// and read, so the wrong one turns every turn into plain text.
+Future<AgentSession> openAgent(
+  InferenceModel model, {
+  required ModelType modelType,
+}) async {
   final bundled = AssetSkillSource(names: packageSkillNames);
   final registry = SkillRegistry()
     ..addAll(await loadAppSkills(), selected: true)
@@ -69,7 +77,7 @@ Future<AgentSession> openAgent(InferenceModel model) async {
       NativeIntentExecutor(),
       JsSkillExecutor(sourceFor: (skill) => _jsSourceFor(skill, bundled)),
     ],
-    modelType: Models.gemma4.modelType,
+    modelType: modelType,
     maxOutputTokens: 512,
   );
 }
@@ -78,9 +86,10 @@ Future<AgentSession> openAgent(InferenceModel model) async {
 /// package bundles, in this app's for one the app wrote.
 ///
 /// The executor serves the page, and the files next to it, from a server on
-/// 127.0.0.1 inside the app and runs it in a headless webview; nothing goes
-/// over the network. That server is why Android needs cleartext traffic to
-/// 127.0.0.1 and macOS the `network.server` entitlement.
+/// 127.0.0.1 inside the app and runs it in a headless webview. That server is
+/// why Android needs cleartext traffic to 127.0.0.1 and macOS the
+/// `network.server` entitlement. The page may still fetch from the network:
+/// the bundled qr-code loads its QR library from cdnjs.
 JsSkillSource _jsSourceFor(Skill skill, AssetSkillSource bundled) =>
     packageSkillNames.contains(skill.name)
     ? bundled.jsSkillSourceFor(skill)

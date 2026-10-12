@@ -47,15 +47,18 @@ void main() {
     );
   });
 
-  // A JS skill whose page is not in the bundle parses fine and fails only
-  // when the model calls it. Load the page the executor will ask for.
-  test('every app JS skill ships the page it runs', () async {
+  // A JS skill whose page or script is not in the bundle parses fine and
+  // fails only when the model calls it, after a 30 s timeout. Load the page
+  // the executor will ask for, and the script that page loads.
+  test('every app JS skill ships the page it runs and its script', () async {
     for (final skill in await loadAppSkills()) {
       if (skill.type != SkillType.js) continue;
-      final page = await rootBundle.loadString(
-        'assets/skills/${skill.name}/scripts/${skill.scriptName}',
-      );
-      expect(page, contains('index.js'), reason: skill.name);
+      final dir = 'assets/skills/${skill.name}/scripts';
+      final page = await rootBundle.loadString('$dir/${skill.scriptName}');
+      final src = RegExp(r'<script src="([^"]+)"').firstMatch(page)?.group(1);
+      expect(src, isNotNull, reason: '${skill.name}: no <script src>');
+      final script = await rootBundle.loadString('$dir/$src');
+      expect(script, contains('ai_edge_gallery_get_result'), reason: src);
     }
   });
 
@@ -66,5 +69,19 @@ void main() {
     final skills = await AssetSkillSource(names: packageSkillNames).load();
     expect(skills.map((s) => s.name), packageSkillNames);
     expect(skills.map((s) => s.type).toSet(), {SkillType.intent, SkillType.js});
+  });
+
+  // SkillRegistry keeps one skill per name, and looks names up with `_` and
+  // `-` as the same: an app skill named like a bundled one would be replaced
+  // or shadowed by it, without a word.
+  test('the app and the package skills have different names', () {
+    String key(String name) => name.replaceAll('_', '-');
+    expect(
+      appSkillNames
+          .map(key)
+          .toSet()
+          .intersection(packageSkillNames.map(key).toSet()),
+      isEmpty,
+    );
   });
 }

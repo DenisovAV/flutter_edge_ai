@@ -51,4 +51,18 @@ void main() {
     expect(skills.map((s) => s.name), packageSkillNames);
     expect(skills.map((s) => s.type).toSet(), {SkillType.intent});
   });
+
+  // SkillRegistry keeps one skill per name, and looks names up with `_` and
+  // `-` as the same: an app skill named like a bundled one would be replaced
+  // or shadowed by it, without a word.
+  test('the app and the package skills have different names', () {
+    String key(String name) => name.replaceAll('_', '-');
+    expect(
+      appSkillNames
+          .map(key)
+          .toSet()
+          .intersection(packageSkillNames.map(key).toSet()),
+      isEmpty,
+    );
+  });
 }

@@ -1,11 +1,12 @@
 // End-to-end check of the agent on a real device or desktop.
 //
-// Downloads Gemma 4 E2B (2.59 GB, ungated — no Hugging Face token), opens the
-// agent with every skill this codelab adds, and asks three things the model
-// cannot do on its own: the time (a native intent), a bill split (this app's
-// JS skill) and a SHA-1 (a JS skill the package bundles). The claim under
-// test is the codelab's: the model picks the skill, the app runs it, and the
-// answer carries what the skill computed.
+// Downloads Gemma 4 E2B (2.59 GB, ungated — no Hugging Face token), opens one
+// agent with every skill this codelab adds — one conversation, as the app
+// holds — and asks three things the model cannot do on its own: the time (a
+// native intent), a bill split (this app's JS skill) and a SHA-1 (a JS skill
+// the package bundles). The claim under test is the codelab's: the model
+// picks the skill, the app runs it, and the answer carries what the skill
+// computed. Sampling is the model's own, so a 2B model can fail a run.
 //
 // Not part of CI (needs a device and a 2.59 GB download). Android, iOS, macOS
 // or Windows — Linux has no webview for JS skills, and the test skips there:
@@ -35,36 +36,31 @@ Future<void> _install(ModelChoice model) async {
   }).install();
 }
 
-/// Runs one request on a fresh agent and returns every event it produced.
-Future<List<AgentEvent>> _ask(InferenceModel model, String request) async {
-  final agent = await openAgent(model);
-  try {
-    final events = await agent.ask(request).toList();
-    for (final event in events) {
-      debugPrint('[agent] $event');
-    }
-    return events;
-  } finally {
-    await agent.close();
+/// Runs one request and returns every event it produced. The turn must end
+/// with an answer, not at the iteration limit.
+Future<List<AgentEvent>> _ask(AgentSession agent, String request) async {
+  final events = await agent.ask(request).toList();
+  for (final event in events) {
+    debugPrint('[agent] $event');
   }
+  expect(events.last, isA<DoneEvent>(), reason: request);
+  return events;
 }
 
 String _answer(List<AgentEvent> events) =>
     events.whereType<DoneEvent>().map((e) => e.text).join();
 
-/// The text of every successful result [tool] returned.
+/// The text of each successful result [tool] returned.
 ///
 /// A turn may also contain errors: a 2B model sometimes calls the wrong tool
 /// first, reads the error — which lists what it should have called — and
 /// tries again. That recovery is the agent working, so the test asks for the
 /// successful call, not for a turn without a single mistake.
-String _results(List<AgentEvent> events, String tool) => events
-    .whereType<ToolResultEvent>()
-    .where((e) => e.toolName == tool)
-    .map((e) => e.result)
-    .whereType<TextResult>()
-    .map((r) => r.text)
-    .join();
+List<String> _results(List<AgentEvent> events, String tool) => [
+  for (final event in events.whereType<ToolResultEvent>())
+    if (event.toolName == tool)
+      if (event.result case TextResult(:final text)) text,
+];
 
 /// `JsSkillExecutor.isAvailable` is false on Linux, which has no webview: two
 /// of the three requests would get an ErrorResult, and the test would fail on
@@ -85,27 +81,40 @@ void main() {
       preferredBackend: PreferredBackend.cpu,
     );
 
+    final agent = await openAgent(model, modelType: choice.modelType);
     try {
-      // A native intent: the time comes from the device, not the weights.
-      final time = await _ask(model, 'What time is it right now?');
-      expect(_results(time, AgentToolNames.runIntent), isNotEmpty);
-      expect(_answer(time), isNotEmpty);
+      // A native intent: the time comes from the device, not the weights —
+      // "2026-10-12T13:05:42 Monday". The answer has to carry it: its minutes
+      // or its weekday.
+      final time = await _ask(agent, 'What time is it right now?');
+      final clock = _results(time, AgentToolNames.runIntent)
+          .map(RegExp(r'^\d{4}-\d\d-\d\dT\d\d:(\d\d):\d\d (\w+)$').firstMatch)
+          .nonNulls
+          .firstOrNull;
+      expect(clock, isNotNull, reason: 'no date-time result');
+      expect(
+        _answer(time),
+        anyOf(contains(clock!.group(1)), contains(clock.group(2))),
+      );
 
       // This app's JS skill: 84 + 15% = 96.60, a third of it 32.20.
       final split = await _ask(
-        model,
+        agent,
         'Split a bill of 84 dollars between 3 people with a 15% tip.',
       );
-      expect(_results(split, AgentToolNames.runSkill), contains('32.20'));
-      expect(_answer(split), contains('32.2'));
+      expect(
+        _results(split, AgentToolNames.runSkill),
+        contains(contains('Each of 3 pays 32.20')),
+      );
+      expect(_answer(split), matches(RegExp(r'\b32\.20?\b')));
 
       // A JS skill the package bundles. SHA-1 of "hello".
-      final hash = await _ask(model, 'Calculate the hash of the text: hello');
-      expect(
-        _results(hash, AgentToolNames.runSkill),
-        contains('aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d'),
-      );
+      const sha1 = 'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d';
+      final hash = await _ask(agent, 'Calculate the hash of the text: hello');
+      expect(_results(hash, AgentToolNames.runSkill), contains(contains(sha1)));
+      expect(_answer(hash), contains(sha1.substring(0, 8)));
     } finally {
+      await agent.close();
       await model.close();
     }
   }, skip: _noWebview);

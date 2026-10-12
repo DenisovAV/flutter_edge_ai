@@ -77,9 +77,10 @@ class AgentApp extends StatelessWidget {
     return MaterialApp(
       title: 'Gemma Agent',
       theme: ThemeData(colorSchemeSeed: Colors.teal),
-      // The agent package runs its skills through native webviews and OS
-      // intents, and has not been verified on the web. The web build still
-      // compiles — CI builds it — but says so instead of starting an agent.
+      // Not on the web: the model below is the native .litertlm, which the
+      // web engine cannot run, and the agent this codelab builds has not been
+      // verified there. The web build still compiles — CI builds it — and
+      // says so instead of downloading 2.59 GB it cannot use.
       home: kIsWeb ? const _NoAgentOnWeb() : const ModelGate(model: _model),
     );
   }
@@ -192,8 +193,8 @@ class _NoAgentOnWeb extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
-            'This agent runs on Android, iOS, macOS and Windows. '
-            'flutter_edge_ai_agent is not supported on the web.',
+            'This app runs on Android, iOS, macOS and Windows. The model '
+            'and the agent it uses are not supported on the web.',
             textAlign: TextAlign.center,
           ),
         ),

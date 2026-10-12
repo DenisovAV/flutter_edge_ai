@@ -19,5 +19,6 @@ Never do the arithmetic yourself. Call the `run_js` tool with:
   - total: the bill before tip, as a number
   - people: how many people share it, as a whole number
   - tip_percent: the tip in percent, as a number; 0 if the user gave none
+  - no other fields
 
 Then tell the user what each person pays, using the numbers the tool returned.

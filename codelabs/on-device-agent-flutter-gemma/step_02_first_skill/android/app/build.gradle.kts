@@ -11,9 +11,10 @@ android {
 
     compileOptions {
         // flutter_edge_ai_agent brings flutter_local_notifications (its
-        // schedule_notification intent), which uses java.time APIs that need
-        // core library desugaring on older Android versions. Without this the
-        // build fails as soon as the agent package is added.
+        // schedule_notification intent), whose library declares that the app
+        // must enable core library desugaring. AGP checks that whatever the
+        // minSdk, so without this the build fails as soon as the agent
+        // package is added.
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -76,7 +77,11 @@ class AgentApp extends StatelessWidget {
     return MaterialApp(
       title: 'Gemma Agent',
       theme: ThemeData(colorSchemeSeed: Colors.teal),
-      home: const ModelGate(model: _model),
+      // Not on the web: the model below is the native .litertlm, which the
+      // web engine cannot run, and the agent this codelab builds has not been
+      // verified there. The web build still compiles — CI builds it — and
+      // says so instead of downloading 2.59 GB it cannot use.
+      home: kIsWeb ? const _NoAgentOnWeb() : const ModelGate(model: _model),
     );
   }
 }
@@ -170,6 +175,27 @@ class _GateError extends StatelessWidget {
               const SizedBox(height: 12),
               FilledButton(onPressed: onRetry, child: const Text('Try again')),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// What the web build shows instead of an agent.
+class _NoAgentOnWeb extends StatelessWidget {
+  const _NoAgentOnWeb();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'This app runs on Android, iOS, macOS and Windows. The model '
+            'and the agent it uses are not supported on the web.',
+            textAlign: TextAlign.center,
           ),
         ),
       ),

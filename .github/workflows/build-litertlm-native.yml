@@ -91,9 +91,32 @@ jobs:
           # the runtime in one process — the suspected reason a second
           # engine_create trips 'wgpu::Instance already set'. Upstream docs
           # require litert_runtime_link_mode=dynamic for GPU on every platform.
+          #
+          # libLiteRt.so is built here too, from the pinned LiteRT with this
+          # same toolchain, and shipped instead of Google's prebuilt. That
+          # prebuilt is google3 libc++ (std::__u) while libLiteRtLm.so is
+          # libstdc++, and LiteRT's C++ wrappers are not ABI-neutral:
+          # Options::SetExternalWeightScopedFile hands the runtime a
+          # std::unordered_map inside LiteRtOptionsT, the libc++ runtime reads
+          # it with the wrong layout, and every bundle with TFLiteWeights
+          # sections (EmbeddingGemma 2) fails engine_create with an empty
+          # message. Same invocation, same flags: the libLiteRt.so that
+          # libLiteRtLm.so links against is this target.
           bazelisk build -c opt --strip=always \
             --define=litert_runtime_link_mode=dynamic \
-            '//c:libLiteRtLm.dylib'
+            '//c:libLiteRtLm.dylib' '@litert//litert/c:litert_runtime_c_api_so'
+          # Ask Bazel where it put the file rather than guessing the external
+          # repo layout; exactly one libLiteRt.so, or stop.
+          rt="$(bazelisk cquery -c opt --strip=always \
+            --define=litert_runtime_link_mode=dynamic --output=files \
+            '@litert//litert/c:litert_runtime_c_api_so' | grep '/libLiteRt\.so$' || true)"
+          [ "$(printf '%s' "$rt" | grep -c .)" = 1 ] && [ -s "$rt" ] \
+            || { echo "::error::expected one built libLiteRt.so, cquery gave: '$rt'"; exit 1; }
+          mkdir -p /tmp/litert_runtime
+          cp "$rt" /tmp/litert_runtime/libLiteRt.so
+          # LiteRT's own expected export list at this pin, for the gate below.
+          cp "$(bazelisk info output_base)/external/litert/litert/c/litert_runtime_c_api_so_symbols.txt" /tmp/litert_runtime/
+          ls -l "$rt" /tmp/litert_runtime/
 
       - name: Build libStreamProxy.so
         run: |
@@ -119,6 +142,12 @@ jobs:
             exit 1
           fi
           cp "${libs[@]}" artifacts/
+          # Our libLiteRt.so replaces Google's (see "Build libLiteRtLm.so").
+          # The WebGPU accelerator, TopK sampler, Dawn and the constraint
+          # provider stay Google's prebuilts: they import no LiteRt* symbol and
+          # reach the runtime through the C function tables it hands them.
+          rm -f artifacts/libLiteRt.so
+          cp /tmp/litert_runtime/libLiteRt.so artifacts/libLiteRt.so
           for want in libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so libGemmaModelConstraintProvider.so; do
             if [ ! -s "artifacts/$want" ]; then
               echo "::error::missing $want — dynamic link mode requires it at runtime"
@@ -152,6 +181,14 @@ jobs:
           [ "$want" = "$have" ] || { echo "::error::provider/runtime Constraint ABI mismatch in the shipped artifact (source ComputeMask=$want, provider LogitMask=$have)"; exit 1; }
           echo "provider ABI: shipped artifact agrees with this source (ComputeMask=$want)"
           for f in artifacts/*.so; do patchelf --set-rpath '$ORIGIN' "$f"; done
+          # On the bytes that ship: libLiteRtLm.so and libLiteRt.so are both
+          # libstdc++, every LiteRt* import of libLiteRtLm.so and every Dart
+          # lookup resolves in libLiteRt.so, its exports match the pin's list,
+          # and it raises no glibc/libstdc++ floor.
+          bash packages/flutter_edge_ai_litertlm/native/litert_lm/check_linux_litert_runtime.sh \
+            artifacts /tmp/litert_runtime/litert_runtime_c_api_so_symbols.txt \
+            packages/flutter_edge_ai_litertlm/lib/src/ffi/litert_bindings.dart \
+            /tmp/LiteRT-LM/prebuilt/linux_x86_64/libLiteRt.so
           ls -lh artifacts/
 
       - uses: actions/upload-artifact@v4
@@ -218,9 +255,23 @@ jobs:
           # the runtime in one process — the suspected reason a second
           # engine_create trips 'wgpu::Instance already set'. Upstream docs
           # require litert_runtime_link_mode=dynamic for GPU on every platform.
+          #
+          # libLiteRt.so is built here from the pinned LiteRT and shipped
+          # instead of Google's libc++ prebuilt — see the x86_64 job for why
+          # (one C++ library on both sides of the C API; EmbeddingGemma 2's
+          # external weights are handed over in a std::unordered_map).
           bazelisk build -c opt --strip=always \
             --define=litert_runtime_link_mode=dynamic \
-            '//c:libLiteRtLm.dylib'
+            '//c:libLiteRtLm.dylib' '@litert//litert/c:litert_runtime_c_api_so'
+          rt="$(bazelisk cquery -c opt --strip=always \
+            --define=litert_runtime_link_mode=dynamic --output=files \
+            '@litert//litert/c:litert_runtime_c_api_so' | grep '/libLiteRt\.so$' || true)"
+          [ "$(printf '%s' "$rt" | grep -c .)" = 1 ] && [ -s "$rt" ] \
+            || { echo "::error::expected one built libLiteRt.so, cquery gave: '$rt'"; exit 1; }
+          mkdir -p /tmp/litert_runtime
+          cp "$rt" /tmp/litert_runtime/libLiteRt.so
+          cp "$(bazelisk info output_base)/external/litert/litert/c/litert_runtime_c_api_so_symbols.txt" /tmp/litert_runtime/
+          ls -l "$rt" /tmp/litert_runtime/
 
       - name: Build libStreamProxy.so
         run: |
@@ -246,6 +297,9 @@ jobs:
             exit 1
           fi
           cp "${libs[@]}" artifacts/
+          # Our libLiteRt.so replaces Google's; the other prebuilts stay.
+          rm -f artifacts/libLiteRt.so
+          cp /tmp/litert_runtime/libLiteRt.so artifacts/libLiteRt.so
           for want in libLiteRt.so libLiteRtWebGpuAccelerator.so libwebgpu_dawn.so libGemmaModelConstraintProvider.so; do
             if [ ! -s "artifacts/$want" ]; then
               echo "::error::missing $want — dynamic link mode requires it at runtime"
@@ -279,6 +333,11 @@ jobs:
           [ "$want" = "$have" ] || { echo "::error::provider/runtime Constraint ABI mismatch in the shipped artifact (source ComputeMask=$want, provider LogitMask=$have)"; exit 1; }
           echo "provider ABI: shipped artifact agrees with this source (ComputeMask=$want)"
           for f in artifacts/*.so; do patchelf --set-rpath '$ORIGIN' "$f"; done
+          # Same gate as the x86_64 job, on the bytes that ship.
+          bash packages/flutter_edge_ai_litertlm/native/litert_lm/check_linux_litert_runtime.sh \
+            artifacts /tmp/litert_runtime/litert_runtime_c_api_so_symbols.txt \
+            packages/flutter_edge_ai_litertlm/lib/src/ffi/litert_bindings.dart \
+            /tmp/LiteRT-LM/prebuilt/linux_arm64/libLiteRt.so
           ls -lh artifacts/
 
       - uses: actions/upload-artifact@v4

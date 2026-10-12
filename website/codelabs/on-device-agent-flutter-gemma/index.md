@@ -525,11 +525,13 @@ window['ai_edge_gallery_get_result'] = async (data) => {
   try {
     const input = JSON.parse(data);
     const total = Number(input.total);
-    const people = Math.round(Number(input.people));
+    const people = Number(input.people);
     const tipPercent = Number(input.tip_percent ?? 0);
-    if (!(total > 0) || !(people > 0) || !(tipPercent >= 0)) {
+    if (!(total > 0) || !Number.isInteger(people) || people < 1 ||
+        !(tipPercent >= 0)) {
       return JSON.stringify({
-        error: 'Need a positive total, at least one person and a tip of 0 or more.',
+        error: 'Need a positive total, a whole number of people (1 or more) ' +
+          'and a tip of 0 or more.',
       });
     }
     const tip = total * tipPercent / 100;
@@ -546,8 +548,9 @@ window['ai_edge_gallery_get_result'] = async (data) => {
 ```
 
 `Number(...)` rather than trusting the types: the model may send `"84"` as a
-string. A bad input comes back as an `error`, which the model reads and can
-explain, instead of a `NaN` it would repeat.
+string. A bad input — a total of zero, 2.5 people — comes back as an `error`,
+which the model reads and can explain, instead of a `NaN` it would repeat or
+a rounded party size that gives a plausible wrong answer.
 
 List both folders in `pubspec.yaml` — asset folders are not recursive:
 
@@ -704,7 +707,11 @@ server's tool name and the input it expects. Add `mcp` to the executors.
 Mind the `permissionHook`. Without one, the executor **denies every call**:
 a tool on a server can change things outside the device, and the default is
 that the user agrees to each call. `McpToolCallPermissionDialog` shows the
-tool and its arguments and lets the user allow the call once or always.
+tool and its arguments. This hook allows the one call it was asked about,
+whichever allow button the user pressed; it does not remember anything. What
+skips the prompt for good is the tool's `alwaysAllow` flag in the server's
+`McpServerConfig`, and `McpManagerView` is a ready-made screen where the user
+connects servers and switches that flag per tool.
 
 ## What's next
 Duration: 2

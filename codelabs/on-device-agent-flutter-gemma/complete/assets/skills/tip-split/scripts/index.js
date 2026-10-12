@@ -5,11 +5,15 @@ window['ai_edge_gallery_get_result'] = async (data) => {
   try {
     const input = JSON.parse(data);
     const total = Number(input.total);
-    const people = Math.round(Number(input.people));
+    const people = Number(input.people);
     const tipPercent = Number(input.tip_percent ?? 0);
-    if (!(total > 0) || !(people > 0) || !(tipPercent >= 0)) {
+    // Rejected, not rounded: 2.5 people rounded to 3 is a plausible wrong
+    // answer, and the model would pass it on with confidence.
+    if (!(total > 0) || !Number.isInteger(people) || people < 1 ||
+        !(tipPercent >= 0)) {
       return JSON.stringify({
-        error: 'Need a positive total, at least one person and a tip of 0 or more.',
+        error: 'Need a positive total, a whole number of people (1 or more) ' +
+          'and a tip of 0 or more.',
       });
     }
     const tip = total * tipPercent / 100;

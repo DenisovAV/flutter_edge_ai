@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -41,6 +42,24 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   EmbeddingModel? get initializedEmbeddingModel => _embedderCache.model;
 
   InferenceModel? _initializedModel;
+
+  /// Holds builds back while a previous model is still closing.
+  final ModelCloseGate _closeGate = ModelCloseGate();
+
+  /// The pending or completed build of [_initializedModel]. Reused while the
+  /// active model and the runtime knobs stay the same; see [createModel].
+  Completer<InferenceModel>? _initCompleter;
+
+  /// Which model [_initializedModel] was built for.
+  _ModelIdentity? _lastModelIdentity;
+
+  /// The runtime knobs [_initializedModel] was built with.
+  ActiveModelParams? _lastInferenceParams;
+
+  /// What the in-flight build is building, while [_initCompleter] is pending.
+  /// Kept in lockstep with [_initCompleter], as on mobile and desktop.
+  ({_ModelIdentity identity, ActiveModelParams params})? _inFlightRequest;
+
   SpeechRecognizer? _initializedSttModel;
 
   /// The cached embedder and the rule for reusing it, shared with the mobile
@@ -83,54 +102,42 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       }
     }
 
-    // A cached singleton may exist from a prior createModel call. It is always
-    // closed and replaced — web does NOT do the params-compare reuse that
-    // mobile and desktop do (ActiveModelParams / _lastInferenceParams).
-    //
-    // Not because core cannot see the params: ActiveModelParams records what
-    // the CALLER asked for, so no introspection of the model is needed. The
-    // reason is the spec below. Web synthesises it with the constant name
-    // 'web-active' because, unlike the other shells, createModel here does not
-    // require an active model to be set first. So a reuse check keyed on that
-    // spec cannot see the user swapping the active model file underneath it,
-    // and would hand back a model built from the previous one — silently, and
-    // with the params matching, so nothing would look wrong.
-    //
-    // Always rebuilding is the safe direction of that trade: it costs a reload
-    // that was sometimes unnecessary, rather than answering from the wrong
-    // weights. Reuse can be added here once the spec carries the active
-    // model's identity.
-    if (_initializedModel != null) {
-      if (kDebugMode) {
-        edgeAiLog(
-          '[FlutterEdgeAiWeb] Replacing existing model, closing it first',
-        );
-      }
-      await _initializedModel!.close();
-      _initializedModel = null;
+    // Keyed on the ACTIVE model, as on mobile and desktop. Web used to build
+    // from a synthetic spec named 'web-active', and since a reuse check keyed
+    // on that could not see the active model change, every call closed the
+    // cached model and loaded the weights again, even with nothing changed.
+    // The manager holds the real identity; the engines' source resolver loads
+    // the weights of that same active model, so it is what the cache must
+    // follow. ensureInitialized first: after a page reload the identity is
+    // restored asynchronously.
+    final manager = modelManager as WebModelManager;
+    await manager.ensureInitialized();
+    final active = manager.activeInferenceModel;
+    if (active is! InferenceModelSpec) {
+      throw NoActiveModelError(
+        'No active inference model set. Use `FlutterEdgeAi.installModel()` first',
+      );
     }
 
-    // Engine selection routes through [EngineRegistry] (probe-chain), mirroring
-    // the mobile/desktop refactor: .task → MediaPipe, .litertlm → LiteRT-LM.
-    // Both web engines now live in their own packages (flutter_edge_ai_mediapipe /
-    // flutter_edge_ai_litertlm), supplied via
-    // FlutterEdgeAi.initialize(inferenceEngines: ...). Web registers NO default;
-    // each engine builds its own WebModelSourceResolver internally. Web has no
-    // resolved file path/cache dir (paths are lazy via the resolver), so the
-    // RuntimeConfig's modelPath is empty.
-
-    // Web selection has always been by `fileType` alone; build a minimal spec
-    // carrying it for the probe (web does not require an active model to be set
-    // before createModel, so we don't depend on webManager.activeInferenceModel).
-    final spec = InferenceModelSpec(
-      name: 'web-active',
-      modelSource: AssetSource('models/active.bin'),
+    // The whole active spec is the key, not only its name: a re-install from
+    // another source under the same file name, or a LoRA added or removed,
+    // keeps the name and changes the weights the resolver loads. The engines
+    // read only modelType and fileType from the spec they get and resolve the
+    // weights themselves, so those two come from the caller, as they always
+    // have on web, and are part of the key too.
+    final requestedIdentity = (
+      active: active,
       modelType: modelType,
       fileType: fileType,
     );
-    final config = RuntimeConfig(
+    final requestedSpec = InferenceModelSpec(
+      name: active.name,
+      modelSource: active.modelSource,
+      modelType: modelType,
+      fileType: fileType,
+    );
+    final requestedParams = ActiveModelParams(
       maxTokens: maxTokens,
-      modelPath: '',
       preferredBackend: preferredBackend,
       preferredVisionBackend: preferredVisionBackend,
       preferredAudioBackend: preferredAudioBackend,
@@ -142,30 +149,203 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
       maxConcurrentSessions: maxConcurrentSessions,
       loraRanks: loraRanks,
     );
-    final engine = EngineRegistry.instance.findFor(spec);
-    if (engine == null) {
-      throw StateError(
-        'No inference engine can handle this model (ModelFileType.${spec.fileType.name}). '
-        'Add the engine package to pubspec.yaml and pass it in inferenceEngines: '
-        'of FlutterEdgeAi.initialize(...). Registered engines: '
-        '${EngineRegistry.instance.registered.map((e) => e.name).join(", ")}.',
-      );
-    }
-    if (activationDataType != null) {
-      edgeAiLog(
-        '[FlutterEdgeAiWeb] activationDataType (${activationDataType.name}) is '
-        'not supported on web — no web engine has the setting; ignoring.',
-      );
-    }
-    final model = await engine.createModel(spec, config);
 
-    // Core owns the singleton lifecycle: track it + reset on close. The
-    // package-built model fires this via CloseNotifier (addCloseListener).
-    _initializedModel = model;
-    model.addCloseListener(() {
+    // No model is built while another is still closing: two native models
+    // must not be resident at once (see [ModelCloseGate]).
+    if (_closeGate.isClosing) await _closeGate.wait();
+
+    // A cached model whose close has started is going away, and its close
+    // listener fires only once the teardown ends. Forget it, wait for that
+    // teardown, then build anew; the listener is identity-guarded and will
+    // not touch the new model.
+    if (_initializedModel case final cached? when cached.isClosed) {
+      _initCompleter = null;
+      _inFlightRequest = null;
       _initializedModel = null;
-    });
-    return model;
+      _lastModelIdentity = null;
+      _lastInferenceParams = null;
+      await _closeGate.closeAndWait(cached, label: requestedSpec.name);
+    }
+
+    // The rest mirrors FlutterEdgeAiMobile.createModel, whose comments say
+    // why each step is shaped the way it is.
+    if (_initCompleter != null &&
+        _initializedModel != null &&
+        _lastModelIdentity != null) {
+      final modelChange = _modelChange(_lastModelIdentity!, requestedIdentity);
+      final baseline = _lastInferenceParams;
+      final changedParam = baseline == null
+          ? 'unknown — no recorded config for the cached model'
+          : baseline.firstDifference(requestedParams);
+
+      if (modelChange != null || changedParam != null) {
+        edgeAiLog(
+          modelChange != null
+              ? '[FlutterEdgeAiWeb] Active model changed ($modelChange)'
+              : '[FlutterEdgeAiWeb] Runtime config changed ($changedParam) '
+                    'for ${requestedSpec.name} — rebuilding the model',
+        );
+        // State cleared BEFORE the close is awaited, so no caller observes a
+        // half-torn singleton; a throwing close must not keep it registered.
+        final closing = _initializedModel;
+        _initCompleter = null;
+        _inFlightRequest = null;
+        _initializedModel = null;
+        _lastModelIdentity = null;
+        _lastInferenceParams = null;
+        // Through the gate, so a caller arriving during this close waits for
+        // it instead of building; a failed close is logged, not passed on.
+        if (closing != null) {
+          await _closeGate.closeAndWait(closing, label: requestedSpec.name);
+        }
+      } else {
+        edgeAiLog(
+          '[FlutterEdgeAiWeb] Reusing existing model instance for '
+          '${requestedSpec.name}',
+        );
+        return _initCompleter!.future;
+      }
+    }
+
+    // A build already in flight is shared only with a caller asking for the
+    // same model and knobs; anyone else waits for it, then rebuilds.
+    if (_initCompleter case Completer<InferenceModel> completer) {
+      final pending = _inFlightRequest;
+      final modelChange = pending == null
+          ? null
+          : _modelChange(pending.identity, requestedIdentity);
+      final changedParam = pending?.params.firstDifference(requestedParams);
+      if (pending != null && modelChange == null && changedParam == null) {
+        return completer.future;
+      }
+      edgeAiLog(
+        '[FlutterEdgeAiWeb] A model build is already in flight with a '
+        'different request (${modelChange ?? 'config $changedParam'}) — '
+        'waiting for it, then rebuilding',
+      );
+      var inFlightFailed = false;
+      try {
+        await completer.future;
+      } catch (_) {
+        inFlightFailed = true;
+        edgeAiLog(
+          '[FlutterEdgeAiWeb] In-flight build failed; building fresh for this '
+          'request',
+        );
+      }
+      if (inFlightFailed && identical(_initCompleter, completer)) {
+        _initCompleter = null;
+        _inFlightRequest = null;
+      }
+      return createModel(
+        modelType: modelType,
+        fileType: fileType,
+        maxTokens: maxTokens,
+        preferredBackend: preferredBackend,
+        preferredVisionBackend: preferredVisionBackend,
+        preferredAudioBackend: preferredAudioBackend,
+        loraRanks: loraRanks,
+        maxNumImages: maxNumImages,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+        enableSpeculativeDecoding: enableSpeculativeDecoding,
+        activationDataType: activationDataType,
+        maxConcurrentSessions: maxConcurrentSessions,
+      );
+    }
+
+    final completer = _initCompleter = Completer<InferenceModel>();
+    _inFlightRequest = (identity: requestedIdentity, params: requestedParams);
+
+    try {
+      // Engine selection routes through [EngineRegistry] (probe-chain), as on
+      // mobile and desktop: .task → MediaPipe, .litertlm → LiteRT-LM, from
+      // their own packages via FlutterEdgeAi.initialize(inferenceEngines: ...).
+      // Web registers no default; each engine builds its own
+      // WebModelSourceResolver. Web has no resolved file path, so the
+      // RuntimeConfig's modelPath is empty.
+      final spec = requestedSpec;
+      final config = RuntimeConfig(
+        maxTokens: maxTokens,
+        modelPath: '',
+        preferredBackend: preferredBackend,
+        preferredVisionBackend: preferredVisionBackend,
+        preferredAudioBackend: preferredAudioBackend,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+        maxNumImages: maxNumImages,
+        enableSpeculativeDecoding: enableSpeculativeDecoding,
+        activationDataType: activationDataType,
+        maxConcurrentSessions: maxConcurrentSessions,
+        loraRanks: loraRanks,
+      );
+      final engine = EngineRegistry.instance.findFor(spec);
+      if (engine == null) {
+        throw StateError(
+          'No inference engine can handle this model (ModelFileType.${spec.fileType.name}). '
+          'Add the engine package to pubspec.yaml and pass it in inferenceEngines: '
+          'of FlutterEdgeAi.initialize(...). Registered engines: '
+          '${EngineRegistry.instance.registered.map((e) => e.name).join(", ")}.',
+        );
+      }
+      if (activationDataType != null) {
+        edgeAiLog(
+          '[FlutterEdgeAiWeb] activationDataType (${activationDataType.name}) is '
+          'not supported on web — no web engine has the setting; ignoring.',
+        );
+      }
+      final model = await engine.createModel(spec, config);
+
+      // Core owns the singleton lifecycle: track it + reset on close. The
+      // package-built model fires this via CloseNotifier (addCloseListener).
+      // Identity-guarded: a late close of a superseded model must not clear a
+      // newer, live one.
+      _initializedModel = model;
+      model.addCloseListener(() {
+        if (!identical(_initializedModel, model)) return;
+        _initializedModel = null;
+        _initCompleter = null;
+        _inFlightRequest = null;
+        _lastModelIdentity = null;
+        _lastInferenceParams = null;
+      });
+
+      _lastModelIdentity = requestedIdentity;
+      _lastInferenceParams = requestedParams;
+      _inFlightRequest = null;
+      completer.complete(model);
+      return model;
+    } catch (e, st) {
+      _initCompleter = null;
+      _inFlightRequest = null;
+      _initializedModel = null;
+      _lastModelIdentity = null;
+      _lastInferenceParams = null;
+      completer.completeError(e, st);
+      // The completer's future, not a throw: one future in flight, none
+      // orphaned (#394).
+      return completer.future;
+    }
+  }
+
+  /// How [to] differs from [from] as a model to build, or null if it does
+  /// not: another active model, the same name with other weights (another
+  /// source, a LoRA added or removed), or the same model asked for as another
+  /// modelType or fileType.
+  static String? _modelChange(_ModelIdentity from, _ModelIdentity to) {
+    if (from.active.name != to.active.name) {
+      return '${from.active.name} → ${to.active.name}';
+    }
+    if (from.active != to.active) {
+      return '${to.active.name} re-installed with another source or LoRA';
+    }
+    if (from.modelType != to.modelType) {
+      return 'modelType ${from.modelType.name} → ${to.modelType.name}';
+    }
+    if (from.fileType != to.fileType) {
+      return 'fileType ${from.fileType.name} → ${to.fileType.name}';
+    }
+    return null;
   }
 
   // === EmbeddingModel Methods - Web Implementation ===
@@ -215,7 +395,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
 
       // No active embedding model - user must set one first
       if (activeModel == null) {
-        throw StateError(
+        throw NoActiveModelError(
           'No active embedding model set. Use `FlutterEdgeAi.installEmbedder()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
       }
@@ -466,3 +646,12 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     );
   }
 }
+
+/// The model a web build is for: the active spec, compared by value (source,
+/// LoRA and file set included), and the modelType and fileType it was asked
+/// for.
+typedef _ModelIdentity = ({
+  InferenceModelSpec active,
+  ModelType modelType,
+  ModelFileType fileType,
+});

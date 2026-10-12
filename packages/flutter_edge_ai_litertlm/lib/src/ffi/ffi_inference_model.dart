@@ -51,6 +51,9 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
+  @override
+  bool get isClosed => _isClosed;
+
   /// Sessions opened via [openSession] — detached from the legacy [_session]
   /// singleton. Each owns its own conversation handle.
   final Set<FfiInferenceModelSession> _openSessions = {};
@@ -344,9 +347,23 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
       ? SdkResponseParser.serializeToolsForSdk(tools)
       : null;
 
+  /// The teardown in progress, shared by every caller of [close]: a second
+  /// call waits for it instead of returning at once, so core can tell when
+  /// the model is really gone before it builds the next one.
+  Future<void>? _closeFuture;
+
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() {
+    final teardown = _closeFuture;
+    if (teardown != null) return teardown;
+    final settled = Completer<void>();
+    _closeFuture = settled.future;
+    // The first caller gets the teardown's own outcome; every later caller
+    // gets `settled`, which completes normally once the teardown has ended.
+    return _close().whenComplete(settled.complete);
+  }
+
+  Future<void> _close() async {
     _isClosed = true;
     try {
       await _session?.close();

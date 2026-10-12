@@ -69,7 +69,7 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.2.1
+  flutter_edge_ai: ^2.3.0
   flutter_edge_ai_litertlm: ^1.12.0   # or any other engine from the table
 ```
 
@@ -278,6 +278,12 @@ await for (final response in chat.generateChatResponseAsync()) {
 
 await model.close();
 ```
+
+`getActiveModel` returns the same model while the active model and its
+arguments stay the same. Another model, or other arguments, builds a new one
+and closes the previous handle. A model is closed from the moment its
+`close()` starts (`model.isClosed`); `getActiveModel` waits for that close to
+finish, then builds a new model.
 
 Sampling left unset comes from the model: the sampler a native `.litertlm` file
 ships, else the defaults its family publishes (`SamplingParams.forModelType`),

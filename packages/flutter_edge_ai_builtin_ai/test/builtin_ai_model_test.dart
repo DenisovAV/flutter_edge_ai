@@ -127,6 +127,29 @@ void main() {
   });
 
   group('session lanes', () {
+    test('isClosed is true from the moment close() starts', () async {
+      // Core's getActiveModel cache checks this: its close listener fires
+      // only once the teardown has ended.
+      final model = await newModel();
+      expect(model.isClosed, isFalse);
+
+      final closing = model.close();
+      expect(model.isClosed, isTrue);
+      await closing;
+    });
+
+    test('the OS model is released before the close listeners fire', () async {
+      // Core builds the next model once the listeners fire.
+      final model = await newModel();
+      bool? releasedFirst;
+      model.addCloseListener(
+        () => releasedFirst = host.calls.contains('closeModel'),
+      );
+
+      await model.close();
+      expect(releasedFirst, isTrue);
+    });
+
     test('createSession replaces and closes the previous singleton', () async {
       final model = await newModel();
 

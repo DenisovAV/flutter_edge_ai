@@ -1,7 +1,14 @@
-## 2.2.1
+## 2.3.0
+- `getActiveModel` waits for a closing model to finish, then builds the next one.
+- A LoRA added to an installed model is downloaded, and `getActiveModel` reloads the model.
+- No installed model throws `NoActiveModelError`, a `StateError` callers can tell apart.
+- **Breaking for `implements InferenceModel`:** add `isClosed`; `extends` inherits the default.
 - A model or STT model installed with `fromFile` is active again after a restart.
 - Uninstalling a model no longer deletes the app's own `fromFile` files.
 - Installing a model again from another source replaces it, and core's old copy is deleted.
+
+## 2.2.1
+- Web reuses the loaded model when the active model and arguments are unchanged.
 
 ## 2.2.0
 - **Breaking:** unset sampling values come from the model file, then its family, not greedy `topK: 1` (#572).

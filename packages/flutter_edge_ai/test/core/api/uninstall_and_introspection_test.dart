@@ -163,7 +163,12 @@ void main() {
       // Identity cleared → getActiveEmbedder now fails fast.
       expect(FlutterEdgeAi.hasActiveEmbedder(), isFalse);
       expect(FlutterEdgeAi.activeEmbedderSpec, isNull);
-      expect(() => FlutterEdgeAi.getActiveEmbedder(), throwsStateError);
+      // Typed, so a caller can tell "nothing installed" from a model that
+      // cannot run; still a StateError for code that catches that.
+      expect(
+        () => FlutterEdgeAi.getActiveEmbedder(),
+        throwsA(isA<NoActiveModelError>()),
+      );
     });
 
     test('uninstallEmbedder is a no-op when nothing is active', () async {

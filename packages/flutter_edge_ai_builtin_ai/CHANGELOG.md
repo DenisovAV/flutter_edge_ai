@@ -1,3 +1,7 @@
+## 0.3.4
+- `close()` sets `isClosed` at once and releases the OS model before its listeners fire.
+- Require `flutter_edge_ai` ^2.3.0.
+
 ## 0.3.3
 - Sampling parameters are nullable; unset ones keep `temperature: 0.8, topK: 1` (#572).
 - Require `flutter_edge_ai` ^2.2.0.

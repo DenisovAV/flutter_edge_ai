@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+import 'package:flutter_edge_ai/core/domain/no_active_model_error.dart';
 import 'package:flutter_edge_ai/core/api/inference_installation_builder.dart';
 import 'package:flutter_edge_ai/core/api/embedding_installation_builder.dart';
 import 'package:flutter_edge_ai/core/api/stt_installation_builder.dart';
@@ -387,6 +388,10 @@ class FlutterEdgeAi {
   ///
   /// Throws:
   /// - [StateError] if no active inference model is set
+  /// - `TimeoutException` if the previous model is still closing after 60 s;
+  ///   its close keeps running, and a later call succeeds once it ends. A
+  ///   model closing when this is called (`isClosed` is true) is waited for,
+  ///   never returned.
   ///
   /// Example:
   /// ```dart
@@ -428,7 +433,7 @@ class FlutterEdgeAi {
     final activeSpec = manager.activeInferenceModel;
 
     if (activeSpec == null) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active inference model set. Use FlutterEdgeAi.installModel() first.',
       );
     }
@@ -683,7 +688,7 @@ class FlutterEdgeAi {
     final activeSpec = manager.activeEmbeddingModel;
 
     if (activeSpec == null) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active embedding model set. Use FlutterEdgeAi.installEmbedder() first.',
       );
     }

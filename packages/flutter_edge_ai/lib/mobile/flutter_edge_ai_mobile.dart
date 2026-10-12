@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
+import 'package:flutter_edge_ai/core/domain/no_active_model_error.dart';
 
 import 'dart:io';
 
@@ -32,8 +34,10 @@ import '../core/registry/stt_backend_provider.dart';
 import '../core/registry/tts_registry.dart';
 import '../core/registry/runtime_config.dart';
 import '../core/model_management/model_specs.dart';
+
 import 'package:flutter_edge_ai/core/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/core/embedding/embedder_cache.dart';
+
 // Re-export the spec value types so existing importers of this library (tests,
 // example, and any external code that imported the mobile lib directly) keep
 // seeing InferenceModelSpec/EmbeddingModelSpec/etc. — they used to be `part`s
@@ -63,6 +67,9 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
   Completer<InferenceModel>? _initCompleter;
   InferenceModel? _initializedModel;
 
+  /// Holds builds back while a previous model is still closing.
+  final ModelCloseGate _closeGate = ModelCloseGate();
+
   InferenceModelSpec?
   _lastActiveInferenceSpec; // Track which spec was used to create _initializedModel
 
@@ -80,7 +87,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
   ///
   /// Kept in lockstep with [_initCompleter]: set where that is created,
   /// cleared everywhere it is cleared.
-  ({String specName, ActiveModelParams params})? _inFlightRequest;
+  ({InferenceModelSpec spec, ActiveModelParams params})? _inFlightRequest;
 
   /// The cached embedder, the rule for reusing it, and the serialisation that
   /// makes the rule mean anything — shared with the desktop and web shells,
@@ -139,7 +146,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
 
     // No active inference model - user must set one first
     if (activeModel == null) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active inference model set. Use `FlutterEdgeAi.installModel()` or `modelManager.ensureModelReadyFromSpec()` first',
       );
     }
@@ -164,6 +171,23 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
       loraRanks: loraRanks,
     );
 
+    // No model is built while another is still closing: two native models
+    // must not be resident at once (see [ModelCloseGate]).
+    if (_closeGate.isClosing) await _closeGate.wait();
+
+    // A cached model whose close has started is going away, and its close
+    // listener fires only once the teardown ends. Forget it, wait for that
+    // teardown, then build anew; the listener is identity-guarded and will
+    // not touch the new model.
+    if (_initializedModel case final cached? when cached.isClosed) {
+      _initCompleter = null;
+      _inFlightRequest = null;
+      _initializedModel = null;
+      _lastActiveInferenceSpec = null;
+      _lastInferenceParams = null;
+      await _closeGate.closeAndWait(cached, label: requestedSpec.name);
+    }
+
     // Check if singleton exists and matches the active model
     if (_initCompleter != null &&
         _initializedModel != null &&
@@ -187,10 +211,14 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
           ? 'unknown — no recorded config for the cached model'
           : baseline.firstDifference(requestedParams);
 
-      if (currentSpec.name != requestedSpec.name || changedParam != null) {
+      // By value, not by name: a LoRA added to the same file, or the file
+      // re-installed from another source, keeps the name and changes the
+      // weights.
+      final modelChanged = currentSpec != requestedSpec;
+      if (modelChanged || changedParam != null) {
         edgeAiLog(
-          currentSpec.name != requestedSpec.name
-              ? '⚠️  Active model changed: ${currentSpec.name} → ${requestedSpec.name}'
+          modelChanged
+              ? '⚠️  Active model changed: ${_describeChange(currentSpec, requestedSpec)}'
               : '⚠️  Runtime config changed ($changedParam) for '
                     '${requestedSpec.name} — rebuilding the model',
         );
@@ -224,10 +252,10 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
         _initializedModel = null;
         _lastActiveInferenceSpec = null;
         _lastInferenceParams = null;
-        try {
-          await closing?.close();
-        } catch (e) {
-          edgeAiLog('Old model close() failed, continuing with rebuild: $e');
+        // Through the gate, so a caller arriving during this close waits for
+        // it instead of building; a failed close is logged, not passed on.
+        if (closing != null) {
+          await _closeGate.closeAndWait(closing, label: requestedSpec.name);
         }
       } else {
         // Same model - return existing singleton
@@ -249,7 +277,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     if (_initCompleter case Completer<InferenceModel> completer) {
       final pending = _inFlightRequest;
       final changedParam = pending?.params.firstDifference(requestedParams);
-      final sameModel = pending?.specName == requestedSpec.name;
+      final sameModel = pending?.spec == requestedSpec;
       if (pending != null && sameModel && changedParam == null) {
         // Genuinely the same request — sharing the in-flight build is the
         // point of the completer.
@@ -257,7 +285,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
       }
       edgeAiLog(
         '⏳ A model build is already in flight with a different request '
-        '(${sameModel ? 'config $changedParam' : 'model ${pending?.specName} → ${requestedSpec.name}'})'
+        '(${sameModel ? 'config $changedParam' : 'model ${pending?.spec.name} → ${requestedSpec.name}'})'
         ' — waiting for it, then rebuilding',
       );
       var inFlightFailed = false;
@@ -307,7 +335,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     }
 
     final completer = _initCompleter = Completer<InferenceModel>();
-    _inFlightRequest = (specName: requestedSpec.name, params: requestedParams);
+    _inFlightRequest = (spec: requestedSpec, params: requestedParams);
 
     final isBuiltIn = requestedSpec.fileType == ModelFileType.builtIn;
     String modelPath = '';
@@ -486,7 +514,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
 
       // No active embedding model - user must set one first
       if (activeModel == null) {
-        throw StateError(
+        throw NoActiveModelError(
           'No active embedding model set. Use `FlutterEdgeAi.installEmbedder()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
       }
@@ -949,3 +977,9 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     }
   }
 }
+
+/// How the active model changed, for the rebuild log line.
+String _describeChange(InferenceModelSpec from, InferenceModelSpec to) =>
+    from.name == to.name
+    ? '${to.name} re-installed with another source or LoRA'
+    : '${from.name} → ${to.name}';

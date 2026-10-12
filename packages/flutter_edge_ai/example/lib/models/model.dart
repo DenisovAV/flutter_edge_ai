@@ -632,7 +632,7 @@ enum Model implements InferenceModelInterface {
     licenseUrl: 'https://huggingface.co/litert-community/Phi-4-mini-reasoning',
     needsAuth: false,
     preferredBackend: PreferredBackend.gpu,
-    modelType: ModelType.general,
+    modelType: ModelType.phi,
     fileType: ModelFileType.litertlm,
     temperature: 0.7,
     topK: 40,

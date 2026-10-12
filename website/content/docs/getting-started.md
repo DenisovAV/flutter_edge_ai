@@ -295,9 +295,15 @@ final deep = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 To serve several dialogues from one loaded model, do not reload it — open
 several sessions instead (next section).
 
-On **web** there is no reuse at all: every `getActiveModel` call closes the
-cached model and builds a new one, identical arguments or not. Get the model
-once and keep the handle.
+Web follows the same rule since `flutter_edge_ai` 2.2.1. Before that, every
+`getActiveModel` call on web closed the cached model and built a new one,
+identical arguments or not.
+
+A model is closed from the moment its `close()` starts: `model.isClosed` is
+true. Since 2.3.0 a `getActiveModel` call made while that close is still
+running waits for it to finish (at most 60 s, then `TimeoutException`) and
+builds a new model; it never returns the closing one, and two models are never
+loaded at once.
 
 <Info>
 

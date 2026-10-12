@@ -109,6 +109,53 @@ Future<List<String>> capturePrints(Future<void> Function() body) async {
   return printed;
 }
 
+/// A notice length no other timer in these tests uses, so a zone can tell
+/// the workers' notice timers apart and replace them with [ManualTimer]s.
+const manualNotice = Duration(hours: 1);
+
+/// [capturePrintsInto], and every timer of [manualNotice] is a [ManualTimer]
+/// added to [notices] instead of a real one. The workers create their
+/// notices with `Timer(...)`, which asks the current zone for the timer, so a
+/// test can check that a call cancelled its notice without racing the clock.
+ZoneSpecification capturePrintsWithManualNotices(
+  List<String> printed,
+  List<ManualTimer> notices,
+) => ZoneSpecification.from(
+  capturePrintsInto(printed),
+  createTimer: (self, parent, zone, duration, callback) {
+    if (duration != manualNotice) {
+      return parent.createTimer(zone, duration, callback);
+    }
+    final notice = ManualTimer(callback);
+    notices.add(notice);
+    return notice;
+  },
+);
+
+/// A timer that fires only when the test calls [elapse].
+class ManualTimer implements Timer {
+  ManualTimer(this._callback);
+
+  final void Function() _callback;
+  bool _active = true;
+
+  /// What the timer does once its time has passed: fire, unless cancelled.
+  void elapse() {
+    if (!_active) return;
+    _active = false;
+    _callback();
+  }
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  int get tick => 0;
+
+  @override
+  void cancel() => _active = false;
+}
+
 /// A request that failed because the worker closed before running it — the
 /// worker's own answer, not the main isolate's safety net.
 Matcher closedBeforeRun(String workerName) => isA<StateError>().having(

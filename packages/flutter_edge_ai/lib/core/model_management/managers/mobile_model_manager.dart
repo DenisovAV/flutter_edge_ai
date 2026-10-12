@@ -727,23 +727,35 @@ class MobileModelManager extends ModelFileManager
     if (spec.replacePolicy == ModelReplacePolicy.replace &&
         steps.any((step) => step.installs)) {
       await _handleModelSwitching(spec);
-      // The switch uninstalls every model of the type, this one's files too.
+      // The switch uninstalled every other model of the type.
       steps = await planInstall(spec.files);
     }
-    return installPlanned(steps, modelType: _toRepoType(spec.type));
+    try {
+      return await installPlanned(steps, modelType: _toRepoType(spec.type));
+    } on ModelStorageException {
+      rethrow;
+    } catch (e) {
+      throw ModelStorageException(
+        'Failed to install ${spec.name}',
+        e,
+        '_ensureModelReady',
+      );
+    }
   }
 
   /// Handles model switching according to replace policy
   Future<void> _handleModelSwitching(ModelSpec spec) async {
-    // If replace policy, clean up ALL models of this type before installing new one
+    // If replace policy, clean up every OTHER model of this type before
+    // installing this one: its own files stay, installed or about to be.
     if (spec.replacePolicy == ModelReplacePolicy.replace) {
       edgeAiLog(
-        'Policy-based replacement: cleaning up ALL ${spec.type.name} models',
+        'Policy-based replacement: cleaning up other ${spec.type.name} models',
       );
+      final own = {for (final file in spec.files) file.filename};
 
       // Clean up tasks first: their files are deleted through the records,
       // which keep a file the app installed with `fromFile`.
-      await _cleanupAllTasksOfType(spec.type);
+      await _cleanupAllTasksOfType(spec.type, keep: own);
 
       // Delete all installed models of this type from ModelRepository
       final installedFiles = await getInstalledModels(spec.type);
@@ -751,6 +763,7 @@ class MobileModelManager extends ModelFileManager
       final repository = registry.modelRepository;
 
       for (final filename in installedFiles) {
+        if (own.contains(filename)) continue;
         try {
           await _uninstallFile(filename, repository);
         } catch (e) {
@@ -760,8 +773,12 @@ class MobileModelManager extends ModelFileManager
     }
   }
 
-  /// Clean up all tasks and files of a specific type
-  Future<void> _cleanupAllTasksOfType(ModelManagementType type) async {
+  /// Clean up all tasks and files of a specific type, but those named in
+  /// [keep].
+  Future<void> _cleanupAllTasksOfType(
+    ModelManagementType type, {
+    Set<String> keep = const {},
+  }) async {
     try {
       edgeAiLog('Cleaning up all tasks of type: ${type.name}');
 
@@ -773,7 +790,7 @@ class MobileModelManager extends ModelFileManager
         final filename = record.task.filename;
         final modelType = _detectModelType(filename);
 
-        if (modelType == type) {
+        if (modelType == type && !keep.contains(filename)) {
           cleanedCount++;
           try {
             await ModelFileSystemManager.deleteModelFile(filename);

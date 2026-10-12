@@ -1,6 +1,7 @@
 ## 2.2.1
 - A model or STT model installed with `fromFile` is active again after a restart.
 - Uninstalling a model no longer deletes the app's own `fromFile` files.
+- Installing a model again from another source replaces it, and core's old copy is deleted.
 
 ## 2.2.0
 - **Breaking:** unset sampling values come from the model file, then its family, not greedy `topK: 1` (#572).

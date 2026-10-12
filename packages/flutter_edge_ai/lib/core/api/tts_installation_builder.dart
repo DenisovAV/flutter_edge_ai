@@ -112,7 +112,8 @@ class TtsInstallationBuilder {
   /// Note: This method is idempotent - a bundle file already installed from
   /// the same place is skipped and the spec is just (re-)set as active. A file
   /// installed from somewhere else is installed again from the new base, and
-  /// core's earlier copy of it is deleted once the new bundle is active.
+  /// core's earlier copy of it is deleted once the new bundle is active (or
+  /// at the next start).
   Future<TtsInstallation> install() async {
     if (kIsWeb) {
       throw UnsupportedError(

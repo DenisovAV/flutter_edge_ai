@@ -1,18 +1,22 @@
-/// One rule for installing a model's files, used by every installer — the
-/// builders, `ensureModelReadyFromSpec` and the legacy calls that go through
-/// it — so a name installed again from another source behaves the same way
-/// everywhere.
+/// One rule for installing a model's files, used by the installers — the
+/// inference, STT, embedding and TTS builders, and `ensureModelReadyFromSpec`
+/// with the legacy calls that go through it on Android, iOS and desktop — so
+/// a name installed again from another source behaves the same way. The web
+/// model manager and the legacy `downloadModel` calls do not follow it yet.
 ///
 /// Each file of a spec has a repository record that says whose the file is
 /// and where it lives. A file is skipped only when its record already names
-/// the requested source and the file is there; otherwise it is installed
-/// from the requested source. Core never writes over or deletes a file the
-/// app installed with `fromFile`, and deletes its own earlier copy of a name
-/// only once the new file is active and no record reads that copy.
+/// the requested source and the file is there as it was written; otherwise
+/// it is installed from the requested source. A URL is compared without its
+/// query, fragment and credentials, so a refreshed signed link is the same
+/// source — and a version told apart only by the query is not. These
+/// installers never write over a file the app installed with `fromFile` nor
+/// delete one, and delete core's own earlier copy of a name once the new
+/// file is active, or at the next start, and only when no record reads it.
 ///
-/// An installer [planInstall]s the spec's files — every error is raised
-/// there, before anything changes —, [installPlanned]s the result, activates
-/// the spec and then [CopyRelease.run]s. A copy an interrupted install leaves
+/// An installer [planInstall]s the spec's files — an error is raised there,
+/// before anything changes —, [installPlanned]s the result, activates the
+/// spec and then [CopyRelease.run]s. A copy an interrupted install leaves
 /// behind is released at the next start ([releasePendingCopies]).
 ///
 /// Internal to core; not exported from `flutter_edge_ai.dart`.
@@ -37,7 +41,11 @@ import 'package:flutter_edge_ai/model_file_manager_interface.dart';
 /// What installing one file of a spec does, as [planInstall] decided it.
 @immutable
 final class FileInstallStep {
-  const FileInstallStep._(this.file, {required this.installs, this.releases});
+  const FileInstallStep._(
+    this.file, {
+    required this.installs,
+    this.replacedCopy,
+  });
 
   /// The file: the name it is recorded under and the requested source.
   final ModelFile file;
@@ -46,16 +54,17 @@ final class FileInstallStep {
   final bool installs;
 
   /// Core's earlier copy of this name, released once the spec is active.
-  final String? releases;
+  final String? replacedCopy;
 }
 
 /// Decides, for each of [files], whether it is installed and which earlier
 /// copy of core's it replaces — reading records and files, changing nothing.
 ///
 /// Throws a [ModelStorageException] before anything is installed when a file
-/// the app passed with `fromFile` is not there (naming every such file), or
-/// when a copy core would make lands on a file the app installed with
-/// `fromFile` — installing it would overwrite the app's file.
+/// the app passed with `fromFile` is not there (naming every such file), when
+/// a copy core would make lands on a file the app installed with `fromFile` —
+/// installing it would overwrite the app's file —, or when no handler
+/// installs a file's source.
 Future<List<FileInstallStep>> planInstall(List<ModelFile> files) async {
   final registry = ServiceRegistry.instance;
   final repository = registry.modelRepository;
@@ -76,65 +85,114 @@ Future<List<FileInstallStep>> planInstall(List<ModelFile> files) async {
   }
 
   // Where every file the app installed is, so no copy lands on one.
-  final appFiles = <String>[
+  final appFiles = <_AppFile>[
     if (!kIsWeb)
       for (final info in await repository.listInstalled())
         if (info.source case FileSource(path: final recorded))
-          await appFileLocationNow(recorded),
+          (name: info.id, location: await appFileLocationNow(recorded)),
   ];
 
-  return [
+  final steps = [
     for (final file in files)
       await _plan(file, await repository.loadModel(file.filename), appFiles),
   ];
+  for (final step in steps) {
+    if (step.installs &&
+        registry.sourceHandlerRegistry.getHandler(step.file.source) == null) {
+      throw ModelStorageException(
+        'No source handler for ${step.file.source.runtimeType} '
+            '("${step.file.filename}")',
+        null,
+        'install',
+      );
+    }
+  }
+  return steps;
 }
+
+typedef _AppFile = ({String name, String location});
 
 Future<FileInstallStep> _plan(
   ModelFile file,
   repo.ModelInfo? record,
-  List<String> appFiles,
+  List<_AppFile> appFiles,
 ) async {
-  FileInstallStep install({String? releasing}) =>
-      FileInstallStep._(file, installs: true, releases: releasing);
+  FileInstallStep install({String? replacing}) =>
+      FileInstallStep._(file, installs: true, replacedCopy: replacing);
   final skip = FileInstallStep._(file, installs: false);
   final requested = file.source;
-  final recorded = record?.source;
 
   if (requested is FileSource) {
     if (record == null) return install();
+    final recorded = record.source;
     // The app's file at the recorded path; picked from anywhere else, the
     // record follows the pick.
     if (recorded is FileSource) {
       return requested.path == recorded.path ? skip : install();
     }
-    final copy = await _coreCopy(record);
-    // Core's own copy handed back — a restored spec carries its path, and so
-    // does getModelPath: the same install, and the file stays core's.
-    if (copy != null && await isSameFile(copy, requested.path)) return skip;
-    return install(releasing: copy);
+    // The file the record reads — core's copy, or a resource of the iOS
+    // bundle — handed back (a restored spec carries its path, and so does
+    // getModelPath) is the same install and stays core's, unless the app has
+    // written a file of its own there since.
+    final location = await _readLocation(record);
+    final identity = location == null
+        ? FileIdentity.different
+        : await compareFiles(location, requested.path);
+    if (identity == FileIdentity.same &&
+        await _hasRecordedSize(record, requested.path)) {
+      return skip;
+    }
+    // Core's copy goes only when it is known to be another file.
+    return install(
+      replacing: identity == FileIdentity.different
+          ? await _coreCopy(record)
+          : null,
+    );
   }
 
+  if (record != null &&
+      record.source is! FileSource &&
+      _sameSource(requested, record.source) &&
+      await _isThere(record)) {
+    return skip;
+  }
   final target = await _copyTarget(file.filename, requested);
   if (target != null) {
-    for (final appFile in appFiles) {
-      if (await isSameFile(appFile, target)) {
-        throw ModelStorageException(
-          '${file.filename} would be written to $target, which is a file the '
-              'app installed with fromFile. Install that file with fromFile, or '
-              'move it out of the model directory first.',
-          null,
-          'install',
-        );
-      }
+    for (final app in appFiles) {
+      final identity = await compareFiles(app.location, target);
+      if (identity == FileIdentity.different) continue;
+      throw ModelStorageException(
+        identity == FileIdentity.same
+            ? '${file.filename} would be written to $target, which is '
+                  '${app.name}, a file the app installed with fromFile. '
+                  'Install it with fromFile, or move it out of the model '
+                  'directory first.'
+            : '${file.filename} would be written to $target, and whether '
+                  'that is ${app.name}, a file the app installed with '
+                  'fromFile, could not be found out. Nothing was installed.',
+        null,
+        'install',
+      );
     }
   }
   // Nothing recorded, or the app's own file: the copy takes over the name.
-  if (record == null || recorded is FileSource) return install();
-  if (_sameSource(requested, recorded!) && await _isThere(record)) return skip;
+  if (record == null || record.source is FileSource) return install();
   final copy = await _coreCopy(record);
   final replaced =
-      copy != null && (target == null || !await isSameFile(target, copy));
-  return install(releasing: replaced ? copy : null);
+      copy != null &&
+      (target == null ||
+          await compareFiles(target, copy) == FileIdentity.different);
+  return install(replacing: replaced ? copy : null);
+}
+
+/// Whether the file at [filePath] still has the size [record] was written
+/// with — what tells core's copy from a file of the app's written over it,
+/// or from a copy cut short.
+Future<bool> _hasRecordedSize(repo.ModelInfo record, String filePath) async {
+  final stamp = await fileStamp(filePath);
+  return stamp == null ||
+      record.sizeBytes <= 0 ||
+      stamp.size == record.sizeBytes;
 }
 
 /// Where core's own copy of [record]'s file is, or null when the record is
@@ -169,12 +227,13 @@ Future<String?> _copyTarget(String filename, ModelSource requested) async {
   };
 }
 
-/// Whether the file [record] describes is where it says.
+/// Whether the file [record] describes is where it says, as it was written.
 Future<bool> _isThere(repo.ModelInfo record) async {
   if (kIsWeb) return true;
   final location = await _readLocation(record);
   return location != null &&
-      await ServiceRegistry.instance.fileSystemService.fileExists(location);
+      await ServiceRegistry.instance.fileSystemService.fileExists(location) &&
+      await _hasRecordedSize(record, location);
 }
 
 /// Where [record]'s file is read from in this run, or null when that cannot
@@ -232,8 +291,8 @@ String _withoutQuery(String url) {
 ///
 /// A copy to release is journaled before its record changes, so one an
 /// interrupted install leaves is still released at the next start. A file
-/// installed from anything but the app's file takes its name over: whatever
-/// the app registered under that name is forgotten.
+/// core holds under a name takes it over: whatever the app registered under
+/// that name is forgotten.
 ///
 /// [progress] holds one callback per step (null: no progress for that one);
 /// [beforeInstalling] runs once, before the first file that is installed,
@@ -254,6 +313,7 @@ Future<CopyRelease> installPlanned(
     final file = step.file;
     if (!step.installs) {
       edgeAiLog('ℹ️  Already installed: ${file.filename}');
+      await _forgetAppRegistration(file);
       onFileDone?.call(i);
       continue;
     }
@@ -261,7 +321,9 @@ Future<CopyRelease> installPlanned(
       installing = true;
       await beforeInstalling?.call();
     }
-    if (step.releases case final copy?) await _journal(file.filename, copy);
+    if (step.replacedCopy case final copy?) {
+      await _journal(file.filename, copy);
+    }
 
     final source = file.source;
     final handler = registry.sourceHandlerRegistry.getHandler(source);
@@ -288,15 +350,21 @@ Future<CopyRelease> installPlanned(
         modelType: modelType,
       );
     }
-    if (source is! FileSource) {
-      await registry.protectedFilesRegistry.unprotect(file.filename);
-      await registry.protectedFilesRegistry.unregisterExternalPath(
-        file.filename,
-      );
-    }
+    await _forgetAppRegistration(file);
     onFileDone?.call(i);
   }
   return const CopyRelease._();
+}
+
+/// A file core holds under its name — a copy, or a bundle resource — is not
+/// the app's: whatever the app registered under that name (an install of
+/// its own, or one that releases up to 2.2.0 never unregistered) is
+/// forgotten.
+Future<void> _forgetAppRegistration(ModelFile file) async {
+  if (file.source is FileSource) return;
+  final registry = ServiceRegistry.instance.protectedFilesRegistry;
+  await registry.unprotect(file.filename);
+  await registry.unregisterExternalPath(file.filename);
 }
 
 /// Releases the earlier copies an install replaced, once its spec is active.
@@ -307,26 +375,41 @@ final class CopyRelease {
   /// and those an earlier attempt left — now that it is the active spec.
   ///
   /// Never throws. A copy that cannot be deleted yet (Windows keeps a loaded
-  /// model's file open) stays journaled for the next start; one another
-  /// active model still lists waits for it too.
-  Future<void> run(ModelFileManager manager, ModelSpec activated) =>
-      _releaseJournaled(
-        names: {for (final file in activated.files) file.filename},
-        stillActive: [
-          if (activated.type != ModelManagementType.inference)
-            manager.activeInferenceModel,
-          if (activated.type != ModelManagementType.embedding)
-            manager.activeEmbeddingModel,
-          if (activated.type != ModelManagementType.stt) manager.activeSttModel,
-          if (activated.type != ModelManagementType.tts) manager.activeTtsModel,
-        ].nonNulls.toList(),
-      );
+  /// model's file open), one a record still reads, and one another active
+  /// model lists stay journaled for a later release or the next start.
+  Future<void> run(
+    ModelFileManager manager,
+    ModelSpec activated,
+  ) => _inJournalLane(
+    () => _releaseJournaled(
+      names: {for (final file in activated.files) file.filename},
+      stillActive: [
+        if (activated.type != ModelManagementType.inference)
+          manager.activeInferenceModel,
+        if (activated.type != ModelManagementType.embedding)
+          manager.activeEmbeddingModel,
+        if (activated.type != ModelManagementType.stt) manager.activeSttModel,
+        if (activated.type != ModelManagementType.tts) manager.activeTtsModel,
+      ].nonNulls.toList(),
+    ),
+  );
 }
 
 /// Releases every copy the journal still holds: what an install could not
 /// delete, or did not get to before the app stopped. Runs at start, before
 /// any model is restored. Never throws.
-Future<void> releasePendingCopies() => _releaseJournaled();
+Future<void> releasePendingCopies() => _inJournalLane(_releaseJournaled);
+
+/// The journal is read, worked on and written back by one operation at a
+/// time: a release that took a while would otherwise write back a journal
+/// without the copy an install recorded meanwhile, and lose it.
+Future<void> _journalLane = Future<void>.value();
+
+Future<T> _inJournalLane<T>(Future<T> Function() operation) {
+  final done = _journalLane.then((_) => operation());
+  _journalLane = done.then<void>((_) {}, onError: (Object _) {});
+  return done;
+}
 
 Future<void> _releaseJournaled({
   Set<String>? names,
@@ -338,8 +421,7 @@ Future<void> _releaseJournaled({
     final journal = _readJournal(prefs);
     if (journal.isEmpty) return;
     final registry = ServiceRegistry.instance;
-    final fs = registry.fileSystemService;
-    final storage = await fs.getModelStorageDirectory();
+    final storage = await registry.fileSystemService.getModelStorageDirectory();
     final inUse = {
       for (final spec in stillActive)
         for (final file in spec.files) file.filename,
@@ -357,16 +439,20 @@ Future<void> _releaseJournaled({
         kept.add(copy);
         continue;
       }
-      if (!await _mayDelete(copy, storage, read)) {
-        edgeAiLog('[Install] kept ${copy.path}: it is not a free copy');
-        continue;
-      }
-      try {
-        await fs.deleteFile(copy.path);
-        edgeAiLog('[Install] released ${copy.name}: deleted ${copy.path}');
-      } on Exception catch (e) {
-        edgeAiLog('[Install] cannot delete ${copy.path} yet ($e)');
-        kept.add(copy);
+      final file = path.join(storage, copy.path);
+      switch (await _verdict(copy, file, storage, read)) {
+        case _Verdict.keep:
+          kept.add(copy);
+        case _Verdict.forget:
+          break;
+        case _Verdict.delete:
+          try {
+            await registry.fileSystemService.deleteFile(file);
+            edgeAiLog('[Install] released ${copy.name}: deleted $file');
+          } on Exception catch (e) {
+            edgeAiLog('[Install] cannot delete $file yet ($e)');
+            kept.add(copy);
+          }
       }
     }
     await _writeJournal(prefs, kept);
@@ -375,43 +461,64 @@ Future<void> _releaseJournaled({
   }
 }
 
-/// A journaled copy is deleted only if it is in core's model directory —
-/// never one a desktop install before 0.15.1 left in the user's Documents —,
-/// is still the file that was journaled, and no record reads it.
-Future<bool> _mayDelete(
+/// What becomes of a journaled copy.
+enum _Verdict {
+  /// Free: core's copy, unchanged, read by no record.
+  delete,
+
+  /// Read by a record now, or not to be told apart from one: later.
+  keep,
+
+  /// Not that copy any more — gone, or written since — or not core's.
+  forget,
+}
+
+Future<_Verdict> _verdict(
   _PendingCopy copy,
+  String file,
   String storage,
   List<String> read,
 ) async {
-  if (!path.isWithin(storage, copy.path)) return false;
-  final stamp = await fileStamp(copy.path);
+  if (!path.isWithin(storage, file)) {
+    edgeAiLog('[Install] $file is not in the model directory; kept');
+    return _Verdict.forget;
+  }
+  final stamp = await fileStamp(file);
   if (stamp == null ||
       stamp.size != copy.size ||
       stamp.modifiedMs != copy.modifiedMs) {
-    return false;
+    return _Verdict.forget;
   }
   for (final location in read) {
-    if (await isSameFile(location, copy.path)) return false;
+    if (await compareFiles(location, file) != FileIdentity.different) {
+      edgeAiLog('[Install] $file is read by a record; kept for now');
+      return _Verdict.keep;
+    }
   }
-  return true;
+  return _Verdict.delete;
 }
 
-/// A copy waiting to be released: its name, its path, and the file it was
-/// when journaled.
+/// A copy waiting to be released: its name, its path relative to the model
+/// directory (which moves with the app's container on iOS), and the file it
+/// was when journaled.
 final class _PendingCopy {
   const _PendingCopy(this.name, this.path, this.size, this.modifiedMs);
-
-  factory _PendingCopy.fromJson(Map<String, Object?> json) => _PendingCopy(
-    json['name']! as String,
-    json['path']! as String,
-    json['size']! as int,
-    json['modifiedMs']! as int,
-  );
 
   final String name;
   final String path;
   final int size;
   final int modifiedMs;
+
+  static _PendingCopy? tryParse(Object? json) => switch (json) {
+    {
+      'name': final String name,
+      'path': final String path,
+      'size': final int size,
+      'modifiedMs': final int modifiedMs,
+    } =>
+      _PendingCopy(name, path, size, modifiedMs),
+    _ => null,
+  };
 
   Map<String, Object> toJson() => {
     'name': name,
@@ -421,25 +528,38 @@ final class _PendingCopy {
   };
 }
 
-Future<void> _journal(String name, String copyPath) async {
+/// Records that [copyPath], core's copy of [name], is to be released.
+Future<void> _journal(String name, String copyPath) => _inJournalLane(() async {
   if (kIsWeb) return;
+  final storage = await ServiceRegistry.instance.fileSystemService
+      .getModelStorageDirectory();
+  // Only a copy in the model directory is ever released.
+  if (!path.isWithin(storage, copyPath)) return;
   final stamp = await fileStamp(copyPath);
   if (stamp == null) return;
+  final relative = path.relative(copyPath, from: storage);
   final prefs = await SharedPreferences.getInstance();
   final journal = _readJournal(prefs)
-    ..removeWhere((copy) => copy.name == name && copy.path == copyPath)
-    ..add(_PendingCopy(name, copyPath, stamp.size, stamp.modifiedMs));
+    ..removeWhere((copy) => copy.name == name && copy.path == relative)
+    ..add(_PendingCopy(name, relative, stamp.size, stamp.modifiedMs));
   await _writeJournal(prefs, journal);
-}
+});
 
 List<_PendingCopy> _readJournal(SharedPreferences prefs) {
-  final raw = prefs.getString(PreferencesKeys.pendingCopyReleases);
-  if (raw == null) return [];
   try {
-    return [
-      for (final entry in jsonDecode(raw) as List)
-        _PendingCopy.fromJson(entry as Map<String, Object?>),
-    ];
+    final raw = prefs.getString(PreferencesKeys.pendingCopyReleases);
+    if (raw == null) return [];
+    final entries = jsonDecode(raw);
+    if (entries is! List) throw FormatException('not a list', raw);
+    final journal = <_PendingCopy>[];
+    for (final entry in entries) {
+      if (_PendingCopy.tryParse(entry) case final copy?) {
+        journal.add(copy);
+      } else {
+        edgeAiLog('[Install] unreadable copy journal entry dropped: $entry');
+      }
+    }
+    return journal;
   } on Object catch (e) {
     edgeAiLog('[Install] unreadable copy journal dropped: $e');
     return [];

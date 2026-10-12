@@ -10,25 +10,42 @@ import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
-/// Whether [a] and [b] are one file on disk, however each is spelled: the
-/// same string, a symbolic link to it, a directory link on the way (iOS
-/// `/var` and `/private/var`), a bind mount (Android `/data/user/0` and
-/// `/data/data`), a hard link, or another case on a case-insensitive volume.
+/// Whether two paths are one file on disk: [compareFiles]' answer.
+enum FileIdentity {
+  /// One file, however each path spells it.
+  same,
+
+  /// Two files, or one of the paths names nothing.
+  different,
+
+  /// Both are there, but which they are could not be found out.
+  unknown,
+}
+
+/// Whether [a] and [b] are one file on disk, however each is spelled: a
+/// symbolic link to it, a directory link on the way (iOS `/var` and
+/// `/private/var`), a bind mount (Android `/data/user/0` and `/data/data`), a
+/// hard link, or another case on a case-insensitive volume. A path that names
+/// nothing is a different file from any other, even one spelled the same.
 ///
-/// False only when they are known to differ — one of them is not there, or
-/// both are and are different files. When it cannot be told, it answers true:
-/// every caller keeps a file it might otherwise delete or overwrite.
-Future<bool> isSameFile(String a, String b) async {
-  if (path.equals(a, b)) return true;
+/// [FileIdentity.unknown] when both are there and the file system would not
+/// say; each caller then takes the answer that never loses a file.
+Future<FileIdentity> compareFiles(String a, String b) async {
   try {
-    if (!await File(a).exists() || !await File(b).exists()) return false;
+    if (!await File(a).exists() || !await File(b).exists()) {
+      return FileIdentity.different;
+    }
+    if (path.equals(a, b)) return FileIdentity.same;
     final resolvedA = await File(a).resolveSymbolicLinks();
     final resolvedB = await File(b).resolveSymbolicLinks();
-    if (path.equals(resolvedA, resolvedB)) return true;
-    return await FileSystemEntity.identical(resolvedA, resolvedB);
+    if (path.equals(resolvedA, resolvedB) ||
+        await FileSystemEntity.identical(resolvedA, resolvedB)) {
+      return FileIdentity.same;
+    }
+    return FileIdentity.different;
   } on FileSystemException catch (e) {
-    edgeAiLog('[LocalFile] cannot tell whether $a is $b ($e); taking it so');
-    return true;
+    edgeAiLog('[LocalFile] cannot tell whether $a is $b: $e');
+    return FileIdentity.unknown;
   }
 }
 
@@ -44,8 +61,8 @@ Future<String> appFileLocationNow(String recordedPath) async {
   // `/private/var/…` from a file picker is this container, not a move.
   if (now != recordedPath && !recordedPath.contains(path.basename(container))) {
     edgeAiLog(
-      '[ModelManager] $recordedPath was recorded in an earlier app '
-      'container; using $now',
+      '[LocalFile] $recordedPath was recorded in an earlier app container; '
+      'using $now',
     );
   }
   return now;

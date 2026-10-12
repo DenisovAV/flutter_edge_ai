@@ -138,11 +138,13 @@ class SttInstallationBuilder {
   ///
   /// Note: This method is idempotent - a file already installed from the same
   /// source is skipped and the spec is just (re-)set as active. One installed
-  /// from another source is installed again: a download from another URL (its
-  /// query and token aside), or a file the app picked from another path. Once
-  /// the new file is active, core's earlier copy of it is deleted — never a
-  /// file the app installed with `fromFile`; a download that would land on
-  /// such a file throws a [ModelStorageException] instead.
+  /// from another source is installed again: a download from another URL —
+  /// compared without its query and token, so a version told apart only by
+  /// the query is not —, or a file the app picked from another path. On
+  /// Android, iOS and desktop core's earlier copy of it is deleted once the
+  /// new file is active (or at the next start), never a file the app
+  /// installed with `fromFile`; a download that would land on such a file
+  /// throws a [ModelStorageException] instead.
   Future<SttInstallation> install() async {
     // Check cancellation before starting
     _cancelToken?.throwIfCancelled();

@@ -123,6 +123,23 @@ void main() {
       await model.close();
     });
 
+    test('$label: the same model re-installed with a LoRA builds a new '
+        'model', () async {
+      // The cache compared the spec's name only, and a LoRA added to the same
+      // file keeps the name: the model without the adapter came back.
+      final engine = await useShell();
+      final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
+          .fromNetwork('https://example.com/model.bin')
+          .withLoraFromNetwork('https://example.com/adapter.bin')
+          .install();
+
+      final second = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      expect(engine.createModelCallCount, 2);
+      expect(identical(first, second), isFalse);
+      await second.close();
+    });
+
     test('$label: a caller arriving during a rebuild waits for the old '
         'model to close', () async {
       final engine = await useShell();

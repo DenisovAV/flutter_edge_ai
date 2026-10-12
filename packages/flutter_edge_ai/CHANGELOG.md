@@ -1,5 +1,6 @@
 ## 2.3.0
 - `getActiveModel` waits for a closing model to finish, then builds the next one.
+- A LoRA added to an installed model is downloaded, and `getActiveModel` reloads the model.
 - **Breaking for `implements InferenceModel`:** add `isClosed`; `extends` inherits the default.
 
 ## 2.2.1

@@ -438,13 +438,13 @@ class InferenceInstallationBuilder {
     // Check if model is already installed
     final isInstalled = await repository.isInstalled(namespacedModelFilename);
 
+    final handlerRegistry = registry.sourceHandlerRegistry;
     if (isInstalled) {
       edgeAiLog(
         'ℹ️  Model already installed: $namespacedModelFilename (skipping download)',
       );
     } else {
       // Install model file
-      final handlerRegistry = registry.sourceHandlerRegistry;
       final handler = handlerRegistry.getHandler(source);
       if (_onProgress != null) {
         await for (final progress in handler!.installWithProgress(
@@ -461,10 +461,19 @@ class InferenceInstallationBuilder {
           targetFilename: namespacedModelFilename,
         );
       }
+    }
 
-      // Install LoRA if provided
-      if (_loraSource != null) {
-        final namespacedLoraFilename = files[1].filename;
+    // The LoRA is checked on its own, not only when the model was missing: an
+    // adapter added to a model installed earlier used to be skipped with the
+    // model, and the spec activated below then named a file that was never
+    // downloaded.
+    if (_loraSource != null) {
+      final namespacedLoraFilename = files[1].filename;
+      if (await repository.isInstalled(namespacedLoraFilename)) {
+        edgeAiLog(
+          'ℹ️  LoRA already installed: $namespacedLoraFilename (skipping download)',
+        );
+      } else {
         final loraHandler = handlerRegistry.getHandler(_loraSource!);
         await loraHandler!.install(
           _loraSource!,

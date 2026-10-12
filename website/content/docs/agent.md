@@ -16,6 +16,10 @@ It is reverse-engineered from
 and is **Gallery-compatible**: their `SKILL.md` catalog parses unmodified, and
 their JavaScript skills run as-is.
 
+To build an agent step by step — a text-only skill, native intents and your
+own JavaScript skill — follow the
+[On-Device Agents codelab](/codelabs/on-device-agent-flutter-gemma).
+
 <Info>
 
 Agent skills build on function calling, so they need a function-calling-capable

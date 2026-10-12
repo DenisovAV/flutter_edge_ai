@@ -104,6 +104,9 @@ flutter test integration_test/multimodal_test.dart -d <device-id>
 cd codelabs/function-calling-flutter-gemma/complete
 flutter test integration_test/function_calling_test.dart -d <device-id>
 
+cd codelabs/on-device-agent-flutter-gemma/complete
+flutter test integration_test/agent_test.dart -d <device-id>
+
 cd codelabs/hybrid-ai-flutter-genkit/complete
 flutter test integration_test/smoke_test.dart -d <device-id> \
   --dart-define=HF_TOKEN=hf_xxx --dart-define=GEMINI_API_KEY=AIza...

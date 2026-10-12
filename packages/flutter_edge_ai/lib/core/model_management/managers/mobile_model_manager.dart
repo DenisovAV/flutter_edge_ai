@@ -228,9 +228,26 @@ class MobileModelManager extends ModelFileManager
       return;
     }
 
+    // The LoRA is part of what was activated: a model restored without it
+    // loads with no adapter and no error. When its file is gone there is
+    // nothing to restore, as when the model's own file is.
+    final loraFilename = identity?[PreferencesKeys.activeInferenceLoraFilename];
+    String? loraPath;
+    if (loraFilename != null) {
+      loraPath = await _installedFileLocation(loraFilename);
+      if (loraPath == null) {
+        edgeAiLog(
+          '[ModelManager] active model restore: the LoRA of $filename '
+          '($loraFilename) is not installed or missing — skipping',
+        );
+        return;
+      }
+    }
+
     _activeInferenceModel = InferenceModelSpec(
       name: filename,
       modelSource: FileSource(filePath),
+      loraSource: loraPath == null ? null : FileSource(loraPath),
       modelType: modelType,
       fileType: fileType,
     );
@@ -1624,12 +1641,19 @@ class MobileModelManager extends ModelFileManager
             (f) => f.prefsKey == PreferencesKeys.installedModelFileName,
           )
           .filename;
+      final lora = spec.files
+          .where((f) => f.prefsKey == PreferencesKeys.installedLoraFileName)
+          .firstOrNull;
       final prefs = await SharedPreferences.getInstance();
       await ActiveIdentityStore.write(prefs, ActiveIdentityKind.inference, {
         PreferencesKeys.activeInferenceModelType: spec.modelType.name,
         PreferencesKeys.activeInferenceFileType: spec.fileType.name,
         PreferencesKeys.activeInferenceFilename: filename,
         PreferencesKeys.activeInferenceSource: spec.modelSource.encode(),
+        if (lora != null) ...{
+          PreferencesKeys.activeInferenceLoraFilename: lora.filename,
+          PreferencesKeys.activeInferenceLoraSource: lora.source.encode(),
+        },
       });
     } catch (e, stackTrace) {
       edgeAiLog('[ModelManager] persistActiveInferenceIdentity failed: $e');

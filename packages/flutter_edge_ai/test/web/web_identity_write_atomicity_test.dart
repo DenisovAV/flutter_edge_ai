@@ -93,6 +93,64 @@ void main() {
     );
   });
 
+  group('an inference model installed with a LoRA', () {
+    final lora = ModelSource.network('https://x/adapter.bin');
+    InferenceModelSpec withLora() => InferenceModelSpec(
+      name: 'gemma',
+      modelSource: ModelSource.network('https://x/gemma.task'),
+      loraSource: lora,
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.task,
+    );
+
+    Future<void> recordInstalled(InferenceModelSpec spec, {int? only}) async {
+      final repository = ServiceRegistry.instance.modelRepository;
+      final files = only == null ? spec.files : [spec.files[only]];
+      for (final file in files) {
+        await repository.saveModel(
+          repo.ModelInfo(
+            id: file.filename,
+            source: file.source,
+            installedAt: DateTime(2026),
+            sizeBytes: 2048,
+            type: repo.ModelType.inference,
+            hasLoraWeights: false,
+          ),
+        );
+      }
+    }
+
+    test('has it again after a page reload', () async {
+      await ServiceRegistry.initialize();
+      final spec = withLora();
+      await recordInstalled(spec);
+      await WebModelManager().activateInstalledModel(spec);
+
+      final reloaded = WebModelManager();
+      await reloaded.ensureInitialized();
+
+      final restored = reloaded.activeInferenceModel as InferenceModelSpec?;
+      expect(restored, isNotNull);
+      expect(restored!.loraSource, lora, reason: 'the LoRA was dropped');
+      expect(
+        restored.files.map((f) => f.filename),
+        spec.files.map((f) => f.filename),
+      );
+    });
+
+    test('whose LoRA is no longer installed restores nothing', () async {
+      await ServiceRegistry.initialize();
+      final spec = withLora();
+      await recordInstalled(spec, only: 0);
+      await WebModelManager().activateInstalledModel(spec);
+
+      final reloaded = WebModelManager();
+      await reloaded.ensureInitialized();
+
+      expect(reloaded.activeInferenceModel, isNull);
+    });
+  });
+
   test(
     'explicit embedding identities survive a web restart unchanged',
     () async {

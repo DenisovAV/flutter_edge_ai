@@ -592,8 +592,8 @@ It takes a Hugging Face checkpoint through LoRA fine-tuning, merges, exports to
 `.litertlm`, and bundles the result with metadata — five commands, because each
 stage fails differently and a single `run` would hide which one you are in.
 
-The commands below are verified against **litetune 0.4.0**, the current PyPI
-release, run end to end on 2026-10-11. It pins LiteRT-LM 0.18.0 for
+The commands below are verified against **litetune 0.4.1**, the current PyPI
+release, run end to end on 2026-10-12. It pins LiteRT-LM 0.18.0 for
 verification and the matching 0.18.0 builder for conversion. The source is
 available on [GitHub](https://github.com/DenisovAV/litetune).
 
@@ -625,10 +625,10 @@ without it every invocation, `--help` included, dies in under a second:
 sudo apt-get install -y libvulkan1     # Debian/Ubuntu
 ```
 
-Use a Python from python.org, Homebrew or your OS: with a Python that uv
-installed, litetune 0.4.0 cannot start its stage environments (`venv --copies`
-leaves `libpython` behind) and every stage reports `could_not_check` — measured
-with uv's Python 3.11.
+Use litetune 0.4.1 or later with a Python that uv installed: 0.4.0 could not
+start its stage environments there (`venv --copies` left `libpython` behind)
+and every stage reported `could_not_check`. The run above used uv's Python
+3.11 with 0.4.1.
 
 By default, `tune` and the float-reference side of `verify` choose CUDA, then
 Apple's Metal (`mps`), then CPU. The commands below set
@@ -673,7 +673,7 @@ is wider than most differences worth having — and they cost something that the
 score cannot see. `step_04_finetune/README.md` has both halves, measured.
 
 That score snapshot was recorded with litetune 0.1.7 and LiteRT-LM 0.16.1. A
-rerun on litetune 0.4.0 and LiteRT-LM 0.18.0 (2026-10-11) gave the tuned model
+rerun on litetune 0.4.1 and LiteRT-LM 0.18.0 (2026-10-12) gave the tuned model
 the same 18 of 18 with the runtime's grammar on, and 16 of 18 with it off.
 
 ### The five commands

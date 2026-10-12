@@ -9,8 +9,8 @@ tools.json    the four declarations, the same ones lib/tools.dart holds
 raw.jsonl     90 prompt -> tool-call rows to train and score on
 ```
 
-The commands below are verified against **litetune 0.4.0**, the current PyPI
-release, run end to end on 2026-10-11. It pins LiteRT-LM 0.18.0 for
+The commands below are verified against **litetune 0.4.1**, the current PyPI
+release, run end to end on 2026-10-12. It pins LiteRT-LM 0.18.0 for
 verification and the matching 0.18.0 builder for conversion. The project source
 is also available on [GitHub](https://github.com/DenisovAV/litetune).
 
@@ -43,10 +43,10 @@ toolchain pins `numpy==2.0.2` and that stops publishing wheels after 3.12. On
 Linux also `sudo apt-get install -y libvulkan1`, or every invocation — `--help`
 included — dies in under a second.
 
-Use a Python from python.org, Homebrew or your OS: with a Python that uv
-installed, litetune 0.4.0 cannot start its stage environments (`venv --copies`
-leaves `libpython` behind) and every stage reports `could_not_check` — measured
-with uv's Python 3.11.
+Use litetune 0.4.1 or later with a Python that uv installed: 0.4.0 could not
+start its stage environments there (`venv --copies` left `libpython` behind)
+and every stage reported `could_not_check`. The run above used uv's Python
+3.11 with 0.4.1.
 
 By default, `tune` and the float-reference side of `verify` choose CUDA, then
 Apple's Metal (`mps`), then CPU. The commands below set
@@ -149,9 +149,10 @@ documents directory — `~/Library/Containers/dev.fluttergemma.functioncalling/D
 This timing and score snapshot was recorded with litetune 0.1.7 and its
 LiteRT-LM 0.16.1 runtime, on a MacBook Pro M4 Pro: `prepare` a second, `tune`
 82s, `convert` 84s for `weight_only_wi8_afp32`, `verify` 52s. A rerun on
-litetune 0.4.0 and LiteRT-LM 0.18.0 (2026-10-11, same machine) gave the tuned
-model the same 18 of 18 with the runtime's grammar on, and 16 of 18 with it
-off; `tune` took 261s, `convert` 77s and `verify` about 90s. The held-out split is
+litetune 0.4.1 and LiteRT-LM 0.18.0 (2026-10-12, same machine, on CPU) gave
+the tuned model the same 18 of 18 with the runtime's grammar on, and 16 of 18
+with it off; `tune` took 92s, `convert` 300s and `verify` 74s, on a first run
+that also built litetune's stage environments. The held-out split is
 18 rows, scored through the runtime's tool path — a call counts only when the
 operation name and every argument match.
 

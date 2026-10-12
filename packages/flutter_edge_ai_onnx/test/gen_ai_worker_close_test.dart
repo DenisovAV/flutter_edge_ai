@@ -102,6 +102,35 @@ GenAiTurn _script(Map<String, Object> script) =>
 final _manyChunks = [for (var i = 0; i < 50; i++) 'c$i'];
 const _shortNotice = Duration(milliseconds: 200);
 
+/// A notice length no other timer in these tests uses, so a zone can tell
+/// the client's notice timers apart and replace them with [_ManualTimer]s.
+const _manualNotice = Duration(hours: 1);
+
+/// A timer that fires only when the test calls [elapse]. The client creates
+/// its notices with `Timer(...)`, which asks the current zone for the timer.
+class _ManualTimer implements Timer {
+  _ManualTimer(this._callback);
+
+  final void Function() _callback;
+  bool _active = true;
+
+  /// What the timer does once its time has passed: fire, unless cancelled.
+  void elapse() {
+    if (!_active) return;
+    _active = false;
+    _callback();
+  }
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  int get tick => 0;
+
+  @override
+  void cancel() => _active = false;
+}
+
 final _closedBeforeRun = isA<StateError>().having(
   (e) => e.message,
   'message',
@@ -391,17 +420,50 @@ void main() {
     });
 
     test('a quick load and a quick shutdown() say nothing', () async {
+      // Quick by construction, not by the wall clock: the notices are this
+      // zone's timers, which never fire on their own. Each must be cancelled
+      // by the time its call returns; then the test lets them all elapse.
+      // With real 200 ms timers this failed whenever load or shutdown took
+      // longer than that on a loaded machine.
       final log = logFor('quick_shutdown');
-      final printed = await _capturePrints(() async {
-        final client = await loaded(
-          log,
-          slowLoadNotice: _shortNotice,
-          slowCloseNotice: _shortNotice,
-        );
-        await client.shutdown();
-        // Past both notices: a timer left running would fire by now.
-        await Future<void>.delayed(_shortNotice * 3);
-      });
+      final printed = <String>[];
+      final notices = <_ManualTimer>[];
+      await runZoned(
+        () async {
+          final client = await loaded(
+            log,
+            slowLoadNotice: _manualNotice,
+            slowCloseNotice: _manualNotice,
+          );
+          expect(notices, hasLength(1), reason: 'load() set its notice');
+          expect(
+            notices[0].isActive,
+            isFalse,
+            reason: 'load() cancelled its notice when it returned',
+          );
+          await client.shutdown();
+          expect(notices, hasLength(2), reason: 'shutdown() set its notice');
+          expect(
+            notices[1].isActive,
+            isFalse,
+            reason: 'shutdown() cancelled its notice when it returned',
+          );
+          for (final notice in notices) {
+            notice.elapse();
+          }
+        },
+        zoneSpecification: ZoneSpecification.from(
+          _capturePrintsInto(printed),
+          createTimer: (self, parent, zone, duration, callback) {
+            if (duration != _manualNotice) {
+              return parent.createTimer(zone, duration, callback);
+            }
+            final notice = _ManualTimer(callback);
+            notices.add(notice);
+            return notice;
+          },
+        ),
+      );
       expect(printed.where((l) => l.contains('has taken')), isEmpty);
     });
   });

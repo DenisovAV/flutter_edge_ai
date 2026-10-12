@@ -813,6 +813,25 @@ void main() {
       },
     );
 
+    test('an error inside the response handler fails the download, not the '
+        'zone', () async {
+      // A single-subscription body somebody already listens to: reading it
+      // throws inside the handler.
+      final body = StreamController<List<int>>();
+      body.stream.listen(null);
+      final client = MockClient.streaming(
+        (request, _) async => http.StreamedResponse(body.stream, 200),
+      );
+      await expectLater(
+        convertMessages(
+          urlMessage('https://media.example/a.png'),
+          httpClient: client,
+          downloadTimeout: const Duration(seconds: 5),
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
     test('a body over the size limit fails without reading it', () async {
       final client = MockClient.streaming(
         (request, _) async => http.StreamedResponse(
@@ -1171,6 +1190,11 @@ void main() {
         );
         await expectLater(
           embedder(embedRequest([DocumentData(content: [])])),
+          genkitError(StatusCode.invalidArgument, contains('no text part')),
+        );
+        // A text part with no text is no text either.
+        await expectLater(
+          embedder(embedRequest([doc('')])),
           genkitError(StatusCode.invalidArgument, contains('no text part')),
         );
         await expectLater(

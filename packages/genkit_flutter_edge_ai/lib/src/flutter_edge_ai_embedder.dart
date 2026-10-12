@@ -105,19 +105,18 @@ Future<FlutterEdgeAiEmbedConfig?> _parseEmbedOptions(
 }
 
 /// The text of a document, its text parts joined by spaces. A document with
-/// no text part, empty or all images, say, is an INVALID_ARGUMENT: it would
-/// be embedded as an empty string, and the embedder takes text only.
+/// no text — no text part, only empty ones, or only images — is an
+/// INVALID_ARGUMENT: it would be embedded as an empty string, and the
+/// embedder takes text only.
 String _documentText(DocumentData doc, int index) {
   final buffer = StringBuffer();
-  var hasText = false;
   for (final part in doc.content) {
-    if (part.isText) {
-      if (buffer.isNotEmpty) buffer.write(' ');
-      buffer.write(part.text);
-      hasText = true;
-    }
+    final text = part.isText ? part.text : null;
+    if (text == null || text.isEmpty) continue;
+    if (buffer.isNotEmpty) buffer.write(' ');
+    buffer.write(text);
   }
-  if (!hasText) {
+  if (buffer.isEmpty) {
     throw GenkitException(
       'Document $index has no text part; the on-device embedder takes text '
       'only.',

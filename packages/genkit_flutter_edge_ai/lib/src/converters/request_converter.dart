@@ -561,7 +561,10 @@ Future<(Uint8List, String?)> _download(String url, _MediaDownloads downloads) {
         },
         onError: (Object error, StackTrace stack) =>
             fail(_transferError(error, host), stack),
-      );
+      )
+      // A throw inside the response handler above would otherwise land on a
+      // future nobody listens to; it fails the download instead.
+      .catchError((Object error, StackTrace stack) => fail(error, stack));
   return done.future;
 }
 

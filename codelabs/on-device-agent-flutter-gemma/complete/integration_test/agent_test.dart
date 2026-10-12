@@ -7,7 +7,8 @@
 // test is the codelab's: the model picks the skill, the app runs it, and the
 // answer carries what the skill computed.
 //
-// Not part of CI (needs a device and a 2.59 GB download):
+// Not part of CI (needs a device and a 2.59 GB download). Android, iOS, macOS
+// or Windows — Linux has no webview for JS skills, and the test skips there:
 //   flutter test integration_test/agent_test.dart -d <device-id>
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -65,6 +66,11 @@ String _results(List<AgentEvent> events, String tool) => events
     .map((r) => r.text)
     .join();
 
+/// `JsSkillExecutor.isAvailable` is false on Linux, which has no webview: two
+/// of the three requests would get an ErrorResult, and the test would fail on
+/// a rule of the package rather than on the codelab.
+bool get _noWebview => defaultTargetPlatform == TargetPlatform.linux;
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -102,5 +108,5 @@ void main() {
     } finally {
       await model.close();
     }
-  });
+  }, skip: _noWebview);
 }

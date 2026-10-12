@@ -48,6 +48,35 @@ void main() {
     );
   });
 
+  test(
+    'closed state starts before teardown and close shares its future',
+    () async {
+      final gate = Completer<void>();
+      engine.disposeGate = gate;
+      var notifications = 0;
+      model.addCloseListener(() => notifications++);
+      expect(model.isClosed, isFalse);
+      final closing = model.close();
+      try {
+        expect(model.isClosed, isTrue);
+        expect(model.close(), same(closing));
+        await engine.disposeStarted.future.timeout(const Duration(seconds: 2));
+        expect(notifications, 0);
+        expect(engine.disposals, 0);
+        expect(
+          () => model.createSession(),
+          throwsA(isA<llama.LlamaStateException>()),
+        );
+      } finally {
+        gate.complete();
+        await closing;
+      }
+      expect(model.isClosed, isTrue);
+      expect(notifications, 1);
+      expect(engine.disposals, 1);
+    },
+  );
+
   test('provider forwards context and CPU selection through load', () async {
     final provider = LlamaEngineProvider(
       loader: (path, params) async {
@@ -1195,6 +1224,8 @@ class _FakeEngine extends llama.LlamaEngine {
   int? gpuLayers = 0;
   int cancels = 0;
   int disposals = 0;
+  Completer<void>? disposeGate;
+  final Completer<void> disposeStarted = Completer<void>();
   bool blockGeneration = false;
   bool failAfterFirstToken = false;
   List<llama.LlamaCompletionChunk>? script;
@@ -1351,6 +1382,8 @@ class _FakeEngine extends llama.LlamaEngine {
 
   @override
   Future<void> dispose() async {
+    if (!disposeStarted.isCompleted) disposeStarted.complete();
+    await disposeGate?.future;
     if (disposals == 0) disposals++;
   }
 }

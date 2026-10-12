@@ -1,7 +1,6 @@
 import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart';
 
 /// Uses core's installed blob/network URL rather than downloading the spec again.
@@ -30,18 +29,4 @@ String _urlLocation(String primary) {
     );
   }
   return primary;
-}
-
-/// Core Web probes a synthetic binary spec; recover the activated identity.
-InferenceModelSpec resolveInferenceSpec(InferenceModelSpec spec) {
-  if (spec.name == 'web-active' &&
-      spec.modelSource is edge.AssetSource &&
-      spec.files.first.filename == 'active.bin') {
-    final active =
-        edge.FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel;
-    if (active is InferenceModelSpec && active.fileType == spec.fileType) {
-      return active;
-    }
-  }
-  return spec;
 }

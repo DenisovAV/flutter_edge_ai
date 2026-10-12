@@ -4,8 +4,13 @@ library;
 import 'dart:async';
 import 'dart:js_interop';
 
+// Core storage fixtures avoid downloads while exercising the real Web facade.
+import 'package:flutter_edge_ai/core/di/service_registry.dart';
+import 'package:flutter_edge_ai/core/infrastructure/web_file_system_service.dart';
 import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/core/services/model_repository.dart'
+    as repository;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai/web/flutter_edge_ai_web.dart';
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
@@ -24,18 +29,8 @@ const _bridgeRoot = String.fromEnvironment(
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   test(
-    'Web synthetic probe uses the active identity and rejects other formats',
+    'Web provider selects the supplied real spec and rejects other formats',
     () async {
-      SharedPreferences.setMockInitialValues({});
-      edge.FlutterEdgeAiPlugin.instance = FlutterEdgeAiWeb();
-      final manager =
-          edge.FlutterEdgeAiPlugin.instance.modelManager as WebModelManager;
-      final probe = edge.InferenceModelSpec(
-        name: 'web-active',
-        modelSource: edge.AssetSource('models/active.bin'),
-        modelType: edge.ModelType.general,
-        fileType: edge.ModelFileType.binary,
-      );
       final sentinel = llama.LlamaStateException('Loader reached');
       final provider = LlamaEngineProvider(
         loader: (location, params) async {
@@ -43,46 +38,107 @@ void main() {
           throw sentinel;
         },
       );
-      expect(provider.canHandle(probe), isFalse);
       for (final filename in ['model.gguf', 'other.bin', 'other.task']) {
-        await manager.activateInstalledModel(
-          edge.InferenceModelSpec(
-            name: filename,
-            modelSource: edge.NetworkSource('https://example.test/$filename'),
-            modelType: edge.ModelType.general,
-            fileType: edge.ModelFileType.binary,
-          ),
+        final spec = edge.InferenceModelSpec(
+          name: filename,
+          modelSource: edge.NetworkSource('https://example.test/$filename'),
+          modelType: edge.ModelType.general,
+          fileType: edge.ModelFileType.binary,
         );
-        expect(provider.canHandle(probe), filename.endsWith('.gguf'));
-        if (filename.endsWith('.gguf')) {
-          await expectLater(
-            provider.createModel(
-              probe,
-              const RuntimeConfig(
-                modelPath: 'https://example.test/model.gguf',
-                maxTokens: 512,
-              ),
+        expect(provider.canHandle(spec), filename.endsWith('.gguf'));
+        await expectLater(
+          provider.createModel(
+            spec,
+            RuntimeConfig(
+              modelPath: 'https://example.test/$filename',
+              maxTokens: 512,
             ),
-            throwsA(same(sentinel)),
-          );
-        } else {
-          await expectLater(
-            provider.createModel(
-              probe,
-              const RuntimeConfig(
-                modelPath: 'https://example.test/other.bin',
-                maxTokens: 512,
-              ),
-            ),
-            throwsA(isA<llama.LlamaUnsupportedException>()),
-          );
-        }
+          ),
+          filename.endsWith('.gguf')
+              ? throwsA(same(sentinel))
+              : throwsA(isA<llama.LlamaUnsupportedException>()),
+        );
       }
+    },
+  );
+
+  test(
+    'Web facade reuses a model and waits for app-initiated close before reload',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      edge.FlutterEdgeAiPlugin.instance = FlutterEdgeAiWeb();
+      final engines = <_WebEngine>[];
+      final gate = Completer<void>();
+      final provider = LlamaEngineProvider(
+        loader: (location, params) async {
+          expect(location, 'https://example.test/model.gguf');
+          final engine = _WebEngine();
+          if (engines.isEmpty) engine.disposeGate = gate;
+          engines.add(engine);
+          return engine;
+        },
+      );
       await edge.FlutterEdgeAi.initialize(
+        inferenceEngines: [provider],
         webStorageMode: edge.WebStorageMode.none,
       );
-      await manager.clearActiveInferenceIdentity();
-      expect(provider.canHandle(probe), isFalse);
+      final manager =
+          edge.FlutterEdgeAiPlugin.instance.modelManager as WebModelManager;
+      addTearDown(() async {
+        if (!gate.isCompleted) gate.complete();
+        await edge.FlutterEdgeAiPlugin.instance.initializedModel?.close();
+        await manager.clearActiveInferenceIdentity();
+        await edge.FlutterEdgeAi.dispose();
+      });
+      final spec = edge.InferenceModelSpec(
+        name: 'model.gguf',
+        modelSource: edge.NetworkSource('https://example.test/model.gguf'),
+        modelType: edge.ModelType.general,
+        fileType: edge.ModelFileType.binary,
+      );
+      final services = ServiceRegistry.instance;
+      await services.modelRepository.saveModel(
+        repository.ModelInfo(
+          id: spec.files.first.filename,
+          source: spec.modelSource,
+          installedAt: DateTime.now(),
+          sizeBytes: 1,
+          type: repository.ModelType.inference,
+          hasLoraWeights: false,
+        ),
+      );
+      (services.fileSystemService as WebFileSystemService).registerUrl(
+        spec.files.first.filename,
+        'https://example.test/model.gguf',
+      );
+      await manager.activateInstalledModel(spec);
+      final first = await edge.FlutterEdgeAi.getActiveModel(maxTokens: 512);
+      expect(
+        await edge.FlutterEdgeAi.getActiveModel(maxTokens: 512),
+        same(first),
+      );
+      expect(engines, hasLength(1));
+      final closing = first.close();
+      expect(first.isClosed, isTrue);
+      await engines.first.disposeStarted.future.timeout(
+        const Duration(seconds: 2),
+      );
+      var replaced = false;
+      final pending = edge.FlutterEdgeAi.getActiveModel(maxTokens: 512)
+          .then((model) {
+            replaced = true;
+            return model;
+          });
+      await Future<void>.delayed(Duration.zero);
+      expect(replaced, isFalse);
+      expect(engines, hasLength(1));
+      gate.complete();
+      await closing;
+      final replacement = await pending.timeout(const Duration(seconds: 2));
+      expect(replacement, isNot(same(first)));
+      expect(replacement.isClosed, isFalse);
+      expect(engines, hasLength(2));
+      expect(engines.first.disposals, 1);
     },
   );
   test(
@@ -195,4 +251,33 @@ void main() {
     skip: _modelUrl.isEmpty,
     timeout: const Timeout(Duration(minutes: 3)),
   );
+}
+
+class _WebBackend implements llama.LlamaBackend {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _WebEngine extends llama.LlamaEngine {
+  _WebEngine() : super(_WebBackend());
+
+  Completer<void>? disposeGate;
+  final Completer<void> disposeStarted = Completer<void>();
+  int disposals = 0;
+
+  @override
+  llama.LlamaRuntime get runtime => llama.LlamaRuntime.llamaCpp;
+
+  @override
+  Future<int> getContextSize() async => 512;
+
+  @override
+  Future<int?> getResolvedGpuLayers() async => 0;
+
+  @override
+  Future<void> dispose() async {
+    if (!disposeStarted.isCompleted) disposeStarted.complete();
+    await disposeGate?.future;
+    disposals++;
+  }
 }

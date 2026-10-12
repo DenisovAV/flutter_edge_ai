@@ -63,6 +63,10 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   Future<void> _lifecycle = Future<void>.value();
   Future<void>? _closing;
   bool _closed = false;
+
+  /// Whether teardown has started; core must wait before loading again.
+  @override
+  bool get isClosed => _closed;
   @override
   LlamaInferenceSession? get session => _session;
   @override

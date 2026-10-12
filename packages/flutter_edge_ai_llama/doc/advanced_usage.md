@@ -109,9 +109,10 @@ Core now owns imported-file restart restoration; the connector has no preference
 reader or activation workaround. The remaining Web shim and engine imports will
 move to public core libraries after the 2.3.0 API train lands.
 
-Core Web probes a synthetic `web-active` / `active.bin` spec. The connector
-recovers the active installed identity for that exact probe before selecting
-and loading it; unrelated binary formats are still rejected.
+Core 2.2.1 passes the real active model identity to the provider on Web.
+The connector selects the supplied spec directly; unrelated binary formats
+are rejected. Core reuses the loaded model for unchanged requests, and waits
+for a closing model to finish teardown before loading its replacement.
 Web resolves core's installed blob/network URLs. Use `WebStorageMode.cacheApi`
 or `none`; OPFS stream handles are not accepted by llamadart's URL loader.
 Missing bridge assets, unavailable GPU, unsupported projector/template grammar

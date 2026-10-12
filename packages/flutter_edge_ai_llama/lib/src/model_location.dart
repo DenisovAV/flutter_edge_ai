@@ -6,6 +6,3 @@ Future<String> resolveModelLocation(
   ModelSpec spec,
   RuntimeConfig config,
 ) async => config.modelPath;
-
-/// Native core supplies the real inference identity to its provider.
-InferenceModelSpec resolveInferenceSpec(InferenceModelSpec spec) => spec;

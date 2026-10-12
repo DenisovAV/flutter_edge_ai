@@ -43,9 +43,8 @@ class LlamaEngineProvider implements InferenceEngineProvider {
   int get priority => 0;
   @override
   bool canHandle(edge.InferenceModelSpec spec) {
-    final actual = resolveInferenceSpec(spec);
-    return actual.fileType == edge.ModelFileType.binary &&
-        actual.files.first.filename.toLowerCase().endsWith('.gguf');
+    return spec.fileType == edge.ModelFileType.binary &&
+        spec.files.first.filename.toLowerCase().endsWith('.gguf');
   }
 
   @override
@@ -53,7 +52,6 @@ class LlamaEngineProvider implements InferenceEngineProvider {
     edge.InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
-    spec = resolveInferenceSpec(spec);
     if (!canHandle(spec)) {
       throw llama.LlamaUnsupportedException(
         'Declare a .gguf model as ModelFileType.binary.',

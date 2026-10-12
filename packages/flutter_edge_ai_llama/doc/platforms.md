@@ -357,6 +357,26 @@ public engine SPI migration. Dedicated GGUF routing and public Web resolution
 remain pending upstream API work. This draft is not release-ready; the full
 GitHub matrix must pass on the branch before full review.
 
+## Core 2.2.1 Web and lifecycle review, 2026-10-12
+
+The provider now selects core's real Web spec directly, without synthetic-spec
+identity recovery. `LlamaInferenceModel.isClosed` becomes true as soon as close
+starts, so core waits for teardown before replacing an app-closed model.
+
+Flutter 3.47.1 / Dart 3.13.1 validation passed: 48 VM contracts, 48 Chrome
+contracts with three explicit skips, seven demo tests and 22 tooling tests.
+The Web facade regression verifies unchanged requests reuse one runtime and a
+replacement does not load while the previous runtime is disposing. Targeted
+closed-state and format-selection mutations triggered regression assertions.
+Hosted archive/dependency validation passed with the expected Unreleased warning.
+The immutable SmolLM2-135M Q8 CPU fixture passed the macOS VM facade's install,
+recall, cancellation/retry and fresh-manager restore. The real browser
+worker/Wasm smoke generated a nonempty reply through the installed URL.
+All 18 workspace package/example suites passed, and workspace analysis had no
+errors or warnings. A separate consumer using hosted core 2.2.1 passed the same
+real CPU lifecycle smoke without a core override. These local results do not
+replace current-head GitHub platform qualification.
+
 ## Before a production release
 
 1. Run every required workflow on the release revision. Do not count workflow

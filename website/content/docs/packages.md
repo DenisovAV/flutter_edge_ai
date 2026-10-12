@@ -41,7 +41,7 @@ is on the [Capabilities](/docs/capabilities) page.
 - **Probe-chain registry.** Engines and backends are pure factories that declare
   `canHandle(spec)` + a priority. The registry selects a provider per model by
   declared `ModelFileType` — `task` / `binary` → MediaPipe, `litertlm` → LiteRT-LM,
-  `onnx` → Onnx, `builtIn` → BuiltInAi.
+  `onnx` → Onnx, `builtIn` → BuiltInAi, `gguf` → a llama.cpp engine.
 - **One app can run both formats.** Register both `LiteRtLmEngine()` and
   `MediaPipeEngine()`, and the registry routes each model to the engine that
   handles its declared `ModelFileType` — not its file extension.

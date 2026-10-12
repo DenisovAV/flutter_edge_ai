@@ -64,8 +64,9 @@ name. `installModel` defaults it to `ModelFileType.task`, so declare it
 explicitly: `ModelFileType.litertlm` for `.litertlm` files (omitting it routes the
 model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 `.task`, `ModelFileType.binary` for `.bin` and `.tflite`, `ModelFileType.onnx`
-for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
-`ModelFileType.builtIn` for OS-provided models.
+for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), `ModelFileType.gguf` for
+`.gguf` files, which a llama.cpp engine runs, and `ModelFileType.builtIn` for
+OS-provided models.
 
 </Info>
 

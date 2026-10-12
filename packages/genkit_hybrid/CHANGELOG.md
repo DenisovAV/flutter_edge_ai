@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- A cancel ends a cascade before or during its `accept`, never with a success.
+- `UNIMPLEMENTED` falls back to the next branch: another model may have the capability.
+
 ## 0.3.0
 
 - **Breaking:** require `genkit` ^1.0.0; each branch runs in its own trace span and honours cancellation.

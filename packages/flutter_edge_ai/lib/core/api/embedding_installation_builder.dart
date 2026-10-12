@@ -1,6 +1,6 @@
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/core/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/core/model_management/model_activation.dart';
 import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -178,8 +178,15 @@ class EmbeddingInstallationBuilder {
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure
   ///
-  /// Note: This method is idempotent - calling install() on an already-installed
-  /// model will skip download and just set it as active.
+  /// Note: This method is idempotent - a file already installed from the same
+  /// source is skipped and the spec is just (re-)set as active. One installed
+  /// from another source is installed again: a download from another URL —
+  /// compared without its query and token, so a version told apart only by
+  /// the query is not —, or a file the app picked from another path. On
+  /// Android, iOS and desktop core's earlier copy of it is deleted once the
+  /// new file is active (or at the next start), never a file the app
+  /// installed with `fromFile`; a download that would land on such a file
+  /// throws a [ModelStorageException] instead.
   Future<EmbeddingInstallation> install() async {
     // Check cancellation before starting
     _cancelToken?.throwIfCancelled();
@@ -205,84 +212,19 @@ class EmbeddingInstallationBuilder {
       replacePolicy: ModelReplacePolicy.keep,
     );
 
-    final registry = ServiceRegistry.instance;
-    final repository = registry.modelRepository;
-
-    // spec.files is [modelFile, tokenizerFile] in that fixed order (see
-    // EmbeddingModelSpec.files) — reuse the already-namespaced identity.
-    final files = spec.files;
-    final modelFilename = files[0].filename;
-    final tokenizerFilename = files[1].filename;
-
-    // Check if both model and tokenizer are already installed
-    final isModelInstalled = await repository.isInstalled(modelFilename);
-    final isTokenizerInstalled = await repository.isInstalled(
-      tokenizerFilename,
+    // The model, then its tokenizer, each by its own record (see
+    // install_rule.dart).
+    final release = await installPlanned(
+      await planInstall(spec.files),
+      modelType: repo.ModelType.embedding,
+      cancelToken: _cancelToken,
+      progress: [_onModelProgress, _onTokenizerProgress],
     );
-
-    if (isModelInstalled && isTokenizerInstalled) {
-      edgeAiLog(
-        'ℹ️  Embedding model already installed: $modelFilename + $tokenizerFilename (skipping download)',
-      );
-    } else {
-      final handlerRegistry = registry.sourceHandlerRegistry;
-
-      // Install model file if not already installed
-      if (!isModelInstalled) {
-        edgeAiLog('📥 Installing embedding model...');
-        final modelHandler = handlerRegistry.getHandler(_modelSource!);
-        if (_onModelProgress != null) {
-          await for (final progress in modelHandler!.installWithProgress(
-            _modelSource!,
-            cancelToken: _cancelToken,
-            targetFilename: modelFilename,
-            modelType: repo.ModelType.embedding,
-          )) {
-            _onModelProgress!(progress);
-          }
-        } else {
-          await modelHandler!.install(
-            _modelSource!,
-            cancelToken: _cancelToken,
-            targetFilename: modelFilename,
-            modelType: repo.ModelType.embedding,
-          );
-        }
-      } else {
-        edgeAiLog('ℹ️  Embedding model file already installed: $modelFilename');
-      }
-
-      // Install tokenizer file if not already installed
-      if (!isTokenizerInstalled) {
-        edgeAiLog('📥 Installing tokenizer...');
-        final tokenizerHandler = handlerRegistry.getHandler(
-          effectiveTokenizerSource,
-        );
-        if (_onTokenizerProgress != null) {
-          await for (final progress in tokenizerHandler!.installWithProgress(
-            effectiveTokenizerSource,
-            cancelToken: _cancelToken,
-            targetFilename: tokenizerFilename,
-            modelType: repo.ModelType.embedding,
-          )) {
-            _onTokenizerProgress!(progress);
-          }
-        } else {
-          await tokenizerHandler!.install(
-            effectiveTokenizerSource,
-            cancelToken: _cancelToken,
-            targetFilename: tokenizerFilename,
-            modelType: repo.ModelType.embedding,
-          );
-        }
-      } else {
-        edgeAiLog('ℹ️  Tokenizer file already installed: $tokenizerFilename');
-      }
-    }
 
     // AUTO-SET as active embedding model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     await activateInstalledModel(manager, spec);
+    await release.run(manager, spec);
 
     edgeAiLog('✅ Embedding model installed and set as active: ${spec.name}');
 

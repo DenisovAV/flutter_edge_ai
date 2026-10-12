@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/core/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/core/model_management/model_activation.dart';
+import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
@@ -263,8 +264,15 @@ class InferenceInstallationBuilder {
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure
   ///
-  /// Note: This method is idempotent - calling install() on an already-installed
-  /// model will skip download and just set it as active.
+  /// Note: This method is idempotent - a file already installed from the same
+  /// source is skipped and the spec is just (re-)set as active. One installed
+  /// from another source is installed again: a download from another URL —
+  /// compared without its query and token, so a version told apart only by
+  /// the query is not —, or a file the app picked from another path. On
+  /// Android, iOS and desktop core's earlier copy of it is deleted once the
+  /// new file is active (or at the next start), never a file the app
+  /// installed with `fromFile`; a download that would land on such a file
+  /// throws a [ModelStorageException] instead.
   Future<InferenceInstallation> install() async {
     // Check cancellation before starting
     _cancelToken?.throwIfCancelled();
@@ -425,58 +433,18 @@ class InferenceInstallationBuilder {
       fileType: _fileType,
     );
 
-    final registry = ServiceRegistry.instance;
-    final repository = registry.modelRepository;
-
-    // spec.files is [modelFile, loraFile?] in that fixed order (see
-    // InferenceModelSpec.files) — reuse the ALREADY-namespaced identity
-    // instead of recomputing a basename, so the isInstalled check and the
-    // download target always agree.
-    final files = spec.files;
-    final namespacedModelFilename = files[0].filename;
-
-    // Check if model is already installed
-    final isInstalled = await repository.isInstalled(namespacedModelFilename);
-
-    if (isInstalled) {
-      edgeAiLog(
-        'ℹ️  Model already installed: $namespacedModelFilename (skipping download)',
-      );
-    } else {
-      // Install model file
-      final handlerRegistry = registry.sourceHandlerRegistry;
-      final handler = handlerRegistry.getHandler(source);
-      if (_onProgress != null) {
-        await for (final progress in handler!.installWithProgress(
-          source,
-          cancelToken: _cancelToken,
-          targetFilename: namespacedModelFilename,
-        )) {
-          _onProgress!(progress);
-        }
-      } else {
-        await handler!.install(
-          source,
-          cancelToken: _cancelToken,
-          targetFilename: namespacedModelFilename,
-        );
-      }
-
-      // Install LoRA if provided
-      if (_loraSource != null) {
-        final namespacedLoraFilename = files[1].filename;
-        final loraHandler = handlerRegistry.getHandler(_loraSource!);
-        await loraHandler!.install(
-          _loraSource!,
-          cancelToken: _cancelToken,
-          targetFilename: namespacedLoraFilename,
-        );
-      }
-    }
+    // The model, then its LoRA, each by its own record (see install_rule.dart).
+    final release = await installPlanned(
+      await planInstall(spec.files),
+      modelType: repo.ModelType.inference,
+      cancelToken: _cancelToken,
+      progress: [_onProgress],
+    );
 
     // AUTO-SET as active inference model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     await activateInstalledModel(manager, spec);
+    await release.run(manager, spec);
 
     edgeAiLog('✅ Inference model installed and set as active: ${spec.name}');
 
@@ -613,51 +581,27 @@ class InferenceInstallationBuilder {
       directoryFiles: bundle,
     );
 
-    final registry = ServiceRegistry.instance;
-    final repository = registry.modelRepository;
-    final handlerRegistry = registry.sourceHandlerRegistry;
-
-    final files = spec.files;
-    final total = files.length;
-    for (var i = 0; i < files.length; i++) {
-      final file = files[i];
-      _cancelToken?.throwIfCancelled();
-      if (await repository.isInstalled(file.filename)) {
-        edgeAiLog(
-          'ℹ️  Already installed: ${file.filename} (skipping download)',
-        );
-      } else {
-        final handler = handlerRegistry.getHandler(file.source);
-        if (handler == null) {
-          throw StateError(
-            'No source handler for ${file.source.runtimeType} (directory '
-            'member "${file.filename}").',
-          );
-        }
-        if (_onProgress != null) {
-          // Each file owns the slice [i/total, (i+1)/total]; stream WITHIN it so
-          // the bar keeps moving during the multi-GB model.onnx download instead
-          // of freezing between file boundaries (weights dominate total size).
-          await for (final pct in handler.installWithProgress(
-            file.source,
-            cancelToken: _cancelToken,
-            targetFilename: file.filename,
-          )) {
-            _onProgress!((((i + pct / 100) / total) * 100).round());
-          }
-        } else {
-          await handler.install(
-            file.source,
-            cancelToken: _cancelToken,
-            targetFilename: file.filename,
-          );
-        }
-      }
-      _onProgress?.call((((i + 1) / total) * 100).round());
-    }
+    // Each file owns the slice [i/total, (i+1)/total] of the progress and
+    // streams within it, so the bar keeps moving during the multi-GB
+    // model.onnx download instead of freezing between files.
+    final total = spec.files.length;
+    final onProgress = _onProgress;
+    final release = await installPlanned(
+      await planInstall(spec.files),
+      modelType: repo.ModelType.inference,
+      cancelToken: _cancelToken,
+      progress: [
+        for (var i = 0; i < total; i++)
+          onProgress == null
+              ? null
+              : (pct) => onProgress((((i + pct / 100) / total) * 100).round()),
+      ],
+      onFileDone: (i) => onProgress?.call((((i + 1) / total) * 100).round()),
+    );
 
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     await activateInstalledModel(manager, spec);
+    await release.run(manager, spec);
     edgeAiLog('✅ ONNX directory model installed and set as active: $modelId');
 
     return InferenceInstallation(spec: spec, runtime: runtime, notes: notes);

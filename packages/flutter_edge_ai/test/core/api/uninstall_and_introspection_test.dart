@@ -1,6 +1,7 @@
 // Unit test for the 1.5.0 facade API-completeness surface:
-//   - destructive uninstallEmbedder() (deletes model + tokenizer, clears the
-//     active identity, no-op when nothing is active),
+//   - uninstallEmbedder() (uninstalls model + tokenizer, keeps files the app
+//     installed with fromFile, clears the active identity, no-op when nothing
+//     is active),
 //   - the typed identity getters (activeEmbedderSpec vs the other modalities),
 //   - getModelPath() resolving an installed file's on-device path.
 //
@@ -74,11 +75,11 @@ void main() {
     }
   });
 
-  // FileSourceHandler references external files in place (no copy). To
-  // exercise the real managed-storage deletion path, seed the fixtures INSIDE
-  // the managed model directory (Application Support/flutter_gemma on the
-  // desktop test host; the name is kept across the rename) so the "external" path IS the managed path — then
-  // getModelPath resolves to them and uninstall deletes them.
+  // FileSourceHandler references the app's files in place (no copy). The
+  // fixtures sit INSIDE the managed model directory (Application
+  // Support/flutter_gemma on the desktop test host; the name is kept across
+  // the rename), so the app's file IS at the managed path — the layout where
+  // only the record says whose file it is, and uninstall must keep it.
   Future<EmbeddingModelSpec> installEmbedder() async {
     final managedDir = Directory(
       path.join(fakeAppSupport.path, 'flutter_gemma'),
@@ -131,36 +132,44 @@ void main() {
       },
     );
 
-    test(
-      'uninstallEmbedder deletes ALL files and clears the active identity',
-      () async {
-        await FlutterEdgeAi.initialize(
-          embeddingBackends: [_FakeEmbeddingBackend()],
+    test('uninstallEmbedder uninstalls both files, keeps fromFile ones and '
+        'clears the active identity', () async {
+      await FlutterEdgeAi.initialize(
+        embeddingBackends: [_FakeEmbeddingBackend()],
+      );
+
+      final spec = await installEmbedder();
+      final paths = [
+        for (final file in spec.files)
+          await FlutterEdgeAi.getModelPath(file.filename),
+      ];
+      expect(paths.every((p) => File(p).existsSync()), isTrue);
+
+      await FlutterEdgeAi.uninstallEmbedder();
+
+      // Both the model AND the tokenizer are uninstalled, not just one;
+      // installed with fromFile, they are the app's own files and stay.
+      final repository = ServiceRegistry.instance.modelRepository;
+      for (final file in spec.files) {
+        expect(await repository.isInstalled(file.filename), isFalse);
+      }
+      for (final p in paths) {
+        expect(
+          File(p).existsSync(),
+          isTrue,
+          reason: '$p is the app\'s own file',
         );
-
-        final spec = await installEmbedder();
-        final paths = [
-          for (final file in spec.files)
-            await FlutterEdgeAi.getModelPath(file.filename),
-        ];
-        expect(paths.every((p) => File(p).existsSync()), isTrue);
-
-        await FlutterEdgeAi.uninstallEmbedder();
-
-        // Both the model AND the tokenizer are gone — not just one file.
-        for (final p in paths) {
-          expect(
-            File(p).existsSync(),
-            isFalse,
-            reason: '$p should be deleted by uninstallEmbedder',
-          );
-        }
-        // Identity cleared → getActiveEmbedder now fails fast.
-        expect(FlutterEdgeAi.hasActiveEmbedder(), isFalse);
-        expect(FlutterEdgeAi.activeEmbedderSpec, isNull);
-        expect(() => FlutterEdgeAi.getActiveEmbedder(), throwsStateError);
-      },
-    );
+      }
+      // Identity cleared → getActiveEmbedder now fails fast.
+      expect(FlutterEdgeAi.hasActiveEmbedder(), isFalse);
+      expect(FlutterEdgeAi.activeEmbedderSpec, isNull);
+      // Typed, so a caller can tell "nothing installed" from a model that
+      // cannot run; still a StateError for code that catches that.
+      expect(
+        () => FlutterEdgeAi.getActiveEmbedder(),
+        throwsA(isA<NoActiveModelError>()),
+      );
+    });
 
     test('uninstallEmbedder is a no-op when nothing is active', () async {
       await FlutterEdgeAi.initialize(

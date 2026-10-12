@@ -292,17 +292,25 @@ class ModelFileSystemManager {
     return deletedCount;
   }
 
-  /// Safely deletes a model file
+  /// Safely deletes core's copy of a model file, in core's directory.
+  ///
+  /// Only that one path is ever deleted, never a path a `fromFile` install
+  /// points at. A name the app installed with `fromFile` is the app's, and
+  /// nothing is deleted for it — not even a file of that name in core's
+  /// directory, which is where an app on Android and iOS keeps one in its
+  /// Documents, and where iOS finds it after moving the app's container. Whose
+  /// file it is comes from its repository record, not from the external-path
+  /// registry, which releases up to 2.2.0 left behind after every uninstall.
   static Future<void> deleteModelFile(String filename) async {
     try {
-      // A FileSource install is referenced in place under its (possibly
-      // namespaced) filename -> its original path; delete THAT, not the
-      // managed-dir path the filename would otherwise map to (which is empty
-      // for an externally-referenced companion, so uninstall would leave the
-      // real file behind).
-      final external = await ServiceRegistry.instance.protectedFilesRegistry
-          .getExternalPath(filename);
-      final filePath = external ?? await getModelFilePath(filename);
+      final source = (await ServiceRegistry.instance.modelRepository.loadModel(
+        filename,
+      ))?.source;
+      if (source is FileSource) {
+        edgeAiLog('Kept $filename: the app installed it with fromFile');
+        return;
+      }
+      final filePath = await getModelFilePath(filename);
       final file = File(filePath);
 
       if (await file.exists()) {
@@ -317,6 +325,16 @@ class ModelFileSystemManager {
         'delete',
       );
     }
+  }
+
+  /// Drops what a `fromFile` install registered for [filename] — the external
+  /// path and the cleanup protection — and leaves the file alone. Safe for
+  /// any file and safe to repeat, so it also clears what an older release
+  /// left registered and what a failed earlier call did not finish.
+  static Future<void> forgetExternalFile(String filename) async {
+    final registry = ServiceRegistry.instance.protectedFilesRegistry;
+    await registry.unprotect(filename);
+    await registry.unregisterExternalPath(filename);
   }
 
   /// Ensures a directory exists, creating it if necessary

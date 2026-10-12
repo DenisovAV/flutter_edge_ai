@@ -9,10 +9,14 @@ tools.json    the four declarations, the same ones lib/tools.dart holds
 raw.jsonl     90 prompt -> tool-call rows to train and score on
 ```
 
-The commands below are verified against **litetune 0.3.0**, the current PyPI
-release. It pins LiteRT-LM 0.17.1 for verification and the matching 0.17.1
-builder for conversion. The project source is also available on
-[GitHub](https://github.com/DenisovAV/litetune).
+The commands below are verified against **litetune 0.4.1**, the current PyPI
+release, run end to end on 2026-10-12. It pins LiteRT-LM 0.18.0 for
+verification and the matching 0.18.0 builder for conversion. The project source
+is also available on [GitHub](https://github.com/DenisovAV/litetune).
+
+Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
+relative `--output-dir`, as below, that version wrote a bundle without its GPU
+activation key, and on the GPU it answers wrong.
 
 `tool/check_codelabs.sh` discovers step apps by their `pubspec.yaml`. There is
 none here on purpose, so this directory is not analyzed, tested or built — it
@@ -38,6 +42,11 @@ ungated `sasha-denisov/function-gemma-270M-it`.
 toolchain pins `numpy==2.0.2` and that stops publishing wheels after 3.12. On
 Linux also `sudo apt-get install -y libvulkan1`, or every invocation — `--help`
 included — dies in under a second.
+
+Use litetune 0.4.1 or later with a Python that uv installed: 0.4.0 could not
+start its stage environments there (`venv --copies` left `libpython` behind)
+and every stage reported `could_not_check`. The run above used uv's Python
+3.11 with 0.4.1.
 
 By default, `tune` and the float-reference side of `verify` choose CUDA, then
 Apple's Metal (`mps`), then CPU. The commands below set
@@ -138,10 +147,12 @@ documents directory — `~/Library/Containers/dev.fluttergemma.functioncalling/D
 ## What this run actually measured
 
 This timing and score snapshot was recorded with litetune 0.1.7 and its
-LiteRT-LM 0.16.1 runtime; 0.3.0 uses a newer runtime, so rerun before comparing
-new artifacts to these historical numbers. On a MacBook Pro M4 Pro: `prepare`
-a second, `tune` 82s,
-`convert` 84s for `weight_only_wi8_afp32`, `verify` 52s. The held-out split is
+LiteRT-LM 0.16.1 runtime, on a MacBook Pro M4 Pro: `prepare` a second, `tune`
+82s, `convert` 84s for `weight_only_wi8_afp32`, `verify` 52s. A rerun on
+litetune 0.4.1 and LiteRT-LM 0.18.0 (2026-10-12, same machine, on CPU) gave
+the tuned model the same 18 of 18 with the runtime's grammar on, and 16 of 18
+with it off; `tune` took 92s, `convert` 300s and `verify` 74s, on a first run
+that also built litetune's stage environments. The held-out split is
 18 rows, scored through the runtime's tool path — a call counts only when the
 operation name and every argument match.
 

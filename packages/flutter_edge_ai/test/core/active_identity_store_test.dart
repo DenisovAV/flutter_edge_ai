@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
@@ -36,11 +37,22 @@ void main() {
   });
 
   /// Puts a model file where the manager looks for [filename].
+  /// A file as an install leaves it: in core's directory, with its record.
   Future<void> installFile(String filename) async {
     final path = await ServiceRegistry.instance.fileSystemService
         .getWriteTargetPath(filename);
     await File(path).parent.create(recursive: true);
     await File(path).writeAsBytes(List.filled(16, 1));
+    await ServiceRegistry.instance.modelRepository.saveModel(
+      repo.ModelInfo(
+        id: filename,
+        source: ModelSource.network('https://x/$filename'),
+        installedAt: DateTime.now(),
+        sizeBytes: 16,
+        type: repo.ModelType.inference,
+        hasLoraWeights: false,
+      ),
+    );
   }
 
   group('ActiveIdentityStore', () {

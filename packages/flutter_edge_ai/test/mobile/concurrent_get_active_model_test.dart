@@ -29,6 +29,8 @@ import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
 import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/core/services/download_service.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/desktop/flutter_edge_ai_desktop.dart';
+import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart';
 
 final _fakeBundleBytes = Uint8List(1024 * 1024 + 16);
 
@@ -77,6 +79,113 @@ void main() {
     ).fromNetwork('https://example.com/model.bin').install();
     return engine;
   }
+
+  for (final (label, shell) in <(String, FlutterEdgeAiPlugin Function())>[
+    ('mobile', FlutterEdgeAiMobile.new),
+    ('desktop', () => FlutterEdgeAiDesktop.instance),
+  ]) {
+    Future<_GatedEngine> useShell() async {
+      final previous = FlutterEdgeAiPlugin.instance;
+      FlutterEdgeAiPlugin.instance = shell();
+      addTearDown(() => FlutterEdgeAiPlugin.instance = previous);
+      final engine = await installWithGatedEngine();
+      engine.release();
+      return engine;
+    }
+
+    test('$label: a call while the cached model is closing waits for the '
+        'close, then builds a new one', () async {
+      // The close listener fires only once the teardown ends, so a call in
+      // between used to pass the reuse check and get the closing model; its
+      // next createSession threw "Model is closed". Building at once instead
+      // would race the native teardown: MediaPipe holds one native model.
+      final engine = await useShell();
+      final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      final gate = (first as _FakeInferenceModel).closeGate = Completer<void>();
+      final closing = first.close();
+
+      final second = FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      await pumpEventQueue();
+      expect(
+        engine.createModelCallCount,
+        1,
+        reason: 'nothing is built while the old model is still closing',
+      );
+
+      gate.complete();
+      final model = await second;
+      await closing;
+      expect(engine.createModelCallCount, 2);
+      expect(identical(first, model), isFalse);
+      expect((model as _FakeInferenceModel).isClosed, isFalse);
+      // The superseded model's late close listener left the new one cached.
+      expect(FlutterEdgeAiPlugin.instance.initializedModel, same(model));
+      await model.close();
+    });
+
+    test('$label: the same model re-installed with a LoRA builds a new '
+        'model', () async {
+      // The cache compared the spec's name only, and a LoRA added to the same
+      // file keeps the name: the model without the adapter came back.
+      final engine = await useShell();
+      final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
+          .fromNetwork('https://example.com/model.bin')
+          .withLoraFromNetwork('https://example.com/adapter.bin')
+          .install();
+
+      final second = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      expect(engine.createModelCallCount, 2);
+      expect(identical(first, second), isFalse);
+      await second.close();
+    });
+
+    test('$label: a caller arriving during a rebuild waits for the old '
+        'model to close', () async {
+      final engine = await useShell();
+      final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      final gate = (first as _FakeInferenceModel).closeGate = Completer<void>();
+
+      // Other knobs: the shell closes the first model itself, and the gate
+      // holds that close open.
+      final rebuilt = FlutterEdgeAi.getActiveModel(maxTokens: 2048);
+      await pumpEventQueue();
+      final third = FlutterEdgeAi.getActiveModel(maxTokens: 4096);
+      await pumpEventQueue();
+      expect(
+        engine.createModelCallCount,
+        1,
+        reason: 'the third caller must not build beside the closing model',
+      );
+
+      gate.complete();
+      final models = await Future.wait([rebuilt, third]);
+      expect(engine.configs.map((c) => c.maxTokens), [1024, 2048, 4096]);
+      expect((models[1] as _FakeInferenceModel).config.maxTokens, 4096);
+      await models[1].close();
+    });
+  }
+
+  test('nothing installed is a NoActiveModelError, from the facade and the '
+      'shell', () async {
+    // Typed, so a caller can tell "nothing installed yet" from a model that
+    // is installed and cannot run; still a StateError for code catching that.
+    final previous = FlutterEdgeAiPlugin.instance;
+    FlutterEdgeAiPlugin.instance = FlutterEdgeAiMobile();
+    addTearDown(() => FlutterEdgeAiPlugin.instance = previous);
+    await ServiceRegistry.initialize(
+      downloadService: _FixtureDownloadService(_fakeBundleBytes),
+    );
+
+    await expectLater(
+      FlutterEdgeAi.getActiveModel(),
+      throwsA(isA<NoActiveModelError>()),
+    );
+    await expectLater(
+      FlutterEdgeAiPlugin.instance.createModel(modelType: ModelType.gemmaIt),
+      throwsA(isA<NoActiveModelError>()),
+    );
+  });
 
   test('loraRanks reaches the comparison, not just the comparator', () async {
     // Found by review. ActiveModelParams gained loraRanks as its tenth knob
@@ -492,10 +601,20 @@ class _FakeInferenceModel with CloseNotifier implements InferenceModel {
   /// the whole close window, so no test here could reach the state a caller
   /// arriving mid-close observes — which is exactly where two of the bugs in
   /// this file lived.
+  /// When set, the teardown waits for it, so a test can hold the model in
+  /// the closing state for as long as it needs.
+  Completer<void>? closeGate;
+
+  Future<void>? _closing;
+
+  /// Every caller gets the one teardown, as the real models' `close()` does.
   @override
-  Future<void> close() async {
+  Future<void> close() => _closing ??= _close();
+
+  Future<void> _close() async {
     isClosed = true;
     await Future<void>.delayed(Duration.zero);
+    await closeGate?.future;
     fireCloseListeners();
   }
 

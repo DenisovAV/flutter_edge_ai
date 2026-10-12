@@ -90,10 +90,10 @@ class PreferencesKeys {
   // ============================================================================
 
   /// Encoded source for the active inference model. Format: `<kind>|<value>`
-  /// where kind ∈ {`network`,`asset`,`bundled`} and value is the URL / asset
-  /// path / bundle resource name. `file` is not encoded — Mobile uses a
-  /// resolved `FileSource(filePath)` reconstructed from
-  /// [activeInferenceFilename] directly.
+  /// where kind ∈ {`network`,`asset`,`bundled`,`file`} and value is the URL /
+  /// asset path / bundle resource name / file path. The mobile restore does
+  /// not follow it: it resolves [activeInferenceFilename] through that file's
+  /// own repository record.
   static const String activeInferenceSource = 'active_inference_source';
 
   /// Same encoding as [activeInferenceSource], for the embedding model file.
@@ -153,6 +153,14 @@ class PreferencesKeys {
 
   /// The active TTS model's identity, as one JSON object.
   static const String activeTtsIdentity = 'active_tts_identity';
+
+  // ============================================================================
+  // Install
+  // ============================================================================
+
+  /// Core's copies an install replaced and has not deleted yet, as a JSON
+  /// list of `{name, path, size, modifiedMs}` (see install_rule.dart).
+  static const String pendingCopyReleases = 'pending_copy_releases';
 
   // ============================================================================
   // Path mappings (dynamic keys with filename)

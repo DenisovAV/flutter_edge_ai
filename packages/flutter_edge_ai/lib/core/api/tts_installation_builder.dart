@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai/core/api/tts_asset_listing.dart';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/core/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/core/model_management/model_activation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
@@ -53,7 +54,7 @@ class TtsInstallationBuilder {
 
   /// Absolute directory on disk holding the bundle, laid out as for
   /// [fromAsset]. The files are used where they are, not copied, so the app
-  /// must be allowed to read them — and uninstalling the model deletes them.
+  /// must be allowed to read them; uninstalling the model leaves them there.
   TtsInstallationBuilder fromFile(String directory) {
     _base = TtsFileBase(directory);
     return this;
@@ -110,7 +111,9 @@ class TtsInstallationBuilder {
   ///
   /// Note: This method is idempotent - a bundle file already installed from
   /// the same place is skipped and the spec is just (re-)set as active. A file
-  /// installed from somewhere else is installed again from the new base.
+  /// installed from somewhere else is installed again from the new base, and
+  /// core's earlier copy of it is deleted once the new bundle is active (or
+  /// at the next start).
   Future<TtsInstallation> install() async {
     if (kIsWeb) {
       throw UnsupportedError(
@@ -148,11 +151,6 @@ class TtsInstallationBuilder {
       sourceFor: (fn) => ttsModelType.sourceFor(fn, base),
     );
 
-    final registry = ServiceRegistry.instance;
-    final repository = registry.modelRepository;
-    final handlerRegistry = registry.sourceHandlerRegistry;
-    final protectedFiles = registry.protectedFilesRegistry;
-
     await _requireLocalFiles(base, spec.files);
 
     // NOTE: install-time legacy-file adoption (renaming an on-disk
@@ -163,83 +161,33 @@ class TtsInstallationBuilder {
     // verify the on-disk file actually belongs to this model (no size/hash
     // check available). A manifest file that is not already installed is
     // downloaded fresh (never adopted from a legacy plain file);
-    // already-installed files are still skipped by the loop below. The safe
-    // migration path for genuinely-legacy TTS installs is restore-time, in
-    // MobileModelManager._migrateLegacyCompanionForRestore.
+    // already-installed files are still skipped (see install_rule.dart). The
+    // safe migration path for genuinely-legacy TTS installs is restore-time,
+    // in MobileModelManager._migrateLegacyCompanionForRestore.
     final files = spec.files;
-    final fs = registry.fileSystemService;
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
-    final records = [
-      for (final file in files) await repository.loadModel(file.filename),
-    ];
-    bool installedHere(int i) =>
-        records[i]?.source.encode() == files[i].source.encode();
-
-    // Files are replaced one by one, so a switch that fails halfway would
-    // leave the active voice made of two bundles, and a restart would restore
-    // that mix. Take the voice of this type out of service first; it is
-    // activated again only once the whole bundle is in place, and a retry of
-    // install() finishes the job.
-    final active = manager.activeTtsModel;
-    if (active is TtsModelSpec &&
-        active.ttsModelType == ttsModelType &&
-        !List.generate(files.length, installedHere).every((same) => same)) {
-      await manager.clearActiveTtsIdentity();
-    }
-
-    var done = 0;
-    for (var i = 0; i < files.length; i++) {
-      _cancelToken?.throwIfCancelled();
-      final file = files[i];
-      final installed = records[i];
-
-      // Skip only a file installed from this same place. One installed from
-      // elsewhere (another directory, or a file used in place before a switch
-      // to a download) is installed again, or the spec would point at a copy
-      // that was never made. encode() leaves out auth tokens, so a new token
-      // alone does not re-download.
-      if (installedHere(i)) {
-        edgeAiLog('ℹ️  TTS bundle file already installed: ${file.filename}');
-      } else {
-        edgeAiLog('📥 Installing TTS bundle file: ${file.filename}...');
-        await handlerRegistry
-            .getHandler(file.source)!
-            .install(
-              file.source,
-              cancelToken: _cancelToken,
-              targetFilename: file.filename,
-              modelType: repo.ModelType.tts,
-            );
-        // Only now that the new copy is in place: a file used in place stays
-        // registered under this name, so drop that, letting reads and uninstall
-        // reach the copy and never the user's own file (left where it is).
-        if (file.source is! FileSource &&
-            await protectedFiles.getExternalPath(file.filename) != null) {
-          await protectedFiles.unregisterExternalPath(file.filename);
-          await protectedFiles.unprotect(file.filename);
+    final release = await installPlanned(
+      await planInstall(files),
+      modelType: repo.ModelType.tts,
+      cancelToken: _cancelToken,
+      // Files are replaced one by one, so a switch that fails halfway would
+      // leave the active voice made of two bundles, and a restart would
+      // restore that mix. Take the voice of this type out of service first;
+      // it is activated again only once the whole bundle is in place, and a
+      // retry of install() finishes the job.
+      beforeInstalling: () async {
+        final active = manager.activeTtsModel;
+        if (active is TtsModelSpec && active.ttsModelType == ttsModelType) {
+          await manager.clearActiveTtsIdentity();
         }
-        // A copy the app made earlier (download, asset or Android bundled
-        // copy) is dead weight once the file is read from somewhere else, and
-        // orphan cleanup does not reclaim .npy/.gz members, so delete it.
-        if (installed != null && installed.source is! FileSource) {
-          final managed = await fs.getWriteTargetPath(file.filename);
-          final now = switch (file.source) {
-            FileSource(:final path) => path,
-            BundledSource(:final resourceName) =>
-              await fs.getBundledResourcePath(resourceName),
-            _ => managed,
-          };
-          if (now != managed && await fs.fileExists(managed)) {
-            await fs.deleteFile(managed);
-          }
-        }
-      }
-      done++;
-      _onProgress?.call(((done / files.length) * 100).round());
-    }
+      },
+      onFileDone: (i) =>
+          _onProgress?.call((((i + 1) / files.length) * 100).round()),
+    );
 
     // AUTO-SET as active TTS model (even if already installed).
     await activateInstalledModel(manager, spec);
+    await release.run(manager, spec);
 
     edgeAiLog('✅ TTS model installed and set as active: ${spec.name}');
 

@@ -159,6 +159,17 @@ void main() {
       expect(model.session, isNull);
     });
 
+    test('isClosed is true from the moment close() starts', () async {
+      // Core's getActiveModel cache checks this: its close listener fires
+      // only once the teardown has ended.
+      final model = _model(FakeGenAiClient());
+      expect(model.isClosed, isFalse);
+
+      final closing = model.close();
+      expect(model.isClosed, isTrue);
+      await closing;
+    });
+
     test('createSession after close throws StateError', () async {
       final client = FakeGenAiClient();
       final model = _model(client);

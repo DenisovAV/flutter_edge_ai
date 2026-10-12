@@ -2,6 +2,7 @@
 // both the MediaPipe-web inference model (in core) and the litertlm-web
 // inference model (extracted into `flutter_edge_ai_litertlm`). Both import this
 // directly so neither has to be a `part of flutter_edge_ai_web.dart`.
+import 'package:flutter_edge_ai/core/domain/no_active_model_error.dart';
 import 'dart:js_interop';
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
 
@@ -81,7 +82,7 @@ class WebModelSourceResolver {
     await _modelManager.ensureInitialized();
     final active = _modelManager.activeInferenceModel;
     if (active == null) {
-      throw StateError(
+      throw NoActiveModelError(
         'No active inference model set. Use FlutterEdgeAi.installModel() first.',
       );
     }

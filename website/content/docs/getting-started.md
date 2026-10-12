@@ -49,6 +49,13 @@ only the engines, stores and features your app uses — see
   sampler the model file ships, else its family's published defaults, instead
   of greedy `topK: 1`. Pass `topK: 1` to keep greedy decoding. See
   [Migration](/docs/migration).
+- **2.2.1 — installs and model lifecycle:** a `fromFile` model is active again
+  after a restart, and core never deletes a file you installed with
+  `fromFile`. Installing a name again from another source replaces it (see
+  [Installing again](#installing-again)). With nothing installed,
+  `getActiveModel` and `getActiveEmbedder` throw `NoActiveModelError`, a
+  `StateError`. `InferenceModel.isClosed` is new, and web reuses the loaded
+  model as the other platforms do.
 
 ## What's new in 2.1
 
@@ -295,9 +302,15 @@ final deep = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 To serve several dialogues from one loaded model, do not reload it — open
 several sessions instead (next section).
 
-On **web** there is no reuse at all: every `getActiveModel` call closes the
-cached model and builds a new one, identical arguments or not. Get the model
-once and keep the handle.
+Web follows the same rule since `flutter_edge_ai` 2.2.1. Before that, every
+`getActiveModel` call on web closed the cached model and built a new one,
+identical arguments or not.
+
+A model is closed from the moment its `close()` starts: `model.isClosed` is
+true. Since 2.2.1 a `getActiveModel` call made while that close is still
+running waits for it to finish (at most 60 s, then `TimeoutException`) and
+builds a new model; it never returns the closing one, and two models are never
+loaded at once.
 
 <Info>
 
@@ -358,14 +371,24 @@ If you only ever have one conversation at a time, stick with the simpler
 
 ## Managing Installed Models
 
+### Installing again
+
+Installing a file name again from the source it came from does nothing. From
+another source — another URL (query and token aside), or `fromFile` with
+another path — it replaces the install, and core deletes its own earlier copy
+once the new one is active. Core never deletes or overwrites a file you
+installed with `fromFile`: it is used in place, it is active again after a
+restart, and a download that would land on it throws `ModelStorageException`.
+
 ### Uninstalling
 
 For the **active** embedder / STT / TTS model, one call deletes every file it
 owns (e.g. an embedder's model *and* tokenizer) and clears its persisted
-identity so it isn't auto-restored on the next launch:
+identity so it isn't auto-restored on the next launch. Files you installed with
+`fromFile` are yours: they are uninstalled but stay where they are.
 
 ```dart
-await FlutterEdgeAi.uninstallEmbedder(); // deletes model + tokenizer, clears identity
+await FlutterEdgeAi.uninstallEmbedder(); // model + tokenizer, clears identity
 await FlutterEdgeAi.uninstallStt();
 await FlutterEdgeAi.uninstallTts();
 ```
@@ -377,7 +400,7 @@ and clear the active inference identity if you removed the active one:
 // Free in-memory handles first if the model is loaded.
 await model.close();
 
-// Delete the files + metadata.
+// Delete the downloaded file + metadata (a fromFile file stays).
 await FlutterEdgeAi.uninstallModel('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm');
 
 // Clear the persisted "active model" identity so it isn't auto-restored.

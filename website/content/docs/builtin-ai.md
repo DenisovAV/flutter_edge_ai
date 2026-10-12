@@ -58,8 +58,9 @@ await FlutterEdgeAi.initialize(
 > **Android:** the package's native layer, `flutter_local_ai`, declares
 > `minSdk 26` (the ML Kit GenAI / AICore floor) — raise your app's
 > `android/app/build.gradle(.kts)` `minSdk` to 26 or the manifest merger fails.
-> It also applies the Kotlin Gradle Plugin itself and needs Kotlin 2.3.21, so
-> `android.builtInKotlin=true` is not usable in an app that depends on it.
+> It needs Kotlin 2.3.21. Since 0.2.0 it no longer applies the Kotlin Gradle
+> Plugin itself (Flutter 3.44+ does), so it does not stop an app on AGP 9 from
+> using built-in Kotlin; other plugins in the app still may.
 >
 > **Apple:** since 0.3.0 this package is no longer a Flutter plugin; its native
 > layer is `flutter_local_ai`, which builds from iOS 13.0 / macOS 12.0. A macOS

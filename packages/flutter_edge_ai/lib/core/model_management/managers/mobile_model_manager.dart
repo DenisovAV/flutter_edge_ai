@@ -29,6 +29,9 @@ class MobileModelManager extends ModelFileManager
   Future<void> ensureInitialized() => initialize();
 
   Future<void> _doInit() async {
+    // Copies an earlier install replaced and could not delete yet; before any
+    // restore, so none of them is in use. Never throws.
+    await releasePendingCopies();
     try {
       await _restoreActiveInferenceModel();
       await _restoreActiveEmbeddingModel();
@@ -216,11 +219,11 @@ class MobileModelManager extends ModelFileManager
       return;
     }
 
-    final filePath = await ServiceRegistry.instance.fileSystemService
-        .getTargetPath(filename);
-    if (!File(filePath).existsSync()) {
+    final filePath = await _installedFileLocation(filename);
+    if (filePath == null) {
       edgeAiLog(
-        '[ModelManager] active model restore: file $filePath missing — skipping',
+        '[ModelManager] active model restore: $filename is not installed or '
+        'missing — skipping',
       );
       return;
     }
@@ -232,6 +235,30 @@ class MobileModelManager extends ModelFileManager
       fileType: fileType,
     );
     edgeAiLog('[ModelManager] restored active inference model: $filename');
+  }
+
+  /// Where the installed [filename] is, from its own repository record — never
+  /// from an active identity, which can name another model's source — or null
+  /// when it is not installed or not there.
+  ///
+  /// A file the app installed with `fromFile` is used in place, where it was
+  /// recorded (on iOS, in the app's current container); every other file is
+  /// core's, in core's directory. Nothing else is tried: a file with the same
+  /// name somewhere else is not this one. A file that is there but cannot be
+  /// read still counts, so the engine's open reports why instead of the model
+  /// quietly not being active — as long as it can be seen at all: one in a
+  /// directory the app may no longer list reads as not there.
+  Future<String?> _installedFileLocation(String filename) async {
+    final record = await ServiceRegistry.instance.modelRepository.loadModel(
+      filename,
+    );
+    if (record == null) return null;
+    final fs = ServiceRegistry.instance.fileSystemService;
+    final location = switch (record.source) {
+      FileSource(:final path) => await appFileLocationNow(path),
+      _ => await fs.getReadTargetPath(filename),
+    };
+    return await fs.fileExists(location) ? location : null;
   }
 
   /// Restores a DIRECTORY (ORT-GenAI) active model from the repository records
@@ -316,53 +343,80 @@ class MobileModelManager extends ModelFileManager
   /// pre-refactor collision meant only the last-installed (= the active) model's
   /// tokenizer could exist on disk under the plain name.
   ///
-  /// Renames the file to its namespaced identity, re-keys the repository, and
-  /// rewrites the persisted active filename ([prefsKey]) so the next launch
-  /// restores the namespaced identity directly. Returns the on-disk path the
-  /// caller should use for the reconstructed spec (the namespaced path when a
-  /// migration happened or the input was already namespaced; the plain read
-  /// path when there was nothing to migrate — the caller's existence check
-  /// then handles a truly-missing file).
-  Future<String> _migrateLegacyCompanionForRestore({
+  /// The repository records say what to do:
+  /// - one under the namespaced name already — left by an earlier launch that
+  ///   stopped before the persisted name was rewritten, or by a newer install
+  ///   of this model: it is the current one and is never overwritten from the
+  ///   plain one. A plain record with the same source is that earlier
+  ///   launch's leftover and goes; one with another source belongs to an
+  ///   older install and stays;
+  /// - none under the plain name: nothing to migrate;
+  /// - a `fromFile` file: the app's, used in place — only the record and its
+  ///   registration move to the namespaced name, the file is never renamed;
+  /// - anything else: core's copy, renamed to the namespaced name, keeping
+  ///   where it came from.
+  ///
+  /// Then rewrites the persisted active filename ([prefsKey]) so the next
+  /// launch restores the namespaced identity directly. A plain name that is
+  /// left as it is (nothing recorded, no file to rename) stays persisted; the
+  /// restore then finds it not installed.
+  Future<void> _migrateLegacyCompanionForRestore({
     required String modelId,
     required String persistedFilename,
     required repo.ModelType repoType,
     required String prefsKey,
   }) async {
-    final fs = ServiceRegistry.instance.fileSystemService;
     final namespaced = FileNameUtils.namespaced(modelId, persistedFilename);
-    if (namespaced == persistedFilename) {
-      // Already namespaced (post-refactor install) — nothing to migrate.
-      return fs.getReadTargetPath(persistedFilename);
-    }
-
-    final adopted = await fs.adoptLegacyFile(persistedFilename, namespaced);
-    final newPath = await fs.getWriteTargetPath(namespaced);
-    if (!adopted && !File(newPath).existsSync()) {
-      // No namespaced file and no plain file to adopt — leave the plain
-      // identity untouched; the caller's existence check reports it missing.
-      return fs.getReadTargetPath(persistedFilename);
-    }
+    // Already namespaced (post-refactor install) — nothing to migrate.
+    if (namespaced == persistedFilename) return;
 
     final repository = ServiceRegistry.instance.modelRepository;
+    final prefs = await SharedPreferences.getInstance();
+    final original = await repository.loadModel(persistedFilename);
+    final current = await repository.loadModel(namespaced);
+    if (current != null) {
+      if (original != null &&
+          original.source.encode() == current.source.encode()) {
+        await ModelFileSystemManager.forgetExternalFile(persistedFilename);
+        await repository.deleteModel(persistedFilename);
+      }
+      await prefs.setString(prefsKey, namespaced);
+      return;
+    }
+    if (original == null) return;
+
+    final source = original.source;
+    if (source is FileSource) {
+      final registry = ServiceRegistry.instance.protectedFilesRegistry;
+      await registry.protect(namespaced);
+      await registry.registerExternalPath(namespaced, source.path);
+    } else {
+      final fs = ServiceRegistry.instance.fileSystemService;
+      final adopted = await fs.adoptLegacyFile(persistedFilename, namespaced);
+      if (!adopted &&
+          !File(await fs.getWriteTargetPath(namespaced)).existsSync()) {
+        // No namespaced file and no plain file to adopt — leave the plain
+        // identity untouched; the restore reports it missing.
+        return;
+      }
+    }
     await repository.saveModel(
       repo.ModelInfo(
         id: namespaced,
-        source: FileSource(newPath),
-        installedAt: DateTime.now(),
-        sizeBytes: await fs.getFileSize(newPath),
+        source: source,
+        installedAt: original.installedAt,
+        sizeBytes: original.sizeBytes,
         type: repoType,
         hasLoraWeights: false,
       ),
     );
+    await ModelFileSystemManager.forgetExternalFile(persistedFilename);
     await repository.deleteModel(persistedFilename);
-    final prefs = await SharedPreferences.getInstance();
     await prefs.setString(prefsKey, namespaced);
     edgeAiLog(
       '[ModelManager] migrated legacy companion "$persistedFilename" -> '
       '"$namespaced" (install-identity-namespacing)',
     );
-    return newPath;
   }
 
   /// Mirror of [_restoreActiveInferenceModel] for the embedding pair
@@ -375,36 +429,20 @@ class MobileModelManager extends ModelFileManager
       final record = ActiveEmbeddingIdentityRecord.tryDecode(encodedRecord);
       if (record != null) {
         if (!record.active) return;
-        final fs = ServiceRegistry.instance.fileSystemService;
-        final originalModelSource = ModelSource.tryDecode(record.modelSource!);
-        final originalTokenizerSource = ModelSource.tryDecode(
-          record.tokenizerSource!,
+        // Each file is found through its own repository record, as for
+        // inference and STT. An uninstall keeps a `fromFile` file, so the file
+        // being there does not mean the embedder still is; its records do.
+        final modelPath = await _installedFileLocation(record.modelFilename!);
+        if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+        final tokenizerPath = await _installedFileLocation(
+          record.tokenizerFilename!,
         );
-        late final String modelPath;
-        if (originalModelSource is FileSource) {
-          modelPath = originalModelSource.path;
-        } else {
-          modelPath = await fs.getReadTargetPath(record.modelFilename!);
-          if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) {
-            return;
-          }
-        }
-        late final String tokenizerPath;
-        if (originalTokenizerSource is FileSource) {
-          tokenizerPath = originalTokenizerSource.path;
-        } else {
-          tokenizerPath = await fs.getReadTargetPath(record.tokenizerFilename!);
-          if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) {
-            return;
-          }
-        }
-        final modelExists = await fs.fileExists(modelPath);
         if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
-        final tokenizerExists = await fs.fileExists(tokenizerPath);
-        if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
-        if (!modelExists || !tokenizerExists) {
+        if (modelPath == null || tokenizerPath == null) {
           edgeAiLog(
-            '[ModelManager] active embedding record: file missing — skipping',
+            '[ModelManager] active embedding record: ${record.modelFilename} '
+            'or ${record.tokenizerFilename} is not installed or missing — '
+            'skipping',
           );
           return;
         }
@@ -446,7 +484,6 @@ class MobileModelManager extends ModelFileManager
       return;
     }
 
-    final fs = ServiceRegistry.instance.fileSystemService;
     final modelFilenameExplicit =
         prefs.getBool(PreferencesKeys.activeEmbeddingModelFilenameExplicit) ??
         false;
@@ -458,27 +495,28 @@ class MobileModelManager extends ModelFileManager
     // Only source-derived tokenizer identities are eligible for the one-time
     // pre-namespacing migration. An explicitly persisted artifact identity is
     // already authoritative and must never be rewritten from its basename.
-    final tokenizerPath = tokenizerFilenameExplicit
-        ? await fs.getReadTargetPath(tokenizerFilename)
-        : await _migrateLegacyCompanionForRestore(
-            modelId: FileNameUtils.getBaseName(modelFilename),
-            persistedFilename: tokenizerFilename,
-            repoType: repo.ModelType.embedding,
-            prefsKey: PreferencesKeys.activeEmbeddingTokenizerFilename,
-          );
-    if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+    if (!tokenizerFilenameExplicit) {
+      await _migrateLegacyCompanionForRestore(
+        modelId: FileNameUtils.getBaseName(modelFilename),
+        persistedFilename: tokenizerFilename,
+        repoType: repo.ModelType.embedding,
+        prefsKey: PreferencesKeys.activeEmbeddingTokenizerFilename,
+      );
+      if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
+    }
     final effectiveTokenizerFilename =
         prefs.getString(PreferencesKeys.activeEmbeddingTokenizerFilename) ??
         tokenizerFilename;
-    final modelPath = await fs.getReadTargetPath(modelFilename);
+    final modelPath = await _installedFileLocation(modelFilename);
     if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
-    final modelExists = await fs.fileExists(modelPath);
+    final tokenizerPath = await _installedFileLocation(
+      effectiveTokenizerFilename,
+    );
     if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
-    final tokenizerExists = await fs.fileExists(tokenizerPath);
-    if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
-    if (!modelExists || !tokenizerExists) {
+    if (modelPath == null || tokenizerPath == null) {
       edgeAiLog(
-        '[ModelManager] active embedding restore: file missing — skipping',
+        '[ModelManager] active embedding restore: $modelFilename or '
+        '$effectiveTokenizerFilename is not installed or missing — skipping',
       );
       return;
     }
@@ -556,18 +594,27 @@ class MobileModelManager extends ModelFileManager
       return;
     }
 
-    final fs = ServiceRegistry.instance.fileSystemService;
     // The model weight keeps its plain basename (only companions are
-    // namespaced), so only the tokenizer needs a legacy migration.
-    final tokenizerPath = await _migrateLegacyCompanionForRestore(
-      modelId: FileNameUtils.getBaseName(modelFilename),
+    // namespaced), so only the tokenizer can carry a pre-namespacing name.
+    final modelId = FileNameUtils.getBaseName(modelFilename);
+    await _migrateLegacyCompanionForRestore(
+      modelId: modelId,
       persistedFilename: tokenizerFilename,
       repoType: repo.ModelType.stt,
       prefsKey: PreferencesKeys.activeSttTokenizerFilename,
     );
-    final modelPath = await fs.getReadTargetPath(modelFilename);
-    if (!File(modelPath).existsSync() || !File(tokenizerPath).existsSync()) {
-      edgeAiLog('[ModelManager] active STT restore: file missing — skipping');
+    final namespaced = FileNameUtils.namespaced(modelId, tokenizerFilename);
+    final tokenizerName =
+        await ServiceRegistry.instance.modelRepository.isInstalled(namespaced)
+        ? namespaced
+        : tokenizerFilename;
+    final modelPath = await _installedFileLocation(modelFilename);
+    final tokenizerPath = await _installedFileLocation(tokenizerName);
+    if (modelPath == null || tokenizerPath == null) {
+      edgeAiLog(
+        '[ModelManager] active STT restore: $modelFilename or $tokenizerName '
+        'is not installed or missing — skipping',
+      );
       return;
     }
 
@@ -612,10 +659,12 @@ class MobileModelManager extends ModelFileManager
     final paths = <String, String>{};
     for (final fn in ttsModelType.manifest) {
       final namespacedFn = FileNameUtils.namespaced(ttsModelType.name, fn);
-      final String p;
+      final String? p;
       try {
+        // No record, not installed — whatever is left at its path.
         p = switch ((await repository.loadModel(namespacedFn))?.source) {
-          FileSource(:final path) => path,
+          null => null,
+          FileSource(:final path) => await appFileLocationNow(path),
           BundledSource(:final resourceName) => await fs.getBundledResourcePath(
             resourceName,
           ),
@@ -624,6 +673,12 @@ class MobileModelManager extends ModelFileManager
       } catch (e) {
         edgeAiLog(
           '[ModelManager] active TTS restore: cannot resolve $namespacedFn ($e) — skipping',
+        );
+        return;
+      }
+      if (p == null) {
+        edgeAiLog(
+          '[ModelManager] active TTS restore: $namespacedFn is not installed — skipping',
         );
         return;
       }
@@ -644,15 +699,17 @@ class MobileModelManager extends ModelFileManager
     edgeAiLog('[ModelManager] restored active TTS model: $name');
   }
 
-  /// Internal method for ModelSpec-based operations
-  Future<void> _ensureModelReadySpec(ModelSpec spec) async {
+  /// Internal method for ModelSpec-based operations. Returns what releases
+  /// the copies the install replaced; run it once [spec] is active.
+  Future<CopyRelease> _ensureModelReadySpec(ModelSpec spec) async {
     await _ensureInitialized();
 
     edgeAiLog('UnifiedModelManager: Ensuring model ready - ${spec.name}');
 
     try {
-      await _ensureModelReady(spec);
+      final release = await _ensureModelReady(spec);
       edgeAiLog('UnifiedModelManager: Model ${spec.name} is ready');
+      return release;
     } catch (e) {
       edgeAiLog(
         'UnifiedModelManager: Failed to ensure model ready - ${spec.name}: $e',
@@ -661,73 +718,44 @@ class MobileModelManager extends ModelFileManager
     }
   }
 
-  /// Ensures a model is ready, applying replace policy
-  /// Delegates to Modern API handlers via ServiceRegistry
-  Future<void> _ensureModelReady(ModelSpec spec) async {
+  /// Installs [spec]'s files by the rule every installer follows (see
+  /// install_rule.dart), applying the replace policy first when anything is
+  /// to be installed.
+  Future<CopyRelease> _ensureModelReady(ModelSpec spec) async {
     edgeAiLog('🔍 Ensuring model ready: ${spec.name}');
-    edgeAiLog('🔍 Model source type: ${spec.files.first.source.runtimeType}');
-
-    // Check if already installed
-    final installed = await _isModelInstalled(spec);
-    edgeAiLog('🔍 isModelInstalled returned: $installed');
-
-    if (installed) {
-      edgeAiLog('✅ Model ${spec.name} already ready (skipping installation)');
-      return;
+    var steps = await planInstall(spec.files);
+    if (spec.replacePolicy == ModelReplacePolicy.replace &&
+        steps.any((step) => step.installs)) {
+      await _handleModelSwitching(spec);
+      // The switch uninstalled every other model of the type.
+      steps = await planInstall(spec.files);
     }
-
-    edgeAiLog('📥 Model not installed, proceeding with installation...');
-
-    // Handle model switching with replace policy
-    await _handleModelSwitching(spec);
-
-    // Route to ServiceRegistry handlers
-    await _routeModelBySource(spec);
-  }
-
-  /// Routes model handling to Modern API handlers via ServiceRegistry
-  Future<void> _routeModelBySource(ModelSpec spec) async {
-    // Install ALL files from spec (important for multi-file models like embedding)
-    final registry = ServiceRegistry.instance;
-    final handlerRegistry = registry.sourceHandlerRegistry;
-
-    for (final file in spec.files) {
-      edgeAiLog(
-        '🔀 Routing file: ${file.filename}, source type: ${file.source.runtimeType}',
+    try {
+      return await installPlanned(steps, modelType: _toRepoType(spec.type));
+    } on ModelStorageException {
+      rethrow;
+    } catch (e) {
+      throw ModelStorageException(
+        'Failed to install ${spec.name}',
+        e,
+        '_ensureModelReady',
       );
-
-      try {
-        final handler = handlerRegistry.getHandler(file.source);
-
-        if (handler == null) {
-          throw ModelStorageException(
-            'No handler registered for source type: ${file.source.runtimeType}',
-            null,
-            '_routeModelBySource',
-          );
-        }
-
-        await handler.install(file.source, modelType: _toRepoType(spec.type));
-        edgeAiLog(
-          '✅ File installed: ${file.filename} via Modern handler: ${file.source.runtimeType}',
-        );
-      } catch (e) {
-        throw ModelStorageException(
-          'Failed to install file ${file.filename} via Modern handler',
-          e,
-          '_routeModelBySource',
-        );
-      }
     }
   }
 
   /// Handles model switching according to replace policy
   Future<void> _handleModelSwitching(ModelSpec spec) async {
-    // If replace policy, clean up ALL models of this type before installing new one
+    // If replace policy, clean up every OTHER model of this type before
+    // installing this one: its own files stay, installed or about to be.
     if (spec.replacePolicy == ModelReplacePolicy.replace) {
       edgeAiLog(
-        'Policy-based replacement: cleaning up ALL ${spec.type.name} models',
+        'Policy-based replacement: cleaning up other ${spec.type.name} models',
       );
+      final own = {for (final file in spec.files) file.filename};
+
+      // Clean up tasks first: their files are deleted through the records,
+      // which keep a file the app installed with `fromFile`.
+      await _cleanupAllTasksOfType(spec.type, keep: own);
 
       // Delete all installed models of this type from ModelRepository
       final installedFiles = await getInstalledModels(spec.type);
@@ -735,21 +763,22 @@ class MobileModelManager extends ModelFileManager
       final repository = registry.modelRepository;
 
       for (final filename in installedFiles) {
+        if (own.contains(filename)) continue;
         try {
-          await ModelFileSystemManager.deleteModelFile(filename);
-          await repository.deleteModel(filename);
+          await _uninstallFile(filename, repository);
         } catch (e) {
           edgeAiLog('Failed to delete model file $filename: $e');
         }
       }
-
-      // Clean up tasks
-      await _cleanupAllTasksOfType(spec.type);
     }
   }
 
-  /// Clean up all tasks and files of a specific type
-  Future<void> _cleanupAllTasksOfType(ModelManagementType type) async {
+  /// Clean up all tasks and files of a specific type, but those named in
+  /// [keep].
+  Future<void> _cleanupAllTasksOfType(
+    ModelManagementType type, {
+    Set<String> keep = const {},
+  }) async {
     try {
       edgeAiLog('Cleaning up all tasks of type: ${type.name}');
 
@@ -761,7 +790,7 @@ class MobileModelManager extends ModelFileManager
         final filename = record.task.filename;
         final modelType = _detectModelType(filename);
 
-        if (modelType == type) {
+        if (modelType == type && !keep.contains(filename)) {
           cleanedCount++;
           try {
             await ModelFileSystemManager.deleteModelFile(filename);
@@ -830,10 +859,11 @@ class MobileModelManager extends ModelFileManager
       await _activateModel(spec);
       return;
     }
-    await _ensureModelReadySpec(spec);
+    final release = await _ensureModelReadySpec(spec);
 
     // Set as active model (automatically routes by type)
     await _activateModel(spec);
+    await release.run(this, spec);
   }
 
   /// Legacy API: Ensures a model is ready for use
@@ -845,9 +875,10 @@ class MobileModelManager extends ModelFileManager
       name: filename,
       modelUrl: url,
     );
-    await _ensureModelReadySpec(spec);
+    final release = await _ensureModelReadySpec(spec);
     // Set as active inference model after ensuring it's ready
     await _activateModel(spec);
+    await release.run(this, spec);
   }
 
   /// Downloads a model with progress tracking
@@ -1036,7 +1067,27 @@ class MobileModelManager extends ModelFileManager
     return await ModelFileSystemManager.validateModelFiles(spec);
   }
 
-  /// Deletes a model and all its files
+  /// Uninstalls one file: deletes core's copy — never a file the app
+  /// installed with `fromFile` — forgets what such an install registered,
+  /// and drops the record last, so a failure leaves a retry its record.
+  ///
+  /// Without a record the file is already uninstalled and nothing is
+  /// deleted: whatever has that name now is not core's to remove, and may be
+  /// the app's own file in core's directory.
+  Future<void> _uninstallFile(
+    String filename,
+    repo.ModelRepository repository,
+  ) async {
+    final record = await repository.loadModel(filename);
+    if (record != null && record.source is! FileSource) {
+      await ModelFileSystemManager.deleteModelFile(filename);
+    }
+    await ModelFileSystemManager.forgetExternalFile(filename);
+    if (record != null) await repository.deleteModel(filename);
+  }
+
+  /// Deletes a model and all its files. A file the app installed with
+  /// `fromFile` is the app's own and stays where it is.
   @override
   Future<void> deleteModel(ModelSpec spec) async {
     await _ensureInitialized();
@@ -1047,10 +1098,8 @@ class MobileModelManager extends ModelFileManager
       final registry = ServiceRegistry.instance;
       final repository = registry.modelRepository;
 
-      // Delete all files from filesystem and repository
       for (final file in spec.files) {
-        await ModelFileSystemManager.deleteModelFile(file.filename);
-        await repository.deleteModel(file.filename);
+        await _uninstallFile(file.filename, repository);
       }
 
       // Directory (ORT-GenAI) model: its members lived in a per-model
@@ -1169,12 +1218,23 @@ class MobileModelManager extends ModelFileManager
   }
 
   /// Get all protected files from ModelRepository
+  ///
+  /// Names as the cleanup scans see files on disk: each record's name, and
+  /// for a file the app installed with `fromFile` also the name the file has.
+  /// An app's tokenizer in its Documents (core's directory on Android and
+  /// iOS) keeps its own name while its record has the namespaced one, and
+  /// must never be swept as an orphan.
   Future<List<String>> _getAllProtectedFiles() async {
     final registry = ServiceRegistry.instance;
     final repository = registry.modelRepository;
 
     final allModels = await repository.listInstalled();
-    return allModels.map((info) => info.id).toList();
+    return [
+      for (final info in allModels) ...[
+        info.id,
+        if (info.source case FileSource(path: final file)) path.basename(file),
+      ],
+    ];
   }
 
   /// Validates all files for a model specification
@@ -1403,8 +1463,9 @@ class MobileModelManager extends ModelFileManager
       loraUrl: loraPath != null ? 'file://$loraPath' : null,
     );
 
-    await _ensureModelReadySpec(spec);
+    final release = await _ensureModelReadySpec(spec);
     await _activateModel(spec);
+    await release.run(this, spec);
   }
 
   @override
@@ -1636,8 +1697,9 @@ class MobileModelManager extends ModelFileManager
       replacePolicy: current.replacePolicy,
     );
 
-    await _ensureModelReadySpec(updatedSpec);
+    final release = await _ensureModelReadySpec(updatedSpec);
     await _activateModel(updatedSpec);
+    await release.run(this, updatedSpec);
   }
 
   @override
@@ -1657,8 +1719,9 @@ class MobileModelManager extends ModelFileManager
       replacePolicy: current.replacePolicy,
     );
 
-    await _ensureModelReadySpec(updatedSpec);
+    final release = await _ensureModelReadySpec(updatedSpec);
     await _activateModel(updatedSpec);
+    await release.run(this, updatedSpec);
   }
 
   // === Legacy Model Management Implementation ===

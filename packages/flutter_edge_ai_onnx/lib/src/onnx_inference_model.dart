@@ -71,6 +71,9 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
+  @override
+  bool get isClosed => _isClosed;
+
   /// What every [close] after the first returns: completes, normally, once
   /// the one shared teardown is done — so a second caller waits for it
   /// instead of returning while it is still running.

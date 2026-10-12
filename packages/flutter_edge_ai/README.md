@@ -70,8 +70,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.2.0
-  flutter_edge_ai_litertlm: ^1.12.0   # or any other engine from the table
+  flutter_edge_ai: ^2.2.1
+  flutter_edge_ai_litertlm: ^1.12.1   # or any other engine from the table
 ```
 
 Then complete the platform setup below.
@@ -250,7 +250,9 @@ Future<void> main() async {
 
 ### Install a model
 
-Once per device; installed models survive restarts.
+Once per device; installed models survive restarts, `fromFile` ones included.
+Installing a name again from another source replaces it; core never deletes a
+file you installed with `fromFile`.
 
 ```dart
 await FlutterEdgeAi.installModel(
@@ -279,6 +281,13 @@ await for (final response in chat.generateChatResponseAsync()) {
 
 await model.close();
 ```
+
+`getActiveModel` returns the same model while the active model and its
+arguments stay the same. Another model, or other arguments, builds a new one
+and closes the previous handle. A model is closed from the moment its
+`close()` starts (`model.isClosed`); `getActiveModel` waits for that close to
+finish, then builds a new model. With no model installed it throws
+`NoActiveModelError`, a `StateError`.
 
 Sampling left unset comes from the model: the sampler a native `.litertlm` file
 ships, else the defaults its family publishes (`SamplingParams.forModelType`),

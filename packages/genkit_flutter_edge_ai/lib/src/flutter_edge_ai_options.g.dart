@@ -19,6 +19,7 @@ base class FlutterEdgeAiModelOptions {
 
   FlutterEdgeAiModelOptions({
     int? maxTokens,
+    int? maxOutputTokens,
     double? temperature,
     int? topK,
     double? topP,
@@ -36,6 +37,7 @@ base class FlutterEdgeAiModelOptions {
   }) {
     _json = {
       'maxTokens': ?maxTokens,
+      'maxOutputTokens': ?maxOutputTokens,
       'temperature': ?temperature,
       'topK': ?topK,
       'topP': ?topP,
@@ -59,17 +61,39 @@ base class FlutterEdgeAiModelOptions {
   static const SchemanticType<FlutterEdgeAiModelOptions> $schema =
       _FlutterEdgeAiModelOptionsTypeFactory();
 
-  /// Maximum number of tokens to generate. Defaults to 1024.
+  /// The model's context window in tokens: prompt, history and reply
+  /// together, passed to `getActiveModel(maxTokens:)`. Defaults to 1024. It
+  /// does not limit the reply; [maxOutputTokens] does.
   int? get maxTokens {
     return (_json['maxTokens'] as num?)?.toInt();
   }
 
-  /// Maximum number of tokens to generate. Defaults to 1024.
+  /// The model's context window in tokens: prompt, history and reply
+  /// together, passed to `getActiveModel(maxTokens:)`. Defaults to 1024. It
+  /// does not limit the reply; [maxOutputTokens] does.
   set maxTokens(int? value) {
     if (value == null) {
       _json.remove('maxTokens');
     } else {
       _json['maxTokens'] = value;
+    }
+  }
+
+  /// Cap on the tokens generated for one reply, passed to
+  /// `createChat(maxOutputTokens:)`. `.litertlm` models honour it; MediaPipe
+  /// ignores it.
+  int? get maxOutputTokens {
+    return (_json['maxOutputTokens'] as num?)?.toInt();
+  }
+
+  /// Cap on the tokens generated for one reply, passed to
+  /// `createChat(maxOutputTokens:)`. `.litertlm` models honour it; MediaPipe
+  /// ignores it.
+  set maxOutputTokens(int? value) {
+    if (value == null) {
+      _json.remove('maxOutputTokens');
+    } else {
+      _json['maxOutputTokens'] = value;
     }
   }
 
@@ -181,12 +205,14 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Tool choice mode: 'auto', 'required', or 'none'. Defaults to 'auto'.
+  /// Tool choice mode. Defaults to 'auto'. Genkit's own `toolChoice` on the
+  /// request takes precedence.
   String? get toolChoice {
     return _json['toolChoice'] as String?;
   }
 
-  /// Tool choice mode: 'auto', 'required', or 'none'. Defaults to 'auto'.
+  /// Tool choice mode. Defaults to 'auto'. Genkit's own `toolChoice` on the
+  /// request takes precedence.
   set toolChoice(String? value) {
     if (value == null) {
       _json.remove('toolChoice');
@@ -249,12 +275,12 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Hardware backend for the text decoder ('cpu', 'gpu', 'npu'). Null uses the engine default.
+  /// Hardware backend for the text decoder. Null uses the engine default.
   String? get preferredBackend {
     return _json['preferredBackend'] as String?;
   }
 
-  /// Hardware backend for the text decoder ('cpu', 'gpu', 'npu'). Null uses the engine default.
+  /// Hardware backend for the text decoder. Null uses the engine default.
   set preferredBackend(String? value) {
     if (value == null) {
       _json.remove('preferredBackend');
@@ -263,14 +289,14 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Backend for the vision encoder ('cpu', 'gpu', 'npu'). Null defaults to CPU
-  /// (the Metal/WebGPU delegates can't prepare its ops). Ignored by MediaPipe.
+  /// Backend for the vision encoder. Null defaults to CPU (the Metal/WebGPU
+  /// delegates can't prepare its ops). Ignored by MediaPipe.
   String? get preferredVisionBackend {
     return _json['preferredVisionBackend'] as String?;
   }
 
-  /// Backend for the vision encoder ('cpu', 'gpu', 'npu'). Null defaults to CPU
-  /// (the Metal/WebGPU delegates can't prepare its ops). Ignored by MediaPipe.
+  /// Backend for the vision encoder. Null defaults to CPU (the Metal/WebGPU
+  /// delegates can't prepare its ops). Ignored by MediaPipe.
   set preferredVisionBackend(String? value) {
     if (value == null) {
       _json.remove('preferredVisionBackend');
@@ -279,14 +305,14 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// Backend for the audio encoder ('cpu', 'gpu', 'npu'). Null defaults to CPU;
-  /// set 'gpu' for faster audio (Gemma 3n ~2x on Metal). Ignored by MediaPipe.
+  /// Backend for the audio encoder. Null defaults to CPU; set 'gpu' for
+  /// faster audio (Gemma 3n ~2x on Metal). Ignored by MediaPipe.
   String? get preferredAudioBackend {
     return _json['preferredAudioBackend'] as String?;
   }
 
-  /// Backend for the audio encoder ('cpu', 'gpu', 'npu'). Null defaults to CPU;
-  /// set 'gpu' for faster audio (Gemma 3n ~2x on Metal). Ignored by MediaPipe.
+  /// Backend for the audio encoder. Null defaults to CPU; set 'gpu' for
+  /// faster audio (Gemma 3n ~2x on Metal). Ignored by MediaPipe.
   set preferredAudioBackend(String? value) {
     if (value == null) {
       _json.remove('preferredAudioBackend');
@@ -322,21 +348,41 @@ base class _FlutterEdgeAiModelOptionsTypeFactory
       'type': 'object',
       'description': 'Configuration options for flutter_edge_ai inference',
       'properties': <String, Object?>{
-        'maxTokens': <String, Object?>{'type': 'integer'},
-        'temperature': <String, Object?>{'type': 'number'},
-        'topK': <String, Object?>{'type': 'integer'},
-        'topP': <String, Object?>{'type': 'number'},
+        'maxTokens': <String, Object?>{'type': 'integer', 'minimum': 1},
+        'maxOutputTokens': <String, Object?>{'type': 'integer', 'minimum': 1},
+        'temperature': <String, Object?>{'type': 'number', 'minimum': 0},
+        'topK': <String, Object?>{'type': 'integer', 'minimum': 1},
+        'topP': <String, Object?>{
+          'type': 'number',
+          'maximum': 1,
+          'exclusiveMinimum': 0,
+        },
         'supportImage': <String, Object?>{'type': 'boolean'},
         'supportAudio': <String, Object?>{'type': 'boolean'},
         'enableThinking': <String, Object?>{'type': 'boolean'},
         'randomSeed': <String, Object?>{'type': 'integer'},
-        'toolChoice': <String, Object?>{'type': 'string'},
+        'toolChoice': <String, Object?>{
+          'type': 'string',
+          'enum': ['auto', 'required', 'none'],
+        },
         'systemInstruction': <String, Object?>{'type': 'string'},
-        'maxFunctionBufferLength': <String, Object?>{'type': 'integer'},
+        'maxFunctionBufferLength': <String, Object?>{
+          'type': 'integer',
+          'minimum': 1,
+        },
         'enableSpeculativeDecoding': <String, Object?>{'type': 'boolean'},
-        'preferredBackend': <String, Object?>{'type': 'string'},
-        'preferredVisionBackend': <String, Object?>{'type': 'string'},
-        'preferredAudioBackend': <String, Object?>{'type': 'string'},
+        'preferredBackend': <String, Object?>{
+          'type': 'string',
+          'enum': ['cpu', 'gpu', 'npu'],
+        },
+        'preferredVisionBackend': <String, Object?>{
+          'type': 'string',
+          'enum': ['cpu', 'gpu', 'npu'],
+        },
+        'preferredAudioBackend': <String, Object?>{
+          'type': 'string',
+          'enum': ['cpu', 'gpu', 'npu'],
+        },
       },
     },
     dependencies: [],
@@ -351,8 +397,8 @@ base class FlutterEdgeAiEmbedConfig {
 
   FlutterEdgeAiEmbedConfig._(this._json);
 
-  FlutterEdgeAiEmbedConfig({String? preferredBackend}) {
-    _json = {'preferredBackend': ?preferredBackend};
+  FlutterEdgeAiEmbedConfig({String? preferredBackend, String? taskType}) {
+    _json = {'preferredBackend': ?preferredBackend, 'taskType': ?taskType};
   }
 
   late final Map<String, dynamic> _json;
@@ -361,17 +407,35 @@ base class FlutterEdgeAiEmbedConfig {
   static const SchemanticType<FlutterEdgeAiEmbedConfig> $schema =
       _FlutterEdgeAiEmbedConfigTypeFactory();
 
-  /// Preferred hardware backend hint ('cpu', 'gpu', 'npu').
+  /// Preferred hardware backend hint.
   String? get preferredBackend {
     return _json['preferredBackend'] as String?;
   }
 
-  /// Preferred hardware backend hint ('cpu', 'gpu', 'npu').
+  /// Preferred hardware backend hint.
   set preferredBackend(String? value) {
     if (value == null) {
       _json.remove('preferredBackend');
     } else {
       _json['preferredBackend'] = value;
+    }
+  }
+
+  /// What the text is embedded for: 'retrievalQuery' (the default) for a
+  /// search query, 'retrievalDocument' for a document to index. EmbeddingGemma
+  /// prefixes each differently, so index documents with 'retrievalDocument'.
+  String? get taskType {
+    return _json['taskType'] as String?;
+  }
+
+  /// What the text is embedded for: 'retrievalQuery' (the default) for a
+  /// search query, 'retrievalDocument' for a document to index. EmbeddingGemma
+  /// prefixes each differently, so index documents with 'retrievalDocument'.
+  set taskType(String? value) {
+    if (value == null) {
+      _json.remove('taskType');
+    } else {
+      _json['taskType'] = value;
     }
   }
 
@@ -402,7 +466,14 @@ base class _FlutterEdgeAiEmbedConfigTypeFactory
       'type': 'object',
       'description': 'Configuration options for flutter_edge_ai embeddings',
       'properties': <String, Object?>{
-        'preferredBackend': <String, Object?>{'type': 'string'},
+        'preferredBackend': <String, Object?>{
+          'type': 'string',
+          'enum': ['cpu', 'gpu', 'npu'],
+        },
+        'taskType': <String, Object?>{
+          'type': 'string',
+          'enum': ['retrievalQuery', 'retrievalDocument'],
+        },
       },
     },
     dependencies: [],

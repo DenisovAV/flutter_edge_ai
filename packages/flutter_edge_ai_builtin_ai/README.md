@@ -7,7 +7,8 @@
 Built-in OS AI engine for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai): runs inference
 against the **system/browser-provided** on-device model instead of a downloaded model file —
 Gemini Nano via ML Kit GenAI (AICore) on Android, Apple Foundation Models on iOS/macOS, Windows AI
-Foundry (Phi Silica) on Windows, and Gemini Nano via the Chrome **Prompt API** on Web. Opt-in
+Foundry (Phi Silica) on Windows, and the browser's **Prompt API** on Web (Gemini Nano in Chrome,
+Phi-4-mini in Edge). Opt-in
 package: add it only if you want your app to use whatever model the platform already ships, with no
 model file to download or bundle.
 
@@ -60,12 +61,13 @@ Every row is a property of the running device, OS and build — not of the packa
 | Android | Gemini Nano | ML Kit GenAI / AICore (`genai-prompt` 1.0.0-beta4) | Pixel 9+, Galaxy S25+. **`minSdk 26`** and **Kotlin 2.3.21** in your app (see [Android setup](#android-setup)). |
 | iOS / macOS | Apple Foundation Models | FoundationModels framework | iPhone 15 Pro+, Apple Silicon Macs, Apple Intelligence enabled in **Settings → Apple Intelligence & Siri**. Inference needs **OS 26+** at runtime — below that the plugin reports `unavailableOsTooOld`, so you can still ship a fallback. The plugin itself builds from **iOS 13.0 / macOS 12.0**, so it links and runs on older OSes. |
 | Windows | Phi Silica | Windows AI Foundry (Windows App SDK 2.0+) | Windows 11 25H2+ on Copilot+ class hardware (or a supported GPU), in a packaged app. The build resolves the App SDK projection itself; a build that could not reports `unavailableDeviceUnsupported`. See [Windows setup](#windows-setup). |
-| Web | Gemini Nano | Chrome **Prompt API** (`self.LanguageModel`) | Desktop Chrome / Chromium-Edge only — **not** Chrome-Android/iOS, **not** Firefox/Safari. ~22 GB free disk + a GPU with >4 GB VRAM (or a 16 GB-RAM CPU-only path). See [Web setup](#web-setup). |
+| Web | Gemini Nano (Chrome), Phi-4-mini (Edge) | **Prompt API** (`self.LanguageModel`) | Desktop Chrome / Chromium-Edge only — **not** Chrome-Android/iOS, **not** Firefox/Safari. ~22 GB free disk + a GPU with >4 GB VRAM (or a 16 GB-RAM CPU-only path). See [Web setup](#web-setup). |
 | Linux | — | — | No OS built-in model. `availability()` reports `unavailableDeviceUnsupported`; fall back to a downloaded model. |
 
 Vision (image input) requires **OS 27 plus an OS 27 SDK / Swift 6.4 compiler** on Apple platforms —
 on OS 26 Apple Foundation Models is text-only, and that OS 27 branch is not device-verified yet.
-Android Gemini Nano supports vision on every supported device. **Windows and Web are text-only**:
+Android Gemini Nano supports vision on every supported device. **Windows, Web and Apple on OS 26
+are text-only**:
 creating a model with `supportImage: true` there throws `LocalAiUnsupportedException` rather than
 silently dropping the image.
 
@@ -78,6 +80,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   await FlutterEdgeAi.initialize(
     inferenceEngines: const [BuiltInAiEngine()],
   );
@@ -120,6 +123,12 @@ await BuiltInAi.ensureReady(
 );
 ```
 
+On web, call `ensureReady()` straight from a tap handler while the model still has to be
+downloaded: outside a user gesture the browser refuses to start the download, and `ensureReady()`
+throws a `BuiltInAiUnavailableException` with status `downloadable`
+(`LocalAiUserActivationRequiredException`). The same call succeeds from a tap. Everywhere,
+`ensureReady()` throws a `TimeoutException` once `timeout` (10 minutes by default) passes.
+
 Then load and use the model exactly like any other flutter_edge_ai engine:
 
 ```dart
@@ -140,6 +149,8 @@ final response = await session.getResponse();
 | Thinking mode | ❌ | ❌ | ❌ | ❌ |
 | `sizeInTokens` | ✅ native token count | ✅ on OS 26.4+, built with Xcode 26.4+ (estimate otherwise) | ❌ estimate | ✅ `measureContextUsage` |
 | `maxOutputTokens` | ✅ | ✅ | ❌ ignored | ❌ ignored (warns once) |
+| `topP` | ❌ ignored | ❌ ignored (top-k wins) | ✅ | ❌ ignored |
+| `randomSeed` | ❌ ignored | ❌ ignored | ❌ ignored | ❌ ignored |
 | LoRA weights | ❌ | ❌ | ❌ | ❌ |
 | Concurrent sessions (`openSession`) | ✅ | ✅ | ✅ | ✅ |
 
@@ -155,11 +166,17 @@ uses `measureContextUsage`, falling back to the legacy `measureInputUsage` on ol
 Audio input, LoRA, and `loraPath` throw `UnsupportedError` — the OS models expose none of them.
 `enableThinking` is accepted for API parity and ignored, with a one-time log warning.
 
+An unset `temperature` or `topK` is sent as `0.8` or `1`, `flutter_local_ai`'s own defaults, so
+the OS model decodes greedily unless you pass a `topK` above 1; Windows applies `topP` only alongside
+one. `temperature: 0` is greedy whatever `topK` comes with it. A `temperature` or `topP` without
+`topK`, an ignored `topP`, and any `randomSeed` are each reported once, in release builds too.
+
 "Prompt-based" function calling means tool definitions are woven into the prompt (by core
 `InferenceChat`) rather than using a native structured tool-calling API. Native tool declarations
 are deliberately **not** forwarded to the OS runner: handing the same tools to both would run two
-competing tool loops for one turn. Gemini Nano handles single-turn calls; multi-turn agent chaining
-is not supported on Web (see `flutter_edge_ai_agent`).
+competing tool loops for one turn. Pass `supportsFunctionCalls: true` to `createChat` along with
+the `tools`: it defaults to `false` here. Gemini Nano handles single-turn calls; multi-turn agent
+chaining is not supported on Web (see `flutter_edge_ai_agent`).
 
 ### Reaching what flutter_edge_ai's interface has no slot for
 
@@ -201,8 +218,9 @@ kotlin {
 ```
 
 Let the Prompt API resolve its own common and coroutine dependencies rather than pinning older
-versions. Unlike flutter_edge_ai's own plugins, `flutter_local_ai` applies the Kotlin Gradle Plugin
-itself, so `android.builtInKotlin=true` is not usable in an app that depends on it.
+versions. Since 0.2.0, `flutter_local_ai` no longer applies the Kotlin Gradle Plugin itself (Flutter
+3.44+ does), so it does not stop an app on AGP 9 from using built-in Kotlin; other plugins in the app
+still may.
 
 ## Windows setup
 
@@ -215,8 +233,10 @@ and your fallback runs. The environment variables `FLUTTER_LOCAL_AI_WINDOWS_AI` 
 [`flutter_local_ai`'s Windows setup](https://pub.dev/packages/flutter_local_ai).
 
 Running needs Windows 11 25H2+ on a Copilot+ PC (or a supported GPU) and a packaged app — see
-[Microsoft's setup guide](https://learn.microsoft.com/en-us/windows/ai/apis/get-started). This path
-still needs Windows device validation.
+[Microsoft's setup guide](https://learn.microsoft.com/en-us/windows/ai/apis/get-started). The
+package needs identity and the `systemAIModels` capability; an unpackaged run (a plain
+`flutter run`) cannot reach Windows AI and reports `unavailableOther`. This path still needs Windows
+device validation.
 
 ## Web setup
 
@@ -232,6 +252,9 @@ feature **enabled**:
   ```
 - **Local development**: enable `chrome://flags/#prompt-api-for-gemini-nano` in your own Chrome and
   restart the browser.
+- **Microsoft Edge**: open `edge://flags`, enable **Prompt API for on-device language model** and
+  restart. The model is Phi-4-mini, not Gemini Nano; it downloads on first use. Verified on stable
+  Edge 151 on macOS; Edge Dev 154–155 exposes the API but cannot run the model.
 
 ⚠️ **Verify before you ship**: whether the Prompt API is still origin-trial/flag-gated on plain web
 pages, or has shipped in stable Chrome without a token, changes over time (it has been stable in
@@ -255,12 +278,12 @@ reason attached.
 | Status | Meaning | User-facing remedy | Web notes |
 |--------|---------|---------------------|-----------|
 | `available` | Ready to use now. | — | — |
-| `downloadable` | Feature exists but isn't downloaded yet. | Call `BuiltInAi.ensureReady()` — it triggers the download and reports progress via `onProgress`. | On Web, `ensureReady()` reports a *real* percentage from the browser's `downloadprogress` event. |
+| `downloadable` | Feature exists but isn't downloaded yet. | Call `BuiltInAi.ensureReady()` — it triggers the download and reports progress via `onProgress`. | On Web, call it from a user gesture; it reports a *real* percentage from the browser's `downloadprogress` event. |
 | `downloading` | A download is already in progress. | Call `BuiltInAi.ensureReady()` and wait; it polls until ready or the `timeout` elapses. | Same on Web. |
 | `unavailableDeviceUnsupported` | This device/browser doesn't have AICore (Android), Apple Intelligence hardware (Apple), a configured App SDK (Windows), or the Prompt API (Web) — and always on Linux, which has no OS model. | Fall back to a bundled model — the device can't run the built-in one. | Also returned when `'LanguageModel' in self` is `false` — wrong browser, wrong platform, or the feature isn't enabled (see [Web setup](#web-setup)). |
 | `unavailableOsTooOld` | The OS version is below what the built-in model requires. | Prompt the user to update the OS, or fall back to a bundled model. | Never returned on Web. |
 | `unavailableDisabled` | The feature exists but is turned off. | Ask the user to enable it: Apple Intelligence in **Settings → Apple Intelligence & Siri** (iOS/macOS), or the Windows AI feature in Windows Settings. | Only Apple and Windows report it. ML Kit has no "switched off" state, so Android folds this into `unavailableOther`; Chrome folds it into `unavailableDeviceUnsupported`/`unavailableOther`. |
-| `unavailableOther` | Unclassified failure — including a probe that timed out. | Fall back to a bundled model; check device/console logs for detail. | Chrome's `'unavailable'` maps here — the browser doesn't report *why* (disk floor, VRAM, flag/origin-trial missing). |
+| `unavailableOther` | Unclassified failure — including a probe that timed out, and an unpackaged Windows app. | Fall back to a bundled model; check device/console logs for detail. | Chrome's `'unavailable'` maps here — the browser doesn't report *why* (disk floor, VRAM). |
 
 `availability()` never throws and never hangs — a probe that doesn't return within
 `BuiltInAi.debugProbeTimeout` resolves to `unavailableOther`. `ensureReady()` throws

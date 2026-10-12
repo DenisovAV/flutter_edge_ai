@@ -157,6 +157,31 @@ void main() {
     expect(res.message!.content.first.text, 'recovered');
   });
 
+  test('UNIMPLEMENTED falls back: the next branch is another model', () async {
+    var cloudCalls = 0;
+    final noTools = Model(
+      name: 'device',
+      fn: (request, context) async => throw GenkitException(
+        'configured without tools',
+        status: StatusCode.unimplemented,
+      ),
+    );
+    final model = hybridModel(
+      branches: {
+        'onDevice': noTools,
+        'cloud': fakeModel(
+          name: 'c',
+          text: 'from cloud',
+          onCall: () => cloudCalls++,
+        ),
+      },
+      strategy: _Pick(['onDevice', 'cloud']),
+    );
+    final res = await model(_req());
+    expect(cloudCalls, 1);
+    expect(res.message!.content.first.text, 'from cloud');
+  });
+
   test(
     'streaming: branch fails before first token -> next branch used',
     () async {

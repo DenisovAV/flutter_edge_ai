@@ -10,7 +10,7 @@ package: add it only if your app needs speech-to-text, text-to-speech, or a
 push-to-talk voice loop.
 
 This package depends on `flutter_edge_ai_litertlm`, which owns the shared `libLiteRtLm`
-native bundle and exposes the LiteRt interpreter FFI (`LiteRtBindings`) used here.
+native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here.
 
 ## Status
 
@@ -18,7 +18,7 @@ native bundle and exposes the LiteRt interpreter FFI (`LiteRtBindings`) used her
   and **Parakeet** (log-mel) via `LiteRtSttBackend`.
 - **TTS** works end-to-end for **Matcha** (`litert-community/Matcha-TTS`, 22050 Hz
   — a 3-graph LiteRT pipeline: encoder → CFM decoder → HiFi-GAN vocoder,
-  producing 16-bit PCM), **Qwen3-TTS** and **Inflect-Nano-v2** via
+  producing 16-bit PCM), **Qwen3-TTS** and **Inflect-Nano-v2** (both 24000 Hz) via
   `LiteRtTtsBackend`; `kokoro`/`supertonic` are follow-ons.
 
 Both backends are pure factories (`canHandle` always `true`) — the *model* is
@@ -55,11 +55,32 @@ print(synth.sampleRate); // 22050
 await synth.close();
 ```
 
+A recognizer's or synthesizer's `close()` frees its native model even
+mid-request: requests that have not started fail with a `StateError`, the one in
+flight finishes, and `close()` returns once the model is freed, printing a
+warning if that takes over 30 s. Before 0.5.5 such a close could leave the model
+resident.
+
 A voice can also ship with the app: `fromAsset(directory)` and
 `fromFile(directory)` take a directory laid out like the Hugging Face repo, and
-`fromBundled()` takes native resources named `<type>__<file>`
-(`matcha__config.json`). See
-[Voice files shipped with the app](https://flutteredge.ai/docs/speech).
+`fromBundled()` (Android and iOS only) takes native resources named
+`<type>__<file>` (`matcha__config.json`). See
+[Voice files shipped with the app](https://flutteredge.ai/docs/speech#voice-files-shipped-with-the-app).
+
+Speech-to-text installs a model and a tokenizer:
+
+```dart
+await FlutterEdgeAi.installStt()
+    .modelFromNetwork('https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_f32.tflite')
+    .tokenizerFromNetwork('https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json')
+    .ofType(SttModelType.whisper)
+    .install();
+```
+
+`transcribe` takes raw 16 kHz mono 16-bit little-endian PCM (`Uint8List`), not a
+WAV file. Each model has a fixed window — 5 s for moonshine and Parakeet, 30 s
+for Whisper; shorter audio is zero-padded and longer audio is silently
+truncated.
 
 ### Speech-to-text output language (Whisper)
 
@@ -84,6 +105,9 @@ ignoring the value.
 ## Voice loop
 
 `VoiceSession` chains STT → LLM → TTS into one push-to-talk turn with barge-in.
+The loop also needs an LLM: add `flutter_edge_ai_litertlm`, pass
+`inferenceEngines: [LiteRtLmEngine()]` to `initialize`, and install a
+`.litertlm` model.
 `VoiceSession.fromChat` wraps an `InferenceChat`. A chat with tools is supported
 — pass `onToolCall` and the turn runs through the tool loop; it throws only if a
 tools-enabled chat arrives without a handler. Use `VoiceSession.custom` for an
@@ -119,13 +143,9 @@ exactly as the example `stt_screen`/`tts_screen` do.
 
 | Platform | STT | TTS |
 |----------|-----|-----|
-| Android / iOS | ✅ FFI | ✅ FFI |
+| Android / iOS | ✅ FFI (Android: `arm64-v8a`, `minSdk 30`) | ✅ FFI (Android: `arm64-v8a`, `minSdk 30`) |
 | macOS / Linux / Windows | ✅ FFI | ✅ FFI |
 | Web | 🚧 stub `UnsupportedError` | 🚧 stub `UnsupportedError` |
-
-> Every `flutter_edge_ai_litertlm` release contains the Windows STT/TTS fix.
-> On the legacy package line, use `flutter_gemma_litertlm` 1.7.0 or newer;
-> earlier versions fail with `CreateTensorBufferFromHostMemory` `status=3`.
 
 No `hook/build.dart` of its own — the native library is bundled by
 `flutter_edge_ai_litertlm`'s Native Assets hook and shared transitively.

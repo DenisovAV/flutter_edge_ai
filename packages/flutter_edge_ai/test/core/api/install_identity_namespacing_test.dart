@@ -381,6 +381,8 @@ void main() {
         await ServiceRegistry.initialize(
           fileSystemService: _AlwaysExistingFileSystemService(),
         );
+        // A is installed: its files exist (the fake says so) and are recorded.
+        await _recordInstalled(first);
         final freshManager = MobileModelManager(
           activeEmbeddingIdentityPersistence:
               _ScriptedEmbeddingIdentityPersistence(backing),
@@ -400,6 +402,8 @@ void main() {
           ).encode();
         final fileSystem = _SuspendingFileSystemService();
         await ServiceRegistry.initialize(fileSystemService: fileSystem);
+        // Installed, so only the lease decides whether the restore publishes.
+        await _recordInstalled(oldSpec);
         final restoringManager = MobileModelManager(
           activeEmbeddingIdentityPersistence: persistence,
         );
@@ -435,6 +439,8 @@ void main() {
           ).encode();
         final fileSystem = _SuspendingFileSystemService();
         await ServiceRegistry.initialize(fileSystemService: fileSystem);
+        // Installed, so only the lease decides whether the restore publishes.
+        await _recordInstalled(oldSpec);
         final restoringManager = MobileModelManager(
           activeEmbeddingIdentityPersistence: persistence,
         );
@@ -1192,6 +1198,8 @@ void main() {
       // written under their PLAIN names, repo keyed PLAIN, active prefs PLAIN —
       // exactly what a pre-namespacing install left behind. The model weight
       // was never namespaced, so only the tokenizer is a migration candidate.
+      // Downloaded, so recorded with its network source: a FileSource record
+      // would mark the app's own file, which the restore never renames.
       final modelPath = await fs.getWriteTargetPath(modelName);
       final plainTokenizerPath = await fs.getWriteTargetPath(plainTokenizer);
       await File(modelPath).writeAsBytes(_fakeModelBytes);
@@ -1199,7 +1207,7 @@ void main() {
       await repository.saveModel(
         repo.ModelInfo(
           id: modelName,
-          source: ModelSource.file(modelPath),
+          source: ModelSource.network('https://example.com/$modelName'),
           installedAt: DateTime(2026),
           sizeBytes: _fakeModelBytes.length,
           type: repo.ModelType.stt,
@@ -1209,7 +1217,7 @@ void main() {
       await repository.saveModel(
         repo.ModelInfo(
           id: plainTokenizer,
-          source: ModelSource.file(plainTokenizerPath),
+          source: ModelSource.network('https://example.com/$plainTokenizer'),
           installedAt: DateTime(2026),
           sizeBytes: _fakeCompanionBytes.length,
           type: repo.ModelType.stt,
@@ -1620,6 +1628,22 @@ final class _ScriptedEmbeddingIdentityPersistence
         backing.durableRecord = encodedRecord;
         return true;
     }
+  }
+}
+
+/// Records [spec]'s files the way an install does.
+Future<void> _recordInstalled(EmbeddingModelSpec spec) async {
+  for (final file in spec.files) {
+    await ServiceRegistry.instance.modelRepository.saveModel(
+      repo.ModelInfo(
+        id: file.filename,
+        source: file.source,
+        installedAt: DateTime(2026),
+        sizeBytes: 1,
+        type: repo.ModelType.embedding,
+        hasLoraWeights: false,
+      ),
+    );
   }
 }
 

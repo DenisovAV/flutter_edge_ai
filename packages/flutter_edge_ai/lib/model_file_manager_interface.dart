@@ -18,7 +18,9 @@ abstract class ModelFileManager {
   /// Downloads a model without progress tracking
   Future<void> downloadModel(ModelSpec spec, {String? token});
 
-  /// Deletes a model and all its files.
+  /// Uninstalls a model and all its files: core's copies are deleted, and a
+  /// file the app installed with `fromFile` is the app's own and stays where
+  /// it is.
   ///
   /// This is a storage operation only. The caller that owns an active-model
   /// lifecycle is responsible for clearing its identity after deletion.
@@ -52,7 +54,14 @@ abstract class ModelFileManager {
   /// Returns number of deleted files
   Future<int> cleanupStorage();
 
-  /// Modern API: Ensures a model spec is ready for use
+  /// Modern API: Ensures a model spec is ready for use, and makes it active.
+  ///
+  /// On Android, iOS and desktop each file is installed unless it is
+  /// installed from the same source already, as the installers do: a file
+  /// picked from another path, or a download from another URL, is installed
+  /// again, and core's earlier copy is deleted once [spec] is active — never
+  /// a file the app installed with `fromFile`. On web a name already
+  /// installed is kept.
   Future<void> ensureModelReadyFromSpec(ModelSpec spec);
 
   /// Legacy API: Ensures a model is ready for use, handling all necessary operations

@@ -27,7 +27,15 @@ await FlutterEdgeAi.initialize(
 );
 ```
 
-`MediaPipeEngine` handles `ModelFileType.task` / `ModelFileType.binary` (`.bin`) models; pass it alongside other engines (e.g. `LiteRtLmEngine` from `flutter_edge_ai_litertlm`) if your app uses both formats.
+`MediaPipeEngine` handles `ModelFileType.task` / `ModelFileType.binary` (`.bin`, `.tflite`) models; pass it alongside other engines (e.g. `LiteRtLmEngine` from `flutter_edge_ai_litertlm`) if your app uses both formats.
+
+`maxTokens` is the whole context (input plus output), and a small value is not raised as it is on `.litertlm`. `maxOutputTokens` is ignored (only a debug log says so); stop early with `session.stopGeneration()`.
+
+On Android and iOS, pass `supportImage: true` to `createChat` as well as to `getActiveModel`, or the image is dropped. The Gemma 3n `.task` files carry no audio encoder; use a `.litertlm` model for audio.
+
+## Sampling
+
+A `.task` file ships no sampler, so an unset `temperature`, `topK` or `topP` comes from the model family's defaults (`SamplingParams.forModelType`), with an unset `topK` capped at 40, MediaPipe's own default; an unset `randomSeed` is 1. `topK: 1` or `temperature: 0` decodes greedily, as Phi and Hammer do by default; before 1.2.0 every family did. On Android and iOS each session starts from its seed, so vary `randomSeed` for a different answer to the same prompt. On web the model keeps its first session, so the sampling of a later `createSession` is not applied; web also has no top-p, and a `topP` you pass is ignored with a one-time warning.
 
 ## Web setup
 
@@ -40,6 +48,8 @@ window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
 ```
+
+Load the model's `-web.task` build (e.g. `gemma3-1b-it-int4-web.task`); mobile `.task` files generally do not run on web. Also copy `cache_api.js` and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into your app's `web/` and load them with `<script src="cache_api.js"></script>` and `<script src="opfs_helper.js"></script>` — see [Installation → Web](https://flutteredge.ai/docs/installation#web). Web runs on the GPU only.
 
 (Android needs no extra setup — the MediaPipe Gradle deps are bundled by this package.)
 
@@ -64,7 +74,7 @@ statically linked binaries".
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ `com.google.mediapipe:tasks-genai` (Gradle) |
-| iOS      | ✅ `MediaPipeTasksGenAI` (CocoaPods) — **requires iOS 16.0+** |
-| Web      | ✅ `@mediapipe/tasks-genai` (CDN, see above) |
+| Android  | ✅ `com.google.mediapipe:tasks-genai` 0.10.33 (Gradle) |
+| iOS      | ✅ `MediaPipeTasksGenAI` 0.10.33 (CocoaPods) — **requires iOS 16.0+**; run `.task` models on `PreferredBackend.cpu` |
+| Web      | ✅ `@mediapipe/tasks-genai` 0.10.29 (CDN, see above) — GPU only, `-web.task` models |
 | Desktop  | ❌ (MediaPipe `.task` not supported on desktop — use `flutter_edge_ai_litertlm`) |

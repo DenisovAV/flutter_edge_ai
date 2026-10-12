@@ -2,9 +2,11 @@
 //
 // The fake engines in those tests run INSIDE the worker isolate, so the test
 // on the main isolate cannot read their state. Each fake appends one line per
-// call to a log file instead; the writes are synchronous and flushed, so a
-// line is on disk before the call returns — and a worker that was killed
-// never writes the lines that come after the kill.
+// call to a log file instead; the writes are synchronous, so a line can be
+// read before the call returns — and a worker that was killed never writes
+// the lines that come after the kill. They are not fsync'd: the test reads
+// the log on the same machine, from the page cache, and an fsync makes every
+// logged call wait for the disk, the worker blocked meanwhile.
 //
 // A fake that must hold a call — a native call that has not returned yet —
 // blocks on a gate: it waits until the file `<log>.release` exists. The test
@@ -30,7 +32,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// Appends [line] to the log at [path]; a null path logs nothing.
 void appendLogLine(String? path, String line) {
   if (path == null) return;
-  File(path).writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+  File(path).writeAsStringSync('$line\n', mode: FileMode.append);
 }
 
 const _gateDeadline = Duration(seconds: 30);

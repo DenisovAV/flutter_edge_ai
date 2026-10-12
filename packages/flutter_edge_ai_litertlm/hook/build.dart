@@ -216,7 +216,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-d',
+  version: '0.18.0-e',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -227,6 +227,18 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.18.0-e rebuilds libLiteRtLm on all seven targets: on Linux and Windows
+  // EmbeddingGemma 2's external weights are addressed by the bundle's path
+  // inside each model flatbuffer instead of a C++ map handed to Google's
+  // prebuilt libc++ libLiteRt — the libstdc++/MSVC STL mismatch failed the
+  // create on Linux and was an access violation on Windows (patch_c_api.sh
+  // §13; Apple and Android compile it out); and embedding responses report
+  // their input and truncated lengths (§14,
+  // litert_lm_embedding_response_get_input_length / _get_truncated_length).
+  // Every other file is byte-identical to 0.18.0-d: Windows LiteRtDispatch.dll
+  // is carried from it byte for byte, and CI's StreamProxy.dll differs only in
+  // its link stamps.
+  //
   // 0.18.0-d rebuilds the two Linux libLiteRtLm.so and nothing else: the
   // Gemma data processors wrap the prebuilt constraint provider instead of
   // reinterpret_cast-ing it (patch_c_api.sh §12, #551) — on Linux it speaks
@@ -279,19 +291,19 @@ final _litertlmBundle = _NativeBundle(
   // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        '19e83477c58425c34b9ed1a06779f61effc225e0245c0cd16c80ab7fcc2e2788',
+        'a191411ddf005c11a1ec9675df49df5c666c628d85ca79d98342fa7b89e03e4d',
     'litertlm-linux_arm64.tar.gz':
-        '4e7988402e92facc0c1d7a287bada2f4d27e787a7bf4842e4e5d9d3598706db4',
+        '29c2306f8d42d88b500f033acf878109a9de8e58d34eb0bc75c464c536be3214',
     'litertlm-windows_x86_64.tar.gz':
-        '4bdf9d262bf6a59e7be3d336e812a56cb701a87bd13e1e5d9c6ca8d04bae30ae',
+        '23c381d0953328fc1b71023ba5d88baa0aa3a11c9295179e70fce3e199b68931',
     'litertlm-macos_arm64.tar.gz':
-        'e1a53ba0526caed3825c0d1c3b47f30171632daf2bbb5eaaf37f8d75e67bb8fe',
+        'ca27d192e191b1c580ad0d29b6b12728e8cb3156b8ec0d56ce627fbb370bbde9',
     'litertlm-ios_arm64.tar.gz':
-        'da21ca8aff5b75da45cff31855ed155add0828761f84b17108a25c49e1e1b198',
+        '9ea458fe126e45b49652ff9cdd0ae661688ccd1ec16223dd45d439c032e9e950',
     'litertlm-ios_sim_arm64.tar.gz':
-        '4d0295a703646db586b19894a1f58691df7039360493a8a6f22fe6f91795c879',
+        '47225d29a82c402211509c9c044536835ac3ca865666436e394425a496e3f2b7',
     'litertlm-android_arm64.tar.gz':
-        'baabefaaea74217f3001f07809ba0ce077ddbd7993a8d4475692a4cf1eebe3b9',
+        'c2ded5b50430c319f6e7499635fb3d4887cb2638024e6c333182e5bf7a37d384',
   },
   companions: [
     'GemmaModelConstraintProvider',

@@ -1,8 +1,8 @@
-import 'package:flutter_edge_ai/core/function_call_parser.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/parsing/function_call_format_factory.dart';
-import 'package:flutter_edge_ai/core/parsing/function_gemma_format.dart';
-import 'package:flutter_edge_ai/core/parsing/sdk_passthrough_function_call_format.dart';
+import 'package:flutter_edge_ai/src/function_call_parser.dart';
+import 'package:flutter_edge_ai/src/model.dart';
+import 'package:flutter_edge_ai/src/parsing/function_call_format_factory.dart';
+import 'package:flutter_edge_ai/src/parsing/function_gemma_format.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_passthrough_function_call_format.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

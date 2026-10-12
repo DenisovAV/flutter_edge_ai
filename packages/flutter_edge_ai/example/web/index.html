@@ -60,11 +60,15 @@
        reaches `LiteRtLmEngine.create()` before `Engine` is bound. We expose a
        promise (`window.litertLmReady`) that resolves to the Engine constructor
        and that Dart awaits before calling any static interop. See
-       lib/web/litert_lm_web.dart and litert_lm_web_inference.dart. -->
+       lib/web/litert_lm_web.dart and litert_lm_web_inference.dart.
+       `window.EmbeddingEngine` is the same module's embedding engine, for
+       EmbeddingGemma 2 `.litertlm` embedders (flutter_edge_ai_litertlm 1.15.0+,
+       on WebGPU); without that line they fail to load with an error naming it. -->
   <script type="module">
   window.litertLmReady = (async () => {
     const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');
     window.Engine = m.Engine;
+    window.EmbeddingEngine = m.EmbeddingEngine;
     return m.Engine;
   })();
   </script>

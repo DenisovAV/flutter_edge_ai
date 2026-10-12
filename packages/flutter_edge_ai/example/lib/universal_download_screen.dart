@@ -201,6 +201,7 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
             setState(() {
               _modelProgress = modelProg;
               _tokenizerProgress = tokenizerProg;
+              _progress = modelProg;
             });
           },
         );
@@ -394,7 +395,9 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
   }
 
   Widget _buildProgressSection() {
-    if (widget.model.kind == ModelKind.embedding) {
+    // A `.litertlm` embedding bundle is one file: no tokenizer bar.
+    final model = widget.model;
+    if (model is EmbeddingModelInterface && model.tokenizerUrl != null) {
       return _buildDualProgressBars();
     } else {
       return _buildSingleProgressBar();

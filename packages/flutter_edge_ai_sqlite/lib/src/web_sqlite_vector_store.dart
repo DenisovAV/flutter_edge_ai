@@ -29,7 +29,7 @@ import 'package:sqlite3/wasm.dart';
 /// The vec0 table is created **lazily** on the first [addDocument] (so the
 /// embedding dimension can be learned), or recovered from an existing table on
 /// [initialize].
-class WebSqliteVectorStore implements VectorStoreRepository {
+final class WebSqliteVectorStore extends VectorStoreRepository {
   WebSqliteVectorStore({
     @visibleForTesting this.forceBrowserLocksUnavailableForTesting = false,
     @visibleForTesting this.durabilityFenceForTesting,
@@ -57,7 +57,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   WasmSqlite3? _sqlite3;
   CommonDatabase? _db;
   int? _detectedDimension;
-  EmbeddingProfile? _embeddingProfile;
+  VectorStoreBinding? _binding;
   bool _isInitialized = false;
   WebStoreLocationLease? _locationLease;
 
@@ -138,7 +138,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
       ensureSqliteEmbeddingProfileTable(_db!);
       // Recover the dimension from an existing vec0 table (page reload).
       _detectExistingTable();
-      _embeddingProfile = readSqliteEmbeddingProfile(_db!);
+      _binding = readSqliteBinding(_db!);
       _validateProfileDimension();
 
       _isInitialized = true;
@@ -151,7 +151,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
       // half fixed if this arm were left alone.
       _isInitialized = false;
       _detectedDimension = null;
-      _embeddingProfile = null;
+      _binding = null;
       await _closeResources();
       if (e is VectorStoreException) rethrow;
       throw VectorStoreException('Failed to initialize SQLite WASM (vec0)', e);
@@ -258,7 +258,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   }
 
   void _validateProfileDimension() {
-    final profile = _embeddingProfile;
+    final profile = _binding?.profile;
     final dimension = _detectedDimension;
     if (profile != null &&
         dimension != null &&
@@ -271,7 +271,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   }
 
   EmbeddingProfile _requireEmbeddingProfile() {
-    final profile = _embeddingProfile;
+    final profile = _binding?.profile;
     if (profile == null) {
       throw StateError(
         'This SQLite vector store has no embedding profile. Bind one through '
@@ -282,37 +282,37 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   }
 
   @override
-  Future<EmbeddingProfile?> readEmbeddingProfile() async {
+  Future<VectorStoreBinding?> readBinding() async {
     if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
-    final profile = readSqliteEmbeddingProfile(_db!);
-    _embeddingProfile = profile;
+    final binding = readSqliteBinding(_db!);
+    _binding = binding;
     _validateProfileDimension();
-    return profile;
+    return binding;
   }
 
   @override
-  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async {
+  Future<void> bind(VectorStoreBinding binding) async {
     if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
     _beginDurabilityOperation();
     try {
       final dimension = _detectedDimension;
-      if (dimension != null && dimension != profile.dimension) {
+      if (dimension != null && dimension != binding.profile.dimension) {
         throw VectorStoreException(
-          'Cannot bind $profile to a SQLite vec_documents shard with dimension '
+          'Cannot bind $binding to a SQLite vec_documents shard with dimension '
           '$dimension.',
         );
       }
       try {
-        await bindSqliteEmbeddingProfile(
+        await bindSqliteBinding(
           _db!,
-          profile,
+          binding,
           durabilityFence: durabilityFenceForTesting ?? _flushDurably,
         );
-        _embeddingProfile = profile;
+        _binding = binding;
       } on SqliteProfileDurabilityException {
         // The SQL COMMIT has already succeeded when the durability fence fails.
         // Its durable state is now unknown, so this connection must never keep
@@ -740,7 +740,7 @@ class WebSqliteVectorStore implements VectorStoreRepository {
     _persistence = _WebPersistence.inMemory;
     _isInitialized = false;
     _detectedDimension = null;
-    _embeddingProfile = null;
+    _binding = null;
     try {
       db?.close();
       // The strong drain on web. `IndexedDbFileSystem.close()` queues a close

@@ -16,11 +16,11 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/core/registry/stt_backend_provider.dart';
-import 'package:flutter_edge_ai/core/registry/stt_registry.dart';
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/lifecycle/close_notifier.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/registry/stt_backend_provider.dart';
+import 'package:flutter_edge_ai/src/registry/stt_registry.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 // FileSourceHandler enforces a minimum size per extension (1MB for model

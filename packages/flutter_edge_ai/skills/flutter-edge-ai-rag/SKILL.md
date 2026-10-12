@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-rag
-description: Use when adding or debugging on-device RAG, semantic search, text embeddings, metadata filters, embedding profiles, or pluggable sqlite-vec/qdrant-edge storage in a flutter_edge_ai app with flutter_edge_ai_rag, flutter_edge_ai_sqlite or flutter_edge_ai_qdrant. Also use when moving RAG code to flutter_edge_ai 2.0 — FlutterEdgeAi.rag is undefined, initialize(vectorStore:) was removed, or open() throws "No vector-store provider can handle providerId" — and when QdrantLegacyStoreException or an embedding-profile mismatch is thrown.
+description: Use when adding or debugging on-device RAG, semantic search, text embeddings (EmbeddingGemma 1 .tflite, EmbeddingGemma 2 .litertlm), metadata filters, embedding profiles, image or audio document indexes, or pluggable sqlite-vec/qdrant-edge storage in a flutter_edge_ai app with flutter_edge_ai_rag, flutter_edge_ai_sqlite or flutter_edge_ai_qdrant. Also use when moving RAG code to flutter_edge_ai 2.0 or to flutter_edge_ai_rag 1.1 — FlutterEdgeAi.rag is undefined, initialize(vectorStore:) was removed, addText/searchText/activeEmbedderProfileId are undefined, or open() throws "No vector-store provider can handle providerId" or "is bound to" — and when QdrantLegacyStoreException or an embedding-profile mismatch is thrown.
 ---
 
 # On-device RAG with Flutter Edge AI
@@ -12,9 +12,11 @@ description: Use when adding or debugging on-device RAG, semantic search, text e
 2. Storage packages are providers: `flutter_edge_ai_sqlite` registers
    `SqliteVectorStoreProvider`; `flutter_edge_ai_qdrant` registers
    `QdrantVectorStoreProvider`. Application code uses `RagIndex`.
-3. One persistent location belongs to one stable `EmbeddingProfile`. Its ID
-   versions weights, tokenizer, pooling, normalization, and document/query
-   prefixes. A mutable URL or file path is not an identity.
+3. One persistent location belongs to one stable `EmbeddingProfile` and one
+   document modality (`VectorStoreSpec.documents`: text, image or audio). The
+   profile id versions weights, tokenizer, pooling, normalization, and
+   document/query prefixes; a mutable URL or file path is not an identity.
+   Profile ids may not contain control characters.
 4. Keep one live `RagIndex` per location, make opening single-flight, and share
    it across widgets. Web SQLite enforces this with an exclusive Web Lock.
 5. Dispose indexes before `FlutterEdgeAi.dispose()` or before disposing a
@@ -40,15 +42,27 @@ on Android, iOS, Web, macOS, Windows, and Linux; qdrant-edge has no Web arm.
 `flutter_edge_ai_sqlite` needs Flutter 3.47 or newer. On older Flutter use
 `flutter_edge_ai_qdrant` (native only) or upgrade Flutter.
 
+`flutter_edge_ai_rag` re-exports `EmbeddingInput`, `EmbeddingModality`,
+`TaskType` and the `EmbeddingException` family, so RAG code needs no core
+import for them.
+
 ## Default active embedder
 
-Initialize only embedding runtime pieces in core. Pin model downloads to an
-immutable revision and use a profile ID that describes those exact bytes and
-preprocessing:
+Initialize only embedding runtime pieces in core and install the embedder
+before opening an index: `open()` resolves the embedder's profile, which loads
+the model. Pin model downloads to an immutable revision.
+
+`FlutterEdgeAiActiveEmbedder.forActiveModel(namespace:)` derives the profile id
+from the installed file names (`'<namespace>@<files joined by +>'`, with `%`,
+`@` and `+` inside a name percent-encoded), so
+installing a model under different file names changes the id and the old
+location refuses to open instead of mixing two embedding spaces. EmbeddingGemma
+1 and 2 are both 768-dimensional: the id is the only thing that tells them
+apart. The id follows file NAMES, not bytes: install with revision-qualified
+`filename:`s, as below, so new weights under the same download name get a new
+id too.
 
 ```dart
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
@@ -58,9 +72,6 @@ import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-const embeddingProfileId =
-    'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
-    'retrieval-prefix-meanpool-l2-v1';
 const revision = '29888fcee3216acadc7e844906e5fe0d79a61875';
 const modelBase =
     'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/$revision';
@@ -75,16 +86,19 @@ await FlutterEdgeAi.initialize(
 await FlutterEdgeAi.installEmbedder()
     .modelFromNetwork(
       '$modelBase/embeddinggemma-300M_seq256_mixed-precision.tflite',
+      filename: 'embeddinggemma-300m-seq256-mp__rev-29888fcee321.tflite',
     )
-    .tokenizerFromNetwork('$modelBase/sentencepiece.model')
+    .tokenizerFromNetwork(
+      '$modelBase/sentencepiece.model',
+      filename: 'embeddinggemma-300m__sentencepiece__rev-29888fcee321.model',
+    )
     .install();
-await FlutterEdgeAi.getActiveEmbedder();
 
 final rag = FlutterEdgeAiRag(
   providers: const [SqliteVectorStoreProvider()],
 );
 // Native: an absolute path to the database file. Web: a plain name.
-const databaseName = 'knowledge-embeddinggemma-29888fcee321-v1.db';
+const databaseName = 'knowledge-v1.db';
 final databasePath = kIsWeb
     ? databaseName
     : p.join((await getApplicationDocumentsDirectory()).path, databaseName);
@@ -97,7 +111,7 @@ final index = await rag.open(
       FilterField(name: 'year', type: FilterFieldType.number),
     ]),
   ),
-  activeEmbedderProfileId: embeddingProfileId,
+  embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(namespace: 'knowledge'),
 );
 ```
 
@@ -106,17 +120,367 @@ must accept the Gemma license on the model page, or the download is refused.
 Keep the token out of source — it is compiled into the app, so a shipped app
 should download from a repo that needs none.
 
-`open()` pins the embedder that is active at that moment: install the embedder
-before opening the index, and after switching embedders open a new index at a
-new location.
+An explicit id is the alternative when one store must outlive a file rename,
+or serve several bundles known to produce identical vectors. Name everything
+that shapes the vectors:
+
+```dart
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+
+final embedder = FlutterEdgeAiActiveEmbedder(
+  profileId:
+      'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+      'retrieval-prefix-meanpool-l2-v1',
+);
+```
+
+The adapter pins the embedding model that is active when it is created and
+resolves the model again on every operation, so it follows core's embedder
+cache. After switching embedders it throws `StateError`: create a new embedder
+and open a new index at a new location. A request that failed because core
+replaced the model before it ran (`EmbedderClosedException`) is retried once.
+Queries over text documents use `TaskType.retrievalQuery`; pass `queryTask:`
+for another task, e.g. `TaskType.questionAnswering`.
+
+## EmbeddingGemma 2 (one `.litertlm` file, native)
+
+EmbeddingGemma 2 text ships as one `.litertlm` bundle that carries its own
+tokenizer: install the model alone — no `tokenizerFrom…()` call, and no
+`flutter_edge_ai_embeddings` or `embeddingTokenizers:` needed. The repo is not
+gated:
+
+```dart
+const eg2Revision = '9be6e8b90982095dc05c2bd162e4b954ee4dbac7';
+// One id for the 270m, 440m and 740m bundles: their text towers are identical.
+const eg2ProfileId = 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1';
+
+await FlutterEdgeAi.initialize(
+  embeddingBackends: const [LiteRtEmbeddingBackend()],
+);
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-270m-litert-lm/resolve/$eg2Revision/'
+      'embeddinggemma-2-text-270m.litertlm',
+    )
+    .install();
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final limit = embedder.maxInputTokens; // 1024
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
+final eg2Index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      'knowledge-embeddinggemma2-text-v1.db',
+    ),
+  ),
+  embedder: FlutterEdgeAiActiveEmbedder(profileId: eg2ProfileId),
+);
+```
+
+- Android, iOS, macOS, Linux, Windows (`flutter_edge_ai_litertlm` 1.13.0 for
+  text, 1.13.1 for images), and Web from 1.13.1 (text and images, on WebGPU
+  through `@litert-lm/core`'s EmbeddingEngine). The Web page needs
+  `window.EmbeddingEngine = m.EmbeddingEngine;` next to `window.Engine =
+  m.Engine;` in its `@litert-lm/core` module script; without it the load fails
+  with an `EmbeddingLoadException` naming that line. The browser needs WebGPU:
+  the CPU (WebAssembly) path of `@litert-lm/core` 0.18.0 cannot read these
+  bundles' external weights, so there is no CPU fallback, and a browser
+  without WebGPU (no `navigator.gpu`, or no adapter) fails the load with an
+  `EmbeddingLoadException` that says so.
+- The 270m is text only: `getActiveEmbedder(supportImage: true)` throws
+  `EmbeddingLoadException` naming the 440m bundle — natively before any engine
+  or cache is made (below); on Web only after the bundle was read, when the
+  runtime refuses to create the engine. `supportAudio: true` needs the 740m
+  bundle (below): on the 270m and the 440m it throws `EmbeddingLoadException`
+  naming the 740m, and on Web it is refused on every bundle.
+- `maxInputTokens` is 1024 — task prefix, BOS and EOS included. Keep chunks at
+  512 tokens or fewer: memory grows with the input length. A longer text throws
+  `EmbeddingInputTooLongException` with the exact `actualTokens` (natively
+  from `flutter_edge_ai_litertlm` 1.13.1, from a truncated run; on Web read
+  after the engine ran the whole input in 1024-token windows). Either way an
+  over-long chunk still costs a full embedding before it is refused: split
+  before embedding.
+- It runs on CPU natively (`activeBackend` is `PreferredBackend.cpu`) and on
+  WebGPU on Web (`PreferredBackend.gpu`), and refuses `PreferredBackend.npu`:
+  the NPU runs the per-SoC bundles (next section). Web vectors therefore
+  differ slightly from native ones — measured min cos about 0.995 for text and
+  0.998 for images against the native CPU vectors — and retrieval across
+  platforms holds: web queries find natively embedded images and native
+  queries find web-embedded images, top-1 10/10 on the example's ten scenes.
+  Natively it keeps a weight cache of about 71 MB, on top of the 165 MB
+  bundle, in the app's cache directory: never backed up, and rebuilt at the
+  next load if the OS clears it. Web keeps no weight cache.
+- EmbeddingGemma 1 and 2 both produce 768-d vectors but are different spaces:
+  give each its own location and profile ID — the dimension check alone cannot
+  tell them apart. `FlutterEdgeAiActiveEmbedder.forActiveModel` already gives
+  them different ids (different file names); the explicit id above is for one
+  text store shared by the three EmbeddingGemma 2 bundles.
+
+### EmbeddingGemma 2 on a Qualcomm NPU (`flutter_edge_ai_litertlm` 1.13.1)
+
+The same repos hold each bundle compiled for one SoC's NPU
+(`embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm`,
+`embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275.litertlm`, …). It runs on
+Qualcomm Android (arm64) and Qualcomm Linux arm64, in an app whose pubspec sets
+`hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true` (the flag
+the LLM NPU path uses), loaded with `preferredBackend: PreferredBackend.npu`:
+
+```dart
+const eg2Revision = '9be6e8b90982095dc05c2bd162e4b954ee4dbac7';
+// Its own id: NPU vectors are not the CPU bundle's. Shared by the SoC's 270m
+// and 440m (byte-identical text towers).
+const npuProfileId =
+    'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850';
+
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-270m-litert-lm/resolve/$eg2Revision/'
+      'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm',
+    )
+    .install();
+final npu = await FlutterEdgeAi.getActiveEmbedder(
+  preferredBackend: PreferredBackend.npu,
+);
+assert(npu.activeBackend == PreferredBackend.npu);
+
+final rag = FlutterEdgeAiRag(providers: const [SqliteVectorStoreProvider()]);
+final npuIndex = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      'knowledge-embeddinggemma2-npu-sm8850.db',
+    ),
+  ),
+  // The adapter loads the embedder per operation: pass npu here too.
+  embedder: FlutterEdgeAiActiveEmbedder(
+    profileId: npuProfileId,
+    preferredBackend: PreferredBackend.npu,
+  ),
+);
+```
+
+- Verified SoCs: SM8850, SM8650 and QCS8275. Google also publishes SM8550,
+  SM8750 (load, not verified by us), Tensor G5/G6, MediaTek MT6991/MT6993 and
+  Intel PTL (refused). What a bundle targets is read from the bundle.
+- Its vectors are close to the CPU bundle's, not equal (SM8650: cosine
+  0.79–0.86 for a few words, 0.99 from about 200 words; images 0.86–0.88), so
+  never compare NPU vectors with CPU ones; within the NPU space retrieval
+  holds (text → image 10/10).
+- Nothing falls back: a per-SoC bundle without `npu`, the generic bundle with
+  `npu`, `npu` on iOS/macOS/Windows/Linux x64/Web, a build without
+  `qualcomm_npu`, a device without a reachable Qualcomm NPU, and a bundle the
+  NPU cannot run (another SoC's) each throw `EmbeddingLoadException` with the
+  fix. A loaded embedder is never reused for the other backend.
+- Give an NPU index its own profile id (above); never open a CPU index with an
+  NPU embedder or the reverse. `FlutterEdgeAiActiveEmbedder.forActiveModel`
+  keys on the file name, so it separates them by itself.
+
+### EmbeddingGemma 2 images (440m; `flutter_edge_ai_litertlm` 1.13.1 native, 1.13.1 Web)
+
+The 440m bundle adds a vision encoder to the same text tower, so one model
+embeds both and a text finds photos. Install it like the 270m (ungated):
+
+```dart
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+const visionRevision = 'e301f74d5551b0c2641bd5cb4652a76239d5c5f8';
+// The text id of the 270m section; image vectors also depend on the vision
+// budget, so image indexes add it.
+const photosProfileId =
+    'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-vis140';
+
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-vision-440m-litert-lm/resolve/$visionRevision/'
+      'embeddinggemma-2-text-vision-440m.litertlm',
+      filename: 'embeddinggemma-2-text-vision-440m__rev-e301f74d5551.litertlm',
+    )
+    .install();
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
+final photos = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      'photos-embeddinggemma2-vis140.db',
+    ),
+    documents: EmbeddingModality.image,
+  ),
+  embedder: FlutterEdgeAiActiveEmbedder(
+    profileId: photosProfileId,
+    supportImage: true,
+  ),
+);
+await photos.add(
+  id: 'photo-1',
+  document: EmbeddingInput.image(bytes), // upright, ≤ 1024 px: see below
+  content: path, // a reference to the photo, never its bytes
+);
+final hits = await photos.search(query: EmbeddingInput.text('a red bicycle'));
+```
+
+Pass upright, downscaled images. The engine decodes the file itself, ignores
+EXIF orientation — a portrait phone photo, stored sideways with an orientation
+tag, is embedded lying on its side (measured cos 0.89 against the upright
+picture) — and decodes at full size, which a 12 MP photo pays for. Decode with
+Flutter first: it applies the orientation and decodes straight to the target
+size:
+
+```dart
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
+final codec = await ui.instantiateImageCodecWithSize(
+  await ui.ImmutableBuffer.fromUint8List(bytes), // the photo as picked
+  getTargetSize: (w, h) => math.max(w, h) <= 1024
+      ? const ui.TargetImageSize()
+      : w >= h
+      ? const ui.TargetImageSize(width: 1024)
+      : const ui.TargetImageSize(height: 1024),
+);
+final image = (await codec.getNextFrame()).image;
+final png = await image.toByteData(format: ui.ImageByteFormat.png);
+image.dispose();
+codec.dispose();
+final upright = EmbeddingInput.image(png!.buffer.asUint8List());
+```
+
+This also converts what Flutter decodes and the engine does not (WebP; HEIC on
+Android). Keep the original for display; give the model the result. The same
+code runs on Web (CanvasKit and skwasm decode through the browser), on the
+page itself: there are no isolates there.
+
+- Formats the engine decodes: JPEG, PNG, GIF and BMP. HEIC, WebP, TIFF and
+  AVIF throw `EmbeddingFormatNotSupportedException` (with `detected` and
+  `accepted`) before anything is sent — decode them as above. A corrupt or
+  truncated file of an accepted type reaches the model and fails with
+  `EmbeddingEngineException` (`nativeCode` 3 on native; on Web the message
+  carries the runtime's reason); the model keeps working.
+- Vision budget: 140 tokens per image by default (closest to the reference
+  model, min cos 0.985 on our test images);
+  `LiteRtEmbeddingBackend(visionTokensPerImage: 70)` — what the model card and
+  Google AI Edge Gallery use — is about twice as fast with slightly lower
+  fidelity (min cos 0.970); give its image indexes their own id (`…-vis70`). Any other value throws `EmbeddingLoadException`. Text vectors
+  do not depend on it. `forActiveModel` ids follow file names only, so an app
+  that changes the budget puts it in the namespace (`'photos-vis70'`).
+- On Web the vision encoder does not fit next to a loaded `.litertlm` LLM:
+  the page's `@litert-lm/core` module has 4 GB of WebAssembly memory, and the
+  440m's vision engine (about 3.3 GB) and Gemma 4 E2B do not share it —
+  whichever loads second fails, the embedder with an `EmbeddingLoadException`
+  that says to close the LLM first. Text-only embedding loads next to the LLM.
+- Cost (CPU, measured): 388 MB on disk plus a 218 MB vision weight cache
+  written every time the model loads — also when it only embeds text. The
+  first image adds RAM: about 385 MB on an M4 Pro Mac, about 500 MB on a
+  Pixel 8. Per image at 140 tokens: about 0.35 s on an Apple-silicon Mac,
+  about 2 s on an Android flagship (Pixel 8 Pro 1.8 s, Pixel 8a 2.3 s), more
+  on mid-range phones and rising under sustained load as the phone heats up;
+  70 tokens takes about half. A 440m loaded for text alone still loads its
+  vision tower: apps that embed only text use the 270m. LiteRT-LM's thread
+  setting reaches the text tower only. Close the embedder after a large photo
+  ingest on low-RAM devices.
+- A text query over an image index is sent raw (`TaskType.none`): measured,
+  the retrieval-query prefix found the same photos with a smaller margin. Do
+  not set `queryTask` for it: that applies to text documents only.
+
+### EmbeddingGemma 2 audio and combined inputs (740m; `flutter_edge_ai_litertlm` 1.13.1, native)
+
+The 740m bundle (`litert-community/embeddinggemma-2-740m-litert-lm`, revision
+`24d962e906c7d332c6428e71c9676855024569e2`, ungated, 485 MB) has the 440m's
+text and vision towers — the same text and image vectors, so the same profile
+ids — plus an audio encoder. Audio and combined inputs are native-only: on
+Web `supportAudio: true` is refused.
+
+```dart
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
+final clips = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: path, // its own location: one modality per location
+    documents: EmbeddingModality.audio,
+  ),
+  embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(
+    namespace: 'clips',
+    supportAudio: true,
+  ),
+);
+await clips.add(
+  id: 'memo-1',
+  document: EmbeddingInput.audio(bytes), // encoded WAV, MP3 or FLAC bytes
+  content: 'file:///memos/1.wav',
+);
+final hits = await clips.search(
+  query: EmbeddingInput.text('turn off the kitchen lights'),
+);
+
+// Several parts in one vector (flutter_edge_ai 2.3.1), outside an index:
+final embedder = await FlutterEdgeAi.getActiveEmbedder(
+  supportImage: true,
+  supportAudio: true,
+);
+final vector = await embedder.embed(
+  EmbeddingInput(text: 'kitchen', audio: bytes),
+  taskType: TaskType.retrievalDocument,
+);
+```
+
+- Formats: WAV, MP3 and FLAC, any rate and channel count (the engine mixes
+  down to mono and resamples to 16 kHz). Ogg and M4A throw
+  `EmbeddingFormatNotSupportedException` before anything is sent; a corrupt
+  file of an accepted type throws `EmbeddingEngineException` (`nativeCode` 2)
+  and the model keeps working. One clip per vector.
+- Length: about 25 tokens per second, so up to about 40 seconds fit the
+  1024-token cap; a 60-second clip throws `EmbeddingInputTooLongException`
+  with `actualTokens` 1504. Split long recordings.
+- `EmbeddingInput(text:, images:, audio:)` puts the text (with its task
+  prefix), then the images in order, then the audio into one vector, whatever
+  order the arguments are written in. Declare every medium it carries. Any
+  input with more than one part — several modalities, or several images — is
+  a combined input: an engine that embeds one part per vector (every other one
+  here, and EmbeddingGemma 2 on Web) refuses it with
+  `UnsupportedEmbeddingCombinationException` before anything is sent.
+- An audio index keeps the text profile id: audio vectors do not depend on the
+  vision budget, and the store's `documents` modality keeps it apart from a
+  text store. A text query over it is sent raw (`TaskType.none`).
+- Audio vectors are not bit-portable: the audio encoder quantizes activations
+  to 8 bits, so another CPU kernel can move a clip's vector by up to cos 0.05
+  (text and image vectors do not move that way). Retrieval holds: every test
+  sentence was found by its text query on every build measured.
+- Cost (CPU, M4 Pro Mac): 385 MB of weight caches written at every load (text
+  71 MB, vision 218 MB, audio 95 MB), also for text-only use; about 0.2–0.3 s
+  per 3-second clip. Use the 270m for text, the 440m for text and images.
 
 ## Index and search
 
 ```dart
-const embeddingProfileId =
-    'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
-    'retrieval-prefix-meanpool-l2-v1';
-const databaseName = 'knowledge-embeddinggemma-29888fcee321-v1.db';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+const databaseName = 'knowledge-v1.db';
 final databasePath = kIsWeb
     ? databaseName
     : p.join((await getApplicationDocumentsDirectory()).path, databaseName);
@@ -132,16 +496,16 @@ final index = await rag.open(
       FilterField(name: 'year', type: FilterFieldType.number),
     ]),
   ),
-  activeEmbedderProfileId: embeddingProfileId,
+  embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(namespace: 'knowledge'),
 );
-await index.addText(
+await index.add(
   id: 'doc-1',
-  content: chunk,
+  document: EmbeddingInput.text(chunk),
   metadata: jsonEncode({'lang': 'en', 'year': 2024}),
 );
 
-final hits = await index.searchText(
-  query: question,
+final hits = await index.search(
+  query: EmbeddingInput.text(question),
   topK: 5,
   threshold: 0.3,
   filter: Filter(
@@ -153,20 +517,86 @@ final hits = await index.searchText(
 await index.flush();
 ```
 
-`addText` uses the document embedding path; `searchText` uses the query path.
-For precomputed batches, generate with `TaskType.retrievalDocument`, then use
-`addVector`. Use `searchVector` for precomputed queries. `remove`, `stats`,
-`clear`, and `flush` operate on the owned index. Flush after a write batch:
-it is required for qdrant durability, a Web SQLite durability fence, and a
-no-op on native SQLite.
+`add` embeds with the embedder's document role and stores the chunk as the
+hit's `content` (pass `content:` to store something else); `search` uses the
+query role. For precomputed batches, embed with `TaskType.retrievalDocument`,
+then use `addVector`; use `searchVector` for precomputed queries. `remove`,
+`stats`, `clear`, and `flush` operate on the owned index. Flush after a write
+batch: it is required for qdrant durability, a Web SQLite durability fence,
+and a no-op on native SQLite. Every field a `Filter` names must be declared in
+`filterSchema`; an undeclared one throws `ArgumentError`.
+
+Chunk text below the embedder's input limit,
+`(await FlutterEdgeAi.getActiveEmbedder()).maxInputTokens` — 256 tokens for the
+EmbeddingGemma seq256 file above, task prefix, BOS and EOS included. A longer
+chunk or query is never truncated: `add` and `search` throw
+`EmbeddingInputTooLongException`, whose `maxInputTokens` and `actualTokens`
+say by how much. A null `maxInputTokens` means the model file declares no
+limit.
+
+## Image and audio documents
+
+A location holds documents of one modality. An image index needs an embedder
+that embeds images (`RagEmbedder.modalities`); `open()` refuses one that does
+not with `ArgumentError`. `content` is required and is a reference to the
+media — a URI, file path or asset id — never its bytes; search results return
+it. A text query over an image index is text-to-image search:
+
+```dart
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+
+final rag = FlutterEdgeAiRag(
+  providers: const [SqliteVectorStoreProvider()],
+);
+final photos = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: path, // its own location: one modality per location
+    documents: EmbeddingModality.image,
+  ),
+  embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(
+    namespace: 'photos',
+    supportImage: true,
+  ),
+);
+await photos.add(
+  id: 'photo-1',
+  document: EmbeddingInput.image(bytes), // encoded JPEG/PNG bytes
+  content: 'content://media/external/images/1',
+);
+final matches = await photos.search(query: EmbeddingInput.text('a red bicycle'));
+```
+
+The active embedder embeds images with the EmbeddingGemma 2 440m bundle
+(above; on Web from `flutter_edge_ai_litertlm` 1.13.1). With any other model —
+the 270m, EmbeddingGemma 1, ONNX — `getActiveEmbedder(supportImage: true)`,
+and therefore `open()` of an image index with the active embedder, fails with
+`EmbeddingLoadException`. A
+custom `RagEmbedder` can embed media with any model. A text index and an image
+index can share one installed model: each adapter declares what it needs, and
+core reloads the embedder once with both.
+
+Cross-modal scores are not on one scale, so mixed corpora use one index per
+modality and the app merges results. Text locations open in both directions
+between this release and flutter_edge_ai_rag 1.0 with the 2.0.x stores. On an
+image or audio location those older releases refuse every open that names a
+profile, legacy adoption, every text operation and a rebind.
 
 ## Vector-only and custom embedders
 
 RAG can run without `FlutterEdgeAi.initialize()`.
 
-For vector-only use, bind the new store explicitly and call only vector APIs:
+For vector-only use, open with the profile of the pipeline that produced the
+vectors and call only vector APIs:
 
 ```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 const databaseName = 'vectors-v1.db';
 final databasePath = kIsWeb
     ? databaseName
@@ -174,12 +604,12 @@ final databasePath = kIsWeb
 final rag = FlutterEdgeAiRag(
   providers: const [SqliteVectorStoreProvider()],
 );
-final index = await rag.open(
+final index = await rag.openVectors(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: databasePath,
   ),
-  embeddingProfile: EmbeddingProfile(
+  profile: EmbeddingProfile(
     id: 'my-precomputed-embedding-pipeline-v1',
     dimension: 768,
   ),
@@ -190,8 +620,9 @@ await index.addVector(id: 'doc-1', content: chunk, embedding: vector);
 final hits = await index.searchVector(embedding: queryVector);
 ```
 
-For independent text RAG, implement `RagEmbedder`. `EmbeddingProfile` has no
-`const` constructor — it validates its arguments:
+For independent RAG, implement `RagEmbedder`. It maps the document and query
+roles to its model's conventions. `EmbeddingProfile` has no `const`
+constructor — it validates its arguments:
 
 ```text
 class AppEmbedder implements RagEmbedder {
@@ -199,17 +630,23 @@ class AppEmbedder implements RagEmbedder {
   final MyEmbeddingModel model;
 
   @override
-  Future<EmbeddingProfile> get profile async => EmbeddingProfile(
+  Future<EmbeddingProfile> resolveProfile() async => EmbeddingProfile(
     id: 'my-model-tokenizer-pooling-prefix-v1',
     dimension: 384,
   );
 
   @override
-  Future<List<double>> embedDocument(String text) =>
-      model.embed('document: $text');
+  Set<EmbeddingModality> get modalities => const {EmbeddingModality.text};
 
   @override
-  Future<List<double>> embedQuery(String text) => model.embed('query: $text');
+  Future<List<double>> embedDocument(EmbeddingInput document) =>
+      model.embed('document: ${document.text}');
+
+  @override
+  Future<List<double>> embedQuery(
+    EmbeddingInput query, {
+    required EmbeddingModality documentModality,
+  }) => model.embed('query: ${query.text}');
 }
 
 final index = await rag.open(
@@ -228,22 +665,22 @@ location, even when dimensions match.
 
 ```dart
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
-const embeddingProfileId =
-    'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
-    'retrieval-prefix-meanpool-l2-v1';
 final rag = FlutterEdgeAiRag(
   providers: const [QdrantVectorStoreProvider()],
 );
 // A directory, not a file — qdrant creates its shard files inside it.
 final storeDirectory = p.join(
   (await getApplicationDocumentsDirectory()).path,
-  'knowledge-qdrant-embeddinggemma-29888fcee321-v1',
+  'knowledge-qdrant-v1',
 );
 try {
   final index = await rag.open(
     spec: VectorStoreSpec(providerId: 'qdrant', location: storeDirectory),
-    activeEmbedderProfileId: embeddingProfileId,
+    embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(namespace: 'knowledge'),
   );
 } on QdrantLegacyStoreException catch (e) {
   // Written by flutter_gemma_rag_qdrant 1.2 or earlier: not readable.
@@ -265,11 +702,17 @@ qdrant stores written by 1.3.x.
 
 A nonempty 1.x store has no profile metadata. Prefer a new profile-versioned
 location and re-index. Only when the exact old embedding pipeline is known may
-the app open it with an explicit `embeddingProfile` and
-`allowLegacyProfileAdoption: true`. That flag is a `VectorStoreSpec` field, not
-an `open()` argument; the provider also checks vector dimension:
+the app open it with that profile and `allowLegacyProfileAdoption: true`. That
+flag is a `VectorStoreSpec` field, not an `open()` argument, applies to text
+locations only, and the provider also checks vector dimension:
 
 ```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 const oldDatabaseName = 'rag.db'; // the location the 1.x app already used
 final databasePath = kIsWeb
     ? oldDatabaseName
@@ -277,22 +720,31 @@ final databasePath = kIsWeb
 final rag = FlutterEdgeAiRag(
   providers: const [SqliteVectorStoreProvider()],
 );
-final index = await rag.open(
+final index = await rag.openVectors(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: databasePath,
     allowLegacyProfileAdoption: true,
   ),
-  embeddingProfile: EmbeddingProfile(
+  profile: EmbeddingProfile(
     id: 'the-verified-old-embedding-pipeline-v1',
     dimension: 768,
   ),
 );
 ```
 
+Stores written by flutter_edge_ai_rag 1.0 (`flutter_edge_ai_sqlite` /
+`flutter_edge_ai_qdrant` 2.0.x) open unchanged as text locations.
+
 Make open/dispose app-owned and idempotent:
 
 ```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 const databaseName = 'knowledge-v1.db';
 final databasePath = kIsWeb
     ? databaseName
@@ -303,12 +755,12 @@ final rag = FlutterEdgeAiRag(
 Future<RagIndex>? opening;
 Future<void>? disposing;
 
-opening ??= rag.open(
+opening ??= rag.openVectors(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: databasePath,
   ),
-  embeddingProfile: EmbeddingProfile(id: 'embedding-pipeline-v1', dimension: 768),
+  profile: EmbeddingProfile(id: 'embedding-pipeline-v1', dimension: 768),
 );
 disposing ??= () async {
   final pending = opening;
@@ -321,6 +773,13 @@ Do not create an index in each widget or reopen the same Web location while a
 previous index is live. Shutdown order is:
 
 ```dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 const databaseName = 'knowledge-v1.db';
 final databasePath = kIsWeb
     ? databaseName
@@ -328,16 +787,33 @@ final databasePath = kIsWeb
 final rag = FlutterEdgeAiRag(
   providers: const [SqliteVectorStoreProvider()],
 );
-final index = await rag.open(
+final index = await rag.openVectors(
   spec: VectorStoreSpec(
     providerId: SqliteVectorStoreProvider.providerId,
     location: databasePath,
   ),
-  embeddingProfile: EmbeddingProfile(id: 'embedding-pipeline-v1', dimension: 768),
+  profile: EmbeddingProfile(id: 'embedding-pipeline-v1', dimension: 768),
 );
 await index.dispose();
 await FlutterEdgeAi.dispose();
 ```
+
+## Moving from flutter_edge_ai_rag 1.0 to 1.1
+
+| rag 1.0 | rag 1.1 |
+| --- | --- |
+| `open(spec:, activeEmbedderProfileId: id)` | `open(spec:, embedder: FlutterEdgeAiActiveEmbedder(profileId: id))`, or `.forActiveModel(namespace:)` |
+| `open(spec:, embeddingProfile: p)` (vectors only) | `openVectors(spec:, profile: p)` |
+| `open()` bound the profile on the first text operation | `open()` resolves the profile and binds the location at once; install the embedder first |
+| `index.addText(id:, content: c)` | `index.add(id:, document: EmbeddingInput.text(c))` |
+| `index.searchText(query: q)` | `index.search(query: EmbeddingInput.text(q))` |
+| `index.embeddingProfile` could be null | never null; `index.documents` names the modality |
+| `RagEmbedder` with a `profile` getter, `embedDocument(String)`, `embedQuery(String)` | `resolveProfile()`, `modalities`, `embedDocument(EmbeddingInput)`, `embedQuery(EmbeddingInput, documentModality:)` |
+| a filter on an undeclared field was ignored | `ArgumentError` |
+| `VectorStoreRepository` (`implements`), `readEmbeddingProfile`/`bindEmbeddingProfile` | `abstract base class` (`extends`), `readBinding()`/`bind(VectorStoreBinding)` |
+
+Upgrade every flutter_edge_ai package together: the stores of this release
+need flutter_edge_ai_rag 1.1.
 
 ## Moving from 1.x core RAG to 2.0
 
@@ -346,13 +822,13 @@ In flutter_edge_ai 2.0 RAG left core: the `FlutterEdgeAi.rag.…` calls and the
 are gone. Add `flutter_edge_ai_rag` and a storage package, remove those two
 parameters, and open a `RagIndex`:
 
-| 1.x (`FlutterEdgeAi.rag.…`) | 2.0 `RagIndex` |
+| 1.x (`FlutterEdgeAi.rag.…`) | `RagIndex` |
 | --- | --- |
 | `initialize(vectorStore: ...)` on core | `FlutterEdgeAiRag(providers: [...])` |
-| `rag.initialize(location)` | `rag.open(spec: VectorStoreSpec(...))` |
-| `addDocument(...)` | `addText(...)` |
+| `rag.initialize(location)` | `rag.open(spec: VectorStoreSpec(...), embedder: ...)` |
+| `addDocument(...)` | `add(id:, document: EmbeddingInput.text(...))` |
 | `addDocumentWithEmbedding(...)` | `addVector(...)` |
-| `searchSimilar(query: ...)` | `searchText(query: ...)` |
+| `searchSimilar(query: ...)` | `search(query: EmbeddingInput.text(...))` |
 | `removeDocument(id: ...)` | `remove(id: ...)` |
 | `stats()` / `flush()` / `clear()` | the same methods on the index |
 
@@ -366,14 +842,38 @@ location.
 
 - Copy `web/rag/sqlite3.wasm` from `flutter_edge_ai_sqlite` to the same path in
   the app. Copy the four matching LiteRT embedding files from
-  `flutter_edge_ai_litertlm/web/` when that runtime is used.
-- A filter with no effect usually names a field omitted from `filterSchema`.
+  `flutter_edge_ai_litertlm/web/` when that runtime is used, and copy them
+  again after upgrading it: a stale `litert_embeddings.js` fails
+  `getActiveEmbedder()` with an `EmbeddingLoadException` that names the file.
+  EmbeddingGemma 2 (`.litertlm`) needs none of those files, only
+  `window.EmbeddingEngine = m.EmbeddingEngine;` in the `@litert-lm/core`
+  module script of `web/index.html`, and a browser with WebGPU.
+- `EmbeddingLoadException` starting "EmbeddingGemma 2 on the web needs
+  WebGPU": the browser has no `navigator.gpu` or no GPU adapter. There is no
+  CPU path for these bundles on Web; use a browser with WebGPU enabled.
+- `ArgumentError` naming an undeclared filter field: add it to `filterSchema`.
   SQLite names must match `^[A-Za-z][A-Za-z0-9_]*$` and avoid reserved columns.
-- A profile mismatch means model/preprocessing bytes changed or the wrong
-  location was opened. Do not bypass it; choose the correct profile/location.
-- A first `addVector` on an empty store needs `embeddingProfile`; raw numbers
-  cannot identify their embedding space.
-- A text operation using the default embedder needs `activeEmbedderProfileId`
-  on `open()`. `open()` pins the embedder that is active at that moment:
-  install the embedder before opening the index, and after switching embedders
-  open a new index at a new location.
+- `StateError: Vector store "…" is bound to …, not …`: the location belongs to
+  another profile or document modality — model or preprocessing bytes
+  changed, a different model is installed, or the wrong location was opened.
+  Do not bypass it; choose the correct profile/location.
+- Vector-only indexes need `openVectors(profile:)`: raw numbers cannot
+  identify their embedding space.
+- `EmbeddingInputTooLongException` from `add` or `search`: the text is longer
+  than the embedder's `maxInputTokens`. Split it into smaller chunks; older
+  releases truncated it silently. With EmbeddingGemma 2 its `actualTokens` is
+  the exact count (natively from `flutter_edge_ai_litertlm` 1.13.1).
+- `EmbeddingLoadException` from `open()` of an image index: the installed
+  model has no vision encoder — "has no vision encoder; install
+  embeddinggemma-2-text-vision-440m" on the 270m — or is not an EmbeddingGemma
+  2 bundle. From an audio index: "has no audio encoder; install
+  embeddinggemma-2-740m" on the 270m and the 440m; on Web every bundle refuses
+  audio.
+- `EmbeddingFormatNotSupportedException` from `add` or `search` on an image
+  index: HEIC, WebP, TIFF or AVIF; convert to JPEG or PNG.
+- `VectorStoreException` "… is not a valid embedding profile" on open: the
+  location was bound by flutter_edge_ai_rag 1.0 to an id with a control
+  character, which 1.1 refuses; this version cannot open it.
+- `StateError` mentioning that the active embedding model changed: an adapter
+  is pinned to the model active when it was created. After switching
+  embedders, create a new embedder and open a new index at a new location.

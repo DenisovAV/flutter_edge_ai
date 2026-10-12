@@ -17,9 +17,15 @@ import 'dart:io';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
-import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
+// ignore: implementation_imports — seeds and inspects core's persisted active identity
+import 'package:flutter_edge_ai/src/model_management/active_identity_store.dart'
+    show ActiveIdentityKind, ActiveIdentityStore;
+// ignore: implementation_imports — reads core's persisted identity keys
+import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart'
+    show PreferencesKeys;
+// ignore: implementation_imports — resets core's services to simulate a restart
+import 'package:flutter_edge_ai/src/di/service_registry.dart'
+    show ServiceRegistry;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';

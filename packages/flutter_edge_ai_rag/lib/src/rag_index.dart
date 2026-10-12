@@ -1,175 +1,204 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:flutter_edge_ai/flutter_edge_ai.dart'
+    show EmbeddingInput, EmbeddingModality;
+
 import 'embedding.dart';
 import 'filter.dart';
 import 'vector_store.dart';
 
-/// Package-internal construction seam used by `FlutterEdgeAiRag.open`.
+/// Package-internal construction seam used by `FlutterEdgeAiRag.open` and
+/// `openVectors`.
 ///
 /// Not exported from the package barrel; applications receive indexes only
-/// through the factory so configuration and ownership cannot be bypassed.
+/// through the factory so configuration, binding and ownership cannot be
+/// bypassed.
 RagIndex createRagIndex({
   required VectorStoreRepository store,
-  required RagEmbedder embedder,
-  required EmbeddingProfile? initialProfile,
-  required bool allowLegacyProfileAdoption,
-}) => RagIndex._(store, embedder, initialProfile, allowLegacyProfileAdoption);
+  required RagEmbedder? embedder,
+  required VectorStoreBinding binding,
+}) => RagIndex._(store, embedder, binding);
 
-/// An independently-owned RAG index.
+/// An independently-owned RAG index over one bound vector-store location.
 ///
-/// The index owns its vector store and closes it on [dispose]. Its [RagEmbedder]
-/// is always borrowed. Each index pins at most one [EmbeddingProfile]; use a
-/// separate index and persistent location for every embedding space.
-class RagIndex {
-  RagIndex._(
-    this._store,
-    this._embedder,
-    this._boundProfile,
-    this._allowLegacyProfileAdoption,
-  );
+/// The index owns its vector store and closes it on [dispose]. Its
+/// [RagEmbedder] is always borrowed: dispose the index before the embedder.
+/// The location is bound to one [EmbeddingProfile] and one document modality
+/// ([documents]) for its lifetime; use a separate index and location for
+/// every embedding space and every modality.
+final class RagIndex {
+  RagIndex._(this._store, this._embedder, this._binding);
 
   final VectorStoreRepository _store;
-  final RagEmbedder _embedder;
-  final bool _allowLegacyProfileAdoption;
+  final RagEmbedder? _embedder;
+  final VectorStoreBinding _binding;
   final _OperationGate _gate = _OperationGate();
 
-  _TextProfileClaim? _textProfileClaim;
-  EmbeddingProfile? _boundProfile;
   bool _disposeRequested = false;
   Future<void>? _disposeFuture;
   int _acceptedOperations = 0;
   Completer<void>? _operationsDrained;
 
-  EmbeddingProfile? get embeddingProfile => _boundProfile;
+  /// The embedding space this index is bound to; resolved at open.
+  EmbeddingProfile get embeddingProfile => _binding.profile;
+
+  /// The one modality of this index's documents.
+  EmbeddingModality get documents => _binding.documents;
 
   bool get isDisposed => _disposeRequested;
 
-  Future<void> addText({
+  /// Embeds [document] with the embedder's document role and stores it.
+  ///
+  /// Text index: [document] is text only, and [content] defaults to its
+  /// text. Image or audio index: [document] carries that medium (optionally
+  /// with text), and [content] is required — a reference to the medium (a
+  /// URI, file path or asset id), never its bytes; search results return it.
+  /// Fails with [ArgumentError] otherwise.
+  ///
+  /// Like every method of this class that returns a future, it reports every
+  /// error — argument errors included — as a failed future, never as a
+  /// synchronous throw.
+  Future<void> add({
     required String id,
-    required String content,
+    required EmbeddingInput document,
+    String? content,
     String? metadata,
-  }) {
+  }) => Future.sync(() {
     _ensureUsable();
     _validateId(id);
-    return _runTextOperation((profile) async {
-      final embedding = await _embedder.embedDocument(content);
-      _validateEmbedding(embedding, expectedDimension: profile.dimension);
-      await _store.addDocument(
-        id: id,
-        content: content,
-        embedding: embedding,
-        metadata: metadata,
-      );
-    });
-  }
-
-  Future<void> addVector({
-    required String id,
-    required String content,
-    required List<double> embedding,
-    String? metadata,
-  }) {
-    _ensureUsable();
-    _validateId(id);
-    final embeddingSnapshot = List<double>.unmodifiable(embedding);
-    _validateEmbedding(embeddingSnapshot);
-    final profile = _boundProfile;
-    if (profile == null && _textProfileClaim == null) {
-      _requireBoundProfile();
-    }
-    if (profile != null) {
-      _validateEmbedding(
-        embeddingSnapshot,
-        expectedDimension: profile.dimension,
-      );
-    }
+    final embedder = _requireEmbedder('add');
+    final storedContent = _contentFor(document, content);
     return _accept(
       () => _gate.runShared(() async {
-        final boundProfile = _requireBoundProfile();
+        final embedding = await embedder.embedDocument(document);
         _validateEmbedding(
-          embeddingSnapshot,
-          expectedDimension: boundProfile.dimension,
+          embedding,
+          expectedDimension: embeddingProfile.dimension,
         );
         await _store.addDocument(
           id: id,
-          content: content,
-          embedding: embeddingSnapshot,
+          content: storedContent,
+          embedding: embedding,
           metadata: metadata,
         );
       }),
     );
-  }
+  });
 
-  Future<List<RetrievalResult>> searchText({
-    required String query,
-    int topK = 5,
-    double threshold = 0.0,
-    Filter? filter,
-  }) {
-    _ensureUsable();
-    _validateSearch(topK: topK, threshold: threshold);
-    return _runTextOperation((profile) async {
-      final embedding = await _embedder.embedQuery(query);
-      _validateEmbedding(embedding, expectedDimension: profile.dimension);
-      return _store.searchSimilar(
-        queryEmbedding: embedding,
-        topK: topK,
-        threshold: threshold,
-        filter: filter,
-      );
-    });
-  }
-
-  Future<List<RetrievalResult>> searchVector({
+  /// Stores a precomputed vector, which must be in this index's embedding
+  /// space and of its dimension.
+  Future<void> addVector({
+    required String id,
     required List<double> embedding,
+    required String content,
+    String? metadata,
+  }) => Future.sync(() {
+    _ensureUsable();
+    _validateId(id);
+    final embeddingSnapshot = List<double>.unmodifiable(embedding);
+    _validateEmbedding(
+      embeddingSnapshot,
+      expectedDimension: embeddingProfile.dimension,
+    );
+    return _accept(
+      () => _gate.runShared(
+        () => _store.addDocument(
+          id: id,
+          content: content,
+          embedding: embeddingSnapshot,
+          metadata: metadata,
+        ),
+      ),
+    );
+  });
+
+  /// Embeds [query] with the embedder's query role for this index's
+  /// [documents] and searches. The query may be any modality the embedder
+  /// has: a text query over an image index is text → image search; any other
+  /// modality fails with [ArgumentError].
+  ///
+  /// Every [filter] field must be declared in the spec's `filterSchema`
+  /// ([ArgumentError] otherwise).
+  Future<List<RetrievalResult>> search({
+    required EmbeddingInput query,
     int topK = 5,
     double threshold = 0.0,
     Filter? filter,
-  }) {
+  }) => Future.sync(() {
     _ensureUsable();
     _validateSearch(topK: topK, threshold: threshold);
-    final embeddingSnapshot = List<double>.unmodifiable(embedding);
-    _validateEmbedding(embeddingSnapshot);
-    final profile = _boundProfile;
-    if (profile == null && _textProfileClaim == null) {
-      _requireBoundProfile();
-    }
-    if (profile != null) {
-      _validateEmbedding(
-        embeddingSnapshot,
-        expectedDimension: profile.dimension,
+    _validateFilter(filter);
+    final embedder = _requireEmbedder('search');
+    final unsupported = query.modalities.difference(embedder.modalities);
+    if (unsupported.isNotEmpty) {
+      throw ArgumentError.value(
+        query,
+        'query',
+        'carries ${_names(unsupported)}, which this index\'s embedder does '
+            'not embed (it embeds ${_names(embedder.modalities)})',
       );
     }
     return _accept(
-      () => _gate.runShared(() {
-        final boundProfile = _requireBoundProfile();
+      () => _gate.runShared(() async {
+        final embedding = await embedder.embedQuery(
+          query,
+          documentModality: documents,
+        );
         _validateEmbedding(
-          embeddingSnapshot,
-          expectedDimension: boundProfile.dimension,
+          embedding,
+          expectedDimension: embeddingProfile.dimension,
         );
         return _store.searchSimilar(
-          queryEmbedding: embeddingSnapshot,
+          queryEmbedding: embedding,
           topK: topK,
           threshold: threshold,
           filter: filter,
         );
       }),
     );
-  }
+  });
 
-  Future<void> remove({required String id}) {
+  /// Searches with a precomputed query vector. Every [filter] field must be
+  /// declared in the spec's `filterSchema` ([ArgumentError] otherwise).
+  Future<List<RetrievalResult>> searchVector({
+    required List<double> embedding,
+    int topK = 5,
+    double threshold = 0.0,
+    Filter? filter,
+  }) => Future.sync(() {
+    _ensureUsable();
+    _validateSearch(topK: topK, threshold: threshold);
+    _validateFilter(filter);
+    final embeddingSnapshot = List<double>.unmodifiable(embedding);
+    _validateEmbedding(
+      embeddingSnapshot,
+      expectedDimension: embeddingProfile.dimension,
+    );
+    return _accept(
+      () => _gate.runShared(
+        () => _store.searchSimilar(
+          queryEmbedding: embeddingSnapshot,
+          topK: topK,
+          threshold: threshold,
+          filter: filter,
+        ),
+      ),
+    );
+  });
+
+  Future<void> remove({required String id}) => Future.sync(() {
     _ensureUsable();
     _validateId(id);
     return _accept(() => _gate.runShared(() => _store.removeDocument(id: id)));
-  }
+  });
 
   Future<VectorStoreStats> stats() =>
       _accept(() => _gate.runShared(_store.getStats));
 
   Future<void> flush() => _accept(() => _gate.runExclusive(_store.flush));
 
-  /// Clears documents but deliberately preserves [embeddingProfile].
+  /// Clears documents but deliberately preserves the binding.
   Future<void> clear() => _accept(() => _gate.runExclusive(_store.clear));
 
   /// Rejects new work immediately, waits for accepted work, then closes once.
@@ -191,105 +220,77 @@ class RagIndex {
     await _gate.runExclusive(_store.close);
   }
 
-  /// Claims the first unresolved text profile synchronously, before any await.
-  ///
-  /// The claimant owns an exclusive gate slot for its whole operation: profile
-  /// resolution/binding, embedding, and storage. Followers capture the same
-  /// claim and queue as shared work behind it. This avoids a shared-to-exclusive
-  /// gate upgrade while keeping every operation accepted after the first bind
-  /// behind that bind.
-  Future<T> _runTextOperation<T>(
-    Future<T> Function(EmbeddingProfile profile) operation,
-  ) {
-    final existing = _textProfileClaim;
-    if (existing != null) {
-      return _accept(
-        () => _gate.runShared(() async {
-          final profile = await existing.future;
-          return operation(profile);
-        }),
-      );
-    }
-
-    final claim = _TextProfileClaim();
-    _textProfileClaim = claim;
-    return _accept(
-      () => _gate.runExclusive(() async {
-        final profile = await _resolveFirstTextProfile(claim);
-        return operation(profile);
-      }),
-    );
-  }
-
-  Future<EmbeddingProfile> _resolveFirstTextProfile(
-    _TextProfileClaim claim,
-  ) async {
-    try {
-      final profile = await _resolveAndBindTextProfile();
-      claim.complete(profile);
-      return profile;
-    } catch (error, stackTrace) {
-      if (identical(_textProfileClaim, claim)) {
-        _textProfileClaim = null;
-      }
-      claim.completeError(error, stackTrace);
-      Error.throwWithStackTrace(error, stackTrace);
-    }
-  }
-
-  Future<EmbeddingProfile> _resolveAndBindTextProfile() async {
-    final profile = await _embedder.profile;
-    final bound = _boundProfile ?? await _store.readEmbeddingProfile();
-    if (bound != null) {
-      if (bound != profile) {
-        throw StateError(
-          'This index is bound to $bound, but its text embedder reports '
-          '$profile. Use a separate location for each embedding profile.',
-        );
-      }
-      _boundProfile = bound;
-      return bound;
-    }
-
-    final stats = await _store.getStats();
-    if (stats.documentCount > 0) {
-      if (!_allowLegacyProfileAdoption) {
-        throw StateError(
-          'This store contains legacy vectors without an embedding profile. '
-          'Reopen with allowLegacyProfileAdoption: true only after verifying '
-          'which embedding model created them.',
-        );
-      }
-      if (stats.vectorDimension != profile.dimension) {
-        throw StateError(
-          'Cannot adopt ${stats.vectorDimension}D legacy vectors as $profile.',
-        );
-      }
-    }
-    await _store.bindEmbeddingProfile(profile);
-    final persisted = await _store.readEmbeddingProfile();
-    if (persisted != profile) {
+  RagEmbedder _requireEmbedder(String operation) {
+    final embedder = _embedder;
+    if (embedder == null) {
       throw StateError(
-        'Vector-store provider did not persist the requested $profile.',
+        'This RagIndex was opened with openVectors() and has no embedder, so '
+        '$operation() cannot embed. Use addVector() / searchVector(), or open '
+        'the location with FlutterEdgeAiRag.open(embedder: ...).',
       );
     }
-    _boundProfile = profile;
-    return profile;
+    return embedder;
   }
 
-  EmbeddingProfile _requireBoundProfile() {
-    final profile = _boundProfile;
-    if (profile == null) {
-      throw StateError(
-        'This RagIndex has no bound embedding profile. Pass embeddingProfile '
-        'to FlutterEdgeAiRag.open(), or complete a text operation first.',
+  String _contentFor(EmbeddingInput document, String? content) {
+    final modalities = document.modalities;
+    switch (documents) {
+      case EmbeddingModality.text:
+        if (modalities.length != 1 ||
+            !modalities.contains(EmbeddingModality.text)) {
+          throw ArgumentError.value(
+            document,
+            'document',
+            'this index holds text documents; the document carries '
+                '${_names(modalities)}',
+          );
+        }
+        return content ?? document.text!;
+      case EmbeddingModality.image || EmbeddingModality.audio:
+        final allowed = {documents, EmbeddingModality.text};
+        if (!modalities.contains(documents) ||
+            !allowed.containsAll(modalities)) {
+          throw ArgumentError.value(
+            document,
+            'document',
+            'this index holds ${documents.name} documents; the document '
+                'carries ${_names(modalities)}',
+          );
+        }
+        if (content == null || content.trim().isEmpty) {
+          throw ArgumentError.value(
+            content,
+            'content',
+            'is required for ${documents.name} documents: a reference to the '
+                'medium (a URI, file path or asset id), never its bytes',
+          );
+        }
+        return content;
+    }
+  }
+
+  void _validateFilter(Filter? filter) {
+    if (filter == null) return;
+    final schema = _store.filterSchema;
+    final conditions = [...?filter.must, ...?filter.should, ...?filter.mustNot];
+    for (final condition in conditions) {
+      if (schema.fieldFor(condition.key) != null) continue;
+      final declared = [for (final field in schema.fields) field.name];
+      throw ArgumentError.value(
+        condition.key,
+        'filter',
+        'filters on a field that is not declared in this index\'s '
+            'VectorStoreSpec.filterSchema (declared: '
+            '${declared.isEmpty ? 'none' : declared.join(', ')}), so it could '
+            'never match',
       );
     }
-    return profile;
   }
 
+  /// Registers [operation] synchronously, so [dispose] waits for it; a
+  /// disposing index fails it as a future, like every other error here.
   Future<T> _accept<T>(Future<T> Function() operation) {
-    _ensureUsable();
+    if (_disposeRequested) return Future.error(_disposedError());
     _acceptedOperations++;
     return Future<T>.sync(operation).whenComplete(() {
       _acceptedOperations--;
@@ -301,10 +302,14 @@ class RagIndex {
   }
 
   void _ensureUsable() {
-    if (_disposeRequested) {
-      throw StateError('This RagIndex is disposing or already disposed.');
-    }
+    if (_disposeRequested) throw _disposedError();
   }
+
+  static StateError _disposedError() =>
+      StateError('This RagIndex is disposing or already disposed.');
+
+  static String _names(Set<EmbeddingModality> modalities) =>
+      '{${[for (final modality in modalities) modality.name].join(', ')}}';
 
   static void _validateId(String id) {
     if (id.trim().isEmpty) {
@@ -323,7 +328,7 @@ class RagIndex {
 
   static void _validateEmbedding(
     List<double> embedding, {
-    int? expectedDimension,
+    required int expectedDimension,
   }) {
     if (embedding.isEmpty) {
       throw ArgumentError.value(embedding, 'embedding', 'must not be empty');
@@ -337,11 +342,11 @@ class RagIndex {
         );
       }
     }
-    if (expectedDimension != null && embedding.length != expectedDimension) {
+    if (embedding.length != expectedDimension) {
       throw ArgumentError.value(
         embedding.length,
         'embedding.length',
-        'must match the pinned profile dimension $expectedDimension',
+        'must match the bound profile dimension $expectedDimension',
       );
     }
   }
@@ -418,22 +423,4 @@ class _GateWaiter {
 
   final bool exclusive;
   final Completer<void> completer;
-}
-
-class _TextProfileClaim {
-  _TextProfileClaim() {
-    // The claimant reports resolution failures through its operation future.
-    // This handler only prevents a claim with no followers from becoming an
-    // unhandled asynchronous error; followers still receive the same error.
-    future.ignore();
-  }
-
-  final Completer<EmbeddingProfile> _completer = Completer<EmbeddingProfile>();
-
-  Future<EmbeddingProfile> get future => _completer.future;
-
-  void complete(EmbeddingProfile profile) => _completer.complete(profile);
-
-  void completeError(Object error, StackTrace stackTrace) =>
-      _completer.completeError(error, stackTrace);
 }

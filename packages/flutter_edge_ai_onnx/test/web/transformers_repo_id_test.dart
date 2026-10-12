@@ -3,7 +3,7 @@
 // split out of `TransformersWebResolver` specifically to have no web-only
 // imports (the resolver itself transitively imports `dart:js_interop` via
 // `WebModelManager` and can only be compile-checked by `flutter build web`).
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_onnx/src/web/transformers_repo_id.dart';
 import 'package:flutter_test/flutter_test.dart';
 

@@ -16,7 +16,7 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:isolate';
 
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 import 'gen_ai_client.dart' show GenAiGenerationStats, GenAiTurn;
 import 'gen_ai_protocol.dart';

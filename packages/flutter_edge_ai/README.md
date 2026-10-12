@@ -16,7 +16,8 @@ app uses.
 
 > **Formerly `flutter_gemma`.** Through 1.11.3 this package shipped as
 > `flutter_gemma`. Version 2.0 also moves RAG out of core into
-> `flutter_edge_ai_rag`. See the [migration guide](MIGRATION.md).
+> `flutter_edge_ai_rag`, and 2.3.0 changes the embedding API. See the
+> [migration guide](MIGRATION.md).
 
 📖 Full documentation: **[flutteredge.ai](https://flutteredge.ai)**
 
@@ -26,7 +27,7 @@ app uses.
 - **Multimodal:** image and audio input with Gemma 4, Gemma 3n and other vision models.
 - **Function calling** and **thinking mode** on the models that support them.
 - **CPU, GPU and NPU** backends — Qualcomm NPU on Android (opt-in), Intel NPU on Windows.
-- **Embeddings and on-device RAG** with Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
+- **Embeddings and on-device RAG:** EmbeddingGemma 1 and 2 with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.
 - **Model management:** installs from the network, assets, bundled files or local paths; Hugging Face installs in one call; retries, typed download errors, LoRA weights.
@@ -69,9 +70,18 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.2.1
-  flutter_edge_ai_litertlm: ^1.12.1   # or any other engine from the table
+  flutter_edge_ai: ^2.3.1
+  flutter_edge_ai_litertlm: ^1.13.1   # or any other engine from the table
 ```
+
+> **Upgrade every flutter_edge_ai package together.** Minimum versions with
+> core 2.3.0: `flutter_edge_ai_litertlm` 1.13.0 · `flutter_edge_ai_embeddings`
+> 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 · `flutter_edge_ai_mediapipe` 1.2.2 ·
+> `flutter_edge_ai_builtin_ai` 0.3.5 · `flutter_edge_ai_speech` 0.5.6 ·
+> `flutter_edge_ai_agent` 0.2.9 · `flutter_edge_ai_rag` 1.1.0 ·
+> `flutter_edge_ai_sqlite` 2.1.0 · `flutter_edge_ai_qdrant` 2.1.0 ·
+> `genkit_flutter_edge_ai` 0.9.1. An older engine or store fails to compile
+> against 2.3.0; see the [migration guide](MIGRATION.md).
 
 Then complete the platform setup below.
 
@@ -324,7 +334,13 @@ and why `.litertlm` keeps the first session's values:
 
 ² On Web: no audio input; Gemma 4 vision needs the `-web.task` build, while thinking and function calling need the `.litertlm` one; Gemma 3n vision is native-only.
 
-Download links, sizes, formats per platform, embedding and speech models:
+Embedding models: EmbeddingGemma 1 (`.tflite` plus a tokenizer, every
+platform) and EmbeddingGemma 2 (one `.litertlm` file: text and images, plus,
+on Android, iOS, macOS, Linux and Windows, audio and several parts in one
+vector with `EmbeddingInput(text:, images:, audio:)`), both through
+`flutter_edge_ai_litertlm`; MiniLM-class
+`.onnx` models through `flutter_edge_ai_onnx`. Download links, sizes, formats
+per platform, embedding and speech models:
 [models](https://flutteredge.ai/docs/models).
 
 ## Going further

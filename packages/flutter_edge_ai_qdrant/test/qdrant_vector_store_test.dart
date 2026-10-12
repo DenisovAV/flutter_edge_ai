@@ -43,7 +43,7 @@ void main() {
     shardDir =
         '${Directory.systemTemp.path}/qdrant_unit_${DateTime.now().microsecondsSinceEpoch}';
     await repo.initialize(shardDir);
-    await repo.bindEmbeddingProfile(_testProfile4);
+    await repo.bind(VectorStoreBinding(profile: _testProfile4));
   });
 
   tearDown(() async {
@@ -677,7 +677,7 @@ void main() {
 
       final store = QdrantVectorStore();
       await store.initialize(dbDir.path);
-      await store.bindEmbeddingProfile(_testProfile4);
+      await store.bind(VectorStoreBinding(profile: _testProfile4));
       await store.addDocument(
         id: 'doc',
         content: 'doc',
@@ -737,7 +737,7 @@ void main() {
       await store.initialize(dbDir.path);
 
       await expectLater(
-        store.bindEmbeddingProfile(_testProfile4),
+        store.bind(VectorStoreBinding(profile: _testProfile4)),
         throwsA(isA<VectorStoreException>()),
       );
 
@@ -784,8 +784,10 @@ void main() {
       await store.initialize(
         '${Directory.systemTemp.path}/qdrant_nowrite_${DateTime.now().microsecondsSinceEpoch}',
       );
-      await store.bindEmbeddingProfile(
-        EmbeddingProfile(id: 'qdrant-empty-search-v1', dimension: 1),
+      await store.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(id: 'qdrant-empty-search-v1', dimension: 1),
+        ),
       );
       expect(
         await store.searchSimilar(queryEmbedding: const [1.0], topK: 5),

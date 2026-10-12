@@ -11,10 +11,10 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_registry.dart';
+import 'package:flutter_edge_ai/engine.dart';
+// ignore: implementation_imports — drives core's resolver registry directly
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_registry.dart'
+    show HuggingFaceResolverRegistry;
 import 'package:flutter_edge_ai_litertlm/src/manifest/litertlm_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/manifest/litertlm_manifest_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -17,12 +17,12 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart';
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_registry.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver.dart';
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_registry.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 final _fakeModelBytes = Uint8List(1024 * 1024 + 16);

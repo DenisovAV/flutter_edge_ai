@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
-import 'package:flutter_edge_ai/core/services/file_system_service.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
-import 'package:flutter_edge_ai/core/model_management/cancel_token.dart';
-import 'package:flutter_edge_ai/core/services/asset_loader.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart';
-import 'package:flutter_edge_ai/core/services/protected_files_registry.dart';
+import 'package:flutter_edge_ai/src/domain/model_source.dart';
+import 'package:flutter_edge_ai/src/services/file_system_service.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
+import 'package:flutter_edge_ai/src/services/asset_loader.dart';
+import 'package:flutter_edge_ai/src/services/model_repository.dart';
+import 'package:flutter_edge_ai/src/services/protected_files_registry.dart';
 
 /// Mock FileSystemService that tracks file operations
 class MockFileSystemService implements FileSystemService {
@@ -32,9 +32,6 @@ class MockFileSystemService implements FileSystemService {
   @override
   Future<int> getFileSize(String path) async =>
       _files.contains(path) ? 1024 : 0;
-
-  @override
-  Future<String> getTargetPath(String filename) async => '/models/$filename';
 
   @override
   Future<String> getReadTargetPath(String filename) async =>

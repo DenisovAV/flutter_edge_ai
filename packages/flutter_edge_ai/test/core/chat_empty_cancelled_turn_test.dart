@@ -1,7 +1,7 @@
-import 'package:flutter_edge_ai/core/chat.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/src/chat.dart';
+import 'package:flutter_edge_ai/src/message.dart';
+import 'package:flutter_edge_ai/src/model.dart';
+import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// #325 regression: when a streaming generation is cancelled (or ends) with an

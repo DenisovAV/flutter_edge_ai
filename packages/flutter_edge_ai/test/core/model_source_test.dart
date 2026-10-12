@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
+import 'package:flutter_edge_ai/src/domain/model_source.dart';
 
 void main() {
   group('ModelSource - NetworkSource', () {

@@ -17,7 +17,7 @@ Future<void> main() async {
 
   // An absolute path to a shard directory, not a .db file.
   final dir = await getApplicationDocumentsDirectory();
-  final index = await rag.open(
+  final index = await rag.openVectors(
     spec: VectorStoreSpec(
       providerId: 'qdrant',
       location: '${dir.path}/rag_store',
@@ -25,7 +25,7 @@ Future<void> main() async {
         fields: [FilterField(name: 'lang', type: FilterFieldType.string)],
       ),
     ),
-    embeddingProfile: EmbeddingProfile(
+    profile: EmbeddingProfile(
       id: 'my-embedder-v1',
       dimension: 4,
     ),
@@ -60,14 +60,16 @@ Future<void> main() async {
 ```
 
 This example is vector-only and does not initialize the main inference
-runtime. For `addText` and `searchText`, first initialize `FlutterEdgeAi` and
-install its active embedding model, then pass a stable
-`activeEmbedderProfileId` to `rag.open()`. The ID must version the weights,
-tokenizer, pooling, normalization, and document/query prefix contract.
+runtime. For `add` and `search` over `EmbeddingInput.text`, first initialize
+`FlutterEdgeAi` and install its active embedding model, then pass
+`embedder: FlutterEdgeAiActiveEmbedder(profileId: …)` with a stable id to
+`rag.open()`. The ID must version the weights, tokenizer, pooling,
+normalization, and document/query prefix contract.
 
 For an existing nonempty store created without profile metadata, pass an
-explicit `EmbeddingProfile` and set `allowLegacyProfileAdoption: true` only
-after verifying which embedding model created those vectors.
+explicit `EmbeddingProfile` to `rag.openVectors(profile:)` and set
+`allowLegacyProfileAdoption: true` only after verifying which embedding model
+created those vectors.
 
 See the [package README](https://pub.dev/packages/flutter_edge_ai_qdrant) for
 platform support and behavior notes. A full runnable app that wires every engine

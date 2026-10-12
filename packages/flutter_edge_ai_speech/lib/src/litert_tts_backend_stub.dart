@@ -1,9 +1,4 @@
-import 'package:flutter_edge_ai/core/registry/tts_backend_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show SpeechSynthesizer;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show TtsModelSpec;
+import 'package:flutter_edge_ai/engine.dart';
 
 /// Web stub for [LiteRtTtsBackend] — `flutter_edge_ai_speech` has no web TTS
 /// arm (native-only). Registers cleanly so `initialize` doesn't break on

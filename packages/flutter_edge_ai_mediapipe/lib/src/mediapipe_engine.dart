@@ -1,11 +1,7 @@
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show InferenceModel, supportedLoraRanks;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show InferenceModelSpec;
-import 'package:flutter_edge_ai/core/domain/platform_types.dart' as core_types;
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/engine.dart'
+    as core_types
+    show PreferredBackend;
 import 'package:flutter_edge_ai_mediapipe/pigeon.g.dart' as mp_pigeon;
 
 import 'mobile/mobile_inference_model.dart';

@@ -1,10 +1,154 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to Flutter Edge AI 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai 2.3.0: the embedding API, EmbeddingGemma 2, RAG 1.1
+
+> **Upgrade every flutter_edge_ai package together** (`flutter pub upgrade`,
+> not `flutter pub upgrade flutter_edge_ai`). Minimum versions with core
+> 2.3.0: `flutter_edge_ai_litertlm` 1.13.0 · `flutter_edge_ai_embeddings`
+> 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 · `flutter_edge_ai_mediapipe` 1.2.2 ·
+> `flutter_edge_ai_builtin_ai` 0.3.5 · `flutter_edge_ai_speech` 0.5.6 ·
+> `flutter_edge_ai_agent` 0.2.9 · `flutter_edge_ai_rag` 1.1.0 ·
+> `flutter_edge_ai_sqlite` 2.1.0 · `flutter_edge_ai_qdrant` 2.1.0. An older
+> one fails to compile inside that package. `genkit_flutter_edge_ai` 0.9.0
+> still compiles; 0.9.1 calls the new API and re-resolves a closed embedder.
+> `flutter_edge_ai_diagnostics` and `genkit_hybrid` are unaffected.
+
+```
+dependencies:
+  flutter_edge_ai: ^2.3.0
+  flutter_edge_ai_litertlm: ^1.13.0
+  flutter_edge_ai_embeddings: ^2.3.0 # EmbeddingGemma 1 and other two-file models
+  flutter_edge_ai_rag: ^1.1.0
+  flutter_edge_ai_sqlite: ^2.1.0     # or flutter_edge_ai_qdrant: ^2.1.0
+```
+
+### Embeddings
+
+`EmbeddingModel` takes an `EmbeddingInput` and a required `TaskType`. The three
+old methods still compile as deprecated forwarders and are removed in 2.5.0.
+
+| Before (2.2) | After (2.3) |
+|---|---|
+| `generateEmbedding(t)` | `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)`. The task is required; `TaskType.none` embeds the text with no prefix. |
+| `generateEmbeddings(ts)` | `embedAll([for (final t in ts) EmbeddingInput.text(t)], taskType: …)`; it also takes a `cancelToken:`. |
+| `await m.getDimension()` | `m.dimension` |
+| a closed model threw `StateError` synchronously | `EmbedderClosedException`; every embedding error arrives as a failed future. Catch `EmbeddingException` for all of them. |
+| inputs longer than the model's sequence length were truncated without a word (EmbeddingGemma 1 `.tflite`, ONNX static graphs, LiteRT.js on web, SigLIP) | `EmbeddingInputTooLongException(maxInputTokens, actualTokens)`. Chunk your text below `model.maxInputTokens` — task prefix, BOS and EOS included. |
+| `TaskType { retrievalQuery, retrievalDocument }` | seven values appended: `none`, `questionAnswering`, `factChecking`, `codeRetrieval`, `classification`, `clustering`, `sentenceSimilarity`. Add the cases or a default branch to exhaustive switches; the first two keep their index. |
+| `getActiveEmbedder({preferredBackend})` | adds `supportImage` and `supportAudio`: declare media at load. Media sent to a model that did not declare them throws. |
+| `FlutterEdgeAiPlugin.createEmbeddingModel(modelPath:, tokenizerPath:)` | the explicit paths are gone. Install the files with `installEmbedder().modelFromFile(…)` (and `tokenizerFromFile(…)` unless it is a `.litertlm`), then call `getActiveEmbedder()`. |
+| `EmbeddingModelSpec(tokenizerSource:)` was required | `tokenizerSource` is null for a `.litertlm` embedder; check `spec.isSelfContained`. `spec.files` has one entry then. |
+| `installEmbedder()` without a tokenizer always threw | a `.litertlm` installs alone; a tokenizer for a `.litertlm` is an `ArgumentError` before any download, and a model no registered backend can run on this platform is an `UnsupportedError` before any download. |
+
+New and additive: `EmbeddingInput.image`/`.audio`, `EmbeddingModality`,
+`EncodedMediaFormat`, `sniffEncodedMediaFormat`, `EmbeddingModel.modalities`,
+`maxInputTokens` and the `EmbeddingException` family
+(`EmbeddingLoadException`, `EmbeddingEngineException`, …).
+
+Test fakes and mocks: `EmbeddingModel` is an `abstract base class` now. A fake
+is `final class FakeEmbedder extends EmbeddingModel` (add `with CloseNotifier`
+from `package:flutter_edge_ai/engine.dart` for close listeners) implementing
+`dimension`, `isClosed`, `embed`, `addCloseListener` and `close`.
+`implements EmbeddingModel`, and therefore a mockito or mocktail mock of it, no
+longer compiles, and `isClosed` is no longer defaulted.
+
+### EmbeddingGemma 2
+
+`flutter_edge_ai_litertlm` 1.13.0 runs EmbeddingGemma 2 text: one `.litertlm`
+file that carries its own tokenizer, so it installs without
+`tokenizerFrom…()` and needs no `flutter_edge_ai_embeddings`. Android, iOS,
+macOS, Linux and Windows, CPU, at most 1024 input tokens — keep chunks at 512
+or fewer. Images, the Web (text and images) and audio arrive in
+litertlm 1.13.1. See
+[Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2) for the install
+snippet and its disk and memory cost.
+
+### Web: copy the new `litert_embeddings.js`
+
+The LiteRT.js embedding bundle changed its API. Copy `web/litert_embeddings.js`
+from `flutter_edge_ai_litertlm` 1.13.0 (with the three files next to it) into
+your app's `web/`. A stale copy fails `getActiveEmbedder()` with an
+`EmbeddingLoadException` that names the file. Web EmbeddingGemma 1 now gets
+the same task prefix and the same token ids as native for every `TaskType`. A
+`.litertlm` embedder is refused on web at `install()`, before anything
+downloads.
+
+### Imports: `flutter_edge_ai.dart` for apps, `engine.dart` for engines
+
+Core's internals moved under `lib/src`, which is private. The public
+libraries are `flutter_edge_ai.dart` (apps), `engine.dart` (engine and
+tokenizer packages; it re-exports the app library), `engine_io.dart`,
+`engine_web.dart` and `genai.dart`.
+
+| Before | After |
+|---|---|
+| `package:flutter_edge_ai/core/…`, `/mobile/…`, `/web/…`, `/desktop/…`, `/flutter_edge_ai_interface.dart`, `/model_file_manager_interface.dart` | `package:flutter_edge_ai/flutter_edge_ai.dart`; engine packages `package:flutter_edge_ai/engine.dart` |
+| `EmbeddingTokenizerRegistry`, `SkillExecutorRegistry`, `ForwardResult`, `EmbeddingOutputContract`, `EmbeddingTokenizer`, `TokenizedInput`, `EmbeddingTokenizerFactory`, `meanPoolAndNormalize` from the app library | from `package:flutter_edge_ai/engine.dart` |
+| `ModelThinkingFilter` through `package:flutter_edge_ai/core/extensions.dart` | the app library |
+| `EmbeddingForwardPass`, `ForwardPassDescriptor`, `EmbeddingForwardPassFactory`, `CommonEmbeddingModel.create`, `EmbeddingBackendProvider.createModel` | `EmbeddingPass`, `EmbeddingPassInfo`, `EmbeddingPassDescriptor<C>`, `TokenEmbeddingPass` (if you tokenize in Dart) and `EmbeddingBackendProvider.describe()`, which returns `EmbeddingPassDescriptor(engineTag:, factory:, config:, activeBackend:)`. Core builds, hosts and closes the model. |
+| `CommonEmbeddingModel.inputSequenceLength`, `.outputDimension` | `EmbeddingModel.maxInputTokens`, `.dimension` |
+| `class MyBackend implements EmbeddingBackendProvider` | `extends EmbeddingBackendProvider` (an `abstract base class`) |
+| `flutter_edge_ai_embeddings` re-exported core's seam types | it exports only `GemmaEmbeddingTokenizers`; import the seam types from `engine.dart`. A SigLIP input over 63 tokens throws instead of truncating. |
+| onnx `OnnxEmbeddingForwardPass` | `OnnxEmbeddingPass` with `OnnxEmbeddingConfig`; it extends `TokenEmbeddingPass` |
+| litertlm `WebEmbeddingModel` (`web_embedding_model.dart`) | removed: `FlutterEdgeAi.getActiveEmbedder()` |
+
+### Removed deprecated members
+
+| Removed | Use |
+|---|---|
+| `FlutterEdgeAi.initialize(enableWebCache:)` | `webStorageMode:` |
+| `ModelFileManager.ensureModelReady(filename, url)` | `ensureModelReadyFromSpec(spec)` |
+| `installModelFromAsset`, `installModelFromAssetWithProgress` | `FlutterEdgeAi.installModel(…).fromAsset(path)`, with `.withProgress(…)` |
+| `setModelPath` | `FlutterEdgeAi.installModel(…).fromFile(path)` |
+| `setLoraWeightsPath` | `FlutterEdgeAi.installModel(…).withLoraFromFile(path)` |
+| `deleteLoraWeights` | install the model again without LoRA |
+| `deleteCurrentModel` | `deleteModel(spec)` |
+| `FunctionCallParser.isJsonStart`, `isJsonComplete` | `isFunctionCallStart`, `isFunctionCallComplete(buffer, modelType: …)` |
+| `StopTokenFilter` | nothing: stop tokens have not reached the output since 0.14.0 |
+| `FileSystemService.getTargetPath` | `getReadTargetPath` or `getWriteTargetPath` |
+| `InferenceModelSpec.modelUrl`, `loraUrl` | `modelSource`, `loraSource` |
+| `EmbeddingModelSpec.modelUrl`, `tokenizerUrl` | `modelSource`, `tokenizerSource` |
+| `EmbeddingModelSpec.fromLegacyUrl` | `EmbeddingModelSpec(name: …, modelSource: ModelSource.network(url), tokenizerSource: ModelSource.network(tokenizerUrl))` |
+| `MobileModelManager`/`WebModelManager.currentActiveModel`, `SmartDownloader.isHuggingFaceUrl` | these classes are internal now; read `FlutterEdgeAi.activeModelSpec` / `activeEmbedderSpec` |
+
+`InferenceModelSpec.fromLegacyUrl` is deprecated and removed in 2.5.0. Build
+the spec with the `ModelSource` that matches the URL:
+`ModelSource.network(url)` for `http(s)://`, `ModelSource.asset(path)` for
+`asset://` or a bare path, `ModelSource.bundled(name)` for `native://`,
+`ModelSource.file(path)` for `file://`. The factory defaulted to
+`modelType: ModelType.general`; pass that to keep its behaviour.
+
+### RAG: `flutter_edge_ai_rag` 1.1, `flutter_edge_ai_sqlite` and `flutter_edge_ai_qdrant` 2.1
+
+A location now binds one embedding profile **and** one document modality
+(`VectorStoreSpec.documents`: text, image or audio).
+
+| rag 1.0 | rag 1.1 |
+|---|---|
+| `open(spec:, activeEmbedderProfileId: id)`, profile bound on the first text operation | `open(spec:, embedder: FlutterEdgeAiActiveEmbedder(profileId: id))` — or `.forActiveModel(namespace:)` — resolves the profile (loading the model) and binds the location at once: install the embedder before `open()` |
+| `open(spec:, embeddingProfile: p)` for precomputed vectors | `openVectors(spec:, profile: p)` |
+| `index.addText(id:, content: c)` | `index.add(id:, document: EmbeddingInput.text(c))` |
+| `index.searchText(query: q)` | `index.search(query: EmbeddingInput.text(q))` |
+| `index.embeddingProfile` could be null | never null; `index.documents` names the modality |
+| `RagEmbedder { profile, embedDocument(String), embedQuery(String) }` | `{ resolveProfile(), modalities, embedDocument(EmbeddingInput), embedQuery(EmbeddingInput, documentModality:) }`: wrap strings in `EmbeddingInput.text`, return `{EmbeddingModality.text}` from `modalities` |
+| a filter on an undeclared field was ignored | `ArgumentError`: declare every filtered field in `VectorStoreSpec.filterSchema` |
+| `VectorStoreRepository` (`implements`) with `readEmbeddingProfile`/`bindEmbeddingProfile` | `abstract base class` (`extends`) with `readBinding()`/`bind(VectorStoreBinding)`; the [rag README](https://pub.dev/packages/flutter_edge_ai_rag) describes how a store persists the binding |
+| `EmbeddingProfile` ids could contain control characters | U+0000–U+001F are refused, and `EmbeddingProfile` can no longer be implemented |
+
+`flutter_edge_ai_rag` re-exports `EmbeddingInput`, `EmbeddingModality`,
+`TaskType` and the `EmbeddingException` family, and every error of a
+`Future`-returning `RagIndex` or `FlutterEdgeAiRag` method arrives as a failed
+future.
+
+Stores written by sqlite/qdrant 2.0.x open unchanged in 2.1.0 as text
+locations, and text locations move both ways. A location bound to images or
+audio cannot be opened by sqlite/qdrant 2.0.x.
 
 ## flutter_edge_ai 2.2.0: sampling defaults come from the model
 
@@ -89,13 +233,14 @@ Flutter Edge AI 2.0 keeps inference, embeddings, speech, installation, and
 model lifecycle in `flutter_edge_ai`, but moves RAG orchestration and all
 vector-store contracts to `flutter_edge_ai_rag`. RAG is instance-scoped and can
 use the active core embedder, a custom embedder, or precomputed vectors without
-initializing core.
+initializing core. The snippets below use the current RAG API
+(`flutter_edge_ai_rag` 1.1, see the 2.3.0 section above).
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.2.1
-  flutter_edge_ai_rag: ^1.0.1
-  flutter_edge_ai_sqlite: ^2.0.1 # or flutter_edge_ai_qdrant: ^2.0.1
+  flutter_edge_ai: ^2.3.0
+  flutter_edge_ai_rag: ^1.1.0
+  flutter_edge_ai_sqlite: ^2.1.0 # or flutter_edge_ai_qdrant: ^2.1.0
 ```
 
 Also breaking in 2.0:
@@ -128,14 +273,17 @@ final index = await rag.open(
       FilterField(name: 'category', type: FilterFieldType.string),
     ]),
   ),
-  activeEmbedderProfileId:
-      'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
-      'retrieval-prefix-meanpool-l2-v1',
+  embedder: FlutterEdgeAiActiveEmbedder(
+    profileId: 'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+        'retrieval-prefix-meanpool-l2-v1',
+  ),
 );
 
 try {
-  await index.addText(id: 'doc-1', content: 'Text to retrieve');
-  final hits = await index.searchText(query: 'What should I retrieve?');
+  await index.add(id: 'doc-1', document: EmbeddingInput.text('Text to retrieve'));
+  final hits = await index.search(
+    query: EmbeddingInput.text('What should I retrieve?'),
+  );
   await index.flush();
   print(hits);
 } finally {
@@ -143,12 +291,12 @@ try {
 }
 ```
 
-| 1.x core RAG | 2.0 `RagIndex` |
+| 1.x core RAG | `RagIndex` |
 |---|---|
-| `FlutterEdgeAi.rag.initialize(location)` | `FlutterEdgeAiRag(...).open(spec: VectorStoreSpec(location: ...))` |
-| `addDocument(...)` | `addText(...)` |
+| `FlutterEdgeAi.rag.initialize(location)` | `FlutterEdgeAiRag(...).open(spec: VectorStoreSpec(location: ...), embedder: ...)` |
+| `addDocument(...)` | `add(id: ..., document: EmbeddingInput.text(...))` |
 | `addDocumentWithEmbedding(...)` | `addVector(...)` |
-| `searchSimilar(query: ...)` | `searchText(query: ...)` |
+| `searchSimilar(query: ...)` | `search(query: EmbeddingInput.text(...))` |
 | low-level vector search | `searchVector(embedding: ...)` |
 | `removeDocument(id: ...)` | `remove(id: ...)` |
 | `stats()` / `flush()` / `clear()` | same methods on the owned index |
@@ -158,16 +306,17 @@ try {
 
 Every persistent location is durably bound to an `EmbeddingProfile`. Its ID
 must version the weights, tokenizer, pooling, normalization, and document/query
-prefix contract. For batch/precomputed vectors, pass an explicit profile; if
-later text searches borrow the active core embedder, also pass the same ID as
-`activeEmbedderProfileId`. A vector-only index omits it. Independent text RAG
-passes a custom `RagEmbedder` whose `profile` reports that stable identity.
+prefix contract. For precomputed vectors, open a vector-only index with
+`openVectors(spec:, profile:)`; if later text searches borrow the active core
+embedder, open with `embedder: FlutterEdgeAiActiveEmbedder(profileId:)` instead
+— `addVector` works on that index too. Independent text RAG passes a custom
+`RagEmbedder` whose `resolveProfile()` reports that stable identity.
 
 A nonempty 1.11 store has no profile metadata. Prefer a new, profile-versioned
 location and re-index. If you can independently attest the old model and
 preprocessing, open once with `allowLegacyProfileAdoption: true` on the
-`VectorStoreSpec` and the verified `embeddingProfile`; the provider checks the
-stored dimension before binding it.
+`VectorStoreSpec` and the verified profile passed to `openVectors(profile:)`;
+the provider checks the stored dimension before binding it.
 
 SQLite filter fields are physical `vec0` columns, so a schema change needs a
 new schema-versioned location and re-index. On Web, keep one app-owned index per
@@ -265,17 +414,17 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**After (current 2.0 set):**
+**After (current 2.3 set):**
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.2.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.12.1        # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
-  flutter_edge_ai_mediapipe: ^1.2.1       # add if you run .task / .bin models
-  flutter_edge_ai_embeddings: ^2.2.3      # add if you compute embeddings (tokenizers; needs a backend, see above)
-  flutter_edge_ai_rag: ^1.0.1             # add for on-device RAG (RagIndex) + one store below
-  flutter_edge_ai_qdrant: ^2.0.1          # native on-device RAG store (qdrant)
-  flutter_edge_ai_sqlite: ^2.0.1          # RAG store (sqlite-vec; all platforms incl. web) — needs Flutter 3.47
+  flutter_edge_ai: ^2.3.0                 # core — always required
+  flutter_edge_ai_litertlm: ^1.13.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai_mediapipe: ^1.2.2       # add if you run .task / .bin models
+  flutter_edge_ai_embeddings: ^2.3.0      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
+  flutter_edge_ai_rag: ^1.1.0             # add for on-device RAG (RagIndex) + one store below
+  flutter_edge_ai_qdrant: ^2.1.0          # native on-device RAG store (qdrant)
+  flutter_edge_ai_sqlite: ^2.1.0          # RAG store (sqlite-vec; all platforms incl. web) — needs Flutter 3.47
 ```
 
 Pick by what you actually used in 0.16.x:
@@ -284,7 +433,7 @@ Pick by what you actually used in 0.16.x:
 |---|---|
 | `.litertlm` models (Gemma 4, Qwen3, FastVLM, any desktop) | `flutter_edge_ai_litertlm` |
 | `.task` / `.bin` models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4, …) | `flutter_edge_ai_mediapipe` |
-| `generateEmbedding()` / `installEmbedder()` | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
+| `generateEmbedding()` / `installEmbedder()` | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`). `generateEmbedding` is `embed` since 2.3.0 |
 | RAG (`addDocument` / `searchSimilar`), fastest on native | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
 | RAG on web (or a portable store on any platform) | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 
@@ -335,8 +484,8 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 ```
 dependencies:
-  flutter_edge_ai_embeddings: ^2.2.3   # tokenizer implementations (still required)
-  flutter_edge_ai_litertlm: ^1.12.1     # now provides LiteRtEmbeddingBackend
+  flutter_edge_ai_embeddings: ^2.3.0   # tokenizer implementations (still required)
+  flutter_edge_ai_litertlm: ^1.13.0     # now provides LiteRtEmbeddingBackend
 ```
 
 `LiteRtEmbeddingBackend()` itself is unchanged — only where the class is
@@ -454,7 +603,7 @@ try {
         );
       }
       // Bind the verified space before the first addDocument call.
-      await store.bindEmbeddingProfile(sourceEmbeddingProfile);
+      await store.bind(VectorStoreBinding(profile: sourceEmbeddingProfile));
     }
 
     for (final row in legacyRows) {
@@ -590,9 +739,11 @@ void main() async {
       providerId: 'qdrant',
       location: ragDirectory,
     ),
-    activeEmbedderProfileId:
-        'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
-        'retrieval-prefix-meanpool-l2-v1',
+    // open() loads the embedder: install it before this call.
+    embedder: FlutterEdgeAiActiveEmbedder(
+      profileId: 'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+          'retrieval-prefix-meanpool-l2-v1',
+    ),
   );
 
   runApp(MyApp(ragIndex: index));
@@ -606,8 +757,9 @@ before `FlutterEdgeAi.dispose()` or before disposing its custom embedder.
 
 ## 3. Model/chat stays compatible; RAG uses `RagIndex`
 
-Model, session, chat, and embedding installation calls keep their API. Replace
-the removed singleton RAG facade with calls on the app-owned index:
+Model, session, chat, and embedding installation calls keep their API (the
+embedding calls themselves changed in 2.3.0, see above). Replace the removed
+singleton RAG facade with calls on the app-owned index:
 
 ```dart
 // install + run a model
@@ -624,9 +776,9 @@ await FlutterEdgeAi.installEmbedder()
     .modelFromNetwork(modelUrl, token: token)
     .tokenizerFromNetwork(tokenizerUrl, token: token)
     .install();
-await index.addText(id: 'doc-1', content: document);
+await index.add(id: 'doc-1', document: EmbeddingInput.text(document));
 await index.flush(); // required for qdrant; Web SQLite durability fence
-final hits = await index.searchText(query: query, topK: 5);
+final hits = await index.search(query: EmbeddingInput.text(query), topK: 5);
 
 // Shutdown order: the index borrows its embedder.
 await index.dispose();
@@ -640,8 +792,8 @@ await FlutterEdgeAi.dispose();
   `embeddingBackends` throws a clear error naming the runtime package to add.
 - `FlutterEdgeAiRag.open()` with no matching registered provider throws and
   lists the registered provider IDs. Text RAG with the default active embedder
-  also requires a stable `activeEmbedderProfileId`; raw vectors require an
-  explicit `embeddingProfile` when a new location is created.
+  needs `embedder: FlutterEdgeAiActiveEmbedder(profileId: …)` with a stable
+  id; raw vectors need `openVectors(profile: …)`.
 
 ## Platform setup
 

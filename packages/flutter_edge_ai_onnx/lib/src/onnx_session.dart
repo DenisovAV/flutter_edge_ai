@@ -5,12 +5,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show VoidCallback;
-import 'package:flutter_edge_ai/core/extensions.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 import 'ffi/gen_ai_client.dart';
 import 'onnx_sampling.dart';

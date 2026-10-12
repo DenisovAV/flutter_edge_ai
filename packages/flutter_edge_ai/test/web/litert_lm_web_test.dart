@@ -15,7 +15,7 @@
 @TestOn('chrome')
 library;
 
-import 'package:flutter_edge_ai/web/flutter_edge_ai_web.dart';
+import 'package:flutter_edge_ai/src/web/flutter_edge_ai_web.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

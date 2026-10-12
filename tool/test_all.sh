@@ -24,7 +24,8 @@
 #   tool/test_all.sh              # all packages
 #   tool/test_all.sh --coverage   # plus lcov for flutter_edge_ai (what CI does)
 #
-# Exit: 0 all green · 1 any package failed, or nothing was discovered.
+# Exit: 0 all green · 1 any package failed, the public-surface or web-graph
+#       check failed, or nothing was discovered.
 
 set -uo pipefail
 
@@ -97,6 +98,34 @@ fi
 
 fail=0 tested=0 untested=0 total=0
 summary=""
+
+# The public-surface guard first: seconds, no Flutter, and a red test further
+# down cannot hide it. It fails on deep imports of core internals and on
+# unannotated cross-package src/ imports (see the script's header).
+echo "::group::check_core_surface"
+tool/check_core_surface.sh
+surface_rc=$?
+echo "::endgroup::"
+if [[ $surface_rc -eq 0 ]]; then
+  summary="${summary}  ok  tool/check_core_surface.sh"$'\n'
+else
+  summary="${summary}  FAILED  tool/check_core_surface.sh"$'\n'
+  fail=1
+fi
+
+# The web import graph next (seconds): no file a web build can reach may
+# import dart:io, dart:ffi or dart:isolate. The web compilers accept those
+# imports, so without this a leak surfaces only at runtime.
+echo "::group::check_web_graph"
+dart tool/check_web_graph.dart
+web_graph_rc=$?
+echo "::endgroup::"
+if [[ $web_graph_rc -eq 0 ]]; then
+  summary="${summary}  ok  tool/check_web_graph.dart"$'\n'
+else
+  summary="${summary}  FAILED  tool/check_web_graph.dart"$'\n'
+  fail=1
+fi
 
 # Example apps too. They are not workspace members, so the root `pub get` never
 # resolves them, and until 2026-10-09 this loop never visited them either: two

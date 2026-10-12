@@ -71,14 +71,14 @@ void main() {
         id: 'cross-backend-parity-v1',
         dimension: embedding.length,
       );
-      await sqlite.bindEmbeddingProfile(profile);
+      await sqlite.bind(VectorStoreBinding(profile: profile));
 
       // qdrant needs no override: the official qdrant_edge SDK's own Native
       // Assets build hook resolves its native library automatically.
       final q = QdrantVectorStore();
       q.configure(schema);
       await q.initialize('${tmp.path}/shard');
-      await q.bindEmbeddingProfile(profile);
+      await q.bind(VectorStoreBinding(profile: profile));
       qdrant = q;
 
       for (final doc in docs) {

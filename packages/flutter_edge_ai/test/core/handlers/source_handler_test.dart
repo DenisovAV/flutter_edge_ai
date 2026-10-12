@@ -1,17 +1,17 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
-import 'package:flutter_edge_ai/core/handlers/network_source_handler.dart';
-import 'package:flutter_edge_ai/core/handlers/asset_source_handler.dart';
-import 'package:flutter_edge_ai/core/handlers/bundled_source_handler.dart';
-import 'package:flutter_edge_ai/core/handlers/file_source_handler.dart';
-import 'package:flutter_edge_ai/core/handlers/source_handler_registry.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
-import 'package:flutter_edge_ai/core/services/file_system_service.dart';
-import 'package:flutter_edge_ai/core/services/asset_loader.dart';
-import 'package:flutter_edge_ai/core/services/protected_files_registry.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart';
+import 'package:flutter_edge_ai/src/domain/model_source.dart';
+import 'package:flutter_edge_ai/src/handlers/network_source_handler.dart';
+import 'package:flutter_edge_ai/src/handlers/asset_source_handler.dart';
+import 'package:flutter_edge_ai/src/handlers/bundled_source_handler.dart';
+import 'package:flutter_edge_ai/src/handlers/file_source_handler.dart';
+import 'package:flutter_edge_ai/src/handlers/source_handler_registry.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/services/file_system_service.dart';
+import 'package:flutter_edge_ai/src/services/asset_loader.dart';
+import 'package:flutter_edge_ai/src/services/protected_files_registry.dart';
+import 'package:flutter_edge_ai/src/services/model_repository.dart';
 
 // Mock implementations
 class MockDownloadService extends Mock implements DownloadService {}

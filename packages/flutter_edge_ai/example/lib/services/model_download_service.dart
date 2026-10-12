@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/api/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
 import 'package:flutter_edge_ai_example/utils/platform_io_helper.dart';
 import 'package:http/http.dart' as http;

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter_edge_ai/genai.dart';
-import 'package:flutter_edge_ai/core/genai/genai_input_converter.dart';
-import 'package:flutter_edge_ai/core/message.dart';
+import 'package:flutter_edge_ai/src/genai/genai_input_converter.dart';
+import 'package:flutter_edge_ai/src/message.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -14,10 +14,20 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:background_downloader/background_downloader.dart';
-import 'package:flutter_edge_ai/core/model_management/utils/download_temp_reclaim.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart';
-import 'package:flutter_edge_ai/mobile/smart_downloader.dart';
+// ignore: implementation_imports — device test of core's download temp-file reclaim
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
+    show ModelFileSystemManager;
+// ignore: implementation_imports — device test of core's download temp-file reclaim
+import 'package:flutter_edge_ai/src/model_management/utils/download_temp_reclaim.dart'
+    show
+        ReclaimDecision,
+        kDownloadTempPrefix,
+        reconcileResumeRecord,
+        sweepOrphanedDownloadTemps;
+// ignore: implementation_imports — device test of core's downloader resume path
+import 'package:flutter_edge_ai/src/mobile/smart_downloader.dart'
+    show SmartDownloader, computeTaskId;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;

@@ -37,7 +37,7 @@ Future<void> initializeBound4(
   String databasePath,
 ) async {
   await store.initialize(databasePath);
-  await store.bindEmbeddingProfile(testProfile4);
+  await store.bind(VectorStoreBinding(profile: testProfile4));
 }
 
 /// Lays out the three entries a 1.x (crate 0.7.x) shard wrote directly at the

@@ -42,51 +42,56 @@ const _queries = [
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'Dual prefix vs single prefix RAG ranking',
-    (tester) async {
-      await registerTestEngines();
+  testWidgets('Dual prefix vs single prefix RAG ranking', (tester) async {
+    await registerTestEngines();
 
-      await FlutterEdgeAi.installEmbedder()
-          .modelFromAsset(_modelPath)
-          .tokenizerFromAsset(_tokenizerPath)
-          .install();
+    await FlutterEdgeAi.installEmbedder()
+        .modelFromAsset(_modelPath)
+        .tokenizerFromAsset(_tokenizerPath)
+        .install();
 
-      final model = await FlutterEdgeAi.getActiveEmbedder();
+    final model = await FlutterEdgeAi.getActiveEmbedder();
 
-      try {
-        // ===== MODE 1: Single prefix (query prefix for everything) =====
-        print('\n\n========== SINGLE PREFIX (query for all) ==========');
-        final docEmbSingle = <String, List<double>>{};
-        for (final entry in _documents.entries) {
-          docEmbSingle[entry.key] = await model.generateEmbedding(entry.value);
-        }
-        for (final query in _queries) {
-          final queryEmb = await model.generateEmbedding(query);
-          _printRanking(query, queryEmb, docEmbSingle);
-        }
-
-        // ===== MODE 2: Dual prefix (doc prefix for documents, query prefix for queries) =====
-        print(
-          '\n\n========== DUAL PREFIX (doc for indexing, query for search) ==========',
+    try {
+      // ===== MODE 1: Single prefix (query prefix for everything) =====
+      print('\n\n========== SINGLE PREFIX (query for all) ==========');
+      final docEmbSingle = <String, List<double>>{};
+      for (final entry in _documents.entries) {
+        docEmbSingle[entry.key] = await model.embed(
+          EmbeddingInput.text(entry.value),
+          taskType: TaskType.retrievalQuery,
         );
-        final docEmbDual = <String, List<double>>{};
-        for (final entry in _documents.entries) {
-          docEmbDual[entry.key] = await model.generateEmbedding(
-            entry.value,
-            taskType: TaskType.retrievalDocument,
-          );
-        }
-        for (final query in _queries) {
-          final queryEmb = await model.generateEmbedding(query);
-          _printRanking(query, queryEmb, docEmbDual);
-        }
-      } finally {
-        await model.close();
       }
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+      for (final query in _queries) {
+        final queryEmb = await model.embed(
+          EmbeddingInput.text(query),
+          taskType: TaskType.retrievalQuery,
+        );
+        _printRanking(query, queryEmb, docEmbSingle);
+      }
+
+      // ===== MODE 2: Dual prefix (doc prefix for documents, query prefix for queries) =====
+      print(
+        '\n\n========== DUAL PREFIX (doc for indexing, query for search) ==========',
+      );
+      final docEmbDual = <String, List<double>>{};
+      for (final entry in _documents.entries) {
+        docEmbDual[entry.key] = await model.embed(
+          EmbeddingInput.text(entry.value),
+          taskType: TaskType.retrievalDocument,
+        );
+      }
+      for (final query in _queries) {
+        final queryEmb = await model.embed(
+          EmbeddingInput.text(query),
+          taskType: TaskType.retrievalQuery,
+        );
+        _printRanking(query, queryEmb, docEmbDual);
+      }
+    } finally {
+      await model.close();
+    }
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }
 
 void _printRanking(

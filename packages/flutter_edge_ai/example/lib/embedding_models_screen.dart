@@ -10,6 +10,11 @@ class EmbeddingModelsScreen extends StatefulWidget {
 }
 
 class _EmbeddingModelsScreenState extends State<EmbeddingModelsScreen> {
+  /// Every catalog model this platform can run: since flutter_edge_ai_litertlm
+  /// 1.13.1 the `.litertlm` bundles (EmbeddingGemma 2) run on the web too; the
+  /// per-SoC NPU bundles are listed on Android and Linux only.
+  List<EmbeddingModel> get _models => listedEmbeddingModels;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -39,9 +44,9 @@ class _EmbeddingModelsScreenState extends State<EmbeddingModelsScreen> {
             const SizedBox(height: 32),
             Expanded(
               child: ListView.builder(
-                itemCount: EmbeddingModel.values.length,
+                itemCount: _models.length,
                 itemBuilder: (context, index) {
-                  final model = EmbeddingModel.values[index];
+                  final model = _models[index];
                   return UniversalModelCard(model: model);
                 },
               ),

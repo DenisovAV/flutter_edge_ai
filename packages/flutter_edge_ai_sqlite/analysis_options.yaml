@@ -17,6 +17,8 @@ analyzer:
     # compiled separately by build_runner; not part of this package's sources.
     - tool/web_vec0_probe/**
   errors:
+    # Another package's lib/src is private to it (tool/check_core_surface.sh).
+    implementation_imports: error
     # Treat warnings as info (example app demonstrates backward compatibility)
     deprecated_member_use: info
     deprecated_member_use_from_same_package: info

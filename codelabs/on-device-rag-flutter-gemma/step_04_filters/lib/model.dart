@@ -93,7 +93,8 @@ abstract final class Models {
 ///
 /// `seq256` in the file name is the **sequence length in tokens**, not the
 /// embedding dimension. The vectors this model emits are 768 long regardless;
-/// 256 is how much text fits into one forward pass before it is truncated.
+/// 256 tokens, task prefix included, is the most one forward pass takes. A
+/// longer input throws `EmbeddingInputTooLongException` rather than being cut.
 abstract final class Embedders {
   static const embeddingGemma = EmbedderChoice(
     label: 'EmbeddingGemma 300M',

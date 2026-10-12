@@ -16,8 +16,12 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
   /// built model.
   FakeInferenceModel modelToReturn;
 
-  /// What [getActiveEmbedder] returns.
+  /// What [getActiveEmbedder] returns once [embedderQueue] is empty.
   FakeEmbeddingModel embedderToReturn;
+
+  /// Handed out, in order, before [embedderToReturn] — so a test can serve a
+  /// model that is already closed and then a fresh one.
+  final embedderQueue = <FakeEmbeddingModel>[];
   int getActiveModelCallCount = 0;
   int getActiveEmbedderCallCount = 0;
 
@@ -56,7 +60,7 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
     getActiveEmbedderCallCount++;
     if (loadError case final error?) throw error;
     lastPreferredBackend = preferredBackend;
-    return embedderToReturn;
+    return embedderQueue.isEmpty ? embedderToReturn : embedderQueue.removeAt(0);
   }
 }
 
@@ -270,57 +274,88 @@ class FakeInferenceChat extends gemma.InferenceChat {
   Future<void> close() async {}
 }
 
-/// Fake embedding model that returns preconfigured embeddings.
-class FakeEmbeddingModel implements gemma.EmbeddingModel {
-  /// Embeddings returned by [generateEmbeddings].
+/// Fake embedding model in the shape core 2.3 requires of a fake: a `final
+/// class` extending `EmbeddingModel` that implements `dimension`, `isClosed`,
+/// `embed`, `addCloseListener` and `close`. A closed one fails every request
+/// with `EmbedderClosedException`, as core's model does.
+final class FakeEmbeddingModel extends gemma.EmbeddingModel {
+  FakeEmbeddingModel({this.vectorFor});
+
+  /// When set, every input's vector is computed from its text and task, the
+  /// way a real model's is; [embeddingsToReturn] is then ignored.
+  final List<double> Function(String text, gemma.TaskType taskType)? vectorFor;
+
+  /// What [embedAll] returns when [vectorFor] is null.
   List<List<double>> embeddingsToReturn = [];
 
-  int generateEmbeddingCallCount = 0;
-  int generateEmbeddingsCallCount = 0;
+  /// When set, every request fails with it.
+  Object? failWith;
+
+  int embedAllCallCount = 0;
   List<String> lastTexts = [];
   gemma.TaskType? lastTaskType;
+  bool closed = false;
+  final _closeListeners = <void Function()>[];
 
-  /// `implements` does not inherit the interface's default, so this has to be
-  /// spelled out. CPU matches every real embedder.
+  @override
+  int get dimension => 256;
+
+  @override
+  bool get isClosed => closed;
+
+  /// CPU, as every real embedder answers.
   @override
   gemma.PreferredBackend? get activeBackend => gemma.PreferredBackend.cpu;
 
-  // `implements` does not inherit the interface's default, so this has to
-  // be spelled out.
   @override
-  bool isClosed = false;
-
-  @override
-  Future<List<double>> generateEmbedding(
-    String text, {
-    gemma.TaskType taskType = gemma.TaskType.retrievalQuery,
+  Future<List<double>> embed(
+    gemma.EmbeddingInput input, {
+    required gemma.TaskType taskType,
   }) async {
-    generateEmbeddingCallCount++;
-    lastTexts = [text];
+    _refuseIfUnusable();
+    final compute = vectorFor;
+    if (compute != null) return compute(input.text ?? '', taskType);
     return embeddingsToReturn.isNotEmpty ? embeddingsToReturn.first : [];
   }
 
   @override
-  Future<List<List<double>>> generateEmbeddings(
-    List<String> texts, {
-    gemma.TaskType taskType = gemma.TaskType.retrievalQuery,
+  Future<List<List<double>>> embedAll(
+    List<gemma.EmbeddingInput> inputs, {
+    required gemma.TaskType taskType,
+    gemma.CancelToken? cancelToken,
   }) async {
-    generateEmbeddingsCallCount++;
-    lastTexts = texts;
+    embedAllCallCount++;
+    lastTexts = [for (final input in inputs) input.text ?? ''];
     lastTaskType = taskType;
+    _refuseIfUnusable();
+    if (vectorFor != null) {
+      return super.embedAll(
+        inputs,
+        taskType: taskType,
+        cancelToken: cancelToken,
+      );
+    }
     return embeddingsToReturn;
   }
 
-  @override
-  Future<int> getDimension() async => 256;
-
-  @override
-  void addCloseListener(void Function() listener) {
-    // No-op: the plugin checks isClosed instead.
+  void _refuseIfUnusable() {
+    if (closed) throw const gemma.EmbedderClosedException();
+    final error = failWith;
+    if (error != null) throw error;
   }
 
   @override
-  Future<void> close() async => isClosed = true;
+  void addCloseListener(void Function() listener) =>
+      _closeListeners.add(listener);
+
+  @override
+  Future<void> close() async {
+    if (closed) return;
+    closed = true;
+    for (final listener in _closeListeners) {
+      listener();
+    }
+  }
 }
 
 /// A session that only reports its metrics.

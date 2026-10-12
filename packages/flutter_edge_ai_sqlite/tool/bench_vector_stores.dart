@@ -324,8 +324,10 @@ Future<int> runBench(BenchConfig cfg, IOSink out) async {
     try {
       final probe = QdrantVectorStore();
       await probe.initialize('${probeDir.path}/shard');
-      await probe.bindEmbeddingProfile(
-        EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+      await probe.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+        ),
       );
       await probe.addDocument(
         id: 'probe',
@@ -398,8 +400,10 @@ Future<int> runBench(BenchConfig cfg, IOSink out) async {
       final dbFile = File('${Directory.systemTemp.path}/bench_vec0_$size.db');
       if (dbFile.existsSync()) dbFile.deleteSync();
       await vec0.initialize(dbFile.path);
-      await vec0.bindEmbeddingProfile(
-        EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+      await vec0.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+        ),
       );
       addThroughputVec0[size] = await _populate(vec0, size, cfg);
       for (final topK in cfg.topKs) {
@@ -422,8 +426,10 @@ Future<int> runBench(BenchConfig cfg, IOSink out) async {
       );
       if (shardDir.existsSync()) shardDir.deleteSync(recursive: true);
       await qdrant.initialize('${shardDir.path}/shard');
-      await qdrant.bindEmbeddingProfile(
-        EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+      await qdrant.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(id: 'benchmark-v1', dimension: cfg.dim),
+        ),
       );
       addThroughputQdrant[size] = await _populate(qdrant, size, cfg);
       for (final topK in cfg.topKs) {

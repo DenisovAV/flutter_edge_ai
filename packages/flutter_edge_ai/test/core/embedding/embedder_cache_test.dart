@@ -1,10 +1,21 @@
 import 'dart:async';
 
-import 'package:flutter_edge_ai/core/embedding/embedder_cache.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
+import 'package:flutter_edge_ai/src/embedding/embedding_exceptions.dart';
+import 'package:flutter_edge_ai/src/embedding/embedding_input.dart';
+import 'package:flutter_edge_ai/src/embedding/embedding_modality.dart';
+import 'package:flutter_edge_ai/src/lifecycle/close_notifier.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+/// The model to reuse, or null for "build one" — what most cases here ask.
+extension on EmbedderCache {
+  Future<EmbeddingModel?> reuseOrNull(
+    ActiveEmbedderParams requested, {
+    required String label,
+  }) => reuseOrInvalidate(requested, label: label).then((d) => d.reuse);
+}
 
 /// The state machine the three shells used to each own a copy of. Every case
 /// here is a defect that reached review in one shell or another: a rebuild that
@@ -18,10 +29,7 @@ void main() {
     test('an empty cache asks for a build', () async {
       final cache = EmbedderCache();
 
-      expect(
-        await cache.reuseOrInvalidate(paramsFor('/a'), label: 'test'),
-        isNull,
-      );
+      expect(await cache.reuseOrNull(paramsFor('/a'), label: 'test'), isNull);
     });
 
     test('matching params reuse the model without closing it', () async {
@@ -29,10 +37,7 @@ void main() {
       final model = _FakeEmbedder();
       cache.record(model, paramsFor('/a'));
 
-      final reused = await cache.reuseOrInvalidate(
-        paramsFor('/a'),
-        label: 'test',
-      );
+      final reused = await cache.reuseOrNull(paramsFor('/a'), label: 'test');
 
       expect(reused, same(model));
       expect(model.closeCount, 0);
@@ -46,10 +51,7 @@ void main() {
         final model = _FakeEmbedder();
         cache.record(model, paramsFor('/a'));
 
-        final reused = await cache.reuseOrInvalidate(
-          paramsFor('/b'),
-          label: 'test',
-        );
+        final reused = await cache.reuseOrNull(paramsFor('/b'), label: 'test');
 
         expect(reused, isNull);
         expect(model.closeCount, 1);
@@ -64,7 +66,7 @@ void main() {
       cache.record(model, paramsFor('/a', tokenizer: '/t1'));
 
       expect(
-        await cache.reuseOrInvalidate(
+        await cache.reuseOrNull(
           paramsFor('/a', tokenizer: '/t2'),
           label: 'test',
         ),
@@ -80,10 +82,7 @@ void main() {
       cache.record(model, paramsFor('/a'));
 
       // A rebuild for /b is in flight and stuck inside close().
-      final rebuild = cache.reuseOrInvalidate(
-        paramsFor('/b'),
-        label: 'rebuild',
-      );
+      final rebuild = cache.reuseOrNull(paramsFor('/b'), label: 'rebuild');
       await pumpEventQueue();
 
       // Someone asks for /a — the config the closing model was built from.
@@ -91,7 +90,7 @@ void main() {
       // either until it has finished closing.
       var answered = false;
       final duringClose = cache
-          .reuseOrInvalidate(paramsFor('/a'), label: 'matching')
+          .reuseOrNull(paramsFor('/a'), label: 'matching')
           .whenComplete(() => answered = true);
       await pumpEventQueue();
       expect(answered, isFalse, reason: 'the old model is still closing');
@@ -119,7 +118,7 @@ void main() {
 
       var answered = false;
       final rebuild = cache
-          .reuseOrInvalidate(paramsFor('/b'), label: 'rebuild')
+          .reuseOrNull(paramsFor('/b'), label: 'rebuild')
           .whenComplete(() => answered = true);
       await pumpEventQueue();
 
@@ -139,7 +138,7 @@ void main() {
 
     test(
       'a close that outlasts the wait fails the caller with a '
-      'TimeoutException, keeps running, and holds every later build',
+      'EmbedderCloseTimeoutException, keeps running, and holds every later build',
       () async {
         // Unbounded, one wedged native close hangs every embedder call in the
         // app behind the serialize lane.
@@ -151,13 +150,19 @@ void main() {
         cache.record(model, paramsFor('/a'));
 
         await expectLater(
-          cache.reuseOrInvalidate(paramsFor('/b'), label: 'first'),
+          cache.reuseOrNull(paramsFor('/b'), label: 'first'),
           throwsA(
-            isA<TimeoutException>().having(
-              (e) => e.message,
-              'message',
-              allOf(contains('/a'), contains('closing')),
-            ),
+            isA<EmbedderCloseTimeoutException>()
+                .having(
+                  (e) => e.message,
+                  'message',
+                  allOf(contains('/a'), contains('closing')),
+                )
+                .having(
+                  (e) => e.waited,
+                  'waited',
+                  greaterThanOrEqualTo(const Duration(milliseconds: 90)),
+                ),
           ),
         );
         expect(model.closeCount, 1, reason: 'the close was started...');
@@ -166,8 +171,8 @@ void main() {
         // Still closing: the next caller must not be told to build either —
         // and it waits for the SAME close rather than starting another.
         await expectLater(
-          cache.reuseOrInvalidate(paramsFor('/b'), label: 'second'),
-          throwsA(isA<TimeoutException>()),
+          cache.reuseOrNull(paramsFor('/b'), label: 'second'),
+          throwsA(isA<EmbedderCloseTimeoutException>()),
           reason: 'building now would put two native models in memory',
         );
         expect(model.closeCount, 1);
@@ -176,13 +181,43 @@ void main() {
         await pumpEventQueue();
         expect(model.closed, isTrue);
         expect(
-          await cache.reuseOrInvalidate(paramsFor('/b'), label: 'third'),
+          await cache.reuseOrNull(paramsFor('/b'), label: 'third'),
           isNull,
           reason: 'with the old model gone, the build may go ahead',
         );
       },
       timeout: const Timeout(Duration(seconds: 10)),
     );
+
+    test('waited is what THIS caller waited: about the limit for the first, '
+        'about zero for one that arrives after the deadline', () async {
+      const limit = Duration(milliseconds: 200);
+      final cache = EmbedderCache(closeWaitLimit: limit);
+      final gate = Completer<void>();
+      final model = _FakeEmbedder(closeGate: gate);
+      cache.record(model, paramsFor('/a'));
+
+      Future<Duration> waitedBy(String label) => cache
+          .reuseOrNull(paramsFor('/b'), label: label)
+          .then<Duration>(
+            (_) => fail('$label was told to build'),
+            onError: (Object e) =>
+                e is EmbedderCloseTimeoutException ? e.waited : throw e,
+          );
+
+      final first = await waitedBy('first');
+      final later = await waitedBy('later');
+      expect(first, greaterThanOrEqualTo(limit * 0.9));
+      expect(first, lessThan(limit * 2));
+      expect(
+        later,
+        lessThan(limit ~/ 4),
+        reason: 'the deadline had passed when it asked; it failed at once',
+      );
+
+      gate.complete();
+      await pumpEventQueue();
+    });
 
     test('callers queued behind a close share one deadline: all fail when it '
         'passes, not one limit apart, and its end is announced', () async {
@@ -203,10 +238,8 @@ void main() {
             for (var i = 0; i < 3; i++)
               cache
                   .serialize(
-                    () => cache.reuseOrInvalidate(
-                      paramsFor('/b'),
-                      label: 'caller $i',
-                    ),
+                    () =>
+                        cache.reuseOrNull(paramsFor('/b'), label: 'caller $i'),
                   )
                   .then<Object?>(
                     (v) => v,
@@ -217,7 +250,7 @@ void main() {
                   ),
           ];
           final outcomes = await Future.wait(callers);
-          expect(outcomes, everyElement(isA<TimeoutException>()));
+          expect(outcomes, everyElement(isA<EmbedderCloseTimeoutException>()));
         },
         zoneSpecification: ZoneSpecification(
           print: (self, parent, zone, line) => printed.add(line),
@@ -243,7 +276,7 @@ void main() {
       expect(announced, hasLength(1));
       expect(announced.single, contains('/a'));
       expect(
-        await cache.reuseOrInvalidate(paramsFor('/b'), label: 'after'),
+        await cache.reuseOrNull(paramsFor('/b'), label: 'after'),
         isNull,
         reason: 'with the close done, the build goes ahead',
       );
@@ -265,7 +298,7 @@ void main() {
 
       var answered = false;
       final rebuild = cache
-          .reuseOrInvalidate(paramsFor('/a'), label: 'after app close')
+          .reuseOrNull(paramsFor('/a'), label: 'after app close')
           .whenComplete(() => answered = true);
       await pumpEventQueue();
       expect(answered, isFalse, reason: 'the app\'s close is still running');
@@ -278,6 +311,172 @@ void main() {
         reason: 'the cache joined the app\'s close rather than run another',
       );
     }, timeout: const Timeout(Duration(seconds: 10)));
+  });
+
+  group('EmbedderCache: a failed load still closing (R5 §4.6 step 5)', () {
+    test('the next build waits for it', () async {
+      final cache = EmbedderCache();
+      final cleanup = Completer<void>();
+      cache.trackFailedLoadCleanup(cleanup.future, paramsFor('/a'));
+
+      var answered = false;
+      final next = cache
+          .reuseOrInvalidate(paramsFor('/a'), label: 'retry')
+          .whenComplete(() => answered = true);
+      await pumpEventQueue();
+      expect(answered, isFalse, reason: 'two native models at once otherwise');
+
+      cleanup.complete();
+      expect((await next).reuse, isNull);
+    });
+
+    test('under the same bound as a replaced embedder', () async {
+      final cache = EmbedderCache(
+        closeWaitLimit: const Duration(milliseconds: 100),
+      );
+      cache.trackFailedLoadCleanup(Completer<void>().future, paramsFor('/a'));
+      await expectLater(
+        cache.reuseOrNull(paramsFor('/a'), label: 'retry'),
+        throwsA(isA<EmbedderCloseTimeoutException>()),
+      );
+    });
+
+    test('a cleanup that fails releases the wait too', () async {
+      final cache = EmbedderCache();
+      cache.trackFailedLoadCleanup(
+        Future<void>.error(StateError('close failed')),
+        paramsFor('/a'),
+      );
+      expect(await cache.reuseOrNull(paramsFor('/a'), label: 'retry'), isNull);
+    });
+  });
+
+  group('EmbedderCache declared media (R5 §4.6)', () {
+    ActiveEmbedderParams p({
+      String model = '/m',
+      Set<EmbeddingModality> media = const {},
+    }) => ActiveEmbedderParams(
+      modelPath: model,
+      tokenizerPath: '/t',
+      media: media,
+    );
+
+    test('a model loaded for images serves a text-only request', () async {
+      final cache = EmbedderCache();
+      final model = _FakeEmbedder();
+      cache.record(model, p(media: {EmbeddingModality.image}));
+
+      final decision = await cache.reuseOrInvalidate(p(), label: 'text');
+      expect(decision.reuse, same(model));
+      expect(decision.build.media, {EmbeddingModality.image});
+      expect(model.closeCount, 0);
+    });
+
+    test(
+      'media the model lacks rebuild it with the UNION, never narrower',
+      () async {
+        final cache = EmbedderCache();
+        final model = _FakeEmbedder();
+        cache.record(model, p(media: {EmbeddingModality.image}));
+
+        final decision = await cache.reuseOrInvalidate(
+          p(media: {EmbeddingModality.audio}),
+          label: 'audio',
+        );
+        expect(decision.reuse, isNull);
+        expect(decision.build.media, {
+          EmbeddingModality.image,
+          EmbeddingModality.audio,
+        });
+        expect(decision.build.firstDifference(p()), isNull);
+        expect(model.closeCount, 1, reason: 'one engine resident at a time');
+      },
+    );
+
+    test('a different model builds what was asked, not a union', () async {
+      final cache = EmbedderCache();
+      final model = _FakeEmbedder();
+      cache.record(model, p(media: {EmbeddingModality.image}));
+
+      final decision = await cache.reuseOrInvalidate(
+        p(model: '/other', media: {EmbeddingModality.audio}),
+        label: 'other',
+      );
+      expect(decision.reuse, isNull);
+      expect(decision.build.modelPath, '/other');
+      expect(decision.build.media, {EmbeddingModality.audio});
+    });
+
+    test('a closed cached model is replaced by the request alone', () async {
+      final cache = EmbedderCache();
+      final model = _FakeEmbedder();
+      cache.record(model, p(media: {EmbeddingModality.image}));
+      await model.close();
+
+      final decision = await cache.reuseOrInvalidate(
+        p(media: {EmbeddingModality.audio}),
+        label: 'after close',
+      );
+      expect(decision.build.media, {EmbeddingModality.audio});
+    });
+
+    test(
+      'a text index and an image index used alternately cause one rebuild',
+      () async {
+        // R5 §4.6: strict keys would close the text index's model whenever
+        // the image index opened, and the other way round, for ever.
+        final cache = EmbedderCache();
+        var builds = 0;
+        Future<EmbeddingModel> resolve(Set<EmbeddingModality> media) async {
+          final decision = await cache.reuseOrInvalidate(
+            p(media: media),
+            label: 'index',
+          );
+          final reused = decision.reuse;
+          if (reused != null) return reused;
+          builds++;
+          final built = _FakeEmbedder();
+          await cache.adopt(built, decision.build);
+          return built;
+        }
+
+        final first = await resolve(const {});
+        final imageModel = await resolve({EmbeddingModality.image});
+        for (var i = 0; i < 3; i++) {
+          expect(await resolve(const {}), same(imageModel));
+          expect(await resolve({EmbeddingModality.image}), same(imageModel));
+        }
+        expect(builds, 2, reason: 'the first build, and one widening rebuild');
+        expect((first as _FakeEmbedder).closeCount, 1);
+        expect(cache.params!.media, {EmbeddingModality.image});
+      },
+    );
+  });
+
+  group('ActiveEmbedderParams.media', () {
+    ActiveEmbedderParams p([Set<EmbeddingModality> media = const {}]) =>
+        ActiveEmbedderParams(modelPath: '/m', media: media);
+
+    test('text is implied, never listed', () {
+      expect(p({EmbeddingModality.text, EmbeddingModality.image}).media, {
+        EmbeddingModality.image,
+      });
+    });
+
+    test('identity (==, hashCode, firstDifference) ignores media', () {
+      final image = p({EmbeddingModality.image});
+      expect(image, p());
+      expect(image.hashCode, p().hashCode);
+      expect(image.firstDifference(p()), isNull);
+    });
+
+    test('canServe: same identity and covering media', () {
+      final both = p({EmbeddingModality.image, EmbeddingModality.audio});
+      expect(both.canServe(p({EmbeddingModality.image})), isTrue);
+      expect(both.canServe(p()), isTrue);
+      expect(p().canServe(p({EmbeddingModality.image})), isFalse);
+      expect(both.canServe(ActiveEmbedderParams(modelPath: '/other')), isFalse);
+    });
   });
 
   group('EmbedderCache.record', () {
@@ -340,7 +539,7 @@ void main() {
       cache.record(hostile, paramsFor('/a'));
 
       expect(
-        await cache.reuseOrInvalidate(paramsFor('/b'), label: 'rebuild'),
+        await cache.reuseOrNull(paramsFor('/b'), label: 'rebuild'),
         isNull,
         reason: 'the answer is still "build a new one"',
       );
@@ -361,7 +560,7 @@ void main() {
       await silent.close();
 
       expect(
-        await cache.reuseOrInvalidate(paramsFor('/a'), label: 'test'),
+        await cache.reuseOrNull(paramsFor('/a'), label: 'test'),
         isNull,
         reason: 'the params match, so only isClosed can save this caller',
       );
@@ -467,7 +666,7 @@ void main() {
 
     test('a body that never settles holds the lane, and releases it', () async {
       // The documented price of having no completer to join: one stuck build
-      // (a wedged native createModel) stalls EVERY later request on this shell,
+      // (a wedged native load) stalls EVERY later request on this shell,
       // not just a matching one. Pinned so the trade-off cannot change by
       // accident — the previous per-shell code stalled them too, via an await
       // on the in-flight completer, so this is not new, only explicit.
@@ -519,7 +718,7 @@ void main() {
 
         expect(
           await cache.serialize(
-            () => cache.reuseOrInvalidate(paramsFor('/a'), label: 'retry'),
+            () => cache.reuseOrNull(paramsFor('/a'), label: 'retry'),
           ),
           isNull,
           reason: 'a failed build must not leave a baseline behind',
@@ -545,7 +744,7 @@ void main() {
 
 /// Closes without telling anyone, the way a third-party implementation that
 /// does not mix in `CloseNotifier` might.
-class _SilentCloseEmbedder extends _FakeEmbedder {
+final class _SilentCloseEmbedder extends _FakeEmbedder {
   bool _closed = false;
 
   @override
@@ -559,7 +758,7 @@ class _SilentCloseEmbedder extends _FakeEmbedder {
 
 /// Refuses to register a close listener, the way a third-party implementation
 /// that does not mix in `CloseNotifier` might.
-class _HostileListenerEmbedder extends _FakeEmbedder {
+final class _HostileListenerEmbedder extends _FakeEmbedder {
   _HostileListenerEmbedder({super.throwOnClose});
 
   @override
@@ -567,7 +766,10 @@ class _HostileListenerEmbedder extends _FakeEmbedder {
       throw StateError('this model does not support close listeners');
 }
 
-class _FakeEmbedder extends EmbeddingModel with CloseNotifier {
+/// The fake embedder, and the base of the others in this file (`base`, so
+/// they can refine it; each of them is `final`). It never reports itself closed — the cache must learn of a
+/// close from the listener — unless a subclass says otherwise.
+base class _FakeEmbedder extends EmbeddingModel with CloseNotifier {
   _FakeEmbedder({this.closeGate, this.throwOnClose = false});
 
   final Completer<void>? closeGate;
@@ -578,21 +780,16 @@ class _FakeEmbedder extends EmbeddingModel with CloseNotifier {
   bool closed = false;
 
   @override
-  Future<List<double>> generateEmbedding(
-    String text, {
-    TaskType taskType = TaskType.retrievalQuery,
+  int get dimension => 1;
+
+  @override
+  bool get isClosed => false;
+
+  @override
+  Future<List<double>> embed(
+    EmbeddingInput input, {
+    required TaskType taskType,
   }) async => const [0.0];
-
-  @override
-  Future<List<List<double>>> generateEmbeddings(
-    List<String> texts, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) async => const [
-    [0.0],
-  ];
-
-  @override
-  Future<int> getDimension() async => 1;
 
   @override
   Future<void> close() async {
@@ -607,7 +804,7 @@ class _FakeEmbedder extends EmbeddingModel with CloseNotifier {
 /// Closes the way `CommonEmbeddingModel` does: `isClosed` turns true at once,
 /// the teardown takes as long as [_gate], and every `close()` call returns that
 /// same teardown.
-class _JoiningCloseEmbedder extends _FakeEmbedder {
+final class _JoiningCloseEmbedder extends _FakeEmbedder {
   _JoiningCloseEmbedder(this._gate);
 
   final Completer<void> _gate;

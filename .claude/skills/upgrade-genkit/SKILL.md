@@ -26,7 +26,7 @@ features to support (Phase 3).
 1. Identify what changed in the core public API. In the monorepo flutter_edge_ai
    is a path dep (not pub), so don't rely on `dart pub outdated` — instead read
    the diff / CHANGELOG of `packages/flutter_edge_ai`:
-   - `git log --oneline -- packages/flutter_edge_ai/lib/flutter_edge_ai_interface.dart packages/flutter_edge_ai/lib/core`
+   - `git log --oneline -- packages/flutter_edge_ai/lib` (the public libraries at `lib/*.dart` plus everything under `lib/src`)
    - `packages/flutter_edge_ai/CHANGELOG.md` (top entry)
 2. Summarize for the user:
    - **Breaking changes** (removed/renamed APIs, changed signatures)

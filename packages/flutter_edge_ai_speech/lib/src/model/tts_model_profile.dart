@@ -14,8 +14,7 @@
 /// role.
 library;
 
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show TtsModelType;
+import 'package:flutter_edge_ai/engine.dart' show TtsModelType;
 
 /// Which end-to-end synthesis pipeline a TTS model family uses.
 enum TtsPipelineKind {

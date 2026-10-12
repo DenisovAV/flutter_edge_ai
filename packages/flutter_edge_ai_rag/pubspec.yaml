@@ -1,6 +1,6 @@
 name: flutter_edge_ai_rag
 description: "Pluggable on-device RAG for Flutter Edge AI, with independent vector-store providers and embedders."
-version: 1.0.1
+version: 1.1.0
 resolution: workspace
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_rag
@@ -19,9 +19,19 @@ environment:
   flutter: '>=3.44.0'
 
 dependencies:
-  flutter_edge_ai: ^2.0.0
+  # ^2.3.0: the embedder adapter calls `EmbeddingModel.embed` with
+  # `EmbeddingInput` and `TaskType`, and the barrel re-exports the
+  # `EmbeddingException` family — all new in 2.3.0.
+  flutter_edge_ai: ^2.3.0
+  # @visibleForTesting on FlutterEdgeAiActiveEmbedder's resolver seams.
+  meta: ^1.15.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # test/active_embedder_core_cache_test.dart drives core's real
+  # getActiveEmbedder (install, cache, rebuild) on the host: core reads
+  # SharedPreferences and path_provider, which the test fakes.
+  path_provider_platform_interface: ^2.1.0
+  shared_preferences: ^2.5.2

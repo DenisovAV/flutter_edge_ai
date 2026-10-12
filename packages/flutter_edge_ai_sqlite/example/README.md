@@ -22,9 +22,9 @@ Future<void> buildIndex() async {
   final location = kIsWeb
       ? 'knowledge.db'
       : p.join((await getApplicationDocumentsDirectory()).path, 'knowledge.db');
-  final index = await rag.open(
+  final index = await rag.openVectors(
     spec: VectorStoreSpec(providerId: 'sqlite', location: location),
-    embeddingProfile: EmbeddingProfile(
+    profile: EmbeddingProfile(
       id: 'my-embedder-v1',
       dimension: 768,
     ),

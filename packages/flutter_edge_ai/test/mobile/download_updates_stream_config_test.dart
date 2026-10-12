@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:background_downloader/background_downloader.dart';
-import 'package:flutter_edge_ai/mobile/smart_downloader.dart';
+import 'package:flutter_edge_ai/src/mobile/smart_downloader.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

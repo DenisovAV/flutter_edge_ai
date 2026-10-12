@@ -22,7 +22,7 @@ import 'package:flutter_edge_ai_sqlite/src/sqlite_profile_storage.dart';
 /// `+content`/`+metadata` columns and one typed column per declared
 /// [FilterField], so `searchSimilar` returns the document and its metadata in a
 /// single query and pushes [Filter] predicates down to the engine.
-class SqliteVectorStore implements VectorStoreRepository {
+final class SqliteVectorStore extends VectorStoreRepository {
   SqliteVectorStore({@visibleForTesting this.durabilityFenceForTesting});
 
   /// Test seam for suspending the post-COMMIT bind await deterministically.
@@ -31,7 +31,7 @@ class SqliteVectorStore implements VectorStoreRepository {
 
   Database? _db;
   int? _detectedDimension;
-  EmbeddingProfile? _embeddingProfile;
+  VectorStoreBinding? _binding;
   bool _isInitialized = false;
   Future<void> _lifecycleTail = Future<void>.value();
   int _pendingLifecycleActions = 0;
@@ -155,7 +155,7 @@ class SqliteVectorStore implements VectorStoreRepository {
       _db = sqlite3.open(databasePath);
       ensureSqliteEmbeddingProfileTable(_db!);
       _detectDimensionFromExistingTable();
-      _embeddingProfile = readSqliteEmbeddingProfile(_db!);
+      _binding = readSqliteBinding(_db!);
       _validateProfileDimension();
       // Last, and only once everything above succeeded. Setting it before
       // `_detectDimensionFromExistingTable()` — which throws on a schema this
@@ -177,7 +177,7 @@ class SqliteVectorStore implements VectorStoreRepository {
       // resurrecting the exact bug this change exists to fix.
       _isInitialized = false;
       _detectedDimension = null;
-      _embeddingProfile = null;
+      _binding = null;
       final failed = _db;
       _db = null;
       try {
@@ -227,7 +227,7 @@ class SqliteVectorStore implements VectorStoreRepository {
   }
 
   void _validateProfileDimension() {
-    final profile = _embeddingProfile;
+    final profile = _binding?.profile;
     final dimension = _detectedDimension;
     if (profile != null &&
         dimension != null &&
@@ -240,7 +240,7 @@ class SqliteVectorStore implements VectorStoreRepository {
   }
 
   EmbeddingProfile _requireEmbeddingProfile() {
-    final profile = _embeddingProfile;
+    final profile = _binding?.profile;
     if (profile == null) {
       throw StateError(
         'This SQLite vector store has no embedding profile. Bind one through '
@@ -251,39 +251,39 @@ class SqliteVectorStore implements VectorStoreRepository {
   }
 
   @override
-  Future<EmbeddingProfile?> readEmbeddingProfile() async {
+  Future<VectorStoreBinding?> readBinding() async {
     if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
-    final profile = readSqliteEmbeddingProfile(_db!);
-    _embeddingProfile = profile;
+    final binding = readSqliteBinding(_db!);
+    _binding = binding;
     _validateProfileDimension();
-    return profile;
+    return binding;
   }
 
   @override
-  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async {
+  Future<void> bind(VectorStoreBinding binding) async {
     if (!isInitialized || _db == null) {
       throw StateError('VectorStore not initialized. Call initialize() first.');
     }
-    await _enqueueLifecycle(() => _bindEmbeddingProfile(profile));
+    await _enqueueLifecycle(() => _bind(binding));
   }
 
-  Future<void> _bindEmbeddingProfile(EmbeddingProfile profile) async {
+  Future<void> _bind(VectorStoreBinding binding) async {
     final db = _db;
     if (!_isInitialized || db == null) {
       throw StateError('VectorStore closed before profile binding started.');
     }
     final dimension = _detectedDimension;
-    if (dimension != null && dimension != profile.dimension) {
+    if (dimension != null && dimension != binding.profile.dimension) {
       throw VectorStoreException(
-        'Cannot bind $profile to a SQLite vec_documents shard with dimension '
+        'Cannot bind $binding to a SQLite vec_documents shard with dimension '
         '$dimension.',
       );
     }
-    await bindSqliteEmbeddingProfile(
+    await bindSqliteBinding(
       db,
-      profile,
+      binding,
       durabilityFence: durabilityFenceForTesting,
     );
     if (!_isInitialized || !identical(_db, db)) {
@@ -291,7 +291,7 @@ class SqliteVectorStore implements VectorStoreRepository {
         'SQLite location changed while its embedding profile was binding.',
       );
     }
-    _embeddingProfile = profile;
+    _binding = binding;
   }
 
   /// Lazily creates the vec0 virtual table once the embedding dimension is
@@ -590,7 +590,7 @@ class SqliteVectorStore implements VectorStoreRepository {
       _db = null;
       _isInitialized = false;
       _detectedDimension = null;
-      _embeddingProfile = null;
+      _binding = null;
     }
   }
 

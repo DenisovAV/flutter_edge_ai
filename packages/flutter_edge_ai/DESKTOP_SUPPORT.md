@@ -26,7 +26,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 │              Flutter Desktop App                     │
 │                                                      │
 │   ┌──────────────────────────────────────────────┐ │
-│   │  FlutterEdgeAiDesktop (lib/desktop/)           │ │
+│   │  FlutterEdgeAiDesktop (lib/src/desktop/)       │ │
 │   │           ↓                                    │ │
 │   │  LiteRtLmFfiClient                            │ │
 │   │  (flutter_edge_ai_litertlm/lib/src/ffi/)        │ │
@@ -43,7 +43,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.18.0-d`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.18.0-e`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
@@ -100,8 +100,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^2.2.1            # core
-  flutter_edge_ai_litertlm: ^1.12.1  # .litertlm engine
+  flutter_edge_ai: ^2.3.0            # core
+  flutter_edge_ai_litertlm: ^1.13.0  # .litertlm engine
 ```
 
 ```dart
@@ -464,7 +464,7 @@ plugin, delete the file and the engine rebuilds the cache on first run.
 ## API Reference
 
 `FlutterEdgeAi`, `InferenceModel`, `InferenceModelSession`, `InferenceChat` —
-all platform-agnostic. See `lib/flutter_edge_ai_interface.dart` and the
+all platform-agnostic. See `lib/src/interface.dart` and the
 [example app](example/) for usage patterns.
 
 For native debugging on iOS / Linux, see comments in

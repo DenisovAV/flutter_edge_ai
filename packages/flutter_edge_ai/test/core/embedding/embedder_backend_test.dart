@@ -1,32 +1,29 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
-import 'package:flutter_edge_ai/core/embedding/embedder_backend_notice.dart';
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/core/embedding/common_embedding_model.dart';
-import 'package:flutter_edge_ai/core/embedding/forward_pass.dart';
-import 'package:flutter_edge_ai/core/embedding/tokenizer_adapter.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/src/domain/platform_types.dart';
+import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
+import 'package:flutter_edge_ai/src/embedding/embedding_input.dart';
+import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/src/embedding/common_embedding_model.dart';
+import 'package:flutter_edge_ai/src/embedding/embedding_pass.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Nothing but the defaults, to pin what an implementation gets for free.
-class _BareEmbedder extends EmbeddingModel {
+/// Nothing but what a fake must implement, to pin what it gets for free.
+final class _BareEmbedder extends EmbeddingModel {
+  @override
+  int get dimension => 1;
+  @override
+  bool get isClosed => false;
+  @override
+  Future<List<double>> embed(
+    EmbeddingInput input, {
+    required TaskType taskType,
+  }) async => const [0.0];
   @override
   void addCloseListener(void Function() listener) {}
   @override
   Future<void> close() async {}
-  @override
-  Future<List<double>> generateEmbedding(
-    String text, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) async => const [];
-  @override
-  Future<List<List<double>>> generateEmbeddings(
-    List<String> texts, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) async => const [];
-  @override
-  Future<int> getDimension() async => 0;
 }
 
 void main() {
@@ -41,25 +38,54 @@ void main() {
   );
 
   group('ActiveEmbedderParams', () {
-    test(
-      'a different backend is NOT a difference — it builds the same model',
-      () {
-        // The whole point of normalizing to CPU: asking for GPU must not unload
-        // and reload a bit-identical embedder. If this goes red, the
-        // normalization line was dropped and every backend change costs a
-        // 570-780 ms recompile for nothing.
-        expect(
-          params(
-            backend: PreferredBackend.gpu,
-          ).firstDifference(params(backend: PreferredBackend.cpu)),
-          isNull,
-        );
-        expect(
-          params().firstDifference(params(backend: PreferredBackend.npu)),
-          isNull,
-        );
-      },
-    );
+    test('gpu is NOT a difference — it builds the same model as cpu', () {
+      // The whole point of normalizing gpu to CPU: asking for GPU must not
+      // unload and reload a bit-identical embedder. If this goes red, the
+      // normalization line was dropped and every backend change costs a
+      // 570-780 ms recompile for nothing.
+      expect(
+        params(
+          backend: PreferredBackend.gpu,
+        ).firstDifference(params(backend: PreferredBackend.cpu)),
+        isNull,
+      );
+      expect(
+        params().firstDifference(params(backend: PreferredBackend.gpu)),
+        isNull,
+      );
+    });
+
+    test('npu IS a difference: an embedder cached for one side never serves '
+        'the other', () {
+      // An EmbeddingGemma 2 per-SoC bundle runs on the NPU, and its vectors
+      // are not the CPU bundle's. If npu keyed as cpu, a cached CPU embedder
+      // would answer an npu request (and an NPU one a request without npu)
+      // without the backend ever being asked — a silent switch of vector
+      // space.
+      expect(
+        params().firstDifference(params(backend: PreferredBackend.npu)),
+        'activeBackend',
+      );
+      expect(
+        params(
+          backend: PreferredBackend.cpu,
+        ).firstDifference(params(backend: PreferredBackend.npu)),
+        'activeBackend',
+      );
+      expect(
+        params(backend: PreferredBackend.npu).activeBackend,
+        PreferredBackend.npu,
+      );
+      expect(
+        params(backend: PreferredBackend.gpu).activeBackend,
+        PreferredBackend.cpu,
+      );
+      expect(
+        params(backend: PreferredBackend.npu).withMedia(const {}).activeBackend,
+        PreferredBackend.npu,
+        reason: 'a widened rebuild keeps the backend it was built for',
+      );
+    });
 
     test('paths are differences, and the changed one is named', () {
       expect(
@@ -104,21 +130,25 @@ void main() {
       expect(() => ActiveEmbedderParams(modelPath: ''), throwsArgumentError);
     });
 
-    test('isIgnoredBackend is true only for something CPU is not', () {
-      expect(ActiveEmbedderParams.isIgnoredBackend(null), isFalse);
-      expect(
-        ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.cpu),
-        isFalse,
-      );
-      expect(
-        ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.gpu),
-        isTrue,
-      );
-      expect(
-        ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.npu),
-        isTrue,
-      );
-    });
+    test(
+      'isIgnoredBackend is true only for gpu, which no embedder runs on',
+      () {
+        expect(ActiveEmbedderParams.isIgnoredBackend(null), isFalse);
+        expect(
+          ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.cpu),
+          isFalse,
+        );
+        expect(
+          ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.gpu),
+          isTrue,
+        );
+        expect(
+          ActiveEmbedderParams.isIgnoredBackend(PreferredBackend.npu),
+          isFalse,
+          reason: 'an EmbeddingGemma 2 per-SoC bundle runs on it',
+        );
+      },
+    );
   });
 
   group('noticeEmbedderBackendIgnored', () {
@@ -170,13 +200,41 @@ void main() {
 
     test('says it once, and a reset lets it speak again', () {
       noticeEmbedderBackendIgnored(PreferredBackend.gpu);
-      noticeEmbedderBackendIgnored(PreferredBackend.npu);
+      noticeEmbedderBackendIgnored(PreferredBackend.gpu);
       expect(printed, hasLength(1), reason: 'once per isolate, not per call');
 
       resetEmbedderBackendNotice();
-      noticeEmbedderBackendIgnored(PreferredBackend.npu);
+      noticeEmbedderBackendIgnored(PreferredBackend.gpu);
       expect(printed, hasLength(2));
-      expect(printed.last, contains('npu'));
+      expect(printed.last, contains('gpu'));
+    });
+
+    test('npu is not called ignored before the backend has answered', () {
+      noticeEmbedderBackendIgnored(PreferredBackend.npu);
+      expect(
+        printed,
+        isEmpty,
+        reason:
+            'an NPU bundle runs on it; "Embeddings run on CPU" would be '
+            'false for it',
+      );
+    });
+
+    test('npu not applied: said when the built embedder is not on the NPU, '
+        'silent when it is or when npu was not asked for', () {
+      noticeEmbedderNpuNotApplied(PreferredBackend.npu, PreferredBackend.npu);
+      noticeEmbedderNpuNotApplied(null, PreferredBackend.cpu);
+      noticeEmbedderNpuNotApplied(PreferredBackend.gpu, PreferredBackend.cpu);
+      expect(printed, isEmpty);
+
+      noticeEmbedderNpuNotApplied(PreferredBackend.npu, PreferredBackend.cpu);
+      expect(printed, hasLength(1));
+      expect(printed.single, contains('npu is not applied'));
+      expect(printed.single, contains('cpu'));
+      expect(printed.single, contains('activeBackend'));
+
+      noticeEmbedderNpuNotApplied(PreferredBackend.npu, PreferredBackend.cpu);
+      expect(printed, hasLength(1), reason: 'the same one shot');
     });
 
     test('on web every requested backend is reported as not applied, cpu '
@@ -208,95 +266,40 @@ void main() {
       // it answers `cpu`, the fact was moved back into the shared facade — and
       // then the next engine that really does use an accelerator is reported as
       // CPU with nothing to catch it.
-      final model = await CommonEmbeddingModel.create(
-        descriptor: ForwardPassDescriptor(
+      final model = await CommonEmbeddingModel.start(
+        const EmbeddingPassDescriptor<String>(
           engineTag: 'fake',
-          modelPath: 'fake',
-          factory: buildFakePass,
-          tokenizerFactory: buildFakeTokenizer,
-          outputContract: EmbeddingOutputContract.pooledFinal,
+          factory: _buildFakePass,
+          config: 'fake',
           activeBackend: PreferredBackend.gpu,
         ),
-        tokenizerPath: 'fake',
+        declaredMedia: const {},
+        label: 'fake',
       );
       addTearDown(model.close);
       expect(model.activeBackend, PreferredBackend.gpu);
     },
   );
 
-  test('a throwing close listener cannot cancel the teardown', () async {
-    // `addCloseListener` is public, and `CloseNotifier` calls each listener
-    // bare. Listeners therefore fire AFTER the worker teardown, so one throw
-    // cannot exit `close()` before `_worker.close()` is sent — which is what
-    // happened when this branch briefly fired them first, leaking the isolate
-    // for good because `_isClosed` made the retry a no-op. The listener's
-    // error still reaches the caller: silenced would be worse.
-    var tornDown = false;
-    final model = await CommonEmbeddingModel.create(
-      descriptor: ForwardPassDescriptor(
-        engineTag: 'fake',
-        modelPath: 'fake',
-        factory: buildFakePass,
-        tokenizerFactory: buildFakeTokenizer,
-        outputContract: EmbeddingOutputContract.pooledFinal,
-        activeBackend: PreferredBackend.cpu,
-      ),
-      tokenizerPath: 'fake',
-      onClose: () => tornDown = true,
-    );
-    model.addCloseListener(() => throw StateError('listener failed'));
-
-    await expectLater(
-      model.close(),
-      throwsStateError,
-      reason: "the listener's failure belongs to whoever closed the model",
-    );
-    expect(
-      tornDown,
-      isTrue,
-      reason:
-          'onClose runs after the worker teardown, so the teardown happened',
-    );
-    expect(model.isClosed, isTrue);
-  });
-
   test('EmbeddingModel.activeBackend defaults to null, not to a guess', () {
-    // Defaulted rather than abstract so an existing SUBCLASS keeps compiling.
-    // `implements` does not inherit a default body, so those still break — this
-    // PR's own genkit fake had to add the override. Null means "not known here".
+    // Defaulted rather than abstract, so a fake (the only subclass outside
+    // core) need not answer it. Null means "not known here".
     expect(_BareEmbedder().activeBackend, isNull);
   });
 }
 
 /// Minimal pass: the facade must carry whatever the descriptor declares, so the
 /// pass itself only has to be loadable.
-class _FakePass implements EmbeddingForwardPass {
+final class _FakePass extends EmbeddingPass {
   @override
-  Future<void> load() async {}
+  Future<EmbeddingPassInfo> load() async =>
+      const EmbeddingPassInfo(dimension: 2);
+  @override
+  Future<List<double>> embed(EmbeddingInput input, TaskType taskType) async =>
+      const [1.0, 0.0];
   @override
   Future<void> close() async {}
-  @override
-  int get outputDimension => 2;
-  @override
-  int? get inputSequenceLength => null;
-  @override
-  EmbeddingOutputContract? get outputContract => null;
-  @override
-  Future<ForwardResult> run({
-    required List<int> tokenIds,
-    List<int>? attentionMask,
-    List<int>? tokenTypeIds,
-  }) async => const ForwardResult(values: [1.0, 0.0], shape: [1, 2]);
 }
 
-EmbeddingForwardPass buildFakePass(String modelPath) => _FakePass();
-
-class _FakeTokenizer implements EmbeddingTokenizer {
-  const _FakeTokenizer();
-  @override
-  TokenizedInput encode(String prefix, String text) =>
-      const TokenizedInput(ids: [1, 2]);
-}
-
-Future<EmbeddingTokenizer> buildFakeTokenizer(String path) async =>
-    const _FakeTokenizer();
+/// Top-level: the descriptor crosses into core's worker isolate.
+EmbeddingPass _buildFakePass(String _) => _FakePass();

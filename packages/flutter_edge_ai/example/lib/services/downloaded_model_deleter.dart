@@ -12,7 +12,8 @@ class DownloadedModelDeleter {
     if (match is! EmbeddingMatch || match.isTokenizer) return false;
 
     final tokenizerId = match.model.tokenizerFilename;
-    if (tokenizerId == installedId) return false;
+    // A `.litertlm` bundle carries its own tokenizer: nothing else to remove.
+    if (tokenizerId == null || tokenizerId == installedId) return false;
     if (!await FlutterEdgeAi.isModelInstalled(tokenizerId)) return false;
 
     return !await isEmbeddingTokenizerStillNeeded(
@@ -30,7 +31,8 @@ class DownloadedModelDeleter {
     if (match is EmbeddingMatch && !match.isTokenizer) {
       await FlutterEdgeAi.uninstallModel(installedId);
       final tokenizerId = match.model.tokenizerFilename;
-      if (tokenizerId != installedId &&
+      if (tokenizerId != null &&
+          tokenizerId != installedId &&
           await FlutterEdgeAi.isModelInstalled(tokenizerId) &&
           !await isEmbeddingTokenizerStillNeeded(
             tokenizerFilename: tokenizerId,

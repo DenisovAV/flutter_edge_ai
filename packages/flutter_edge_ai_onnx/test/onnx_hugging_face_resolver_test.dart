@@ -6,9 +6,8 @@
 
 import 'dart:convert';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
+import 'package:flutter_edge_ai/engine.dart'
+    show ModelFileType, PreferredBackend;
 import 'package:flutter_edge_ai_onnx/flutter_edge_ai_onnx.dart'
     show OnnxHuggingFaceResolver;
 import 'package:flutter_test/flutter_test.dart';

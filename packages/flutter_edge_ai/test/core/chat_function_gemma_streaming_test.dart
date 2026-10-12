@@ -1,9 +1,9 @@
-import 'package:flutter_edge_ai/core/chat.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/model_response.dart';
-import 'package:flutter_edge_ai/core/tool.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/src/chat.dart';
+import 'package:flutter_edge_ai/src/message.dart';
+import 'package:flutter_edge_ai/src/model.dart';
+import 'package:flutter_edge_ai/src/model_response.dart';
+import 'package:flutter_edge_ai/src/tool.dart';
+import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// #366, exercised through the streaming loop rather than through `parse()`.

@@ -4,8 +4,7 @@
 
 import 'dart:convert';
 
-import 'package:flutter_edge_ai/core/embedding/tokenizer_adapter.dart'
-    show EmbeddingTokenizer;
+import 'package:flutter_edge_ai/engine.dart' show EmbeddingTokenizer;
 
 import 'wordpiece_embedding_tokenizer.dart' show WordPieceEmbeddingTokenizer;
 

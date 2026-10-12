@@ -198,6 +198,17 @@ def _doc_problem(root, prefix, label):
         "--", f"{prefix}pubspec.yaml",
     )
     if not boundary:
+        # A version set while resolving a merge (a stacked release branch that
+        # took main's published numbers and moved to the next patch) lives only
+        # in the merge commit, which `git log -S` skips without -m. Fall back to
+        # the merge that brought the version into this branch's first-parent
+        # line: the release boundary is then the merge, and boundary~1 is the
+        # branch as it was before it.
+        boundary = git(
+            root, "log", "-1", "--format=%H", "-m", "--first-parent",
+            "-S", f"version: {version}", "--", f"{prefix}pubspec.yaml",
+        )
+    if not boundary:
         raise GitUnavailable(
             f"cannot locate the commit that set version {version} for {label}"
         )

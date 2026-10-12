@@ -43,6 +43,7 @@ import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+// ignore: implementation_imports — shares the sqlite package's native/web parity cases
 import 'package:flutter_edge_ai_sqlite/src/testing/parity_cases.dart';
 
 void main() {
@@ -60,8 +61,13 @@ void main() {
     store.configure(schema);
     // A fresh IndexedDB name per test keeps one case's corpus out of another's.
     await store.initialize('parity_${DateTime.now().microsecondsSinceEpoch}');
-    await store.bindEmbeddingProfile(
-      EmbeddingProfile(id: 'web-parity-v1', dimension: embedding.length),
+    await store.bind(
+      VectorStoreBinding(
+        profile: EmbeddingProfile(
+          id: 'web-parity-v1',
+          dimension: embedding.length,
+        ),
+      ),
     );
     // NOT catchError: close() propagates, and 1.3.0's third fix was a
     // close() gated on a flag the failure path clears. Swallowing a close
@@ -136,28 +142,64 @@ void main() {
     final first = WebSqliteVectorStore();
     addTearDown(first.close);
     await first.initialize(location);
-    expect(await first.readEmbeddingProfile(), isNull);
-    await first.bindEmbeddingProfile(profile);
+    expect(await first.readBinding(), isNull);
+    await first.bind(VectorStoreBinding(profile: profile));
     await first.addDocument(
       id: 'doc',
       content: 'document',
       embedding: const [1, 0, 0, 0],
     );
     await first.clear();
-    expect(await first.readEmbeddingProfile(), profile);
+    expect(await first.readBinding(), VectorStoreBinding(profile: profile));
     await first.close();
 
     final second = WebSqliteVectorStore();
     addTearDown(second.close);
     await second.initialize(location);
-    expect(await second.readEmbeddingProfile(), profile);
+    expect(await second.readBinding(), VectorStoreBinding(profile: profile));
     expect((await second.getStats()).documentCount, 0);
     await expectLater(
-      second.bindEmbeddingProfile(
-        EmbeddingProfile(id: 'other-web-profile-v1', dimension: 4),
+      second.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(id: 'other-web-profile-v1', dimension: 4),
+        ),
       ),
       throwsA(isA<VectorStoreException>()),
     );
+  });
+
+  testWidgets('an image binding persists and refuses a text bind', (
+    tester,
+  ) async {
+    final location = 'image_binding_${DateTime.now().microsecondsSinceEpoch}';
+    final binding = VectorStoreBinding(
+      profile: EmbeddingProfile(id: 'web-image-profile-v1', dimension: 4),
+      documents: EmbeddingModality.image,
+    );
+    final first = WebSqliteVectorStore();
+    addTearDown(first.close);
+    await first.initialize(location);
+    await first.bind(binding);
+    await first.addDocument(
+      id: 'photo',
+      content: 'content://media/1',
+      embedding: const [0, 1, 0, 0],
+    );
+    await first.close();
+
+    final second = WebSqliteVectorStore();
+    addTearDown(second.close);
+    await second.initialize(location);
+    expect(await second.readBinding(), binding);
+    await expectLater(
+      second.bind(VectorStoreBinding(profile: binding.profile)),
+      throwsA(isA<VectorStoreException>()),
+    );
+    final hits = await second.searchSimilar(
+      queryEmbedding: const [0, 1, 0, 0],
+      topK: 1,
+    );
+    expect(hits.single.content, 'content://media/1');
   });
 
   testWidgets('provider opens the web implementation without kIsWeb', (
@@ -168,9 +210,9 @@ void main() {
     final rag = FlutterEdgeAiRag(
       providers: [const SqliteVectorStoreProvider()],
     );
-    final index = await rag.open(
+    final index = await rag.openVectors(
       spec: VectorStoreSpec(providerId: 'sqlite', location: location),
-      embeddingProfile: profile,
+      profile: profile,
     );
     addTearDown(index.dispose);
     await index.addVector(

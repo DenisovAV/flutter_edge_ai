@@ -8,6 +8,9 @@
 # The following line activates a set of recommended lints for Flutter apps,
 # packages, and plugins designed to encourage good coding practices.
 analyzer:
+  errors:
+    # Another package's lib/src is private to it (tool/check_core_surface.sh).
+    implementation_imports: error
   exclude:
     - build/**
     - android/**

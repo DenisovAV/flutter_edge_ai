@@ -52,7 +52,7 @@ import 'dart:convert';
 import 'io/read_text_file_stub.dart'
     if (dart.library.io) 'io/read_text_file_io.dart';
 
-import 'package:flutter_edge_ai/core/embedding/tokenizer_adapter.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// [EmbeddingTokenizer] for BERT-style WordPiece models. `encode(prefix,
 /// text)` tokenizes `prefix + text` (matching the SentencePiece adapter's

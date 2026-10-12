@@ -1,3 +1,5 @@
+import 'package:flutter_edge_ai/flutter_edge_ai.dart' show EmbeddingModality;
+
 import 'embedding.dart';
 import 'rag_index.dart';
 import 'vector_store.dart';
@@ -8,7 +10,7 @@ import 'vector_store_provider.dart';
 /// This is deliberately independent from `FlutterEdgeAi.initialize()`: apps
 /// may create multiple registries and indexes, use different embedders, or run
 /// vector-only workflows without initializing an inference engine.
-class FlutterEdgeAiRag {
+final class FlutterEdgeAiRag {
   FlutterEdgeAiRag({required List<VectorStoreProvider> providers})
     : _providers = _sortAndValidate(providers);
 
@@ -30,76 +32,99 @@ class FlutterEdgeAiRag {
     return false;
   }
 
-  /// Opens an independently-owned RAG index.
+  /// Opens an independently-owned RAG index whose documents [embedder]
+  /// embeds.
   ///
-  /// [embedder] is borrowed and never closed. When omitted, the Flutter Edge AI
-  /// embedder that is active when `open()` runs is pinned to this index — so
-  /// install it first — and its model is loaded by the first text operation,
-  /// provided [activeEmbedderProfileId] declares its stable embedding-space
-  /// identity. After switching embedders, open a new index at a new location.
-  /// Vector operations never trigger embedder resolution. Pass
-  /// [embeddingProfile] for a new vector-only index; otherwise raw vector
-  /// operations remain disabled until a text operation has safely bound and
-  /// persisted its profile.
+  /// Resolves the embedder's profile now — with
+  /// [FlutterEdgeAiActiveEmbedder] that loads the model, so install the
+  /// embedder before calling this. [embedder] must embed `spec.documents`
+  /// ([ArgumentError] otherwise). The location is then bound to
+  /// `(profile, spec.documents)`: an unbound location is bound now, and a
+  /// location bound to anything else is refused with a [StateError] — use a
+  /// different location for every embedding profile and document modality.
+  /// An unbound location that already holds documents is adopted only for
+  /// text and only with `spec.allowLegacyProfileAdoption` and a matching
+  /// dimension.
+  ///
+  /// [embedder] is borrowed and never closed: dispose the index before the
+  /// embedder.
+  ///
+  /// Every error, argument errors included, arrives as a failed future.
   Future<RagIndex> open({
     required VectorStoreSpec spec,
-    RagEmbedder? embedder,
-    EmbeddingProfile? embeddingProfile,
-    String? activeEmbedderProfileId,
+    required RagEmbedder embedder,
   }) async {
-    _validateEmbeddingArguments(
-      embedder: embedder,
-      embeddingProfile: embeddingProfile,
-      activeEmbedderProfileId: activeEmbedderProfileId,
-    );
     final provider = _resolveProvider(spec);
+    final modalities = embedder.modalities;
+    if (!modalities.contains(spec.documents)) {
+      throw ArgumentError.value(
+        embedder,
+        'embedder',
+        'embeds ${_names(modalities)}, not the ${spec.documents.name} '
+            'documents of "${spec.location}"',
+      );
+    }
+    final profile = await embedder.resolveProfile();
+    return _openBound(
+      provider: provider,
+      spec: spec,
+      binding: VectorStoreBinding(profile: profile, documents: spec.documents),
+      embedder: embedder,
+    );
+  }
+
+  /// Opens a vector-only index (`addVector` / `searchVector`) bound to
+  /// [profile] and `spec.documents`, with the same binding rules as [open].
+  ///
+  /// Raw numbers cannot identify their embedding space, so the profile is
+  /// required: name the pipeline that produced the vectors.
+  Future<RagIndex> openVectors({
+    required VectorStoreSpec spec,
+    required EmbeddingProfile profile,
+  }) async {
+    final provider = _resolveProvider(spec);
+    return _openBound(
+      provider: provider,
+      spec: spec,
+      binding: VectorStoreBinding(profile: profile, documents: spec.documents),
+      embedder: null,
+    );
+  }
+
+  Future<RagIndex> _openBound({
+    required VectorStoreProvider provider,
+    required VectorStoreSpec spec,
+    required VectorStoreBinding binding,
+    required RagEmbedder? embedder,
+  }) async {
     VectorStoreRepository? store;
     try {
       store = await provider.createStore(spec);
       store.configure(spec.filterSchema);
       await store.initialize(spec.location);
-      final storedProfile = await store.readEmbeddingProfile();
+      final stored = await store.readBinding();
       final stats = await store.getStats();
-      _validateStoredProfile(storedProfile, stats);
+      _validateStoredBinding(stored, stats);
 
-      var boundProfile = storedProfile;
-      if (embeddingProfile != null) {
-        if (storedProfile != null) {
-          if (storedProfile != embeddingProfile) {
-            throw StateError(
-              'Vector store "${spec.location}" is bound to $storedProfile, '
-              'not the requested $embeddingProfile. Use a different location.',
-            );
-          }
-        } else {
-          _validateLegacyAdoption(
-            spec: spec,
-            stats: stats,
-            profile: embeddingProfile,
+      if (stored != null) {
+        if (stored != binding) {
+          throw StateError(
+            'Vector store "${spec.location}" is bound to $stored, not '
+            '$binding. Use a different location.',
           );
-          await store.bindEmbeddingProfile(embeddingProfile);
-          final persisted = await store.readEmbeddingProfile();
-          if (persisted != embeddingProfile) {
-            throw StateError(
-              'Vector-store provider did not persist the requested '
-              '$embeddingProfile.',
-            );
-          }
-          boundProfile = embeddingProfile;
+        }
+      } else {
+        _validateLegacyAdoption(spec: spec, stats: stats, binding: binding);
+        await store.bind(binding);
+        final persisted = await store.readBinding();
+        if (persisted != binding) {
+          throw StateError(
+            'Vector-store provider "${provider.id}" did not persist the '
+            'requested $binding (read back: $persisted).',
+          );
         }
       }
-      return createRagIndex(
-        store: store,
-        embedder:
-            embedder ??
-            (activeEmbedderProfileId == null
-                ? const _MissingActiveEmbedderIdentity()
-                : FlutterEdgeAiActiveEmbedder(
-                    profileId: activeEmbedderProfileId,
-                  )),
-        initialProfile: boundProfile,
-        allowLegacyProfileAdoption: spec.allowLegacyProfileAdoption,
-      );
+      return createRagIndex(store: store, embedder: embedder, binding: binding);
     } catch (error, stackTrace) {
       if (store != null) {
         try {
@@ -112,44 +137,18 @@ class FlutterEdgeAiRag {
     }
   }
 
-  static void _validateEmbeddingArguments({
-    required RagEmbedder? embedder,
-    required EmbeddingProfile? embeddingProfile,
-    required String? activeEmbedderProfileId,
-  }) {
-    if (activeEmbedderProfileId != null &&
-        activeEmbedderProfileId.trim().isEmpty) {
-      throw ArgumentError.value(
-        activeEmbedderProfileId,
-        'activeEmbedderProfileId',
-        'must not be empty',
-      );
-    }
-    if (embedder != null && activeEmbedderProfileId != null) {
-      throw ArgumentError(
-        'activeEmbedderProfileId applies only to the default active embedder; '
-        'a custom RagEmbedder declares its own profile.',
-      );
-    }
-    if (embeddingProfile != null &&
-        activeEmbedderProfileId != null &&
-        embeddingProfile.id != activeEmbedderProfileId) {
-      throw ArgumentError(
-        'embeddingProfile.id (${embeddingProfile.id}) must match '
-        'activeEmbedderProfileId ($activeEmbedderProfileId).',
-      );
-    }
-  }
+  static String _names(Set<EmbeddingModality> modalities) =>
+      '{${[for (final modality in modalities) modality.name].join(', ')}}';
 
-  static void _validateStoredProfile(
-    EmbeddingProfile? profile,
+  static void _validateStoredBinding(
+    VectorStoreBinding? binding,
     VectorStoreStats stats,
   ) {
-    if (profile != null &&
+    if (binding != null &&
         stats.documentCount > 0 &&
-        stats.vectorDimension != profile.dimension) {
+        stats.vectorDimension != binding.profile.dimension) {
       throw StateError(
-        'The persisted $profile conflicts with the store\'s '
+        'The persisted $binding conflicts with the store\'s '
         '${stats.vectorDimension}D vectors. Refusing to open corrupted data.',
       );
     }
@@ -158,9 +157,16 @@ class FlutterEdgeAiRag {
   static void _validateLegacyAdoption({
     required VectorStoreSpec spec,
     required VectorStoreStats stats,
-    required EmbeddingProfile profile,
+    required VectorStoreBinding binding,
   }) {
     if (stats.documentCount == 0) return;
+    if (binding.documents != EmbeddingModality.text) {
+      throw StateError(
+        'Vector store "${spec.location}" contains legacy vectors without an '
+        'embedding profile. They are text vectors, so they cannot be opened '
+        'as ${binding.documents.name} documents. Use a different location.',
+      );
+    }
     if (!spec.allowLegacyProfileAdoption) {
       throw StateError(
         'Vector store "${spec.location}" contains legacy vectors without an '
@@ -168,9 +174,10 @@ class FlutterEdgeAiRag {
         'after verifying which embedding model created them.',
       );
     }
-    if (stats.vectorDimension != profile.dimension) {
+    if (stats.vectorDimension != binding.profile.dimension) {
       throw StateError(
-        'Cannot adopt ${stats.vectorDimension}D legacy vectors as $profile.',
+        'Cannot adopt ${stats.vectorDimension}D legacy vectors as '
+        '${binding.profile}.',
       );
     }
   }
@@ -234,24 +241,4 @@ class _ProviderEntry {
 
   final VectorStoreProvider provider;
   final int index;
-}
-
-class _MissingActiveEmbedderIdentity implements RagEmbedder {
-  const _MissingActiveEmbedderIdentity();
-
-  Never _missing() => throw StateError(
-    'Text RAG with the active Flutter Edge AI embedder requires an explicit '
-    'activeEmbedderProfileId in FlutterEdgeAiRag.open(). Use a stable ID that '
-    'versions the weights, tokenizer, pooling, normalization, and prefix '
-    'contract; source paths and URLs are not model identities.',
-  );
-
-  @override
-  Future<EmbeddingProfile> get profile => Future.error(_missing());
-
-  @override
-  Future<List<double>> embedDocument(String text) => Future.error(_missing());
-
-  @override
-  Future<List<double>> embedQuery(String text) => Future.error(_missing());
 }

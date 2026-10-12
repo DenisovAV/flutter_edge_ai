@@ -101,8 +101,10 @@ void main() {
 
       final run = DateTime.now().microsecondsSinceEpoch;
       await store.initialize('redim_a_$run');
-      await store.bindEmbeddingProfile(
-        EmbeddingProfile(id: 'redim-a-v1', dimension: 4),
+      await store.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(id: 'redim-a-v1', dimension: 4),
+        ),
       );
       await store.addDocument(
         id: 'a',
@@ -111,8 +113,10 @@ void main() {
       );
 
       await store.initialize('redim_b_$run');
-      await store.bindEmbeddingProfile(
-        EmbeddingProfile(id: 'redim-b-v1', dimension: 8),
+      await store.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(id: 'redim-b-v1', dimension: 8),
+        ),
       );
       expect(
         (await store.getStats()).vectorDimension,
@@ -303,8 +307,10 @@ void main() {
       await store.initialize(location);
 
       await expectLater(
-        store.bindEmbeddingProfile(
-          EmbeddingProfile(id: 'fence-profile-v1', dimension: 4),
+        store.bind(
+          VectorStoreBinding(
+            profile: EmbeddingProfile(id: 'fence-profile-v1', dimension: 4),
+          ),
         ),
         throwsA(
           isA<VectorStoreException>().having(
@@ -315,10 +321,12 @@ void main() {
         ),
       );
       expect(store.isInitialized, isFalse);
-      await expectLater(store.readEmbeddingProfile(), throwsStateError);
+      await expectLater(store.readBinding(), throwsStateError);
       await expectLater(
-        store.bindEmbeddingProfile(
-          EmbeddingProfile(id: 'second-profile-v1', dimension: 4),
+        store.bind(
+          VectorStoreBinding(
+            profile: EmbeddingProfile(id: 'second-profile-v1', dimension: 4),
+          ),
         ),
         throwsStateError,
       );
@@ -357,8 +365,10 @@ void main() {
       addTearDown(store.close);
       await store.initialize(location);
 
-      final binding = store.bindEmbeddingProfile(
-        EmbeddingProfile(id: 'close-fence-v1', dimension: 4),
+      final binding = store.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(id: 'close-fence-v1', dimension: 4),
+        ),
       );
       await fenceEntered.future;
       var closeCompleted = false;

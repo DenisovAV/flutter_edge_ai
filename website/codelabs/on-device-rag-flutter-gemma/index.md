@@ -45,7 +45,7 @@ to make, and each step here is built around one of them:
 ### What you'll need
 
 * Flutter **3.47** or newer — higher than the rest of flutter_edge_ai asks for.
-  `flutter_edge_ai_sqlite` 2.0.0 requires sqlite3 3.6.0, whose build
+  `flutter_edge_ai_sqlite` 2.1.0 requires sqlite3 3.6.0, whose build
   toolchain wants `meta ^1.19.0`, and every Flutter 3.44.x pins `meta` to
   1.18.0 exactly. On 3.44 the Step 3 app will not resolve
 * Any one of Flutter's six platforms: an arm64 Android device or emulator, an
@@ -163,7 +163,7 @@ That registry change shipped in the legacy `flutter_gemma` 1.9.0 package and is
 part of the current `flutter_edge_ai`; the backend no longer carries a
 tokenizer, and the app says which families it has.
 
-**Watch out:** Leave `embeddingTokenizers` out and the first embedding throws a `StateError` naming the package to add. That is the design working: the alternative — falling back to one family and tokenizing with the wrong convention — returns vectors that are quietly the wrong point in the embedding space, and no test downstream can tell them from good ones.
+**Watch out:** Leave `embeddingTokenizers` out and the first embedding fails with an `EmbeddingLoadException` naming the package to add. That is the design working: the alternative — falling back to one family and tokenizing with the wrong convention — returns vectors that are quietly the wrong point in the embedding space, and no test downstream can tell them from good ones.
 
 ### Pick an embedding model
 
@@ -197,7 +197,7 @@ Two files, and both are required: the `.tflite` holds the weights,
 tokenizer baked into the graph — hand over only the first and the install
 fails.
 
-**Good to know:** `seq256` is the **sequence length in tokens**, not the embedding dimension. The vectors are 768 long either way; 256 is how much text fits into one forward pass before it is truncated. Every recipe here is comfortably shorter.
+**Good to know:** `seq256` is the **sequence length in tokens**, not the embedding dimension. The vectors are 768 long either way; 256 tokens, task prefix included, is the most one forward pass takes, and a longer input throws `EmbeddingInputTooLongException` rather than being cut. Every recipe here is comfortably shorter.
 
 ### Install it and embed
 
@@ -218,24 +218,24 @@ await FlutterEdgeAi.installEmbedder()
     .install();
 
 final embedder = await FlutterEdgeAi.getActiveEmbedder();
-final vectors = await embedder.generateEmbeddings(
-  kRecipes.map((r) => r.text).toList(),
-  taskType: TaskType.retrievalDocument,
-);
+final vectors = await embedder.embedAll([
+  for (final r in kRecipes) EmbeddingInput.text(r.text),
+], taskType: TaskType.retrievalDocument);
 ```
 
 `install()` is idempotent — the bytes are fetched once, and the second run of
 that button skips straight past the download. Progress is a link in the
 builder chain, not an argument to `install()`.
 
-One call for the whole corpus rather than a loop: the worker isolate is set up
-once and the model stays resident between texts.
+One call for the whole corpus rather than a loop: `embedAll` checks every text
+before the first is sent, and keeps the next one queued while the model works
+on the current one.
 
 ### The prefix that throws nothing
 
-`taskType` is the part worth slowing down for. EmbeddingGemma was trained with
-a different prefix for documents than for queries, and the enum is where that
-lives:
+`taskType` — a required argument — is the part worth slowing down for.
+EmbeddingGemma was trained with a different prefix for documents than for
+queries, and the enum is where that lives:
 
 ```text
 TaskType.retrievalDocument  ->  'title: none | text: '
@@ -246,7 +246,7 @@ Index your corpus with the query prefix and nothing errors. The vectors simply
 land slightly off, every search afterwards is a little worse, and no exception
 will ever point at it.
 
-**Watch out:** This is the one place in the codelab you have to get right by hand. From Step 3 on, `RagIndex.searchText(query:)` embeds the query for you and uses `retrievalQuery` by default — so the two halves stay matched as long as you index with `retrievalDocument`.
+**Watch out:** This is the one place in the codelab you have to get right by hand. From Step 3 on, `RagIndex.search(query:)` embeds the query for you, through the index's embedder, whose query task is `retrievalQuery` by default — so the two halves stay matched as long as you index with `retrievalDocument`.
 
 ### Wire it into the app
 
@@ -292,6 +292,10 @@ Embedding in a browser runs through LiteRT.js, which ships as four files in
 ```text
 litert.js   litert_embeddings.js   sentencepiece.js   tensorflow.js
 ```
+
+Take them from the version your app resolves: `flutter_edge_ai_litertlm`
+1.13.0 changed the bundle's API, and a copy from an older release fails
+`getActiveEmbedder()` with an `EmbeddingLoadException` that names the file.
 
 Then load the entry point from `web/index.html`:
 
@@ -418,7 +422,6 @@ Future<RagIndex> _index() {
 }
 
 Future<RagIndex> _openOnce() async {
-  const embedder = Embedders.embeddingGemma;
   return _rag.open(
     spec: VectorStoreSpec(
       providerId: SqliteVectorStoreProvider.providerId,
@@ -427,8 +430,12 @@ Future<RagIndex> _openOnce() async {
       // fields.
       filterSchema: filterSchema,
     ),
-    embeddingProfile: EmbeddingProfile(id: embedder.profileId, dimension: 768),
-    activeEmbedderProfileId: embedder.profileId,
+    // Core's active embedder under this app's stable profile id. open()
+    // binds the store to that id and the model's dimension before a row
+    // is written, and search() embeds queries through it.
+    embedder: FlutterEdgeAiActiveEmbedder(
+      profileId: Embedders.embeddingGemma.profileId,
+    ),
   );
 }
 ```
@@ -436,7 +443,14 @@ Future<RagIndex> _openOnce() async {
 The file's versions also refuse to run after `dispose()` and forget a failed
 open so the next call retries; the excerpt leaves both out.
 
-**Watch out:** Install the embedder **before** you open the index. `open()` pins the embedder that is active at that moment, for the life of the index, so an index opened on a fresh install — before `installEmbedder()` has run — takes `addVector` rows happily and then throws *No active embedding model was configured when the RAG index was opened* on the first `searchText`. That is what `embedderInstalled` (`FlutterEdgeAi.hasActiveEmbedder()`) guards: `RagStore` will not open until it is true, and its `search()` returns an empty list before then — nothing can have been indexed without the embedder anyway.
+`open()` binds the location for good: to the embedding profile — the ID you
+pass plus the dimension the model reports, 768 — and to the modality of its
+documents, `VectorStoreSpec.documents`, which defaults to text. Opening a
+location already bound to something else fails with a `StateError`, so as long
+as every model gets its own profile ID, two embedding spaces never share a
+store.
+
+**Watch out:** Install the embedder **before** you open the index. `open()` resolves the embedder's profile, which loads the active embedding model, and `FlutterEdgeAiActiveEmbedder` pins the model that is active when it is created, for the life of the index. On a fresh install — before `installEmbedder()` has run — there is none, and `open()` fails with *No active embedding model was configured when this FlutterEdgeAiActiveEmbedder was created*. That is what `embedderInstalled` (`FlutterEdgeAi.hasActiveEmbedder()`) guards: `RagStore` will not open until it is true, and its `search()` returns an empty list before then — nothing can have been indexed without the embedder anyway.
 
 The runnable app uses the stable profile ID
 `embeddinggemma-300m-seq256-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1`
@@ -460,16 +474,17 @@ await (await _index()).addVector(
 );
 ```
 
-**Good to know:** There is also `addText(id:, content:)`, which embeds for you.
-This codelab already batch-embeds twelve documents, so `addVector` avoids doing
-that work twice. `id` is what a search result hands back, so it has to stay
-stable across re-indexes.
+**Good to know:** There is also `add(id:, document: EmbeddingInput.text(...))`,
+which embeds through the index's embedder for you. This codelab already
+batch-embeds twelve documents, so `addVector` avoids doing that work twice.
+`id` is what a search result hands back, so it has to stay stable across
+re-indexes.
 
-And searching takes text, not a vector:
+And searching takes the query as an `EmbeddingInput`, not a vector:
 
 ```dart
-await (await _index()).searchText(
-  query: query,
+await (await _index()).search(
+  query: EmbeddingInput.text(query),
   topK: 3,
   threshold: 0.3,
 );
@@ -557,7 +572,7 @@ timing is the whole point on sqlite-vec: each declared field becomes a real
 typed `vec0` column, and vec0 has no `ALTER`. Adding a filter field later means
 using a new schema-versioned location and re-indexing the corpus.
 
-**Watch out:** A `Filter` over a field that was never declared is **silently dropped**. The search comes back unfiltered — no error, no log in a release build, just more results than you asked for. Declare what you might filter on, not only what you filter on today.
+**Watch out:** A `Filter` over a field that was never declared is **refused**: `search()` fails with an `ArgumentError` that lists the declared fields, because such a condition could never match. Declare what you might filter on, not only what you filter on today.
 
 ### Build a filter
 
@@ -592,8 +607,8 @@ skips filtering entirely.
 ### Pass it to the search
 
 ```dart
-await (await _index()).searchText(
-  query: query,
+await (await _index()).search(
+  query: EmbeddingInput.text(query),
   topK: 3,
   threshold: 0.3,
   filter: filter,

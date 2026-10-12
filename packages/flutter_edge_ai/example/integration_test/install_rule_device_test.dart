@@ -1,4 +1,4 @@
-// The install rule (core/model_management/install_rule.dart) on a real
+// The install rule (lib/src/model_management/install_rule.dart) on a real
 // device, where host tests cannot reach: another spelling of core's copy
 // (Android's bind mount of the app's data, a directory link on desktop),
 // deleting and journaling on the device's file system — a copy a loaded
@@ -17,11 +17,15 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/model_management/install_rule.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
+// ignore: implementation_imports — resets core's services between runs
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+// ignore: implementation_imports — device test of core's install rule
+import 'package:flutter_edge_ai/src/model_management/install_rule.dart';
+// ignore: implementation_imports — inspects the repository records the install rule writes
+import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
+// ignore: implementation_imports — device test of the mobile model manager's install paths
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

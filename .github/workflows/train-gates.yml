@@ -1,0 +1,77 @@
+name: Train gates
+
+# The compile matrix for a release train that moves several packages at once
+# (EmbeddingGemma 2 train, design R5 §9.3). Run by hand on the tip of the last
+# train branch before publish day (the rehearsal), and again on main after the
+# release PR merges. The per-PR checks stay in test.yml; this workflow holds
+# the gates that only make sense for a whole train.
+#
+# SKELETON. It runs the minimum-versions gate and the store downgrade harness
+# today. Later train PRs add:
+#   - the codelab gate (`CODELAB_USE_LOCAL_PACKAGES=1 tool/check_codelabs.sh`)
+#     once the codelabs migrate (PR G);
+#   - the unforced-consumer gate: a scratch app on hosted
+#     `genkit_flutter_edge_ai: 0.8.0` with path overrides for the train, analyze
+#     + `flutter build web` + macOS (PR C, when the embedding forwarders land);
+#   - `dart pub publish --dry-run` for every published package and
+#     `dart tool/check_published_assets.dart` (PR F).
+# Example builds (apk, ios, macos, web, web --wasm) already run per PR in
+# test.yml.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # Gate 3 of §9.3: every caret floor must still compile and pass. `pub
+  # downgrade` resolves the LOWEST versions the constraints allow, so a floor
+  # that is too low for an API a package now uses fails here instead of in a
+  # user's app that happens to resolve the old version.
+  minimum-versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Resolve the workspace at its minimum versions
+        run: flutter pub downgrade
+
+      - name: Analyze code
+        run: flutter analyze packages/ --no-fatal-infos
+
+      - name: Core public surface
+        run: tool/check_core_surface.sh
+
+      - name: Web import graph
+        run: dart tool/check_web_graph.dart
+
+      - name: Run tests (all packages)
+        run: tool/test_all.sh
+
+  # Gate 6 of §9.3: the published flutter_edge_ai_rag 1.0.0 +
+  # flutter_edge_ai_sqlite 2.0.1 + flutter_edge_ai_qdrant 2.0.1 must refuse
+  # every image/audio store the train writes and still open its text stores
+  # (tool/rag_store_compat/README.md).
+  store-downgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Store downgrade harness
+        run: tool/rag_store_compat/run_downgrade_harness.sh

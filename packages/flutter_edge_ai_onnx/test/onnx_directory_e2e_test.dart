@@ -14,16 +14,19 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart';
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_registry.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
+import 'package:flutter_edge_ai/engine.dart';
+// ignore: implementation_imports — injects a fake download service into core
+import 'package:flutter_edge_ai/src/services/download_service.dart'
+    show DownloadService;
+// ignore: implementation_imports — resets core's resolver registry between tests
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_registry.dart'
+    show HuggingFaceResolverRegistry;
+// ignore: implementation_imports — installs the directory through core's real model manager
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
+// ignore: implementation_imports — swaps core's services for the fakes
+import 'package:flutter_edge_ai/src/di/service_registry.dart'
+    show ServiceRegistry;
 
 import 'package:flutter_edge_ai_onnx/src/onnx_engine.dart';
 

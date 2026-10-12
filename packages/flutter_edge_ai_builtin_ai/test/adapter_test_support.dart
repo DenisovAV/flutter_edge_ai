@@ -11,12 +11,13 @@ library;
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/domain/model_source.dart' show ModelSource;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show InferenceModelSpec;
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
-    show RuntimeConfig;
+import 'package:flutter_edge_ai/engine.dart'
+    show
+        InferenceModelSpec,
+        ModelFileType,
+        ModelSource,
+        ModelType,
+        RuntimeConfig;
 import 'package:flutter_local_ai/flutter_local_ai.dart'
     show LocalAiAvailability;
 import 'package:flutter_local_ai/testing.dart' show FakeLocalAiHost;

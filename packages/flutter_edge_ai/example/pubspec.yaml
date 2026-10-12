@@ -120,6 +120,9 @@ dev_dependencies:
   # integration_test/embedding_close_leak_test.dart forces a full GC before
   # each memory snapshot.
   vm_service: ^15.0.0
+  # test/w1_native_token_ids_golden_test.dart pins the tokenizer file the W1
+  # golden was computed from by its SHA-256.
+  crypto: ^3.0.6
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -154,6 +157,14 @@ flutter:
     - assets/
     - assets/models/
     - assets/test/
+    # EmbeddingGemma 2 image samples (generated, see
+    # integration_test/tools/generate_eg2_vision_images.py): the Image Search
+    # screen's sample photos and the device suites' test images.
+    - assets/eg2_vision/
+    # EmbeddingGemma 2 audio clips (synthesized, see
+    # integration_test/tools/generate_eg2_audio_clips.py): the device suites'
+    # test clips and the text→audio retrieval set.
+    - assets/eg2_audio/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware

@@ -3,7 +3,8 @@
 // the shared web infra (web_model_source) and core parsing
 // directly so it no longer needs to be a `part of flutter_edge_ai_web.dart`.
 import 'dart:async';
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/engine_web.dart';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
@@ -11,19 +12,7 @@ import 'dart:js_interop_unsafe';
 import 'package:flutter/foundation.dart';
 import 'package:mutex/mutex.dart';
 
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
-import 'package:flutter_edge_ai/core/tool.dart';
-import 'package:flutter_edge_ai/core/extensions.dart';
-import 'package:flutter_edge_ai/core/function_call_parser.dart';
-import 'package:flutter_edge_ai/core/parsing/sdk_response_parser.dart';
-import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
-import 'package:flutter_edge_ai/web/web_model_source.dart';
-
+import 'litert_lm_page_lock.dart';
 import 'litert_lm_web.dart';
 import '../ffi/engine_sampler_latch.dart';
 import '../thinking_context.dart';
@@ -167,10 +156,12 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
     final sw = Stopwatch()..start();
-    final engineFuture = LiteRtLmEngine.create(
-      LiteRtLmEngineOptions(model: modelArg),
+    // Streams the model into the page's WebAssembly module, which the
+    // EmbeddingGemma 2 engine shares: see litert_lm_page_lock.dart.
+    _engine = await liteRtLmPageLock.run(
+      () =>
+          LiteRtLmEngine.create(LiteRtLmEngineOptions(model: modelArg)).toDart,
     );
-    _engine = await engineFuture.toDart;
     if (kDebugMode) {
       edgeAiLog(
         '[LiteRtLmWebInferenceModel/perf] Engine.create: ${sw.elapsedMilliseconds}ms',
@@ -450,33 +441,36 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         : null;
 
     final beforeConv = sw.elapsedMilliseconds;
-    final convoFuture = _engine!.createConversation(
-      LiteRtLmConversationOptions(
-        sessionConfig: sessionConfigJs,
-        preface: prefaceJs,
-        filterChannelContentFromKvCache: enableThinking ? true : null,
-        // Deliberately NOT enabled, unlike the FFI path. Upstream
-        // google-ai-edge/LiteRT-LM#2434: with constrained decoding on, the WASM
-        // grammar does not return to its start state after a completed
-        // `<|tool_call>...<tool_call|>` block, so the NEXT decode round in that
-        // conversation aborts with `Invalid token at state N` no matter what it
-        // contains. That kills every multi-turn tool flow — including the agent
-        // loop's call -> result -> continue, which cannot avoid that round.
-        //
-        // Measured on 0.17.0, seven cases in
-        // `example/integration_test/web_function_calling_test.dart`: with the
-        // flag off all pass, including the negative control (a non-action prompt
-        // still calls nothing) and the round-trip. Gemma 4 emits well-formed
-        // tool-call blocks without the grammar, and `SdkResponseParser` keeps its
-        // raw-token fallback for the case where it does not. With the flag on,
-        // any turn following a tool call fails.
-        //
-        // Native keeps it on: the C++ grammar resets correctly and is
-        // unaffected. Re-enable here once #2434 is fixed upstream.
-        enableConstrainedDecoding: null,
-      ),
+    final options = LiteRtLmConversationOptions(
+      sessionConfig: sessionConfigJs,
+      preface: prefaceJs,
+      filterChannelContentFromKvCache: enableThinking ? true : null,
+      // Deliberately NOT enabled, unlike the FFI path. Upstream
+      // google-ai-edge/LiteRT-LM#2434: with constrained decoding on, the WASM
+      // grammar does not return to its start state after a completed
+      // `<|tool_call>...<tool_call|>` block, so the NEXT decode round in that
+      // conversation aborts with `Invalid token at state N` no matter what it
+      // contains. That kills every multi-turn tool flow — including the agent
+      // loop's call -> result -> continue, which cannot avoid that round.
+      //
+      // Measured on 0.17.0, seven cases in
+      // `example/integration_test/web_function_calling_test.dart`: with the
+      // flag off all pass, including the negative control (a non-action prompt
+      // still calls nothing) and the round-trip. Gemma 4 emits well-formed
+      // tool-call blocks without the grammar, and `SdkResponseParser` keeps its
+      // raw-token fallback for the case where it does not. With the flag on,
+      // any turn following a tool call fails.
+      //
+      // Native keeps it on: the C++ grammar resets correctly and is
+      // unaffected. Re-enable here once #2434 is fixed upstream.
+      enableConstrainedDecoding: null,
     );
-    final conversation = await convoFuture.toDart;
+    final engine = _engine!;
+    // May prefill the preface inside the page's WebAssembly module: see
+    // litert_lm_page_lock.dart.
+    final conversation = await liteRtLmPageLock.run(
+      () => engine.createConversation(options).toDart,
+    );
     if (kDebugMode) {
       edgeAiLog(
         '[LiteRtLmWebInferenceModel/perf] createConversation: ${sw.elapsedMilliseconds - beforeConv}ms',
@@ -526,7 +520,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
 /// Session-side accumulator + async iterator pump for `@litert-lm/core`.
 ///
-/// Mirrors [FfiInferenceModelSession] (lib/core/ffi/ffi_inference_model.dart)
+/// Mirrors [FfiInferenceModelSession] (lib/src/ffi/ffi_inference_model.dart)
 /// 1:1 — same buffering of query chunks, same Gemma 4 raw-JSON-accumulating
 /// branch, same `with RawSdkResponseSession` mixin so [InferenceChat] reads
 /// `lastRawResponse` and extracts `tool_calls` via the shared
@@ -560,6 +554,20 @@ class LiteRtLmWebSession extends InferenceModelSession
   final StringBuffer _queryBuffer = StringBuffer();
   bool _isClosed = false;
   bool _isCancelled = false;
+
+  /// Completes when the generation that started last has read its JS stream
+  /// to the end and released its page lease; null before the first one.
+  /// [close] waits for it, so the owning model deletes its engine only after
+  /// nothing is suspended inside the page's WebAssembly module any more.
+  Future<void>? _generationEnded;
+
+  /// Releases that generation's page lease. [close] calls it when the stream
+  /// does not end within [closeDrainTimeout], so a stuck runtime cannot hold
+  /// the page lock (and with it every EmbeddingGemma 2 call) for good.
+  void Function()? _releaseGenerationPage;
+
+  /// How long [close] waits for a cancelled generation to end.
+  static const Duration closeDrainTimeout = Duration(seconds: 30);
 
   /// Whether LiteRT-LM runs this model's tool calling natively (Gemma 4, and
   /// FunctionGemma); see [FunctionCallParser.usesSdkPassthrough].
@@ -694,6 +702,19 @@ class LiteRtLmWebSession extends InferenceModelSession
       if (mutexHeld) generationMutex.release();
     }
 
+    // The page lock (litert_lm_page_lock.dart): held from before
+    // `sendMessageStreaming` until the JS stream has ENDED — not until the
+    // Dart consumer stops listening. A generation stays suspended inside the
+    // page's WebAssembly module for its whole length, and the EmbeddingGemma 2
+    // engine must not enter the module meanwhile. A consumer that cancels
+    // early therefore leaves the pump draining the stream to its end.
+    LiteRtLmPageLease? pageLease;
+    final ended = Completer<void>();
+    void releasePage() {
+      pageLease?.release();
+      if (!ended.isCompleted) ended.complete();
+    }
+
     // The request payload: tool results go back as one role-`tool` message,
     // the only shape after which the template continues the model's own turn;
     // everything else is the staged text as a plain string (media never gets
@@ -722,20 +743,38 @@ class LiteRtLmWebSession extends InferenceModelSession
           ? raw.callMethod<JSObject>(asyncIterSym)
           : raw; // assume it's already an iterator
 
+      // After the consumer is gone: reads the stream to its end, emitting
+      // nothing, and only then lets the next page-lock holder in.
+      void drain() {
+        iter.next().toDart.then((JSObject step) {
+          if (step.getProperty<JSBoolean>('done'.toJS).toDart) {
+            releasePage();
+          } else {
+            drain();
+          }
+        }, onError: (Object _, StackTrace _) => releasePage());
+      }
+
       void pump() {
         if (controller.isClosed || _isCancelled) {
           releaseMutex();
           if (!controller.isClosed) controller.close();
+          drain();
           return;
         }
         iter.next().toDart.then(
           (JSObject step) {
+            final done = (step.getProperty<JSBoolean>('done'.toJS)).toDart;
             if (controller.isClosed || _isCancelled) {
               releaseMutex();
               if (!controller.isClosed) controller.close();
+              if (done) {
+                releasePage();
+              } else {
+                drain();
+              }
               return;
             }
-            final done = (step.getProperty<JSBoolean>('done'.toJS)).toDart;
             if (done) {
               if (accumulateRaw) {
                 _lastRawResponse = rawBuffer!.toString();
@@ -748,6 +787,7 @@ class LiteRtLmWebSession extends InferenceModelSession
                 );
               }
               releaseMutex();
+              releasePage();
               controller.close();
               return;
             }
@@ -779,6 +819,8 @@ class LiteRtLmWebSession extends InferenceModelSession
                   controller.addError(e, st);
                   controller.close();
                 }
+                // The generation itself goes on: read it to its end.
+                drain();
                 return;
               }
             }
@@ -786,6 +828,7 @@ class LiteRtLmWebSession extends InferenceModelSession
           },
           onError: (Object error, StackTrace st) {
             releaseMutex();
+            releasePage();
             if (!controller.isClosed) {
               controller.addError(error, st);
               controller.close();
@@ -804,13 +847,21 @@ class LiteRtLmWebSession extends InferenceModelSession
       try {
         await generationMutex.acquire();
         mutexHeld = true;
+        pageLease = await liteRtLmPageLock.acquire();
         if (_isCancelled || controller.isClosed) {
           releaseMutex();
+          releasePage();
           if (!controller.isClosed) await controller.close();
           return;
         }
+        // From here the stream holds the page until it ends; close() waits
+        // for that (a generation still queued above has nothing to wait for).
+        _generationEnded = ended.future;
+        _releaseGenerationPage = releasePage;
         startPump();
       } catch (e, st) {
+        // Nothing reached the stream's end if startPump threw: no drain.
+        releasePage();
         releaseMutex();
         if (!controller.isClosed) {
           controller.addError(e, st);
@@ -871,6 +922,22 @@ class LiteRtLmWebSession extends InferenceModelSession
       if (kDebugMode) {
         edgeAiLog('[LiteRtLmWebSession] cancel during close threw: $e');
       }
+    }
+    // cancel() only asks the stream to stop: the pump keeps reading it to its
+    // end and holds the page lock until then. Wait for that, so the model
+    // deletes its engine after the last call into the module has returned.
+    final ended = _generationEnded;
+    if (ended != null) {
+      await ended.timeout(
+        closeDrainTimeout,
+        onTimeout: () {
+          edgeAiLog(
+            '[LiteRtLmWebSession] the cancelled generation did not end within '
+            '${closeDrainTimeout.inSeconds} s; releasing the page lock anyway.',
+          );
+          _releaseGenerationPage?.call();
+        },
+      );
     }
     _queryBuffer.clear();
     onClose();

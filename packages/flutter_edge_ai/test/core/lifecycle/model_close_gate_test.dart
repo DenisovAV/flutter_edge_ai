@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/src/lifecycle/model_close_gate.dart';
+import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/engine.dart' show ModelType;
 import 'package:flutter_edge_ai_mediapipe/pigeon.g.dart';
 import 'package:flutter_edge_ai_mediapipe/src/mobile/mobile_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';

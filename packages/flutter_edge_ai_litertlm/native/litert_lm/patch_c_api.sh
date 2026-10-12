@@ -59,7 +59,10 @@ if ! grep -q '"libLiteRtLm.dylib"' "$DIR/c/BUILD"; then
 LDSEOF
 
   # Windows .def: whitelist of symbols to export from LiteRtLm.dll.
-  # Derived from lib/core/ffi/litert_lm_bindings.dart lookupFunction calls.
+  # Derived from lib/src/ffi/litert_lm_bindings.dart lookupFunction calls.
+  # The EmbeddingEngine C API leaves the DLL through LITERT_LM_C_API_EXPORT;
+  # the two response getters section 14 adds are also named here, so a tree
+  # that lost section 14 fails the Windows link instead of shipping without.
   cat > "$DIR/c/windows_exports.def" << 'DEFEOF'
 LIBRARY "LiteRtLm"
 EXPORTS
@@ -86,6 +89,8 @@ EXPORTS
   litert_lm_conversation_get_benchmark_info
   litert_lm_conversation_send_message
   litert_lm_conversation_send_message_stream
+  litert_lm_embedding_response_get_input_length
+  litert_lm_embedding_response_get_truncated_length
   litert_lm_engine_create
   litert_lm_engine_create_session
   litert_lm_engine_delete
@@ -479,5 +484,96 @@ for name in ("gemma3", "gemma4", "function_gemma"):
     open(path, "w").write(code)
     print(f"  OK: {name}_data_processor.cc returns WrapGemmaModelConstraint")
 PYEOF
+
+# ── 13. Linux/Windows: external weights read by path (EmbeddingGemma 2) ──
+# A .litertlm TFLiteModel with a TFLiteWeights section reads its weights from
+# a group named "tflite_weights". Upstream hands that section to the runtime
+# through litert::Options::SetExternalWeightScopedFile, which stores a C++
+# std::unordered_map inside the runtime's LiteRtOptionsT. On Linux and Windows
+# the runtime is Google's prebuilt libLiteRt (libc++) and we are not, so the
+# map is unreadable: Linux opens "tflite_weights" in the working directory and
+# engine_create fails, Windows faults in libLiteRt.dll (0xC0000005).
+# external_weights_by_path.{h,cc} rename the group to an absolute path of the
+# bundle and shift the offsets, so the runtime maps the same bytes through its
+# own path branch; GetWeightsSectionOffset reports no section, so no map is
+# handed over. Apple and Android compile it out (one standard library there);
+# -DLITERT_LM_FORCE_PATH_WEIGHTS turns it on for a test build.
+#
+# A real diff, applied like section 11, plus anchors on the assumptions the
+# patch rests on: a moved upstream line fails the build here, not a user's
+# engine_create.
+PATHW_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+for f in external_weights_by_path.h external_weights_by_path.cc \
+    external_weights_by_path_test.cc; do
+  cp "$PATHW_SRC_DIR/$f" "$DIR/runtime/components/$f"
+done
+PATHW_PATCH="$PATHW_SRC_DIR/patches/external_weights_by_path.patch"
+if git -C "$DIR" apply --check "$PATHW_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$PATHW_PATCH"
+  echo "  OK: TFLiteWeights are read by path on Linux and Windows"
+elif git -C "$DIR" apply --reverse --check "$PATHW_PATCH" 2>/dev/null; then
+  echo "  SKIP: external weights by path already applied"
+else
+  echo "  ERROR: $PATHW_PATCH does not apply to this LiteRT-LM revision —" >&2
+  echo "         model_resources_litert_lm or runtime/components/BUILD moved;" >&2
+  echo "         re-create the patch against it." >&2
+  exit 1
+fi
+pathw_fail() {
+  echo "  ERROR: section 13: $1" >&2
+  exit 1
+}
+PATHW_UTILS="$DIR/runtime/executor/litert_compiled_model_executor_utils.cc"
+# The group name the rewrite looks for is the one upstream gives the section.
+grep -qF 'external_weights.sections["tflite_weights"]' "$PATHW_UTILS" ||
+  pathw_fail "GetExternalWeightResources no longer names the group \"tflite_weights\""
+# NotFound from GetWeightsSectionOffset must still mean "no scoped file".
+grep -qF 'absl::IsNotFound(section_offset.status())' "$PATHW_UTILS" ||
+  pathw_fail "GetExternalWeightResources no longer treats NotFound as no external weights"
+# Every caller of SetExternalWeightScopedFile must be fed by
+# GetExternalWeightResources; a new one would hand the runtime a map again.
+pathw_callers="$(grep -rlF '.SetExternalWeightScopedFile(' --include='*.cc' \
+  "$DIR/runtime" "$DIR/c" | grep -v '_test\.cc$' | sed "s|^$DIR/||" | sort | tr '\n' ' ')"
+[ "$pathw_callers" = "runtime/components/embedding_lookup/embedding_lookup_text.cc runtime/executor/litert_compiled_model_executor_utils.cc " ] ||
+  pathw_fail "unexpected SetExternalWeightScopedFile callers: $pathw_callers"
+grep -qF 'if (external_weight_file_.has_value() &&' \
+  "$DIR/runtime/components/embedding_lookup/embedding_lookup_text.cc" ||
+  pathw_fail "EmbeddingLookupText no longer skips an absent weight file"
+# The in-memory map (SetWeightInMemoryMap) crosses the same boundary; the
+# .litertlm resources must keep returning none.
+if grep -q 'GetWeightInMemoryMap' "$DIR/runtime/components/model_resources_litert_lm.h"; then
+  pathw_fail "ModelResourcesLitertLm now provides an in-memory weight map"
+fi
+echo "  OK: section 13 anchors hold"
+
+# ── 14. EmbeddingEngine response lengths (EmbeddingGemma 2) ──
+# EmbeddingEngineImpl fills EmbeddingResponse.input_length and
+# .truncated_length (runtime/core/embedding_engine_impl.cc), but the C API
+# returns only the vector, so a caller cannot tell a truncated input from a
+# whole one without tokenizing it again. Two getters, exported on every
+# platform (LITERT_LM_C_API_EXPORT, and section 1's Windows .def):
+#   litert_lm_embedding_response_get_input_length     -1 for NULL
+#   litert_lm_embedding_response_get_truncated_length 0 when not truncated,
+#                                                     -1 for NULL
+# A real diff, applied like section 11, plus an anchor on the two fields it
+# reads still being filled.
+EMB_LEN_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/embedding_response_lengths.patch"
+if git -C "$DIR" apply --check "$EMB_LEN_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$EMB_LEN_PATCH"
+  echo "  OK: embedding responses report input and truncated lengths"
+elif git -C "$DIR" apply --reverse --check "$EMB_LEN_PATCH" 2>/dev/null; then
+  echo "  SKIP: embedding response lengths already applied"
+else
+  echo "  ERROR: $EMB_LEN_PATCH does not apply to this LiteRT-LM revision —" >&2
+  echo "         c/embedding_engine.{h,cc} moved; re-create the patch against it." >&2
+  exit 1
+fi
+EMB_IMPL="$DIR/runtime/core/embedding_engine_impl.cc"
+for field in input_length truncated_length; do
+  grep -qF "response.$field = embedding_output.$field;" "$EMB_IMPL" || {
+    echo "  ERROR: section 14: EmbeddingEngineImpl no longer fills response.$field" >&2
+    exit 1
+  }
+done
 
 echo "Patch complete."

@@ -2,7 +2,7 @@
 // `feat/onnx-web`, Task 2.2). `dart:js_interop` only resolves on web compile
 // targets — this file can never be imported into a VM (`flutter test`) run;
 // it is compile-checked by `flutter build web` and exercised for real only
-// in a browser. See `onnx_web_embedding_forward_pass.dart` for the pure-Dart
+// in a browser. See `onnx_web_embedding_pass.dart` for the pure-Dart
 // half this client plugs into via the shared [OrtClient] interface.
 //
 // index.html contract: a `window.ortReady` Promise (resolving once the
@@ -110,8 +110,8 @@ class OrtWebClient implements OrtClient {
       hasLastHiddenStateOutput: _outputName == 'last_hidden_state',
       // onnxruntime-web's InferenceSession does not expose static
       // input/output shape metadata the way the native ORT C API does — the
-      // web forward pass always treats the graph as dynamic-shape (see
-      // `onnx_web_embedding_forward_pass.dart`'s module doc) and discovers
+      // web pass always treats the graph as dynamic-shape (see
+      // `onnx_web_embedding_pass.dart`'s module doc) and discovers
       // the output dimension via a 1-token probe instead.
       staticSeqLen: null,
       staticDim: null,
@@ -161,3 +161,10 @@ class OrtWebClient implements OrtClient {
     }
   }
 }
+
+@JS('URL.revokeObjectURL')
+external void _revokeObjectUrlJs(JSString url);
+
+/// Releases an object URL the web embedding pass created through
+/// `resolveWebModelUrl`.
+void revokeObjectUrl(String url) => _revokeObjectUrlJs(url.toJS);

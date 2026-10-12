@@ -9,9 +9,13 @@ import 'runtime_errors.dart';
 /// Creates a Genkit [Embedder] action backed by flutter_edge_ai's embedding model.
 ///
 /// The embedding model comes from flutter_edge_ai on every call, which reuses
-/// the loaded one while nothing changed. Texts are embedded as search queries unless the options say
-/// `taskType: 'retrievalDocument'`, which is what documents being indexed
-/// need: EmbeddingGemma prefixes the two differently.
+/// the loaded one while nothing changed; a handle kept here could have been
+/// closed or replaced since. When the model is closed between that lookup and
+/// the request (`EmbedderClosedException`, which means the request never ran),
+/// it is resolved again and the request retried once. Texts are embedded as
+/// search queries unless the options say `taskType: 'retrievalDocument'`,
+/// which is what documents being indexed need: EmbeddingGemma prefixes the
+/// two differently.
 Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
   required String name,
   required FlutterEdgeAiRuntime runtime,
@@ -37,20 +41,32 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
           _documentText(doc, index),
       ];
 
+      // One text input per document.
+      final inputs = [
+        for (final text in texts) gemma.EmbeddingInput.text(text),
+      ];
+
       // Asked for on every call: flutter_edge_ai reuses the loaded embedder
       // while it is open and nothing changed, and builds a new one when the
       // active embedder or the backend did — a handle cached here would miss
       // both.
-      final embedder = await withRuntimeErrors(
-        'Could not load the on-device embedder',
-        () => runtime.getActiveEmbedder(preferredBackend: backend),
-      );
-      context.cancel?.throwIfCancelled();
+      Future<List<List<double>>> attempt() async {
+        final embedder = await withRuntimeErrors(
+          'Could not load the on-device embedder',
+          () => runtime.getActiveEmbedder(preferredBackend: backend),
+        );
+        context.cancel?.throwIfCancelled();
+        return embedder.embedAll(inputs, taskType: taskType);
+      }
 
-      final vectors = await embedder.generateEmbeddings(
-        texts,
-        taskType: taskType,
-      );
+      // EmbedderClosedException means the request never ran: the model was
+      // closed between the lookup and the request. Resolve it again, once.
+      List<List<double>> vectors;
+      try {
+        vectors = await attempt();
+      } on gemma.EmbedderClosedException {
+        vectors = await attempt();
+      }
       context.cancel?.throwIfCancelled();
       if (vectors.length != texts.length) {
         throw GenkitException(

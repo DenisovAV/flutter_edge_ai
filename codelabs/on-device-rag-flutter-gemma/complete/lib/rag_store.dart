@@ -38,11 +38,12 @@ class RagStore {
 
   /// Whether the embedder this index searches with is installed yet.
   ///
-  /// `FlutterEdgeAiRag.open()` pins the embedder that is active at the moment
-  /// it runs, for the life of the index. Opened before `installEmbedder()`, it
-  /// pins none, and every `addText` and `searchText` after that throws. So
-  /// install the embedder first and open the index second — this store
-  /// refuses to open until this is true.
+  /// `FlutterEdgeAiRag.open()` resolves its embedder's profile, which loads
+  /// the active embedding model, and `FlutterEdgeAiActiveEmbedder` pins the
+  /// model that is active when it is created, for the life of the index.
+  /// Before `installEmbedder()` there is none, and `open()` fails. So install
+  /// the embedder first and open the index second — this store refuses to
+  /// open until this is true.
   bool get embedderInstalled => FlutterEdgeAi.hasActiveEmbedder();
 
   /// Opens this app's one index, or joins the in-flight open.
@@ -63,20 +64,18 @@ class RagStore {
 
   Future<RagIndex> _openOnce() async {
     try {
-      final embedder = Embedders.embeddingGemma;
       final index = await _rag.open(
         spec: VectorStoreSpec(
           providerId: SqliteVectorStoreProvider.providerId,
           location: await databasePath(),
           filterSchema: filterSchema,
         ),
-        // Batch indexing below writes raw vectors first, so bind the new store
-        // explicitly. The same ID lets searchText borrow the active core model.
-        embeddingProfile: EmbeddingProfile(
-          id: embedder.profileId,
-          dimension: 768,
+        // Core's active embedder under this app's stable profile id. open()
+        // binds the store to that id and the model's dimension before a row
+        // is written, and search() embeds queries through it.
+        embedder: FlutterEdgeAiActiveEmbedder(
+          profileId: Embedders.embeddingGemma.profileId,
         ),
-        activeEmbedderProfileId: embedder.profileId,
       );
       if (_disposeRequested) {
         await index.dispose();
@@ -95,10 +94,9 @@ class RagStore {
     onStatus?.call('Embedding ${kRecipes.length} recipes...');
 
     final embedder = await FlutterEdgeAi.getActiveEmbedder();
-    final vectors = await embedder.generateEmbeddings(
-      kRecipes.map((recipe) => recipe.text).toList(),
-      taskType: TaskType.retrievalDocument,
-    );
+    final vectors = await embedder.embedAll([
+      for (final recipe in kRecipes) EmbeddingInput.text(recipe.text),
+    ], taskType: TaskType.retrievalDocument);
 
     onStatus?.call('Writing ${kRecipes.length} rows...');
     for (var i = 0; i < kRecipes.length; i++) {
@@ -129,15 +127,14 @@ class RagStore {
     Filter? filter,
   }) async {
     // `index()` installs the embedder before it writes a row, so with none
-    // installed there is nothing to find — and opening now would pin "no
-    // embedder" for the life of the index.
+    // installed there is nothing to find — and opening now would fail.
     if (!embedderInstalled) return const [];
     final ragIndex = await _index();
     final stats = await ragIndex.stats();
     if (stats.documentCount == 0) return const [];
 
-    return ragIndex.searchText(
-      query: query,
+    return ragIndex.search(
+      query: EmbeddingInput.text(query),
       topK: topK,
       threshold: threshold,
       filter: filter,

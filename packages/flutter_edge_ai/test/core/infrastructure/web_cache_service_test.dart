@@ -4,10 +4,10 @@
 /// where Cache API is available. Use `flutter test --platform chrome`
 @TestOn('chrome')
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/core/infrastructure/web_cache_service.dart';
-import 'package:flutter_edge_ai/core/infrastructure/web_cache_interop_stub.dart'
-    if (dart.library.js_interop) 'package:flutter_edge_ai/core/infrastructure/web_cache_interop.dart';
-import 'package:flutter_edge_ai/core/infrastructure/web_file_system_service.dart';
+import 'package:flutter_edge_ai/src/infrastructure/web_cache_service.dart';
+import 'package:flutter_edge_ai/src/infrastructure/web_cache_interop_stub.dart'
+    if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_cache_interop.dart';
+import 'package:flutter_edge_ai/src/infrastructure/web_file_system_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

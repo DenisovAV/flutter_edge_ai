@@ -1,5 +1,4 @@
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show SttModelType;
+import 'package:flutter_edge_ai/engine.dart' show SttModelType;
 import 'package:flutter_edge_ai_speech/src/model/stt_model_profile.dart';
 import 'package:flutter_edge_ai_speech/src/tokenizer/stt_special_tokens.dart';
 import 'package:flutter_edge_ai_speech/src/tokenizer/stt_tokenizer.dart';

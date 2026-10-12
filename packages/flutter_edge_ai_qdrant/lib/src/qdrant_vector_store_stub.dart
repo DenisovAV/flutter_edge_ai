@@ -10,13 +10,13 @@ class QdrantLegacyStoreException extends VectorStoreException {
   const QdrantLegacyStoreException(super.message);
 }
 
-class QdrantVectorStore implements VectorStoreRepository {
+final class QdrantVectorStore extends VectorStoreRepository {
   @override
   bool get isInitialized => false;
 
   // qdrant-edge can't run on web, so there is nothing to make filterable —
-  // [configure] is a no-op and the schema stays empty. (`implements` does not
-  // inherit the abstract class's bodied defaults, so these must be declared.)
+  // [configure] is a no-op and the schema stays empty. (VectorStoreRepository
+  // has no bodied defaults, so these must be declared.)
   @override
   FilterSchema get filterSchema => FilterSchema.empty;
 
@@ -30,13 +30,12 @@ class QdrantVectorStore implements VectorStoreRepository {
       );
 
   @override
-  Future<EmbeddingProfile?> readEmbeddingProfile() async =>
-      throw UnimplementedError(
-        'QdrantVectorStore is native-only; qdrant-edge cannot run on web',
-      );
+  Future<VectorStoreBinding?> readBinding() async => throw UnimplementedError(
+    'QdrantVectorStore is native-only; qdrant-edge cannot run on web',
+  );
 
   @override
-  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async =>
+  Future<void> bind(VectorStoreBinding binding) async =>
       throw UnimplementedError(
         'QdrantVectorStore is native-only; qdrant-edge cannot run on web',
       );

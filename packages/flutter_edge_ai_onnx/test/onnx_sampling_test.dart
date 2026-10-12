@@ -1,5 +1,4 @@
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_onnx/src/onnx_sampling.dart';
 import 'package:flutter_test/flutter_test.dart';
 

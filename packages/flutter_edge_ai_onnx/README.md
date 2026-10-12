@@ -44,6 +44,16 @@ await FlutterEdgeAi.initialize(
 
 Either arm can be registered on its own — they don't depend on each other.
 
+> **0.5.8 needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
+> flutter_edge_ai package upgraded together:** `flutter_edge_ai_litertlm`
+> 1.13.0 · `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_mediapipe`
+> 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 · `flutter_edge_ai_speech` 0.5.6 ·
+> `flutter_edge_ai_agent` 0.2.9 · `flutter_edge_ai_rag` 1.1.0 ·
+> `flutter_edge_ai_sqlite` 2.1.0 · `flutter_edge_ai_qdrant` 2.1.0 ·
+> `genkit_flutter_edge_ai` 0.9.1. Run `flutter pub upgrade`; the
+> [migration guide](https://flutteredge.ai/docs/migration) lists the API
+> changes.
+
 ## Platform matrix
 
 | Platform | Native archives | `OnnxEngine`/`OnnxEmbeddingBackend` enabled |
@@ -56,7 +66,7 @@ Either arm can be registered on its own — they don't depend on each other.
 | iOS (arm64) | ✅ bundled | ✅ device-verified |
 | Web | N/A — Transformers.js + onnxruntime-web, no native archive | ✅ both arms |
 
-`OnnxEngine.canHandle`/`OnnxEmbeddingBackend.createModel` are gated to
+`OnnxEngine.canHandle`/`OnnxEmbeddingBackend.describe` are gated to
 macOS arm64, Linux x64, Windows x64, Android arm64, and iOS arm64 —
 device-verified end-to-end (generation +
 embeddings) on macOS (~54 tok/s, M4 Pro), Linux (~5.3-5.8 tok/s), Windows
@@ -74,7 +84,7 @@ Transformers.js/onnxruntime-web arms below instead.
 `OnnxEmbeddingBackend.canHandle` stays extension-based on every platform for
 a different reason (so a catch-all embedding backend like
 `LiteRtEmbeddingBackend` never silently claims an `.onnx`/`.ort` file); its
-platform gate lives in `createModel` instead, as a loud `StateError`.
+platform gate lives in `describe` instead, as a loud `EmbeddingLoadException`.
 
 Android needs **`minSdk 24`** — both the ORT and ORT-GenAI AARs declare
 `minSdkVersion=24`; raise your app's `android/app/build.gradle(.kts)`
@@ -217,7 +227,23 @@ A plain ONNX Runtime forward pass (no ORT-GenAI, no text generation) over an
 The output contract and mask/`token_type_ids` requirements are discovered
 from the session's actual graph once it opens — no per-model configuration
 needed. Priority 10 (above `LiteRtEmbeddingBackend`'s catch-all priority 0),
-so registering both and installing an `.onnx`/`.ort` model routes here.
+so registering both and installing an `.onnx`/`.ort` model (any letter case)
+routes here.
+
+Limits:
+
+- **Text only.** `getActiveEmbedder(supportImage: true)` or
+  `supportAudio: true` fails with `EmbeddingLoadException`.
+- **Input length.** `maxInputTokens` is the graph's static sequence length, or
+  null for a dynamic-shape graph. A static graph is padded, never truncated: a
+  longer input — task prefix and special tokens included — fails with
+  `EmbeddingInputTooLongException`.
+- **Task prefixes.** `embed(…, taskType:)` prefixes the text exactly as the
+  LiteRT backend does; `TaskType.none` adds no prefix.
+
+The pass itself is `OnnxEmbeddingPass` (with `OnnxEmbeddingConfig`), exported
+on native for tests and device gates that drive it directly; apps get it
+through `FlutterEdgeAi.getActiveEmbedder()`.
 
 On native the embedder reports `activeBackend == cpu`: no execution provider is
 appended, so plain ORT runs on CPU and `preferredBackend` is not applied. On web

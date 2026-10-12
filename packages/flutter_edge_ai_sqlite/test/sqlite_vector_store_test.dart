@@ -103,7 +103,7 @@ void main() {
   });
 
   group('SqliteVectorStore (vec0)', () {
-    late SqliteVectorStore repo;
+    late VectorStoreRepository repo;
     late String dbPath;
 
     setUp(() {
@@ -613,17 +613,41 @@ void main() {
 
 /// Keeps profile-less store-behaviour tests focused on vec0 semantics while
 /// profile-specific tests exercise the required explicit binding separately.
-class _TestSqliteVectorStore extends SqliteVectorStore {
+///
+/// Wraps rather than extends: SqliteVectorStore is a final class.
+final class _TestSqliteVectorStore extends VectorStoreRepository {
+  final SqliteVectorStore _inner = SqliteVectorStore();
+
   Future<void> _bindForDimension(int dimension) async {
-    if (await readEmbeddingProfile() == null) {
-      await bindEmbeddingProfile(
-        EmbeddingProfile(
-          id: 'sqlite-vector-store-test-v1',
-          dimension: dimension,
+    if (await _inner.readBinding() == null) {
+      await _inner.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(
+            id: 'sqlite-vector-store-test-v1',
+            dimension: dimension,
+          ),
         ),
       );
     }
   }
+
+  @override
+  void configure(FilterSchema schema) => _inner.configure(schema);
+
+  @override
+  FilterSchema get filterSchema => _inner.filterSchema;
+
+  @override
+  bool get isInitialized => _inner.isInitialized;
+
+  @override
+  Future<void> initialize(String location) => _inner.initialize(location);
+
+  @override
+  Future<VectorStoreBinding?> readBinding() => _inner.readBinding();
+
+  @override
+  Future<void> bind(VectorStoreBinding binding) => _inner.bind(binding);
 
   @override
   Future<void> addDocument({
@@ -633,13 +657,17 @@ class _TestSqliteVectorStore extends SqliteVectorStore {
     String? metadata,
   }) async {
     await _bindForDimension(embedding.length);
-    await super.addDocument(
+    await _inner.addDocument(
       id: id,
       content: content,
       embedding: embedding,
       metadata: metadata,
     );
   }
+
+  @override
+  Future<void> removeDocument({required String id}) =>
+      _inner.removeDocument(id: id);
 
   @override
   Future<List<RetrievalResult>> searchSimilar({
@@ -649,11 +677,23 @@ class _TestSqliteVectorStore extends SqliteVectorStore {
     Filter? filter,
   }) async {
     await _bindForDimension(queryEmbedding.length);
-    return super.searchSimilar(
+    return _inner.searchSimilar(
       queryEmbedding: queryEmbedding,
       topK: topK,
       threshold: threshold,
       filter: filter,
     );
   }
+
+  @override
+  Future<VectorStoreStats> getStats() => _inner.getStats();
+
+  @override
+  Future<void> clear() => _inner.clear();
+
+  @override
+  Future<void> flush() => _inner.flush();
+
+  @override
+  Future<void> close() => _inner.close();
 }

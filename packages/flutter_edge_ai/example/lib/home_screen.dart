@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/agent_demo_screen.dart';
 import 'package:flutter_edge_ai_example/downloaded_models_screen.dart';
 import 'package:flutter_edge_ai_example/embedding_models_screen.dart';
+import 'package:flutter_edge_ai_example/image_search_screen.dart';
 import 'package:flutter_edge_ai_example/model_selection_screen.dart';
 import 'package:flutter_edge_ai_example/stt_models_screen.dart';
 import 'package:flutter_edge_ai_example/translate_models_screen.dart';
@@ -128,6 +129,17 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             _NavigationCard(
+              key: const Key('home-image-search'),
+              title: 'Image Search',
+              subtitle:
+                  'Find photos by text or by photo with EmbeddingGemma 2 '
+                  '(choose Text + Vision 440M under Embedding Models)',
+              icon: Icons.image_search,
+              color: Colors.lightGreen,
+              onTap: () => _push(const ImageSearchScreen()),
+            ),
+            const SizedBox(height: 16),
+            _NavigationCard(
               title: 'Speech-to-Text',
               subtitle: 'On-device transcription with Moonshine',
               icon: Icons.mic,
@@ -169,6 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _NavigationCard extends StatelessWidget {
   const _NavigationCard({
+    super.key,
     required this.title,
     required this.subtitle,
     required this.icon,

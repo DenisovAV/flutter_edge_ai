@@ -36,13 +36,13 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # The engine-agnostic core: registry, install/runtime API, chat.
-  flutter_edge_ai: ^2.0.0
+  flutter_edge_ai: ^2.3.0
   # The .litertlm inference engine. Engines are opt-in — core
   # registers none, so this package must be added explicitly.
-  flutter_edge_ai_litertlm: ^1.8.7
+  flutter_edge_ai_litertlm: ^1.13.0
   # Speech-to-text (and, in the next step, text-to-speech). Opt-in like the
   # engine: core has the API, this package runs the models behind it.
-  flutter_edge_ai_speech: ^0.5.3
+  flutter_edge_ai_speech: ^0.5.6
   # The microphone. It can hand over raw 16 kHz PCM as a stream, which is
   # exactly what the recognizer takes.
   record: ^7.1.1

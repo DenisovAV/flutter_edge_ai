@@ -1,3 +1,13 @@
+## 2.3.1
+- Combined text, image and audio inputs: `EmbeddingInput(text:, images:, audio:)`.
+
+## 2.3.0
+- **Breaking:** EmbeddingGemma 2 embedding API (`embed`, `EmbeddingInput`); see MIGRATION.md for minimum versions.
+- **Breaking:** over-long embedding inputs throw `EmbeddingInputTooLongException` instead of truncating.
+- **Breaking:** internals move to `lib/src`; engines import `package:flutter_edge_ai/engine.dart`.
+- **Breaking:** remove deprecated 1.x/2.0 members (listed in MIGRATION.md).
+- Web: streaming-storage (OPFS) models load from the stored file, not an in-memory copy.
+
 ## 2.2.1
 - `getActiveModel` waits for a closing model to finish, then builds the next one.
 - A LoRA added to an installed model is downloaded, and `getActiveModel` reloads the model.

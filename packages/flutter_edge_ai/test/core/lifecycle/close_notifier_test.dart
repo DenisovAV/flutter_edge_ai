@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
+import 'package:flutter_edge_ai/src/lifecycle/close_notifier.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _Model with CloseNotifier {

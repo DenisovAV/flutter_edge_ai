@@ -7,9 +7,9 @@
 //
 // This is the `dart:ffi`-only half of what the barrel used to export
 // unconditionally — direct construction of [GenAiClient]/[GenAiFfiClient]
-// (advanced FFI client access) and the plain-ORT embedding forward-pass
-// pieces ([OnnxEmbeddingForwardPass],
-// [OrtClient]) used by tests/advanced callers that build a custom client.
+// (advanced FFI client access) and the plain-ORT embedding pass
+// ([OnnxEmbeddingPass] with its [OnnxEmbeddingConfig], and the [OrtClient]
+// seam) used by tests and device gates that drive it directly.
 // Mirrors `flutter_edge_ai_litertlm`'s `litert_bindings_stub.dart` pattern: the
 // web arm (`native_exports_stub.dart`) exports NO symbols at all — web
 // engine packages build their own JS-interop-backed equivalents instead (see
@@ -20,5 +20,6 @@ export 'ffi/gen_ai_client.dart'
     show GenAiClient, GenAiFfiClient, GenAiTurn, GenAiGenerationStats;
 export 'onnx_inference_model.dart';
 export 'onnx_session.dart';
-export 'embedding/onnx_embedding_forward_pass.dart';
+export 'embedding/onnx_embedding_pass.dart'
+    show OnnxEmbeddingConfig, OnnxEmbeddingPass;
 export 'embedding/ort_client.dart';

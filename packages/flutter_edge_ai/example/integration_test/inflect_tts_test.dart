@@ -18,11 +18,11 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' show PreferredBackend;
-// ignore: implementation_imports
+// ignore: implementation_imports — drives speech's Inflect TTS internals directly
 import 'package:flutter_edge_ai_speech/src/litert/inflect_tts_core.dart';
-// ignore: implementation_imports
+// ignore: implementation_imports — drives speech's Inflect TTS internals directly
 import 'package:flutter_edge_ai_speech/src/model/tts_model_profile.dart';
-// ignore: implementation_imports
+// ignore: implementation_imports — drives speech's Inflect TTS internals directly
 import 'package:flutter_edge_ai_speech/src/tts/inflect_text_frontend.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

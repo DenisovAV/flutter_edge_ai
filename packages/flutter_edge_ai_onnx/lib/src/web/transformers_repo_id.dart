@@ -3,7 +3,7 @@
 // (only core's `ModelSource` domain), so it — unlike the resolver, which
 // transitively imports the web-only `WebModelManager` — CAN be unit-tested on
 // the VM (`flutter test`). See `test/web/transformers_repo_id_test.dart`.
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// Maps a [ModelSource] to the Transformers.js (`@huggingface/transformers`)
 /// repo id it identifies:

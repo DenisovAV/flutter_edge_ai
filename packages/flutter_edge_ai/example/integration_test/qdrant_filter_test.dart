@@ -9,8 +9,11 @@
 
 import 'dart:io';
 
+// ignore: implementation_imports — drives qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/filter_codec.dart';
+// ignore: implementation_imports — drives qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/point_id_hasher.dart';
+// ignore: implementation_imports — drives qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';

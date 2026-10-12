@@ -1,5 +1,4 @@
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// MediaPipe's own default top-k (tasks-genai 0.10.33).
 ///

@@ -11,7 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_edge_ai_embeddings/src/embedding_tokenizer.dart';
-import 'package:flutter_edge_ai/core/embedding/tokenizer_adapter.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Writes a tiny SentencePiece tokenizer (single-char vocab over [alphabet])
@@ -108,9 +108,9 @@ void main() {
     });
 
     test('the TaskType prefix is DROPPED, not embedded as leading text', () {
-      // Every production call arrives with one: CommonEmbeddingModel passes
-      // `taskType.prefix`, and generateEmbedding DEFAULTS to
-      // TaskType.retrievalQuery — no caller can pass an empty prefix. An
+      // Every production call arrives with one: the pass hands the tokenizer
+      // `taskType.prefix`, and every TaskType but `none` has a non-empty
+      // one. An
       // earlier revision concatenated it (and a test pinned that as the
       // contract), so every SigLIP vector was the embedding of
       // "task: search result | query: " + text: shifted off the space the
@@ -144,16 +144,15 @@ void main() {
       expect(out.attentionMask, everyElement(1));
     });
 
-    // The three boundary cases, against the reference (`tokenizers` with
-    // `enable_truncation(64)` plus the json's own fixed-64 right-padding, which
-    // is also what DJL's LONGEST_FIRST default produces):
+    // The three boundary cases. Up to 63 content tokens the ids are the
+    // reference's (`tokenizers` with the json's own fixed-64 right-padding):
     //
     //   62 content -> [62 content, EOS, pad]
     //   63 content -> [63 content, EOS]        (no padding left)
-    //   64+        -> [first 63,   EOS]        (EOS SURVIVES truncation)
+    //   64+        -> EmbeddingInputTooLongException(64, content + EOS)
     //
-    // An earlier revision appended the EOS and then cut back to 64, dropping it
-    // on the third case — cosine 0.9683 against a correct vector.
+    // The third case used to be cut to [first 63, EOS] — a vector of a
+    // different text, with no error (R5 O9: overflow is a typed error).
 
     test('content just under the width keeps EOS and pads', () {
       final ids = siglip.encode('', 'a' * 62).ids;
@@ -196,21 +195,45 @@ void main() {
       },
     );
 
-    test('truncation keeps the trailing EOS rather than cutting it off', () {
-      final ids = siglip.encode('', 'a' * 200).ids;
-      expect(ids.length, siglipSeqLen);
-      expect(
-        ids.sublist(0, siglipSeqLen - 1).every((id) => id == 4),
-        isTrue,
-        reason: 'the first 63 positions are content',
-      );
-      expect(
-        ids[siglipSeqLen - 1],
-        siglipEosId,
-        reason:
-            'the reference truncates content to 63 and keeps <eos> last; '
-            'appending EOS and then clamping to 64 would drop it here',
-      );
+    test('content over the width throws with both counts instead of being '
+        'cut to fit', () {
+      for (final (content, actual) in [(64, 65), (200, 201)]) {
+        expect(
+          () => siglip.encode('', 'a' * content),
+          throwsA(
+            isA<EmbeddingInputTooLongException>()
+                .having((e) => e.maxInputTokens, 'maxInputTokens', 64)
+                .having((e) => e.actualTokens, 'actualTokens', actual),
+          ),
+          reason: '$content content tokens',
+        );
+      }
+    });
+
+    test(
+      'the prefix never counts: 63 content tokens fit whatever the task',
+      () {
+        // Dropped before counting, so a long prefix cannot push a fitting
+        // input over the width.
+        final ids = siglip
+            .encode('task: search result | query: ', 'a' * 63)
+            .ids;
+        expect(ids, siglip.encode('', 'a' * 63).ids);
+      },
+    );
+
+    test('ids of an input that fits are exactly 2.1\'s', () {
+      // Golden: what 2.1 produced for 'Aba' under every prefix — lowercased
+      // content, EOS, 60 pads. The overflow change must not move a fitting
+      // input by one id.
+      final golden = [4, 5, 4, siglipEosId, ...List.filled(60, siglipPadId)];
+      for (final prefix in [
+        '',
+        'task: search result | query: ',
+        'title: none | text: ',
+      ]) {
+        expect(siglip.encode(prefix, 'Aba').ids, golden, reason: prefix);
+      }
     });
   });
 }

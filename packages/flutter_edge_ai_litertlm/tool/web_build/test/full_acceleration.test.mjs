@@ -28,7 +28,8 @@ async function fullyAcceleratedAfter(compile) {
 const model = (accelerator, isFullyAccelerated) => ({
   options: { accelerator },
   isFullyAccelerated,
-  getInputDetails: () => [{ shape: [1, 256] }],
+  getInputDetails: () => [{ shape: Int32Array.from([1, 256]) }],
+  getOutputDetails: () => [{ shape: Int32Array.from([1, 768]) }],
 });
 
 test('a webgpu request silently recompiled for wasm is not fully accelerated', async () => {

@@ -222,6 +222,19 @@ jobs:
             --define=litert_runtime_link_mode=dynamic \
             '//c:libLiteRtLm.dylib'
 
+      - name: Test external weights by path (patch_c_api.sh section 13)
+        # Section 13 repacks every TFLite model that has a TFLiteWeights
+        # section (EmbeddingGemma 2) so Google's runtime reads the weights by
+        # path. Its unit test runs here, on one of the two platforms that
+        # compile it in, with the build's flags so Bazel reuses its cache.
+        # Not on x86_64: same source, and less headroom under its timeout.
+        run: |
+          cd /tmp/LiteRT-LM
+          bazelisk test -c opt --strip=always \
+            --define=litert_runtime_link_mode=dynamic \
+            --test_output=errors \
+            '//runtime/components:external_weights_by_path_test'
+
       - name: Build libStreamProxy.so
         run: |
           gcc -shared -fPIC -o /tmp/libStreamProxy.so \

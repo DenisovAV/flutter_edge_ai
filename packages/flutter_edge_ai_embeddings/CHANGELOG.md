@@ -1,3 +1,7 @@
+## 2.3.0
+- **Breaking:** require `flutter_edge_ai` ^2.3.0; core re-exports removed; long SigLIP inputs throw.
+- Gemma tokenization now matches reference SentencePiece (HTML-tag pieces, BOM-led pieces).
+
 ## 2.2.3
 - README: the ONNX embedding backend in the platform table.
 

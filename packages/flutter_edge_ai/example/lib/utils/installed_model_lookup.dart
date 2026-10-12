@@ -1,35 +1,9 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai_example/models/base_model.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding;
 import 'package:flutter_edge_ai_example/models/model.dart';
 import 'package:flutter_edge_ai_example/models/translate_model.dart';
 import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
-
-/// Resolves the on-disk path (or web URL) for an installed model file.
-Future<String> resolveInstalledModelPath(String installedId) async {
-  final registry = ServiceRegistry.instance;
-  final info = await registry.modelRepository.loadModel(installedId);
-  final source = info?.source;
-  if (source != null) {
-    switch (source) {
-      case FileSource(:final path):
-        return path;
-      case NetworkSource(:final url) when kIsWeb:
-        return url;
-      case AssetSource(:final path) when kIsWeb:
-        return path;
-      case BundledSource(:final resourceName):
-        return registry.fileSystemService.getBundledResourcePath(resourceName);
-      case NetworkSource():
-      case AssetSource():
-        break;
-    }
-  }
-  return registry.fileSystemService.getReadTargetPath(installedId);
-}
 
 bool isInferenceOrTranslationArtifact(String id) {
   final lower = id.toLowerCase();
@@ -106,43 +80,11 @@ String? activeEmbeddingModelId() {
 /// Both sources must match a catalog entry. This deliberately refuses custom
 /// files and stale mutable URLs: a filename, path, URL, or vector dimension is
 /// not enough to prove that two embeddings inhabit the same space.
-String? embeddingProfileIdForSpec(EmbeddingModelSpec spec) {
-  for (final model in example_embedding.EmbeddingModel.values) {
-    final files = spec.files;
-    if (files.length == 2 &&
-        files[0].filename == model.filename &&
-        files[1].filename == model.tokenizerFilename &&
-        _sourceMatchesCatalogModel(
-          spec.modelSource,
-          model.url,
-          model.sourceType,
-        ) &&
-        _sourceMatchesCatalogModel(
-          spec.tokenizerSource,
-          model.tokenizerUrl,
-          model.sourceType,
-        )) {
-      return model.ragProfileId;
-    }
-  }
-  return null;
-}
+String? embeddingProfileIdForSpec(EmbeddingModelSpec spec) =>
+    embeddingCatalogProfileForSpec(spec);
 
 Future<String?> activeEmbeddingProfileId() =>
     resolveActiveEmbeddingCatalogProfile();
-
-bool _sourceMatchesCatalogModel(
-  ModelSource source,
-  String catalogLocation,
-  ModelSourceType sourceType,
-) => switch ((source, sourceType)) {
-  (NetworkSource(:final url), ModelSourceType.network) =>
-    url == catalogLocation,
-  (AssetSource(:final path), ModelSourceType.asset) => path == catalogLocation,
-  (BundledSource(:final resourceName), ModelSourceType.bundled) =>
-    resourceName == catalogLocation,
-  _ => false,
-};
 
 /// Filenames marked active in the plugin (inference + embedding).
 Set<String> activeModelIds() {
@@ -277,11 +219,15 @@ DownloadedCatalogMatch? resolveCatalog(String installedId) {
     )) {
       return EmbeddingMatch(model: model, isTokenizer: false);
     }
-    if (_matchesInstalledId(
-      installedId,
-      filename: model.tokenizerFilename,
-      url: model.tokenizerUrl,
-    )) {
+    final tokenizerFilename = model.tokenizerFilename;
+    final tokenizerUrl = model.tokenizerUrl;
+    if (tokenizerFilename != null &&
+        tokenizerUrl != null &&
+        _matchesInstalledId(
+          installedId,
+          filename: tokenizerFilename,
+          url: tokenizerUrl,
+        )) {
       return EmbeddingMatch(model: model, isTokenizer: true);
     }
   }

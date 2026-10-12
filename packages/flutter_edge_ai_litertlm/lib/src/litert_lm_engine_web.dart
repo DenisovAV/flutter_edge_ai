@@ -1,14 +1,5 @@
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart'
-    show HuggingFaceResolver;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_source.dart'
-    show HuggingFaceResolverSource;
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart' show InferenceModel;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show InferenceModelSpec;
-import 'package:flutter_edge_ai/web/web_model_source.dart';
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/engine_web.dart';
 
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 import 'web/litert_lm_web_inference.dart';

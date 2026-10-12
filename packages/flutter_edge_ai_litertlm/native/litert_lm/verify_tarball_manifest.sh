@@ -400,6 +400,29 @@ for d in "$align_tmp"/litertlm-android_*; do
 done
 
 echo
+echo "==> Checking every libLiteRtLm exports the EmbeddingEngine C API"
+# flutter_edge_ai_litertlm's EmbeddingGemma 2 pass binds the EmbeddingEngine,
+# ModelInfo and error-reporter functions out of libLiteRtLm (R5 §4.11). They
+# leave the library through visibility attributes, not the Windows .def in
+# patch_c_api.sh, and no LLM test calls them — so a rebuild that drops one
+# would ship an embedder that fails at load on that platform alone. The list
+# is the pass's own (check_embedding_exports.py; a VM test keeps them equal).
+emb_fail=0
+for d in "$align_tmp"/litertlm-*; do
+  [[ -d "$d" ]] || continue
+  if ! python3 "$(dirname "$0")/check_embedding_exports.py" "$d" "$(basename "$d")"; then
+    emb_fail=1
+  fi
+done
+if [[ $emb_fail -eq 1 ]]; then
+  echo
+  echo "❌ EMBEDDING EXPORTS CHECK FAILED — EmbeddingGemma 2 cannot load on that"
+  echo "   platform. Export the missing functions (Windows: they need"
+  echo "   LITERT_LM_C_API_EXPORT or a .def entry) and rebuild."
+  exit 1
+fi
+
+echo
 echo "==> Checking the Windows C++ runtime against what the docs promise"
 # The docs tell Windows end-users what they must install. That sentence is a
 # claim about the bundle's import tables, and it drifted for a year: the pages

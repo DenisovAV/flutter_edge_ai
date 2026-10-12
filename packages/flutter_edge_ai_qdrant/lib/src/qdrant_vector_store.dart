@@ -66,7 +66,7 @@ class QdrantLegacyStoreException extends VectorStoreException {
 ///     1.x layout is present it refuses outright rather than removing data it
 ///     cannot read. Nothing the caller keeps alongside the store is ever
 ///     touched, by this package or by anything it tells the caller to do.
-class QdrantVectorStore implements VectorStoreRepository {
+final class QdrantVectorStore extends VectorStoreRepository {
   QdrantEdgeClient? _client;
 
   /// Dimension is captured on the first `addDocument` call (matches the
@@ -77,9 +77,9 @@ class QdrantVectorStore implements VectorStoreRepository {
   /// only the count. We keep it in Dart-land instead.
   final Distance _distance = Distance.cosine;
 
-  /// Once observed, a durable profile cannot be replaced by contract.
+  /// Once observed, a durable binding cannot be replaced by contract.
   /// Absence is deliberately not cached so another store can bind this path.
-  EmbeddingProfile? _embeddingProfile;
+  VectorStoreBinding? _binding;
 
   /// The path passed to [initialize]. The store never opens or deletes this
   /// path directly — only the owned subdirectory under it (see [_storeDirFor]).
@@ -208,14 +208,33 @@ class QdrantVectorStore implements VectorStoreRepository {
   /// losing rename cannot replace the winner's non-empty directory on POSIX
   /// or Windows. Unique temp directories are never read as records, so a
   /// crash exposes neither partial JSON nor a stale lock owner.
+  ///
+  /// * The version-1 profile record `{schema, version, id, dimension}` exists
+  ///   for every bound location and keeps its 2.0 schema; an image or audio
+  ///   binding stores the qualified id (`VectorStoreBinding.v1RecordId`)
+  ///   there, which a 2.0 reader cannot match.
+  /// * The version-1 dimension record `{schema, version, dimension}` is the
+  ///   location's vector-size reservation, unchanged.
+  /// * The version-2 binding record `{schema, version, id, dimension,
+  ///   documents}` (unqualified id) exists only for image and audio bindings.
+  ///   It is published after the profile record; a crash between the two
+  ///   leaves a qualified profile record without it, which the next read
+  ///   repairs by republishing it from the profile record (the same
+  ///   rename-CAS, so concurrent repairs agree).
   static const _profileDirectoryName =
       '.flutter_edge_ai_rag.embedding_profile.v1';
   static const _dimensionDirectoryName =
       '.flutter_edge_ai_rag.embedding_dimension.v1';
+  static const _bindingDirectoryName = '.flutter_edge_ai_rag.binding.v2';
   static const _recordTempPrefix = '.flutter_edge_ai_rag.record.tmp.';
   static const _profileSchema = 'flutter_edge_ai_rag.embedding_profile';
   static const _dimensionSchema = 'flutter_edge_ai_rag.embedding_dimension';
+  static const _bindingSchema = 'flutter_edge_ai_rag.binding';
+
+  /// Separate constants: each record's schema evolves on its own.
   static const _profileVersion = 1;
+  static const _dimensionVersion = 1;
+  static const _bindingVersion = 2;
 
   @override
   /// The contract is "true if [initialize] was called successfully" — so a
@@ -278,7 +297,7 @@ class QdrantVectorStore implements VectorStoreRepository {
     _client = null;
     _opening = null;
     _dim = null;
-    _embeddingProfile = null;
+    _binding = null;
     _unusableReason = null;
     _generation++;
     _databasePath = databasePath;
@@ -383,6 +402,9 @@ class QdrantVectorStore implements VectorStoreRepository {
 
   static String _dimensionDirectoryFor(String databasePath) =>
       p.join(_storeDirFor(databasePath), _dimensionDirectoryName);
+
+  static String _bindingDirectoryFor(String databasePath) =>
+      p.join(_storeDirFor(databasePath), _bindingDirectoryName);
 
   /// Entries a 1.x store (crate 0.7.x) wrote DIRECTLY at [_databasePath],
   /// before this package owned a format-scoped subdirectory. `edge_config.json`
@@ -498,6 +520,7 @@ class QdrantVectorStore implements VectorStoreRepository {
   static bool _isProfileArtifact(String name) =>
       name == _profileDirectoryName ||
       name == _dimensionDirectoryName ||
+      name == _bindingDirectoryName ||
       name.startsWith(_recordTempPrefix);
 
   /// True when [databasePath] holds a shard written by 1.x. Such a store is
@@ -566,118 +589,263 @@ class QdrantVectorStore implements VectorStoreRepository {
   }
 
   @override
-  Future<EmbeddingProfile?> readEmbeddingProfile() =>
-      _serializeLifecycle(_readEmbeddingProfile);
+  Future<VectorStoreBinding?> readBinding() =>
+      _serializeLifecycle(_readBinding);
 
-  Future<EmbeddingProfile?> _readEmbeddingProfile() async {
-    _assertUsable('readEmbeddingProfile');
+  Future<VectorStoreBinding?> _readBinding() async {
+    _assertUsable('readBinding');
     final databasePath = _databasePath!;
-    final profile = await _readEmbeddingProfileRecord(
-      _profileDirectoryFor(databasePath),
-    );
+    final binding = await _readBindingRecords(databasePath);
     final dimension = await _readDimensionRecord(
       _dimensionDirectoryFor(databasePath),
     );
-    if (profile != null &&
+    if (binding != null &&
         dimension != null &&
-        profile.dimension != dimension) {
+        binding.profile.dimension != dimension) {
       throw VectorStoreException(
-        'The persisted $profile conflicts with the location\'s '
+        'The persisted $binding conflicts with the location\'s '
         '${dimension}D dimension reservation.',
       );
     }
-    _embeddingProfile = profile;
-    return profile;
+    _binding = binding;
+    return binding;
   }
 
   @override
-  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) =>
-      _serializeLifecycle(() => _bindEmbeddingProfile(profile));
+  Future<void> bind(VectorStoreBinding binding) =>
+      _serializeLifecycle(() => _bind(binding));
 
-  Future<void> _bindEmbeddingProfile(EmbeddingProfile profile) async {
-    _assertUsable('bindEmbeddingProfile');
+  Future<void> _bind(VectorStoreBinding binding) async {
+    _assertUsable('bind');
     final databasePath = _databasePath!;
+    final dimension = binding.profile.dimension;
     final shardDimension = _dim;
-    if (shardDimension != null && shardDimension != profile.dimension) {
+    if (shardDimension != null && shardDimension != dimension) {
       throw VectorStoreException(
-        'Cannot bind $profile to a ${shardDimension}D qdrant shard.',
+        'Cannot bind $binding to a ${shardDimension}D qdrant shard.',
       );
     }
 
     // The dimension record is the cross-isolate/process transaction point
     // shared with first shard creation. Whichever operation publishes it
     // first fixes the only vector size this location may use.
-    await _claimDimension(databasePath, profile.dimension);
+    try {
+      await _claimDimension(databasePath, dimension);
+    } on ArgumentError catch (error) {
+      // A refused bind, not a bad vector: the contract's exception for it.
+      throw VectorStoreException(
+        'Cannot bind $binding: ${error.message}',
+        error,
+      );
+    }
 
+    // The profile record is the compare-and-set point for every version,
+    // 2.0 included: publish it if absent, then it must be ours.
     final profileDirectory = _profileDirectoryFor(databasePath);
-    final existing = await _readEmbeddingProfileRecord(profileDirectory);
-    if (existing != null) {
-      _requireSameProfile(existing, profile);
-      _embeddingProfile = existing;
-      return;
+    var v1 = await _readV1Record(profileDirectory);
+    final publishedV1 = v1 == null;
+    if (v1 == null) {
+      await _publishRecord(
+        storeDirectory: _storeDirFor(databasePath),
+        finalDirectory: profileDirectory,
+        json: {
+          'schema': _profileSchema,
+          'version': _profileVersion,
+          'id': binding.v1RecordId,
+          'dimension': dimension,
+        },
+      );
+      v1 = await _readV1Record(profileDirectory);
+      if (v1 == null) {
+        throw VectorStoreException(
+          'The embedding profile was not persisted at $profileDirectory.',
+        );
+      }
+    }
+    if (v1.id != binding.v1RecordId || v1.dimension != dimension) {
+      // Names what the location IS bound to (or why that cannot be read).
+      final existing = await _readBindingRecords(databasePath);
+      _refuseRebind(existing, binding);
     }
 
-    await _publishRecord(
-      storeDirectory: _storeDirFor(databasePath),
-      finalDirectory: profileDirectory,
-      json: {
-        'schema': _profileSchema,
-        'version': _profileVersion,
-        'id': profile.id,
-        'dimension': profile.dimension,
-      },
+    // A media binding's record: ours to write when this call published the
+    // profile record. A profile record that was already there without it is
+    // the ambiguous state _readBindingRecords repairs only for an empty store.
+    if (binding.documents != EmbeddingModality.text && publishedV1) {
+      final bindingDirectory = _bindingDirectoryFor(databasePath);
+      if (await _readV2Record(bindingDirectory) == null) {
+        await _publishV2(databasePath, binding);
+      }
+    }
+    final persisted = await _readBindingRecords(databasePath);
+    if (persisted != binding) _refuseRebind(persisted, binding);
+    _binding = persisted;
+  }
+
+  static Never _refuseRebind(
+    VectorStoreBinding? persisted,
+    VectorStoreBinding requested,
+  ) => throw VectorStoreException(
+    'This qdrant location is already bound to $persisted and cannot be '
+    'rebound to $requested. Use a different location.',
+  );
+
+  /// Reads the binding: the reader truth table documented on
+  /// [VectorStoreBinding], including the repair of a qualified profile record
+  /// whose version-2 record a crash kept from being published.
+  ///
+  /// The repair runs only while the location holds no points. A qualified
+  /// profile record without its binding record is either that interrupted
+  /// bind — published before any document could be written — or a text
+  /// location an older version bound to an id that happens to contain
+  /// U+001F. Read as a media binding, the second would start taking media
+  /// vectors next to its text ones, so with documents present this refuses,
+  /// as the sqlite store refuses the same records.
+  Future<VectorStoreBinding?> _readBindingRecords(String databasePath) async {
+    final v1 = await _readV1Record(_profileDirectoryFor(databasePath));
+    final bindingDirectory = _bindingDirectoryFor(databasePath);
+    var v2 = await _readV2Record(bindingDirectory);
+    if (v1 == null) {
+      if (v2 != null) {
+        throw VectorStoreException(
+          'The qdrant vector-store binding is corrupt: $bindingDirectory '
+          'exists without the profile record.',
+        );
+      }
+      return null;
+    }
+    final binding = VectorStoreBinding.fromV1Record(
+      id: v1.id,
+      dimension: v1.dimension,
     );
-    final persisted = await _readEmbeddingProfileRecord(profileDirectory);
-    if (persisted == null) {
+    if (binding.documents == EmbeddingModality.text) {
+      if (v2 != null) {
+        throw VectorStoreException(
+          'The qdrant vector-store binding is corrupt: the profile record '
+          'binds ${binding.profile} to text documents, but $bindingDirectory '
+          'names ${v2.documents} documents.',
+        );
+      }
+      return binding;
+    }
+    if (v2 == null) {
+      if (!await _holdsNoPoints(databasePath)) {
+        throw VectorStoreException(
+          'The qdrant location $databasePath is ambiguous: its profile record '
+          'names "${binding.profile.id}\\u001F${binding.documents.name}" '
+          '(${binding.profile.dimension}D) without the binding record '
+          '$bindingDirectory, and it holds documents. That is either a '
+          '${binding.documents.name} binding whose binding record was lost, '
+          'or a text location an older version bound to an id containing '
+          'U+001F; this store will not guess. Use a different location.',
+        );
+      }
+      // Published after the profile record, so a crash in between leaves
+      // exactly this, before any document. Idempotent: every repairer
+      // publishes the same record through the same rename-CAS.
+      await _publishV2(databasePath, binding);
+      v2 = await _readV2Record(bindingDirectory);
+      if (v2 == null) {
+        throw VectorStoreException(
+          'The qdrant binding record was not persisted at $bindingDirectory.',
+        );
+      }
+    }
+    if (v2.id != binding.profile.id ||
+        v2.dimension != binding.profile.dimension ||
+        v2.documents != binding.documents.name) {
       throw VectorStoreException(
-        'The embedding profile was not persisted at $profileDirectory.',
+        'The qdrant vector-store binding is corrupt: the profile record says '
+        '$binding, $bindingDirectory says '
+        '(${v2.id}, ${v2.dimension}D, ${v2.documents}).',
       );
     }
-    _requireSameProfile(persisted, profile);
-    _embeddingProfile = persisted;
+    return binding;
   }
 
-  static void _requireSameProfile(
-    EmbeddingProfile persisted,
-    EmbeddingProfile requested,
-  ) {
-    if (persisted != requested) {
-      throw VectorStoreException(
-        'This qdrant location is already bound to $persisted and cannot be '
-        'rebound to $requested.',
-      );
+  /// Whether the location holds no points, as far as this store can tell. A
+  /// shard on disk that this store has not opened counts as holding some.
+  Future<bool> _holdsNoPoints(String databasePath) async {
+    final client = _client;
+    if (client != null) {
+      try {
+        return await client.count() == 0;
+      } on QdrantException catch (e) {
+        throw VectorStoreException(
+          'Cannot count the points at $databasePath to check its binding',
+          e,
+        );
+      }
     }
+    return !_ownedDirectoryContainsShardData(_storeDirFor(databasePath));
   }
 
-  static Future<EmbeddingProfile?> _readEmbeddingProfileRecord(
+  static Future<void> _publishV2(
+    String databasePath,
+    VectorStoreBinding binding,
+  ) => _publishRecord(
+    storeDirectory: _storeDirFor(databasePath),
+    finalDirectory: _bindingDirectoryFor(databasePath),
+    json: {
+      'schema': _bindingSchema,
+      'version': _bindingVersion,
+      'id': binding.profile.id,
+      'dimension': binding.profile.dimension,
+      'documents': binding.documents.name,
+    },
+  );
+
+  /// The version-1 profile record as stored: its id may be qualified, so it
+  /// is not an [EmbeddingProfile] yet.
+  static Future<({String id, int dimension})?> _readV1Record(
     String profileDirectory,
   ) async {
     final decoded = await _readRecord(
       directoryPath: profileDirectory,
       schema: _profileSchema,
+      version: _profileVersion,
       expectedKeys: const {'schema', 'version', 'id', 'dimension'},
     );
     if (decoded == null) return null;
-    try {
-      if (decoded['id'] is! String || decoded['dimension'] is! int) {
-        throw const FormatException('invalid profile fields');
-      }
-      return EmbeddingProfile(
-        id: decoded['id'] as String,
-        dimension: decoded['dimension'] as int,
-      );
-    } on Object catch (error) {
+    final id = decoded['id'];
+    final dimension = decoded['dimension'];
+    if (id is! String || dimension is! int || dimension <= 0) {
       throw VectorStoreException(
         'The embedding profile sidecar at $profileDirectory is corrupt.',
-        error,
       );
     }
+    return (id: id, dimension: dimension);
+  }
+
+  static Future<({String id, int dimension, String documents})?> _readV2Record(
+    String bindingDirectory,
+  ) async {
+    final decoded = await _readRecord(
+      directoryPath: bindingDirectory,
+      schema: _bindingSchema,
+      version: _bindingVersion,
+      expectedKeys: const {'schema', 'version', 'id', 'dimension', 'documents'},
+    );
+    if (decoded == null) return null;
+    final id = decoded['id'];
+    final dimension = decoded['dimension'];
+    final documents = decoded['documents'];
+    if (id is! String ||
+        dimension is! int ||
+        dimension <= 0 ||
+        documents is! String) {
+      throw VectorStoreException(
+        'The binding record at $bindingDirectory is corrupt.',
+      );
+    }
+    return (id: id, dimension: dimension, documents: documents);
   }
 
   static Future<int?> _readDimensionRecord(String dimensionDirectory) async {
     final decoded = await _readRecord(
       directoryPath: dimensionDirectory,
       schema: _dimensionSchema,
+      version: _dimensionVersion,
       expectedKeys: const {'schema', 'version', 'dimension'},
     );
     if (decoded == null) return null;
@@ -693,13 +861,14 @@ class QdrantVectorStore implements VectorStoreRepository {
   static Future<Map<String, dynamic>?> _readRecord({
     required String directoryPath,
     required String schema,
+    required int version,
     required Set<String> expectedKeys,
   }) async {
     try {
       return await AtomicDirectoryRecord.read(
         directoryPath: directoryPath,
         schema: schema,
-        version: _profileVersion,
+        version: version,
         expectedKeys: expectedKeys,
       );
     } on AtomicDirectoryRecordException catch (error) {
@@ -732,17 +901,16 @@ class QdrantVectorStore implements VectorStoreRepository {
   }
 
   Future<void> _claimDimension(String databasePath, int dimension) async {
-    final profile =
-        _embeddingProfile ??
-        await _readEmbeddingProfileRecord(_profileDirectoryFor(databasePath));
-    if (profile != null && profile.dimension != dimension) {
+    final boundDimension =
+        _binding?.profile.dimension ??
+        (await _readV1Record(_profileDirectoryFor(databasePath)))?.dimension;
+    if (boundDimension != null && boundDimension != dimension) {
       throw ArgumentError(
         'Embedding dimension mismatch: this location is bound to '
-        '${profile.dimension}D by $profile and was given a vector of length '
-        '$dimension.',
+        '${boundDimension}D by its embedding profile and was given a vector '
+        'of length $dimension.',
       );
     }
-    if (profile != null) _embeddingProfile = profile;
 
     final dimensionDirectory = _dimensionDirectoryFor(databasePath);
     var persisted = await _readDimensionRecord(dimensionDirectory);
@@ -752,7 +920,7 @@ class QdrantVectorStore implements VectorStoreRepository {
         finalDirectory: dimensionDirectory,
         json: {
           'schema': _dimensionSchema,
-          'version': _profileVersion,
+          'version': _dimensionVersion,
           'dimension': dimension,
         },
       );
@@ -769,18 +937,16 @@ class QdrantVectorStore implements VectorStoreRepository {
   Future<_ProfileLease> _requireEmbeddingProfile(String operation) async {
     final databasePath = _databasePath!;
     final generation = _generation;
-    final profile =
-        _embeddingProfile ??
-        await _readEmbeddingProfileRecord(_profileDirectoryFor(databasePath));
-    if (profile == null) {
+    final binding = _binding ?? await _readBindingRecords(databasePath);
+    if (binding == null) {
       throw StateError(
-        '$operation requires a bound EmbeddingProfile. Call '
-        'bindEmbeddingProfile() first, or open this location through '
-        'FlutterEdgeAiRag with embeddingProfile/activeEmbedderProfileId. '
-        'For a nonempty legacy store, explicitly verify its model and enable '
+        '$operation requires a bound location. Call bind() first, or open '
+        'this location through FlutterEdgeAiRag.open() / openVectors(). For '
+        'a nonempty legacy store, explicitly verify its model and enable '
         'allowLegacyProfileAdoption.',
       );
     }
+    final profile = binding.profile;
     final dimension = await _readDimensionRecord(
       _dimensionDirectoryFor(databasePath),
     );
@@ -791,11 +957,11 @@ class QdrantVectorStore implements VectorStoreRepository {
     );
     if (dimension != null && dimension != profile.dimension) {
       throw VectorStoreException(
-        'The persisted $profile conflicts with the location\'s '
+        'The persisted $binding conflicts with the location\'s '
         '${dimension}D dimension reservation.',
       );
     }
-    _embeddingProfile = profile;
+    _binding = binding;
     return _ProfileLease(
       databasePath: databasePath,
       generation: generation,
@@ -1254,7 +1420,7 @@ class QdrantVectorStore implements VectorStoreRepository {
     _client = null;
     _opening = null;
     _dim = null;
-    _embeddingProfile = null;
+    _binding = null;
     _unusableReason = null;
     _generation++;
     _databasePath = null;

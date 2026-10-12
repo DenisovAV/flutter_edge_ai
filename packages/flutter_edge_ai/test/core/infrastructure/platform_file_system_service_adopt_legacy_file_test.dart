@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
-import 'package:flutter_edge_ai/core/infrastructure/platform_file_system_service.dart';
+import 'package:flutter_edge_ai/src/infrastructure/platform_file_system_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

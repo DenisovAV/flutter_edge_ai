@@ -68,8 +68,9 @@ class _EmbedPageState extends State<EmbedPage> {
 
       final embedder = await FlutterEdgeAi.getActiveEmbedder();
 
-      // One call for the whole corpus rather than a loop: the worker isolate
-      // is set up once and the model stays resident between texts.
+      // One call for the whole corpus rather than a loop: `embedAll` checks
+      // every text before the first is sent, and keeps the next one queued
+      // while the model works on the current one.
       //
       // `retrievalDocument` is the half of the asymmetry that matters here.
       // EmbeddingGemma was trained with a different prefix for documents than
@@ -81,10 +82,9 @@ class _EmbedPageState extends State<EmbedPage> {
       // Index with the query prefix and nothing errors — the vectors just land
       // slightly off, and every search afterwards is a little worse for a
       // reason no exception will ever point at.
-      final vectors = await embedder.generateEmbeddings(
-        kRecipes.map((r) => r.text).toList(),
-        taskType: TaskType.retrievalDocument,
-      );
+      final vectors = await embedder.embedAll([
+        for (final r in kRecipes) EmbeddingInput.text(r.text),
+      ], taskType: TaskType.retrievalDocument);
 
       if (!mounted) return;
       setState(() {

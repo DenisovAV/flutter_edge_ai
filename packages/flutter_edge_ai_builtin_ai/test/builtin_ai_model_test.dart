@@ -8,9 +8,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
-import 'package:flutter_edge_ai/core/tool.dart' show Tool;
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
-    show RuntimeConfig;
+import 'package:flutter_edge_ai/engine.dart' show RuntimeConfig, Tool;
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart'
     show BuiltInAiEngine;
 import 'package:flutter_edge_ai_builtin_ai/src/builtin_ai_model.dart'

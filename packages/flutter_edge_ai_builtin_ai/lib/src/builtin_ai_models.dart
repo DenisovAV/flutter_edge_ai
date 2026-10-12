@@ -1,9 +1,7 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
-import 'package:flutter_edge_ai/core/domain/model_source.dart' show ModelSource;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show InferenceModelSpec;
+import 'package:flutter_edge_ai/engine.dart'
+    show InferenceModelSpec, ModelFileType, ModelSource, ModelType;
 
 /// Ready-made [InferenceModelSpec]s for the OS built-in models.
 ///

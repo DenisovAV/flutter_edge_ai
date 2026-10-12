@@ -1,15 +1,15 @@
 import 'dart:async';
 
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
-import 'package:flutter_edge_ai/core/lifecycle/inference_model_cache.dart';
-import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
+import 'package:flutter_edge_ai/src/domain/model_source.dart';
+import 'package:flutter_edge_ai/src/domain/platform_types.dart';
+import 'package:flutter_edge_ai/src/lifecycle/inference_model_cache.dart';
+import 'package:flutter_edge_ai/src/lifecycle/model_close_gate.dart';
+import 'package:flutter_edge_ai/src/model.dart';
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show InferenceModelSpec;
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart'
     show ActiveModelParams;
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 InferenceModelSpec _spec(String name) => InferenceModelSpec(

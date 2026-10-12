@@ -15,8 +15,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
+import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_speech/src/litert/litert_speech_recognizer.dart';
 import 'package:flutter_edge_ai_speech/src/litert/stt_worker.dart';
 import 'package:flutter_edge_ai_speech/src/model/stt_model_profile.dart';

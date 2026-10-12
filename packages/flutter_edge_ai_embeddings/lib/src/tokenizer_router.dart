@@ -30,7 +30,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'embedding_tokenizer.dart' show loadGemmaSentencePieceEmbeddingTokenizer;
-import 'package:flutter_edge_ai/core/embedding/tokenizer_adapter.dart' show EmbeddingTokenizer;
+import 'package:flutter_edge_ai/engine.dart' show EmbeddingTokenizer;
 import 'tokenizer_convention.dart' show isSiglip2TokenizerJson;
 import 'wordpiece_embedding_tokenizer.dart' show WordPieceEmbeddingTokenizer;
 

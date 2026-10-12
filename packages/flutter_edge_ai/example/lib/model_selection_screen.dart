@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/chat_screen.dart';
 import 'package:flutter_edge_ai_example/model_download_screen.dart';
 import 'package:flutter_edge_ai_example/models/model.dart';

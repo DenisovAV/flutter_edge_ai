@@ -11,8 +11,8 @@
 // statically linked inside `onnxruntime-genai.framework` on iOS (which is
 // OLDER than 1.27, so `OrtFfiClient` probes `GetApi` down from
 // ORT_API_VERSION to the version that framework accepts — see
-// `ort_ffi_client.dart`). Drives `OnnxEmbeddingForwardPass` DIRECTLY (bypasses
-// the registry/install plumbing — the native ORT path is the thing under test).
+// `ort_ffi_client.dart`). Drives `OnnxEmbeddingPass` DIRECTLY (bypasses the
+// registry/install plumbing — the native ORT path is the thing under test).
 //
 // Model: Xenova/all-MiniLM-L6-v2 (WordPiece `tokenizer.json`, single-file
 // `model.onnx`, no external data — light enough for a simulator/emulator).
@@ -26,9 +26,12 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
-import 'package:flutter_edge_ai_onnx/src/embedding/onnx_embedding_forward_pass.dart';
+import 'package:flutter_edge_ai/engine.dart';
+// ignore: implementation_imports — runs the ONNX embedding pass directly on a device
+import 'package:flutter_edge_ai_onnx/src/embedding/onnx_embedding_pass.dart';
+// ignore: implementation_imports — runs the ONNX embedding pass directly on a device
 import 'package:flutter_edge_ai_embeddings/src/tokenizer_router.dart';
+// ignore: implementation_imports — runs the ONNX embedding pass directly on a device
 import 'package:flutter_edge_ai_onnx/src/embedding/ort_ffi_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -61,36 +64,10 @@ double _cosine(List<double> a, List<double> b) {
   return dot / (math.sqrt(na) * math.sqrt(nb));
 }
 
-/// Finalize a [ForwardResult] EXACTLY like `embedding_worker.dart`'s
-/// `_finalize` — the real production dispatch, not a reimplementation.
-List<double> _finalizeLikeWorker(
-  EmbeddingOutputContract contract,
-  ForwardResult result,
-  List<int>? attentionMask,
-) {
-  switch (contract) {
-    case EmbeddingOutputContract.pooledFinal:
-      return List<double>.of(result.values);
-    case EmbeddingOutputContract.tokenLevel:
-      return meanPoolAndNormalize(result, attentionMask: attentionMask);
-  }
-}
-
-Future<List<double>> _embed(
-  OnnxEmbeddingForwardPass pass,
-  EmbeddingTokenizer tokenizer,
-  String text,
-) async {
-  final tokenized = tokenizer.encode('', text);
-  final result = await pass.run(
-    tokenIds: tokenized.ids,
-    attentionMask: tokenized.attentionMask,
-    tokenTypeIds: tokenized.tokenTypeIds,
-  );
-  final contract = pass.outputContract!;
-  final effectiveMask = result.attentionMask ?? tokenized.attentionMask;
-  return _finalizeLikeWorker(contract, result, effectiveMask);
-}
+/// Embeds [text] the way core's worker does — through the pass's own `embed`,
+/// with no task prefix (MiniLM was not trained with one).
+Future<List<double>> _embed(OnnxEmbeddingPass pass, String text) =>
+    pass.embed(EmbeddingInput.text(text), TaskType.none);
 
 /// Temp-then-rename download; skips the network if [dest] already exists
 /// non-empty (a warm app-data dir shouldn't re-pull the model on a re-run).
@@ -152,37 +129,34 @@ void main() {
           reason: 'download did not produce model.onnx + tokenizer.json',
         );
 
-        final tokenizer = await resolveEmbeddingTokenizer(tokenizerPath);
-        final pass = OnnxEmbeddingForwardPass(
-          modelPath,
+        final pass = OnnxEmbeddingPass(
+          OnnxEmbeddingConfig(
+            modelPath: modelPath,
+            tokenizerPath: tokenizerPath,
+            tokenizerFactory: resolveEmbeddingTokenizer,
+          ),
           clientFactory: OrtFfiClient.new,
         );
-        final loadSw = Stopwatch()..start();
-        await pass.load();
-        loadSw.stop();
-        // ignore: avoid_print
-        print(
-          '[onnx emb] load took ${loadSw.elapsedMilliseconds} ms on '
-          '${Platform.operatingSystem} (dlopen ORT + OrtCreateSession)',
-        );
-
         try {
+          final loadSw = Stopwatch()..start();
+          final info = await pass.load();
+          loadSw.stop();
+          // ignore: avoid_print
+          print(
+            '[onnx emb] load took ${loadSw.elapsedMilliseconds} ms on '
+            '${Platform.operatingSystem} (dlopen ORT + OrtCreateSession), '
+            'maxInputTokens=${info.maxInputTokens}',
+          );
           expect(
-            pass.outputDimension,
+            info.dimension,
             384,
             reason: 'all-MiniLM-L6-v2 embeds to 384 dims',
           );
-          expect(pass.outputContract, EmbeddingOutputContract.tokenLevel);
 
-          final a = await _embed(pass, tokenizer, 'The cat sat on the mat.');
-          final b = await _embed(
-            pass,
-            tokenizer,
-            'A feline rested on the rug.',
-          );
+          final a = await _embed(pass, 'The cat sat on the mat.');
+          final b = await _embed(pass, 'A feline rested on the rug.');
           final c = await _embed(
             pass,
-            tokenizer,
             'Quantum entanglement baffles physicists.',
           );
 
@@ -190,7 +164,7 @@ void main() {
           expect(a.any((v) => v != 0), isTrue);
 
           // Repeatability — identical text, identical vector.
-          final a2 = await _embed(pass, tokenizer, 'The cat sat on the mat.');
+          final a2 = await _embed(pass, 'The cat sat on the mat.');
           for (var i = 0; i < a.length; i++) {
             expect(a[i], closeTo(a2[i], 1e-5));
           }
@@ -201,7 +175,7 @@ void main() {
           print(
             '[onnx emb] ${Platform.operatingSystem}: cosine(similar)='
             '$simSimilar cosine(different)=$simDifferent '
-            'dim=${pass.outputDimension}',
+            'dim=${a.length}',
           );
           expect(
             simSimilar,

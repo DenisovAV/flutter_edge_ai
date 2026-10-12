@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/model_management/utils/download_temp_reclaim.dart';
+import 'package:flutter_edge_ai/src/model_management/utils/download_temp_reclaim.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

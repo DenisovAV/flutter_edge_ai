@@ -1,15 +1,12 @@
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show InferenceModelSpec;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart'
-    show HuggingFaceResolver;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_source.dart'
-    show HuggingFaceResolverSource;
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart'
-    show InferenceEngineProvider;
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
-    show RuntimeConfig;
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart' show InferenceModel;
+import 'package:flutter_edge_ai/engine.dart'
+    show
+        HuggingFaceResolver,
+        HuggingFaceResolverSource,
+        InferenceEngineProvider,
+        InferenceModel,
+        InferenceModelSpec,
+        ModelFileType,
+        RuntimeConfig;
 import 'package:flutter_local_ai/flutter_local_ai.dart' show LocalAiModel;
 
 import 'availability.dart' show BuiltInAi;

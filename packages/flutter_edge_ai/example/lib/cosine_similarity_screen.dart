@@ -5,6 +5,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
+import 'package:flutter_edge_ai_example/services/embedding_catalog_install.dart';
 import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
 
 class CosineSimilarityScreen extends StatefulWidget {
@@ -92,16 +93,10 @@ class _CosineSimilarityScreenState extends State<CosineSimilarityScreen> {
         }
       }
 
-      await FlutterEdgeAi.installEmbedder()
-          .modelFromNetwork(
-            widget.model.url,
+      await withCatalogEmbedderSources(
+            FlutterEdgeAi.installEmbedder(),
+            widget.model,
             token: token,
-            filename: widget.model.filename,
-          )
-          .tokenizerFromNetwork(
-            widget.model.tokenizerUrl,
-            token: token,
-            filename: widget.model.tokenizerFilename,
           )
           .withModelProgress((percent) {
             if (!mounted) return;
@@ -125,9 +120,10 @@ class _CosineSimilarityScreenState extends State<CosineSimilarityScreen> {
       }
 
       // Get active embedding model
+      // npu for a per-SoC NPU bundle, which runs nowhere else; the default
+      // (CPU) for every other embedder.
       _embeddingModel = await FlutterEdgeAi.getActiveEmbedder(
-        preferredBackend:
-            PreferredBackend.gpu, // Use GPU mode for better performance
+        preferredBackend: widget.model.embedderBackend,
       );
 
       if (kDebugMode) {
@@ -199,18 +195,25 @@ class _CosineSimilarityScreenState extends State<CosineSimilarityScreen> {
       if (kDebugMode) {
         debugPrint('Generating query embedding...');
       }
-      _queryEmbedding = await _embeddingModel!.generateEmbedding(queryText);
+      _queryEmbedding = await _embeddingModel!.embed(
+        EmbeddingInput.text(queryText),
+        taskType: TaskType.retrievalQuery,
+      );
 
       if (kDebugMode) {
         debugPrint('Generating similar embedding...');
       }
-      _similarEmbedding = await _embeddingModel!.generateEmbedding(similarText);
+      _similarEmbedding = await _embeddingModel!.embed(
+        EmbeddingInput.text(similarText),
+        taskType: TaskType.retrievalQuery,
+      );
 
       if (kDebugMode) {
         debugPrint('Generating different embedding...');
       }
-      _differentEmbedding = await _embeddingModel!.generateEmbedding(
-        differentText,
+      _differentEmbedding = await _embeddingModel!.embed(
+        EmbeddingInput.text(differentText),
+        taskType: TaskType.retrievalQuery,
       );
 
       // Debug: Print vector info

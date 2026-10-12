@@ -4,7 +4,7 @@ import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 ///
 /// This stub is used on non-web platforms where dart:js_interop is not available.
 /// The actual web implementation is in web_sqlite_vector_store.dart.
-class WebSqliteVectorStore implements VectorStoreRepository {
+final class WebSqliteVectorStore extends VectorStoreRepository {
   WebSqliteVectorStore({
     bool forceBrowserLocksUnavailableForTesting = false,
     Future<void> Function()? durabilityFenceForTesting,
@@ -21,14 +21,14 @@ class WebSqliteVectorStore implements VectorStoreRepository {
   }
 
   @override
-  Future<EmbeddingProfile?> readEmbeddingProfile() async {
+  Future<VectorStoreBinding?> readBinding() async {
     throw UnimplementedError(
       'WebSqliteVectorStore is only available on web; use SqliteVectorStore',
     );
   }
 
   @override
-  Future<void> bindEmbeddingProfile(EmbeddingProfile profile) async {
+  Future<void> bind(VectorStoreBinding binding) async {
     throw UnimplementedError(
       'WebSqliteVectorStore is only available on web; use SqliteVectorStore',
     );

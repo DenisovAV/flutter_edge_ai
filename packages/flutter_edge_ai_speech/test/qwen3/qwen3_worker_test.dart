@@ -23,8 +23,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
+import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_speech/src/litert/tts_worker.dart';
 import 'package:flutter_edge_ai_speech/src/model/tts_model_profile.dart';
 import 'package:flutter_test/flutter_test.dart';

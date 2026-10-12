@@ -201,7 +201,10 @@ void main() {
 
       final sw = Stopwatch()..start();
       for (var i = _rangeFrom; i < _rangeTo; i++) {
-        slots[i] = await embedder.generateEmbedding(texts[i]);
+        slots[i] = await embedder.embed(
+          EmbeddingInput.text(texts[i]),
+          taskType: TaskType.retrievalQuery,
+        );
         if ((i - _rangeFrom + 1) % 100 == 0) {
           // ignore: avoid_print
           print(

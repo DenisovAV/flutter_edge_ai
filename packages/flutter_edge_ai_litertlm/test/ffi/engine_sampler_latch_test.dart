@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/sampling.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/engine_sampler_latch.dart';
 import 'package:flutter_test/flutter_test.dart';
 

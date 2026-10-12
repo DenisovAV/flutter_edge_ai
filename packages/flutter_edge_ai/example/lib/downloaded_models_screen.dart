@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_edge_ai_example/chat_screen.dart';
 import 'package:flutter_edge_ai_example/services/downloaded_model_deleter.dart';
 import 'package:flutter_edge_ai_example/services/downloaded_model_loader.dart';
 import 'package:flutter_edge_ai_example/utils/installed_model_lookup.dart';
+import 'package:flutter_edge_ai_example/utils/platform_io_helper.dart';
 
 class _DownloadedModelEntry {
   const _DownloadedModelEntry({
@@ -162,7 +164,23 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
 
   Future<void> _copyPath(_DownloadedModelEntry entry) async {
     try {
-      final path = await resolveInstalledModelPath(entry.id);
+      final path = await FlutterEdgeAi.getModelPath(entry.id);
+      // getModelPath computes the managed path; it does not check it. A
+      // bundled install has no file there (iOS reads every bundled file from
+      // the app bundle; on Android a namespaced companion has none either),
+      // so copying it would hand out a path that does not exist.
+      if (!await createFile(path).exists()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No file on disk at $path for ${entry.displayName}: '
+              'bundled resources are read from the app package.',
+            ),
+          ),
+        );
+        return;
+      }
       await Clipboard.setData(ClipboardData(text: path));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -306,13 +324,16 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
             ),
           );
         }
-        trailingChildren.add(
-          IconButton(
-            icon: const Icon(Icons.copy_outlined),
-            tooltip: 'Copy path',
-            onPressed: () => _copyPath(entry),
-          ),
-        );
+        // Web has no file path to copy: getModelPath returns the bare file name.
+        if (!kIsWeb) {
+          trailingChildren.add(
+            IconButton(
+              icon: const Icon(Icons.copy_outlined),
+              tooltip: 'Copy path',
+              onPressed: () => _copyPath(entry),
+            ),
+          );
+        }
         if (!isLoading && !isDeleting && canDelete) {
           trailingChildren.add(
             IconButton(

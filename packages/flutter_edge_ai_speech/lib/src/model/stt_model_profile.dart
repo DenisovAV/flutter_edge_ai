@@ -7,8 +7,7 @@
 /// drives engine behavior via data rather than subclassing.
 library;
 
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show SttModelType;
+import 'package:flutter_edge_ai/engine.dart' show SttModelType;
 
 import '../litert/log_mel_frontend.dart' show SttMelNormalization;
 export '../litert/log_mel_frontend.dart' show SttMelNormalization;

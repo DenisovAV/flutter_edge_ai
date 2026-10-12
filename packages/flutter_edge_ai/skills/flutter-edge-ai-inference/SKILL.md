@@ -47,7 +47,7 @@ final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024)
 
 Gemma 4 E2B is 2.6 GB and needs no token. On web use `gemma-4-E2B-it-web.litertlm` from the same repo (2.0 GB).
 
-`install()` skips the download when the file is already on disk, so calling it at every launch is safe. The latest install becomes the model `getActiveModel` loads.
+`install()` skips the download when the file is already installed from the same source, so calling it at every launch is safe. The latest install becomes the model `getActiveModel` loads.
 
 A gated repo needs a token, given once:
 
@@ -86,6 +86,10 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 **flutter_gemma names after upgrading to 2.0**
 - Symptom: `Undefined name 'FlutterGemma'`, `Undefined name 'GemmaLogLevel'`, or a `package:flutter_gemma/...` import that does not resolve.
 - Fix: the flutter_gemma names are gone in 2.0. Rename the dependencies and imports (`flutter_gemma*` → `flutter_edge_ai*`; `flutter_gemma_rag_sqlite` and `flutter_gemma_rag_qdrant` become `flutter_edge_ai_sqlite` and `flutter_edge_ai_qdrant`), then run `dart fix --apply`, which renames the old class names. Delete the old `flutter-gemma-*` skill directories and run `dart run skills@ get --all` again — they still teach the old names. RAG also left core in 2.0: see the flutter-edge-ai-rag skill.
+
+**Deep imports after upgrading to 2.3**
+- Symptom: `Target of URI doesn't exist: 'package:flutter_edge_ai/core/model.dart'` — or any other `package:flutter_edge_ai/core/…`, `/mobile/…`, `/web/…`, `/desktop/…` or `flutter_edge_ai_interface.dart` import.
+- Fix: since `flutter_edge_ai` 2.3.0 core's internals are private under `lib/src`. Apps import `package:flutter_edge_ai/flutter_edge_ai.dart`; an engine or tokenizer package imports `package:flutter_edge_ai/engine.dart`. The deprecated members went in the same release — `setModelPath`, `installModelFromAsset`, `initialize(enableWebCache:)` and the rest; core's MIGRATION.md lists each with its replacement.
 
 **No engine registered**
 - Symptom: `StateError: No inference engine can handle this model (ModelFileType.litertlm). Add the engine package to pubspec.yaml and pass it in inferenceEngines: of FlutterEdgeAi.initialize(...)`
@@ -271,9 +275,9 @@ print(model.activeBackend); // what actually loaded
 | `npu` | NPU, GPU, CPU on Windows, and on Qualcomm Android and Qualcomm Linux arm64 when the app sets `qualcomm_npu`; GPU, CPU everywhere else |
 | `cpu` | CPU only |
 
-Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android) or Intel Lunar/Panther Lake (Windows) and a model compiled for that NPU; `PreferredBackend.cpu` never falls back. The iOS Simulator is CPU-only. On an iOS device a MediaPipe `.task` on the GPU is killed for memory while loading, before any fallback can run: pass `PreferredBackend.cpu` for it (flutter-edge-ai-mediapipe). On web, MediaPipe is GPU-only.
+Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android), a Qualcomm Linux arm64 board, or Intel Lunar/Panther Lake (Windows), and a model compiled for that NPU; `PreferredBackend.cpu` never falls back. The iOS Simulator is CPU-only. On an iOS device a MediaPipe `.task` on the GPU is killed for memory while loading, before any fallback can run: pass `PreferredBackend.cpu` for it (flutter-edge-ai-mediapipe). On web, MediaPipe is GPU-only.
 
-On NPU, run a **Gemma 4** bundle. A Gemma 3 bundle on either vendor's NPU drops every prefill chunk after the first — no error, no log line, and a fluent reply that answers from the opening of the prompt and ignores the rest (LiteRT-LM#3508). `maxTokens` is also not clamped up to 1024 on the NPU attempt the way it is on CPU and GPU, because the safe context is baked into the compiled bundle: pass the `cache_length` it was built for. Requesting `PreferredBackend.npu` does not guarantee the NPU runs — the engine falls back to GPU then CPU, and the floor applies to those attempts, so a fallback is clamped rather than crashed. The NPU candidate is attempted only on Windows and on Android phones with Qualcomm FastRPC; on other Android phones, macOS, Linux and iOS it is skipped, because nothing there can run it — and on macOS the native runtime was measured accepting `npu` anyway, which made `activeBackend` report an NPU the machine does not have. On Windows the check is per OS, so a PC without an Intel NPU still attempts it, and `activeBackend` can then report `npu` while the model runs elsewhere.
+On NPU, run a **Gemma 4** bundle. A Gemma 3 bundle on either vendor's NPU drops every prefill chunk after the first — no error, no log line, and a fluent reply that answers from the opening of the prompt and ignores the rest (LiteRT-LM#3508). `maxTokens` is also not clamped up to 1024 on the NPU attempt the way it is on CPU and GPU, because the safe context is baked into the compiled bundle: pass the `cache_length` it was built for. Requesting `PreferredBackend.npu` does not guarantee the NPU runs — the engine falls back to GPU then CPU, and the floor applies to those attempts, so a fallback is clamped rather than crashed. The NPU candidate is attempted only on Windows, on Android phones with Qualcomm FastRPC, and on Qualcomm Linux arm64 boards with `/dev/fastrpc-cdsp`, the last two only when the app sets `qualcomm_npu`; on other Android phones, macOS, other Linux machines and iOS it is skipped, because nothing there can run it — and on macOS the native runtime was measured accepting `npu` anyway, which made `activeBackend` report an NPU the machine does not have. On Windows the check is per OS, so a PC without an Intel NPU still attempts it, and `activeBackend` can then report `npu` while the model runs elsewhere.
 
 On GPU, Gemma 4 can copy numbers wrongly from a long prompt: `2026/06/23` comes back as `20226/12/17`, the same way on every run (LiteRT-LM#3012 on Adreno, #2814 on Metal). The published Gemma 4 `.litertlm` files ask for half-precision activations. Ask for full precision when the answers carry figures, dates or amounts:
 

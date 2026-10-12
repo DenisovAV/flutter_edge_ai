@@ -1,7 +1,7 @@
 /// Public, native-only export of the LiteRt interpreter FFI bindings
 /// (`LiteRtBindings`) for native-only leaves that need to import the
 /// concrete bindings from a file that is itself native-only (never reached
-/// on web) — this package's own `src/embedding/litert_embedding_forward_pass.dart`
+/// on web) — this package's own `src/embedding/litert_embedding_pass.dart`
 /// (as an intra-package import) and the capability package
 /// `flutter_edge_ai_speech`.
 ///

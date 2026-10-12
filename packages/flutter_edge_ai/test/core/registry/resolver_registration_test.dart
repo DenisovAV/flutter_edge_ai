@@ -21,20 +21,20 @@
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
-import 'package:flutter_edge_ai/core/api/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
+import 'package:flutter_edge_ai/src/api/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
+import 'package:flutter_edge_ai/src/model.dart' show ModelFileType;
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show InferenceModelSpec;
-import 'package:flutter_edge_ai/core/registry/engine_registry.dart';
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart';
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_registry.dart';
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_source.dart';
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart' show InferenceModel;
+import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver.dart';
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_registry.dart';
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_source.dart';
+import 'package:flutter_edge_ai/src/registry/inference_engine_provider.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/interface.dart' show InferenceModel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

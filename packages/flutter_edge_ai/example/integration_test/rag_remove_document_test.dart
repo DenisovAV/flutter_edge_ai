@@ -23,12 +23,9 @@ void main() {
       final rag = FlutterEdgeAiRag(
         providers: [const SqliteVectorStoreProvider()],
       );
-      final index = await rag.open(
+      final index = await rag.openVectors(
         spec: VectorStoreSpec(providerId: 'sqlite', location: dbPath),
-        embeddingProfile: EmbeddingProfile(
-          id: 'remove-document-test-v1',
-          dimension: 3,
-        ),
+        profile: EmbeddingProfile(id: 'remove-document-test-v1', dimension: 3),
       );
       addTearDown(() async {
         await index.dispose();

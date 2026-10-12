@@ -1,7 +1,7 @@
 // The SessionConfig web `.litertlm` sends, checked on the VM: the web model
 // itself needs a browser and a model, and a sampler sent without its `type`
 // is dropped by the engine without an error (#572).
-import 'package:flutter_edge_ai/core/sampling.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web_session_config.dart';
 import 'package:flutter_test/flutter_test.dart';
 

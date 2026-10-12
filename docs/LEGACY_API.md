@@ -6,6 +6,18 @@
 > `downloadModelFromNetworkWithProgress`, `downloadLoraWeightsFromNetwork`,
 > `installLoraWeightsFromAsset`, `loadAssetModel` / `loadNetworkModel` and the
 > model manager's `setReplacePolicy` / `replacePolicy` no longer exist.
+> `flutter_edge_ai` 2.3.0 also removed `installModelFromAsset`,
+> `installModelFromAssetWithProgress`, `setModelPath`, `setLoraWeightsPath`,
+> `deleteLoraWeights`, `deleteCurrentModel`, `ensureModelReady`,
+> `EmbeddingModelSpec.fromLegacyUrl` and the specs' `modelUrl` / `loraUrl` /
+> `tokenizerUrl` getters, and moved `MobileModelManager` (with its
+> `createInferenceSpec` / `createEmbeddingSpec` helpers) and every
+> `package:flutter_edge_ai/core/…` path under the private `lib/src`; each
+> replacement is in the
+> [2.3.0 migration guide](../packages/flutter_edge_ai/MIGRATION.md#removed-deprecated-members).
+> The embedding examples' `generateEmbedding` / `generateEmbeddings` /
+> `getDimension` are deprecated since 2.3.0 and removed in 2.5.0: use
+> `embed(EmbeddingInput.text(t), taskType: …)`, `embedAll` and `dimension`.
 > For new projects, use the [Modern API](../packages/flutter_edge_ai/README.md#quick-start) instead.
 > The RAG examples describe the pre-2.0 core/plugin API; RAG now lives in
 > `flutter_edge_ai_rag`; follow the
@@ -48,11 +60,13 @@ Don't forget to add your model to pubspec.yaml
 
 1) Loading from assets (loraUrl is optional)
 ```dart
+    // Removed in 2.3.0: FlutterEdgeAi.installModel(...).fromAsset(path)
     await modelManager.installModelFromAsset('model.bin', loraPath: 'lora_weights.bin');
 ```
 
 2) Loading from assets with Progress Status (loraUrl is optional)
 ```dart
+    // Removed in 2.3.0: FlutterEdgeAi.installModel(...).fromAsset(path).withProgress(...)
     modelManager.installModelFromAssetWithProgress('model.bin', loraPath: 'lora_weights.bin').listen(
     (progress) {
       print('Loading progress: $progress%');
@@ -105,6 +119,7 @@ await modelManager.installLoraWeightsFromAsset('lora_weights.bin');
 4. **Model Management**
    You can set model and weights paths manually
 ```dart
+// Removed in 2.3.0: installModel(...).fromFile(path) / .withLoraFromFile(path)
 await modelManager.setModelPath('model.bin');
 await modelManager.setLoraWeightsPath('lora_weights.bin');
 ```
@@ -126,7 +141,7 @@ final currentPolicy = modelManager.replacePolicy;
 
 **Automatic Model Management**
 
-Use `ensureModelReady()` for seamless model switching that handles all scenarios automatically:
+Use `ensureModelReady()` for seamless model switching that handles all scenarios automatically (removed in 2.3.0 — use `ensureModelReadyFromSpec(spec)`):
 
 ```dart
 // Handles all cases:
@@ -142,6 +157,7 @@ await modelManager.ensureModelReady(
 
 You can delete the model and weights from the device. Deleting the model or LoRA weights will automatically close and clean up the inference. This ensures that there are no lingering resources or memory leaks when switching models or updating files.
 ```dart
+// Removed in 2.3.0: deleteModel(spec); reinstall without LoRA
 await modelManager.deleteModel();
 await modelManager.deleteLoraWeights();
 ```
@@ -879,13 +895,13 @@ mkdir -p web/rag
 cp <flutter_edge_ai_sqlite_package_path>/web/rag/sqlite3.wasm web/rag/sqlite3.wasm
 ```
 
-### Legacy API (Still supported)
+### Legacy API (removed in 2.3.0)
 
 <details>
 <summary>Click to expand Legacy API for embeddings</summary>
 
 ```dart
-// Create embedding model specification
+// Removed in 2.3.0 (MobileModelManager is internal): FlutterEdgeAi.installEmbedder()
 final embeddingSpec = MobileModelManager.createEmbeddingSpec(
   name: 'EmbeddingGemma 1024',
   modelUrl: 'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq1024_mixed-precision.tflite',
@@ -963,7 +979,7 @@ If you're upgrading from the Legacy API, here are common migration patterns:
 <td>
 
 ```dart
-// Network download
+// Network download (removed in 2.3.0: MobileModelManager is internal)
 final spec = MobileModelManager.createInferenceSpec(
   name: 'model.bin',
   modelUrl: 'https://example.com/model.bin',
@@ -1000,7 +1016,7 @@ await FlutterEdgeAi.installModel(
 <td>
 
 ```dart
-// From assets
+// From assets (removed in 2.3.0)
 await modelManager.installModelFromAssetWithProgress(
   'model.bin',
   loraPath: 'lora.bin',
@@ -1047,6 +1063,7 @@ await FlutterEdgeAi.installModel(
 <td>
 
 ```dart
+// Removed in 2.3.0: MobileModelManager is internal
 final spec = MobileModelManager.createInferenceSpec(
   name: 'model.bin',
   modelUrl: url,
@@ -1071,7 +1088,7 @@ final isInstalled = await FlutterEdgeAi
 
 ### Key Migration Notes
 
-- ✅ **Simpler imports**: Use `package:flutter_edge_ai/core/api/flutter_edge_ai.dart`
+- ✅ **Simpler imports**: Use `package:flutter_edge_ai/flutter_edge_ai.dart` (since 2.3.0 the only app library; `core/…` paths are private)
 - ✅ **Builder pattern**: Chain methods for cleaner code
 - ✅ **Callback-based progress**: Simpler than streams for most cases
 - ✅ **Type-safe sources**: Compile-time validation of source types

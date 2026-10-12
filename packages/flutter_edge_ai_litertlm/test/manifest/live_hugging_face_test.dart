@@ -51,13 +51,16 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
-import 'package:flutter_edge_ai/core/registry/engine_registry.dart';
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart'
-    show ResolvedHfModel;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_registry.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart' show FlutterEdgeAi;
+import 'package:flutter_edge_ai/engine.dart';
+// ignore: implementation_imports — resets core's registries between live runs
+import 'package:flutter_edge_ai/src/registry/engine_registry.dart'
+    show EngineRegistry;
+// ignore: implementation_imports — resets core's registries between live runs
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_registry.dart'
+    show HuggingFaceResolverRegistry;
+// ignore: implementation_imports — resets core's registries between live runs
+import 'package:flutter_edge_ai/src/di/service_registry.dart'
+    show ServiceRegistry;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmEngine;
 import 'package:flutter_edge_ai_litertlm/src/manifest/litertlm_manifest_resolver.dart';

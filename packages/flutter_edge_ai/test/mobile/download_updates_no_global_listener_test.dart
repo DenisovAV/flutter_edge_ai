@@ -23,7 +23,7 @@
 import 'dart:async';
 
 import 'package:background_downloader/background_downloader.dart';
-import 'package:flutter_edge_ai/mobile/smart_downloader.dart';
+import 'package:flutter_edge_ai/src/mobile/smart_downloader.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -160,11 +160,9 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(ours.map((u) => u.task.taskId), ['ours']);
-    expect(
-      host.map((u) => u.task.taskId),
-      ['theirs'],
-      reason: 'the host must receive its own task and only its own',
-    );
+    expect(host.map((u) => u.task.taskId), [
+      'theirs',
+    ], reason: 'the host must receive its own task and only its own');
   });
 
   test(

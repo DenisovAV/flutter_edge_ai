@@ -1,14 +1,53 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
-import 'package:flutter_edge_ai/core/model_management/active_embedding_identity.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/base_model.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _provenanceSchemaVersion = 1;
+
+/// The part of a catalog embedder that provenance reads.
+///
+/// A self-contained entry (one `.litertlm` bundle that carries its own
+/// tokenizer) has no tokenizer: [tokenizerUrl] and [tokenizerFilename] are
+/// both null.
+typedef EmbeddingCatalogEntry = ({
+  String profileId,
+  ModelSourceType sourceType,
+  String url,
+  String filename,
+  String? tokenizerUrl,
+  String? tokenizerFilename,
+});
+
+EmbeddingCatalogEntry _entryOf(catalog.EmbeddingModel model) => (
+  profileId: model.ragProfileId,
+  sourceType: model.sourceType,
+  url: model.url,
+  filename: model.filename,
+  tokenizerUrl: model.tokenizerUrl,
+  tokenizerFilename: model.tokenizerFilename,
+);
+
+/// Every embedder in this app's catalog.
+List<EmbeddingCatalogEntry> get shippedEmbeddingCatalog => [
+  for (final model in catalog.EmbeddingModel.values) _entryOf(model),
+];
+
+/// The profile of the catalog entry [spec] was installed from, by its
+/// immutable sources and versioned install identities; null for anything
+/// else.
+String? embeddingCatalogProfileForSpec(
+  EmbeddingModelSpec spec, {
+  @visibleForTesting List<EmbeddingCatalogEntry>? catalogEntries,
+}) {
+  for (final entry in catalogEntries ?? shippedEmbeddingCatalog) {
+    if (_matchesCatalogSpec(spec, entry)) return entry.profileId;
+  }
+  return null;
+}
 
 abstract final class EmbeddingCatalogPreferencesKeys {
   static const activeProfileProvenance =
@@ -42,14 +81,27 @@ class _SharedPreferencesProvenanceStorage
 
 /// Persists a verified catalog identity separately from the runtime paths.
 ///
-/// This must only be called while [model]'s exact immutable source pair and
-/// versioned install identities are active. Unknown FileSource pairs are never
+/// This must only be called while [model]'s exact immutable sources (model,
+/// and tokenizer when it has one) and versioned install identities are
+/// active. Unknown FileSource pairs are never
 /// promoted into catalog provenance.
 Future<void> persistVerifiedEmbeddingCatalogSelection(
   catalog.EmbeddingModel model, {
   EmbeddingModelSpec? spec,
   @visibleForTesting EmbeddingCatalogProvenanceStorage? storage,
   @visibleForTesting EmbeddingModelSpec? Function()? activeSpecReader,
+}) => _persistVerified(
+  _entryOf(model),
+  spec: spec,
+  storage: storage,
+  activeSpecReader: activeSpecReader,
+);
+
+Future<void> _persistVerified(
+  EmbeddingCatalogEntry model, {
+  EmbeddingModelSpec? spec,
+  EmbeddingCatalogProvenanceStorage? storage,
+  EmbeddingModelSpec? Function()? activeSpecReader,
 }) async {
   final readActiveSpec =
       activeSpecReader ?? () => FlutterEdgeAi.activeEmbedderSpec;
@@ -57,8 +109,8 @@ Future<void> persistVerifiedEmbeddingCatalogSelection(
   final activeSpec = spec ?? readActiveSpec();
   if (activeSpec == null || !_matchesCatalogSpec(activeSpec, model)) {
     throw StateError(
-      'Cannot persist ${model.ragProfileId}: the active embedding pair does '
-      'not match its immutable catalog sources and install identities.',
+      'Cannot persist ${model.profileId}: the active embedder does not '
+      'match its immutable catalog sources and install identities.',
     );
   }
 
@@ -96,12 +148,20 @@ Future<void> persistVerifiedEmbeddingCatalogSelection(
 }
 
 /// Resolves the active profile across restart without trusting FileSource
-/// names or paths on their own.
+/// paths on their own.
+///
+/// Reads only the public `FlutterEdgeAi.activeEmbedderSpec`. After a native
+/// restart that spec points at the installed files (`FileSource`s), so the
+/// catalog source is no longer in it: the profile is then taken from this
+/// app's own provenance record, and only when that record names a catalog
+/// model whose revision-qualified file names are exactly the active files.
 Future<String?> resolveActiveEmbeddingCatalogProfile({
   EmbeddingModelSpec? spec,
   @visibleForTesting EmbeddingCatalogProvenanceStorage? storage,
   @visibleForTesting EmbeddingModelSpec? Function()? activeSpecReader,
+  @visibleForTesting List<EmbeddingCatalogEntry>? catalogEntries,
 }) async {
+  final entries = catalogEntries ?? shippedEmbeddingCatalog;
   final readActiveSpec =
       activeSpecReader ?? () => FlutterEdgeAi.activeEmbedderSpec;
   final tracksActiveSpec = spec == null;
@@ -111,20 +171,21 @@ Future<String?> resolveActiveEmbeddingCatalogProfile({
     return null;
   }
 
-  for (final model in catalog.EmbeddingModel.values) {
+  for (final model in entries) {
     if (_matchesCatalogSpec(activeSpec, model)) {
-      await persistVerifiedEmbeddingCatalogSelection(
+      await _persistVerified(
         model,
         spec: tracksActiveSpec ? null : activeSpec,
         storage: storage,
         activeSpecReader: readActiveSpec,
       );
-      return model.ragProfileId;
+      return model.profileId;
     }
   }
 
+  final tokenizerSource = activeSpec.tokenizerSource;
   if (activeSpec.modelSource is! FileSource ||
-      activeSpec.tokenizerSource is! FileSource) {
+      (tokenizerSource != null && tokenizerSource is! FileSource)) {
     await clearEmbeddingCatalogProvenance(storage: storage);
     return null;
   }
@@ -142,37 +203,10 @@ Future<String?> resolveActiveEmbeddingCatalogProfile({
     return null;
   }
 
-  final model = _catalogModelForRecord(record);
-  final activeFiles = activeSpec.files;
-  final encodedCoreIdentity = target.getString(
-    PreferencesKeys.activeEmbeddingIdentityRecord,
-  );
-  final coreIdentity = ActiveEmbeddingIdentityRecord.tryDecode(
-    encodedCoreIdentity,
-  );
-  if (encodedCoreIdentity != null &&
-      (coreIdentity == null || !coreIdentity.active)) {
-    await clearEmbeddingCatalogProvenance(storage: target);
-    return null;
-  }
-  final persistedModelSource = coreIdentity?.active == true
-      ? coreIdentity!.modelSource
-      : target.getString(PreferencesKeys.activeEmbeddingSource);
-  final persistedTokenizerSource = coreIdentity?.active == true
-      ? coreIdentity!.tokenizerSource
-      : target.getString(PreferencesKeys.activeEmbeddingTokenizerSource);
+  final model = _catalogModelForRecord(record, entries);
   final valid =
       model != null &&
-      record == _EmbeddingCatalogProvenance.fromCatalog(model) &&
-      activeFiles.length == 2 &&
-      activeFiles[0].filename == record.modelFilename &&
-      activeFiles[1].filename == record.tokenizerFilename &&
-      (coreIdentity == null ||
-          (coreIdentity.active &&
-              coreIdentity.modelFilename == record.modelFilename &&
-              coreIdentity.tokenizerFilename == record.tokenizerFilename)) &&
-      persistedModelSource == record.modelSource &&
-      persistedTokenizerSource == record.tokenizerSource;
+      _filesAre(activeSpec, record.modelFilename, record.tokenizerFilename);
   if (!valid) {
     await clearEmbeddingCatalogProvenance(storage: target);
     return null;
@@ -208,18 +242,29 @@ void _ensureStillActive(
   }
 }
 
-bool _matchesCatalogSpec(
-  EmbeddingModelSpec spec,
-  catalog.EmbeddingModel model,
-) {
-  final files = spec.files;
-  return files.length == 2 &&
-      files[0].filename == model.filename &&
-      files[1].filename == model.tokenizerFilename &&
+bool _matchesCatalogSpec(EmbeddingModelSpec spec, EmbeddingCatalogEntry model) {
+  final tokenizerUrl = model.tokenizerUrl;
+  return _filesAre(spec, model.filename, model.tokenizerFilename) &&
       spec.modelSource.encode() ==
           _catalogSource(model.url, model.sourceType) &&
-      spec.tokenizerSource.encode() ==
-          _catalogSource(model.tokenizerUrl, model.sourceType);
+      spec.tokenizerSource?.encode() ==
+          (tokenizerUrl == null
+              ? null
+              : _catalogSource(tokenizerUrl, model.sourceType));
+}
+
+/// Whether [spec]'s files are exactly [modelFilename], then
+/// [tokenizerFilename] when the model has one (a self-contained `.litertlm`
+/// bundle has none).
+bool _filesAre(
+  EmbeddingModelSpec spec,
+  String modelFilename,
+  String? tokenizerFilename,
+) {
+  final files = spec.files;
+  return files.length == (tokenizerFilename == null ? 1 : 2) &&
+      files[0].filename == modelFilename &&
+      (tokenizerFilename == null || files[1].filename == tokenizerFilename);
 }
 
 String _catalogSource(String location, ModelSourceType sourceType) =>
@@ -229,11 +274,15 @@ String _catalogSource(String location, ModelSourceType sourceType) =>
       ModelSourceType.bundled => ModelSource.bundled(location).encode(),
     };
 
-catalog.EmbeddingModel? _catalogModelForRecord(
+/// The catalog entry [record] was written for, matched on every field: two
+/// entries may share a profile id (the EmbeddingGemma 2 bundles share one text
+/// space), so the id alone does not say which was installed.
+EmbeddingCatalogEntry? _catalogModelForRecord(
   _EmbeddingCatalogProvenance record,
+  List<EmbeddingCatalogEntry> entries,
 ) {
-  for (final model in catalog.EmbeddingModel.values) {
-    if (model.ragProfileId == record.profileId) return model;
+  for (final model in entries) {
+    if (_EmbeddingCatalogProvenance.fromCatalog(model) == record) return model;
   }
   return null;
 }
@@ -246,17 +295,23 @@ class _EmbeddingCatalogProvenance {
     required this.tokenizerFilename,
     required this.modelSource,
     required this.tokenizerSource,
-  });
+  }) : assert(
+         (tokenizerFilename == null) == (tokenizerSource == null),
+         'a tokenizer has both a file name and a source, or neither',
+       );
 
   factory _EmbeddingCatalogProvenance.fromCatalog(
-    catalog.EmbeddingModel model,
+    EmbeddingCatalogEntry model,
   ) => _EmbeddingCatalogProvenance(
     schemaVersion: _provenanceSchemaVersion,
-    profileId: model.ragProfileId,
+    profileId: model.profileId,
     modelFilename: model.filename,
     tokenizerFilename: model.tokenizerFilename,
     modelSource: _catalogSource(model.url, model.sourceType),
-    tokenizerSource: _catalogSource(model.tokenizerUrl, model.sourceType),
+    tokenizerSource: switch (model.tokenizerUrl) {
+      final url? => _catalogSource(url, model.sourceType),
+      null => null,
+    },
   );
 
   static _EmbeddingCatalogProvenance? tryDecode(String? encoded) {
@@ -270,22 +325,26 @@ class _EmbeddingCatalogProvenance {
       final tokenizerFilename = json['tokenizerFilename'];
       final modelSource = json['modelSource'];
       final tokenizerSource = json['tokenizerSource'];
+      // A self-contained model has no tokenizer: both tokenizer fields are
+      // absent. One without the other is a broken record.
+      final hasTokenizer =
+          tokenizerFilename is String && tokenizerSource is String;
+      final noTokenizer = tokenizerFilename == null && tokenizerSource == null;
       if (schemaVersion is! int ||
           schemaVersion != _provenanceSchemaVersion ||
           profileId is! String ||
           modelFilename is! String ||
-          tokenizerFilename is! String ||
           modelSource is! String ||
-          tokenizerSource is! String) {
+          !(hasTokenizer || noTokenizer)) {
         return null;
       }
       return _EmbeddingCatalogProvenance(
         schemaVersion: schemaVersion,
         profileId: profileId,
         modelFilename: modelFilename,
-        tokenizerFilename: tokenizerFilename,
+        tokenizerFilename: tokenizerFilename as String?,
         modelSource: modelSource,
-        tokenizerSource: tokenizerSource,
+        tokenizerSource: tokenizerSource as String?,
       );
     } catch (_) {
       return null;
@@ -295,17 +354,19 @@ class _EmbeddingCatalogProvenance {
   final int schemaVersion;
   final String profileId;
   final String modelFilename;
-  final String tokenizerFilename;
+
+  /// Null, with [tokenizerSource], for a self-contained model.
+  final String? tokenizerFilename;
   final String modelSource;
-  final String tokenizerSource;
+  final String? tokenizerSource;
 
   Map<String, Object> toJson() => {
     'schemaVersion': schemaVersion,
     'profileId': profileId,
     'modelFilename': modelFilename,
-    'tokenizerFilename': tokenizerFilename,
+    'tokenizerFilename': ?tokenizerFilename,
     'modelSource': modelSource,
-    'tokenizerSource': tokenizerSource,
+    'tokenizerSource': ?tokenizerSource,
   };
 
   @override

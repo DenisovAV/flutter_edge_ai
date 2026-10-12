@@ -30,8 +30,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
+import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_speech/src/qwen3/npy_reader.dart';
 import 'package:flutter_edge_ai_speech/src/qwen3/qwen2_bpe_encoder.dart';
 import 'package:flutter_edge_ai_speech/src/qwen3/qwen3_prompt.dart';

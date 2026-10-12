@@ -15,8 +15,7 @@
 // `onnx_generation_host_smoke_test.dart` for that).
 import 'dart:isolate';
 
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart'
-    show EdgeAiLogLevel;
+import 'package:flutter_edge_ai/engine.dart' show EdgeAiLogLevel;
 
 import 'gen_ai_client.dart' show GenAiTurn;
 

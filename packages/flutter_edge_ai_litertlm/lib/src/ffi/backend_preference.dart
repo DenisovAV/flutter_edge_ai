@@ -4,7 +4,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// Whether this host ships an NPU dispatch stack at all.
 ///
@@ -180,6 +180,14 @@ String npuUnavailableReason(String operatingSystem, {String? fastRpcError}) =>
             '${fastRpcError ?? 'this machine has no Qualcomm NPU'}',
       _ => 'no NPU dispatch stack ships for $operatingSystem',
     };
+
+/// Why this host cannot run its NPU stack, from the probe [hostShipsNpuDispatch]
+/// ran (read it after that getter). For the EmbeddingGemma 2 refusal, which
+/// words the same reason as the LLM path's fallback notice.
+String get hostNpuUnavailableReason => npuUnavailableReason(
+  Platform.operatingSystem,
+  fastRpcError: Platform.isLinux ? _linuxNpuProbeError : _fastRpcProbeError,
+);
 
 /// The backends to try, in order, for a [preferredBackend] request.
 ///

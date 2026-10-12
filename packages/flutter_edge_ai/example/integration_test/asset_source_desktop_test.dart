@@ -17,9 +17,10 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:flutter_edge_ai/core/api/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+// ignore: implementation_imports — asserts against core's managed storage path
+import 'package:flutter_edge_ai/src/di/service_registry.dart'
+    show ServiceRegistry;
 import 'inference_test_helpers.dart' show registerTestEngines;
 
 void main() {
@@ -52,7 +53,7 @@ void main() {
     // On desktop this is Application Support/flutter_edge_ai/ (not Documents),
     // so we ask FileSystemService for the correct expected path.
     final expectedPath = await ServiceRegistry.instance.fileSystemService
-        .getTargetPath(fixtureBasename);
+        .getWriteTargetPath(fixtureBasename);
     final installed = File(expectedPath);
     expect(
       installed.existsSync(),

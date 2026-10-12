@@ -1,9 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'; // For EmbeddingModelSpec
-import 'package:flutter_edge_ai_example/models/base_model.dart'; // For ModelSourceType
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
+import 'package:flutter_edge_ai_example/services/embedding_catalog_install.dart';
 import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -24,10 +24,20 @@ class EmbeddingModelDownloadService {
     return '${directory.path}/${model.filename}';
   }
 
-  /// Helper method to get the tokenizer file path.
-  Future<String> getTokenizerFilePath() async {
+  /// Helper method to get the tokenizer file path; null for a `.litertlm`
+  /// bundle, which carries its own tokenizer.
+  Future<String?> getTokenizerFilePath() async {
+    final tokenizer = model.tokenizerFilename;
+    if (tokenizer == null) return null;
     final directory = await getApplicationDocumentsDirectory();
-    return '${directory.path}/${model.tokenizerFilename}';
+    return '${directory.path}/$tokenizer';
+  }
+
+  /// Whether the model's tokenizer is installed — trivially true for a
+  /// `.litertlm` bundle, which has none.
+  Future<bool> _tokenizerInstalled() async {
+    final tokenizer = model.tokenizerFilename;
+    return tokenizer == null || await FlutterEdgeAi.isModelInstalled(tokenizer);
   }
 
   /// Checks if both model and tokenizer files exist and match remote file sizes.
@@ -38,9 +48,7 @@ class EmbeddingModelDownloadService {
       final modelInstalled = await FlutterEdgeAi.isModelInstalled(
         model.filename,
       );
-      final tokenizerInstalled = await FlutterEdgeAi.isModelInstalled(
-        model.tokenizerFilename,
-      );
+      final tokenizerInstalled = await _tokenizerInstalled();
 
       final installed = modelInstalled && tokenizerInstalled;
 
@@ -70,47 +78,12 @@ class EmbeddingModelDownloadService {
       double modelProgress = 0;
       double tokenizerProgress = 0;
 
-      // Start building the installer
-      var builder = FlutterEdgeAi.installEmbedder();
-
-      // Add model source based on sourceType
-      switch (model.sourceType) {
-        case ModelSourceType.network:
-          final authToken = token.isEmpty ? null : token;
-          builder = builder.modelFromNetwork(
-            model.url,
-            token: authToken,
-            filename: model.filename,
-          );
-        case ModelSourceType.asset:
-          builder = builder.modelFromAsset(model.url, filename: model.filename);
-        case ModelSourceType.bundled:
-          builder = builder.modelFromBundled(
-            model.url,
-            filename: model.filename,
-          );
-      }
-
-      // Add tokenizer source based on sourceType
-      switch (model.sourceType) {
-        case ModelSourceType.network:
-          final authToken = token.isEmpty ? null : token;
-          builder = builder.tokenizerFromNetwork(
-            model.tokenizerUrl,
-            token: authToken,
-            filename: model.tokenizerFilename,
-          );
-        case ModelSourceType.asset:
-          builder = builder.tokenizerFromAsset(
-            model.tokenizerUrl,
-            filename: model.tokenizerFilename,
-          );
-        case ModelSourceType.bundled:
-          builder = builder.tokenizerFromBundled(
-            model.tokenizerUrl,
-            filename: model.tokenizerFilename,
-          );
-      }
+      final authToken = token.isEmpty ? null : token;
+      final builder = withCatalogEmbedderSources(
+        FlutterEdgeAi.installEmbedder(),
+        model,
+        token: authToken,
+      );
 
       // Add progress callbacks and install
       await builder
@@ -142,7 +115,8 @@ class EmbeddingModelDownloadService {
           false;
       // Use Modern API to properly uninstall (deletes metadata + files)
       await FlutterEdgeAi.uninstallModel(model.filename);
-      await FlutterEdgeAi.uninstallModel(model.tokenizerFilename);
+      final tokenizer = model.tokenizerFilename;
+      if (tokenizer != null) await FlutterEdgeAi.uninstallModel(tokenizer);
       if (wasActive) {
         await FlutterEdgeAi.clearActiveEmbeddingIdentity();
         await clearEmbeddingCatalogProvenance();
@@ -161,10 +135,7 @@ class EmbeddingModelDownloadService {
       final modelInstalled = await FlutterEdgeAi.isModelInstalled(
         model.filename,
       );
-      final tokenizerInstalled = await FlutterEdgeAi.isModelInstalled(
-        model.tokenizerFilename,
-      );
-      return modelInstalled && tokenizerInstalled;
+      return modelInstalled && await _tokenizerInstalled();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Error checking embedding model installation: $e');

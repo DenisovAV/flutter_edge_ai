@@ -28,10 +28,15 @@ So text generation has four interchangeable runtimes, embeddings have two
 (LiteRT and ONNX, both on every platform), and speech has one (LiteRT, on
 native platforms).
 
-- **Embeddings**: LiteRT runs `.tflite` models (EmbeddingGemma, Gecko), ONNX
-  runs `.onnx` models (MiniLM, EmbeddingGemma). Both take their tokenizer from
-  `flutter_edge_ai_embeddings`. On the Web, ONNX embeddings accept WordPiece
-  (BERT-style) models only.
+- **Embeddings**: LiteRT runs `.tflite` models (EmbeddingGemma 1, Gecko) and
+  EmbeddingGemma 2 `.litertlm` bundles — text, and JPEG/PNG/GIF/BMP images
+  with the 440m and 740m bundles, on native platforms and (since litertlm
+  1.13.1, on WebGPU) on the Web; WAV/MP3/FLAC audio with the 740m bundle and
+  several parts in one vector, on native platforms (litertlm 1.13.1); ONNX runs `.onnx`
+  models (MiniLM, EmbeddingGemma). The `.tflite` and `.onnx` models take their
+  tokenizer from `flutter_edge_ai_embeddings`; an EmbeddingGemma 2 bundle
+  carries its own. On the Web, ONNX embeddings accept WordPiece (BERT-style)
+  models only. Every embedding model takes all nine `TaskType`s.
 - **Speech**: speech-to-text runs moonshine, Whisper and Parakeet on a finished
   recording (it does not stream); text-to-speech runs Matcha, Qwen3-TTS and
   Inflect. `VoiceSession` combines the two into a voice loop.

@@ -13,7 +13,7 @@
 // constant, which is what makes this a drift test rather than a tautology.
 import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/mobile/smart_downloader.dart';
+import 'package:flutter_edge_ai/src/mobile/smart_downloader.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 DownloadTask build({String? token, bool allowPause = true}) =>

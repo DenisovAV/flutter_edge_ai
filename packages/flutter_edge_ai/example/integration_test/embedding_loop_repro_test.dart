@@ -121,7 +121,10 @@ void main() {
 
     final sw = Stopwatch()..start();
     for (var i = 0; i < texts.length; i++) {
-      final v = await embedder.generateEmbedding(texts[i]);
+      final v = await embedder.embed(
+        EmbeddingInput.text(texts[i]),
+        taskType: TaskType.retrievalQuery,
+      );
       if ((i + 1) % 25 == 0) {
         // ignore: avoid_print
         print(

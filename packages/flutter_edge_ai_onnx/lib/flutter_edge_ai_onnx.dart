@@ -57,7 +57,7 @@ export 'src/web/onnx_embedding_backend_web.dart'
     if (dart.library.ffi) 'src/embedding/onnx_embedding_backend.dart';
 
 // Native-only advanced/test surface — direct construction of the ORT-GenAI
-// FFI client, the plain-ORT embedding forward pass, or a custom `OrtClient`
+// FFI client, the plain-ORT embedding pass, or a custom `OrtClient`
 // (fakes for unit tests). Exports NO symbols on web — see
 // `src/native_exports_stub.dart`'s doc for why (mirrors
 // `flutter_edge_ai_litertlm`'s `litert_bindings_stub.dart`).

@@ -2,14 +2,14 @@
 @TestOn('!vm')
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/services/file_system_service.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
-import 'package:flutter_edge_ai/core/model_management/cancel_token.dart';
-import 'package:flutter_edge_ai/core/services/asset_loader.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart';
-import 'package:flutter_edge_ai/core/services/protected_files_registry.dart';
-import 'package:flutter_edge_ai/core/handlers/source_handler_registry.dart';
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/services/file_system_service.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
+import 'package:flutter_edge_ai/src/services/asset_loader.dart';
+import 'package:flutter_edge_ai/src/services/model_repository.dart';
+import 'package:flutter_edge_ai/src/services/protected_files_registry.dart';
+import 'package:flutter_edge_ai/src/handlers/source_handler_registry.dart';
 
 // Mock implementations for testing
 class MockFileSystemService implements FileSystemService {
@@ -24,9 +24,6 @@ class MockFileSystemService implements FileSystemService {
 
   @override
   Future<int> getFileSize(String path) async => 0;
-
-  @override
-  Future<String> getTargetPath(String filename) async => '';
 
   @override
   Future<String> getReadTargetPath(String filename) async => '';

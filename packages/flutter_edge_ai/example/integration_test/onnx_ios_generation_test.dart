@@ -19,6 +19,7 @@
 //   flutter test integration_test/onnx_ios_generation_test.dart -d <iphone-id>
 import 'dart:io';
 
+// ignore: implementation_imports — drives onnx's ORT-GenAI FFI client directly on iOS
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

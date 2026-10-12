@@ -112,7 +112,94 @@ void main() {
       // flutter_edge_ai keeps the loaded embedder and builds a new one when
       // the active embedder changes; a handle cached here would miss that.
       expect(runtime.getActiveEmbedderCallCount, 2);
-      expect(fakeEmbedder.generateEmbeddingsCallCount, 2);
+      expect(fakeEmbedder.embedAllCallCount, 2);
+    });
+
+    test('vectors are identical to 0.8.0\'s for the same input: the query '
+        'task generateEmbeddings defaulted to', () async {
+      final model = FakeEmbeddingModel(
+        vectorFor: (text, taskType) => [
+          text.length.toDouble(),
+          taskType.index.toDouble(),
+        ],
+      );
+      runtime = FakeRuntime(embedder: model);
+      final texts = ['First text', 'Second'];
+
+      final response = await buildEmbedder()(
+        EmbedRequest(
+          input: [
+            for (final t in texts) DocumentData(content: [TextPart(text: t)]),
+          ],
+        ),
+      );
+
+      // What 0.8.0 called: the deprecated forwarder, with its default task.
+      // ignore: deprecated_member_use
+      final before = await model.generateEmbeddings(texts);
+      expect([for (final e in response.embeddings) e.embedding], before);
+      expect(model.lastTaskType, gemma.TaskType.retrievalQuery);
+    });
+
+    test('a model closed before the request ran is resolved again and the '
+        'request retried once', () async {
+      final closed = FakeEmbeddingModel()..closed = true;
+      final fresh = FakeEmbeddingModel()
+        ..embeddingsToReturn = [
+          [0.5, 0.5],
+        ];
+      runtime = FakeRuntime(embedder: fresh)..embedderQueue.add(closed);
+
+      final response = await buildEmbedder()(
+        EmbedRequest(
+          input: [
+            DocumentData(content: [TextPart(text: 'a')]),
+          ],
+        ),
+      );
+
+      expect(response.embeddings.single.embedding, [0.5, 0.5]);
+      expect(runtime.getActiveEmbedderCallCount, 2);
+    });
+
+    test(
+      'retries only once: a second closed model fails the request',
+      () async {
+        final first = FakeEmbeddingModel()..closed = true;
+        final second = FakeEmbeddingModel()..closed = true;
+        runtime = FakeRuntime(embedder: second)..embedderQueue.add(first);
+
+        await expectLater(
+          buildEmbedder()(
+            EmbedRequest(
+              input: [
+                DocumentData(content: [TextPart(text: 'a')]),
+              ],
+            ),
+          ),
+          throwsA(isA<gemma.EmbedderClosedException>()),
+        );
+        expect(runtime.getActiveEmbedderCallCount, 2);
+      },
+    );
+
+    test('any other failure is not retried', () async {
+      fakeEmbedder.failWith = const gemma.EmbeddingEngineException(
+        'boom',
+        engine: 'Fake',
+      );
+
+      await expectLater(
+        buildEmbedder()(
+          EmbedRequest(
+            input: [
+              DocumentData(content: [TextPart(text: 'a')]),
+            ],
+          ),
+        ),
+        throwsA(isA<gemma.EmbeddingEngineException>()),
+      );
+      expect(runtime.getActiveEmbedderCallCount, 1);
     });
 
     test('joins multiple text parts in document', () async {
@@ -161,7 +248,7 @@ void main() {
       expect(runtime.lastPreferredBackend, gemma.PreferredBackend.gpu);
     });
 
-    test('invalidates cache when preferredBackend changes', () async {
+    test('each request passes its own preferredBackend', () async {
       fakeEmbedder.embeddingsToReturn = [
         [1.0],
       ];

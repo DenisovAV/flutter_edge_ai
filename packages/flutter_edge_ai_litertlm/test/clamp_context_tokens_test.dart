@@ -7,8 +7,7 @@
 @TestOn('vm')
 library;
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
+import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart';
 import 'package:flutter_test/flutter_test.dart';

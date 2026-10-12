@@ -2,10 +2,10 @@
 // C API (Phase 2 — plain-ORT embedding forward pass, hardened plan Task 2).
 //
 // Built and used ENTIRELY inside the embedding worker isolate (same
-// isolate-affinity rule as `LiteRtEmbeddingForwardPass` in
+// isolate-affinity rule as `LiteRtEmbeddingPass` in
 // `flutter_edge_ai_litertlm`): the native handles this class holds
 // (`OrtEnv`/`OrtSession`/... pointers) cannot cross an isolate boundary, so
-// `createOnnxEmbeddingForwardPass`'s `load()` constructs this client fresh
+// `OnnxEmbeddingPass.load()` constructs this client fresh
 // inside the receiving isolate, never before.
 //
 // Design: ORT's C API is a struct-of-function-pointers reached via
@@ -14,7 +14,7 @@
 // frees the status and throws a [StateError] on failure. Native handles are
 // tracked as they're created so a failure partway through `load()` frees
 // everything already allocated, in reverse order, instead of leaking it (the
-// same pattern `LiteRtEmbeddingForwardPass.load()` uses).
+// same pattern LiteRT's native embedding graph uses).
 
 import 'dart:ffi' as ffi;
 import 'dart:io';
@@ -506,7 +506,7 @@ class OrtFfiClient implements OrtClient {
       );
     } catch (_) {
       // Reverse-order teardown on a partial load failure — mirrors
-      // LiteRtEmbeddingForwardPass.load()'s catch block.
+      // LiteRT's native embedding graph's open().
       if (session != null) _releaseSession(session);
       if (sessionOptions != null) _releaseSessionOptions(sessionOptions);
       if (cpuMemoryInfo != null) _releaseMemoryInfo(cpuMemoryInfo);

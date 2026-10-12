@@ -5,8 +5,7 @@
 // copy-paste near-twins) — invisible under the default config, where both
 // resolve to 'cpu', so a device smoke test would not catch it.
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 

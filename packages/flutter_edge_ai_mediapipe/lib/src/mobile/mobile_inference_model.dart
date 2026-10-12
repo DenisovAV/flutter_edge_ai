@@ -3,22 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:mutex/mutex.dart';
 
-import 'package:flutter_edge_ai/core/chat.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
-import 'package:flutter_edge_ai/core/tool.dart';
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show InferenceModel, InferenceModelSession;
+import 'package:flutter_edge_ai/engine.dart';
 
 // MobileInferenceModel exposes `activeBackend` as part of the [InferenceModel]
 // contract, whose type is core's PreferredBackend (from package:flutter_edge_ai).
 // The MediaPipe→core enum bridge lives in the engine; this model stores core's
 // value type directly so the override is valid and core's type never tangles
 // with the package's own pigeon enum.
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
 
 import '../mediapipe_sampling.dart';
 import 'mobile_inference_session.dart';

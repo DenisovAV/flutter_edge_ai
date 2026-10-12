@@ -2,9 +2,9 @@
 // file, so core never wraps a message in manual turn markers — the posture of
 // .onnx and .litertlm. The reply is cleaned as a .bin's is: a trailing
 // end-of-turn marker a template renders as text is stripped.
-import 'package:flutter_edge_ai/core/extensions.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/src/extensions.dart';
+import 'package:flutter_edge_ai/src/message.dart';
+import 'package:flutter_edge_ai/src/model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

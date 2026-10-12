@@ -17,8 +17,7 @@
 // CPU by default; --dart-define=TOOLS_BACKEND=gpu for the GPU backend.
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/parsing/sdk_response_parser.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 

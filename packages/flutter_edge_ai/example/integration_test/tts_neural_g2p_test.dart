@@ -21,7 +21,9 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
     show FlutterEdgeAi, FlutterEdgeAiPlugin, TtsModelSpec, TtsModelType;
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     show LiteRtTtsBackend;
+// ignore: implementation_imports — drives speech's TTS core and model profiles directly
 import 'package:flutter_edge_ai_speech/src/litert/tts_core.dart' show TtsCore;
+// ignore: implementation_imports — drives speech's TTS core and model profiles directly
 import 'package:flutter_edge_ai_speech/src/model/tts_model_profile.dart'
     show TtsModelProfile;
 
@@ -31,41 +33,39 @@ const _modelUrl =
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'neuralG2p produces IPA phonemes via the dp_g2p graph',
-    (_) async {
-      await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
+  testWidgets('neuralG2p produces IPA phonemes via the dp_g2p graph', (
+    _,
+  ) async {
+    await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
-      await FlutterEdgeAi.installTts()
-          .fromNetwork(_modelUrl)
-          .ofType(TtsModelType.matcha)
-          .install();
+    await FlutterEdgeAi.installTts()
+        .fromNetwork(_modelUrl)
+        .ofType(TtsModelType.matcha)
+        .install();
 
-      final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      final activeModel = manager.activeTtsModel;
-      if (activeModel is! TtsModelSpec) {
-        fail('No active TTS model after install()');
-      }
-      final artifactPaths = await manager.getModelFilePaths(activeModel);
-      if (artifactPaths == null || artifactPaths.isEmpty) {
-        fail('Active TTS model files not found on disk');
-      }
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final activeModel = manager.activeTtsModel;
+    if (activeModel is! TtsModelSpec) {
+      fail('No active TTS model after install()');
+    }
+    final artifactPaths = await manager.getModelFilePaths(activeModel);
+    if (artifactPaths == null || artifactPaths.isEmpty) {
+      fail('Active TTS model files not found on disk');
+    }
 
-      final core = await TtsCore.load(
-        profile: TtsModelProfile.forType(activeModel.ttsModelType),
-        artifactPaths: artifactPaths,
-      );
+    final core = await TtsCore.load(
+      profile: TtsModelProfile.forType(activeModel.ttsModelType),
+      artifactPaths: artifactPaths,
+    );
 
-      try {
-        expect(core.neuralG2p('world'), 'wˈɜːld');
+    try {
+      expect(core.neuralG2p('world'), 'wˈɜːld');
 
-        final chomsky = core.neuralG2p('chomsky');
-        expect(chomsky, isNotEmpty);
-        expect(chomsky.contains('ˈ'), isTrue);
-      } finally {
-        core.dispose();
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+      final chomsky = core.neuralG2p('chomsky');
+      expect(chomsky, isNotEmpty);
+      expect(chomsky.contains('ˈ'), isTrue);
+    } finally {
+      core.dispose();
+    }
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }

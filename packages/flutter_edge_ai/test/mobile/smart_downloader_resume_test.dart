@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/mobile/smart_downloader.dart';
+import 'package:flutter_edge_ai/src/mobile/smart_downloader.dart';
 
 void main() {
   group('shouldConfigureForegroundNotification (#356, #357 review)', () {

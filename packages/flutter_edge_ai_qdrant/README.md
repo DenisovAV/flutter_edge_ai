@@ -23,6 +23,11 @@ than peak speed, use `flutter_edge_ai_sqlite`.
 [`flutter_edge_ai_sqlite`](https://pub.dev/packages/flutter_edge_ai_sqlite)
 (`WebSqliteVectorStore`).
 
+> **2.1.0 needs `flutter_edge_ai_rag` 1.1.0**, which needs `flutter_edge_ai`
+> 2.3.0: upgrade every flutter_edge_ai package together. A location now binds
+> an embedding profile **and** a document modality (text, image or audio);
+> stores written by 2.0.x open unchanged as text locations.
+
 ## Teach your AI assistant this package
 
 ```bash
@@ -44,12 +49,12 @@ final rag = FlutterEdgeAiRag(
 );
 
 final dir = await getApplicationDocumentsDirectory();
-final index = await rag.open(
+final index = await rag.openVectors(
   spec: VectorStoreSpec(
     providerId: 'qdrant',
     location: '${dir.path}/rag_store', // a directory
   ),
-  embeddingProfile: EmbeddingProfile(
+  profile: EmbeddingProfile(
     id: 'my-embedder-v1',
     dimension: 4,
   ),
@@ -71,7 +76,7 @@ await index.dispose();
 `SqliteVectorStoreProvider`, there is no static `providerId` constant.
 
 This vector-only form is independent from the main inference runtime. To use
-`addText` and `searchText`, initialize `FlutterEdgeAi`, install an active
+`add` and `search` with text, initialize `FlutterEdgeAi`, install an active
 embedding model, and open the index with a stable identity for that model:
 
 ```dart
@@ -80,9 +85,17 @@ final textIndex = await rag.open(
     providerId: 'qdrant',
     location: '${dir.path}/text_rag_store',
   ),
-  activeEmbedderProfileId:
-      'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
-      'retrieval-prefix-meanpool-l2-v1',
+  embedder: FlutterEdgeAiActiveEmbedder(
+    profileId: 'embeddinggemma-300m-seq256-mp-rev-29888fcee321-'
+        'retrieval-prefix-meanpool-l2-v1',
+  ),
+);
+await textIndex.add(
+  id: 'intro',
+  document: EmbeddingInput.text('Flutter runs on-device.'),
+);
+final textHits = await textIndex.search(
+  query: EmbeddingInput.text('Where does Flutter run?'),
 );
 ```
 
@@ -92,13 +105,20 @@ The index borrows the active or custom embedder, so dispose the index before
 disposing that embedder or calling `FlutterEdgeAi.dispose()`.
 
 `QdrantVectorStore` also honors the payload-aware `Filter` DSL on
-`searchSimilar` and `RagIndex.searchText`/`searchVector`. It remains exported
+`searchSimilar` and `RagIndex.search`/`searchVector`. It remains exported
 as a low-level `VectorStoreRepository` for applications that need direct vector
 operations.
-Low-level callers must first call `bindEmbeddingProfile()` with the stable ID
-and dimension for their embedding space; add, search, remove, and clear refuse
-an unbound location. `getStats()` remains available before binding so migration
-code can inspect a legacy store before explicitly adopting it.
+Low-level callers must first call `bind(VectorStoreBinding(profile: …))` with
+the stable profile of their embedding space (and `documents:` for an image or
+audio location); add, search, remove, and clear refuse an unbound location.
+`getStats()` remains available before binding so migration code can inspect a
+legacy store before explicitly adopting it. The binding is kept in immutable
+record directories inside the store's `qdrant_edge_v1/` directory: the
+version-1 profile record older releases read, plus a version-2 binding record
+for image and audio — the
+encoding is described in the
+[flutter_edge_ai_rag README](https://pub.dev/packages/flutter_edge_ai_rag#implementing-a-vector-store).
+qdrant 2.0.x refuses a location bound to images or audio.
 
 Field names here are almost unrestricted — payload keys are free-form UTF-8 —
 with one exception: a name containing `.` is rejected, because qdrant reads it
@@ -124,7 +144,8 @@ refuses; if a schema must work on both, keep it inside sqlite's narrower set.
 - `addDocument`'s `metadata` is forwarded as a raw JSON string into the payload;
   filtering by metadata fields requires valid JSON.
 - Distance defaults to cosine.
-- Every location is durably bound to one `EmbeddingProfile`.
+- Every location is durably bound to one `EmbeddingProfile` and one document
+  modality.
 
 ## Adopting an existing profile-less store
 
@@ -133,13 +154,13 @@ embedding profile. `FlutterEdgeAiRag` refuses to guess. After independently
 verifying the exact model that created the vectors, adopt it explicitly once:
 
 ```dart
-final index = await rag.open(
+final index = await rag.openVectors(
   spec: VectorStoreSpec(
     providerId: 'qdrant',
     location: '${dir.path}/rag_store',
     allowLegacyProfileAdoption: true,
   ),
-  embeddingProfile: EmbeddingProfile(
+  profile: EmbeddingProfile(
     id: 'embeddinggemma-300m-v1',
     dimension: 768,
   ),
@@ -169,9 +190,9 @@ import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 
 final RagIndex index;
 try {
-  index = await rag.open(
+  index = await rag.openVectors(
     spec: VectorStoreSpec(providerId: 'qdrant', location: path),
-    embeddingProfile: profile,
+    profile: profile,
   );
 } on QdrantLegacyStoreException catch (e) {
   // e.message names exactly what to remove. Do it with the file APIs you

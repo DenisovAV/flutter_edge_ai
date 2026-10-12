@@ -20,10 +20,9 @@ export 'src/litert_lm_engine_web.dart'
 export 'src/ffi/litert_bindings_stub.dart'
     if (dart.library.ffi) 'src/ffi/litert_bindings.dart';
 
-// LiteRT embedding backend (`LiteRtEmbeddingBackend`) — moved from
-// flutter_edge_ai_embeddings (embedder decoupling, 1.5.0). Native arm builds a
-// `ForwardPassDescriptor` over the LiteRT C API forward pass; web arm builds
-// the LiteRT.js-backed `WebEmbeddingModel` directly.
+// LiteRT embedding backend (`LiteRtEmbeddingBackend`). Both arms only describe
+// a pass — the LiteRT C API pass on native, the LiteRT.js one on web — and core
+// builds, hosts and closes it.
 // Where the LiteRT.js WASM runtime is fetched from on web. Plain Dart with no
 // imports at all, so it is exported unconditionally: an app sets it once at
 // startup, and on native it is simply inert. The web MODEL beside it is not

@@ -1,10 +1,13 @@
 import 'dart:typed_data' show Uint8List;
 
-import 'package:flutter_edge_ai/core/extensions.dart' show MessageExtension;
-import 'package:flutter_edge_ai/core/message.dart' show Message;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show InferenceModelSession, SessionMetrics;
+import 'package:flutter_edge_ai/engine.dart'
+    show
+        InferenceModelSession,
+        Message,
+        MessageExtension,
+        ModelFileType,
+        ModelType,
+        SessionMetrics;
 import 'package:flutter_local_ai/flutter_local_ai.dart' show LocalAiSession;
 import 'package:meta/meta.dart' show experimental;
 

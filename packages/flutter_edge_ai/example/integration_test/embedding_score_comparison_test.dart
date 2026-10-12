@@ -27,14 +27,17 @@ void main() {
     final model = await FlutterEdgeAi.getActiveEmbedder();
 
     try {
-      final queryEmb = await model.generateEmbedding(
-        'Which planet is known as the Red Planet',
+      final queryEmb = await model.embed(
+        EmbeddingInput.text('Which planet is known as the Red Planet'),
+        taskType: TaskType.retrievalQuery,
       );
-      final similarEmb = await model.generateEmbedding(
-        'Mars is famous for its reddish appearance',
+      final similarEmb = await model.embed(
+        EmbeddingInput.text('Mars is famous for its reddish appearance'),
+        taskType: TaskType.retrievalQuery,
       );
-      final diffEmb = await model.generateEmbedding(
-        'The stock market closed higher today',
+      final diffEmb = await model.embed(
+        EmbeddingInput.text('The stock market closed higher today'),
+        taskType: TaskType.retrievalQuery,
       );
 
       final simScore = _cosineSimilarity(queryEmb, similarEmb);

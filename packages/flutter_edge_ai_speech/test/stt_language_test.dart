@@ -14,8 +14,7 @@
 @TestOn('vm')
 library;
 
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show SttModelType;
+import 'package:flutter_edge_ai/engine.dart' show SttModelType;
 import 'package:flutter_edge_ai_speech/src/litert/stt_core.dart'
     show promptForLanguage, resolveSttSpecialTokens;
 import 'package:flutter_edge_ai_speech/src/litert/litert_speech_recognizer.dart'

@@ -15,10 +15,11 @@ class PlatformServiceImpl : NSObject, PlatformService, FlutterStreamHandler {
     private let sessionMapQueue = DispatchQueue(label: "flutter_edge_ai.sessionMap")
 
     // 0.15.2: embedding migrated to the shared Dart-FFI + LiteRT path
-    // (see `lib/core/litert/litert_embedding_model.dart`). The pigeon
+    // (today: core's `CommonEmbeddingModel` over flutter_edge_ai_litertlm's
+    // `lib/src/embedding/litert_embedding_pass.dart`). The pigeon
     // surface below is preserved for ABI continuity but no longer
-    // backs the runtime path — Dart instantiates LitertEmbeddingModel
-    // directly and never calls these methods.
+    // backs the runtime path — Dart runs the embedder itself and never
+    // calls these methods.
 
     func createModel(
         maxTokens: Int64,
@@ -473,7 +474,7 @@ class PlatformServiceImpl : NSObject, PlatformService, FlutterStreamHandler {
 
     // 0.15.2: embedding pigeon methods dropped from PlatformService.
     // Dart talks to LiteRT C API directly via dart:ffi
-    // (lib/core/litert/litert_embedding_model.dart).
+    // (flutter_edge_ai_litertlm's lib/src/embedding/litert_embedding_pass.dart).
 
     public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         self.eventSink = events

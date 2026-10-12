@@ -1,6 +1,6 @@
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
-import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/src/domain/model_source.dart';
+import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The relative fetch suffix for a qwen3 bundle member — every qwen3 member

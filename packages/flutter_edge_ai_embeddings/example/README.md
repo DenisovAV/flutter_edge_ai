@@ -3,8 +3,9 @@
 `flutter_edge_ai_embeddings` supplies the embedding **tokenizers** for
 [`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai) — Gemma
 SentencePiece and BERT-family WordPiece. Since 2.2.0 that is all it is: the
-forward-pass seam, the background-isolate worker and the pooling live in
-`flutter_edge_ai` itself, and the backend comes from an engine package, e.g.
+embedding pass SPI, the host that runs a pass off the UI isolate and the
+pooling live in `flutter_edge_ai` itself, and the backend comes from an engine
+package, e.g.
 [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm)'s
 `LiteRtEmbeddingBackend` (Gecko / EmbeddingGemma `.tflite` via the LiteRT C
 API — dart:ffi on the 5 native platforms, LiteRT.js on web). Register both once
@@ -32,9 +33,13 @@ Future<void> main() async {
       .tokenizerFromNetwork('https://example.com/sentencepiece.model', token: 'hf_...')
       .install();
 
-  // Create the embedding model and embed text.
+  // Create the embedding model and embed text. The task type is required:
+  // it picks the prompt prefixed to the text.
   final embedder = await FlutterEdgeAi.getActiveEmbedder();
-  final vector = await embedder.generateEmbedding('Gemma runs on-device.');
+  final vector = await embedder.embed(
+    EmbeddingInput.text('Gemma runs on-device.'),
+    taskType: TaskType.retrievalDocument,
+  );
   print('embedding dim: ${vector.length}');
 
   await embedder.close();

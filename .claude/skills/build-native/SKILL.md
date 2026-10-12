@@ -464,6 +464,25 @@ nm -gU packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<dir>/libLite
 
 Run `nm -gU | grep -c '_litert_lm_'` — expect ~50 symbols (matches `bindings.dart` lookupFunction count).
 
+**EmbeddingEngine exports (EmbeddingGemma 2).** `verify_tarball_manifest.sh` runs
+`check_embedding_exports.py` on every tarball: `libLiteRtLm` must export the 27
+EmbeddingEngine / ModelInfo / error-reporter functions the `.litertlm` embedding
+pass calls (`liteRtLmEmbeddingSymbols` in `lib/src/embedding/litert_lm_embedding_pass.dart`;
+a VM test keeps the two lists equal). They leave through visibility attributes,
+not the Windows `.def`, and no LLM check calls them — a dropped one fails only
+an EG2 load on that platform. On a **LiteRT-LM pin bump** also:
+- replace `native/litert_lm/include/c/*.h` with upstream's `c/` headers at the new
+  pin, verbatim, and regenerate `lib/src/ffi/litert_lm_embedding_bindings.dart`:
+  `dart pub global activate ffigen 20.1.1`, then in `packages/flutter_edge_ai_litertlm`
+  `dart pub global run ffigen --config ffigen_embedding.yaml` (ffigen is no
+  dependency of the workspace; upstream `main` after v0.18.0 already changed the
+  embedding setters to return status codes);
+- re-check R5 §4.8's enumeration: under `kError`, status 3 (InvalidArgument) from
+  `compute_embedding` on one well-formed text part must still mean overflow and
+  nothing else (`embedding_litert_compiled_model_executor.cc`, `embedding_engine_impl.cc`,
+  `c/embedding_engine.cc`). If another InvalidArgument became reachable, the pass's
+  overflow mapping is wrong for that pin.
+
 ### 7. **Real `pub get` smoke test in a fresh project**
 
 This catches problems no static check sees. Mandatory before commit:

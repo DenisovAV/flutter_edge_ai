@@ -1,6 +1,6 @@
-import 'package:flutter_edge_ai/core/extensions.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/src/extensions.dart';
+import 'package:flutter_edge_ai/src/message.dart';
+import 'package:flutter_edge_ai/src/model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The tool result is the only thing the model reads to answer. Golden strings

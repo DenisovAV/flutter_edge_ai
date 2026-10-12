@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// Writes a debug-only diagnostic through Flutter Edge AI's shared logger.
 ///

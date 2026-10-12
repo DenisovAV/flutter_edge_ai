@@ -6,8 +6,11 @@
 
 import 'dart:io';
 
+// ignore: implementation_imports — drives qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/filter_codec.dart';
+// ignore: implementation_imports — drives qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/point_id_hasher.dart';
+// ignore: implementation_imports — drives qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
 import 'package:flutter_edge_ai_qdrant/flutter_edge_ai_qdrant.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
@@ -153,7 +156,7 @@ void main() {
     () async {
       final first = QdrantVectorStore();
       await first.initialize(shardDir.path);
-      await first.bindEmbeddingProfile(storeProfile);
+      await first.bind(VectorStoreBinding(profile: storeProfile));
       for (var i = 0; i < 3; i++) {
         await first.addDocument(
           id: 'doc$i',
@@ -186,7 +189,7 @@ void main() {
     // storage there is slower than a dev box.
     final store = QdrantVectorStore();
     await store.initialize(shardDir.path);
-    await store.bindEmbeddingProfile(storeProfile);
+    await store.bind(VectorStoreBinding(profile: storeProfile));
     addTearDown(store.close);
 
     await Future.wait([
@@ -256,7 +259,7 @@ void main() {
     final store = QdrantVectorStore();
     addTearDown(store.close);
     await store.initialize(shardDir.path);
-    await store.bindEmbeddingProfile(storeProfile);
+    await store.bind(VectorStoreBinding(profile: storeProfile));
     await store.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
     await store.addDocument(id: 'b', content: 'y', embedding: vec(4, 2));
     expect((await store.getStats()).documentCount, equals(2));
@@ -283,7 +286,7 @@ void main() {
     // place to trust it.
     final seed = QdrantVectorStore();
     await seed.initialize(shardDir.path);
-    await seed.bindEmbeddingProfile(storeProfile);
+    await seed.bind(VectorStoreBinding(profile: storeProfile));
     await seed.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
     await seed.addDocument(id: 'b', content: 'y', embedding: vec(4, 2));
     await seed.close();
@@ -312,7 +315,7 @@ void main() {
       // edgeAiLog, which is debug-only, so a release build said nothing at all.
       final holder = QdrantVectorStore();
       await holder.initialize(shardDir.path);
-      await holder.bindEmbeddingProfile(storeProfile);
+      await holder.bind(VectorStoreBinding(profile: storeProfile));
       await holder.addDocument(id: 'a', content: 'x', embedding: vec(4, 1));
       addTearDown(holder.close);
 

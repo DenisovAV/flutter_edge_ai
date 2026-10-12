@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/core/infrastructure/background_downloader_service.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
-import 'package:flutter_edge_ai/core/model_management/cancel_token.dart';
+import 'package:flutter_edge_ai/src/infrastructure/background_downloader_service.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

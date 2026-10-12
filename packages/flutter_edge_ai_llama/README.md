@@ -12,8 +12,8 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
 The tested dependencies are Flutter **3.47.1 / Dart 3.13.1**,
-`flutter_edge_ai 2.2.1`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
-Core 2.2.1 is published. This draft contribution targets its inference APIs;
+`flutter_edge_ai 2.3.0`, `llamadart 0.11.1` and the Apple companion `0.0.21`.
+Core 2.3.0 is published. This draft contribution targets its inference APIs;
 GGUF embeddings are deferred to a separate contribution against the new core SPI.
 
 ## Try a chat in a few minutes
@@ -84,7 +84,7 @@ the path below with the package directory relative to your app's pubspec:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: '>=2.2.1 <2.3.0'
+  flutter_edge_ai: ^2.3.0
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
@@ -145,11 +145,11 @@ Future<void> main() async {
 }
 ```
 
-Core 2.2.1 uses `ModelFileType.binary` for GGUF; the connector recognizes the
+Core 2.3.0 uses `ModelFileType.binary` for GGUF; the connector recognizes the
 `.gguf` filename. It does not claim other binary formats. On Web, replace
 `.fromFile(...)` with `.fromNetwork(modelUrl)` and prepare the assets/headers above.
 
-Core 2.2.1 restores the installed imported model during initialization. Load it
+Core 2.3.0 restores the installed imported model during initialization. Load it
 with `getActiveModel`; conversation history starts fresh. No connector-specific
 restore call is needed.
 
@@ -163,11 +163,12 @@ conversation can continue. Close the model when your feature is finished.
 This contribution provides inference only. GGUF embeddings are preserved for a
 [follow-up](doc/deferred_embeddings.md) against core's new embedding SPI.
 
-The current core range accepts 2.2.x patches and requires its imported-file
-restore fix. The upcoming 2.3.0 API move is intentionally excluded until the
-connector switches to `engine.dart` / `engine_web.dart` and a dedicated GGUF
-file type. Until then, register the llama provider alone for GGUF; MediaPipe
-also claims binary models at the same priority. This draft is not release-ready.
+The connector uses core 2.3's public `engine.dart` / `engine_web.dart` APIs.
+GGUF still uses the binary file type until upstream adds its dedicated identity;
+register the llama provider alone for GGUF because MediaPipe also claims binary
+models at the same priority. The GGUF identity and LoRA restart changes in
+upstream #649 must land in a published core release before this draft is ready
+for full review. No local-core override is needed for the current code.
 
 ## Troubleshooting
 

@@ -186,15 +186,18 @@ void main() {
       try {
         final loaded = await _read(vm, 'loaded');
 
-        // generateEmbeddings(texts) is Future.wait over one worker request per
-        // text, and Future.wait reports only the first error. So the batch is
-        // sent as one-text generateEmbeddings calls from one synchronous loop:
-        // the same 300 requests, in the same order, in the same event-loop
-        // turn as generateEmbeddings(List.filled(300, ...)). Future.wait over
-        // them is that call's outcome; each one alone is an item's.
+        // The batch is 300 embed() calls from one synchronous loop: 300
+        // requests queued at the worker in one event-loop turn, which is what
+        // a close must overtake. (embedAll keeps at most two of its requests
+        // outstanding, so it would leave nothing queued behind the close.)
+        // Future.wait over them is the batch's outcome — it reports only the
+        // first error; each call alone is an item's.
         final calls = [
           for (var i = 0; i < _batchSize; i++)
-            model.generateEmbeddings([_sentence]),
+            model.embed(
+              EmbeddingInput.text(_sentence),
+              taskType: TaskType.retrievalQuery,
+            ),
         ];
         final batch = Future.wait(
           calls,

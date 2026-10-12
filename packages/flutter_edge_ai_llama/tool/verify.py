@@ -131,7 +131,7 @@ def main():
         run([flutter, "analyze"])
         run([sys.executable, "-m", "unittest", "discover", "-s", "test", "-p", "test_tooling.py"])
         run([flutter, "test", "test/connector_test.dart"])
-        run([flutter, "test", "test/connector_test.dart", "test/web_smoke_test.dart", "--platform", "chrome"])
+        run([flutter, "test", "test/connector_test.dart", "test/web_smoke_test.dart", "test/web_location_test.dart", "--platform", "chrome"])
         run([flutter, "test"], PACKAGE / "example")
     elif args.lane == "native":
         fixture = f"--dart-define=GGUF_MODEL_PATH={args.model_path.resolve()}"

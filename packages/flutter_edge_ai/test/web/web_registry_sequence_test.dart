@@ -7,13 +7,13 @@
 // "suppress the core default" one-shot flag anymore — both engines are
 // explicitly registered, and findFor just probes by fileType.
 
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
-import 'package:flutter_edge_ai/core/registry/engine_registry.dart';
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart' show InferenceModel;
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
+import 'package:flutter_edge_ai/src/model.dart' show ModelFileType, ModelType;
+import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
+import 'package:flutter_edge_ai/src/registry/inference_engine_provider.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/interface.dart' show InferenceModel;
+import 'package:flutter_edge_ai/src/domain/model_source.dart';
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show InferenceModelSpec;
 import 'package:flutter_test/flutter_test.dart';
 

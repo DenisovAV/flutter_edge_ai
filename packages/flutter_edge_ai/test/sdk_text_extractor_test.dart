@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_text_extractor.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

@@ -5,10 +5,8 @@
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
-import 'package:flutter_edge_ai/core/domain/model_source.dart' show ModelSource;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
-    show RuntimeConfig;
+import 'package:flutter_edge_ai/engine.dart'
+    show ModelFileType, ModelSource, ModelType, RuntimeConfig;
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_local_ai/flutter_local_ai.dart' show debugLocalAiHost;
 import 'package:flutter_local_ai/testing.dart' show FakeLocalAiHost;

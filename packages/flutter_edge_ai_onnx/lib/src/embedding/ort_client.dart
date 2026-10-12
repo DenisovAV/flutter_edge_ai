@@ -3,8 +3,8 @@
 // `flutter_edge_ai_litertlm`'s `LiteRtBindings` / forward-pass split: an
 // abstract interface unit tests fake with ZERO dlopen, and a concrete
 // `dart:ffi` implementation (`OrtFfiClient`) built only inside the
-// background worker isolate — never on the isolate that constructs the
-// [ForwardPassDescriptor].
+// embedding worker isolate — never on the isolate that runs the backend's
+// `describe()`.
 //
 // HARD RULE (design D1, Phase 2 plan D-T4): `dart:ffi` only. No
 // `flutter_onnxruntime` anywhere in this package.
@@ -27,8 +27,8 @@ class OrtInputTensor {
 /// output layout (a pre-pooled `sentence_embedding`/`pooler_output` vs
 /// per-token `last_hidden_state` vs a first-output fallback) is only knowable
 /// after the graph is parsed, which is why
-/// `OnnxEmbeddingForwardPass.outputContract` reports it via an override
-/// (design D-T2) rather than the descriptor declaring it upfront.
+/// `describeOrtGraph` decides the output contract after the session opens
+/// (design D-T2) rather than the backend declaring it upfront.
 class OrtIoSpec {
   const OrtIoSpec({
     required this.inputNames,
@@ -51,7 +51,7 @@ class OrtIoSpec {
   /// True when [outputName] is `last_hidden_state` (rank-3 per-token hidden
   /// states) rather than a pre-pooled `sentence_embedding` (rank-2) or an
   /// unrecognized first-output fallback (whose rank [OrtFfiClient] discovers
-  /// at run time). `OnnxEmbeddingForwardPass.outputContract` uses this to
+  /// at run time). `describeOrtGraph` uses this to
   /// decide `tokenLevel` vs `pooledFinal` without ever branching on the
   /// numeric shape of a specific [ForwardResult] (design D-T2's rule).
   final bool hasLastHiddenStateOutput;
@@ -109,10 +109,10 @@ int pickOnnxOutputIndex(List<String> outputNames) {
 }
 
 /// Injectable wrapper around a single ONNX Runtime session. The separation
-/// lets `OnnxEmbeddingForwardPass` unit tests substitute a fake — zero
+/// lets `OnnxEmbeddingPass` unit tests substitute a fake — zero
 /// `dlopen`, zero native session — while `OrtFfiClient` is the real
 /// `dart:ffi` implementation used in production (built inside the embedding
-/// worker isolate by `createOnnxEmbeddingForwardPass`'s `load()`).
+/// worker isolate by `OnnxEmbeddingPass.load()`).
 abstract class OrtClient {
   /// Opens the session at [modelPath] and reports its IO layout.
   Future<OrtIoSpec> load(String modelPath);

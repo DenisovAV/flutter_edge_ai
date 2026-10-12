@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai_example/models/base_model.dart';
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
+import 'package:flutter_edge_ai_example/services/embedding_catalog_install.dart';
 import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
 import 'package:flutter_edge_ai_example/utils/installed_model_lookup.dart';
 
@@ -99,39 +99,11 @@ class DownloadedModelLoader {
       token = await AuthTokenService.loadToken();
     }
 
-    var builder = FlutterEdgeAi.installEmbedder();
-
-    switch (model.sourceType) {
-      case ModelSourceType.network:
-        builder = builder.modelFromNetwork(
-          model.url,
-          token: token,
-          filename: model.filename,
-        );
-      case ModelSourceType.asset:
-        builder = builder.modelFromAsset(model.url, filename: model.filename);
-      case ModelSourceType.bundled:
-        builder = builder.modelFromBundled(model.url, filename: model.filename);
-    }
-
-    switch (model.sourceType) {
-      case ModelSourceType.network:
-        builder = builder.tokenizerFromNetwork(
-          model.tokenizerUrl,
-          token: token,
-          filename: model.tokenizerFilename,
-        );
-      case ModelSourceType.asset:
-        builder = builder.tokenizerFromAsset(
-          model.tokenizerUrl,
-          filename: model.tokenizerFilename,
-        );
-      case ModelSourceType.bundled:
-        builder = builder.tokenizerFromBundled(
-          model.tokenizerUrl,
-          filename: model.tokenizerFilename,
-        );
-    }
+    final builder = withCatalogEmbedderSources(
+      FlutterEdgeAi.installEmbedder(),
+      model,
+      token: token,
+    );
 
     await builder.install();
     await persistVerifiedEmbeddingCatalogSelection(model);

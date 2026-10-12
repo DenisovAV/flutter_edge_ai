@@ -1,12 +1,13 @@
 import 'dart:convert';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart'
-    show HuggingFaceResolver, ResolvedHfFile, ResolvedHfModel;
-import 'package:flutter_edge_ai/core/utils/file_name_utils.dart'
-    show FileNameUtils;
+import 'package:flutter_edge_ai/engine.dart'
+    show
+        HuggingFaceResolver,
+        ModelFileType,
+        PreferredBackend,
+        ResolvedHfFile,
+        ResolvedHfModel,
+        sanitizeHfDirName;
 
 import 'hf/hf_fetch_types.dart';
 import 'hf/hf_fetch_web.dart' if (dart.library.io) 'hf/hf_fetch_io.dart';
@@ -240,7 +241,7 @@ class OnnxHuggingFaceResolver implements HuggingFaceResolver {
       url: files.firstWhere((f) => f.name == marker).url,
       fileType: ModelFileType.onnx,
       files: files,
-      directoryName: FileNameUtils.sanitizeHfDirName(
+      directoryName: sanitizeHfDirName(
         repo,
         variant: folder.isEmpty ? null : folder,
       ),

@@ -26,7 +26,7 @@ unreported offload cannot prove either CPU or GPU execution.
 
 ## Automated gates
 
-Current gates use Flutter **3.47.1 / Dart 3.13.1**, `flutter_edge_ai 2.2.1`,
+Current gates use Flutter **3.47.1 / Dart 3.13.1**, `flutter_edge_ai 2.3.0`,
 `llamadart 0.11.1`, Apple runtime companion `0.0.21`, native llama.cpp artifacts `v0.5.0-2`,
 and browser assets
 `v0.1.54`. The browser manifest itself is SHA-256 pinned, and its asset checksums
@@ -81,7 +81,7 @@ python3 tool/verify.py device --device <device-id> --model-url <immutable-gguf-u
 ```
 
 The default package lane validates hosted dependency resolution and the
-standalone archive. Core 2.2.1 is published. The optional local-core lane remains
+standalone archive. Core 2.3.0 is published. The optional local-core lane remains
 for development preparation and is not a substitute for hosted validation.
 
 The native lane uses a VM facade smoke on Linux and the packaged
@@ -377,6 +377,35 @@ errors or warnings. A separate consumer using hosted core 2.2.1 passed the same
 real CPU lifecycle smoke without a core override. These local results do not
 replace current-head GitHub platform qualification.
 
+## Published core 2.3.0 migration, 2026-10-12
+
+The connector uses core's public `engine.dart` and conditional `engine_web.dart`
+APIs with a hosted `^2.3.0` dependency. Browser model URLs resolve through
+`WebModelSourceResolver`; OPFS streams fail with a typed error that explains
+which storage modes to use. The supplied model identity remains core-owned.
+Dedicated GGUF routing and LoRA restart support still await upstream #649 and
+a published release containing it.
+
+Local Flutter 3.47.1 / Dart 3.13.1 validation passed:
+
+- Connector formatting and analysis; 48 VM contracts, 52 Chrome contracts with
+  three explicit skips, seven demo tests and 22 tooling tests.
+- Real macOS CPU installation, generation, two-turn recall, cancellation/retry,
+  reload and fresh-manager restoration with the immutable SmolLM2 fixture.
+- Real browser worker/Wasm generation through the public installed-URL resolver.
+  An OPFS acceptance mutation triggered the intended regression assertion.
+- A separate consumer resolved hosted core 2.3.0 without an override and passed
+  the same real native lifecycle smoke. Standalone package validation passed
+  with only the expected Unreleased changelog warning.
+- All 18 workspace package/example suites; workspace analysis without errors
+  or warnings; public-import and Web-graph guards. The root formatter reports
+  86 unchanged upstream files outside the connector; CI treats this gate as
+  non-blocking. Connector formatting is clean.
+
+Current-head GitHub platform checks remain required; earlier platform evidence
+above belongs to its stated revision. This contribution remains draft pending
+GGUF identity, LoRA restart validation and final independent blocking review.
+
 ## Before a production release
 
 1. Run every required workflow on the release revision. Do not count workflow
@@ -387,7 +416,7 @@ replace current-head GitHub platform qualification.
    for each platform/backend combination claimed as qualified. Native macOS
    has the original model-specific evidence in `development.md`; other combinations need
    their own evidence. Web hardware WebGPU and advanced families are open.
-4. Review exact-pin compatibility shims against core's public extension APIs;
+4. Keep the public engine SPI and declared GGUF identity aligned with core;
    retain bounded dependencies until the restore/identity/projector/tokenizer
    contracts are stable. Test migrations before widening dependency ranges.
 5. Complete independent blocking QA, choose ownership/repository metadata and

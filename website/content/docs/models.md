@@ -74,7 +74,7 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 | Format | Android | iOS | Web | Desktop | Use Case |
 |---|:---:|:---:|:---:|:---:|---|
 | `.task` | ✅ | ✅ ⁴ | ✅ | ❌ | Older models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) |
-| `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Newer models (Gemma 4, Qwen3, FastVLM + desktop for all) |
+| `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Newer models (Gemma 4, Qwen3, FastVLM + desktop for all); EmbeddingGemma 2 embeddings (native only) |
 | `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4, Gemma 3 1B and Gemma 3 270M in the current catalog) |
 | `.bin` | ✅ | ✅ | ✅ | ❌ | Manual chat template formatting required |
 | `.tflite` | ✅ | ✅ | ✅ | ✅ | LLM via `ModelFileType.binary` (MediaPipe, mobile and web), and LiteRT embedding models (EmbeddingGemma, Gecko) on every platform |
@@ -465,10 +465,12 @@ The LiteRT embedding models below generate **768-dimensional vectors**. The
 numbers in names (64/256/512/1024/2048) indicate **maximum input sequence length
 in tokens**, not embedding dimension. (With the ONNX backend the dimension is
 model-dependent — e.g. all-MiniLM-L6-v2 is 384-dim.) See
-[Embeddings & RAG](/docs/embeddings-and-rag) for usage.
+[Embeddings & RAG](/docs/embeddings-and-rag) for usage. An input longer than
+the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 
 | Model | Parameters | Dimensions | Max Seq Length | Size | Auth Required |
 |---|---|---|---|---|---|
+| **[EmbeddingGemma 2 text](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm)** (`.litertlm`, native only) | 270M | 768D | 1024 tokens | 165MB + 71MB weight cache | ❌ |
 | **[Gecko 64](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 64 tokens | 110MB | ❌ |
 | **[Gecko 256](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 256 tokens | 114MB | ❌ |
 | **[Gecko 512](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 512 tokens | 116MB | ❌ |
@@ -476,6 +478,12 @@ model-dependent — e.g. all-MiniLM-L6-v2 is 384-dim.) See
 | **[EmbeddingGemma 512](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 512 tokens | 179MB | ✅ |
 | **[EmbeddingGemma 1024](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 1024 tokens | 183MB | ✅ |
 | **[EmbeddingGemma 2048](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
+
+EmbeddingGemma 2 is one `.litertlm` file with its own tokenizer (no
+`tokenizerFrom…()`), runs on CPU on Android, iOS, macOS, Linux and Windows,
+and embeds text only in `flutter_edge_ai_litertlm` 1.13.0. Keep chunks at 512
+tokens or fewer; see [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
+Every other row is a `.tflite` model plus a tokenizer file.
 
 **Performance (Android Pixel 8):**
 
@@ -529,8 +537,9 @@ import 'package:flutter_edge_ai_embeddings/embedding_tokenizer.dart'
     show loadSiglipSentencePieceEmbeddingTokenizer;
 ```
 
-and pass that as the tokenizer factory of the `ForwardPassDescriptor` you give
-to `CommonEmbeddingModel.create`. That library is native-only. See the
+and pass it as the `tokenizerFactory` of your own `TokenEmbeddingPass` (from
+`package:flutter_edge_ai/engine.dart`), which your backend's `describe()`
+returns in an `EmbeddingPassDescriptor`. That library is native-only. See the
 [`flutter_edge_ai_embeddings` README](https://pub.dev/packages/flutter_edge_ai_embeddings)
 for the full profile, and [Embeddings & RAG](/docs/embeddings-and-rag) for why
 the tokenizer router declines to guess.

@@ -21,7 +21,7 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | **`flutter_edge_ai_builtin_ai`** | System OS models — Gemini Nano (Android / AICore), Apple Foundation Models (iOS 26+/macOS 26+), Windows AI Foundry (Phi Silica), and Gemini Nano via the Chrome Prompt API (Web). No model file to bundle or download. A thin adapter over [`flutter_local_ai`](https://pub.dev/packages/flutter_local_ai), which owns the native layer — not a plugin itself. | Android + iOS + macOS + Windows + Web |
 | **`flutter_edge_ai_llama`** (unreleased) | [GGUF inference](/docs/llama) through llamadart. Native artifacts and the Web bridge remain owned by llamadart. | Android, iOS, macOS, Windows, Linux + Web; see qualification matrix |
 | **`flutter_edge_ai_onnx`** | Text generation (`OnnxEngine`) + embeddings (`OnnxEmbeddingBackend`) — ORT-GenAI/ORT via `dart:ffi` on native, Transformers.js/onnxruntime-web on Web. | macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64 + Web |
-| **`flutter_edge_ai_embeddings`** | Embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via `embeddingTokenizers:`. Needs a backend — `LiteRtEmbeddingBackend` (`flutter_edge_ai_litertlm`) or `OnnxEmbeddingBackend` (`flutter_edge_ai_onnx`). | All |
+| **`flutter_edge_ai_embeddings`** | Embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via `embeddingTokenizers:`, for `.tflite` and `.onnx` models (an EmbeddingGemma 2 `.litertlm` carries its own). Needs a backend — `LiteRtEmbeddingBackend` (`flutter_edge_ai_litertlm`) or `OnnxEmbeddingBackend` (`flutter_edge_ai_onnx`). | All |
 | **`flutter_edge_ai_rag`** | Instance-scoped RAG orchestration, `RagIndex`, stable embedding profiles, filters, and vector-store provider contracts. | All |
 | **`flutter_edge_ai_qdrant`** | qdrant-edge provider for `flutter_edge_ai_rag`, via the official qdrant_edge UniFFI SDK. Fastest on native. | Native (no Web) |
 | **`flutter_edge_ai_sqlite`** | SQLite + `sqlite-vec` provider for `flutter_edge_ai_rag`. Exact + portable. | All (incl. Web) |
@@ -61,7 +61,8 @@ is on the [Capabilities](/docs/capabilities) page.
 | Run `.task` / `.bin` models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) | `flutter_edge_ai_mediapipe` |
 | Run the OS system model with no download (Gemini Nano / Apple FM / Windows AI Foundry) | `flutter_edge_ai_builtin_ai` |
 | Run ONNX models — ORT-GenAI (native) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
-| Generate text embeddings | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
+| Generate text embeddings with EmbeddingGemma 2 (`.litertlm`, native) | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) alone |
+| Generate text embeddings with EmbeddingGemma 1 / Gecko (`.tflite`) | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
 | On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |

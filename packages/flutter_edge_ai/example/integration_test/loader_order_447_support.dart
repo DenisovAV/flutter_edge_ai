@@ -34,9 +34,14 @@ typedef _LoadGlobalDart = Pointer<Void> Function(Pointer<Uint8>);
 /// same two-outcomes-one-value defect as #447 itself, reproduced in the
 /// instrument.
 ///
-/// /proc/self/maps distinguishes them. A process can always read its own, and
-/// the path shows up whether the .so was extracted to the app's lib dir or
-/// mapped uncompressed straight out of the APK.
+/// /proc/self/maps distinguishes them — for a library extracted to the app's
+/// lib dir. One stored uncompressed in the APK (the default packaging) is
+/// mapped straight out of `base.apk`, and the maps name `base.apk`, not the
+/// .so: measured on FTL (Pixel 8a, API 35; Pixel 8 Pro, API 34), where
+/// libLiteRtLm was loaded and in use and this returned false. So on such an
+/// install a false here proves nothing; "loaded" is asked through
+/// [globallyVisible] of [controlSymbol] instead, which needs the library both
+/// loaded and global.
 bool mappedInProcess(String soname) =>
     File('/proc/self/maps').readAsStringSync().contains(soname);
 

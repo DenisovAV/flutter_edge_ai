@@ -21,9 +21,9 @@ void main() {
     final directory = await getTemporaryDirectory();
     final path =
         '${directory.path}/test_vector_store_${DateTime.now().microsecondsSinceEpoch}.db';
-    final index = await rag.open(
+    final index = await rag.openVectors(
       spec: VectorStoreSpec(providerId: 'sqlite', location: path),
-      embeddingProfile: EmbeddingProfile(
+      profile: EmbeddingProfile(
         id: 'vector-store-${dimension}d-test-v1',
         dimension: dimension,
       ),
@@ -131,7 +131,7 @@ void main() {
 
       await index.clear();
       expect((await index.stats()).documentCount, 0);
-      expect(index.embeddingProfile?.dimension, 3);
+      expect(index.embeddingProfile.dimension, 3);
     });
 
     testWidgets('rejects a mismatched vector dimension', (tester) async {
@@ -142,6 +142,7 @@ void main() {
         embedding: const [1.0, 0.0, 0.0],
       );
 
+      // Every error of an asynchronous API is a failed future.
       await expectLater(
         index.addVector(
           id: 'doc2',

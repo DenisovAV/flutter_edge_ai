@@ -1,0 +1,154 @@
+--- a/runtime/components/BUILD
++++ b/runtime/components/BUILD
+@@ -284,11 +284,46 @@ cc_test(
+     ],
+ )
+ 
++# flutter_gemma patch (section 13): external weights addressed by path on
++# platforms whose runtime is Google's prebuilt libLiteRt (Linux, Windows).
++cc_library(
++    name = "external_weights_by_path",
++    srcs = ["external_weights_by_path.cc"],
++    hdrs = ["external_weights_by_path.h"],
++    deps = [
++        "@com_google_absl//absl/log:absl_log",
++        "@com_google_absl//absl/status",
++        "@com_google_absl//absl/status:statusor",
++        "@com_google_absl//absl/strings",
++        "@com_google_absl//absl/strings:string_view",
++        "@com_google_absl//absl/types:span",
++        "@flatbuffers//:runtime_cc",
++        "@litert//litert/cc:litert_buffer_ref",
++        "@litert//tflite/schema:schema_fbs",
++        "//runtime/util:scoped_file",
++    ],
++)
++
++cc_test(
++    name = "external_weights_by_path_test",
++    srcs = ["external_weights_by_path_test.cc"],
++    deps = [
++        ":external_weights_by_path",
++        "@com_google_googletest//:gtest_main",
++        "@com_google_absl//absl/status",
++        "@com_google_absl//absl/types:span",
++        "@flatbuffers//:runtime_cc",
++        "@litert//tflite/schema:schema_fbs",
++        "//runtime/util:scoped_file",
++    ],
++)
++
+ cc_library(
+     name = "model_resources_litert_lm",
+     srcs = ["model_resources_litert_lm.cc"],
+     hdrs = ["model_resources_litert_lm.h"],
+     deps = [
++        ":external_weights_by_path",
+         ":model_resources",
+         "@com_google_absl//absl/container:flat_hash_map",
+         "@com_google_absl//absl/log:absl_log",
+@@ -297,6 +332,7 @@ cc_library(
+         "@com_google_absl//absl/status:statusor",
+         "@com_google_absl//absl/strings",
+         "@com_google_absl//absl/strings:string_view",
++        "@com_google_absl//absl/types:span",
+         "@litert//litert/cc:litert_buffer_ref",
+         "@litert//litert/cc:litert_macros",
+         "@litert//litert/cc:litert_model",
+--- a/runtime/components/model_resources_litert_lm.cc
++++ b/runtime/components/model_resources_litert_lm.cc
+@@ -37,9 +37,11 @@
+ #include "absl/strings/ascii.h"  // from @com_google_absl
+ #include "absl/strings/str_cat.h"  // from @com_google_absl
+ #include "absl/strings/string_view.h"  // from @com_google_absl
++#include "absl/types/span.h"  // from @com_google_absl
+ #include "litert/cc/litert_buffer_ref.h"  // from @litert
+ #include "litert/cc/litert_macros.h"  // from @litert
+ #include "litert/cc/litert_model.h"  // from @litert
++#include "runtime/components/external_weights_by_path.h"
+ #include "runtime/components/model_resources.h"
+ #include "runtime/proto/embedding_metadata.pb.h"
+ #include "runtime/util/litert_lm_loader.h"
+@@ -102,6 +104,39 @@ absl::StatusOr<const litert::Model*> ModelResourcesLitertLm::GetTFLiteModel(
+     return it->second.get();
+   }
+ 
++#if LITERT_LM_PATH_WEIGHTS
++  // flutter_gemma patch (section 13): the runtime reads this model's external
++  // weights by path, so no ScopedWeightSource crosses into it (see
++  // external_weights_by_path.h). Errors are returned, never retried through
++  // the scoped file.
++  auto weights_section = litert_lm_loader_->GetSectionLocation(
++      BufferKey(schema::AnySectionDataType_TFLiteWeights, key));
++  if (weights_section.ok()) {
++    litert::BufferRef<uint8_t> section = litert_lm_loader_->GetTFLiteModel(key);
++    if (section.Size() == 0) {
++      return absl::NotFoundError(
++          absl::StrCat(model_type_str, " not found in the model."));
++    }
++    LITERT_ASSIGN_OR_RETURN(auto bundle, litert_lm_loader_->GetScopedFile());
++    LITERT_ASSIGN_OR_RETURN(
++        auto addressed,
++        external_weights_by_path::AddressWeightsByPath(
++            absl::MakeConstSpan(section.Data(), section.Size()), bundle.get(),
++            weights_section->first,
++            weights_section->second - weights_section->first));
++    if (addressed.has_value()) {
++      auto owned =
++          std::make_unique<external_weights_by_path::PathAddressedModel>(
++              std::move(*addressed));
++      LITERT_ASSIGN_OR_RETURN(auto model,
++                              Model::CreateFromBuffer(owned->flatbuffer));
++      path_addressed_models_[key] = std::move(owned);
++      model_map_[key] = std::make_unique<litert::Model>(std::move(model));
++      return model_map_[key].get();
++    }
++  }
++#endif  // LITERT_LM_PATH_WEIGHTS
++
+   if (enable_file_backed_model_loading_) {
+     auto scoped_file = litert_lm_loader_->GetScopedFile();
+     auto section_location = litert_lm_loader_->GetSectionLocation(
+@@ -329,8 +364,18 @@ ModelResourcesLitertLm::GetScopedFile() {
+ 
+ absl::StatusOr<std::pair<size_t, size_t>>
+ ModelResourcesLitertLm::GetWeightsSectionOffset(ModelType model_type) {
++#if LITERT_LM_PATH_WEIGHTS
++  // flutter_gemma patch (section 13): GetTFLiteModel addressed the weights by
++  // path. NotFound makes GetExternalWeightResources hand no ScopedWeightSource
++  // to SetExternalWeightScopedFile, whose C++ map the prebuilt runtime cannot
++  // read.
++  (void)model_type;
++  return absl::NotFoundError(
++      "TFLiteWeights are addressed by path (flutter_gemma patch section 13)");
++#else
+   return litert_lm_loader_->GetSectionLocation(
+       BufferKey(schema::AnySectionDataType_TFLiteWeights, model_type));
++#endif  // LITERT_LM_PATH_WEIGHTS
+ }
+ 
+ absl::StatusOr<FileRegion>
+--- a/runtime/components/model_resources_litert_lm.h
++++ b/runtime/components/model_resources_litert_lm.h
+@@ -27,6 +27,7 @@
+ #include "absl/status/statusor.h"  // from @com_google_absl
+ #include "absl/strings/string_view.h"  // from @com_google_absl
+ #include "litert/cc/litert_model.h"  // from @litert
++#include "runtime/components/external_weights_by_path.h"
+ #include "runtime/components/model_resources.h"
+ #include "runtime/proto/asr_metadata.pb.h"
+ #include "runtime/proto/embedding_metadata.pb.h"
+@@ -111,6 +112,13 @@ class ModelResourcesLitertLm : public ModelResources {
+       ModelType model_type) override;
+ 
+  private:
++  // flutter_gemma patch (section 13): the rewritten flatbuffers of models whose
++  // external weights are read by path. Declared before model_map_ so they
++  // outlive the litert::Model objects built on them.
++  absl::flat_hash_map<
++      std::string,
++      std::unique_ptr<external_weights_by_path::PathAddressedModel>>
++      path_addressed_models_;
+   absl::flat_hash_map<std::string, std::unique_ptr<litert::Model>> model_map_;
+   absl::flat_hash_map<ModelType, std::unique_ptr<Tokenizer>> tokenizer_map_;
+   std::unique_ptr<proto::LlmMetadata> llm_metadata_;

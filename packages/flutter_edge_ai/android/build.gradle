@@ -121,7 +121,7 @@ dependencies {
     // litertlm NPU dispatch channel.
 
     // 0.15.2: localagents-rag dropped — embedding is now Dart-FFI + LiteRT
-    // (see lib/core/litert/litert_embedding_model.dart). Guava +
+    // (flutter_edge_ai_litertlm's lib/src/embedding/litert_embedding_pass.dart). Guava +
     // kotlinx-coroutines-guava were only used by the RAG library, so they
     // also go.
 

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/core/utils/file_name_utils.dart';
+import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 
 void main() {
   group('FileNameUtils', () {

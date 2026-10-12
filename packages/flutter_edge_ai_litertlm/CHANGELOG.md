@@ -1,3 +1,9 @@
+## 1.13.0
+- Run EmbeddingGemma 2 (`.litertlm`) text embeddings on Android, iOS, macOS, Linux and Windows.
+- Web EmbeddingGemma uses the same prefixes and token ids as native for every `TaskType` (re-copy `litert_embeddings.js`).
+- **Breaking:** require `flutter_edge_ai` ^2.3.0; `WebEmbeddingModel` is no longer exported.
+- Native libraries from `native-v0.18.0-e`.
+
 ## 1.12.1
 - `close()` sets `isClosed` at once; a second call waits for the teardown.
 - Require `flutter_edge_ai` ^2.2.1.

@@ -1,4 +1,6 @@
 analyzer:
+  errors:
+    implementation_imports: error
   exclude:
     - build/**
     - android/**

@@ -11,11 +11,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show SpeechRecognizer;
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../model/stt_model_profile.dart';

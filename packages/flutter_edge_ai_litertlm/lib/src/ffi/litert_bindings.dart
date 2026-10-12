@@ -18,7 +18,7 @@
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/utils/host_native_library.dart';
+import 'package:flutter_edge_ai/engine_io.dart';
 
 import 'package:ffi/ffi.dart';
 

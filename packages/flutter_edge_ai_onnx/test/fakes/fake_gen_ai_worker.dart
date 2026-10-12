@@ -55,8 +55,7 @@
 //   at most), so the turn ends only when something stops it.
 // - `kill`: when true, the isolate kills ITSELF (`Isolate.current.kill`)
 //   instead of ever replying — simulates an unexpected native crash
-//   mid-generation, same shape as `embedding_worker_test.dart`'s
-//   `killMidRequest` fake mode. Never sends a Chunk/GenerateDone.
+//   mid-generation. Never sends a Chunk/GenerateDone.
 // - `crash`: when true, an uncaught error takes the isolate down at the
 //   turn's first yield — a death mid-turn that reports its reason.
 // - `throw`: when true, the turn throws — a native call that failed.

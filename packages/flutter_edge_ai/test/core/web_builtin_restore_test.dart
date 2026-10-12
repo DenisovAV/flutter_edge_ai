@@ -2,7 +2,7 @@
 library;
 
 // Web-arm counterpart of `builtin_restore_test.dart` (which only exercises
-// MobileModelManager, since flutter_edge_ai_default_web.dart makes
+// MobileModelManager, since lib/src/default_web.dart makes
 // FlutterEdgeAiPlugin.instance unusable outside a real plugin registration on
 // web). Proves the WebModelManager._restoreActiveInferenceModel() builtIn
 // early-return fix: without it, a restored builtIn active model would be
@@ -16,10 +16,10 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
-import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/domain/model_source.dart';
+import 'package:flutter_edge_ai/src/model_management/managers/web_model_manager.dart';
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 void main() {

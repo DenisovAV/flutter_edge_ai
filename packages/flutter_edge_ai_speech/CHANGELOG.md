@@ -1,3 +1,6 @@
+## 0.5.6
+- Require `flutter_edge_ai` ^2.3.0 and `flutter_edge_ai_litertlm` ^1.13.0.
+
 ## 0.5.5
 - Closing a speech recognizer or synthesizer mid-request no longer leaks its native model.
 

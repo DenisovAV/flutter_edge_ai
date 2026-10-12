@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/desktop/flutter_edge_ai_desktop.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,7 +112,7 @@ void main() {
 
       await loaded.close();
       // Fresh plugin/manager rehydrates the active identity from persisted prefs.
-      FlutterEdgeAiDesktop.registerWith();
+      edge.FlutterEdgeAiDesktop.registerWith();
       await edge.FlutterEdgeAiPlugin.instance.modelManager.ensureInitialized();
       expect(
         (edge.FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel

@@ -5,15 +5,17 @@
 > changes. See the [migration guide](https://flutteredge.ai/docs/migration).
 
 LiteRT-LM on-device engine for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai):
-runs `.litertlm` models and LiteRT `.tflite` embeddings. Opt-in package — add it
-only if you run either. Android, iOS, macOS, Linux and Windows via `dart:ffi`;
-Web (early preview) via `@litert-lm/core` and LiteRT.js.
+runs `.litertlm` models, EmbeddingGemma 2 `.litertlm` embeddings and LiteRT
+`.tflite` embeddings. Opt-in package — add it only if you run one of them.
+Android, iOS, macOS, Linux and Windows via `dart:ffi`; Web (early preview) via
+`@litert-lm/core` and LiteRT.js.
 
 This package **owns** the shared LiteRT-LM native library (`libLiteRtLm`) and
 exposes the LiteRT C API bindings (`LiteRtBindings`); both are shared by
 [flutter_edge_ai_speech](https://pub.dev/packages/flutter_edge_ai_speech). It
 also ships the LiteRT C API embedding backend (`LiteRtEmbeddingBackend`) — see [Embeddings](#embeddings) below — over the
-runtime-agnostic embedding pipeline in `flutter_edge_ai`. Tokenizers come from
+runtime-agnostic embedding pipeline in `flutter_edge_ai`. Tokenizers for
+`.tflite` models come from
 [flutter_edge_ai_embeddings](https://pub.dev/packages/flutter_edge_ai_embeddings),
 which the app registers; this package does not depend on it.
 
@@ -40,10 +42,21 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.2.1`,
-`flutter_edge_ai_litertlm: ^1.12.1`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.3.0`,
+`flutter_edge_ai_litertlm: ^1.13.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
+
+> **1.13.0 needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
+> flutter_edge_ai package upgraded together:** `flutter_edge_ai_embeddings`
+> 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 · `flutter_edge_ai_mediapipe` 1.2.2 ·
+> `flutter_edge_ai_builtin_ai` 0.3.5 · `flutter_edge_ai_speech` 0.5.6 ·
+> `flutter_edge_ai_agent` 0.2.9 · `flutter_edge_ai_rag` 1.1.0 ·
+> `flutter_edge_ai_sqlite` 2.1.0 · `flutter_edge_ai_qdrant` 2.1.0 ·
+> `genkit_flutter_edge_ai` 0.9.1. Run `flutter pub upgrade`, not
+> `flutter pub upgrade flutter_edge_ai_litertlm`. The
+> [migration guide](https://flutteredge.ai/docs/migration) lists the API
+> changes.
 
 ## Sampling
 
@@ -123,28 +136,98 @@ on every install, because the variant's filename is only known after the fetch.
 
 ## Embeddings
 
+`LiteRtEmbeddingBackend` runs two kinds of embedding model:
+
+| Model file | Platforms | Tokenizer | Longest input |
+|---|---|---|---|
+| EmbeddingGemma 2 text, one `.litertlm` | Android, iOS, macOS, Linux, Windows | inside the bundle | 1024 tokens |
+| EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
+
 ```dart
 import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 
 await FlutterEdgeAi.initialize(
   embeddingBackends: [LiteRtEmbeddingBackend()],
-  embeddingTokenizers: [GemmaEmbeddingTokenizers()],
+  embeddingTokenizers: [GemmaEmbeddingTokenizers()], // .tflite models only
+);
+
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final vector = await embedder.embed(
+  EmbeddingInput.text('How do I reset the device?'),
+  taskType: TaskType.retrievalQuery,
 );
 ```
 
-Both lists, and both packages: this one brings the backend, and
-`flutter_edge_ai_embeddings` brings the tokenizers it asks core for. On web the
-tokenizer list is unused — the LiteRT.js bundle tokenizes in JS.
-
-`LiteRtEmbeddingBackend` runs Gecko / EmbeddingGemma `.tflite` models via the
-LiteRT C API. The pipeline it plugs into — the forward-pass seam, the worker
-isolate and the pooling — lives in `flutter_edge_ai`; the tokenizers come from
-`flutter_edge_ai_embeddings`, which your app registers via
-`embeddingTokenizers:`. This package depends on neither beyond core.
+A `.tflite` model needs both lists and both packages: this one brings the
+backend, and `flutter_edge_ai_embeddings` brings the tokenizers it asks core
+for. On web the tokenizer list is unused — the LiteRT.js bundle tokenizes in
+JS. The pipeline the backend plugs into — the embedding pass SPI, the host that
+runs a pass off the UI isolate, and the pooling — lives in `flutter_edge_ai`.
 On web it runs via LiteRT.js instead; see
 [Embeddings on web](#embeddings-on-web) below for the four files and the
 `<script>` tag your app needs.
+
+`taskType` is required and prefixes the text: `retrievalQuery` and
+`retrievalDocument` for search, `none` for no prefix, and
+`questionAnswering`, `factChecking`, `codeRetrieval`, `classification`,
+`clustering`, `sentenceSimilarity`. Every model here gets the same prefix for
+the same task, native and web.
+
+An input longer than `embedder.maxInputTokens` — task prefix, BOS and EOS
+included — is never truncated: `embed` fails with
+`EmbeddingInputTooLongException`. Every embedding error arrives as a failed
+future (`EmbeddingException` and its subclasses).
+
+### EmbeddingGemma 2
+
+EmbeddingGemma 2 text ships as one `.litertlm` bundle that carries its own
+tokenizer, so it installs without `tokenizerFrom…()` and needs neither
+`flutter_edge_ai_embeddings` nor `embeddingTokenizers:`. The repository is not
+gated:
+
+```dart
+const revision = '9be6e8b90982095dc05c2bd162e4b954ee4dbac7';
+
+await FlutterEdgeAi.initialize(
+  embeddingBackends: const [LiteRtEmbeddingBackend()],
+);
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-270m-litert-lm/resolve/$revision/'
+      'embeddinggemma-2-text-270m.litertlm',
+    )
+    .install();
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final vector = await embedder.embed(
+  EmbeddingInput.text(chunk), // core adds the task prefix
+  taskType: TaskType.retrievalDocument,
+);
+```
+
+- **Native only:** Android, iOS, macOS, Linux and Windows. On web `install()`
+  refuses a `.litertlm` embedder with an `UnsupportedError` before downloading
+  anything.
+- **Text only in 1.13.0.** `getActiveEmbedder(supportImage: true)` or
+  `supportAudio: true` fails with `EmbeddingLoadException`; images arrive in
+  1.14.0 and audio in 1.16.0.
+- **At most 1024 tokens per input**, task prefix, BOS and EOS included
+  (`maxInputTokens == 1024`). Keep chunks at 512 tokens or fewer: memory grows
+  with the input length (on an M4 Pro Mac about +170 MB at 128 tokens, +340 MB
+  at 512 and +560 MB at 1024). A longer input fails with
+  `EmbeddingInputTooLongException` whose `actualTokens` is null — LiteRT-LM
+  reports the overflow without a count.
+- **CPU.** `activeBackend` is `PreferredBackend.cpu`; `preferredBackend` is not
+  applied.
+- **Disk:** the 165 MB bundle plus a 71 MB weight cache the engine writes at
+  its first load. The 440m bundle adds a 218 MB vision cache and the 740m
+  bundle writes 385 MB of caches in total, even for text-only use. The cache
+  lives in
+  the app's cache directory: it is never backed up, and if the OS clears it the
+  next load writes it again.
+- EmbeddingGemma 1 and 2 both produce 768-dimensional vectors in different
+  embedding spaces: never mix them in one vector store.
 
 `EmbeddingModel.activeBackend` is `cpu` on native, the only backend this
 package's embedder uses, so `preferredBackend` is not applied. On web it is
@@ -176,7 +259,12 @@ then load the entry module from `web/index.html`:
 ```
 
 Upgrading from an earlier version: delete the copies in your app's `web/` and
-re-copy all four from this package. Before `flutter_gemma_litertlm` 1.8.0 they
+re-copy all four from this package. 1.13.0 changed the bundle's API: Dart now
+builds the task prefix, so every `TaskType` gets the prefix and token ids it
+gets on native, and the bundle reports the model's input limit instead of
+truncating.
+A copy from an earlier version fails `getActiveEmbedder()` with an
+`EmbeddingLoadException` that names `litert_embeddings.js`. Before `flutter_gemma_litertlm` 1.8.0 they
 came from `flutter_gemma_embeddings`, and the copies you have are built against an older
 `@litertjs/core` than the runtime this version loads. If you built your own
 `web/wasm/`, either delete it and take the CDN default or rebuild it from the
@@ -267,7 +355,7 @@ Native platforms need no web setup.
 | Windows  | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN, text-only) |
 
-The native library (`native-v0.18.0-d`, LiteRT-LM v0.18.0) is fetched at build
+The native library (`native-v0.18.0-e`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and on macOS a `post_install` block in `macos/Podfile`, without

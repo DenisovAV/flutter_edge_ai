@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/sampling.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// `SamplerType.TOP_P` in `@litert-lm/core`.
 const samplerTypeTopP = 2;

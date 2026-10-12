@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/core/registry/skill_executor_registry.dart';
-import 'package:flutter_edge_ai/core/registry/skill_executor_provider.dart';
+import 'package:flutter_edge_ai/src/registry/skill_executor_registry.dart';
+import 'package:flutter_edge_ai/src/registry/skill_executor_provider.dart';
 
 class _FakeExecutor implements SkillExecutorProvider {
   _FakeExecutor(this.name, this._canExecute, {this.priority = 0});

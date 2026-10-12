@@ -17,9 +17,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+// ignore: implementation_imports — reads core's file-system service to check install paths
+import 'package:flutter_edge_ai/src/di/service_registry.dart'
+    show ServiceRegistry;
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/model.dart';
 
 // ── Model URLs (for iOS download, macOS/Android use local files) ──
 const _gemma4Url =
@@ -670,7 +671,8 @@ void main() {
   //
   // LiteRT-LM NPU executor only supports internal greedy sampling. As of
   // 0.15.1 we skip the sampler-params setter chain when backend == 'npu'
-  // (lib/core/ffi/litert_lm_client.dart::createConversation). These tests
+  // (flutter_edge_ai_litertlm lib/src/ffi/litert_lm_client.dart,
+  // `_createRawConversation`). These tests
   // verify the path end-to-end: engine creates successfully with NPU
   // backend even when caller passes non-default temperature/topK/topP, and
   // generation is deterministic (same prompt → identical output across
@@ -972,17 +974,20 @@ void main() {
   // Mobile (Android, iOS) skips this group entirely — Documents is
   // sandboxed there and never cloud-synced.
   group('Desktop storage path (#179)', () {
-    testWidgets('getTargetPath resolves into Application Support', (t) async {
+    testWidgets('getWriteTargetPath resolves into Application Support', (
+      t,
+    ) async {
       if (Platform.isAndroid || Platform.isIOS) {
         print('[Desktop storage] SKIP: mobile path unchanged');
         return;
       }
 
       // No install required — we just inspect what path the plugin would
-      // hand back for a synthetic filename. This is the exact call site
-      // that NetworkSourceHandler / fromNetwork uses to decide where to
-      // write the downloaded bytes (and that getActiveModel uses to
-      // locate the model file at inference time).
+      // hand back for a synthetic filename. getWriteTargetPath is the exact
+      // call site that NetworkSourceHandler / fromNetwork uses to decide
+      // where to write the downloaded bytes; getReadTargetPath is what
+      // getActiveModel uses to locate the model file at inference time, and
+      // for a file with no pre-0.15.1 copy in Documents the two agree.
       //
       // Routing through ServiceRegistry mirrors the plugin's own
       // dependency-injection order, so we exercise the production path,
@@ -990,7 +995,12 @@ void main() {
       final fs = ServiceRegistry.instance.fileSystemService;
       final filename =
           'storage_path_probe_${DateTime.now().millisecondsSinceEpoch}.litertlm';
-      final resolved = await fs.getTargetPath(filename);
+      final resolved = await fs.getWriteTargetPath(filename);
+      expect(
+        await fs.getReadTargetPath(filename),
+        resolved,
+        reason: 'read and write targets must agree when no legacy copy exists',
+      );
 
       final docsDir = await getApplicationDocumentsDirectory();
       final supportDir = await getApplicationSupportDirectory();
@@ -1050,7 +1060,7 @@ void main() {
   // Embedding must NOT block the calling (UI) isolate (#299)
   // ══════════════════════════════════════════════════════════════════
   //
-  // Since the #299 fix, `generateEmbedding` runs the blocking LiteRT forward
+  // Since the #299 fix, `embed` runs the blocking LiteRT forward
   // pass on a background worker isolate. We prove the main isolate stays alive
   // by spinning an async counter on it WHILE a batch of embeddings runs: if the
   // forward were synchronous on the calling isolate, the counter could not
@@ -1092,7 +1102,10 @@ void main() {
     ) async {
       final model = embModel!;
       // Warm up (first call pays worker spawn + native compile).
-      await model.generateEmbedding('warm up');
+      await model.embed(
+        EmbeddingInput.text('warm up'),
+        taskType: TaskType.retrievalQuery,
+      );
 
       const texts = [
         'Renewable energy is reshaping the global power grid.',
@@ -1118,7 +1131,10 @@ void main() {
       final spinner = spin();
       final sw = Stopwatch()..start();
       for (final text in texts) {
-        await model.generateEmbedding(text);
+        await model.embed(
+          EmbeddingInput.text(text),
+          taskType: TaskType.retrievalQuery,
+        );
       }
       sw.stop();
       running = false;

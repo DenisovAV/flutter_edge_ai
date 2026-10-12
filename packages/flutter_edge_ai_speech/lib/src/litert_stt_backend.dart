@@ -1,9 +1,4 @@
-import 'package:flutter_edge_ai/core/registry/stt_backend_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show SpeechRecognizer;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show SttModelSpec;
+import 'package:flutter_edge_ai/engine.dart';
 import 'litert/litert_speech_recognizer.dart';
 import 'model/stt_model_profile.dart';
 

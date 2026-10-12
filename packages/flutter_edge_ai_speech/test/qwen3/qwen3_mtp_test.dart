@@ -22,8 +22,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
+import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 import 'package:flutter_edge_ai_speech/src/qwen3/qwen3_tts_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 

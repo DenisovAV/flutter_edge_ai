@@ -9,12 +9,22 @@ The **embedding tokenizers** for
 and BERT-family WordPiece, plus the task-type prefixing and the routing that
 picks between them. Android, iOS, macOS, Linux, Windows, Web.
 
-Since 2.2.0 this is all it is. The seam an engine implements, the
-background-isolate worker and the pooling moved into `flutter_edge_ai` itself, so
-an engine package can implement embeddings without depending on this one — and
-no engine does. What lives here is the part that cannot move: the tokenizer
-implementations, which pull `dart_sentencepiece_tokenizer` and must stay out of
-core's dart2wasm-clean graph.
+Since 2.2.0 this is all it is. The pass SPI an engine implements, the host
+that runs it off the UI isolate and the pooling live in `flutter_edge_ai`
+itself (`package:flutter_edge_ai/engine.dart`), so an engine package can
+implement embeddings without depending on this one — and no engine does. What
+lives here is the part that cannot move: the tokenizer implementations, which
+pull `dart_sentencepiece_tokenizer` and must stay out of core's dart2wasm-clean
+graph. Since 2.3.0 the barrel exports only `GemmaEmbeddingTokenizers`; the
+tokenizer seam types (`EmbeddingTokenizer`, `TokenizedInput`, `ForwardResult`,
+…) come from `package:flutter_edge_ai/engine.dart`.
+
+An EmbeddingGemma 2 `.litertlm` bundle carries its own tokenizer: an app that
+embeds only with it needs neither this package nor `embeddingTokenizers:`.
+
+> **2.3.0 needs `flutter_edge_ai` 2.3.0**, and with it every flutter_edge_ai
+> package upgraded together — see the
+> [migration guide](https://flutteredge.ai/docs/migration).
 
 Your app registers them, beside the backend that consumes them:
 
@@ -59,7 +69,7 @@ convention.
 
 `LiteRtEmbeddingBackend` provides the embedding model that
 `FlutterEdgeAi.getActiveEmbedder()` returns, which text RAG
-(`RagIndex.addText` / `searchText`) in
+(`RagIndex.add` / `search` over `EmbeddingInput.text`) in
 [`flutter_edge_ai_rag`](https://pub.dev/packages/flutter_edge_ai_rag) uses with
 a storage provider from `flutter_edge_ai_sqlite` or `flutter_edge_ai_qdrant`.
 
@@ -99,9 +109,10 @@ silently rather than failing:
 SigLIP2's ONNX export carries no `attention_mask`, and its head does not pool
 over the sequence at all — `Siglip2TextModel` takes `last_hidden_state[:, -1, :]`,
 the LAST position, which with right-padding is a pad token. So the 64-token width
-has to live in the ids: the adapter pads (and truncates) to exactly 64 itself
-rather than leaving it to the forward pass, and the pad id is first-order rather
-than cosmetic.
+has to live in the ids: the adapter pads to exactly 64 itself rather than
+leaving it to the forward pass, and the pad id is first-order rather than
+cosmetic. Content longer than 63 tokens is never cut: it fails with
+`EmbeddingInputTooLongException` (`maxInputTokens: 64`).
 
 `WordPieceEmbeddingTokenizer.fromPath` reads from disk and is **native only**;
 on web it throws `UnsupportedError` — fetch the `tokenizer.json` yourself there
@@ -116,9 +127,9 @@ id in range, nothing thrown, and a vector that is quietly the wrong point in the
 embedding space. The loader therefore **refuses** such a file rather than
 embedding it wrongly.
 
-Until a profile selector lands, reach the adapter by building the
-`ForwardPassDescriptor` yourself, with
-`loadSiglipSentencePieceEmbeddingTokenizer` as its tokenizer factory:
+Until a profile selector lands, reach the adapter through your own
+`TokenEmbeddingPass` (from `package:flutter_edge_ai/engine.dart`), with
+`loadSiglipSentencePieceEmbeddingTokenizer` as its `tokenizerFactory`:
 
 ```dart
 import 'package:flutter_edge_ai_embeddings/embedding_tokenizer.dart'
@@ -141,21 +152,32 @@ requires both: plenty of models declare one alone.
 Both loaders return a tokenizer with any `padding` and `truncation` the file
 declares switched OFF: `encode()` gives back bare content, never a fixed-width
 row. Width and terminators belong to the profile — `encodeForSiglipEmbedding`
-applies SigLIP2's 64-token rule itself — and to the forward pass, which owns the
-engine's compiled `seqLen`.
+applies SigLIP2's 64-token rule itself — and to the pass, which owns the
+engine's compiled sequence length.
 
-This matters if you build a `ForwardPassDescriptor` by hand: do not expect the
+This matters if you build a token embedding pass by hand: do not expect the
 file's `"padding": {"strategy": {"Fixed": 64}}` to have been applied for you.
 
 The loaders throw `StateError` if the resolved `dart_sentencepiece_tokenizer`
 accepts the calls that disable those settings and leaves them set anyway. That
 is a check on the tokenizer's config, not a guarantee about `encode()`'s output.
 
+### Gemma SentencePiece
+
+Since 2.3.0 the Gemma adapter tokenizes as reference SentencePiece does: the
+user-defined pieces in Gemma's vocabulary — HTML tags such as `</div>` — stay
+one token, where 2.2 split them into several, and pieces that begin with a
+byte-order mark keep it (2.2's `.model` reader dropped it, so text such as
+`<?` or `//` got another piece's id). The `.model` and `tokenizer.json`
+loaders agree with Python SentencePiece on every string of the package's
+differential test set, so native EmbeddingGemma 1 gets the same token ids as
+the LiteRT.js bundle on web.
+
 ### The task-type prefix
 
-`TaskType` has two values and both prefixes are non-empty, and
-`generateEmbedding` defaults to `TaskType.retrievalQuery` — so no caller can
-embed without one. That is the intended contract for Gemma/Gecko.
+`TaskType` has nine values, and `embed` requires one. Every value but
+`TaskType.none` (no prefix) prepends its prompt to the text — the contract for
+Gemma/Gecko.
 
 It is not for a CLIP-family tower, whose vision side encodes an image with no
 prefix at all, so **the SigLIP2 profile drops it**. Honoring one would put query
@@ -168,19 +190,28 @@ prefixes either; making that configurable belongs with the profile selector.
 
 ## Building a new engine backend
 
-Implement `EmbeddingForwardPass` (`load`/`run`/`close`/`outputDimension`/
-`inputSequenceLength`) for your engine, expose a top-level factory tear-off
-for it, and build an `EmbeddingBackendProvider` that calls
-`CommonEmbeddingModel.create(descriptor: ForwardPassDescriptor(...), tokenizerPath: ...)`.
-Declare `EmbeddingOutputContract.pooledFinal` if your engine's forward pass
-already returns the final embedding, or `.tokenLevel` if it returns raw
-per-token hidden states for core's `meanPoolAndNormalize` (exported by
-`flutter_edge_ai`, re-exported here) to pool.
-Pass `activeBackend:` too — the backend your forward pass really runs on. It is
-optional, so nothing will make you, but it is what `EmbeddingModel.activeBackend`
-reports to the app, and omitting it answers `null`. Never default it to CPU for
-an engine that might use an accelerator: that reports a guess as a fact.
-See `flutter_edge_ai_litertlm`'s `lib/src/embedding/` for a worked example.
+Everything below comes from `package:flutter_edge_ai/engine.dart`. Write
+`class MyBackend extends EmbeddingBackendProvider` whose `describe(spec,
+config)` returns an `EmbeddingPassDescriptor(engineTag:, factory:, config:,
+activeBackend:)`: a sendable `config` and a top-level `factory` that builds
+your pass from it. Core builds, hosts and closes the model; `describe` only
+says what to run.
+
+A pass that tokenizes in Dart extends `TokenEmbeddingPass`: implement
+`openGraph()` (returning a `TokenPassGraph` with the dimension,
+`maxInputTokens` and output contract), `runTokens()` and `closeGraph()`, and
+it tokenizes with the factory core resolved, applies the task prefix and
+refuses over-long input for you. Declare `EmbeddingOutputContract.pooledFinal`
+if your graph already returns the final embedding, or `.tokenLevel` if it
+returns raw per-token hidden states for `meanPoolAndNormalize` to pool. Any
+other engine implements `EmbeddingPass` (`load`/`embed`/`close`) directly.
+
+`activeBackend` is required — the backend your pass really runs on, or `null`
+when unknown. It is what `EmbeddingModel.activeBackend` reports to the app.
+Never default it to CPU for an engine that might use an accelerator: that
+reports a guess as a fact. See `flutter_edge_ai_litertlm`'s
+`lib/src/embedding/` and `flutter_edge_ai_onnx`'s `OnnxEmbeddingPass` for
+worked examples.
 
 ## Troubleshooting
 

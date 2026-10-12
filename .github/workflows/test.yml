@@ -56,6 +56,23 @@ jobs:
       - name: Analyze code
         run: flutter analyze packages/ --no-fatal-infos
 
+      # Core publishes five libraries (flutter_edge_ai, engine, engine_io,
+      # engine_web, genai); lib/src is private. The analyzer's
+      # implementation_imports lint (an error in every analysis_options.yaml)
+      # only sees files under lib/; this script also covers tests, examples and
+      # tools, and prints the annotated exceptions so they are reviewed in one
+      # place. tool/test_all.sh runs it too; this step names the failure.
+      - name: Core public surface
+        run: tool/check_core_surface.sh
+
+      # The web compilers do not reject a native import that leaks into the web
+      # graph (dart2js lists dart:io and dart:isolate, dart2wasm accepts all
+      # three); it compiles and fails at runtime. This walks the import graph
+      # from every public library, taking the web branch of each conditional
+      # directive, and fails on dart:io, dart:ffi or dart:isolate.
+      - name: Web import graph
+        run: dart tool/check_web_graph.dart
+
       # Every package that has tests, each run from its OWN directory. The loop
       # lives in tool/test_all.sh so CI and the local "before committing"
       # command are the same code — a second copy here would drift, which is
@@ -104,6 +121,45 @@ jobs:
 
       - name: Lint the skill files
         run: dart run skills_lint@0.5.1
+
+  # The analyzer and the public-surface golden see only the NATIVE branch of
+  # conditional imports and exports, so a web arm that no longer compiles (a
+  # moved file, a renamed symbol, a signature that drifted from its native
+  # twin) shows up only here. Both compilers, because dart2wasm rejects code
+  # dart2js accepts (e.g. JS-interop type checks). What these builds do NOT
+  # catch is a native library leaking into the web graph: dart2js accepts
+  # direct dart:io and dart:isolate imports and dart2wasm accepts dart:ffi too,
+  # so such a leak compiles and fails at runtime. That is the job of
+  # tool/check_web_graph.dart (analyze job).
+  build-example-web:
+    runs-on: ubuntu-latest
+    needs: analyze-and-test
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install plugin dependencies
+        run: flutter pub get
+
+      - name: Install example dependencies
+        working-directory: packages/flutter_edge_ai/example
+        run: flutter pub get
+
+      - name: Build example web (dart2js)
+        working-directory: packages/flutter_edge_ai/example
+        run: flutter build web
+
+      - name: Build example web (dart2wasm)
+        working-directory: packages/flutter_edge_ai/example
+        run: flutter build web --wasm
 
   build-example-android:
     runs-on: ubuntu-latest

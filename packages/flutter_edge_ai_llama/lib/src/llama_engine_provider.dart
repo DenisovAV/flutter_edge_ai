@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 

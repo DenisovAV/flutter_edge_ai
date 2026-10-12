@@ -521,5 +521,5 @@ internal class PlatformServiceImpl(
 
   // 0.15.2: embedding pigeon methods dropped from PlatformService contract.
   // Dart now talks to LiteRT C API directly via dart:ffi
-  // (lib/core/litert/litert_embedding_model.dart).
+  // (flutter_edge_ai_litertlm's lib/src/embedding/litert_embedding_pass.dart).
 }

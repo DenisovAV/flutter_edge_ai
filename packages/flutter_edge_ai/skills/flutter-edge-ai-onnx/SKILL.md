@@ -91,3 +91,5 @@ window.ortReady = (async () => {
 `OnnxEmbeddingBackend` handles single-file `.onnx` or `.ort` embedding models, installed with `FlutterEdgeAi.installEmbedder()` like any other — see the flutter-edge-ai-rag skill for the indexing flow.
 
 On native it takes WordPiece (BERT-style, e.g. all-MiniLM-L6-v2) and SentencePiece (e.g. EmbeddingGemma-300M-ONNX) models and runs on CPU: `activeBackend` is `PreferredBackend.cpu` and `preferredBackend` is not applied. On web it takes WordPiece models only — all-MiniLM-L6-v2 works there, EmbeddingGemma-300M-ONNX is native-only.
+
+ONNX embeddings are text-only: `getActiveEmbedder(supportImage: true)` or `supportAudio: true` throws `EmbeddingLoadException`. A graph with a fixed sequence length reports it as `maxInputTokens`, and a longer input — special tokens and task prefix included — throws `EmbeddingInputTooLongException` instead of being truncated. A dynamic-shape graph declares no limit: `maxInputTokens` is `null`.

@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/parsing/sdk_response_parser.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_response_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// On web, `@litert-lm/core` (0.12.1 / 0.14.0) does NOT convert Gemma 4

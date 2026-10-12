@@ -8,16 +8,7 @@
 // Same public shape as the native arm (HARD RULE 2) — an app's
 // `gemma_bootstrap.dart`-style registration list never needs an `if
 // (kIsWeb)` branch to use it.
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show InferenceModelSpec;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart'
-    show HuggingFaceResolver;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_source.dart'
-    show HuggingFaceResolverSource;
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart' show InferenceModel;
+import 'package:flutter_edge_ai/engine.dart';
 
 import '../onnx_hugging_face_resolver.dart' show OnnxHuggingFaceResolver;
 import 'onnx_web_inference_model.dart';

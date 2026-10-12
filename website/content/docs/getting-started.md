@@ -42,6 +42,26 @@ only the engines, stores and features your app uses — see
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+## What's new in 2.3
+
+- **EmbeddingGemma 2** (`flutter_edge_ai_litertlm` 1.13.0): text embeddings
+  from one `.litertlm` bundle with its own tokenizer, on Android, iOS, macOS,
+  Linux and Windows; up to 1024 tokens per input. See
+  [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
+- **A new embedding API** (breaking): `embed(EmbeddingInput.text(t), taskType: …)`
+  and `embedAll` replace `generateEmbedding(s)`, `dimension` replaces
+  `getDimension()`, `TaskType` has nine values, errors are typed
+  `EmbeddingException`s delivered as failed futures, and an over-long input
+  throws `EmbeddingInputTooLongException` instead of being truncated.
+- **RAG 1.1** (breaking): `RagIndex.add`/`search` take an `EmbeddingInput`,
+  `open()` takes the embedder and `openVectors()` a profile, and a location
+  binds one document modality. Needs `flutter_edge_ai_sqlite` /
+  `flutter_edge_ai_qdrant` 2.1.0.
+- **Engine packages import `package:flutter_edge_ai/engine.dart`**; core's
+  internals moved under `lib/src`, and the deprecated 1.x/2.0 members are gone.
+  Upgrade every flutter_edge_ai package together — see
+  [Migration](/docs/migration).
+
 ## What's new in 2.2
 
 - **Sampling defaults come from the model** (breaking): `temperature`, `topK`,

@@ -1,5 +1,4 @@
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// [sampling] with a top-k added when it asks for sampling without one
 /// ([SamplingParams.needsSamplingTopK]) and the model's `genai_config.json`

@@ -59,7 +59,10 @@ void main() {
           .tokenizerFromFile(_p('sentencepiece.model'))
           .install();
       final embedder = await FlutterEdgeAi.getActiveEmbedder();
-      final vector = await embedder.generateEmbedding('warm up the embedder');
+      final vector = await embedder.embed(
+        EmbeddingInput.text('warm up the embedder'),
+        taskType: TaskType.retrievalQuery,
+      );
       expect(vector, isNotEmpty, reason: 'the embedding path itself must work');
       expect(
         globallyVisible(probeSymbol),

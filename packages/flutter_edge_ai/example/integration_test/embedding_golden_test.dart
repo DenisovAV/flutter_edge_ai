@@ -105,8 +105,8 @@ void main() {
       ]) {
         for (final text in _texts) {
           final key = '${taskType.name}::$text';
-          captured[key] = await embedder.generateEmbedding(
-            text,
+          captured[key] = await embedder.embed(
+            EmbeddingInput.text(text),
             taskType: taskType,
           );
         }

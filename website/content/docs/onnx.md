@@ -159,15 +159,21 @@ A SigLIP 2 `tokenizer.json` is a third convention the provider does **not**
 select yet, and it is BPE — so it would otherwise be read as Gemma and return a
 plausible but wrong vector. The provider refuses it instead, with a message
 pointing at `loadSiglipSentencePieceEmbeddingTokenizer`, which you can wire into
-a `ForwardPassDescriptor` yourself — see
+your own `TokenEmbeddingPass` (from `package:flutter_edge_ai/engine.dart`) — see
 [SigLIP 2 text tower](/docs/models#siglip-2-text-tower-onnx-manual-wiring) for
 the profile and how to recognise a matching export.
 
 The output contract and mask requirements are discovered from the session's
 actual graph once it opens — no per-model configuration. It registers at
 priority 10 (above `LiteRtEmbeddingBackend`'s catch-all priority 0), so with
-both registered an `.onnx`/`.ort` model routes here. See
+both registered an `.onnx`/`.ort` model (any letter case) routes here. See
 [Embeddings & RAG](/docs/embeddings-and-rag) for the shared embedding API.
+
+ONNX embeddings are **text only** (`getActiveEmbedder(supportImage: true)`
+throws `EmbeddingLoadException`). `maxInputTokens` is the graph's static
+sequence length, or null for a dynamic-shape graph; a static graph is padded,
+never truncated, so a longer input throws `EmbeddingInputTooLongException`.
+The pass is `OnnxEmbeddingPass` (`OnnxEmbeddingForwardPass` before 0.5.8).
 
 ## Web setup
 

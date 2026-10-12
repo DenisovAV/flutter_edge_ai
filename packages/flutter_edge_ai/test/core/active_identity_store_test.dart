@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/model_management/active_identity_store.dart';
-import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/model_management/active_identity_store.dart';
+import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';

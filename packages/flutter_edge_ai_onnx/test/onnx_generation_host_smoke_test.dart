@@ -14,8 +14,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
 import 'package:flutter_edge_ai_onnx/src/onnx_session.dart';
 import 'package:flutter_test/flutter_test.dart';

@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/sampling.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// LiteRT-LM builds an engine's sampler at its first generation and keeps it
 /// for every later conversation (google-ai-edge/LiteRT-LM#2080), so a later

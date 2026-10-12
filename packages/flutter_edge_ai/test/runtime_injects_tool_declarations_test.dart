@@ -1,5 +1,5 @@
-import 'package:flutter_edge_ai/core/parsing/json_function_call_format.dart';
-import 'package:flutter_edge_ai/core/parsing/sdk_passthrough_function_call_format.dart';
+import 'package:flutter_edge_ai/src/parsing/json_function_call_format.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_passthrough_function_call_format.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 

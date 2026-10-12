@@ -14,7 +14,7 @@
 // test only asserts getWriteTargetPath == getReadTargetPath, never how
 // background_downloader maps the absolute target onto a write location.
 import 'package:background_downloader/background_downloader.dart';
-import 'package:flutter_edge_ai/mobile/smart_downloader.dart';
+import 'package:flutter_edge_ai/src/mobile/smart_downloader.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 

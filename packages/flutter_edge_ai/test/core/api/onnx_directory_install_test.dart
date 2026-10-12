@@ -14,18 +14,18 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show DirectoryBundleFile, InferenceModelSpec;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart';
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver_registry.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
-import 'package:flutter_edge_ai/core/utils/file_name_utils.dart'
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver.dart';
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_registry.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/utils/file_name_utils.dart'
     show FileNameUtils;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
 
 const _modelId = 'org__repo__cpu';

@@ -57,22 +57,31 @@ Future<String> _docsPath(String name) async {
 }
 
 Future<void> _exercise(String label, EmbeddingModel model) async {
-  final dim = await model.getDimension();
+  final dim = model.dimension;
   expect(dim, 768);
   print('[$label] dim=$dim');
 
-  final q = await model.generateEmbedding(_queries[0]);
+  final q = await model.embed(
+    EmbeddingInput.text(_queries[0]),
+    taskType: TaskType.retrievalQuery,
+  );
   expect(q.length, 768);
   expect(q.where((v) => v != 0).length, greaterThan(700));
 
   // Self-consistency.
-  final q2 = await model.generateEmbedding(_queries[0]);
+  final q2 = await model.embed(
+    EmbeddingInput.text(_queries[0]),
+    taskType: TaskType.retrievalQuery,
+  );
   expect(_cosine(q, q2), greaterThan(0.99999));
 
   // TaskType.prefix wires.
-  final qSame = await model.generateEmbedding(_queries[0]);
-  final dSame = await model.generateEmbedding(
-    _queries[0],
+  final qSame = await model.embed(
+    EmbeddingInput.text(_queries[0]),
+    taskType: TaskType.retrievalQuery,
+  );
+  final dSame = await model.embed(
+    EmbeddingInput.text(_queries[0]),
     taskType: TaskType.retrievalDocument,
   );
   final cosTypes = _cosine(qSame, dSame);
@@ -83,8 +92,14 @@ Future<void> _exercise(String label, EmbeddingModel model) async {
   expect(cosTypes, lessThan(0.999));
 
   // Semantic gradient (log only).
-  final qWarm = await model.generateEmbedding(_queries[1]);
-  final qPizza = await model.generateEmbedding(_queries[2]);
+  final qWarm = await model.embed(
+    EmbeddingInput.text(_queries[1]),
+    taskType: TaskType.retrievalQuery,
+  );
+  final qPizza = await model.embed(
+    EmbeddingInput.text(_queries[2]),
+    taskType: TaskType.retrievalQuery,
+  );
   print(
     '[$label] cosine(climate, global_warming) = '
     '${_cosine(q, qWarm).toStringAsFixed(4)}',
@@ -95,20 +110,21 @@ Future<void> _exercise(String label, EmbeddingModel model) async {
   );
 
   // Batch == single.
-  final batch = await model.generateEmbeddings(
-    _docs,
-    taskType: TaskType.retrievalDocument,
-  );
+  final batch = await model.embedAll([
+    for (final t in _docs) EmbeddingInput.text(t),
+  ], taskType: TaskType.retrievalDocument);
   for (var i = 0; i < _docs.length; i++) {
-    final single = await model.generateEmbedding(
-      _docs[i],
+    final single = await model.embed(
+      EmbeddingInput.text(_docs[i]),
       taskType: TaskType.retrievalDocument,
     );
     expect(_cosine(batch[i], single), greaterThan(0.99999));
   }
 
   // Tiny RAG ranking.
-  final qVecs = await model.generateEmbeddings(_queries);
+  final qVecs = await model.embedAll([
+    for (final t in _queries) EmbeddingInput.text(t),
+  ], taskType: TaskType.retrievalQuery);
   for (var i = 0; i < _queries.length; i++) {
     var bestIdx = 0, bestCos = -1.0;
     for (var j = 0; j < _docs.length; j++) {
@@ -142,21 +158,17 @@ void main() {
     }
   }, timeout: const Timeout(Duration(minutes: 5)));
 
-  testWidgets(
-    'EmbeddingGemma 256 — full RAG flow',
-    (_) async {
-      await registerTestEngines();
-      await FlutterEdgeAi.installEmbedder()
-          .modelFromFile(await _docsPath(_gemmaModelName))
-          .tokenizerFromFile(await _docsPath(_gemmaTokenizerName))
-          .install();
-      final model = await FlutterEdgeAi.getActiveEmbedder();
-      try {
-        await _exercise('EmbeddingGemma256', model);
-      } finally {
-        await model.close();
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 5)),
-  );
+  testWidgets('EmbeddingGemma 256 — full RAG flow', (_) async {
+    await registerTestEngines();
+    await FlutterEdgeAi.installEmbedder()
+        .modelFromFile(await _docsPath(_gemmaModelName))
+        .tokenizerFromFile(await _docsPath(_gemmaTokenizerName))
+        .install();
+    final model = await FlutterEdgeAi.getActiveEmbedder();
+    try {
+      await _exercise('EmbeddingGemma256', model);
+    } finally {
+      await model.close();
+    }
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }

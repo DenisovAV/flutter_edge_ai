@@ -15,8 +15,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web.dart';
 import 'package:flutter_edge_ai_litertlm/src/web/litert_lm_web_inference.dart';
 import 'package:flutter_test/flutter_test.dart';

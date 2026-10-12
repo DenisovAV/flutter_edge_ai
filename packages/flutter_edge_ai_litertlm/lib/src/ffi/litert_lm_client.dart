@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 import 'dart:convert';
 import 'dart:ffi';
@@ -12,13 +12,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mutex/mutex.dart';
 
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
-import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
-
 import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
+import 'litert_lm_library.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
@@ -251,38 +248,6 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   }
 }
 
-/// Opens the LiteRT-LM shared library for the current platform.
-///
-/// Top-level so it can be called from a spawned isolate, which cannot capture
-/// `this` or any other non-const closure state.
-///
-/// Deliberately a plain open, and safe only because of an ordering invariant:
-/// both callers run inside `initialize()`, which calls `_ensureBindings()` —
-/// and therefore `openLiteRtLmRequiringDefaultScope` — first. On Android a
-/// plain open cannot DEMOTE an already-global soinfo, so arriving second is
-/// harmless. If a future caller can reach this before `_ensureBindings`, it
-/// must go through litert_default_scope.dart instead or it reintroduces #447.
-DynamicLibrary _openLiteRtLmLibrary() {
-  if (Platform.isIOS) {
-    return DynamicLibrary.open(
-      '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm',
-    );
-  }
-  if (Platform.isMacOS) {
-    return DynamicLibrary.open('LiteRtLm.framework/LiteRtLm');
-  }
-  if (Platform.isAndroid) {
-    // Through the helper rather than relying on the ordering invariant above.
-    // Best-effort variant: an isolate must not throw here, and by the time
-    // this runs the LLM path has already required the strict one.
-    return openLiteRtLmPreferringDefaultScope('libLiteRtLm.so');
-  }
-  if (Platform.isLinux) {
-    return DynamicLibrary.open('libLiteRtLm.so');
-  }
-  return DynamicLibrary.open('LiteRtLm.dll');
-}
-
 /// Calls native `litert_lm_conversation_create` on a spawned isolate.
 ///
 /// For multimodal models this compiles the vision encoder's OpenCL kernels
@@ -301,7 +266,11 @@ Future<int> _createConversationOffMainIsolate({
   final isolateLogLevel = edgeAiLogLevel;
   return Isolate.run(() {
     edgeAiLogLevel = isolateLogLevel;
-    final create = _openLiteRtLmLibrary()
+    // Plain open (litert_lm_library.dart), safe only because this runs inside
+    // `initialize()`, after `_ensureBindings()` opened the library with the
+    // preloads the LLM path needs and, on Android, the strict default scope
+    // (#447). A caller that can come first must not rely on it.
+    final create = openLiteRtLmLibrary()
         .lookupFunction<
           Pointer Function(Pointer, Pointer),
           Pointer Function(Pointer, Pointer)
@@ -926,7 +895,10 @@ class LiteRtLmFfiClient {
       final engineAddr = await Isolate.run(() {
         edgeAiLogLevel = isolateLogLevel;
         final isolateSw = Stopwatch()..start();
-        final lib = _openLiteRtLmLibrary();
+        // Plain open (litert_lm_library.dart): `_ensureBindings()` above
+        // already loaded it with the preloads and, on Android, the strict
+        // default scope this path needs (#447).
+        final lib = openLiteRtLmLibrary();
         edgeAiLog(
           '[LiteRtLmFfi/perf]   isolate: DynamicLibrary.open: ${isolateSw.elapsedMilliseconds}ms',
           level: EdgeAiLogLevel.verbose,

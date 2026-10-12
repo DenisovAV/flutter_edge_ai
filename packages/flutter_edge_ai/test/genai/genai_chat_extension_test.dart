@@ -1,5 +1,5 @@
 import 'package:flutter_edge_ai/genai.dart';
-import 'package:flutter_edge_ai/core/genai/genai_chat_extension.dart';
+import 'package:flutter_edge_ai/src/genai/genai_chat_extension.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // This suite verifies the guard behavior that needs no live engine.

@@ -22,15 +22,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/core/registry/engine_registry.dart';
-import 'package:flutter_edge_ai/core/registry/inference_engine_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/lifecycle/close_notifier.dart';
+import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
+import 'package:flutter_edge_ai/src/registry/inference_engine_provider.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/desktop/flutter_edge_ai_desktop.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart';
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart';
 
 final _fakeBundleBytes = Uint8List(1024 * 1024 + 16);
 
@@ -53,11 +52,11 @@ void main() {
   });
 
   tearDown(() async {
-    // FlutterEdgeAiMobile is a singleton: its _initCompleter / _initializedModel
-    // / _inFlightRequest outlive a test, and FlutterEdgeAi.reset() deliberately
-    // does NOT touch them (it resets the DI registry, and documents that the
-    // active inference model survives). Closing the cached model is what fires
-    // the close listener that clears them. Without this, the first test's
+    // FlutterEdgeAiMobile is a singleton: its InferenceModelCache outlives a
+    // test, and FlutterEdgeAi.reset() deliberately does NOT touch it (it
+    // resets the DI registry, and documents that the active inference model
+    // survives). Closing the cached model is what fires the close listener
+    // that clears it. Without this, the first test's
     // leftover in-flight build reappeared inside the second one, which then
     // reported a config difference no test in it had asked for.
     await FlutterEdgeAiPlugin.instance.initializedModel?.close();

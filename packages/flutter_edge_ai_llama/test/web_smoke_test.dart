@@ -5,14 +5,19 @@ import 'dart:async';
 import 'dart:js_interop';
 
 // Core storage fixtures avoid downloads while exercising the real Web facade.
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/infrastructure/web_file_system_service.dart';
-import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart'
+// ignore: implementation_imports — seeds core storage for the real Web facade without downloads.
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+// ignore: implementation_imports — registers a deterministic URL in the Web facade fixture.
+import 'package:flutter_edge_ai/src/infrastructure/web_file_system_service.dart';
+// ignore: implementation_imports — activates and clears the Web facade storage fixture.
+import 'package:flutter_edge_ai/src/model_management/managers/web_model_manager.dart';
+import 'package:flutter_edge_ai/engine.dart';
+// ignore: implementation_imports — constructs installed metadata for the Web facade fixture.
+import 'package:flutter_edge_ai/src/services/model_repository.dart'
     as repository;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
-import 'package:flutter_edge_ai/web/flutter_edge_ai_web.dart';
+// ignore: implementation_imports — registers the real Web platform shell for browser tests.
+import 'package:flutter_edge_ai/src/web/flutter_edge_ai_web.dart';
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart' as llama;

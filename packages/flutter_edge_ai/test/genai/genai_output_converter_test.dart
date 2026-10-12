@@ -1,6 +1,6 @@
 import 'package:flutter_edge_ai/genai.dart';
-import 'package:flutter_edge_ai/core/genai/genai_output_converter.dart';
-import 'package:flutter_edge_ai/core/model_response.dart';
+import 'package:flutter_edge_ai/src/genai/genai_output_converter.dart';
+import 'package:flutter_edge_ai/src/model_response.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

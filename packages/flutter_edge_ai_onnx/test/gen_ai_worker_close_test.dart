@@ -15,8 +15,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
-import 'package:flutter_edge_ai/core/model.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_worker.dart'
     show closedBeforeRunMessage;

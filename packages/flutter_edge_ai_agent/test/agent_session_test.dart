@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/flutter_edge_ai.dart'
+import 'package:flutter_edge_ai/engine.dart'
     show InferenceChat, SkillExecutorProvider, SkillExecutorRegistry;
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_test/flutter_test.dart';

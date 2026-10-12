@@ -1,7 +1,7 @@
 /// Where the LiteRT.js WASM runtime is fetched from on web.
 ///
-/// Web embeddings run through LiteRT.js, which loads a WASM runtime at the
-/// first embedding call — `litert_wasm_internal.js` or, without relaxed SIMD,
+/// Web embeddings run through LiteRT.js, which loads a WASM runtime when the
+/// embedder loads (`getActiveEmbedder()`) — `litert_wasm_internal.js` or, without relaxed SIMD,
 /// `litert_wasm_compat_internal.js`, each with a ~9 MB `.wasm` beside it.
 /// Shipping both variants in this package would put ~5.7 MB compressed into
 /// every install of it, native-only apps included, so until 1.8.0 this pointed
@@ -19,14 +19,14 @@
 /// that release's WASM entry points by name. 0.2.x called
 /// `loadAndCompileWebGpu`, which 2.x replaced with `loadModel` + `compileModel`
 /// — point this at a release other than the one `web/litert.js` was built from
-/// and the first embedding fails with something that names no version at all
+/// and the embedder load fails with something that names no version at all
 /// (`Cannot read properties of undefined (reading 'create')` for a runtime
 /// older than the glue). Both halves are rebuilt together from
 /// `tool/web_build`, so this pin moves when that build does.
 ///
 /// Serve it yourself — offline, an air-gapped deploy, or a CSP that forbids
 /// third-party script — by copying `node_modules/@litertjs/core/wasm/` into
-/// the app's `web/wasm/` and setting the prefix before the first embedding:
+/// the app's `web/wasm/` and setting the prefix before the first embedder loads:
 ///
 /// ```dart
 /// LiteRtWebRuntime.wasmPath = '/wasm/';
@@ -37,7 +37,7 @@
 /// value above is root-absolute: an app served under a base href other than
 /// `/` needs the full path (`/my-app/wasm/`) or an absolute URL.
 ///
-/// Set it BEFORE the first embedding. The runtime is loaded once and cached
+/// Set it BEFORE the first `getActiveEmbedder()`. The runtime is loaded once and cached
 /// behind a flag in `litert_embeddings.js`, so a later assignment is ignored
 /// without an error.
 ///

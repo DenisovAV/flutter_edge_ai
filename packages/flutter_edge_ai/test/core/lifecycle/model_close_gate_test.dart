@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/src/lifecycle/model_close_gate.dart';
+import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -55,15 +55,71 @@ void main() {
     expect(gate.isClosing, isFalse);
   });
 
-  test('a close that fails is not passed on to the caller', () async {
-    final gate = ModelCloseGate();
-    final model = _ClosingModel()..error = StateError('native close failed');
+  test('a close that fails is not passed on to the caller, and is reported '
+      'in release too', () async {
+    final printed = await _printed(() async {
+      final gate = ModelCloseGate();
+      final model = _ClosingModel()..error = StateError('native close failed');
 
-    final wait = gate.closeAndWait(model, label: 'a');
-    model.finish();
-    await expectLater(wait, completes);
-    expect(gate.isClosing, isFalse);
+      final wait = gate.closeAndWait(model, label: 'old-model');
+      model.finish();
+      await expectLater(wait, completes);
+      expect(gate.isClosing, isFalse);
+    });
+    // `print`, which release builds keep: the debug-only log would leave a
+    // model possibly still resident with nothing said about it.
+    expect(
+      printed,
+      contains(
+        allOf(
+          contains('WARNING'),
+          contains('(old-model)'),
+          contains('native close failed'),
+        ),
+      ),
+    );
   });
+
+  test('a close that outlived a caller says when it ends', () async {
+    final printed = await _printed(() async {
+      final gate = ModelCloseGate(const Duration(milliseconds: 20));
+      final model = _ClosingModel();
+      await expectLater(
+        gate.closeAndWait(model, label: 'slow-model'),
+        throwsA(isA<TimeoutException>()),
+      );
+      model.finish();
+      await pumpEventQueue();
+    });
+    expect(
+      printed,
+      contains(allOf(contains('(slow-model)'), contains('finished closing'))),
+    );
+  });
+
+  test('a close nobody gave up on ends without a word', () async {
+    final printed = await _printed(() async {
+      final gate = ModelCloseGate();
+      final model = _ClosingModel();
+      final wait = gate.closeAndWait(model, label: 'a');
+      model.finish();
+      await wait;
+      await pumpEventQueue();
+    });
+    expect(printed, isEmpty);
+  });
+}
+
+/// What [body] prints.
+Future<List<String>> _printed(Future<void> Function() body) async {
+  final lines = <String>[];
+  await runZoned(
+    body,
+    zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) => lines.add(line),
+    ),
+  );
+  return lines;
 }
 
 class _ClosingModel implements InferenceModel {

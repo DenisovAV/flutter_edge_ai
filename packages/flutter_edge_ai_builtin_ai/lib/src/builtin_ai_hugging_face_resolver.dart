@@ -1,8 +1,5 @@
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart'
-    show HuggingFaceResolver, ResolvedHfModel;
+import 'package:flutter_edge_ai/engine.dart'
+    show HuggingFaceResolver, ModelFileType, PreferredBackend, ResolvedHfModel;
 
 /// [HuggingFaceResolver] for built-in OS models (Gemini Nano / Apple
 /// Foundation Models / Chrome Prompt API).

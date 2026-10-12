@@ -1,19 +1,10 @@
-// Unit tests for `OnnxEmbeddingBackend` — provider identity, priority, and
-// the `.onnx`/`.ort` extension-matrix `canHandle` (Phase 2 hardened plan
-// Task 3). No native session, no dlopen.
+// `OnnxEmbeddingBackend` (native arm): identity, the `.onnx`/`.ort`
+// `canHandle` matrix, and what describe() hands core or refuses. describe() is
+// pure, so nothing here opens a session or spawns a worker.
 
-import 'package:flutter_edge_ai/core/domain/model_source.dart';
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show EmbeddingModelSpec;
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_onnx/src/embedding/onnx_embedding_backend.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
-import 'package:flutter_edge_ai/core/embedding/forward_pass.dart';
-import 'package:flutter_edge_ai/core/embedding/tokenizer_adapter.dart';
-import 'package:flutter_edge_ai/core/registry/embedding_tokenizer_provider.dart';
-import 'package:flutter_edge_ai/core/registry/embedding_tokenizer_registry.dart';
-import 'package:flutter_edge_ai_onnx/src/embedding/onnx_embedding_backend.dart'
-    show onnxEmbeddingDescriptor;
+import 'package:flutter_edge_ai_onnx/src/embedding/onnx_embedding_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 EmbeddingModelSpec _spec(String modelFilename) => EmbeddingModelSpec(
@@ -22,119 +13,139 @@ EmbeddingModelSpec _spec(String modelFilename) => EmbeddingModelSpec(
   tokenizerSource: FileSource('/tmp/tokenizer.json'),
 );
 
+RuntimeConfig _config({
+  String? tokenizerPath = '/data/tokenizer.json',
+  bool supportImage = false,
+  bool supportAudio = false,
+}) => RuntimeConfig(
+  maxTokens: 0,
+  modelPath: '/data/model.onnx',
+  tokenizerPath: tokenizerPath,
+  supportImage: supportImage,
+  supportAudio: supportAudio,
+);
+
+Matcher _loadRefusal(Object message) => throwsA(
+  isA<EmbeddingLoadException>()
+      .having((e) => e.engine, 'engine', 'ONNX')
+      .having((e) => e.message, 'message', message),
+);
+
 void main() {
-  group('the descriptor OnnxEmbeddingBackend hands the worker', () {
+  const backend = OnnxEmbeddingBackend();
+
+  test('identity: "ONNX Embedding", priority 10 (above LiteRT\'s 0)', () {
+    expect(backend.name, 'ONNX Embedding');
+    expect(backend.priority, 10);
+  });
+
+  group('canHandle extension matrix', () {
+    test('handles .onnx and .ort, ASCII case-insensitive', () {
+      for (final name in [
+        'model.onnx',
+        'model.ort',
+        'MODEL.ONNX',
+        'model.Onnx',
+        'model.ORT',
+      ]) {
+        expect(backend.canHandle(_spec(name)), isTrue, reason: name);
+      }
+    });
+
+    test('does not handle .tflite, .litertlm or an unrecognised name', () {
+      for (final name in [
+        'model.tflite',
+        'model',
+        'model.bin',
+        'model.onnx.bin',
+        'modelonnx',
+      ]) {
+        expect(backend.canHandle(_spec(name)), isFalse, reason: name);
+      }
+      expect(
+        backend.canHandle(
+          EmbeddingModelSpec(
+            name: 'eg2',
+            modelSource: FileSource('/tmp/model.litertlm'),
+          ),
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('describe()', () {
     setUp(
       () => EmbeddingTokenizerRegistry.instance.registerAll([_AnyTokenizer()]),
     );
-    tearDown(EmbeddingTokenizerRegistry.instance.reset);
+    tearDown(() {
+      EmbeddingTokenizerRegistry.instance.reset();
+      OnnxEmbeddingBackend.debugForceUnsupportedHost = null;
+    });
 
-    ForwardPassDescriptor build() => onnxEmbeddingDescriptor(
-      EmbeddingModelSpec(
-        name: 'minilm',
-        modelSource: ModelSource.file('/m.onnx'),
-        tokenizerSource: ModelSource.file('/tokenizer.json'),
-      ),
-      RuntimeConfig(maxTokens: 0, modelPath: '/m.onnx'),
+    test('hands core the opened paths, the registry\'s tokenizer and an '
+        'OnnxEmbeddingPass', () async {
+      final descriptor = await backend.describe(_spec('model.onnx'), _config());
+      final config = descriptor.config as OnnxEmbeddingConfig;
+
+      expect(descriptor.engineTag, 'ONNX');
+      expect(config.modelPath, '/data/model.onnx');
+      expect(config.tokenizerPath, '/data/tokenizer.json');
+      expect(identical(config.tokenizerFactory, _unused), isTrue);
+      expect(descriptor.build(), isA<OnnxEmbeddingPass>());
+    });
+
+    test('declares CPU, so EmbeddingModel.activeBackend is not null', () async {
+      // No ORT client appends an execution provider, so CPU is the true
+      // answer — and this line is the only place it comes from.
+      final descriptor = await backend.describe(_spec('model.onnx'), _config());
+      expect(descriptor.activeBackend, PreferredBackend.cpu);
+    });
+
+    test(
+      'refuses declared images or audio: ONNX embeddings are text-only',
+      () async {
+        for (final (image, audio) in [(true, false), (false, true)]) {
+          await expectLater(
+            backend.describe(
+              _spec('model.onnx'),
+              _config(supportImage: image, supportAudio: audio),
+            ),
+            _loadRefusal('ONNX embeddings are text-only'),
+          );
+        }
+      },
     );
 
-    test('declares CPU, so EmbeddingModel.activeBackend is not null', () {
-      // Neither ORT client appends an execution provider, so CPU is the true
-      // answer — and this line is the only place it comes from. Delete it and
-      // the release-visible answer silently becomes null.
-      expect(build().activeBackend, PreferredBackend.cpu);
-    });
-  });
-
-  group('OnnxEmbeddingBackend identity', () {
-    test('name is "ONNX Embedding", priority is 10 (above LiteRT\'s '
-        'catch-all 0)', () {
-      const backend = OnnxEmbeddingBackend();
-      expect(backend.name, 'ONNX Embedding');
-      expect(backend.priority, 10);
-    });
-  });
-
-  group('OnnxEmbeddingBackend.canHandle extension matrix', () {
-    const backend = OnnxEmbeddingBackend();
-
-    test('handles .onnx (single-file export)', () {
-      expect(backend.canHandle(_spec('model.onnx')), isTrue);
-    });
-
-    test('handles .ort (ORT-optimized format)', () {
-      expect(backend.canHandle(_spec('model.ort')), isTrue);
-    });
-
-    test('does not handle .tflite (LiteRT\'s territory)', () {
-      expect(backend.canHandle(_spec('model.tflite')), isFalse);
-    });
-
-    test('does not handle an extensionless / unrecognized filename', () {
-      expect(backend.canHandle(_spec('model')), isFalse);
-      expect(backend.canHandle(_spec('model.bin')), isFalse);
-    });
-  });
-
-  group('OnnxEmbeddingBackend.createModel guards', () {
-    test('throws when config.tokenizerPath is null', () async {
-      const backend = OnnxEmbeddingBackend();
-      const config = RuntimeConfig(
-        maxTokens: 1024,
-        modelPath: '/tmp/model.onnx',
-      );
-
-      await expectLater(
-        backend.createModel(_spec('model.onnx'), config),
-        throwsA(isA<StateError>()),
-      );
-    });
-  });
-
-  group(
-    'OnnxEmbeddingBackend platform gate (debugForceUnsupportedHost seam)',
-    () {
-      tearDown(() {
-        OnnxEmbeddingBackend.debugForceUnsupportedHost = null;
-      });
-
-      test('canHandle stays true on an unsupported host (must NOT gate — '
-          'gating here would let the LiteRT catch-all silently claim the '
-          'file instead)', () {
-        OnnxEmbeddingBackend.debugForceUnsupportedHost = true;
-        const backend = OnnxEmbeddingBackend();
-
-        expect(backend.canHandle(_spec('model.onnx')), isTrue);
-      });
-
-      test('createModel throws a StateError naming the platform when the '
-          'host is unsupported', () async {
-        OnnxEmbeddingBackend.debugForceUnsupportedHost = true;
-        const backend = OnnxEmbeddingBackend();
-        const config = RuntimeConfig(
-          maxTokens: 1024,
-          modelPath: '/tmp/model.onnx',
-          tokenizerPath: '/tmp/tokenizer.json',
-        );
-
+    test(
+      'a spec with no resolved tokenizer path is identity corrupt',
+      () async {
         await expectLater(
-          backend.createModel(_spec('model.onnx'), config),
-          throwsA(
-            isA<StateError>().having(
-              (e) => e.message,
-              'message',
-              allOf(contains('unsupported host'), contains('macOS-arm64')),
-            ),
-          ),
+          backend.describe(_spec('model.onnx'), _config(tokenizerPath: null)),
+          _loadRefusal(startsWith('identity corrupt')),
         );
-      });
-    },
-  );
+      },
+    );
+
+    test('canHandle stays true on an unsupported host — gating it would let '
+        'another backend claim the file and fail obscurely — and describe() '
+        'refuses there, naming the platform', () async {
+      OnnxEmbeddingBackend.debugForceUnsupportedHost = true;
+
+      expect(backend.canHandle(_spec('model.onnx')), isTrue);
+      await expectLater(
+        backend.describe(_spec('model.onnx'), _config()),
+        _loadRefusal(
+          allOf(contains('unsupported host'), contains('macOS-arm64')),
+        ),
+      );
+    });
+  });
 }
 
 /// Claims every spec. The factory is never called — these tests inspect the
 /// descriptor, they do not spawn a worker.
-class _AnyTokenizer implements EmbeddingTokenizerProvider {
+final class _AnyTokenizer implements EmbeddingTokenizerProvider {
   @override
   String get name => 'any';
 

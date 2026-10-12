@@ -7,9 +7,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/message.dart' show Message;
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart'
-    show RuntimeConfig;
+import 'package:flutter_edge_ai/engine.dart' show Message, RuntimeConfig;
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart'
     show BuiltInAiEngine;
 import 'package:flutter_edge_ai_builtin_ai/src/builtin_ai_model.dart'

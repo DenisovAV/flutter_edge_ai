@@ -1,0 +1,25 @@
+name: rag_store_compat_published
+description: >-
+  RAG store compatibility harness, PUBLISHED side: the exact packages an app
+  that has not upgraded runs (flutter_edge_ai_rag 1.0.0, flutter_edge_ai_sqlite
+  2.0.1, flutter_edge_ai_qdrant 2.0.1). Generates the committed v2_0_1 store
+  fixtures and checks that these versions refuse stores written by the train.
+  Not a workspace member; see ../README.md.
+publish_to: none
+
+environment:
+  sdk: '>=3.12.0 <4.0.0'
+  flutter: '>=3.47.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Exact pins: the point is what these releases do.
+  flutter_edge_ai_rag: 1.0.0
+  flutter_edge_ai_sqlite: 2.0.1
+  flutter_edge_ai_qdrant: 2.0.1
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

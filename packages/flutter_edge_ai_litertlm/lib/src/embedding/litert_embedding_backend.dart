@@ -1,28 +1,24 @@
-// LiteRT C API embedding backend — native arm (embedder decoupling plan
-// Task 4). Moved from `flutter_edge_ai_embeddings/lib/src/litert_embedding_backend.dart`
-// unchanged in shape: builds a `ForwardPassDescriptor` for
-// `createLiteRtEmbeddingForwardPass` and hands it to the runtime-agnostic
-// `CommonEmbeddingModel`.
+// LiteRT embedding backend — native arm. It only DESCRIBES what to run
+// (`describe()` is pure: no native library, no isolate); core builds the pass
+// in its embedding worker, hosts it, checks every request and closes it.
+//
+// Routing is by the file core actually opens (`config.modelPath`): a
+// `.litertlm` bundle (EmbeddingGemma 2, through LiteRT-LM's EmbeddingEngine)
+// or a `.tflite` graph with a separate tokenizer (EmbeddingGemma 1, Gecko,
+// through the LiteRT C API).
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter_edge_ai/core/registry/embedding_backend_provider.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart' show EmbeddingModel;
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show EmbeddingModelSpec;
-import 'package:flutter_edge_ai/core/embedding/common_embedding_model.dart'
-    show CommonEmbeddingModel;
-import 'package:flutter_edge_ai/core/embedding/forward_pass.dart'
-    show EmbeddingOutputContract, ForwardPassDescriptor;
-import 'package:flutter_edge_ai/core/registry/embedding_tokenizer_registry.dart';
+import 'dart:io' show Platform;
 
-import 'litert_embedding_forward_pass.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:path_provider/path_provider.dart';
 
-/// LiteRT C API embedding backend (Gecko / EmbeddingGemma `.tflite`). Pure
-/// factory; core owns the singleton lifecycle via [EmbeddingModel.addCloseListener].
-class LiteRtEmbeddingBackend implements EmbeddingBackendProvider {
+import 'litert_embedding_pass.dart';
+import 'litert_lm_embedding_pass.dart';
+
+/// LiteRT embedding backend: `.tflite` embedders (EmbeddingGemma 1, Gecko)
+/// over the LiteRT C API, and `.litertlm` embedding bundles (EmbeddingGemma 2,
+/// text) over LiteRT-LM's EmbeddingEngine.
+final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   const LiteRtEmbeddingBackend();
 
   @override
@@ -31,61 +27,108 @@ class LiteRtEmbeddingBackend implements EmbeddingBackendProvider {
   @override
   int get priority => 0;
 
+  /// A two-file spec (model + tokenizer), or a `.litertlm` bundle. A future
+  /// self-contained spec of another kind (an ONNX directory) is not claimed.
   @override
-  bool canHandle(EmbeddingModelSpec spec) => true; // sole embedding backend
+  bool canHandle(EmbeddingModelSpec spec) =>
+      spec.tokenizerSource != null ||
+      isLiteRtLmFilename(spec.files.first.filename);
 
   @override
-  Future<EmbeddingModel> createModel(
+  Future<EmbeddingPassDescriptor<Object>> describe(
     EmbeddingModelSpec spec,
     RuntimeConfig config,
   ) async {
-    final tokenizerPath = config.tokenizerPath;
-    if (tokenizerPath == null) {
-      throw StateError(
-        'LiteRtEmbeddingBackend requires config.tokenizerPath (resolved by '
-        'core from the active embedding model).',
+    final file = spec.files.first.filename;
+    final opensBundle = isLiteRtLmFilename(config.modelPath);
+    if (opensBundle != spec.isSelfContained) {
+      throw EmbeddingLoadException(
+        'identity corrupt: the active embedder ${spec.name} opens '
+        '${config.modelPath}, which ${opensBundle ? 'is' : 'is not'} a '
+        '.litertlm bundle, while its spec '
+        '${spec.isSelfContained ? 'carries no' : 'names a'} tokenizer. '
+        'Install the embedder again.',
+        engine: opensBundle ? _liteRtLm : _liteRt,
       );
     }
-    return CommonEmbeddingModel.create(
-      descriptor: liteRtEmbeddingDescriptor(spec, config),
-      tokenizerPath: tokenizerPath,
-      onClose: () {}, // core resets its state via addCloseListener
-    );
+    if (opensBundle) return _describeBundle(config);
+    return _describeTflite(spec, file, config);
   }
 }
 
-/// The descriptor [LiteRtEmbeddingBackend.createModel] hands the embedding
-/// worker.
-///
-/// Split out so a test can inspect what this backend DECLARES without spawning
-/// a worker, which needs the native library. Above all `activeBackend`: the
-/// field is optional on [ForwardPassDescriptor], so deleting that one line made
-/// `EmbeddingModel.activeBackend` null — the release-visible answer this backend
-/// exists to give — and no test went red.
-@visibleForTesting
-ForwardPassDescriptor liteRtEmbeddingDescriptor(
+const _liteRt = 'LiteRT';
+const _liteRtLm = liteRtLmEngineTag;
+
+/// A `.litertlm` embedding bundle (EmbeddingGemma 2) never asks the tokenizer
+/// registry: the bundle carries its own. Declared media are refused here, before
+/// any isolate exists (text only in 1.13.0); whether the bundle has a tower is
+/// the pass's question, answered from the bundle itself at load.
+Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
+  RuntimeConfig config,
+) async {
+  if (config.supportImage || config.supportAudio) {
+    throw const EmbeddingLoadException(
+      liteRtLmTextOnlyRefusal,
+      engine: _liteRtLm,
+    );
+  }
+  // The platform CACHE directory, not application support: iOS backs that up
+  // to iCloud and Android Auto Backup includes it under a 25 MB per-app quota,
+  // which a 71-385 MB weight cache would break. If the OS purges the cache,
+  // the next engine create rebuilds it. Resolved here: the pass runs in core's
+  // worker isolate, which has no platform channels.
+  final cache = (await getApplicationCacheDirectory()).path;
+  final sep = Platform.pathSeparator;
+  return EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>(
+    engineTag: _liteRtLm,
+    factory: buildLiteRtLmEmbeddingPass,
+    config: LiteRtLmEmbeddingConfig(
+      modelPath: config.modelPath,
+      // Short on purpose: the engine's cache file name repeats the model's
+      // name below it, and Windows paths must stay under MAX_PATH.
+      cacheBase: '$cache${sep}flutter_edge_ai${sep}emb',
+      declaredMedia: {
+        if (config.supportImage) EmbeddingModality.image,
+        if (config.supportAudio) EmbeddingModality.audio,
+      },
+    ),
+    // `settings_create(path, "cpu", NULL, NULL)`: the text tower on CPU.
+    activeBackend: PreferredBackend.cpu,
+  );
+}
+
+EmbeddingPassDescriptor<LiteRtEmbeddingConfig> _describeTflite(
   EmbeddingModelSpec spec,
+  String file,
   RuntimeConfig config,
 ) {
-  // outputContract MUST be pooledFinal — LiteRT's compiled graph already
-  // produces the final pooled/normalized vector; routing it through
-  // `meanPoolAndNormalize` a second time would silently add an
-  // L2-normalize the LiteRT path never had (Invariant I0).
-  return ForwardPassDescriptor(
-    engineTag: 'LiteRT',
-    modelPath: config.modelPath,
-    factory: createLiteRtEmbeddingForwardPass,
-    // Asked for, not named. Which family this model needs is a fact about
-    // the model, not about LiteRT — and hardcoding Gemma SentencePiece
-    // here is what made `canHandle => true` a trap: a WordPiece model was
-    // accepted and then tokenized with the wrong convention.
-    tokenizerFactory: EmbeddingTokenizerRegistry.instance.resolveFor(spec),
-    // CPU, and by decision rather than omission: the GPU delegate
-    // compiles and then returns all-zero vectors for EmbeddingGemma's int4
-    // weights (removed in ab3df2bf). Surfaced as
-    // EmbeddingModel.activeBackend so a caller who asked for GPU can see
-    // what happened in a release build.
+  if (config.supportImage || config.supportAudio) {
+    throw EmbeddingLoadException('$file is a text-only model', engine: _liteRt);
+  }
+  final tokenizerPath =
+      config.tokenizerPath ??
+      (throw EmbeddingLoadException(
+        'identity corrupt: the active embedder ${spec.name} names a tokenizer, '
+        'but core resolved no tokenizer path for it. Install the embedder '
+        'again.',
+        engine: _liteRt,
+      ));
+  return EmbeddingPassDescriptor<LiteRtEmbeddingConfig>(
+    engineTag: _liteRt,
+    factory: buildLiteRtEmbeddingPass,
+    config: LiteRtEmbeddingConfig(
+      modelPath: config.modelPath,
+      tokenizerPath: tokenizerPath,
+      // Asked for, not named. Which family this model needs is a fact about
+      // the model, not about LiteRT — and hardcoding Gemma SentencePiece here
+      // is what made a catch-all `canHandle` a trap: a WordPiece model was
+      // accepted and then tokenized with the wrong convention.
+      tokenizerFactory: EmbeddingTokenizerRegistry.instance.resolveFor(spec),
+    ),
+    // CPU, and by decision rather than omission: the GPU delegate compiles
+    // and then returns all-zero vectors for EmbeddingGemma's int4 weights
+    // (removed in ab3df2bf). Surfaced as EmbeddingModel.activeBackend so a
+    // caller who asked for GPU can see what happened in a release build.
     activeBackend: PreferredBackend.cpu,
-    outputContract: EmbeddingOutputContract.pooledFinal,
   );
 }

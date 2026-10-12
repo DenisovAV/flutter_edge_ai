@@ -1,3 +1,6 @@
+## 0.2.9
+- Require `flutter_edge_ai` ^2.3.0 (imports its engine library).
+
 ## 0.2.8
 - Unset sampling values reach the engine unset (#572).
 - Require `flutter_edge_ai` ^2.2.0.

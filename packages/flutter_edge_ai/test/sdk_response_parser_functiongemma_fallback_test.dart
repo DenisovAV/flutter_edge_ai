@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/core/parsing/sdk_response_parser.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_response_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// FunctionGemma's call only reaches `tool_calls` when the runtime parses it.

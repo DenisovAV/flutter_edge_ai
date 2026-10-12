@@ -1,29 +1,18 @@
 // Standalone library: the MediaPipe-web inference model + session + prompt
 // parts, extracted from core's `flutter_edge_ai_web.dart`. Consumes the shared
-// public web infra that STAYS in core (`web_model_source.dart`,
-// `web_image_format.dart`) plus the sibling MediaPipe JS interop
-// (`llm_inference_web.dart`).
+// public web infra that STAYS in core (the web model sources from
+// `engine_web.dart`, `detectImageMimeType` from `engine.dart`) plus the sibling
+// MediaPipe JS interop (`llm_inference_web.dart`).
 import 'dart:async';
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/engine_web.dart';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/extensions.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
-import 'package:flutter_edge_ai/core/tool.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show InferenceModel, InferenceModelSession, SessionMetrics;
 // WebInferenceModel.activeBackend overrides the [InferenceModel] contract, whose
 // type is core's PreferredBackend (from core's platform_types.dart).
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/web/web_image_format.dart';
-import 'package:flutter_edge_ai/web/web_model_source.dart';
 
 import '../mediapipe_sampling.dart';
 import 'llm_inference_web.dart';

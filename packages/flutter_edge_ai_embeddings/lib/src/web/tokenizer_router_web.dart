@@ -13,8 +13,7 @@
 
 import 'dart:js_interop';
 
-import 'package:flutter_edge_ai/core/embedding/tokenizer_adapter.dart'
-    show EmbeddingTokenizer;
+import 'package:flutter_edge_ai/engine.dart' show EmbeddingTokenizer;
 
 import '../wordpiece_tokenizer_json.dart' show parseWordPieceTokenizerJson;
 

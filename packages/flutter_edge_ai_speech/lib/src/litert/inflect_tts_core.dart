@@ -31,9 +31,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/litert_bindings.dart';
 
 import '../model/tts_model_profile.dart';

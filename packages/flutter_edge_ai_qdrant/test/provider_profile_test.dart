@@ -15,6 +15,7 @@ const _recordFileName = 'record.json';
 const _recordTempPrefix = '.flutter_edge_ai_rag.record.tmp.';
 final _profileA = EmbeddingProfile(id: 'embedder-a-v1', dimension: 4);
 final _profileB = EmbeddingProfile(id: 'embedder-b-v1', dimension: 4);
+final _bindingA = VectorStoreBinding(profile: _profileA);
 
 void _writeLegacyStore(String databasePath) {
   File(p.join(databasePath, 'edge_config.json')).writeAsStringSync(
@@ -74,7 +75,7 @@ void main() {
     await expectLater(store.removeDocument(id: 'unbound'), throwsStateError);
     await expectLater(store.clear(), throwsStateError);
 
-    await store.bindEmbeddingProfile(_profileA);
+    await store.bind(VectorStoreBinding(profile: _profileA));
     await store.addDocument(
       id: 'bound',
       content: 'bound',
@@ -89,7 +90,7 @@ void main() {
     final store = QdrantVectorStore();
     addTearDown(store.close);
     await store.initialize(oldPath.path);
-    await store.bindEmbeddingProfile(_profileA);
+    await store.bind(VectorStoreBinding(profile: _profileA));
 
     final reached = Completer<void>();
     final release = Completer<void>();
@@ -105,7 +106,7 @@ void main() {
     );
     await reached.future;
     await store.initialize(newPath.path);
-    await store.bindEmbeddingProfile(_profileB);
+    await store.bind(VectorStoreBinding(profile: _profileB));
     release.complete();
 
     await expectLater(add, throwsA(isA<VectorStoreException>()));
@@ -125,7 +126,7 @@ void main() {
       final store = QdrantVectorStore();
       addTearDown(store.close);
       await store.initialize(oldPath.path);
-      await store.bindEmbeddingProfile(_profileA);
+      await store.bind(VectorStoreBinding(profile: _profileA));
       await store.addDocument(
         id: 'keep',
         content: 'must remain',
@@ -146,7 +147,7 @@ void main() {
         final pending = start();
         await reached.future;
         await store.initialize(newPath.path);
-        await store.bindEmbeddingProfile(_profileB);
+        await store.bind(VectorStoreBinding(profile: _profileB));
         release.complete();
         await expectLater(pending, throwsA(isA<VectorStoreException>()));
         qdrantProfileOperationCheckpointForTesting = null;
@@ -174,28 +175,28 @@ void main() {
   test('same profile bind is idempotent and survives reopen', () async {
     final first = QdrantVectorStore();
     await first.initialize(temp.path);
-    await first.bindEmbeddingProfile(_profileA);
-    await first.bindEmbeddingProfile(_profileA);
-    expect(await first.readEmbeddingProfile(), _profileA);
+    await first.bind(VectorStoreBinding(profile: _profileA));
+    await first.bind(VectorStoreBinding(profile: _profileA));
+    expect(await first.readBinding(), _bindingA);
     await first.close();
 
     final reopened = QdrantVectorStore();
     addTearDown(reopened.close);
     await reopened.initialize(temp.path);
-    expect(await reopened.readEmbeddingProfile(), _profileA);
+    expect(await reopened.readBinding(), _bindingA);
   });
 
   test('conflicting profile bind is refused without overwrite', () async {
     final store = QdrantVectorStore();
     addTearDown(store.close);
     await store.initialize(temp.path);
-    await store.bindEmbeddingProfile(_profileA);
+    await store.bind(VectorStoreBinding(profile: _profileA));
 
     await expectLater(
-      store.bindEmbeddingProfile(_profileB),
+      store.bind(VectorStoreBinding(profile: _profileB)),
       throwsA(isA<VectorStoreException>()),
     );
-    expect(await store.readEmbeddingProfile(), _profileA);
+    expect(await store.readBinding(), _bindingA);
   });
 
   test('concurrent stores cannot silently bind different profiles', () async {
@@ -208,19 +209,19 @@ void main() {
 
     final outcomes = await Future.wait([
       first
-          .bindEmbeddingProfile(_profileA)
+          .bind(VectorStoreBinding(profile: _profileA))
           .then<Object>((_) => _profileA)
           .catchError((Object error) => error),
       second
-          .bindEmbeddingProfile(_profileB)
+          .bind(VectorStoreBinding(profile: _profileB))
           .then<Object>((_) => _profileB)
           .catchError((Object error) => error),
     ]);
 
     expect(outcomes.whereType<EmbeddingProfile>(), hasLength(1));
     expect(outcomes.whereType<VectorStoreException>(), hasLength(1));
-    final persisted = await first.readEmbeddingProfile();
-    expect(persisted, outcomes.whereType<EmbeddingProfile>().single);
+    final persisted = await first.readBinding();
+    expect(persisted?.profile, outcomes.whereType<EmbeddingProfile>().single);
   });
 
   test('different isolates cannot bind different profiles', () async {
@@ -228,8 +229,8 @@ void main() {
       final store = QdrantVectorStore();
       try {
         await store.initialize(temp.path);
-        await store.bindEmbeddingProfile(
-          EmbeddingProfile(id: id, dimension: 4),
+        await store.bind(
+          VectorStoreBinding(profile: EmbeddingProfile(id: id, dimension: 4)),
         );
         return 'bound:$id';
       } on VectorStoreException {
@@ -255,9 +256,9 @@ void main() {
     final reader = QdrantVectorStore();
     addTearDown(reader.close);
     await reader.initialize(temp.path);
-    final persisted = await reader.readEmbeddingProfile();
+    final persisted = await reader.readBinding();
     expect(
-      'bound:${persisted!.id}',
+      'bound:${persisted!.profile.id}',
       outcomes.firstWhere((value) => value.startsWith('bound:')),
     );
   });
@@ -326,8 +327,8 @@ void main() {
     final reader = QdrantVectorStore();
     addTearDown(reader.close);
     await reader.initialize(temp.path);
-    final persisted = await reader.readEmbeddingProfile();
-    expect(output, contains('bound:${persisted!.id}'));
+    final persisted = await reader.readBinding();
+    expect(output, contains('bound:${persisted!.profile.id}'));
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('isolate bind and first shard creation share dimension CAS', () async {
@@ -335,11 +336,13 @@ void main() {
       final store = QdrantVectorStore();
       try {
         await store.initialize(temp.path);
-        await store.bindEmbeddingProfile(
-          EmbeddingProfile(id: 'four-dimensional', dimension: 4),
+        await store.bind(
+          VectorStoreBinding(
+            profile: EmbeddingProfile(id: 'four-dimensional', dimension: 4),
+          ),
         );
         return 'bound-4';
-      } on ArgumentError {
+      } on VectorStoreException {
         return 'rejected-4';
       } finally {
         await store.close();
@@ -349,8 +352,10 @@ void main() {
       final store = QdrantVectorStore();
       try {
         await store.initialize(temp.path);
-        await store.bindEmbeddingProfile(
-          EmbeddingProfile(id: 'eight-dimensional', dimension: 8),
+        await store.bind(
+          VectorStoreBinding(
+            profile: EmbeddingProfile(id: 'eight-dimensional', dimension: 8),
+          ),
         );
         await store.addDocument(
           id: 'eight',
@@ -383,14 +388,14 @@ void main() {
     await writer.initialize(temp.path);
     await reader.initialize(temp.path);
 
-    final binding = writer.bindEmbeddingProfile(_profileA);
+    final binding = writer.bind(VectorStoreBinding(profile: _profileA));
     final observations = await Future.wait([
-      for (var index = 0; index < 100; index++) reader.readEmbeddingProfile(),
+      for (var index = 0; index < 100; index++) reader.readBinding(),
     ]);
     await binding;
 
-    expect(observations, everyElement(anyOf(isNull, equals(_profileA))));
-    expect(await reader.readEmbeddingProfile(), _profileA);
+    expect(observations, everyElement(anyOf(isNull, equals(_bindingA))));
+    expect(await reader.readBinding(), _bindingA);
   });
 
   test('corrupt profile sidecar is reported loudly', () async {
@@ -407,7 +412,7 @@ void main() {
     addTearDown(store.close);
     await store.initialize(temp.path);
     await expectLater(
-      store.readEmbeddingProfile(),
+      store.readBinding(),
       throwsA(
         isA<VectorStoreException>().having(
           (error) => error.message,
@@ -430,7 +435,7 @@ void main() {
     addTearDown(store.close);
     await store.initialize(temp.path);
     await expectLater(
-      store.readEmbeddingProfile(),
+      store.readBinding(),
       throwsA(isA<VectorStoreException>()),
     );
   });
@@ -445,10 +450,10 @@ void main() {
     final store = QdrantVectorStore();
     addTearDown(store.close);
     await store.initialize(temp.path);
-    expect(await store.readEmbeddingProfile(), isNull);
+    expect(await store.readBinding(), isNull);
 
-    await store.bindEmbeddingProfile(_profileA);
-    expect(await store.readEmbeddingProfile(), _profileA);
+    await store.bind(VectorStoreBinding(profile: _profileA));
+    expect(await store.readBinding(), _bindingA);
     expect(partial.existsSync(), isTrue);
   });
 
@@ -456,7 +461,7 @@ void main() {
     final store = QdrantVectorStore();
     addTearDown(store.close);
     await store.initialize(temp.path);
-    await store.bindEmbeddingProfile(_profileA);
+    await store.bind(VectorStoreBinding(profile: _profileA));
 
     await expectLater(
       store.addDocument(
@@ -496,7 +501,7 @@ void main() {
   test('clear removes documents but preserves the profile', () async {
     final store = QdrantVectorStore();
     await store.initialize(temp.path);
-    await store.bindEmbeddingProfile(_profileA);
+    await store.bind(VectorStoreBinding(profile: _profileA));
     await store.addDocument(
       id: 'doc',
       content: 'content',
@@ -504,32 +509,32 @@ void main() {
     );
     await store.clear();
     expect((await store.getStats()).documentCount, 0);
-    expect(await store.readEmbeddingProfile(), _profileA);
+    expect(await store.readBinding(), _bindingA);
     await store.close();
 
     final reopened = QdrantVectorStore();
     addTearDown(reopened.close);
     await reopened.initialize(temp.path);
-    expect(await reopened.readEmbeddingProfile(), _profileA);
+    expect(await reopened.readBinding(), _bindingA);
   });
 
   test('profile-only directory is not mistaken for a qdrant shard', () async {
     final first = QdrantVectorStore();
     await first.initialize(temp.path);
-    await first.bindEmbeddingProfile(_profileA);
+    await first.bind(VectorStoreBinding(profile: _profileA));
     await first.close();
 
     final reopened = QdrantVectorStore();
     addTearDown(reopened.close);
     await reopened.initialize(temp.path);
     expect((await reopened.getStats()).documentCount, 0);
-    expect(await reopened.readEmbeddingProfile(), _profileA);
+    expect(await reopened.readBinding(), _bindingA);
   });
 
   test('profile-only directory does not hide a legacy bare store', () async {
     final first = QdrantVectorStore();
     await first.initialize(temp.path);
-    await first.bindEmbeddingProfile(_profileA);
+    await first.bind(VectorStoreBinding(profile: _profileA));
     await first.close();
     Directory(
       p.join(temp.path, _storeDirName, '${_recordTempPrefix}interrupted'),

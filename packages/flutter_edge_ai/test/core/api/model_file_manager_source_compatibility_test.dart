@@ -1,5 +1,5 @@
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
-import 'package:flutter_edge_ai/model_file_manager_interface.dart';
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -44,12 +44,6 @@ final class _LegacyModelFileManager implements ModelFileManager {
   Future<void> clearModelCache() => throw UnimplementedError();
 
   @override
-  Future<void> deleteCurrentModel() => throw UnimplementedError();
-
-  @override
-  Future<void> deleteLoraWeights() => throw UnimplementedError();
-
-  @override
   Future<void> deleteModel(ModelSpec spec) => throw UnimplementedError();
 
   @override
@@ -64,10 +58,6 @@ final class _LegacyModelFileManager implements ModelFileManager {
 
   @override
   Future<void> ensureInitialized() => throw UnimplementedError();
-
-  @override
-  Future<void> ensureModelReady(String filename, String url) =>
-      throw UnimplementedError();
 
   @override
   Future<void> ensureModelReadyFromSpec(ModelSpec spec) =>
@@ -92,16 +82,6 @@ final class _LegacyModelFileManager implements ModelFileManager {
   Future<Map<String, int>> getStorageStats() => throw UnimplementedError();
 
   @override
-  Future<void> installModelFromAsset(String path, {String? loraPath}) =>
-      throw UnimplementedError();
-
-  @override
-  Stream<int> installModelFromAssetWithProgress(
-    String path, {
-    String? loraPath,
-  }) => throw UnimplementedError();
-
-  @override
   Future<bool> isAnyModelInstalled(ModelManagementType type) =>
       throw UnimplementedError();
 
@@ -110,13 +90,6 @@ final class _LegacyModelFileManager implements ModelFileManager {
 
   @override
   Future<void> performCleanup() => throw UnimplementedError();
-
-  @override
-  Future<void> setLoraWeightsPath(String path) => throw UnimplementedError();
-
-  @override
-  Future<void> setModelPath(String path, {String? loraPath}) =>
-      throw UnimplementedError();
 
   @override
   Future<bool> validateModel(ModelSpec spec) => throw UnimplementedError();

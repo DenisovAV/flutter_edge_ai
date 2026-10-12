@@ -193,7 +193,7 @@ class AiEngine {
             : const [],
         // A backend carries no tokenizer: which one a model needs is a
         // property of the model, so the app registers it. Without this the
-        // first embedding throws a StateError.
+        // first embedding fails, and the error names the package to add.
         embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
       );
 

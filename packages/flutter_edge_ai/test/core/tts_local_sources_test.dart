@@ -2,17 +2,17 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_edge_ai/core/api/tts_asset_listing.dart';
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/handlers/asset_source_handler.dart';
-import 'package:flutter_edge_ai/core/infrastructure/flutter_asset_loader.dart';
-import 'package:flutter_edge_ai/core/infrastructure/platform_file_system_service.dart';
-import 'package:flutter_edge_ai/core/infrastructure/shared_preferences_model_repository.dart';
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
+import 'package:flutter_edge_ai/src/api/tts_asset_listing.dart';
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/handlers/asset_source_handler.dart';
+import 'package:flutter_edge_ai/src/infrastructure/flutter_asset_loader.dart';
+import 'package:flutter_edge_ai/src/infrastructure/platform_file_system_service.dart';
+import 'package:flutter_edge_ai/src/infrastructure/shared_preferences_model_repository.dart';
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';

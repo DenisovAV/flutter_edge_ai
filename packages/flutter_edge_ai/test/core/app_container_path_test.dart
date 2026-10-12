@@ -6,7 +6,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_edge_ai/core/model_management/utils/app_container_path.dart';
+import 'package:flutter_edge_ai/src/model_management/utils/app_container_path.dart';
 
 const _old = 'AAAAAAAA-1111-2222-3333-444444444444';
 const _new = 'BBBBBBBB-5555-6666-7777-888888888888';

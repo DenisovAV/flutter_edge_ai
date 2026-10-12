@@ -1,3 +1,6 @@
+## 0.9.1
+- The embedder calls `embedAll` and re-resolves a closed embedder; require `flutter_edge_ai` ^2.3.0.
+
 ## 0.9.0
 - **Breaking:** bad options and parts the model cannot take fail with a status, not silently.
 - Every tool response reaches the model, and tool calls carry `ref`s.

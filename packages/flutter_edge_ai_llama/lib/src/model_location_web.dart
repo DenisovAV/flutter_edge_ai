@@ -1,24 +1,23 @@
-import 'package:flutter_edge_ai/core/model_management/managers/web_model_manager.dart';
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/engine_web.dart';
 import 'package:llamadart/llamadart.dart';
 
-/// Uses core's installed blob/network URL rather than downloading the spec again.
+/// Resolves core's installed URL through the public Web engine SPI.
 Future<String> resolveModelLocation(
   ModelSpec spec,
-  RuntimeConfig config,
-) async {
+  RuntimeConfig config, {
+  WebModelSourceResolver? resolver,
+}) async {
   if (config.modelPath.isNotEmpty) return _urlLocation(config.modelPath);
-  final manager = WebModelManager();
-  await manager.ensureInitialized();
-  final paths = await manager.getModelFilePaths(spec);
-  final primary = paths?[spec.files.first.prefsKey];
-  if (primary == null || primary.isEmpty) {
-    throw LlamaStateException(
-      'Install and activate the GGUF model before loading it.',
-    );
-  }
-  return _urlLocation(primary);
+  final resolved = await (resolver ?? WebModelSourceResolver.forActiveModel())
+      .resolveActiveInferenceModel();
+  return switch (resolved.model) {
+    BlobUrlModelSource(:final url) => _urlLocation(url),
+    OpfsStreamModelSource() => throw LlamaUnsupportedException(
+      'llamadart accepts model URLs, not Edge AI OPFS streams. '
+      'Initialize Flutter Edge AI with WebStorageMode.cacheApi or none.',
+    ),
+  };
 }
 
 String _urlLocation(String primary) {

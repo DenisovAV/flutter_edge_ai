@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/extensions.dart';
-import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
+import 'package:flutter_edge_ai/src/extensions.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 

@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Runs [body] and returns everything it `print`ed, with `gemmaLog` muted — so

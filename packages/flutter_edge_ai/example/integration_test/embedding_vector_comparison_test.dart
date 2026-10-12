@@ -36,7 +36,10 @@ void main() {
     ];
 
     for (final phrase in testPhrases) {
-      final embedding = await embedder.generateEmbedding(phrase);
+      final embedding = await embedder.embed(
+        EmbeddingInput.text(phrase),
+        taskType: TaskType.retrievalQuery,
+      );
       final dim = embedding.length;
 
       final first10 = embedding
@@ -61,9 +64,18 @@ void main() {
       print('[$platform] last5:  [$last5]');
     }
 
-    final emb1 = await embedder.generateEmbedding(testPhrases[0]);
-    final emb2 = await embedder.generateEmbedding(testPhrases[1]);
-    final emb3 = await embedder.generateEmbedding(testPhrases[2]);
+    final emb1 = await embedder.embed(
+      EmbeddingInput.text(testPhrases[0]),
+      taskType: TaskType.retrievalQuery,
+    );
+    final emb2 = await embedder.embed(
+      EmbeddingInput.text(testPhrases[1]),
+      taskType: TaskType.retrievalQuery,
+    );
+    final emb3 = await embedder.embed(
+      EmbeddingInput.text(testPhrases[2]),
+      taskType: TaskType.retrievalQuery,
+    );
 
     double cosine(List<double> a, List<double> b) {
       double dot = 0, na = 0, nb = 0;

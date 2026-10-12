@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
+import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeSynth implements SpeechSynthesizer {

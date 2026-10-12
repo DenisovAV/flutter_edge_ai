@@ -68,10 +68,12 @@ void main() {
           '${base.path}/dart_hnsw_only_${DateTime.now().microsecondsSinceEpoch}.db';
       final repo = SqliteVectorStore();
       await repo.initialize(dbPath);
-      await repo.bindEmbeddingProfile(
-        EmbeddingProfile(
-          id: 'dart-hnsw-embedding-768d-v1',
-          dimension: _expectedDim,
+      await repo.bind(
+        VectorStoreBinding(
+          profile: EmbeddingProfile(
+            id: 'dart-hnsw-embedding-768d-v1',
+            dimension: _expectedDim,
+          ),
         ),
       );
 

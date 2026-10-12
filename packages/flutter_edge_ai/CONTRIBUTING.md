@@ -177,11 +177,17 @@ Genkit packages. See [Project Structure in `AGENTS.md`](../../AGENTS.md#project-
 for the full layout and which package owns what.
 
 **Key core files** (under `packages/flutter_edge_ai/`):
-- `lib/flutter_edge_ai.dart` - Main public API
-- `lib/core/api/flutter_edge_ai.dart` - Modern API implementation
-- `lib/mobile/flutter_edge_ai_mobile.dart` - Mobile implementation
-- `lib/web/flutter_edge_ai_web.dart` - Web implementation
-- `lib/desktop/flutter_edge_ai_desktop.dart` - Desktop implementation
+- `lib/flutter_edge_ai.dart` - Public app library
+- `lib/engine.dart`, `lib/engine_io.dart`, `lib/engine_web.dart` - Public
+  engine SPI (for engine, backend, tokenizer and resolver packages)
+- `lib/src/api/flutter_edge_ai.dart` - Modern API implementation
+- `lib/src/mobile/flutter_edge_ai_mobile.dart` - Mobile implementation
+- `lib/src/web/flutter_edge_ai_web.dart` - Web implementation
+- `lib/src/desktop/flutter_edge_ai_desktop.dart` - Desktop implementation
+
+Everything under `lib/src` is private: other packages import only the public
+libraries above (plus `genai.dart`). `tool/check_core_surface.sh` enforces it,
+and `test/public_surface/` pins every exported symbol.
 
 ---
 
@@ -204,9 +210,15 @@ Any changes to public APIs should:
 - Be tested thoroughly
 
 **Public API locations:**
-- `lib/flutter_edge_ai.dart`
-- `lib/core/api/flutter_edge_ai.dart`
-- `lib/flutter_edge_ai_interface.dart`
+- `lib/flutter_edge_ai.dart` (apps) and `lib/engine.dart` / `lib/engine_io.dart`
+  / `lib/engine_web.dart` (engine packages) — every export has a `show` list
+- `lib/src/api/flutter_edge_ai.dart`
+- `lib/src/interface.dart`
+
+A change to what these libraries export changes the symbol golden in
+`test/public_surface/`; regenerate it with
+`UPDATE_GOLDENS=1 flutter test test/public_surface/public_surface_test.dart`
+and review the diff.
 
 ### Error Handling
 
@@ -235,7 +247,7 @@ If you're working on desktop support:
 2. **Understand the architecture:**
    - Since 0.14.0 desktop runs LiteRT-LM directly via `dart:ffi` against the C API. No JVM/JRE/gRPC.
    - The FFI client lives in `flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart` (used by all five platforms)
-   - Native libs are downloaded by `flutter_edge_ai_litertlm/hook/build.dart` (the sole hook) at build time from the `native-v0.18.0-d` GitHub release; SHA256-verified and bundled by Native Assets
+   - Native libs are downloaded by `flutter_edge_ai_litertlm/hook/build.dart` (the sole hook) at build time from the `native-v0.18.0-e` GitHub release; SHA256-verified and bundled by Native Assets
 
 3. **Test your changes:**
    - Test on macOS (Apple Silicon) and/or Windows x64 / Linux x86_64 / Linux arm64

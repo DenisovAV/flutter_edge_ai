@@ -22,7 +22,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: '>=2.2.1 <2.3.0'
+  flutter_edge_ai: ^2.3.0
   llamadart: ^0.11.1
 
 dev_dependencies:

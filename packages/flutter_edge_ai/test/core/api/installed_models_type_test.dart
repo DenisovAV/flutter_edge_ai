@@ -15,13 +15,14 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/core/registry/embedding_backend_provider.dart';
-import 'package:flutter_edge_ai/core/registry/embedding_registry.dart';
-import 'package:flutter_edge_ai/core/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/core/registry/stt_backend_provider.dart';
-import 'package:flutter_edge_ai/core/registry/stt_registry.dart';
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/embedding/embedding_pass.dart';
+import 'package:flutter_edge_ai/src/lifecycle/close_notifier.dart';
+import 'package:flutter_edge_ai/src/registry/embedding_backend_provider.dart';
+import 'package:flutter_edge_ai/src/registry/embedding_registry.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/registry/stt_backend_provider.dart';
+import 'package:flutter_edge_ai/src/registry/stt_registry.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 final _fakeModelBytes = Uint8List(1024 * 1024 + 16);
@@ -142,37 +143,43 @@ void main() {
   );
 }
 
-class _FakeEmbeddingBackend implements EmbeddingBackendProvider {
+/// Claims every spec and describes a trivial pass. These tests install and
+/// introspect; nothing builds the embedder.
+final class _FakeEmbeddingBackend extends EmbeddingBackendProvider {
   @override
   String get name => 'FakeEmbedding';
+
   @override
   int get priority => 0;
+
   @override
   bool canHandle(EmbeddingModelSpec spec) => true;
+
   @override
-  Future<EmbeddingModel> createModel(
+  Future<EmbeddingPassDescriptor<Object>> describe(
     EmbeddingModelSpec spec,
     RuntimeConfig config,
-  ) async => _FakeEmbeddingModel();
+  ) async => const EmbeddingPassDescriptor<String>(
+    engineTag: 'Fake',
+    factory: _buildFakePass,
+    config: 'fake',
+    activeBackend: PreferredBackend.cpu,
+  );
 }
 
-class _FakeEmbeddingModel extends EmbeddingModel with CloseNotifier {
+EmbeddingPass _buildFakePass(String _) => _FakePass();
+
+final class _FakePass extends EmbeddingPass {
   @override
-  Future<List<double>> generateEmbedding(
-    String text, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) async => const [0.0];
+  Future<EmbeddingPassInfo> load() async =>
+      const EmbeddingPassInfo(dimension: 1);
+
   @override
-  Future<List<List<double>>> generateEmbeddings(
-    List<String> texts, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) async => const [
-    [0.0],
-  ];
+  Future<List<double>> embed(EmbeddingInput input, TaskType taskType) async =>
+      const [0.0];
+
   @override
-  Future<int> getDimension() async => 1;
-  @override
-  Future<void> close() async => fireCloseListeners();
+  Future<void> close() async {}
 }
 
 class _FakeSttBackend implements SttBackendProvider {

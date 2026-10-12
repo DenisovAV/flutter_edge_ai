@@ -92,7 +92,6 @@ but is available if you need it:
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/core/extensions.dart';
 
 String cleanedResponse = ModelThinkingFilter.cleanResponse(
   rawResponse,

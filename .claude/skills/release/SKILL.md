@@ -134,7 +134,7 @@ tool/test_all.sh            # all pass — NOT `flutter test` at the root, which
                             # has no test/ and silently tests NOTHING
 
 # Cross-platform compile sanity — analyze/test run on host VM and skip
-# conditional imports (e.g. `lib/core/ffi/*_stub.dart`). The only thing
+# conditional imports (e.g. `lib/src/infrastructure/*_stub.dart`). The only thing
 # that catches stub/client signature drift is `flutter build <target>`.
 # Skipping this is how `enableSpeculativeDecoding` web breakage shipped
 # in 0.15.0 — analyze was green, tests passed, web build threw
@@ -232,7 +232,7 @@ Two consequences:
 
 ### 1e. Did the core public API change? → realign the Genkit packages
 ```bash
-git diff <last-tag> -- packages/flutter_edge_ai/lib/flutter_edge_ai_interface.dart packages/flutter_edge_ai/lib/core
+git diff <last-tag> -- packages/flutter_edge_ai/lib
 ```
 If the public `InferenceModel` / `InferenceChat` / `EmbeddingModel` / `Message` / `ModelResponse` / enum surface changed, the Genkit integration packages (`genkit_flutter_edge_ai`, `genkit_hybrid`) likely no longer compile or are missing the new features. **Run the `upgrade-genkit` skill** before publishing — it realigns converters + the test fakes (which must match upstream signatures) and bumps those packages. They release in lockstep with the monorepo, so don't ship a core change that leaves them broken.
 

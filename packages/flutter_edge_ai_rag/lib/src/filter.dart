@@ -1,8 +1,10 @@
 /// Payload filter applied alongside vector similarity search.
 ///
 /// Conditions in [must] are ANDed, conditions in [should] are ORed, and
-/// documents matching any [mustNot] condition are excluded. Backends ignore
-/// conditions for fields that are not declared in the store's [FilterSchema].
+/// documents matching any [mustNot] condition are excluded. Every field a
+/// condition names must be declared in the index's [FilterSchema]: `RagIndex`
+/// refuses an undeclared field with an [ArgumentError] (a vector store called
+/// directly ignores it, so it could never match).
 class Filter {
   Filter({
     List<Condition>? must,

@@ -1,5 +1,5 @@
-import 'package:flutter_edge_ai/core/domain/download_error.dart';
-import 'package:flutter_edge_ai/core/domain/download_exception.dart';
+import 'package:flutter_edge_ai/src/domain/download_error.dart';
+import 'package:flutter_edge_ai/src/domain/download_exception.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

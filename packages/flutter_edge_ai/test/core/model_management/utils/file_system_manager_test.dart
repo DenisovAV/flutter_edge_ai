@@ -1,7 +1,7 @@
 @TestOn('!vm')
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart';
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart';
 
 void main() {
   group('ModelFileSystemManager Tests', () {

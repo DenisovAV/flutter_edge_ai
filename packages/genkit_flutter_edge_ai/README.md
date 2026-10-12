@@ -54,17 +54,17 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 | `flutter_edge_ai_mediapipe` | `MediaPipeEngine()` | `.task` / `.bin` models (Gemma 3, mobile/web) |
 | `flutter_edge_ai_onnx` | `OnnxEngine()`, `OnnxEmbeddingBackend()` | ONNX models and embeddings |
 | `flutter_edge_ai_builtin_ai` | `BuiltInAiEngine()` | the OS's own model (Gemini Nano, Apple Foundation Models, Phi Silica) |
-| `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | text embeddings — required beside any embedding backend |
+| `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | tokenizers for `.tflite` and `.onnx` text embeddings (an EmbeddingGemma 2 `.litertlm` needs none) |
 
 ```yaml
 # pubspec.yaml (your app)
 dependencies:
   genkit: ^1.0.0
-  genkit_flutter_edge_ai: ^0.9.0
-  flutter_edge_ai: ^2.2.1
-  flutter_edge_ai_litertlm: ^1.12.1  # only the engines/backends you actually use
-  flutter_edge_ai_embeddings: ^2.2.3  # the tokenizers an embedding backend needs
-  flutter_edge_ai_mediapipe: ^1.2.1
+  genkit_flutter_edge_ai: ^0.9.1
+  flutter_edge_ai: ^2.3.0
+  flutter_edge_ai_litertlm: ^1.13.0  # only the engines/backends you actually use
+  flutter_edge_ai_embeddings: ^2.3.0  # the tokenizers an embedding backend needs
+  flutter_edge_ai_mediapipe: ^1.2.2
 ```
 
 ```dart
@@ -314,7 +314,8 @@ final documentVectors = await ai.embed(
 ```
 
 The embedder takes text only: a document with no text part is an
-`INVALID_ARGUMENT`.
+`INVALID_ARGUMENT`. It resolves the active embedder again for each request,
+so it follows a model that core replaced or closed in between.
 
 ## Known Limitations
 

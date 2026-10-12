@@ -1,8 +1,33 @@
 /**
- * LiteRT Embeddings API for Dart/JS Interop
+ * LiteRT.js embeddings for flutter_edge_ai_litertlm — bundle API v2.
  *
- * Provides window-scoped functions for embedding generation
- * using LiteRT.js + SentencePiece
+ * Window-scoped functions the Dart side (`LiteRtJsEmbeddingPass`, through
+ * `lib/src/embedding/web/litert_web_embeddings.dart`) calls:
+ *
+ *   liteRtEmbeddingsApiVersion = 2
+ *   loadLiteRtEmbeddings(modelPath, tokenizerPath, wasmPath)
+ *       → {dimension, maxInputTokens}, both read from the compiled model
+ *   embedLiteRtText(prefixedText)
+ *       → {status: 'ok', values: Float32Array}
+ *       | {status: 'too_long', actualTokens, maxInputTokens}
+ *   tokenizeLiteRtText(prefixedText) → Int32Array   (the W1 parity check)
+ *   cleanupLiteRtEmbeddings(), getLiteRtEmbeddingAccelerator(),
+ *   getLiteRtEmbeddingFullyAccelerated()
+ *
+ * This file knows NO task prefix. Dart builds `taskType.prefix + text` with
+ * the one prefix function every engine uses, so all nine TaskType values mean
+ * on web what they mean on native. The ids are `[2, ...encodeIds(text), 1]` —
+ * what the native Dart tokenizer produces for the same string — padded with 0
+ * to the model's input length and NEVER truncated: a longer input comes back
+ * as `too_long`, which Dart turns into EmbeddingInputTooLongException.
+ *
+ * API v1 (flutter_edge_ai_litertlm ≤ 1.12.x) had `generateEmbedding`,
+ * `generateDocumentEmbedding` and `generateEmbeddings`, prepended one of two
+ * hard-coded prefixes itself (every task type but a document got the query
+ * prompt), tokenized prefix and text separately with a "▁" before the text,
+ * cut the ids to the sequence length (EOS included) without a word, and
+ * refused empty text. It set no `liteRtEmbeddingsApiVersion`; the Dart side
+ * refuses a page whose copy does not announce version 2.
  */
 
 // ============================================================================
@@ -15,16 +40,14 @@ import { loadLiteRt, loadAndCompile, Tensor } from '@litertjs/core';
 import { SentencePieceProcessor } from '@sctg/sentencepiece-js';
 
 // ============================================================================
-// Constants (matching iOS implementation)
+// Constants
 // ============================================================================
 
-const TASK_PREFIX = "task: search result | query: ";
-const DOC_PREFIX = "title: none | text: ";
+/** The window API this file implements. Dart refuses any other value. */
+const API_VERSION = 2;
 const BOS_TOKEN = 2;
 const EOS_TOKEN = 1;
 const PAD_TOKEN = 0;
-let MAX_SEQUENCE_LENGTH = 256; // Default, can be overridden
-const EXPECTED_EMBEDDING_DIM = 768;
 
 // ============================================================================
 // Global State
@@ -34,6 +57,11 @@ let tfliteModel = null;
 let tokenizer = null;
 let isInitialized = false;
 let liteRtWasmLoaded = false;  // Track if LiteRT WASM runtime is loaded
+
+// Read from the compiled model at load: the input's sequence length and the
+// output's last dimension. Null while nothing is loaded; never a default.
+let maxSequenceLength = null;
+let embeddingDimension = null;
 
 // Where the OUTPUT BUFFER lived after a run, as reported by the first output
 // tensor. Null until the first run. Buffer residency, not execution: an op that
@@ -164,22 +192,16 @@ async function loadLiteRTModel(modelPath, wasmPath = '/node_modules/@litertjs/co
     }
     reportFullAcceleration(tfliteModel);
 
-    // Auto-detect sequence length from model input shape (like iOS/Android)
-    try {
-      const inputDetails = tfliteModel.getInputDetails();
-      if (inputDetails && inputDetails.length > 0) {
-        const inputShape = inputDetails[0].shape;
-        if (inputShape && inputShape.length >= 2) {
-          const detectedSequenceLength = inputShape[1];
-          if (detectedSequenceLength !== MAX_SEQUENCE_LENGTH) {
-            MAX_SEQUENCE_LENGTH = detectedSequenceLength;
-            console.log(`[LiteRT] Auto-detected maxSequenceLength: ${MAX_SEQUENCE_LENGTH}`);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[LiteRT] Failed to auto-detect sequence length, using default:', e);
-    }
+    // What Dart reports as EmbeddingPassInfo: read from the model, never
+    // assumed. A model this file cannot feed, or whose shapes cannot be read,
+    // fails the load here rather than every embed after it.
+    refuseMultiInputGraph(tfliteModel);
+    maxSequenceLength = readSequenceLength(tfliteModel);
+    embeddingDimension = readDimension(tfliteModel);
+    console.log(
+      `[LiteRT] Model input length ${maxSequenceLength}, ` +
+      `dimension ${embeddingDimension}`,
+    );
 
     return tfliteModel;
   } catch (error) {
@@ -187,169 +209,125 @@ async function loadLiteRTModel(modelPath, wasmPath = '/node_modules/@litertjs/co
   }
 }
 
-// ============================================================================
-// Text Preprocessing
-// ============================================================================
-
-function preprocessTextForEmbedding(text) {
-  // Step 1: Tokenize prefix
-  const prefixTokens = tokenizer.encode(TASK_PREFIX, false);
-
-  // Step 2: Add "▁" before text and tokenize
-  const processedText = "▁" + text;
-  const textTokens = tokenizer.encode(processedText, false);
-
-  // Step 3: Combine prefix + text
-  let combinedTokens = [...prefixTokens, ...textTokens];
-
-  // Step 4: Add BOS at start and EOS at end
-  combinedTokens.unshift(BOS_TOKEN);
-  combinedTokens.push(EOS_TOKEN);
-
-  // Step 5: Pad or truncate to MAX_SEQUENCE_LENGTH
-  if (combinedTokens.length > MAX_SEQUENCE_LENGTH) {
-    combinedTokens = combinedTokens.slice(0, MAX_SEQUENCE_LENGTH);
-  } else if (combinedTokens.length < MAX_SEQUENCE_LENGTH) {
-    const padLength = MAX_SEQUENCE_LENGTH - combinedTokens.length;
-    combinedTokens = [...combinedTokens, ...new Array(padLength).fill(PAD_TOKEN)];
-  }
-
-  return combinedTokens;
+/**
+ * Throws unless the graph has exactly one input. `runIds` builds one tensor —
+ * the token ids — so a BERT-style export that also takes `attention_mask` and
+ * `token_type_ids` would load here and then fail every embed. The native
+ * LiteRT pass refuses the same graphs at load.
+ */
+function refuseMultiInputGraph(model) {
+  const inputs = model.getInputDetails() ?? [];
+  if (inputs.length === 1) return;
+  const names = Array.from(inputs, (input) => input?.name).filter(Boolean);
+  throw new Error(
+    `the model declares ${inputs.length} inputs` +
+    (names.length ? ` (${names.join(', ')})` : '') +
+    ' but LiteRT.js embeddings feed exactly one: the token ids. A graph that ' +
+    'also takes attention_mask or token_type_ids (a BERT / MiniLM export) ' +
+    'cannot run here; register flutter_edge_ai_onnx\'s OnnxEmbeddingBackend ' +
+    'and install the .onnx export of the same model instead.',
+  );
 }
 
-function preprocessDocumentForEmbedding(text) {
-  const prefixTokens = tokenizer.encode(DOC_PREFIX, false);
-  const processedText = "▁" + text;
-  const textTokens = tokenizer.encode(processedText, false);
-  let combinedTokens = [...prefixTokens, ...textTokens];
-  combinedTokens.unshift(BOS_TOKEN);
-  combinedTokens.push(EOS_TOKEN);
-
-  if (combinedTokens.length > MAX_SEQUENCE_LENGTH) {
-    combinedTokens = combinedTokens.slice(0, MAX_SEQUENCE_LENGTH);
-  } else if (combinedTokens.length < MAX_SEQUENCE_LENGTH) {
-    const padLength = MAX_SEQUENCE_LENGTH - combinedTokens.length;
-    combinedTokens = [...combinedTokens, ...new Array(padLength).fill(PAD_TOKEN)];
+/** The compiled input `[1, seq]`'s sequence length, or a thrown Error. */
+function readSequenceLength(model) {
+  const shape = model.getInputDetails()?.[0]?.shape;
+  const length = shape && shape.length >= 2 ? shape[1] : undefined;
+  if (!Number.isInteger(length) || length <= 0) {
+    throw new Error(
+      'cannot read the input sequence length from the model ' +
+      `(input 0 shape: ${describeShape(shape)})`,
+    );
   }
-  return combinedTokens;
+  return length;
+}
+
+/** The output's last dimension — the embedding's length — or a thrown Error. */
+function readDimension(model) {
+  const shape = model.getOutputDetails()?.[0]?.shape;
+  const dimension = shape && shape.length >= 1 ? shape[shape.length - 1] : undefined;
+  if (!Number.isInteger(dimension) || dimension <= 0) {
+    throw new Error(
+      'cannot read the embedding dimension from the model ' +
+      `(output 0 shape: ${describeShape(shape)})`,
+    );
+  }
+  return dimension;
+}
+
+function describeShape(shape) {
+  return shape ? `[${Array.from(shape).join(', ')}]` : 'none';
 }
 
 // ============================================================================
-// Embedding Generation
+// Tokenization and the forward run
 // ============================================================================
 
-async function generateEmbeddingInternal(text) {
-  if (!tfliteModel || !tokenizer) {
-    throw new Error('Model or tokenizer not initialized. Call loadLiteRtEmbeddings first.');
+/**
+ * `[BOS, ...encodeIds(prefixedText), EOS]`, unpadded and uncut — what the
+ * native Dart tokenizer produces for the same string. Tokenized as ONE
+ * string, exactly as given: Dart has already prepended the task prefix.
+ */
+function idsFor(prefixedText) {
+  if (!isInitialized || !tokenizer) {
+    throw new Error('LiteRT embeddings not initialized. Call loadLiteRtEmbeddings first.');
   }
-
-  // Step 1: Preprocess text
-  const tokens = preprocessTextForEmbedding(text);
-
-  // Step 2: Create input tensor
-  const inputArray = new Int32Array(tokens);
-  const inputTensor = new Tensor(inputArray, [1, MAX_SEQUENCE_LENGTH]);
-
-  // Input placement. 0.2.x exposed CompiledModel.accelerator and this
-  // moved the tensor to the GPU by hand; 2.x has no such field (only
-  // options.accelerator) and run() places inputs itself, so the branch
-  // read undefined and never fired. Dropped rather than repaired: the
-  // measured behaviour — identical vectors, WebGPU still selected — IS
-  // the no-move path.
-  const gpuTensor = inputTensor;
-
-  try {
-    // Step 4: Run inference
-    // @litertjs/core 2.x returns a promise here; 0.2.x returned the tensors
-    // directly. Awaiting is the whole migration on our side.
-    const outputTensors = await tfliteModel.run(gpuTensor);
-
-    // Step 5: Extract embeddings
-    const outputTensor = outputTensors[0];
-    reportAccelerator(outputTensor.accelerator);
-
-    // Move back to CPU to read data
-    let cpuTensor = outputTensor;
-    if (outputTensor.accelerator === 'webgpu') {
-      cpuTensor = await outputTensor.moveTo('wasm');
-    }
-
-    // Get data as array
-    const embeddingsTypedArray = cpuTensor.toTypedArray();
-    const embeddingArray = Array.from(embeddingsTypedArray);
-
-    // Validate dimension
-    if (embeddingArray.length !== EXPECTED_EMBEDDING_DIM) {
-      console.warn(`Unexpected embedding dimension: ${embeddingArray.length}, expected ${EXPECTED_EMBEDDING_DIM}`);
-    }
-
-    // Cleanup tensors
-    if (gpuTensor !== inputTensor && !gpuTensor.deleted) gpuTensor.delete();
-    if (!inputTensor.deleted) inputTensor.delete();
-    if (cpuTensor !== outputTensor && !cpuTensor.deleted) cpuTensor.delete();
-    if (!outputTensor.deleted) outputTensor.delete();
-
-    return embeddingArray;
-  } catch (error) {
-    // Cleanup on error
-    try {
-      if (gpuTensor !== inputTensor && !gpuTensor.deleted) gpuTensor.delete();
-      if (!inputTensor.deleted) inputTensor.delete();
-    } catch (cleanupErr) {
-      console.warn('[LiteRT] Tensor cleanup failed:', cleanupErr);
-    }
-    throw error;
+  if (typeof prefixedText !== 'string') {
+    throw new Error(`The text must be a string, got ${typeof prefixedText}`);
   }
+  return [BOS_TOKEN, ...tokenizer.processor.encodeIds(prefixedText), EOS_TOKEN];
 }
 
-async function generateDocumentEmbeddingInternal(text) {
-  if (!tfliteModel || !tokenizer) {
-    throw new Error('Model or tokenizer not initialized. Call loadLiteRtEmbeddings first.');
-  }
-
-  const tokens = preprocessDocumentForEmbedding(text);
-  const inputArray = new Int32Array(tokens);
-  const inputTensor = new Tensor(inputArray, [1, MAX_SEQUENCE_LENGTH]);
-
-  // See generateEmbeddingInternal: 2.x run() places inputs itself.
-  const gpuTensor = inputTensor;
-
+/** One forward run over [ids] (at most maxSequenceLength), padded with 0. */
+async function runIds(ids) {
+  const padded = new Int32Array(maxSequenceLength).fill(PAD_TOKEN);
+  padded.set(ids);
+  // Input placement: 2.x run() places inputs itself. 0.2.x exposed
+  // CompiledModel.accelerator and the input was moved to the GPU by hand; 2.x
+  // has no such field, and the measured no-move path gives identical vectors
+  // with WebGPU still selected.
+  const inputTensor = new Tensor(padded, [1, maxSequenceLength]);
+  let outputTensors = [];
+  let cpuTensor = null;
   try {
     // @litertjs/core 2.x returns a promise here; 0.2.x returned the tensors
-    // directly. Awaiting is the whole migration on our side.
-    const outputTensors = await tfliteModel.run(gpuTensor);
+    // directly.
+    outputTensors = await tfliteModel.run(inputTensor);
+    // Read only once every output is in `outputTensors`, so a getter that
+    // throws still leaves them all to the finally below.
     const outputTensor = outputTensors[0];
-    // Documents are the path a RAG ingest takes, and usually the FIRST
-    // embedding an app ever makes — leaving this out kept the accelerator null
-    // for a whole corpus.
+    if (!outputTensor) throw new Error('the model returned no output tensor');
+    // Every run reports it: the first embedding an app makes is usually a
+    // document during a RAG ingest.
     reportAccelerator(outputTensor.accelerator);
-
-    let cpuTensor = outputTensor;
-    if (outputTensor.accelerator === 'webgpu') {
-      cpuTensor = await outputTensor.moveTo('wasm');
+    cpuTensor = outputTensor.accelerator === 'webgpu'
+      ? await outputTensor.moveTo('wasm')
+      : outputTensor;
+    // A copy: the typed array may be a view that delete() frees.
+    return Float32Array.from(cpuTensor.toTypedArray());
+  } finally {
+    // EVERY tensor the run handed back is ours to free, not only the one we
+    // read: a graph with a second output (pooled and per-token, say) would
+    // otherwise leak it on every call. Then the CPU copy, then the input.
+    for (const tensor of Array.isArray(outputTensors) ? outputTensors : []) {
+      freeTensor(tensor);
     }
+    freeTensor(cpuTensor);
+    freeTensor(inputTensor);
+  }
+}
 
-    const embeddingsTypedArray = cpuTensor.toTypedArray();
-    const embeddingArray = Array.from(embeddingsTypedArray);
-
-    if (embeddingArray.length !== EXPECTED_EMBEDDING_DIM) {
-      console.warn(`Unexpected embedding dimension: ${embeddingArray.length}, expected ${EXPECTED_EMBEDDING_DIM}`);
-    }
-
-    if (gpuTensor !== inputTensor && !gpuTensor.deleted) gpuTensor.delete();
-    if (!inputTensor.deleted) inputTensor.delete();
-    if (cpuTensor !== outputTensor && !cpuTensor.deleted) cpuTensor.delete();
-    if (!outputTensor.deleted) outputTensor.delete();
-
-    return embeddingArray;
+/**
+ * Deletes [tensor] unless it is null or already deleted. A failing delete is
+ * logged, not thrown: it must not stop the other tensors from being freed, nor
+ * replace the error that brought us here.
+ */
+function freeTensor(tensor) {
+  if (!tensor || tensor.deleted) return;
+  try {
+    tensor.delete();
   } catch (error) {
-    try {
-      if (gpuTensor !== inputTensor && !gpuTensor.deleted) gpuTensor.delete();
-      if (!inputTensor.deleted) inputTensor.delete();
-    } catch (cleanupErr) {
-      console.warn('[LiteRT] Tensor cleanup failed:', cleanupErr);
-    }
-    throw error;
+    console.warn('[LiteRT] Could not free a tensor:', error);
   }
 }
 
@@ -431,10 +409,21 @@ function reportAccelerator(accelerator) {
 }
 
 /**
- * Initialize LiteRT embeddings
- * @param {string} modelPath - Path to .tflite model file
- * @param {string} tokenizerPath - Path to sentencepiece.model file
- * @param {string|null|undefined} wasmPath - Optional path to WASM files
+ * The window API version, which the Dart side checks before it loads
+ * anything. API v1 set none.
+ */
+window.liteRtEmbeddingsApiVersion = API_VERSION;
+
+/**
+ * Loads the tokenizer, then compiles the model. Replaces whatever was loaded.
+ * @param {string} modelPath - URL of the .tflite model
+ * @param {string} tokenizerPath - URL of the sentencepiece.model file
+ * @param {string|null|undefined} wasmPath - Optional prefix of the WASM files
+ * @returns {Promise<{dimension: number, maxInputTokens: number}>} read from
+ *     the model: its output's last dimension and its input's sequence length,
+ *     which the task prefix, BOS and EOS count towards
+ * @throws when the graph does not take exactly one input (the token ids) or
+ *     its input length or output dimension cannot be read
  */
 window.loadLiteRtEmbeddings = async function(modelPath, tokenizerPath, wasmPath) {
   try {
@@ -453,6 +442,8 @@ window.loadLiteRtEmbeddings = async function(modelPath, tokenizerPath, wasmPath)
         tokenizer = null;
         liteRtWasmLoaded = false;
         isInitialized = false;
+        maxSequenceLength = null;
+        embeddingDimension = null;
       }
     }
 
@@ -465,10 +456,11 @@ window.loadLiteRtEmbeddings = async function(modelPath, tokenizerPath, wasmPath)
     // Load tokenizer
     await loadSentencePieceTokenizer(tokenizerPath);
 
-    // Load model (auto-detects sequence length from model)
+    // Load model (reads its input length and dimension)
     await loadLiteRTModel(modelPath, effectiveWasmPath);
 
     isInitialized = true;
+    return { dimension: embeddingDimension, maxInputTokens: maxSequenceLength };
   } catch (error) {
     isInitialized = false;
     throw new Error('Failed to initialize LiteRT embeddings: ' + error.message);
@@ -476,64 +468,35 @@ window.loadLiteRtEmbeddings = async function(modelPath, tokenizerPath, wasmPath)
 };
 
 /**
- * Generate embedding for a single text
- * @param {string} text - Text to embed
- * @returns {Promise<Float32Array>} Embedding vector
+ * Embeds one string exactly as given — Dart has prepended the task prefix.
+ * @param {string} prefixedText - may be empty: like native, that embeds the
+ *     BOS and EOS ids alone
+ * @returns {Promise<{status: 'ok', values: Float32Array}
+ *     | {status: 'too_long', actualTokens: number, maxInputTokens: number}>}
+ *     `too_long` when the ids, BOS and EOS included, are longer than the
+ *     model's input; nothing runs then, and nothing is ever truncated
  */
-window.generateEmbedding = async function(text) {
-  if (!isInitialized) {
-    throw new Error('LiteRT embeddings not initialized. Call loadLiteRtEmbeddings first.');
+window.embedLiteRtText = async function(prefixedText) {
+  const ids = idsFor(prefixedText);
+  if (ids.length > maxSequenceLength) {
+    return {
+      status: 'too_long',
+      actualTokens: ids.length,
+      maxInputTokens: maxSequenceLength,
+    };
   }
-
-  if (typeof text !== 'string' || text.trim().length === 0) {
-    throw new Error('Text must be a non-empty string');
-  }
-
-  const embedding = await generateEmbeddingInternal(text);
-  return new Float32Array(embedding);
+  return { status: 'ok', values: await runIds(ids) };
 };
 
 /**
- * Generate document embedding for a single text (uses document prefix)
- * @param {string} text - Text to embed
- * @returns {Promise<Float32Array>} Embedding vector
+ * The ids embedLiteRtText would run for [prefixedText], unpadded and uncut.
+ * For the W1 parity check against the native Dart tokenizer; embedding never
+ * calls it.
+ * @param {string} prefixedText
+ * @returns {Int32Array}
  */
-window.generateDocumentEmbedding = async function(text) {
-  if (!isInitialized) {
-    throw new Error('LiteRT embeddings not initialized. Call loadLiteRtEmbeddings first.');
-  }
-  if (typeof text !== 'string' || text.trim().length === 0) {
-    throw new Error('Text must be a non-empty string');
-  }
-  const embedding = await generateDocumentEmbeddingInternal(text);
-  return new Float32Array(embedding);
-};
-
-/**
- * Generate embeddings for multiple texts (batch)
- * @param {string[]} texts - Array of texts to embed
- * @returns {Promise<Float32Array[]>} Array of embedding vectors
- */
-window.generateEmbeddings = async function(texts) {
-  if (!isInitialized) {
-    throw new Error('LiteRT embeddings not initialized. Call loadLiteRtEmbeddings first.');
-  }
-
-  if (!Array.isArray(texts)) {
-    throw new Error('texts must be an array');
-  }
-
-  const embeddings = [];
-  for (const text of texts) {
-    if (typeof text !== 'string' || text.trim().length === 0) {
-      throw new Error('All texts must be non-empty strings');
-    }
-
-    const embedding = await generateEmbeddingInternal(text);
-    embeddings.push(new Float32Array(embedding));
-  }
-
-  return embeddings;
+window.tokenizeLiteRtText = function(prefixedText) {
+  return Int32Array.from(idsFor(prefixedText));
 };
 
 /**
@@ -558,11 +521,12 @@ window.getLiteRtEmbeddingFullyAccelerated = function() {
 };
 
 /**
- * Get the dimension of embeddings
- * @returns {number} Embedding dimension (768)
+ * The loaded model's embedding dimension, read from its output shape; null
+ * while nothing is loaded. (API v1 returned a constant 768.)
+ * @returns {number|null}
  */
 window.getLiteRtEmbeddingDimension = function() {
-  return EXPECTED_EMBEDDING_DIM;
+  return embeddingDimension;
 };
 
 /**
@@ -633,10 +597,9 @@ window.cleanupLiteRtEmbeddings = async function() {
   // Only model instances need cleanup, not the runtime itself
   console.log('[LiteRT] ✅ Keeping WASM runtime (reusable across models)');
 
-  // 6. Reset sequence length to default
-  // Next model will auto-detect its own sequence length
-  MAX_SEQUENCE_LENGTH = 256;
-  console.log('[LiteRT] ✅ Reset MAX_SEQUENCE_LENGTH to default');
+  // 6. Forget the model's shapes; the next load reads its own.
+  maxSequenceLength = null;
+  embeddingDimension = null;
 
   // 7. Mark as uninitialized
   isInitialized = false;

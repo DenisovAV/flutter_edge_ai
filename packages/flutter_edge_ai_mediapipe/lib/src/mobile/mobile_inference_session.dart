@@ -1,15 +1,9 @@
 import 'dart:async';
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mutex/mutex.dart';
-
-import 'package:flutter_edge_ai/core/extensions.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show InferenceModelSession, SessionMetrics;
 
 import 'package:flutter_edge_ai_mediapipe/pigeon.g.dart';
 

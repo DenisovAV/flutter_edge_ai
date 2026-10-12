@@ -1,3 +1,6 @@
+## 0.5.8
+- **Breaking:** require `flutter_edge_ai` ^2.3.0; `OnnxEmbeddingForwardPass` is now `OnnxEmbeddingPass`.
+
 ## 0.5.7
 - `close()` sets `isClosed` at once; a second call waits for the teardown.
 - Require `flutter_edge_ai` ^2.2.1.

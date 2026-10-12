@@ -3,26 +3,14 @@
 // the shared web infra (web_model_source) and core parsing
 // directly so it no longer needs to be a `part of flutter_edge_ai_web.dart`.
 import 'dart:async';
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/engine_web.dart';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:flutter/foundation.dart';
 import 'package:mutex/mutex.dart';
-
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart';
-import 'package:flutter_edge_ai/core/message.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/sampling.dart';
-import 'package:flutter_edge_ai/core/tool.dart';
-import 'package:flutter_edge_ai/core/extensions.dart';
-import 'package:flutter_edge_ai/core/function_call_parser.dart';
-import 'package:flutter_edge_ai/core/parsing/sdk_response_parser.dart';
-import 'package:flutter_edge_ai/core/parsing/sdk_text_extractor.dart';
-import 'package:flutter_edge_ai/web/web_model_source.dart';
 
 import 'litert_lm_web.dart';
 import '../ffi/engine_sampler_latch.dart';
@@ -526,7 +514,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
 /// Session-side accumulator + async iterator pump for `@litert-lm/core`.
 ///
-/// Mirrors [FfiInferenceModelSession] (lib/core/ffi/ffi_inference_model.dart)
+/// Mirrors [FfiInferenceModelSession] (lib/src/ffi/ffi_inference_model.dart)
 /// 1:1 — same buffering of query chunks, same Gemma 4 raw-JSON-accumulating
 /// branch, same `with RawSdkResponseSession` mixin so [InferenceChat] reads
 /// `lastRawResponse` and extracts `tool_calls` via the shared

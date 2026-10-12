@@ -98,6 +98,28 @@ enum EmbeddingModel implements EmbeddingModelInterface {
         'embeddinggemma-300m-seq512-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1',
   ),
 
+  // EmbeddingGemma 2 text (270M): ONE self-contained `.litertlm` bundle that
+  // carries its own tokenizer, so there is no tokenizer file. Ungated. Native
+  // only (Android, iOS, macOS, Linux, Windows) until the web EG2 engine lands;
+  // the list screen hides it on web. Input cap 1024 tokens (prefix, BOS and
+  // EOS included) — keep RAG chunks at 512 or below.
+  embeddingGemma2Text270m(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm',
+    filename: 'embeddinggemma-2-text-270m__rev-9be6e8b90982.litertlm',
+    displayName: 'EmbeddingGemma 2 Text (270M)',
+    size: '165MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '2d079ee2f6f066b1f368e8d7c819f55214eaef1d0513b312321901f30ab286fb',
+    // Keyed by the text-encoder weights section (sha256 prefix 4410a540ce75):
+    // byte-identical in the 270m, 440m and 740m generic bundles, which give
+    // identical text vectors, so one id serves all three. Never shared with
+    // EmbeddingGemma 1 or an ONNX export of EG2.
+    ragProfileId: 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1',
+  ),
+
   // Gecko-110m models (generate 768D embeddings)
   // Gecko 64 is the smallest and fastest model - ideal for short queries
   gecko64(
@@ -155,11 +177,11 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   @override
   final String url;
   @override
-  final String tokenizerUrl;
+  final String? tokenizerUrl;
   @override
   final String filename;
   @override
-  final String tokenizerFilename;
+  final String? tokenizerFilename;
   @override
   final String displayName;
   @override
@@ -180,21 +202,34 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   /// path, or vector dimension.
   final String ragProfileId;
 
+  /// SHA-256 of the pinned model file, where the catalog records one. The
+  /// EmbeddingGemma 2 integration suite checks the installed bundle against
+  /// it.
+  final String? sha256;
+
   /// Constructor
   const EmbeddingModel({
     required this.url,
-    required this.tokenizerUrl,
+    this.tokenizerUrl,
     required this.filename,
-    required this.tokenizerFilename,
+    this.tokenizerFilename,
     required this.displayName,
     required this.size,
     required this.dimension,
     required this.maxSeqLen,
     required this.needsAuth,
     required this.ragProfileId,
+    this.sha256,
     this.sourceType = ModelSourceType
         .network, // Default to network for backward compatibility
-  });
+  }) : assert(
+         (tokenizerUrl == null) == (tokenizerFilename == null),
+         'a tokenizer has both a URL and a file name, or neither',
+       );
+
+  /// A self-contained `.litertlm` bundle: no tokenizer file, and no web
+  /// engine yet.
+  bool get isLiteRtLmBundle => tokenizerUrl == null;
 
   // BaseModel interface implementation
   @override

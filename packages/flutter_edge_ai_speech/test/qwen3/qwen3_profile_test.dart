@@ -6,8 +6,7 @@
 // the frontend seam (`tts_text_frontend.dart`) and worker (Task 5.3) branch
 // on.
 
-import 'package:flutter_edge_ai/core/model_management/model_specs.dart'
-    show TtsModelType;
+import 'package:flutter_edge_ai/engine.dart' show TtsModelType;
 import 'package:flutter_edge_ai_speech/src/model/tts_model_profile.dart';
 import 'package:flutter_test/flutter_test.dart';
 

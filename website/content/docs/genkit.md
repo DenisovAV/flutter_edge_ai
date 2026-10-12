@@ -23,13 +23,14 @@ with the on-device model exactly as it would with any cloud provider.
 ```
 dependencies:
   genkit: ^1.0.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.9.0
-  flutter_edge_ai: ^2.2.1
+  genkit_flutter_edge_ai: ^0.9.1
+  flutter_edge_ai: ^2.3.0
   # Add the inference engine(s) you need:
-  flutter_edge_ai_litertlm: ^1.12.1   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.2.1  # .task / .bin models (mobile + web)
-  # Optional — for embeddings (needs a backend, e.g. flutter_edge_ai_litertlm above):
-  flutter_edge_ai_embeddings: ^2.2.3
+  flutter_edge_ai_litertlm: ^1.13.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.2.2  # .task / .bin models (mobile + web)
+  # Optional — tokenizers for .tflite / .onnx embedding models (an EmbeddingGemma 2
+  # .litertlm needs none; the backend is flutter_edge_ai_litertlm above):
+  flutter_edge_ai_embeddings: ^2.3.0
 ```
 
 ### Setup
@@ -145,7 +146,8 @@ final documentVectors = await ai.embed(
 Index with `retrievalDocument` and search with the default
 `retrievalQuery`; see [Embeddings & RAG](/docs/embeddings-and-rag). The
 embedder takes text only: a document with no text part is an
-`INVALID_ARGUMENT`.
+`INVALID_ARGUMENT`. Since 0.9.1 it resolves the active embedder again for
+every request, so it follows a model core replaced or closed in between.
 
 ### Configuration options
 

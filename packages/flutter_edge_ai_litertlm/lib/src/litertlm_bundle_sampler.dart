@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/core/sampling.dart';
+import 'package:flutter_edge_ai/engine.dart';
 
 /// The sampler a `.litertlm` bundle ships, read from the file itself: the
 /// container header and its `LlmMetadata` section, a few kilobytes.

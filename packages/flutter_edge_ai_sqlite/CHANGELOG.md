@@ -1,3 +1,6 @@
+## 2.1.0
+- **Breaking:** the store persists the document modality (`VectorStoreBinding`); require `flutter_edge_ai_rag` ^1.1.0.
+
 ## 2.0.1
 - Allow `code_assets` 2.x, which other native plugins now require (#603).
 

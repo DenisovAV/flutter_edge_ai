@@ -34,7 +34,7 @@ Native capabilities have independent opt-in defines for audio model/projector/
 WAV, vision model/projector/PNG, LoRA base/adapter and GPU model. See
 `test/native_capabilities_test.dart`. Unconfigured model tests skip. To test
 imported-file restart with the facade smoke, supply `GGUF_MODEL_PATH`;
-core 2.2.1 restores it without a connector helper.
+core 2.3.0 restores it without a connector helper.
 
 The real Web smoke runner requires a POSIX host (Linux or macOS) and uses Chrome and Flutter's Wasm test mode. Flutter
 3.47.1 omits COEP on test worker scripts even with `--cross-origin-isolation`;

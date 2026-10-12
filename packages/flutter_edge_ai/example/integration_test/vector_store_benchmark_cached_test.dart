@@ -23,8 +23,11 @@ import 'dart:math' as math;
 
 // ignore_for_file: deprecated_member_use
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
+// ignore: implementation_imports — benchmarks qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/filter_codec.dart';
+// ignore: implementation_imports — benchmarks qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/point_id_hasher.dart';
+// ignore: implementation_imports — benchmarks qdrant's client, filter codec and id hasher directly
 import 'package:flutter_edge_ai_qdrant/src/qdrant_edge_client.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart' as rag;
 import 'package:flutter_test/flutter_test.dart';
@@ -187,10 +190,12 @@ void main() {
             '${base.path}/dart_bench_cached_${size}_${DateTime.now().microsecondsSinceEpoch}.db';
         final dartRepo = SqliteVectorStore();
         await dartRepo.initialize(dartDbPath);
-        await dartRepo.bindEmbeddingProfile(
-          rag.EmbeddingProfile(
-            id: 'cached-benchmark-embedding-768d-v1',
-            dimension: _expectedDim,
+        await dartRepo.bind(
+          rag.VectorStoreBinding(
+            profile: rag.EmbeddingProfile(
+              id: 'cached-benchmark-embedding-768d-v1',
+              dimension: _expectedDim,
+            ),
           ),
         );
 

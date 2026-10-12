@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart'
+import 'package:flutter_edge_ai/engine.dart'
     show
+        EdgeAiLogLevel,
         FunctionCallResponse,
         InferenceChat,
         Message,
@@ -10,8 +11,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
         SpeechRecognizer,
         SpeechSynthesizer,
         TextResponse,
-        EdgeAiLogLevel;
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart' show edgeAiLog;
+        edgeAiLog;
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'clause_splitter.dart';

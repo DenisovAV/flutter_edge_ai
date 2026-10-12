@@ -2,8 +2,8 @@
 // isolate — the productionized form of the throughput spike at
 // `scratchpad/ort_genai_spike/bin/main.dart` (hardened plan Phase 3, Task 1).
 //
-// Why a long-lived worker and not `Isolate.run` per call (mirrors
-// `EmbeddingWorker`'s doc, `flutter_edge_ai/lib/core/embedding/embedding_worker.dart`):
+// Why a long-lived worker and not `Isolate.run` per call (mirrors core's
+// embedding worker host, `flutter_edge_ai/lib/src/embedding/embedding_host_io.dart`):
 //   - Model + tokenizer load costs hundreds of ms and must happen once.
 //   - FFI `Pointer`/`DynamicLibrary` cannot cross isolate boundaries — every
 //     native handle (model, tokenizer, generator) is created and used
@@ -39,7 +39,7 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart' as pkg_ffi;
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:mutex/mutex.dart';
 
 import '../onnx_sampling.dart';

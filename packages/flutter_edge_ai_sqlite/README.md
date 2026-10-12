@@ -10,6 +10,11 @@
 
 First-class SQLite vector-store provider for
 [flutter_edge_ai_rag](https://pub.dev/packages/flutter_edge_ai_rag).
+
+> **2.1.0 needs `flutter_edge_ai_rag` 1.1.0**, which needs `flutter_edge_ai`
+> 2.3.0: upgrade every flutter_edge_ai package together. A location now binds
+> an embedding profile **and** a document modality (text, image or audio);
+> stores written by 2.0.x open unchanged as text locations.
 KNN runs **inside SQLite** via [`sqlite-vec`](https://github.com/asg017/sqlite-vec)
 (`vec0` virtual table) — no Dart brute-force, no in-memory index.
 
@@ -50,9 +55,9 @@ final rag = FlutterEdgeAiRag(
 final databasePath = kIsWeb
     ? 'knowledge.db'
     : p.join((await getApplicationDocumentsDirectory()).path, 'knowledge.db');
-final index = await rag.open(
+final index = await rag.openVectors(
   spec: VectorStoreSpec(providerId: 'sqlite', location: databasePath),
-  embeddingProfile: EmbeddingProfile(
+  profile: EmbeddingProfile(
     id: 'my-embedder-v1',
     dimension: 768,
   ),
@@ -67,24 +72,32 @@ final hits = await index.searchVector(embedding: queryVector);
 await index.dispose();
 ```
 
-For text RAG with the active core embedder, replace `embeddingProfile` with a
-stable `activeEmbedderProfileId` and use `addText` / `searchText`. For a custom
-embedder, pass `embedder:` to `open()`; neither path makes the RAG registry a
-singleton. Dispose the index before `FlutterEdgeAi.dispose()` or before
-disposing the borrowed custom embedder.
+For text RAG with the active core embedder, open with
+`rag.open(spec:, embedder: FlutterEdgeAiActiveEmbedder(profileId: …))` (or
+`.forActiveModel(namespace:)`) and use `add` / `search` over
+`EmbeddingInput.text`. A custom `RagEmbedder` goes in the same `embedder:`
+slot; neither path makes the RAG registry a singleton. Dispose the index
+before `FlutterEdgeAi.dispose()` or before disposing the borrowed custom
+embedder.
 
 The provider removes the application-level `kIsWeb` branch between the native
 and web stores; only the `location` differs. Use a stable
 profile ID that versions the weights, tokenizer, pooling, normalization, and
-document/query prefix contract. The profile is stored beside the vectors and
-prevents a location from being reopened with an incompatible embedder.
+document/query prefix contract. The profile and the document modality
+(`VectorStoreSpec.documents`) are stored beside the vectors and prevent a
+location from being reopened with an incompatible embedder. The store keeps
+the version-1 profile table older releases read, and an image or audio
+binding adds a `flutter_edge_ai_rag_binding_v2` table written in the same
+transaction — the encoding is described in the
+[flutter_edge_ai_rag README](https://pub.dev/packages/flutter_edge_ai_rag#implementing-a-vector-store).
+sqlite 2.0.x refuses a location bound to images or audio.
 
 Databases created before 2.0.0 contain vectors but no stored profile. Open a known
 legacy database with `allowLegacyProfileAdoption: true` only after verifying
 the exact embedder that created it; the RAG layer checks its dimension before
 persisting the first profile. Leave the flag false for unverified data.
 
-`RagIndex.searchText` / `searchVector` return **cosine similarity** in
+`RagIndex.search` / `searchVector` return **cosine similarity** in
 `RetrievalResult.similarity` (1 = identical, higher = better), sorted
 descending, filtered by `threshold` — the same contract as the qdrant store
 (vec0 returns distance; the store converts `1 - distance` at the boundary).
@@ -119,7 +132,7 @@ promotes those fields out of each document's metadata JSON into real columns and
 translates `Filter` (`must`/`should`/`mustNot`) into a vec0 `WHERE`:
 
 ```dart
-final index = await rag.open(
+final index = await rag.openVectors(
   spec: VectorStoreSpec(
     providerId: 'sqlite',
     location: databasePath,
@@ -129,7 +142,7 @@ final index = await rag.open(
       FilterField(name: 'archived', type: FilterFieldType.bool),
     ]),
   ),
-  embeddingProfile: EmbeddingProfile(id: 'my-embedder-v1', dimension: 768),
+  profile: EmbeddingProfile(id: 'my-embedder-v1', dimension: 768),
 );
 
 // later, at query time:
@@ -145,7 +158,7 @@ final hits = await index.searchVector(
 
 `FilterField.name` must match `^[A-Za-z][A-Za-z0-9_]*$`, and must not be a name
 vec0 already declares: `id`, `embedding`, `content`, `metadata`, and the hidden
-`distance` and `k`. Otherwise `rag.open()` throws an `ArgumentError` (from the
+`distance` and `k`. Otherwise `rag.open()` / `openVectors()` throws an `ArgumentError` (from the
 store's `configure()`) — at open, not at the first write, which is when the
 table is really built.
 
@@ -155,8 +168,9 @@ fail), so a name outside that set is unrepresentable rather than merely
 unescaped. qdrant accepts most of these names, so a schema written for it may be
 refused here — this set is the portable one.
 
-Filtering on an **undeclared** key is a safe no-op (never throws). With no
-`filterSchema`, the store ignores filters entirely — identical to `filter: null`.
+Through `RagIndex` (flutter_edge_ai_rag 1.1), a filter on an **undeclared** key
+throws `ArgumentError`. The store itself, called directly, still treats one as
+a no-op, and with no `filterSchema` it ignores filters entirely.
 Supported operators: `=`, `!=`, `>`, `>=`, `<`, `<=`, `BETWEEN`, `IN`
 (`FieldEquals`, `FieldRange`, `FieldMatchAny`); max 16 declared columns.
 

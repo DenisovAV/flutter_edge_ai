@@ -58,6 +58,10 @@ own gate:
 tool/check_codelabs.sh     # pub get + analyze + format + test, every step
 ```
 
+`tool/check_core_surface.sh` (part of `tool/test_all.sh`) reads them too, and
+the ```` ```dart ```` fences of the codelab texts under `website/codelabs/`:
+codelab code imports only the packages' public libraries, never a `src/` path.
+
 The same script also enforces the cross-codelab invariants declared in its
 `MIRRORS` table: a later codelab's starter is an earlier codelab's finished app,
 `lib/` and `test/` byte for byte, because both texts tell the learner so. Add a

@@ -20,11 +20,8 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/model.dart' show ModelType;
-import 'package:flutter_edge_ai/core/registry/hugging_face_resolver.dart'
-    show ResolvedHfModel;
+import 'package:flutter_edge_ai/engine.dart'
+    show ModelType, PreferredBackend, ResolvedHfModel;
 import 'package:flutter_edge_ai_litertlm/src/manifest/litertlm_manifest_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -286,7 +283,11 @@ void main() {
     };
     for (final repo in byRepo.keys) {
       final r = await resolve(repo);
-      expect(r.runtime.thinkingDeclared, thinkingRepos.contains(repo), reason: repo);
+      expect(
+        r.runtime.thinkingDeclared,
+        thinkingRepos.contains(repo),
+        reason: repo,
+      );
     }
     // The channel markers stay exact in the data (whitespace included) even
     // though v1 consumes only the declared bool — worth pinning so a future

@@ -2,7 +2,9 @@
 // through the real `dart:ffi` `OrtFfiClient` + the production tokenizer
 // router `resolveEmbeddingTokenizer` (Phase 2 exit-gate evidence, Task 5).
 // Not fakes: this is the one file in this package that actually dlopens
-// `libonnxruntime` and runs real forward passes end-to-end.
+// `libonnxruntime` and runs real forward passes end-to-end, through
+// `OnnxEmbeddingPass` exactly as core's worker drives it (load → embed →
+// close).
 //
 // Two independently-skippable models exercise the two output layouts:
 //   - Model A: all-MiniLM-L6-v2 (WordPiece, `last_hidden_state` -> tokenLevel
@@ -25,9 +27,10 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
-import 'package:flutter_edge_ai_onnx/src/embedding/onnx_embedding_forward_pass.dart';
+import 'package:flutter_edge_ai/engine.dart';
+// ignore: implementation_imports — the embeddings tokenizer router is not exported; the smoke test builds tokenizers through it
 import 'package:flutter_edge_ai_embeddings/src/tokenizer_router.dart';
+import 'package:flutter_edge_ai_onnx/src/embedding/onnx_embedding_pass.dart';
 import 'package:flutter_edge_ai_onnx/src/embedding/ort_ffi_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -41,39 +44,19 @@ double _cosine(List<double> a, List<double> b) {
   return dot / (math.sqrt(na) * math.sqrt(nb));
 }
 
-/// Turns a [ForwardResult] into the final embedding EXACTLY like
-/// `embedding_worker.dart`'s `_finalize` does — the real production
-/// dispatch, not a reimplementation — proving the end-to-end pipeline
-/// (tokenizer router -> pass -> contract dispatch -> pooling) on a real
-/// model.
-List<double> _finalizeLikeWorker(
-  EmbeddingOutputContract contract,
-  ForwardResult result,
-  List<int>? attentionMask,
-) {
-  switch (contract) {
-    case EmbeddingOutputContract.pooledFinal:
-      return List<double>.of(result.values);
-    case EmbeddingOutputContract.tokenLevel:
-      return meanPoolAndNormalize(result, attentionMask: attentionMask);
-  }
-}
+OnnxEmbeddingPass _pass(String modelPath, String tokenizerPath) =>
+    OnnxEmbeddingPass(
+      OnnxEmbeddingConfig(
+        modelPath: modelPath,
+        tokenizerPath: tokenizerPath,
+        tokenizerFactory: resolveEmbeddingTokenizer,
+      ),
+      clientFactory: OrtFfiClient.new,
+    );
 
-Future<List<double>> _embed(
-  OnnxEmbeddingForwardPass pass,
-  EmbeddingTokenizer tokenizer,
-  String text,
-) async {
-  final tokenized = tokenizer.encode('', text);
-  final result = await pass.run(
-    tokenIds: tokenized.ids,
-    attentionMask: tokenized.attentionMask,
-    tokenTypeIds: tokenized.tokenTypeIds,
-  );
-  final contract = pass.outputContract!;
-  final effectiveMask = result.attentionMask ?? tokenized.attentionMask;
-  return _finalizeLikeWorker(contract, result, effectiveMask);
-}
+/// No task prefix: these models were scored raw.
+Future<List<double>> _embed(OnnxEmbeddingPass pass, String text) =>
+    pass.embed(EmbeddingInput.text(text), TaskType.none);
 
 void main() {
   final libraryPath = Platform.environment['FLUTTER_GEMMA_ORT_LIBRARY'];
@@ -95,32 +78,22 @@ void main() {
       return;
     }
 
-    final tokenizer = await resolveEmbeddingTokenizer(
-      '$modelDir/tokenizer.json',
-    );
-    final pass = OnnxEmbeddingForwardPass(
-      '$modelDir/model.onnx',
-      clientFactory: OrtFfiClient.new,
-    );
-    await pass.load();
+    final pass = _pass('$modelDir/model.onnx', '$modelDir/tokenizer.json');
     try {
-      expect(pass.outputDimension, 384);
-      expect(pass.outputContract, EmbeddingOutputContract.tokenLevel);
+      final info = await pass.load();
+      expect(info.dimension, 384);
 
-      final a = await _embed(pass, tokenizer, 'The cat sat on the mat.');
-      final b = await _embed(pass, tokenizer, 'A feline rested on the rug.');
-      final c = await _embed(
-        pass,
-        tokenizer,
-        'Quantum entanglement baffles physicists.',
-      );
+      final a = await _embed(pass, 'The cat sat on the mat.');
+      final b = await _embed(pass, 'A feline rested on the rug.');
+      final c = await _embed(pass, 'Quantum entanglement baffles physicists.');
 
       final simSimilar = _cosine(a, b);
       final simDifferent = _cosine(a, c);
       // ignore: avoid_print
       print(
         'ONNX MiniLM smoke: cosine(similar)=$simSimilar '
-        'cosine(different)=$simDifferent dim=${pass.outputDimension}',
+        'cosine(different)=$simDifferent dim=${info.dimension} '
+        'maxInputTokens=${info.maxInputTokens}',
       );
       expect(
         simSimilar,
@@ -153,23 +126,15 @@ void main() {
         return;
       }
 
-      final tokenizer = await resolveEmbeddingTokenizer(
-        '$modelDir/tokenizer.model',
-      );
-      final pass = OnnxEmbeddingForwardPass(
-        '$modelDir/model.onnx',
-        clientFactory: OrtFfiClient.new,
-      );
-      await pass.load();
+      final pass = _pass('$modelDir/model.onnx', '$modelDir/tokenizer.model');
       try {
-        expect(pass.outputDimension, 768);
-        expect(pass.outputContract, EmbeddingOutputContract.pooledFinal);
+        final info = await pass.load();
+        expect(info.dimension, 768);
 
-        final a = await _embed(pass, tokenizer, 'The cat sat on the mat.');
-        final b = await _embed(pass, tokenizer, 'A feline rested on the rug.');
+        final a = await _embed(pass, 'The cat sat on the mat.');
+        final b = await _embed(pass, 'A feline rested on the rug.');
         final c = await _embed(
           pass,
-          tokenizer,
           'Quantum entanglement baffles physicists.',
         );
 
@@ -178,7 +143,8 @@ void main() {
         // ignore: avoid_print
         print(
           'ONNX EmbeddingGemma smoke: cosine(similar)=$simSimilar '
-          'cosine(different)=$simDifferent dim=${pass.outputDimension}',
+          'cosine(different)=$simDifferent dim=${info.dimension} '
+          'maxInputTokens=${info.maxInputTokens}',
         );
         expect(
           simSimilar,

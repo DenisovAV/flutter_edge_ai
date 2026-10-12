@@ -23,8 +23,7 @@ import 'dart:ffi';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
+import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 // Public, native-only bindings library (not the package barrel) — see the
 // equivalent comment in `tts_core.dart`/`stt_core.dart` for why this import
 // (not the `if (dart.library.ffi)` barrel) is correct in a native-only file.

@@ -69,18 +69,19 @@ Replace the file path with your downloaded instruction-tuned GGUF.
 response. Stop a stream with `await chat.session.stopGeneration()` and start
 a new chat when the context fills. Interrupted turns are discarded.
 
-Core 2.2.1 restores installed models during initialization; conversation history
+Core 2.3.0 restores installed models during initialization; conversation history
 starts fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers
 described in the package guide.
 
-This draft uses core 2.2.x and `ModelFileType.binary` for GGUF. Register the llama
-provider alone for GGUF until core adds its dedicated file type. Migration to
-core's 2.3.0 public engine libraries remains pending.
+This draft uses core 2.3.0 and `ModelFileType.binary` for GGUF. Register the llama
+provider alone for GGUF until core adds its dedicated file type. Engine imports
+and Web URL resolution use core's public engine libraries.
+Dedicated GGUF identity and LoRA restart restoration await upstream #649.
 
 ## Add the development package
 
 The package is not on pub.dev yet. Use the example or a path dependency on
-`packages/flutter_edge_ai_llama` in your clone. Core 2.2.1 is published and
+`packages/flutter_edge_ai_llama` in your clone. Core 2.3.0 is published and
 requires no local-core override.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct

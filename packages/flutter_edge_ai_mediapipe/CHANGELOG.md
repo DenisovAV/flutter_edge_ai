@@ -1,3 +1,6 @@
+## 1.2.2
+- Require `flutter_edge_ai` ^2.3.0 (imports its engine library).
+
 ## 1.2.1
 - `close()` sets `isClosed` at once and releases the native model before its listeners fire.
 - Require `flutter_edge_ai` ^2.2.1.

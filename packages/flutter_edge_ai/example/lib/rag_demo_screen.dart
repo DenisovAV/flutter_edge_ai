@@ -185,9 +185,10 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
         );
       }
 
+      // Loads the embedder now: open() resolves the profile it binds.
       final index = await exampleRag.open(
         spec: spec,
-        activeEmbedderProfileId: profileId,
+        embedder: FlutterEdgeAiActiveEmbedder(profileId: profileId),
       );
       try {
         final stats = await index.stats();
@@ -239,9 +240,9 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
       // prefix. `category` is promoted through the declared FilterSchema.
       for (int i = 0; i < sampleDocuments.length; i++) {
         final category = sampleDocuments[i]['category'] ?? 'general';
-        await index.addText(
+        await index.add(
           id: sampleDocuments[i]['id']!,
-          content: sampleDocuments[i]['content']!,
+          document: EmbeddingInput.text(sampleDocuments[i]['content']!),
           metadata: jsonEncode({'category': category}),
         );
       }
@@ -336,8 +337,8 @@ class _RagDemoScreenState extends State<RagDemoScreen> {
               must: [FieldEquals(key: 'category', value: category)],
             );
 
-      final results = await index.searchText(
-        query: query,
+      final results = await index.search(
+        query: EmbeddingInput.text(query),
         topK: _topK,
         threshold: _threshold,
         filter: filter,

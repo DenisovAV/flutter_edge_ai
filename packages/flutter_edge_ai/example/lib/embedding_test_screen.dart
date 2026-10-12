@@ -2,10 +2,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai_example/models/base_model.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
+import 'package:flutter_edge_ai_example/services/embedding_catalog_install.dart';
 import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
 import 'package:flutter_edge_ai_example/cosine_similarity_screen.dart';
 import 'package:flutter_edge_ai_example/rag_demo_screen.dart';
@@ -67,47 +67,11 @@ class _EmbeddingTestScreenState extends State<EmbeddingTestScreen> {
       }
 
       // Build installer based on sourceType
-      var builder = FlutterEdgeAi.installEmbedder();
-
-      // Add model source
-      switch (widget.model.sourceType) {
-        case ModelSourceType.network:
-          builder = builder.modelFromNetwork(
-            widget.model.url,
-            token: token,
-            filename: widget.model.filename,
-          );
-        case ModelSourceType.asset:
-          builder = builder.modelFromAsset(
-            widget.model.url,
-            filename: widget.model.filename,
-          );
-        case ModelSourceType.bundled:
-          builder = builder.modelFromBundled(
-            widget.model.url,
-            filename: widget.model.filename,
-          );
-      }
-
-      // Add tokenizer source
-      switch (widget.model.sourceType) {
-        case ModelSourceType.network:
-          builder = builder.tokenizerFromNetwork(
-            widget.model.tokenizerUrl,
-            token: token,
-            filename: widget.model.tokenizerFilename,
-          );
-        case ModelSourceType.asset:
-          builder = builder.tokenizerFromAsset(
-            widget.model.tokenizerUrl,
-            filename: widget.model.tokenizerFilename,
-          );
-        case ModelSourceType.bundled:
-          builder = builder.tokenizerFromBundled(
-            widget.model.tokenizerUrl,
-            filename: widget.model.tokenizerFilename,
-          );
-      }
+      var builder = withCatalogEmbedderSources(
+        FlutterEdgeAi.installEmbedder(),
+        widget.model,
+        token: token,
+      );
 
       builder = builder
           .withModelProgress((percent) {
@@ -438,7 +402,10 @@ class _EmbeddingTestScreenState extends State<EmbeddingTestScreen> {
       if (_embeddingModel == null) {
         throw Exception('Embedding model not initialized');
       }
-      final embedding = await _embeddingModel!.generateEmbedding(text);
+      final embedding = await _embeddingModel!.embed(
+        EmbeddingInput.text(text),
+        taskType: TaskType.retrievalQuery,
+      );
 
       setState(() {
         _embeddingResult = embedding;

@@ -14,14 +14,14 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:flutter_edge_ai/core/di/service_registry.dart';
-import 'package:flutter_edge_ai/core/infrastructure/platform_file_system_service.dart';
-import 'package:flutter_edge_ai/core/model_management/constants/preferences_keys.dart';
-import 'package:flutter_edge_ai/core/model_management/install_rule.dart';
-import 'package:flutter_edge_ai/core/services/download_service.dart';
-import 'package:flutter_edge_ai/core/services/model_repository.dart' as repo;
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/infrastructure/platform_file_system_service.dart';
+import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/src/model_management/install_rule.dart';
+import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/mobile/flutter_edge_ai_mobile.dart'
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
 
 /// Over the 1 MB floor install validation applies to model files; the first
@@ -530,16 +530,6 @@ void main() {
 
       expect(copy.existsSync(), isFalse);
       expect(await sourceOf('model.task'), FileSource(picked.path));
-    });
-
-    test('so does the legacy setModelPath', () async {
-      final copy = await downloaded();
-      final picked = userFile('p/model.task', _model(2));
-
-      // ignore: deprecated_member_use_from_same_package
-      await FlutterEdgeAiPlugin.instance.modelManager.setModelPath(picked.path);
-
-      expect(copy.existsSync(), isFalse);
     });
 
     test('reports a failed install as a ModelStorageException', () async {

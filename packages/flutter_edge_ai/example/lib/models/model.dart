@@ -1,8 +1,7 @@
 // ignore_for_file: unused_element_parameter
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/core/model.dart';
-import 'package:flutter_edge_ai/core/domain/platform_types.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'base_model.dart';
 
 // Platform detection that's safe for web

@@ -483,14 +483,14 @@ Add `genkit_flutter_edge_ai` and `flutter_edge_ai`:
 
 ```yaml
   # Step 3: On-device AI (LiteRT-LM engine)
-  genkit_flutter_edge_ai: ^0.9.0
-  flutter_edge_ai: ^2.0.0
+  genkit_flutter_edge_ai: ^0.9.1
+  flutter_edge_ai: ^2.3.0
   # flutter_edge_ai registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
-  flutter_edge_ai_litertlm: ^1.8.7
+  flutter_edge_ai_litertlm: ^1.13.0
   # Step 5 embeds your documents. The engine above runs the forward pass;
   # this package supplies the tokenizers it needs.
-  flutter_edge_ai_embeddings: ^2.2.2
+  flutter_edge_ai_embeddings: ^2.3.0
 ```
 
 Run `flutter pub get`.
@@ -964,7 +964,7 @@ class AiEngine {
             : const [],
         // A backend carries no tokenizer: which one a model needs is a
         // property of the model, so the app registers it. Without this the
-        // first embedding throws a StateError.
+        // first embedding fails, and the error names the package to add.
         embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
       );
 
@@ -1537,7 +1537,9 @@ litert.js   litert_embeddings.js   sentencepiece.js   tensorflow.js
 
 They come from `flutter_edge_ai_litertlm/web/`. The bundle moved there in the
 legacy `flutter_gemma_litertlm` 1.8.0 release and remains owned by the current
-package. Then load the entry point in `web/index.html`:
+package. Take them from the version your app resolves: 1.13.0 changed the
+bundle's API, and a copy from an older release fails the first embedding with
+an error that names the file. Then load the entry point in `web/index.html`:
 
 ```html
 <script type="module" src="litert_embeddings.js"></script>
@@ -1559,8 +1561,8 @@ the current `flutter_edge_ai`: an embedding backend no longer carries one —
 which tokenizer a model needs is a property of the model, not of the engine
 that runs it — so `AiEngine.initialize()` passes
 `embeddingTokenizers: const [GemmaEmbeddingTokenizers()]` beside
-`embeddingBackends:`. Leave it out and the first embedding throws a
-`StateError` naming the package to add.
+`embeddingBackends:`. Leave it out and the first embedding fails, and the
+error names the package to add.
 
 ### Install the embedding model
 

@@ -2,18 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
-import 'package:flutter_edge_ai/core/chat.dart'
-    show InferenceChat, defaultMaxFunctionBufferLength;
-import 'package:flutter_edge_ai/core/domain/platform_types.dart'
-    show PreferredBackend;
-import 'package:flutter_edge_ai/core/lifecycle/close_notifier.dart'
-    show CloseNotifier;
-import 'package:flutter_edge_ai/core/model.dart' show ModelFileType, ModelType;
-import 'package:flutter_edge_ai/core/sampling.dart' show SamplingParams;
-import 'package:flutter_edge_ai/core/tool.dart' show Tool, ToolChoice;
-import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart' show edgeAiLog;
-import 'package:flutter_edge_ai/flutter_edge_ai_interface.dart'
-    show InferenceModel, InferenceModelSession;
+import 'package:flutter_edge_ai/engine.dart'
+    show
+        CloseNotifier,
+        InferenceChat,
+        InferenceModel,
+        InferenceModelSession,
+        ModelFileType,
+        ModelType,
+        PreferredBackend,
+        SamplingParams,
+        Tool,
+        ToolChoice,
+        defaultMaxFunctionBufferLength,
+        edgeAiLog;
 import 'package:flutter_local_ai/flutter_local_ai.dart'
     show LocalAi, LocalAiModel;
 import 'package:meta/meta.dart' show experimental;

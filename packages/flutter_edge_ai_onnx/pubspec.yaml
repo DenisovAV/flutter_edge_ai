@@ -1,6 +1,6 @@
 name: flutter_edge_ai_onnx
 description: "ONNX Runtime engine for flutter_edge_ai: GenAI inference and embeddings on 5 native platforms; web via Transformers.js and onnxruntime-web."
-version: 0.5.7
+version: 0.5.8
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_onnx
 topics: [gemma, llm, onnx, onnxruntime, on-device]
@@ -27,13 +27,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # ^1.11.0: this version passes `activeBackend:` to `ForwardPassDescriptor` —
-  # a named parameter that does not exist before 1.11.0, so an older core is a
-  # compile error — and overrides `EmbeddingModel.activeBackend`, which lands in
-  # 1.11.0 too, on top of 1.9.0's embedding seam and tokenizer registry
-  # (`EmbeddingTokenizerRegistry`). An older core resolves and then fails to
-  # compile — better here than there.
-  flutter_edge_ai: ^2.2.1
+  # ^2.3.0: this version imports `package:flutter_edge_ai/engine.dart` and
+  # implements the embedding pass SPI (`EmbeddingBackendProvider.describe`,
+  # `EmbeddingPassDescriptor`, `TokenEmbeddingPass`), none of which exists
+  # before 2.3.0, on top of 2.2.0's nullable sampling values. An older core
+  # resolves and then fails to compile — better here than there.
+  flutter_edge_ai: ^2.3.0
   ffi: ^2.1.0
   mutex: ^3.1.0
   hooks: ^2.0.0
@@ -45,7 +44,7 @@ dev_dependencies:
   # depend on a sibling (see "Packages -> core, never to each other"). The ORT
   # host smoke test builds a real tokenizer, which an app gets by registering
   # `embeddingTokenizers:` instead.
-  flutter_edge_ai_embeddings: ^2.2.1
+  flutter_edge_ai_embeddings: ^2.3.0
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0

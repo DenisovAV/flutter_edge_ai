@@ -7,8 +7,9 @@ import dev.flutterberlin.flutter_gemma_mediapipe.engines.mediapipe.MediaPipeEngi
  * Factory for creating MediaPipe inference engines.
  *
  * `.litertlm` files are handled by Dart-side FFI (`LiteRtLmFfiClient` in
- * `lib/core/ffi/`) on Android, iOS and desktop, so they never reach this
- * factory. Only MediaPipe-format files are routed through Kotlin.
+ * flutter_edge_ai_litertlm's `lib/src/ffi/`) on Android, iOS and desktop, so
+ * they never reach this factory. Only MediaPipe-format files are routed
+ * through Kotlin.
  */
 object EngineFactory {
 

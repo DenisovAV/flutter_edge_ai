@@ -35,7 +35,8 @@
 ///   * CPU/GPU/NPU is a single WebGPU/WASM backend (no choice to assert).
 ///   * LoRA throws UnsupportedError, exercised in the unit smoke
 ///     (`test/web/litert_lm_web_test.dart`).
-///   * `getTargetPath` is filesystem-only (no path_provider on web).
+///   * The storage-path check (`getWriteTargetPath`) is filesystem-only (no
+///     path_provider on web).
 @TestOn('chrome')
 library;
 

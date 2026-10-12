@@ -103,13 +103,13 @@ after restart, reinstall the paired spec or pass `loraPath` explicitly.
 
 ## Compatibility boundaries
 
-Core 2.2.1 has no `ModelFileType.gguf`; only binary specs with a `.gguf` primary
+Core 2.3.0 has no `ModelFileType.gguf`; only binary specs with a `.gguf` primary
 filename are claimed. Do not register another binary provider for these models.
 Core now owns imported-file restart restoration; the connector has no preference
-reader or activation workaround. The remaining Web shim and engine imports will
-move to public core libraries after the 2.3.0 API train lands.
+reader or activation workaround. Engine contracts use `engine.dart`, and Web URL resolution uses
+`engine_web.dart`. Shipped code imports no core internals.
 
-Core 2.2.1 passes the real active model identity to the provider on Web.
+Core 2.3.0 passes the real active model identity to the provider on Web.
 The connector selects the supplied spec directly; unrelated binary formats
 are rejected. Core reuses the loaded model for unchanged requests, and waits
 for a closing model to finish teardown before loading its replacement.

@@ -79,7 +79,22 @@ class _Turn {
   Object? error;
   final _done = Completer<void>();
   Future<void> get done => _done.future.timeout(const Duration(seconds: 10));
+
+  /// [done] without its timeout, for a caller that sets its own.
+  Future<void> get ended => _done.future;
 }
+
+/// [future], or a failure that says what the worker last logged. A worker
+/// that stops answering otherwise shows up only as the test's own 30 s
+/// timeout, which names no step and nothing of what ran in the worker.
+Future<T> _orReport<T>(Future<T> future, File log, String what) =>
+    future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => fail(
+        '$what had not finished after 10 s; the worker logged '
+        '${_linesOf(log)}',
+      ),
+    );
 
 GenAiTurn _script(Map<String, Object> script) =>
     GenAiTurn(userContent: jsonEncode(script));
@@ -228,17 +243,25 @@ void main() {
     });
 
     test('a reset stops the turn in flight at its next token', () async {
+      // The reset is sent only once the worker has started the turn, so it
+      // is filed after the turn's request and its stop cannot be cleared.
+      // Every wait is bounded and reports the worker's log: this test once
+      // hung on CI until its 30 s timeout, which said nothing of where.
       final log = logFor('reset_stops');
-      final client = await loaded(log);
+      final client = await _orReport(loaded(log), log, 'load()');
       try {
         final turn = _Turn(client.generate(_script({'untilStopped': true})));
         await _waitForLine(log, 'generate');
         await client.resetSession();
-        await turn.done;
+        await _orReport(turn.ended, log, 'the turn');
         expect(turn.error, isNull);
-        expect(_linesOf(log), ['load', 'generate', 'reset']);
+        expect(
+          _linesOf(log),
+          ['load', 'generate', 'stopped', 'reset'],
+          reason: 'the turn ends because it saw the reset, then the reset runs',
+        );
       } finally {
-        await client.shutdown();
+        await _orReport(client.shutdown(), log, 'shutdown()');
       }
     });
 

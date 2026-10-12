@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/core/utils/edge_ai_log.dart';
-import 'package:flutter_edge_ai/core/lifecycle/model_close_gate.dart';
+import 'package:flutter_edge_ai/core/lifecycle/inference_model_cache.dart';
 import 'package:flutter_edge_ai/core/domain/no_active_model_error.dart';
 
 import 'dart:io';
@@ -76,30 +76,9 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
   // Reuse MobileModelManager for desktop (same filesystem behavior)
   late final MobileModelManager _modelManager = MobileModelManager();
 
-  // Inference model singleton
-  Completer<InferenceModel>? _initCompleter;
-  InferenceModel? _initializedModel;
-
-  /// Holds builds back while a previous model is still closing.
-  final ModelCloseGate _closeGate = ModelCloseGate();
-  InferenceModelSpec? _lastActiveInferenceSpec;
-
-  /// Runtime knobs the cached model was built with. This was a three-field
-  /// record — supportImage, supportAudio, maxTokens — so the other six
-  /// parameters of getActiveModel were silently ignored on reuse. The shared
-  /// type compares all nine and names the one that differs.
-  ActiveModelParams? _lastInferenceParams;
-
-  /// What the IN-FLIGHT build is building, while [_initCompleter] is pending.
-  ///
-  /// Deliberately separate from [_lastInferenceParams], which describes the
-  /// model that already exists. One field cannot mean both without the two
-  /// states becoming indistinguishable — and "cached model" vs "model being
-  /// built" is exactly the distinction the race below turns on.
-  ///
-  /// Kept in lockstep with [_initCompleter]: set where that is created,
-  /// cleared everywhere it is cleared.
-  ({InferenceModelSpec spec, ActiveModelParams params})? _inFlightRequest;
+  /// The cached inference model and the rules for reusing it, shared with the
+  /// desktop and web shells.
+  final InferenceModelCache _modelCache = InferenceModelCache();
 
   // Embedding model: one shared cache instead of a completer, a model and a
   // params field kept in lockstep by hand. This shell's hand-rolled version
@@ -130,7 +109,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
   ModelFileManager get modelManager => _modelManager;
 
   @override
-  InferenceModel? get initializedModel => _initializedModel;
+  InferenceModel? get initializedModel => _modelCache.model;
 
   @override
   EmbeddingModel? get initializedEmbeddingModel => _embedderCache.model;
@@ -151,233 +130,26 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,
   }) async {
-    // Check active model
-    final activeModel = _modelManager.activeInferenceModel;
-    if (activeModel == null) {
-      throw NoActiveModelError(
-        'No active inference model set. Use `FlutterEdgeAi.installModel()` or `modelManager.ensureModelReadyFromSpec()` first',
-      );
-    }
-
-    // Hoisted out of the reuse check below: the in-flight race also
-    // needs it, and that runs when the reuse check does not.
-    final requestedSpec = activeModel as InferenceModelSpec;
-
-    // Captured once: compared against the cached model below, and recorded as
-    // the new baseline after a successful build.
-    final requestedParams = ActiveModelParams(
-      maxTokens: maxTokens,
-      preferredBackend: preferredBackend,
-      preferredVisionBackend: preferredVisionBackend,
-      preferredAudioBackend: preferredAudioBackend,
-      supportImage: supportImage,
-      supportAudio: supportAudio,
-      maxNumImages: maxNumImages,
-      enableSpeculativeDecoding: enableSpeculativeDecoding,
-      activationDataType: activationDataType,
-      maxConcurrentSessions: maxConcurrentSessions,
-      loraRanks: loraRanks,
-    );
-
-    // No model is built while another is still closing: two native models
-    // must not be resident at once (see [ModelCloseGate]).
-    if (_closeGate.isClosing) await _closeGate.wait();
-
-    // A cached model whose close has started is going away, and its close
-    // listener fires only once the teardown ends. Forget it, wait for that
-    // teardown, then build anew; the listener is identity-guarded and will
-    // not touch the new model.
-    if (_initializedModel case final cached? when cached.isClosed) {
-      _initCompleter = null;
-      _inFlightRequest = null;
-      _initializedModel = null;
-      _lastActiveInferenceSpec = null;
-      _lastInferenceParams = null;
-      await _closeGate.closeAndWait(cached, label: requestedSpec.name);
-    }
-
-    // Check if singleton exists and matches active model + runtime params
-    if (_initCompleter != null &&
-        _initializedModel != null &&
-        _lastActiveInferenceSpec != null) {
-      final currentSpec = _lastActiveInferenceSpec!;
-
-      // By value, not by name: a LoRA added to the same file, or the file
-      // re-installed from another source, keeps the name and changes the
-      // weights.
-      final modelChanged = currentSpec != requestedSpec;
-      // A MISSING baseline must mean rebuild, not reuse. `?.` here returned
-      // null when _lastInferenceParams was unset, and null is this function's
-      // word for "nothing changed" — so "we have no record of what this model
-      // was built with" and "it was built with exactly this" took the same
-      // branch. That is the same collapse this whole block exists to fix, one
-      // level up. The costs are not symmetric: guessing "rebuild" reloads
-      // weights that were already right, guessing "reuse" hands back a model
-      // configured for something else and says nothing.
-      final baseline = _lastInferenceParams;
-      final changedParam = baseline == null
-          ? 'unknown — no recorded config for the cached model'
-          : baseline.firstDifference(requestedParams);
-
-      if (modelChanged || changedParam != null) {
-        // Name the knob. "paramsChanged=true" told nobody what to change.
-        edgeAiLog(
-          modelChanged
-              ? 'Model recreation: active model changed '
-                    '(${_describeChange(currentSpec, requestedSpec)})'
-              : 'Model recreation: $changedParam changed for '
-                    '${requestedSpec.name}',
+    // Resolved inside the cache, not before it: when the cache waits for a
+    // build in flight and starts over, a model installed meanwhile is the one
+    // built.
+    return _modelCache.obtain(() {
+      // Check active model
+      final activeModel = _modelManager.activeInferenceModel;
+      if (activeModel == null) {
+        throw NoActiveModelError(
+          'No active inference model set. Use `FlutterEdgeAi.installModel()` or `modelManager.ensureModelReadyFromSpec()` first',
         );
-        // Clear the state BEFORE awaiting the close, not after. Everything
-        // between these two statements runs without an await, so no other
-        // caller can observe a half-torn singleton — which the old order
-        // allowed, in two ways:
-        //
-        //   * a caller arriving during the close passed the reuse check (every
-        //     field was still populated) and was handed the model that was
-        //     already closing; its next createSession threw "Model is closed".
-        //   * two callers with different params both entered this branch, both
-        //     awaited a close the second found already done, then raced to
-        //     install their own build. The surviving _initCompleter and
-        //     _lastInferenceParams could come from different callers, so the
-        //     reuse check would hand back a model built for someone else's
-        //     request — the exact failure this change exists to remove. The
-        //     other interleaving simply leaked a model nothing closed.
-        //
-        // Clearing first also removes the reason the old code trusted the
-        // close listener for two of the five fields: nothing here depends on
-        // that listener running, or running in time, or running at all.
-        //
-        // The close is wrapped because a throwing teardown must not leave the
-        // singleton registered; the fields are already clear, so the next call
-        // builds fresh instead of inheriting a dead model.
-        final closing = _initializedModel;
-        _initCompleter = null;
-        _inFlightRequest = null;
-        _initializedModel = null;
-        _lastActiveInferenceSpec = null;
-        _lastInferenceParams = null;
-        // Through the gate, so a caller arriving during this close waits for
-        // it instead of building; a failed close is logged, not passed on.
-        if (closing != null) {
-          await _closeGate.closeAndWait(closing, label: requestedSpec.name);
-        }
-      } else {
-        edgeAiLog('Reusing existing model instance for ${requestedSpec.name}');
-        return _initCompleter!.future;
       }
-    }
 
-    // Return existing completer if initialization in progress
-    // A build may already be in flight — an earlier caller is inside
-    // engine.createModel. Returning that future unconditionally, which is what
-    // this did, hands THIS caller a model built to somebody else's request:
-    // two getActiveModel calls that race, one asking for GPU and one for CPU,
-    // both get whichever started first and the loser is never told. It is the
-    // same defect as the name-only reuse check above, just in the window where
-    // the cached model does not exist yet — so the check above cannot see it.
-    if (_initCompleter case Completer<InferenceModel> completer) {
-      final pending = _inFlightRequest;
-      final changedParam = pending?.params.firstDifference(requestedParams);
-      final sameModel = pending?.spec == requestedSpec;
-      if (pending != null && sameModel && changedParam == null) {
-        // Genuinely the same request — sharing the in-flight build is the
-        // point of the completer.
-        return completer.future;
-      }
-      edgeAiLog(
-        '⏳ A model build is already in flight with a different request '
-        '(${sameModel ? 'config $changedParam' : 'model ${pending?.spec.name} → ${requestedSpec.name}'})'
-        ' — waiting for it, then rebuilding',
-      );
-      var inFlightFailed = false;
-      try {
-        await completer.future;
-      } catch (_) {
-        // That build failed. Its own catch resets the state and its caller
-        // receives the error, so nothing is being swallowed here — fall
-        // through and build fresh for THIS caller.
-        inFlightFailed = true;
-        // Logged, not silent: the "waiting for it" line above fires BEFORE
-        // the await, so a build that failed and was recovered from left no
-        // trace at all. The error itself still reaches the caller that
-        // started that build.
-        edgeAiLog('In-flight build failed; building fresh for this request');
-      }
-      if (inFlightFailed && identical(_initCompleter, completer)) {
-        // A failed build left its own completer installed. Recursing now would
-        // find that same dead completer, await it, catch the same error, and
-        // repeat without end — the recursion below must not depend on every
-        // error path having remembered to reset. (On the SUCCESS path the
-        // completer stays installed on purpose: it IS the cache. Hence the
-        // failure condition rather than a bare identity check.)
-        _initCompleter = null;
-        _inFlightRequest = null;
-      }
-      // Re-enter rather than tear down mid-build: the first caller's future
-      // stays valid and gets the model it asked for, and only then is it
-      // replaced. On re-entry the reuse check above sees a built model whose
-      // params differ and does the ordinary close-and-rebuild, so this
-      // terminates — the rebuild records these params as the new baseline.
-      return createModel(
-        modelType: modelType,
-        fileType: fileType,
+      // Hoisted out of the reuse check below: the in-flight race also
+      // needs it, and that runs when the reuse check does not.
+      final requestedSpec = activeModel as InferenceModelSpec;
+
+      // Captured once: compared against the cached model below, and recorded as
+      // the new baseline after a successful build.
+      final requestedParams = ActiveModelParams(
         maxTokens: maxTokens,
-        preferredBackend: preferredBackend,
-        preferredVisionBackend: preferredVisionBackend,
-        preferredAudioBackend: preferredAudioBackend,
-        loraRanks: loraRanks,
-        maxNumImages: maxNumImages,
-        supportImage: supportImage,
-        supportAudio: supportAudio,
-        enableSpeculativeDecoding: enableSpeculativeDecoding,
-        activationDataType: activationDataType,
-        maxConcurrentSessions: maxConcurrentSessions,
-      );
-    }
-
-    final completer = _initCompleter = Completer<InferenceModel>();
-    _inFlightRequest = (spec: requestedSpec, params: requestedParams);
-
-    try {
-      final isBuiltIn = requestedSpec.fileType == ModelFileType.builtIn;
-
-      String modelPath = '';
-      if (!isBuiltIn) {
-        // Verify model is installed
-        final isInstalled = await _modelManager.isModelInstalled(activeModel);
-        if (!isInstalled) {
-          throw Exception('Active model is no longer installed');
-        }
-
-        // Get model file path
-        final modelFilePaths = await _modelManager.getModelFilePaths(
-          activeModel,
-        );
-        if (modelFilePaths == null || modelFilePaths.isEmpty) {
-          throw Exception('Model file paths not found');
-        }
-
-        modelPath = modelFilePaths.values.first;
-        edgeAiLog('[FlutterEdgeAiDesktop] Using model: $modelPath');
-      } else {
-        edgeAiLog(
-          '[FlutterEdgeAiDesktop] Built-in model ${requestedSpec.name}: '
-          'skipping file/installed checks (no on-disk file)',
-        );
-      }
-
-      // Core resolves the model path + owns the singleton lifecycle, then
-      // dispatches construction polymorphically through the EngineRegistry.
-      // Desktop registers NO default engine — the LiteRtLmEngine is supplied
-      // via FlutterEdgeAi.initialize(inferenceEngines:). If the registry is
-      // empty (or no engine canHandle the spec), the findFor==null StateError
-      // below fires. Desktop is litertlm-only; a `.task` request would simply
-      // find no matching engine.
-      final spec = requestedSpec;
-      final config = RuntimeConfig(
-        maxTokens: maxTokens,
-        modelPath: modelPath,
         preferredBackend: preferredBackend,
         preferredVisionBackend: preferredVisionBackend,
         preferredAudioBackend: preferredAudioBackend,
@@ -387,69 +159,96 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         activationDataType: activationDataType,
         maxConcurrentSessions: maxConcurrentSessions,
-        // Forwarded, not merely compared. ActiveModelParams treats loraRanks as
-        // a rebuild trigger and its dartdoc says the engine receives it — but
-        // desktop compared it and then dropped it here, so a changed rank tore
-        // down multi-gigabyte weights and handed the engine a byte-identical
-        // config. Comparing a value the engine never sees is its own kind of
-        // lie. Mobile and web already forwarded it.
         loraRanks: loraRanks,
       );
-      final engine = EngineRegistry.instance.findFor(spec);
-      if (engine == null) {
-        throw StateError(
-          'No inference engine can handle this model (ModelFileType.${spec.fileType.name}). '
-          'Add the engine package to pubspec.yaml and pass it in inferenceEngines: '
-          'of FlutterEdgeAi.initialize(...). Registered engines: '
-          '${EngineRegistry.instance.registered.map((e) => e.name).join(", ")}.',
-        );
-      }
-      if (activationDataType != null &&
-          spec.fileType != ModelFileType.litertlm) {
-        edgeAiLog(
-          '[FlutterEdgeAi] activationDataType (${activationDataType.name}) is '
-          'read only by the .litertlm engine; ${engine.name} ignores it for '
-          'ModelFileType.${spec.fileType.name}.',
-        );
-      }
-      final model = await engine.createModel(spec, config);
 
-      // Core owns the singleton lifecycle: track it + reset on close. The
-      // package-built model fires this via CloseNotifier (addCloseListener).
-      _initializedModel = model;
-      _lastInferenceParams = requestedParams;
-      model.addCloseListener(() {
-        // Identity-guarded, as the session layer already does
-        // (mobile_inference_model.dart: `if (identical(_session, session))`).
-        // Without it a late close of a SUPERSEDED model nulls whatever is
-        // registered now — including a newer, live model, whose next caller
-        // then reloads weights that were already in memory.
-        if (!identical(_initializedModel, model)) return;
-        _initializedModel = null;
-        _initCompleter = null;
-        _inFlightRequest = null;
-        _lastActiveInferenceSpec = null;
-        _lastInferenceParams = null;
-      });
+      return (
+        identity: (
+          spec: requestedSpec,
+          modelType: requestedSpec.modelType,
+          fileType: requestedSpec.fileType,
+        ),
+        params: requestedParams,
+        label: requestedSpec.name,
+        build: () async {
+          final isBuiltIn = requestedSpec.fileType == ModelFileType.builtIn;
 
-      _lastActiveInferenceSpec = spec;
-      // Nothing is in flight any more. Leaving this set would be a field
-      // outliving its meaning — the reuse check above happens to shadow it
-      // today, which is not a reason to keep a stale one around.
-      _inFlightRequest = null;
-      completer.complete(model);
-      return model;
-    } catch (e, st) {
-      completer.completeError(e, st);
-      _initCompleter = null;
-      _inFlightRequest = null;
-      _initializedModel = null;
-      _lastActiveInferenceSpec = null;
-      _lastInferenceParams = null;
-      // Return the error-completed completer future (not rethrow) so exactly one
-      // Future is in flight — a bare rethrow orphans completer.future. See #394.
-      return completer.future;
-    }
+          String modelPath = '';
+          if (!isBuiltIn) {
+            // Verify model is installed
+            final isInstalled = await _modelManager.isModelInstalled(
+              activeModel,
+            );
+            if (!isInstalled) {
+              throw Exception('Active model is no longer installed');
+            }
+
+            // Get model file path
+            final modelFilePaths = await _modelManager.getModelFilePaths(
+              activeModel,
+            );
+            if (modelFilePaths == null || modelFilePaths.isEmpty) {
+              throw Exception('Model file paths not found');
+            }
+
+            modelPath = modelFilePaths.values.first;
+            edgeAiLog('[FlutterEdgeAiDesktop] Using model: $modelPath');
+          } else {
+            edgeAiLog(
+              '[FlutterEdgeAiDesktop] Built-in model ${requestedSpec.name}: '
+              'skipping file/installed checks (no on-disk file)',
+            );
+          }
+
+          // Core resolves the model path + owns the singleton lifecycle, then
+          // dispatches construction polymorphically through the EngineRegistry.
+          // Desktop registers NO default engine — the LiteRtLmEngine is supplied
+          // via FlutterEdgeAi.initialize(inferenceEngines:). If the registry is
+          // empty (or no engine canHandle the spec), the findFor==null StateError
+          // below fires. Desktop is litertlm-only; a `.task` request would simply
+          // find no matching engine.
+          final spec = requestedSpec;
+          final config = RuntimeConfig(
+            maxTokens: maxTokens,
+            modelPath: modelPath,
+            preferredBackend: preferredBackend,
+            preferredVisionBackend: preferredVisionBackend,
+            preferredAudioBackend: preferredAudioBackend,
+            supportImage: supportImage,
+            supportAudio: supportAudio,
+            maxNumImages: maxNumImages,
+            enableSpeculativeDecoding: enableSpeculativeDecoding,
+            activationDataType: activationDataType,
+            maxConcurrentSessions: maxConcurrentSessions,
+            // Forwarded, not merely compared. ActiveModelParams treats loraRanks as
+            // a rebuild trigger and its dartdoc says the engine receives it — but
+            // desktop compared it and then dropped it here, so a changed rank tore
+            // down multi-gigabyte weights and handed the engine a byte-identical
+            // config. Comparing a value the engine never sees is its own kind of
+            // lie. Mobile and web already forwarded it.
+            loraRanks: loraRanks,
+          );
+          final engine = EngineRegistry.instance.findFor(spec);
+          if (engine == null) {
+            throw StateError(
+              'No inference engine can handle this model (ModelFileType.${spec.fileType.name}). '
+              'Add the engine package to pubspec.yaml and pass it in inferenceEngines: '
+              'of FlutterEdgeAi.initialize(...). Registered engines: '
+              '${EngineRegistry.instance.registered.map((e) => e.name).join(", ")}.',
+            );
+          }
+          if (activationDataType != null &&
+              spec.fileType != ModelFileType.litertlm) {
+            edgeAiLog(
+              '[FlutterEdgeAi] activationDataType (${activationDataType.name}) is '
+              'read only by the .litertlm engine; ${engine.name} ignores it for '
+              'ModelFileType.${spec.fileType.name}.',
+            );
+          }
+          return engine.createModel(spec, config);
+        },
+      );
+    });
   }
 
   @override
@@ -868,9 +667,3 @@ bool get isDesktop {
   if (kIsWeb) return false;
   return Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 }
-
-/// How the active model changed, for the rebuild log line.
-String _describeChange(InferenceModelSpec from, InferenceModelSpec to) =>
-    from.name == to.name
-    ? '${to.name} re-installed with another source or LoRA'
-    : '${from.name} → ${to.name}';

@@ -1,3 +1,6 @@
+## 2.2.3
+- README: the ONNX embedding backend in the platform table.
+
 ## 2.2.2
 - Require `flutter_edge_ai` 2.x.
 

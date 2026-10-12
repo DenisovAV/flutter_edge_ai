@@ -73,7 +73,7 @@ final install = await FlutterEdgeAi.installModel(
 final model = await FlutterEdgeAi.getActiveModel(defaults: install.runtime);
 ```
 
-Other sources on the same builder: `.fromAsset(path)` for a model bundled in the app, `.fromFile(path)` for one already on disk, `.fromBundled(name)` for a platform-bundled resource.
+Other sources on the same builder: `.fromAsset(path)` for a model bundled in the app, `.fromFile(path)` for one already on disk, `.fromBundled(name)` for a platform-bundled resource. A `fromFile` file is used in place and stays the app's: uninstalling leaves it, and it is active again after a restart. Installing the same file name again from another source replaces the install.
 
 `modelType` tells flutter_edge_ai how the model writes tool calls and reasoning, and on some engines it also picks the prompt format. Gemma 3 and Gemma 3n are `ModelType.gemmaIt` — there is no `gemma3`. The full set: `ModelType.general`, `ModelType.gemmaIt`, `ModelType.gemma4`, `ModelType.deepSeek`, `ModelType.qwen`, `ModelType.qwen3`, `ModelType.qwen35`, `ModelType.llama`, `ModelType.hammer`, `ModelType.functionGemma`, `ModelType.phi`. A wrong type still generates text; tool calls and reasoning then arrive as raw text.
 
@@ -253,7 +253,7 @@ await chat.addQueryChunk(
 
 ## The model is a singleton
 
-`getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working; `model.isClosed` says so from the moment `close()` starts, and a `getActiveModel` call made meanwhile waits for the close to finish before it builds the next model. Load it once, then create and close sessions per conversation.
+`getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working; `model.isClosed` says so from the moment `close()` starts, and a `getActiveModel` call made meanwhile waits for the close to finish before it builds the next model. With no model installed it throws `NoActiveModelError`, a `StateError`. Load it once, then create and close sessions per conversation.
 
 ## Backends
 

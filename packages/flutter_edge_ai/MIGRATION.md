@@ -97,7 +97,7 @@ Update dependencies:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.2.1
-  flutter_edge_ai_rag: ^1.0.0
+  flutter_edge_ai_rag: ^1.0.1
   flutter_edge_ai_sqlite: ^2.0.1 # or flutter_edge_ai_qdrant: ^2.0.1
 ```
 
@@ -304,10 +304,10 @@ dependencies:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.2.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.12.0       # .litertlm + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.2.0       # .task / .bin
-  flutter_edge_ai_embeddings: ^2.2.2      # tokenizer providers
-  flutter_edge_ai_rag: ^1.0.0             # RAG orchestration + contracts
+  flutter_edge_ai_litertlm: ^1.12.1       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.2.1       # .task / .bin
+  flutter_edge_ai_embeddings: ^2.2.3      # tokenizer providers
+  flutter_edge_ai_rag: ^1.0.1             # RAG orchestration + contracts
   flutter_edge_ai_qdrant: ^2.0.1          # native qdrant provider
   flutter_edge_ai_sqlite: ^2.0.1          # sqlite-vec provider; needs Flutter 3.47
 ```
@@ -456,7 +456,7 @@ supplies it, and the engine packages stopped depending on
 **Add the dependency** (it no longer arrives through the engine):
 ```yaml
 dependencies:
-  flutter_edge_ai_embeddings: ^2.2.2
+  flutter_edge_ai_embeddings: ^2.2.3
 ```
 
 **Add one line to `initialize`:**

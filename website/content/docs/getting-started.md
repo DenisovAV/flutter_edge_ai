@@ -49,6 +49,13 @@ only the engines, stores and features your app uses — see
   sampler the model file ships, else its family's published defaults, instead
   of greedy `topK: 1`. Pass `topK: 1` to keep greedy decoding. See
   [Migration](/docs/migration).
+- **2.2.1 — installs and model lifecycle:** a `fromFile` model is active again
+  after a restart, and core never deletes a file you installed with
+  `fromFile`. Installing a name again from another source replaces it (see
+  [Installing again](#installing-again)). With nothing installed,
+  `getActiveModel` and `getActiveEmbedder` throw `NoActiveModelError`, a
+  `StateError`. `InferenceModel.isClosed` is new, and web reuses the loaded
+  model as the other platforms do.
 
 ## What's new in 2.1
 
@@ -363,6 +370,15 @@ If you only ever have one conversation at a time, stick with the simpler
 `createSession()` / `createChat()` singleton API — you don't need this.
 
 ## Managing Installed Models
+
+### Installing again
+
+Installing a file name again from the source it came from does nothing. From
+another source — another URL (query and token aside), or `fromFile` with
+another path — it replaces the install, and core deletes its own earlier copy
+once the new one is active. Core never deletes or overwrites a file you
+installed with `fromFile`: it is used in place, it is active again after a
+restart, and a download that would land on it throws `ModelStorageException`.
 
 ### Uninstalling
 

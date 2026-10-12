@@ -40,8 +40,8 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.2.0`,
-`flutter_edge_ai_litertlm: ^1.12.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.2.1`,
+`flutter_edge_ai_litertlm: ^1.12.1`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 

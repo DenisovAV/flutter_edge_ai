@@ -241,7 +241,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "2.3.0"
+    version: "2.2.1"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:

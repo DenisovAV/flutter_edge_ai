@@ -1,6 +1,6 @@
 ## 1.2.1
 - `close()` sets `isClosed` at once and releases the native model before its listeners fire.
-- Require `flutter_edge_ai` ^2.3.0.
+- Require `flutter_edge_ai` ^2.2.1.
 
 ## 1.2.0
 - Unset sampling uses the model family defaults, top-k at most 40, instead of greedy (#572).

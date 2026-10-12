@@ -193,15 +193,18 @@ embeddings) before using the plugin; without one a request fails with
 See [Getting Started](/docs/getting-started).
 
 Every configured model name runs the model that is active in flutter_edge_ai;
-the name is a label. The names share one loaded model and one queue, and a
-newly installed model is picked up by the next request. Set
+the name is a label. The names share one queue, and each request asks
+flutter_edge_ai for the active model, so a newly installed model is picked up
+by the next request. Set
 `supportsTools: false` or `supportsMedia: false` on a
 `FlutterEdgeAiModelConfig` whose model takes no tools or media: its `supports`
 metadata says so, and a request that needs them fails with `UNIMPLEMENTED`
 instead of reaching a model that would ignore them. Options are checked before
 anything loads, so a bad value, a `maxOutputTokens` larger than `maxTokens`
-among them, is an `INVALID_ARGUMENT`. An installed model the app cannot run
-(no engine registered for it) is `FAILED_PRECONDITION`, which no router hides.
+among them, is an `INVALID_ARGUMENT`. An engine that cannot do what was asked
+on this platform is `UNIMPLEMENTED`, which `genkit_hybrid` hands to its next
+branch. An installed model the app cannot run (no engine registered for it) is
+`FAILED_PRECONDITION`, which no router hides.
 
 </Info>
 

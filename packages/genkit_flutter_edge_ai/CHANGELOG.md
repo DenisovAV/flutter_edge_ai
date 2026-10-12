@@ -1,11 +1,11 @@
 ## 0.9.0
-- **Breaking:** a custom `FlutterEdgeAiRuntime` implements `activeModelName` and `activeEmbedderName`.
 - **Breaking:** bad options and parts the model cannot take fail with a status, not silently.
 - Every tool response reaches the model, and tool calls carry `ref`s.
 - Several images per message; media without `contentType` is typed.
 - `outputSchema` works without middleware; new `maxOutputTokens` option; `response.usage`.
 - Embedder `taskType` option: index documents with `retrievalDocument`.
-- All model names share one loaded model and see a newly installed one.
+- Model names share one queue; every request gets the active model, a new one after an install.
+- Require `flutter_edge_ai` ^2.3.0.
 
 ## 0.8.1
 - Unset `temperature` and `topK` no longer force greedy; the model sampler applies (#572).

@@ -34,10 +34,10 @@ This is a **Genkit Dart plugin** that bridges [flutter_edge_ai](https://pub.dev/
 
 ### Key abstractions
 
-- **`FlutterEdgeAiRuntime`** — abstracts flutter_edge_ai's static API (`FlutterEdgeAi.getActiveModel`, `FlutterEdgeAi.getActiveEmbedder`, and the active models' names from `activeModelSpec` / `activeEmbedderSpec`). Production uses `DefaultFlutterEdgeAiRuntime`; tests use `FakeRuntime` from `test/src/fake_runtime.dart`.
-- **Model slot** (`model_slot.dart`) — the one native model every configured name runs: a queue (`enqueue` → `ModelTurn.start` / `end`) and the loaded handle, dropped when the model closes or another one becomes active. The plugin shares one slot across its names.
+- **`FlutterEdgeAiRuntime`** — abstracts flutter_edge_ai's static API (`FlutterEdgeAi.getActiveModel`, `FlutterEdgeAi.getActiveEmbedder`). Production uses `DefaultFlutterEdgeAiRuntime`; tests use `FakeRuntime` from `test/src/fake_runtime.dart`.
+- **Model slot** (`model_slot.dart`) — the queue every configured name shares (`enqueue` → `ModelTurn.start` / `end`), since they all run the one active native model. It caches no model: each turn calls `getActiveModel`, and flutter_edge_ai decides whether the loaded model can be reused. The plugin shares one slot across its names.
 - **Model action** (`flutter_edge_ai_model.dart`) — `_prepare` validates options and converts messages, media and tools before the request's turn starts; `_generate` loads through the slot and runs blocking or streaming generation during the turn.
-- **Embedder action** (`flutter_edge_ai_embedder.dart`) — caches `EmbeddingModel`, loading again on a backend change, a close, or a new active embedder.
+- **Embedder action** (`flutter_edge_ai_embedder.dart`) — calls `getActiveEmbedder` on every request; flutter_edge_ai's `EmbedderCache` does the reuse.
 
 ### Converter layer (`lib/src/converters/`)
 

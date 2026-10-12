@@ -21,7 +21,7 @@ dependencies:
   flutter:
     sdk: flutter
   genkit: ^1.0.0
-  flutter_edge_ai: ^2.2.0
+  flutter_edge_ai: ^2.3.0
   http: ^1.6.0
   schemantic: ^1.0.0
 

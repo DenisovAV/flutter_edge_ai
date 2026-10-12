@@ -6,8 +6,9 @@ import 'package:genkit/plugin.dart';
 import 'flutter_edge_ai_runtime.dart';
 import 'runtime_errors.dart';
 
-/// The runtime arguments a model is loaded with. A request that asks for
-/// different ones loads the model again.
+/// The runtime arguments a model is loaded with. flutter_edge_ai reuses the
+/// loaded model while these and the active model stay the same, and builds a
+/// new one when either changes.
 typedef ModelLoadParams = ({
   int maxTokens,
   bool supportImage,
@@ -21,10 +22,11 @@ typedef ModelLoadParams = ({
 /// The on-device model behind every model name a plugin configures.
 ///
 /// flutter_edge_ai holds one active model, so the configured names are labels
-/// for the same native model, and they share this slot: one queue, so that a
-/// single generation reaches the model at a time, and one cached handle. The
-/// handle is dropped when the model closes, which is what loading it again
-/// with other arguments does, and when another model becomes active.
+/// for the same native model, and they share this slot's queue: a single
+/// generation reaches the model at a time. The slot keeps no model of its
+/// own. Every turn asks flutter_edge_ai for the active model, which reuses the
+/// loaded one while nothing changed and builds a new one when the arguments
+/// or the active model did — a handle cached here would miss both.
 class FlutterEdgeAiModelSlot {
   FlutterEdgeAiModelSlot(this.runtime);
 
@@ -32,9 +34,6 @@ class FlutterEdgeAiModelSlot {
   final FlutterEdgeAiRuntime runtime;
 
   Future<void> _queue = Future.value();
-  gemma.InferenceModel? _model;
-  ModelLoadParams? _params;
-  String? _modelName;
 
   /// Takes the next place in the queue. The caller starts its turn with
   /// [ModelTurn.start] and must call [ModelTurn.end] whatever happens.
@@ -44,37 +43,20 @@ class FlutterEdgeAiModelSlot {
     return turn;
   }
 
-  /// The active model loaded with [params]: the cached handle while it is
-  /// open, was loaded with the same arguments and is still the active model,
-  /// a newly loaded one otherwise. Call it only during a turn.
-  Future<gemma.InferenceModel> load(ModelLoadParams params) async {
-    final activeName = runtime.activeModelName;
-    final cached = _model;
-    if (cached != null && _params == params && _modelName == activeName) {
-      return cached;
-    }
-    _model = null;
-    final model = await withRuntimeErrors(
-      'Could not load the on-device model',
-      () => runtime.getActiveModel(
-        maxTokens: params.maxTokens,
-        supportImage: params.supportImage,
-        supportAudio: params.supportAudio,
-        enableSpeculativeDecoding: params.enableSpeculativeDecoding,
-        preferredBackend: params.preferredBackend,
-        preferredVisionBackend: params.preferredVisionBackend,
-        preferredAudioBackend: params.preferredAudioBackend,
-      ),
-      hasActiveModel: () => runtime.activeModelName != null,
-    );
-    _model = model;
-    _params = params;
-    _modelName = activeName;
-    model.addCloseListener(() {
-      if (identical(_model, model)) _model = null;
-    });
-    return model;
-  }
+  /// The active model, loaded with [params]. Call it only during a turn.
+  Future<gemma.InferenceModel> load(ModelLoadParams params) =>
+      withRuntimeErrors(
+        'Could not load the on-device model',
+        () => runtime.getActiveModel(
+          maxTokens: params.maxTokens,
+          supportImage: params.supportImage,
+          supportAudio: params.supportAudio,
+          enableSpeculativeDecoding: params.enableSpeculativeDecoding,
+          preferredBackend: params.preferredBackend,
+          preferredVisionBackend: params.preferredVisionBackend,
+          preferredAudioBackend: params.preferredAudioBackend,
+        ),
+      );
 }
 
 /// One request's place in a [FlutterEdgeAiModelSlot]'s queue.

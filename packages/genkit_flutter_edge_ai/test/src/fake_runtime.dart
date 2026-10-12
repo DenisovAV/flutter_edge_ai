@@ -18,12 +18,6 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
 
   /// What [getActiveEmbedder] returns.
   FakeEmbeddingModel embedderToReturn;
-
-  @override
-  String? activeModelName = 'fake-model';
-
-  @override
-  String? activeEmbedderName = 'fake-embedder';
   int getActiveModelCallCount = 0;
   int getActiveEmbedderCallCount = 0;
 

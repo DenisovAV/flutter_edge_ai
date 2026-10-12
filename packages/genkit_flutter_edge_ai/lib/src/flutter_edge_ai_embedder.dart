@@ -8,19 +8,14 @@ import 'runtime_errors.dart';
 
 /// Creates a Genkit [Embedder] action backed by flutter_edge_ai's embedding model.
 ///
-/// The embedding model is lazily created on first call and cached for reuse
-/// while it is open, was created for the same backend and is still the active
-/// embedder. Texts are embedded as search queries unless the options say
+/// The embedding model comes from flutter_edge_ai on every call, which reuses
+/// the loaded one while nothing changed. Texts are embedded as search queries unless the options say
 /// `taskType: 'retrievalDocument'`, which is what documents being indexed
 /// need: EmbeddingGemma prefixes the two differently.
 Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
   required String name,
   required FlutterEdgeAiRuntime runtime,
 }) {
-  gemma.EmbeddingModel? cachedEmbedder;
-  gemma.PreferredBackend? cachedBackend;
-  String? cachedName;
-
   return Embedder<FlutterEdgeAiEmbedConfig>(
     name: name,
     customOptions: FlutterEdgeAiEmbedConfig.$schema,
@@ -42,23 +37,14 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
           _documentText(doc, index),
       ];
 
-      // A closed embedder, one for another backend, or one that is no longer
-      // the active embedder is loaded again.
-      final activeName = runtime.activeEmbedderName;
-      var embedder = cachedEmbedder;
-      if (embedder == null ||
-          embedder.isClosed ||
-          cachedBackend != backend ||
-          cachedName != activeName) {
-        embedder = await withRuntimeErrors<gemma.EmbeddingModel>(
-          'Could not load the on-device embedder',
-          () => runtime.getActiveEmbedder(preferredBackend: backend),
-          hasActiveModel: () => runtime.activeEmbedderName != null,
-        );
-        cachedEmbedder = embedder;
-        cachedBackend = backend;
-        cachedName = activeName;
-      }
+      // Asked for on every call: flutter_edge_ai reuses the loaded embedder
+      // while it is open and nothing changed, and builds a new one when the
+      // active embedder or the backend did — a handle cached here would miss
+      // both.
+      final embedder = await withRuntimeErrors(
+        'Could not load the on-device embedder',
+        () => runtime.getActiveEmbedder(preferredBackend: backend),
+      );
       context.cancel?.throwIfCancelled();
 
       final vectors = await embedder.generateEmbeddings(

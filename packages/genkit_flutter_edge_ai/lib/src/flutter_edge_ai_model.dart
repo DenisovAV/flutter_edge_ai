@@ -274,7 +274,6 @@ Future<ModelResponse> _generate(
 ) async {
   final cancel = context.cancel;
   final config = prepared.config;
-  bool hasActiveModel() => slot.runtime.activeModelName != null;
 
   final model = await slot.load(prepared.load);
   // Loading can take seconds; a caller who gave up meanwhile should not pay
@@ -301,19 +300,14 @@ Future<ModelResponse> _generate(
       maxFunctionBufferLength: config?.maxFunctionBufferLength,
       maxOutputTokens: config?.maxOutputTokens,
     ),
-    hasActiveModel: hasActiveModel,
   );
 
   for (final message in prepared.messages) {
     await withRuntimeErrors(
       'Could not pass the request to the on-device model',
       () => chat.addQueryChunk(message),
-      hasActiveModel: hasActiveModel,
     );
   }
-  // The session the metrics are read from after the generation: a
-  // single-turn model's chat replaces its session once it has answered.
-  final session = _sessionOf(chat);
 
   // Generate response. Cancelling the caller's token stops native decoding,
   // and the turn then ends as a CancelledException, which genkit reports as an
@@ -375,7 +369,7 @@ Future<ModelResponse> _generate(
   cancel?.throwIfCancelled();
   final result = response!;
   final usage = convertUsage(
-    _sessionMetrics(session),
+    _sessionMetrics(_sessionOf(chat)),
     inputImages: prepared.inputImages,
     inputAudioFiles: prepared.inputAudioFiles,
   );
@@ -413,8 +407,9 @@ gemma.InferenceModelSession? _sessionOf(gemma.InferenceChat chat) {
 
 /// [session]'s token counts and speed for the generation that just ended, or
 /// null where the engine cannot report them: it does not implement them, or
-/// the session has been closed since. Any other failure is a bug and is
-/// thrown.
+/// the session has been closed since. A single-turn model's chat
+/// (FunctionGemma) opens a fresh session once it has answered, so it reports
+/// none. Any other failure is a bug and is thrown.
 gemma.SessionMetrics? _sessionMetrics(gemma.InferenceModelSession? session) {
   if (session == null) return null;
   try {

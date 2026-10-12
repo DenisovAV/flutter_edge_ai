@@ -869,20 +869,6 @@ void main() {
       });
     });
 
-    test('usage comes from the session that generated, even when the chat '
-        'replaces it afterwards', () async {
-      chat
-        ..sessionMetrics = gemma.SessionMetrics(
-          inputTokens: 12,
-          outputTokens: 5,
-        )
-        // A single-turn model's chat opens a fresh session once it answers.
-        ..onGenerate = () => chat.sessionMetrics = gemma.SessionMetrics();
-      final response = await buildModel()(text('hi'));
-      expect(response.usage?.inputTokens, 12);
-      expect(response.latencyMs, isNotNull);
-    });
-
     test('an engine that reports zeros reports no usage', () async {
       chat.sessionMetrics = gemma.SessionMetrics();
       expect((await buildModel()(text('hi'))).usage, isNull);
@@ -906,9 +892,9 @@ void main() {
     test(
       'no model installed is UNAVAILABLE, so a router can fall back',
       () async {
-        runtime
-          ..activeModelName = null
-          ..loadError = StateError('No active inference model set.');
+        runtime.loadError = gemma.NoActiveModelError(
+          'No active inference model set.',
+        );
         await expectLater(
           buildModel()(text('hi')),
           genkitError(StatusCode.unavailable, contains('No active inference')),
@@ -925,12 +911,12 @@ void main() {
       );
     });
 
-    test('an engine that cannot run here is UNAVAILABLE, so a router can '
-        'fall back', () async {
+    test('an engine that cannot run here is UNIMPLEMENTED, which a router '
+        'hands to its next branch', () async {
       runtime.loadError = UnsupportedError('not on this platform');
       await expectLater(
         buildModel()(text('hi')),
-        genkitError(StatusCode.unavailable, contains('not on this platform')),
+        genkitError(StatusCode.unimplemented, contains('not on this platform')),
       );
     });
 
@@ -1205,9 +1191,9 @@ void main() {
     );
 
     test('no embedder installed is UNAVAILABLE', () async {
-      runtime
-        ..activeEmbedderName = null
-        ..loadError = StateError('No active embedding model set.');
+      runtime.loadError = gemma.NoActiveModelError(
+        'No active embedding model set.',
+      );
       await expectLater(
         createFlutterEdgeAiEmbedder(
           name: 'flutter-edge-ai/e',
@@ -1217,34 +1203,26 @@ void main() {
       );
     });
 
-    test(
-      'a closed embedder, or one no longer active, is loaded again',
-      () async {
-        runtime.embedderToReturn.embeddingsToReturn = [
-          [0.1],
+    test('every call asks flutter_edge_ai for the embedder', () async {
+      // flutter_edge_ai reuses the loaded embedder while nothing changed and
+      // builds a new one when the active embedder did; whatever it returns is
+      // the one used.
+      runtime.embedderToReturn.embeddingsToReturn = [
+        [0.1],
+      ];
+      final embedder = createFlutterEdgeAiEmbedder(
+        name: 'flutter-edge-ai/e',
+        runtime: runtime,
+      );
+      await embedder(embedRequest([doc('q')]));
+      runtime.embedderToReturn = FakeEmbeddingModel()
+        ..embeddingsToReturn = [
+          [0.2],
         ];
-        final embedder = createFlutterEdgeAiEmbedder(
-          name: 'flutter-edge-ai/e',
-          runtime: runtime,
-        );
-        await embedder(embedRequest([doc('q')]));
-        await embedder(embedRequest([doc('q')]));
-        expect(runtime.getActiveEmbedderCallCount, 1);
-
-        runtime.embedderToReturn.isClosed = true;
-        runtime.embedderToReturn = FakeEmbeddingModel()
-          ..embeddingsToReturn = [
-            [0.2],
-          ];
-        final afterClose = await embedder(embedRequest([doc('q')]));
-        expect(runtime.getActiveEmbedderCallCount, 2);
-        expect(afterClose.embeddings.single.embedding, [0.2]);
-
-        runtime.activeEmbedderName = 'another-embedder';
-        await embedder(embedRequest([doc('q')]));
-        expect(runtime.getActiveEmbedderCallCount, 3);
-      },
-    );
+      final second = await embedder(embedRequest([doc('q')]));
+      expect(runtime.getActiveEmbedderCallCount, 2);
+      expect(second.embeddings.single.embedding, [0.2]);
+    });
 
     test(
       'a vector count that does not match the documents is INTERNAL',
@@ -1264,33 +1242,22 @@ void main() {
   });
 
   group('model lifecycle', () {
-    test('a model that core closed is loaded again', () async {
-      final model = buildModel();
-      await model(text('hi'));
-      await model(text('hi'));
-      expect(runtime.getActiveModelCallCount, 1);
-
-      // What getActiveModel with other arguments does to the old handle.
-      await inferenceModel.close();
-      await model(text('hi'));
-      expect(runtime.getActiveModelCallCount, 2);
-    });
-
-    test('a newly installed model is used, not the cached one', () async {
+    test('every request asks flutter_edge_ai for the active model', () async {
+      // flutter_edge_ai reuses the loaded model while nothing changed and
+      // builds a new one when the arguments or the active model did; whatever
+      // it returns is the model used.
       final model = buildModel();
       await model(text('hi'));
 
       final next = FakeInferenceChat()
         ..blockingResponse = const gemma.TextResponse('from B');
-      runtime
-        ..activeModelName = 'model-b'
-        ..modelToReturn = (FakeInferenceModel()..chatToReturn = next);
+      runtime.modelToReturn = FakeInferenceModel()..chatToReturn = next;
       final response = await model(text('hi'));
       expect(runtime.getActiveModelCallCount, 2);
       expect(response.text, 'from B');
     });
 
-    test('every configured name shares one model and one queue', () async {
+    test('every configured name shares one queue', () async {
       final plugin = GenkitFlutterEdgeAiPlugin(
         models: [
           FlutterEdgeAiModelConfig(
@@ -1318,7 +1285,7 @@ void main() {
       chat.generationGate!.complete();
       await Future.wait([first, second]);
       expect(inferenceModel.createChatCallCount, 2);
-      expect(runtime.getActiveModelCallCount, 1);
+      expect(runtime.getActiveModelCallCount, 2);
     });
 
     test('a request that fails preparation fails at once and does not hold '

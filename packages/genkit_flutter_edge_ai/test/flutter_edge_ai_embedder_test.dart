@@ -31,9 +31,7 @@ void main() {
       final response = await embedder(
         EmbedRequest(
           input: [
-            DocumentData(
-              content: [TextPart(text: 'Hello world')],
-            ),
+            DocumentData(content: [TextPart(text: 'Hello world')]),
           ],
         ),
       );
@@ -85,27 +83,35 @@ void main() {
         ),
       );
 
-      expect(response.embeddings.first.metadata, {
-        'source': 'test',
-        'page': 1,
-      });
+      expect(response.embeddings.first.metadata, {'source': 'test', 'page': 1});
     });
 
-    test('caches embedding model across calls', () async {
+    test('asks flutter_edge_ai for the embedder on every call, which reuses '
+        'it', () async {
       fakeEmbedder.embeddingsToReturn = [
         [1.0],
       ];
 
       final embedder = buildEmbedder();
 
-      await embedder(EmbedRequest(
-        input: [DocumentData(content: [TextPart(text: 'a')])],
-      ));
-      await embedder(EmbedRequest(
-        input: [DocumentData(content: [TextPart(text: 'b')])],
-      ));
+      await embedder(
+        EmbedRequest(
+          input: [
+            DocumentData(content: [TextPart(text: 'a')]),
+          ],
+        ),
+      );
+      await embedder(
+        EmbedRequest(
+          input: [
+            DocumentData(content: [TextPart(text: 'b')]),
+          ],
+        ),
+      );
 
-      expect(runtime.getActiveEmbedderCallCount, 1);
+      // flutter_edge_ai keeps the loaded embedder and builds a new one when
+      // the active embedder changes; a handle cached here would miss that.
+      expect(runtime.getActiveEmbedderCallCount, 2);
       expect(fakeEmbedder.generateEmbeddingsCallCount, 2);
     });
 
@@ -118,10 +124,12 @@ void main() {
       await embedder(
         EmbedRequest(
           input: [
-            DocumentData(content: [
-              TextPart(text: 'Hello'),
-              TextPart(text: 'world'),
-            ]),
+            DocumentData(
+              content: [
+                TextPart(text: 'Hello'),
+                TextPart(text: 'world'),
+              ],
+            ),
           ],
         ),
       );
@@ -132,10 +140,7 @@ void main() {
     test('throws on null request', () async {
       final embedder = buildEmbedder();
 
-      await expectLater(
-        embedder(null),
-        throwsA(isA<GenkitException>()),
-      );
+      await expectLater(embedder(null), throwsA(isA<GenkitException>()));
     });
 
     test('passes preferredBackend to runtime', () async {
@@ -144,10 +149,14 @@ void main() {
       ];
 
       final embedder = buildEmbedder();
-      await embedder(EmbedRequest(
-        input: [DocumentData(content: [TextPart(text: 'test')])],
-        options: {'preferredBackend': 'gpu'},
-      ));
+      await embedder(
+        EmbedRequest(
+          input: [
+            DocumentData(content: [TextPart(text: 'test')]),
+          ],
+          options: {'preferredBackend': 'gpu'},
+        ),
+      );
 
       expect(runtime.lastPreferredBackend, gemma.PreferredBackend.gpu);
     });
@@ -159,14 +168,22 @@ void main() {
 
       final embedder = buildEmbedder();
 
-      await embedder(EmbedRequest(
-        input: [DocumentData(content: [TextPart(text: 'a')])],
-        options: {'preferredBackend': 'cpu'},
-      ));
-      await embedder(EmbedRequest(
-        input: [DocumentData(content: [TextPart(text: 'b')])],
-        options: {'preferredBackend': 'gpu'},
-      ));
+      await embedder(
+        EmbedRequest(
+          input: [
+            DocumentData(content: [TextPart(text: 'a')]),
+          ],
+          options: {'preferredBackend': 'cpu'},
+        ),
+      );
+      await embedder(
+        EmbedRequest(
+          input: [
+            DocumentData(content: [TextPart(text: 'b')]),
+          ],
+          options: {'preferredBackend': 'gpu'},
+        ),
+      );
 
       expect(runtime.getActiveEmbedderCallCount, 2);
     });
@@ -175,10 +192,14 @@ void main() {
       final embedder = buildEmbedder();
 
       await expectLater(
-        embedder(EmbedRequest(
-          input: [DocumentData(content: [TextPart(text: 'test')])],
-          options: {'preferredBackend': 'tpu'},
-        )),
+        embedder(
+          EmbedRequest(
+            input: [
+              DocumentData(content: [TextPart(text: 'test')]),
+            ],
+            options: {'preferredBackend': 'tpu'},
+          ),
+        ),
         throwsA(isA<GenkitException>()),
       );
     });
@@ -187,15 +208,21 @@ void main() {
       final embedder = buildEmbedder();
 
       await expectLater(
-        embedder(EmbedRequest(
-          input: [DocumentData(content: [TextPart(text: 'test')])],
-          options: {'preferredBackend': 42},
-        )),
-        throwsA(isA<GenkitException>().having(
-          (e) => e.status,
-          'status',
-          StatusCode.invalidArgument,
-        )),
+        embedder(
+          EmbedRequest(
+            input: [
+              DocumentData(content: [TextPart(text: 'test')]),
+            ],
+            options: {'preferredBackend': 42},
+          ),
+        ),
+        throwsA(
+          isA<GenkitException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.invalidArgument,
+          ),
+        ),
       );
     });
   });

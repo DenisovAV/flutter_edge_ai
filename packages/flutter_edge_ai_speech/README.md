@@ -142,8 +142,8 @@ exactly as the example `stt_screen`/`tts_screen` do.
 ### Audio turns: the model hears the recording
 
 A model with an audio encoder (Gemma 4 E2B/E4B) can take the recording itself.
-`runAudioTurn` skips speech-to-text: `fromChat` wraps the PCM in a WAV header
-and sends it to the chat, and the reply is spoken as in `runTurn`. Load the
+`runAudioTurn` skips speech-to-text: it wraps the PCM in a WAV header,
+`fromChat` sends that to the chat, and the reply is spoken as in `runTurn`. Load the
 model and create the chat with `supportAudio: true`:
 
 ```dart
@@ -167,8 +167,9 @@ barge-in, a `.litertlm` chat rebuilds its conversation from text, so the model
 forgets what was said in earlier audio turns. `createChat` takes
 `supportAudio` from the model unless you pass it; on a chat whose
 `supportAudio` is false, `runAudioTurn` throws a `StateError`. With
-`VoiceSession.custom`, pass `respondToAudio` to the `VoiceResponder`. Audio
-input is native-only.
+`VoiceSession.custom`, pass `respondToAudio` to the `VoiceResponder`: it gets
+the recording as that WAV, which `AgentSession.ask(audioBytes:)` takes as is.
+Audio input is native-only.
 
 ## Platforms
 

@@ -75,7 +75,7 @@ class VoiceSession {
           respond: (userText) =>
               _chatRespond(chat, Message(text: userText, isUser: true)),
           respondToAudio: chat.supportAudio
-              ? (pcm) => _chatRespond(chat, _audioMessage(pcm))
+              ? (wav) => _chatRespond(chat, _audioMessage(wav))
               : null,
           stop: chat.stopGeneration,
         ),
@@ -121,7 +121,7 @@ class VoiceSession {
         respond: (userText) =>
             respondWithTools(Message(text: userText, isUser: true)),
         respondToAudio: chat.supportAudio
-            ? (pcm) => respondWithTools(_audioMessage(pcm))
+            ? (wav) => respondWithTools(_audioMessage(wav))
             : null,
         stop: () async {
           activeToken?.cancel();
@@ -141,13 +141,10 @@ class VoiceSession {
     yield* textTokensOf(chat.generateChatResponseAsync());
   }
 
-  /// The user message of an audio turn: the recording as a WAV, which a
-  /// `.litertlm` chat decodes, and no text.
-  static Message _audioMessage(Uint8List pcm16kMono) => Message.withAudio(
-    text: '',
-    audioBytes: wavFromPcm16kMono(pcm16kMono),
-    isUser: true,
-  );
+  /// The user message of an audio turn: the recording (a WAV, which a
+  /// `.litertlm` chat decodes) and no text.
+  static Message _audioMessage(Uint8List wav) =>
+      Message.withAudio(text: '', audioBytes: wav, isUser: true);
 
   /// Keep only [TextResponse] tokens from a chat response stream. Thinking and
   /// function-call parsing already happened inside the chat, so this neither
@@ -227,7 +224,7 @@ class VoiceSession {
   /// no speech-to-text — for a responder whose model hears audio (see
   /// [VoiceResponder.respondToAudio]; [VoiceSession.fromChat] wires it for a
   /// chat created with `supportAudio: true`). [pcm16kMono] is the same 16 kHz
-  /// mono 16-bit LE PCM [runTurn] takes.
+  /// mono 16-bit LE PCM [runTurn] takes; the responder gets it as a WAV.
   ///
   /// The same contract as [runTurn] minus the STT stage: no
   /// VoiceTranscriptEvent; the reply text and audio exactly as in [runTurn]
@@ -484,7 +481,7 @@ class VoiceSession {
       }
 
       final replyTokens = respondToAudio != null
-          ? respondToAudio(pcm)
+          ? respondToAudio(wavFromPcm16kMono(pcm))
           : _responder.respond(transcript);
       final sub = replyTokens.listen(
         (token) {

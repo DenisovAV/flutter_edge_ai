@@ -362,16 +362,18 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
   audio turn, it named it after an uninterrupted second turn, and not after an
   interrupted one.
 - **The format.** `runAudioTurn` takes the same 16 kHz mono 16-bit PCM as
-  `runTurn`. `fromChat` adds the WAV header, because a `.litertlm` model decodes
-  an audio file, not bare samples.
+  `runTurn`. `runAudioTurn` adds the WAV header, because a `.litertlm` model
+  decodes an audio file, not bare samples.
 - **The flags.** `supportAudio` on `getActiveModel` creates the engine with its
   audio encoder. `createChat` takes it from the model unless you pass it, and
   the chat's flag is what `fromChat` checks: on a chat whose `supportAudio` is
   false, `runAudioTurn` throws a `StateError`.
 - **Native only.** No web engine takes audio input.
 - **A custom responder.** `VoiceResponder` takes an optional `respondToAudio`
-  next to `respond`; it gets the bare PCM, so wrap it in a WAV yourself before
-  sending it to a `.litertlm` chat.
+  next to `respond`. It gets the recording as that WAV, ready for a `.litertlm`
+  chat: an `AgentSession` takes it as is, with
+  `respondToAudio: (wav) => agentTokens(agent.ask('', audioBytes: wav))`,
+  where `agentTokens` is whatever maps your agent's events to text.
 
 ## Platform support
 

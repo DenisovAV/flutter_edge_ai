@@ -95,9 +95,9 @@ class _FakeResponder {
       return ctrl.stream;
     },
     respondToAudio: hearsAudio
-        ? (pcm) {
+        ? (wav) {
             audioCalls++;
-            heard = pcm;
+            heard = wav;
             return ctrl.stream;
           }
         : null,
@@ -870,7 +870,9 @@ void main() {
       expect(recognizer.calls, 0);
       expect(r.audioCalls, 1);
       expect(r.respondCalls, 0);
-      expect(r.heard, same(pcm));
+      // The responder gets the recording as a WAV it can pass on as is.
+      expect(String.fromCharCodes(r.heard!.sublist(0, 4)), 'RIFF');
+      expect(r.heard!.sublist(44), pcm);
     });
 
     test(

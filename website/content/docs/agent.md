@@ -188,7 +188,8 @@ await for (final event in session.ask('', audioBytes: wav)) {
   would answer as if nothing was said. Empty bytes fail the same way.
 - **A file, not samples.** A `.litertlm` model decodes an audio file, so pass a
   WAV (16 kHz mono 16-bit PCM in a RIFF container), not bare PCM. If you record
-  bare PCM, add the 44-byte WAV header first.
+  bare PCM, add the 44-byte WAV header first; `VoiceSession.runAudioTurn` hands
+  its responder a ready WAV.
 - **Text and image.** The text may be empty or add to the recording, and an
   image can go in the same `ask`. Tool results later in the turn carry no media.
 - **Native only.** No web engine takes audio input.

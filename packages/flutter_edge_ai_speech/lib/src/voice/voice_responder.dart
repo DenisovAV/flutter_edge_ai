@@ -16,13 +16,14 @@ class VoiceResponder {
 
   /// Stream the reply's tokens for the recording itself, with no
   /// speech-to-text: for a model that hears audio (Gemma 4 E2B or E4B, created
-  /// with `supportAudio: true`). It receives what [VoiceSession.runAudioTurn]
-  /// received — 16 kHz mono 16-bit LE PCM, bare samples — and a responder that
-  /// sends it to a `.litertlm` chat wraps it in a WAV header first, since
-  /// LiteRT-LM decodes an audio file (`VoiceSession.fromChat` does that).
+  /// with `supportAudio: true`). It receives the recording
+  /// [VoiceSession.runAudioTurn] got as a WAV file — its 16 kHz mono 16-bit
+  /// PCM behind a 44-byte RIFF header — which is what a `.litertlm` chat
+  /// decodes: pass it on as is, e.g. to `Message.withAudio` or to an agent's
+  /// `ask('', audioBytes: wav)`.
   ///
   /// Optional: without it, [VoiceSession.runAudioTurn] throws [StateError].
-  final Stream<String> Function(Uint8List pcm16kMono)? respondToAudio;
+  final Stream<String> Function(Uint8List wav)? respondToAudio;
 
   /// Portable stop of in-flight generation (e.g. `chat.stopGeneration`).
   ///

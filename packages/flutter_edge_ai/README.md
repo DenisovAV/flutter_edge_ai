@@ -319,7 +319,7 @@ and why `.litertlm` keeps the first session's values:
 | Model | `ModelType` | Function calling | Thinking | Vision / audio |
 |---|---|:---:|:---:|:---:|
 | Gemma 4 E2B / E4B ² | `gemma4` | ✅ | ✅ | ✅ / ✅ |
-| Gemma 3n E2B / E4B ² | `gemmaIt` | ✅ ¹ | — | ✅ / ✅ |
+| Gemma 3n E2B / E4B ² | `gemmaIt` | ✅ ³ | — | ✅ / ✅ |
 | Gemma 3 1B, Gemma 3 270M | `gemmaIt` | — | — | — |
 | FunctionGemma 270M | `functionGemma` | ✅ | — | — |
 | Qwen3 0.6B | `qwen3` | ✅ | ✅ | — |
@@ -330,9 +330,9 @@ and why `.litertlm` keeps the first session's values:
 | FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision | `general` | — | — | ✅ / — |
 | SmolLM, SmolLM3, LFM2.5, Phi-4 Mini Reasoning | `general` | — | — | — |
 
-¹ The downloadable E4B `.litertlm`.
-
 ² On Web: no audio input; Gemma 4 vision needs the `-web.task` build, while thinking and function calling need the `.litertlm` one; Gemma 3n vision is native-only.
+
+³ The downloadable E4B `.litertlm`.
 
 Embedding models: EmbeddingGemma 1 (`.tflite` plus a tokenizer, every
 platform) and EmbeddingGemma 2 (one `.litertlm` file: text, images, audio and

@@ -129,7 +129,11 @@ enum Model implements InferenceModelInterface {
   // entries above). So these run on web only, through the MediaPipe
   // `@mediapipe/tasks-genai` path. fileType is `task` to match the file —
   // mixing it with `litertlm` routed the .task blob into the LiteRT-LM engine
-  // and failed with "Invalid magic number".
+  // and failed with "Invalid magic number". Vision works here; thinking and
+  // function calling do not: MediaPipe web has no thinking API (enableThinking
+  // is only logged), and Gemma 4's tools reach the model only through the
+  // runtime, which MediaPipe web does not do — core weaves no tools prompt for
+  // Gemma 4. Both live on the *_litertlm entries.
   gemma4_E2B_web(
     baseUrl:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task',
@@ -150,8 +154,9 @@ enum Model implements InferenceModelInterface {
     supportAudio: false, // .task has no audio encoder
     maxTokens: 4096,
     maxNumImages: 4,
-    isThinking: true,
-    supportsFunctionCalls: true,
+    // MediaPipe web has no thinking API and ignores `tools` (see above).
+    isThinking: false,
+    supportsFunctionCalls: false,
   ),
   gemma4_E4B_web(
     baseUrl:
@@ -173,8 +178,9 @@ enum Model implements InferenceModelInterface {
     supportAudio: false, // .task has no audio encoder
     maxTokens: 4096,
     maxNumImages: 4,
-    isThinking: true,
-    supportsFunctionCalls: true,
+    // MediaPipe web has no thinking API and ignores `tools` (see above).
+    isThinking: false,
+    supportsFunctionCalls: false,
   ),
 
   // Gemma 3 Nano models (Multimodal + Function Calls).

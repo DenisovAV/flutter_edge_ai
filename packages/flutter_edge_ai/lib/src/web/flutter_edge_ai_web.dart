@@ -76,14 +76,10 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     ActivationDataType? activationDataType, // Not read by the web engines.
     int? maxConcurrentSessions,
   }) async {
-    // TODO: Implement multimodal support for web
-    if (supportImage || maxNumImages != null) {
-      if (kDebugMode) {
-        edgeAiLog(
-          'Warning: Image support is not yet implemented for web platform',
-        );
-      }
-    }
+    // No image warning here: whether a web engine takes images is the engine's
+    // to say, and each one does, with a log or an error of its own. Core used
+    // to warn "not yet implemented for web" for every engine, which was wrong
+    // for MediaPipe `.task`.
 
     // Keyed on the ACTIVE model, as on mobile and desktop. Web used to build
     // from a synthetic spec named 'web-active', and since a reuse check keyed

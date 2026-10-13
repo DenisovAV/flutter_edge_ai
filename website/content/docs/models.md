@@ -105,9 +105,9 @@ killed for memory while loading even Gemma 3 1B. See
 
 | Model Family | Best For | Function Calling | Thinking Mode | Vision | Languages | Size |
 |---|---|:---:|:---:|:---:|---|---|
-| **Gemma 4 E2B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ¹ | ✅ | Multilingual | 2.4GB |
-| **Gemma 4 E4B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ¹ | ✅ | Multilingual | 4.3GB |
-| **Gemma3n** | On-device multimodal chat and image analysis | ⚠️ ² | ❌ | ✅ | Multilingual | 3-6GB |
+| **Gemma 4 E2B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 2.4GB |
+| **Gemma 4 E4B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 4.3GB |
+| **Gemma3n** | On-device multimodal chat and image analysis | ⚠️ ⁶ | ❌ | ✅ | Multilingual | 3-6GB |
 | **FastVLM 0.5B** | Fast vision-language inference | ❌ | ❌ | ✅ | Multilingual | 0.5GB |
 | **Qwen2-VL 2B** | Vision-language chat (image + text) | ❌ | ❌ | ✅ | Multilingual | 1.8GB |
 | **SmolVLM2 500M** | Compact vision-language model | ❌ | ❌ | ✅ | Multilingual | 0.36GB |
@@ -125,13 +125,13 @@ killed for memory while loading even Gemma 3 1B. See
 | **SmolLM3 3B** | Multilingual small LLM with reasoning mode | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.0GB |
 | **TranslateGemma 4B** † | Single-shot 55-language translation | ❌ | ❌ | ❌ | 55 languages | 2-4GB |
 
-¹ Gemma 4 **Thinking Mode** needs LiteRT-LM (`.litertlm`): Android, iOS, Desktop
+⁵ Gemma 4 **Thinking Mode** needs LiteRT-LM (`.litertlm`): Android, iOS, Desktop
 and Web (measured on Gemma 4 E2B in Chrome). MediaPipe Web cannot enable it and
 ONNX Web ignores it.
 Qwen3 is different: core parses its emitted `<think>` tags on every platform,
 including Web.
 
-² Gemma3n function calling: the downloadable catalog enables it only on the E4B
+⁶ Gemma3n function calling: the downloadable catalog enables it only on the E4B
 `.litertlm` build.
 
 ‡ Runs as `ModelType.general`. These `.litertlm` bundles stream their reasoning

@@ -428,26 +428,27 @@ await FlutterEdgeAi.uninstallStt();
 await FlutterEdgeAi.uninstallTts();
 ```
 
-To delete an inference model, or any model by filename, use `uninstallModel()`
-and clear the active inference identity if you removed the active one:
+To delete an inference model, or any model by filename, use `uninstallModel()`.
+When the file belongs to the active inference model (the model or its LoRA), it
+also clears the active inference identity, so the model isn't auto-restored and
+`getActiveModel()` throws `NoActiveModelError` instead of loading a deleted file:
 
 ```dart
 // Free in-memory handles first if the model is loaded.
 await model.close();
 
-// Delete the downloaded file + metadata (a fromFile file stays).
+// Delete the downloaded file + metadata (a fromFile file stays). If this was
+// the active model, the active inference identity is cleared too.
 await FlutterEdgeAi.uninstallModel('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm');
-
-// Clear the persisted "active model" identity so it isn't auto-restored.
-await FlutterEdgeAi.clearActiveInferenceIdentity();
 ```
 
 <Info>
 
 `clearActiveInferenceIdentity()` wipes both the in-memory active spec and the
-persisted preference. Pair it with `uninstallModel()` only when the deleted model
-was the active one. The `uninstallEmbedder/Stt/Tts` helpers already clear the
-identity for you.
+persisted preference without deleting any file. `uninstallModel()` now does it
+for you when it removes a file of the active model; calling it afterwards, as
+earlier releases required, is still harmless. The `uninstallEmbedder/Stt/Tts`
+helpers clear their identity too.
 
 </Info>
 
@@ -463,7 +464,9 @@ final EmbeddingModelSpec? embedder = FlutterEdgeAi.activeEmbedderSpec;
 final SttModelSpec? stt = FlutterEdgeAi.activeSttSpec;
 final TtsModelSpec? tts = FlutterEdgeAi.activeTtsSpec;
 
-// Absolute on-device path of an installed file (a URL/OPFS handle on web):
+// Where an installed file is read from on the device: your own file for a
+// fromFile install, the app bundle for fromBundled on iOS, else core's copy.
+// On web it returns the file name itself, not a path or a URL.
 final path = await FlutterEdgeAi.getModelPath(
   'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
 );

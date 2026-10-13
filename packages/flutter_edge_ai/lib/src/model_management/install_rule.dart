@@ -238,11 +238,39 @@ Future<bool> _isThere(repo.ModelInfo record) async {
 
 /// Where [record]'s file is read from in this run, or null when that cannot
 /// be found out (an iOS bundle resource that is gone).
-Future<String?> _readLocation(repo.ModelInfo record) async {
+Future<String?> _readLocation(repo.ModelInfo record) =>
+    _locate(record, inBundle: _bundlePath);
+
+/// Where [record]'s file is read from in this run, as the engines read it,
+/// and what `FlutterEdgeAi.getModelPath` returns for a name with a record:
+/// the app's file where it is now (on iOS in the app's current container), a
+/// resource of the iOS bundle in place, otherwise core's copy.
+///
+/// Throws what the bundle lookup throws for a resource the iOS app bundle
+/// does not hold, as loading the model does. Native only: on web a model
+/// core holds is not a file, and this throws [UnsupportedError] for one.
+Future<String> recordedFileLocation(repo.ModelInfo record) async {
+  final location = await _locate(
+    record,
+    inBundle: ServiceRegistry.instance.fileSystemService.getBundledResourcePath,
+  );
+  if (location == null) {
+    // Core names no copy of its own only on web.
+    throw UnsupportedError('${record.id} is not a file on this platform');
+  }
+  return location;
+}
+
+/// The one answer to where [record]'s file is; [inBundle] finds a resource
+/// of the iOS bundle.
+Future<String?> _locate(
+  repo.ModelInfo record, {
+  required Future<String?> Function(String resourceName) inBundle,
+}) async {
   return switch (record.source) {
     FileSource(:final path) => await appFileLocationNow(path),
     BundledSource(:final resourceName) when !bundledResourcesAreCopies =>
-      await _bundlePath(resourceName),
+      await inBundle(resourceName),
     _ => await _coreCopy(record),
   };
 }

@@ -1,0 +1,479 @@
+// Where FlutterEdgeAi.getModelPath says a file is, and what uninstallModel
+// does to the active inference model.
+//
+// getModelPath answers from the file's own repository record, the way the
+// engines read the file in this run: a file the app installed with
+// `fromFile` where it is now — on iOS in the app's current data container,
+// which an update or a restore from a backup can move —, a resource of the
+// iOS bundle in place, otherwise core's copy. A name with no record (an
+// install older than per-file records) resolves as it always did: what the
+// app registered, else core's directory. Web is not covered: it returns the
+// name unchanged, and these tests run on the VM.
+//
+// uninstallModel clears the active inference identity, in memory and
+// persisted, when the file it removes is one of the active model's — after
+// the file is gone and before its record is, so a step that fails leaves an
+// uninstall that can be retried.
+//
+// Run: flutter test test/core/model_path_and_uninstall_test.dart
+
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/infrastructure/platform_file_system_service.dart';
+import 'package:flutter_edge_ai/src/model_management/active_identity_store.dart';
+import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
+import 'package:flutter_edge_ai/src/model_management/utils/local_file_io.dart'
+    show debugAppContainerCanMove;
+import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
+    show MobileModelManager;
+
+/// Over the 1 MB floor install validation applies to model files.
+final _modelBytes = Uint8List(1024 * 1024 + 1);
+
+/// Two iOS app data containers: the one a file was recorded in, and the one
+/// the app runs in now.
+const _earlierContainer = 'AAAAAAAA-1111-2222-3333-444444444444';
+const _currentContainer = 'BBBBBBBB-5555-6666-7777-888888888888';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Directory root;
+  late Directory user;
+  late _Downloads downloads;
+
+  Future<void> useServices({FileSystemService? fileSystem}) async {
+    ServiceRegistry.reset();
+    await ServiceRegistry.initialize(
+      downloadService: downloads,
+      fileSystemService: fileSystem,
+    );
+  }
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    root = await Directory.systemTemp.createTemp('fe_model_path_');
+    // Documents inside an app data container shaped as iOS names it, so a
+    // test can move the container; to the desktop host it is a directory.
+    final documents = Directory(
+      '${root.path}/Containers/Data/Application/$_currentContainer/Documents',
+    )..createSync(recursive: true);
+    final support = Directory('${root.path}/support')..createSync();
+    user = Directory('${root.path}/user')..createSync();
+    PathProviderPlatform.instance = _FixedPathProviderPlatform(
+      documentsPath: documents.path,
+      appSupportPath: support.path,
+    );
+    downloads = _Downloads();
+    await useServices();
+    // The plugin's model manager lives as long as the process: no test
+    // starts with the previous test's active model.
+    await FlutterEdgeAiPlugin.instance.modelManager
+        .clearActiveInferenceIdentity();
+  });
+
+  tearDown(() async {
+    debugAppContainerCanMove = null;
+    ServiceRegistry.reset();
+    if (await root.exists()) await root.delete(recursive: true);
+  });
+
+  repo.ModelRepository records() => ServiceRegistry.instance.modelRepository;
+
+  File userFile(String relative) => File('${user.path}/$relative')
+    ..createSync(recursive: true)
+    ..writeAsBytesSync(_modelBytes);
+
+  Future<String> coreReadPath(String name) =>
+      ServiceRegistry.instance.fileSystemService.getReadTargetPath(name);
+
+  Future<void> saveRecord(String id, ModelSource source) => records().saveModel(
+    repo.ModelInfo(
+      id: id,
+      source: source,
+      installedAt: DateTime(2026),
+      sizeBytes: _modelBytes.length,
+      type: repo.ModelType.inference,
+      hasLoraWeights: false,
+    ),
+  );
+
+  /// What a `fromFile` install registers for [name].
+  Future<void> registerAppFile(String name, String filePath) async {
+    final registry = ServiceRegistry.instance.protectedFilesRegistry;
+    await registry.protect(name);
+    await registry.registerExternalPath(name, filePath);
+  }
+
+  Future<InferenceInstallation> fromFile(String filePath, {String? lora}) {
+    var builder = FlutterEdgeAi.installModel(
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.task,
+    ).fromFile(filePath);
+    if (lora != null) builder = builder.withLoraFromFile(lora);
+    return builder.install();
+  }
+
+  /// Core's copy of [name], downloaded; the model is active.
+  Future<File> downloaded(String name) async {
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.task,
+    ).fromNetwork('https://a.example/m/$name').install();
+    return File(await coreReadPath(name));
+  }
+
+  Future<Map<String, String>?> persistedIdentity() async =>
+      ActiveIdentityStore.read(
+        await SharedPreferences.getInstance(),
+        ActiveIdentityKind.inference,
+      );
+
+  group('getModelPath', () {
+    test('a fromFile model recorded in an earlier iOS container is where it '
+        'is in the current one', () async {
+      debugAppContainerCanMove = true;
+      final containers = '${root.path}/Containers/Data/Application';
+      final recorded = '$containers/$_earlierContainer/Documents/picked.task';
+      final now = File('$containers/$_currentContainer/Documents/picked.task')
+        ..writeAsBytesSync(_modelBytes);
+      // What the install left before the container moved: the record and the
+      // registration both name the earlier container.
+      await saveRecord('picked.task', FileSource(recorded));
+      await registerAppFile('picked.task', recorded);
+
+      expect(await FlutterEdgeAi.getModelPath('picked.task'), now.path);
+    });
+
+    test('a fromFile model is the app\'s file, where it lies', () async {
+      final picked = userFile('picked/model.task');
+      await fromFile(picked.path);
+
+      expect(await FlutterEdgeAi.getModelPath('model.task'), picked.path);
+    });
+
+    test('a download is core\'s copy, although an older release left the '
+        'name registered as the app\'s file', () async {
+      final copy = await downloaded('model.task');
+      // Releases up to 2.2.0 kept a fromFile registration after the name was
+      // uninstalled or downloaded over.
+      await registerAppFile('model.task', '${user.path}/model.task');
+
+      expect(await FlutterEdgeAi.getModelPath('model.task'), copy.path);
+      expect(copy.existsSync(), isTrue);
+    });
+
+    test('a resource of the iOS bundle is read in place', () async {
+      // The host reads bundled resources in place, as iOS does.
+      final bundle = Directory('${root.path}/Runner.app')..createSync();
+      await useServices(fileSystem: _BundleFiles(bundle));
+      final resource = File('${bundle.path}/gemma.task')
+        ..writeAsBytesSync(_modelBytes);
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromBundled('gemma.task').install();
+
+      expect(await FlutterEdgeAi.getModelPath('gemma.task'), resource.path);
+    });
+
+    test('a bundle resource recorded under a namespaced name is found by its '
+        'resource name', () async {
+      final bundle = Directory('${root.path}/Runner.app')..createSync();
+      await useServices(fileSystem: _BundleFiles(bundle));
+      final resource = File('${bundle.path}/tokenizer.model')
+        ..writeAsBytesSync(_modelBytes);
+      await saveRecord(
+        'gemma__tokenizer.model',
+        BundledSource('tokenizer.model'),
+      );
+
+      expect(
+        await FlutterEdgeAi.getModelPath('gemma__tokenizer.model'),
+        resource.path,
+      );
+    });
+
+    test('a resource the iOS bundle no longer holds throws, as loading it '
+        'does', () async {
+      final bundle = Directory('${root.path}/Runner.app')..createSync();
+      await useServices(fileSystem: _BundleFiles(bundle));
+      await saveRecord('gone.task', BundledSource('gone.task'));
+
+      await expectLater(
+        FlutterEdgeAi.getModelPath('gone.task'),
+        throwsA(
+          isA<Exception>().having(
+            (e) => '$e',
+            'message',
+            contains('gone.task'),
+          ),
+        ),
+      );
+    });
+
+    test('a name with no record is the file the app registered', () async {
+      // An install from before every file had a record.
+      await registerAppFile('legacy.task', '${user.path}/legacy.task');
+
+      expect(
+        await FlutterEdgeAi.getModelPath('legacy.task'),
+        '${user.path}/legacy.task',
+      );
+    });
+
+    test('a name with no record and no registration is in core\'s '
+        'directory', () async {
+      expect(
+        await FlutterEdgeAi.getModelPath('nothing.task'),
+        await coreReadPath('nothing.task'),
+      );
+    });
+  });
+
+  group('uninstallModel and the active model', () {
+    test('removing the active fromFile model clears the active identity, in '
+        'memory and persisted', () async {
+      final picked = userFile('active.task');
+      await fromFile(picked.path);
+      expect(FlutterEdgeAi.activeModelSpec, isNotNull);
+
+      await FlutterEdgeAi.uninstallModel('active.task');
+
+      expect(FlutterEdgeAi.hasActiveModel(), isFalse);
+      expect(FlutterEdgeAi.activeModelSpec, isNull);
+      await expectLater(
+        FlutterEdgeAi.getActiveModel(),
+        throwsA(isA<NoActiveModelError>()),
+      );
+      expect(await persistedIdentity(), isNull);
+      expect(picked.existsSync(), isTrue, reason: 'the app\'s own file');
+    });
+
+    test('removing the active download clears it too', () async {
+      final copy = await downloaded('model.task');
+      expect(FlutterEdgeAi.activeModelSpec, isNotNull);
+
+      await FlutterEdgeAi.uninstallModel('model.task');
+
+      expect(copy.existsSync(), isFalse);
+      expect(FlutterEdgeAi.activeModelSpec, isNull);
+      expect(await persistedIdentity(), isNull);
+    });
+
+    test('removing the active model\'s LoRA clears the identity', () async {
+      final installation = await fromFile(
+        userFile('model.task').path,
+        lora: userFile('adapter.bin').path,
+      );
+      final lora = installation.spec.files.singleWhere(
+        (file) => file.prefsKey == PreferencesKeys.installedLoraFileName,
+      );
+
+      await FlutterEdgeAi.uninstallModel(lora.filename);
+
+      expect(FlutterEdgeAi.activeModelSpec, isNull);
+      expect(await persistedIdentity(), isNull);
+    });
+
+    test('removing a file the active model does not use keeps the '
+        'identity', () async {
+      await fromFile(userFile('other/other.task').path);
+      final active = userFile('active/active.task');
+      await fromFile(active.path);
+
+      await FlutterEdgeAi.uninstallModel('other.task');
+
+      expect(
+        FlutterEdgeAi.activeModelSpec?.modelSource,
+        FileSource(active.path),
+      );
+      expect(
+        (await persistedIdentity())?[PreferencesKeys.activeInferenceFilename],
+        'active.task',
+      );
+    });
+
+    test('removing the active model before anything read it after a start '
+        'clears it', () async {
+      await downloaded('model.task');
+      // A started app whose model manager has not restored the active model
+      // yet.
+      final restarted = MobileModelManager();
+      final plugin = FlutterEdgeAiPlugin.instance;
+      FlutterEdgeAiPlugin.instance = _PluginWith(restarted);
+      addTearDown(() => FlutterEdgeAiPlugin.instance = plugin);
+
+      await FlutterEdgeAi.uninstallModel('model.task');
+
+      expect(restarted.activeInferenceModel, isNull);
+      expect(await persistedIdentity(), isNull);
+    });
+
+    test('an identity clear that fails leaves the record, and the retry '
+        'clears it', () async {
+      final copy = await downloaded('model.task');
+      final active = FlutterEdgeAi.activeModelSpec;
+      expect(active, isNotNull);
+      final manager = _ClearFailsOnce(active!);
+      final plugin = FlutterEdgeAiPlugin.instance;
+      FlutterEdgeAiPlugin.instance = _PluginWith(manager);
+      addTearDown(() => FlutterEdgeAiPlugin.instance = plugin);
+
+      await expectLater(
+        FlutterEdgeAi.uninstallModel('model.task'),
+        throwsA(isA<StateError>()),
+      );
+      expect(copy.existsSync(), isFalse);
+      expect(await records().isInstalled('model.task'), isTrue);
+
+      await FlutterEdgeAi.uninstallModel('model.task');
+
+      expect(manager.activeInferenceModel, isNull);
+      expect(await records().isInstalled('model.task'), isFalse);
+    });
+
+    test('a file delete that fails leaves the identity, and the retry '
+        'clears it', () async {
+      final copy = await downloaded('model.task');
+      await useServices(fileSystem: _UndeletableFileSystem(copy.path));
+
+      await expectLater(
+        FlutterEdgeAi.uninstallModel('model.task'),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(FlutterEdgeAi.activeModelSpec, isNotNull);
+      expect(await persistedIdentity(), isNotNull);
+      expect(await records().isInstalled('model.task'), isTrue);
+
+      await useServices();
+      await FlutterEdgeAi.uninstallModel('model.task');
+
+      expect(copy.existsSync(), isFalse);
+      expect(FlutterEdgeAi.activeModelSpec, isNull);
+      expect(await persistedIdentity(), isNull);
+    });
+  });
+}
+
+/// The plugin with [modelManager] in place of its own.
+final class _PluginWith extends FlutterEdgeAiPlugin {
+  _PluginWith(this.modelManager);
+
+  @override
+  final ModelFileManager modelManager;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// A model manager with [_active] as the active inference model, whose first
+/// clear of it fails, as a storage write can.
+final class _ClearFailsOnce extends ModelFileManager {
+  _ClearFailsOnce(this._active);
+
+  ModelSpec? _active;
+  var _clears = 0;
+
+  @override
+  ModelSpec? get activeInferenceModel => _active;
+
+  @override
+  Future<void> ensureInitialized() async {}
+
+  @override
+  Future<void> clearActiveInferenceIdentity() async {
+    if (++_clears == 1) throw StateError('the identity was not removed');
+    _active = null;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Writes a model-sized file for each download.
+class _Downloads implements DownloadService {
+  @override
+  Future<void> download(
+    String url,
+    String targetPath, {
+    String? token,
+    CancelToken? cancelToken,
+  }) async {
+    await File(targetPath).writeAsBytes(_modelBytes);
+  }
+
+  @override
+  Stream<int> downloadWithProgress(
+    String url,
+    String targetPath, {
+    String? token,
+    int maxRetries = 10,
+    CancelToken? cancelToken,
+    bool? foreground,
+  }) async* {
+    await download(url, targetPath);
+    yield 100;
+  }
+}
+
+/// A file system whose bundled resources are files in [bundle], read in
+/// place as the iOS bundle is; a resource the bundle does not hold is not
+/// found, as on iOS.
+class _BundleFiles extends PlatformFileSystemService {
+  _BundleFiles(this.bundle);
+  final Directory bundle;
+
+  @override
+  Future<String> getBundledResourcePath(String resourceName) async {
+    final resource = File(path.join(bundle.path, resourceName));
+    if (!resource.existsSync()) {
+      throw Exception('Bundled resource not found: $resourceName');
+    }
+    return resource.path;
+  }
+}
+
+/// A file system that cannot delete one file, the way Windows refuses to
+/// delete a model a live engine has mapped.
+class _UndeletableFileSystem extends PlatformFileSystemService {
+  _UndeletableFileSystem(this.locked);
+  final String locked;
+
+  @override
+  Future<void> deleteFile(String filePath) async {
+    if (path.equals(filePath, locked)) {
+      throw FileSystemException('The file is in use', filePath);
+    }
+    await super.deleteFile(filePath);
+  }
+}
+
+class _FixedPathProviderPlatform extends PathProviderPlatform {
+  _FixedPathProviderPlatform({
+    required this.documentsPath,
+    required this.appSupportPath,
+  });
+
+  final String documentsPath;
+  final String appSupportPath;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => documentsPath;
+
+  @override
+  Future<String?> getApplicationSupportPath() async => appSupportPath;
+
+  @override
+  Future<String?> getTemporaryPath() async => Directory.systemTemp.path;
+}

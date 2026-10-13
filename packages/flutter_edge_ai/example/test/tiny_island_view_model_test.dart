@@ -6,7 +6,9 @@
 // scene run in integration_test/tiny_island_test.dart.
 
 import 'dart:async';
+import 'dart:io' show FileSystemException;
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -230,6 +232,42 @@ void main() {
       },
     );
 
+    test('refuses new actions while four are still playing', () async {
+      final vm = await openVm();
+      stage.hold = Completer<void>();
+      for (final request in ['jump', 'dance', 'wave', 'spin around']) {
+        unawaited(vm.submit(request));
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(vm.playing, 4);
+      await vm.submit('nod');
+      expect(vm.lastTurn!.error, contains('still playing 4 actions'));
+      expect(stage.performed, hasLength(4));
+      stage.hold!.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(vm.playing, 0);
+    });
+
+    test("keeps the island's last remark across turns", () async {
+      stage.outcome = const IslandOutcome.declined(
+        'The chest is already open.',
+      );
+      final vm = await openVm();
+      await vm.submit('open the chest');
+      stage.outcome = const IslandOutcome.done();
+      await vm.submit('jump');
+      expect(vm.lastNote, 'open(chest): The chest is already open.');
+    });
+
+    test('an answer with nothing ranked does not wedge the screen', () async {
+      final vm = await openVm();
+      rig.decider!.answerEmpty = true;
+      await vm.submit('jump');
+      expect(vm.deciding, isFalse);
+      expect(vm.lastTurn!.decision!.choice, isNull);
+      expect(stage.shrugs, 1);
+    });
+
     test(
       'opens one at a time; a superseded open releases its decider',
       () async {
@@ -325,6 +363,21 @@ void main() {
       expect(miss.choice, isNull);
       expect(miss.abstainReason, IslandAbstainReason.outOfScope);
       expect(miss.threshold, 0.8);
+    });
+
+    test('a cache that cannot be written costs the next visit only', () async {
+      final decider = await EmbeddingIslandDecider.create(
+        model: model,
+        name: 'fake',
+        profileId: 'p',
+        catalog: catalog,
+        cache: _FailingCache(),
+        threshold: 0.8,
+      );
+      expect(
+        (await decider.decide('water the flowers')).choice,
+        'water(flowers)',
+      );
     });
 
     test(
@@ -435,6 +488,7 @@ void main() {
         ),
       );
       expect(find.text('No embedding model is active.'), findsOneWidget);
+      expect(find.byKey(const Key('tiny-island-retry')), findsOneWidget);
       await tester.tap(find.byKey(const Key('tiny-island-choose-model')));
       expect(chose, 1);
     });
@@ -484,6 +538,7 @@ final class _ScriptedDecider implements IslandDecider {
   final KeywordIslandDecider _inner;
   Object? failNext;
   String? answerWith;
+  bool answerEmpty = false;
   bool closed = false;
 
   @override
@@ -502,6 +557,17 @@ final class _ScriptedDecider implements IslandDecider {
       throw error;
     }
     final decision = await _inner.decide(request);
+    if (answerEmpty) {
+      return IslandDecision(
+        choice: null,
+        ranked: const [],
+        margin: 0,
+        abstainReason: IslandAbstainReason.outOfScope,
+        embedTime: decision.embedTime,
+        scoreTime: decision.scoreTime,
+        optionCount: decision.optionCount,
+      );
+    }
     if (answerWith case final id?) {
       return IslandDecision(
         choice: id,
@@ -527,9 +593,13 @@ final class _RecordingStage implements IslandStage {
   int shrugs = 0;
   IslandOutcome outcome = const IslandOutcome.done();
 
+  /// When set, every action plays until it completes.
+  Completer<void>? hold;
+
   @override
   Future<IslandOutcome> perform(IslandAction action) async {
     performed.add(action.id);
+    if (hold case final hold?) await hold.future;
     return outcome;
   }
 
@@ -578,4 +648,13 @@ final class _WordEmbedder extends EmbeddingModel {
 
   @override
   Future<void> close() async => _closed = true;
+}
+
+final class _FailingCache implements IslandVectorCache {
+  @override
+  Future<Float32List?> read(String key) async => null;
+
+  @override
+  Future<void> write(String key, Float32List vectors) =>
+      Future.error(const FileSystemException('No space left on device'));
 }

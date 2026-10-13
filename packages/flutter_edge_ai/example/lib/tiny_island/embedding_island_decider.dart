@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'island_catalog.dart';
@@ -64,7 +65,11 @@ final class EmbeddingIslandDecider implements IslandDecider {
       }
     }
     final dimension = model.dimension;
-    final key = '${_safe(profileId)}_${_fnv1a(texts)}_${texts.length}';
+    // Everything that changes the vectors is in the key: the embedding space,
+    // the task prefix, the texts, and this format.
+    final key =
+        'v1_${_safe(profileId)}_${_taskType.name}_${_fnv1a(texts)}_'
+        '${texts.length}';
     var vectors = await cache.read(key);
     if (vectors == null || vectors.length != texts.length * dimension) {
       vectors = Float32List(texts.length * dimension);
@@ -82,7 +87,13 @@ final class EmbeddingIslandDecider implements IslandDecider {
         }
         onProgress?.call(end, texts.length);
       }
-      await cache.write(key, vectors);
+      try {
+        await cache.write(key, vectors);
+      } catch (e, st) {
+        // The vectors are in memory either way: this visit decides the same.
+        // Only the next visit pays for embedding them again.
+        debugPrint('[TinyIsland] could not cache the option vectors: $e\n$st');
+      }
     } else {
       onProgress?.call(texts.length, texts.length);
     }

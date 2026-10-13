@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'island_decider.dart';
@@ -144,12 +146,23 @@ class TinyIslandHud extends StatelessWidget {
           ),
         );
       }
-      if (turn.outcome?.note case final note?) {
+      // The island's last remark, which may be about an earlier request
+      // still playing when this one was decided.
+      if (vm.lastNote case final note?) {
         children.add(
           Text(
             note,
             key: const Key('tiny-island-note'),
             style: const TextStyle(color: Colors.amberAccent, fontSize: 12.5),
+          ),
+        );
+      }
+      if (vm.playing > 1) {
+        children.add(
+          Text(
+            'The island is playing ${vm.playing} actions, in order.',
+            key: const Key('tiny-island-queue'),
+            style: _muted,
           ),
         );
       }
@@ -241,14 +254,24 @@ class TinyIslandStatusBar extends StatelessWidget {
             vm.error ?? 'The Decider did not start.',
             key: const Key('tiny-island-error'),
           ),
-          if (vm.suggestModelList) ...[
-            const SizedBox(height: 6),
-            FilledButton(
-              key: const Key('tiny-island-choose-model'),
-              onPressed: onChooseModel,
-              child: const Text('Choose a model'),
-            ),
-          ],
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: [
+              if (vm.suggestModelList)
+                FilledButton(
+                  key: const Key('tiny-island-choose-model'),
+                  onPressed: onChooseModel,
+                  child: const Text('Choose a model'),
+                ),
+              OutlinedButton(
+                key: const Key('tiny-island-retry'),
+                // open() keeps any failure in the view model's state.
+                onPressed: () => unawaited(vm.open()),
+                child: const Text('Try again'),
+              ),
+            ],
+          ),
         ],
       ),
     };

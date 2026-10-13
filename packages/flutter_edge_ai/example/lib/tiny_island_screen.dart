@@ -109,7 +109,8 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
 
   void _send([String? text]) {
     final request = text ?? _input.text;
-    if (request.trim().isEmpty) return;
+    // Enter while a request is being decided keeps the typed text for later.
+    if (request.trim().isEmpty || _vm.deciding) return;
     _input.clear();
     unawaited(_vm.submit(request));
   }

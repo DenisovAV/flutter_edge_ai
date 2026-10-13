@@ -190,15 +190,16 @@ final class TinyIslandViewModel extends ChangeNotifier {
       decision = await decider.decide(text);
     } catch (e, st) {
       debugPrint('[TinyIsland] deciding "$text" failed: $e\n$st');
-      _set(() {
-        deciding = false;
-        turn.error = _describe(e);
-      });
+      _set(() => turn.error = _describe(e));
       return;
+    } finally {
+      _set(() => deciding = false);
     }
+    final best = decision.ranked.firstOrNull;
     debugPrint(
-      '[TinyIsland] "$text" -> ${decision.choice ?? 'abstained (${decision.abstainReason?.name})'} '
-      '${decision.ranked.first.score.toStringAsFixed(3)} in '
+      '[TinyIsland] "$text" -> '
+      '${decision.choice ?? 'abstained (${decision.abstainReason?.name})'} '
+      '${best?.score.toStringAsFixed(3) ?? '-'} in '
       '${decision.totalTime.inMicroseconds / 1000} ms',
     );
     final action = switch (decision.choice) {
@@ -206,28 +207,59 @@ final class TinyIslandViewModel extends ChangeNotifier {
       null => null,
     };
     _set(() {
-      deciding = false;
       turn.decision = decision;
       turn.action = action;
       if (decision.choice != null && action == null) {
         turn.error =
             'The Decider chose "${decision.choice}", which is not '
             'an island action.';
+      } else if (action != null && playing >= maxQueued) {
+        // A decision is instant, an animation is not: past a few queued
+        // actions the island would lag far behind what the HUD shows.
+        turn.error =
+            'The island is still playing $playing actions; '
+            '${action.id} was not queued.';
       }
     });
     if (_disposed || turn.error != null) return;
-    try {
-      if (action == null) {
+    if (action == null) {
+      try {
         await _stage.shrug();
-      } else {
-        final outcome = await _stage.perform(action);
-        _set(() => turn.outcome = outcome);
+      } catch (e, st) {
+        if (!_disposed) debugPrint('[TinyIsland] shrugging failed: $e\n$st');
       }
+      return;
+    }
+    _set(() => playing++);
+    try {
+      final outcome = await _stage.perform(action);
+      _set(() {
+        turn.outcome = outcome;
+        if (outcome.note case final note?) lastNote = '${action.id}: $note';
+      });
     } catch (e, st) {
-      debugPrint('[TinyIsland] playing "${action?.id}" failed: $e\n$st');
-      _set(() => turn.error = 'The island could not play it: $e');
+      if (_disposed) return;
+      debugPrint('[TinyIsland] playing "${action.id}" failed: $e\n$st');
+      _set(() {
+        turn.error = 'The island could not play it: $e';
+        lastNote = '${action.id}: could not play it ($e)';
+      });
+    } finally {
+      _set(() => playing--);
     }
   }
+
+  /// Actions sent to the island and not finished yet (the one playing and
+  /// those queued behind it).
+  int playing = 0;
+
+  /// How many actions may wait for the island before new ones are refused.
+  static const maxQueued = 4;
+
+  /// The island's last remark about an action, which may be an earlier
+  /// turn's ("open(chest): The chest is already open."); null until there
+  /// is one.
+  String? lastNote;
 
   bool _stale(int generation) => _disposed || generation != _generation;
 

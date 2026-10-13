@@ -79,23 +79,34 @@ final class IslandWorld implements IslandStage {
 
   /// Builds the scene. Throws when Flutter GPU is not available (the native
   /// platforms need it turned on) or a model does not load.
+  ///
+  /// Disposed while loading, it stops at the next model and returns.
   Future<void> load() async {
     await Scene.initializeStaticResources();
     if (_disposed) return;
     scene = Scene();
-    _buildSkyAndLight();
-    _buildIsland();
-    _house = _buildHouse(vm.Vector3(-2.6, 0, 2.7));
-    _well = await _buildWell(vm.Vector3(3.7, 0, -0.4));
-    _fire = await _buildCampfire(vm.Vector3(0.1, 0, -2.3));
-    _lamp = await _buildLamp(vm.Vector3(1.4, 0, 3.2));
-    await _buildThings();
-    await _buildDecor();
-    await _buildCharacter();
-    _buildEffects();
-    _buildCamera();
+    _sceneCreated = true;
+    try {
+      _buildSkyAndLight();
+      _buildIsland();
+      _house = _buildHouse(vm.Vector3(-2.6, 0, 2.7));
+      _well = await _buildWell(vm.Vector3(3.7, 0, -0.4));
+      _fire = await _buildCampfire(vm.Vector3(0.1, 0, -2.3));
+      _lamp = await _buildLamp(vm.Vector3(1.4, 0, 3.2));
+      await _buildThings();
+      await _buildDecor();
+      await _buildCharacter();
+      _buildEffects();
+      _buildCamera();
+    } on _Disposed {
+      return;
+    }
     _loaded = true;
   }
+
+  /// Whether [scene] exists (it is created only once static resources are
+  /// up), so dispose knows whether there is one to release.
+  bool _sceneCreated = false;
 
   Future<Node> _model(
     String name, {
@@ -105,6 +116,7 @@ final class IslandWorld implements IslandStage {
     Node? parent,
   }) async {
     final model = await loadScene('$_models/$name.glb');
+    if (_disposed) throw const _Disposed();
     final holder = Node(name: name)
       ..position = at
       ..rotation = vm.Quaternion.axisAngle(_up, yaw)
@@ -534,6 +546,7 @@ final class IslandWorld implements IslandStage {
 
   Future<void> _buildCharacter() async {
     final model = await loadScene('$_models/character-male-a.glb');
+    if (_disposed) throw const _Disposed();
     final scaler = Node(name: 'character-scale')
       ..scale = vm.Vector3.all(_characterScale);
     scaler.add(model);
@@ -693,11 +706,15 @@ final class IslandWorld implements IslandStage {
       _fire.light.intensity = _fire.size * (2.2 + 0.4 * math.sin(_time * 23));
     }
     if (_raining) {
-      for (var i = 0; i < _rainDrops.length; i++) {
-        final p = _rainDrops[i]..y -= dt * 9;
-        if (p.y < 0) p.y += 8;
-        _rain.setInstanceTransform(i, vm.Matrix4.translation(p));
-      }
+      // In place: no matrix per drop per frame, and a translation never
+      // changes winding.
+      _rain.updateInstanceTransforms((transforms) {
+        for (var i = 0; i < _rainDrops.length; i++) {
+          final p = _rainDrops[i]..y -= dt * 9;
+          if (p.y < 0) p.y += 8;
+          transforms[i].setTranslationRaw(p.x, p.y, p.z);
+        }
+      }, recomputeWinding: false);
     }
     if (_following) {
       orbit.target = _actor.position + vm.Vector3(0, 0.7, 0);
@@ -816,6 +833,9 @@ final class IslandWorld implements IslandStage {
     _tweens.clear();
     bubble.dispose();
     frame.dispose();
+    // The scene is app-owned: SceneView does not release it, and its GPU
+    // targets (shadow maps, view rings) would otherwise wait for the GC.
+    if (_sceneCreated) scene.dispose();
   }
 
   // ------------------------------------------------------- state and moves
@@ -1766,6 +1786,11 @@ final class IslandWorld implements IslandStage {
 // ------------------------------------------------------------------ helpers
 
 enum _Posture { standing, sitting, lying, crouching }
+
+/// Thrown inside [IslandWorld.load] when the world was disposed meanwhile.
+final class _Disposed implements Exception {
+  const _Disposed();
+}
 
 enum _Gait {
   walk('walk', 1.7),

@@ -569,8 +569,12 @@ class GenAiFfiClient implements GenAiClient {
     }
   }
 
+  // `async` so a closed or unloaded client's error reaches the caller through
+  // the returned Future, not as a synchronous throw. Nothing awaits before
+  // `_mutex.protect`, so the mutex is still requested during the call, in
+  // call order.
   @override
-  Future<int> countTokens(String text) {
+  Future<int> countTokens(String text) async {
     if (_closed || !_loaded) {
       throw _unusable('GenAiFfiClient is not loaded');
     }

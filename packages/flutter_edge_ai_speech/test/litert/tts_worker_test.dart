@@ -658,8 +658,9 @@ void main() {
 
       expect(listenerCalls, 1);
       expect(onCloseCalls, 1);
-      expect(
-        () => tts.synthesize(_text),
+      // No closure around the call: the error must come through the Future.
+      await expectLater(
+        tts.synthesize(_text),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -676,6 +677,34 @@ void main() {
       expect(onCloseCalls, 1);
       expect(printed.join('\n'), contains('exited unexpectedly'));
       expect(linesOf(log), ['load'], reason: 'it died idle, before a dispose');
+    });
+
+    test('synthesize on a closed synthesizer fails through its Future, never '
+        'synchronously', () async {
+      final log = logFor('synthesizer_closed_synthesize');
+      final tts = await synthesizer(_Mode.fast, log);
+      await tts.close();
+
+      // The call itself must return: a caller that chains handlers instead
+      // of awaiting inside a `try` never sees a synchronous throw.
+      final future = tts.synthesize(_text);
+      await expectLater(
+        future,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'LiteRtSpeechSynthesizer is closed; create a new instance to use '
+                'it',
+          ),
+        ),
+      );
+      final caught = Uint8List(0);
+      expect(
+        await tts.synthesize(_text).catchError((Object _) => caught),
+        same(caught),
+      );
+      expect(linesOf(log), isNot(contains('run')));
     });
 
     test('a caller that retries from its error handler finds the synthesizer '

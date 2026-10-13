@@ -3,10 +3,13 @@
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
+import 'package:flutter_edge_ai_onnx/src/onnx_inference_model.dart';
 import 'package:flutter_edge_ai_onnx/src/onnx_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes/fake_gen_ai_client.dart';
+import 'fakes/fake_gen_ai_worker.dart';
 
 OnnxSession _session(
   FakeGenAiClient client, {
@@ -326,6 +329,28 @@ void main() {
 
       expect(client.countTokensCalls, ['abcdefgh']);
       expect(count, 2); // fake: ceil(length / 4)
+    });
+
+    test('sizeInTokens on a session of a closed model fails through its '
+        'Future, never synchronously', () async {
+      // The real client over the fake worker isolate: the refusal comes from
+      // GenAiFfiClient.countTokens, which sizeInTokens passes through.
+      final client = GenAiFfiClient(workerEntry: fakeGenAiWorkerEntry);
+      await client.load('/tmp/unused-fake-model-dir');
+      final model = OnnxInferenceModel(
+        client: client,
+        maxTokens: 1024,
+        modelType: ModelType.gemmaIt,
+        activeBackend: PreferredBackend.cpu,
+        onClose: () {},
+      );
+      final session = await model.createSession();
+      await model.close();
+
+      // The call itself must return: a caller that chains handlers instead
+      // of awaiting inside a `try` never sees a synchronous throw.
+      final future = session.sizeInTokens('abcdefgh');
+      await expectLater(future, throwsA(isA<StateError>()));
     });
 
     test('getSessionMetrics is empty before any generation', () {

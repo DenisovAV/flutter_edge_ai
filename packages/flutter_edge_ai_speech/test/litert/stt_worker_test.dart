@@ -675,8 +675,9 @@ void main() {
 
       expect(listenerCalls, 1);
       expect(onCloseCalls, 1);
-      expect(
-        () => stt.transcribe(Uint8List(32)),
+      // No closure around the call: the error must come through the Future.
+      await expectLater(
+        stt.transcribe(Uint8List(32)),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -693,6 +694,32 @@ void main() {
       expect(onCloseCalls, 1);
       expect(printed.join('\n'), contains('exited unexpectedly'));
       expect(linesOf(log), ['load'], reason: 'it died idle, before a dispose');
+    });
+
+    test('transcribe on a closed recognizer fails through its Future, never '
+        'synchronously', () async {
+      final log = logFor('recognizer_closed_transcribe');
+      final stt = await recognizer(_Mode.fast, log);
+      await stt.close();
+
+      // The call itself must return: a caller that chains handlers instead
+      // of awaiting inside a `try` never sees a synchronous throw.
+      final future = stt.transcribe(Uint8List(32));
+      await expectLater(
+        future,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'LiteRtSpeechRecognizer is closed; create a new instance to use it',
+          ),
+        ),
+      );
+      expect(
+        await stt.transcribe(Uint8List(32)).catchError((Object _) => 'caught'),
+        'caught',
+      );
+      expect(linesOf(log), isNot(contains('run')));
     });
 
     test('a caller that retries from its error handler finds the recognizer '

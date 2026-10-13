@@ -938,5 +938,23 @@ void main() {
       final result = model.generateEmbedding('x');
       await expectLater(result, throwsA(isA<EmbedderClosedException>()));
     });
+
+    test(
+      'generateEmbeddings and getDimension on a closed model fail as futures',
+      () async {
+        final fake = _FakeHost()..closeGate.complete();
+        final model = CommonEmbeddingModel.withHost(fake);
+        await model.close();
+
+        // No closure around the calls: each must return a Future.
+        // ignore: deprecated_member_use_from_same_package
+        final all = model.generateEmbeddings(['x', 'y']);
+        await expectLater(all, throwsA(isA<EmbedderClosedException>()));
+        // ignore: deprecated_member_use_from_same_package
+        final dimension = model.getDimension();
+        await expectLater(dimension, throwsA(isA<EmbedderClosedException>()));
+        expect(fake.calls, isEmpty);
+      },
+    );
   });
 }

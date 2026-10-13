@@ -54,6 +54,18 @@ flutter run --dart-define=HUGGINGFACE_TOKEN=hf_your_token_here
 flutter run
 ```
 
+**Tiny Island (3D) on Windows and Linux:** the Tiny Island screen renders
+with [flutter_scene](https://pub.dev/packages/flutter_scene), which needs
+Flutter GPU. Android, iOS and macOS turn it on in their manifests
+(`EnableFlutterGPU` / `FLTEnableFlutterGPU`); the web needs nothing; on Windows
+and Linux pass the flag:
+```bash
+flutter run --enable-flutter-gpu
+```
+Its models (`assets/island/models/*.glb`, Kenney, CC0) are converted at build
+time by `hook/build.dart`. The Decider runs on the active embedding model:
+choose EmbeddingGemma 2 Text (270M) under Embedding Models first.
+
 ### 3. Local Models Setup (Optional)
 
 If you want to test local models like `Gemma 3 1B IT (Local)`:

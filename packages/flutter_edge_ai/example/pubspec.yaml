@@ -66,6 +66,11 @@ dependencies:
   record: ^6.0.0
   permission_handler: ^11.3.1
   just_audio: ^0.9.36
+  # The Tiny Island screen's 3D scene (needs Flutter GPU: see README).
+  # hook/build.dart converts assets/island/**/*.glb at build time.
+  flutter_scene: ^0.24.3
+  hooks: ^2.2.0
+  vector_math: ^2.1.4
 
 # The opt-in packages now declare a HOSTED dependency on flutter_edge_ai
 # (`^1.0.0-rc.1`) for publishing. This example consumes the local source, so
@@ -170,6 +175,21 @@ flutter:
     - assets/knowledge/
     - assets/knowledge/memos/
     - assets/knowledge/photos/
+    - flutter_scene_generated/
+    - path: flutter_scene_generated/metal_ios/
+      platforms:
+        - ios
+    - path: flutter_scene_generated/metal_desktop/
+      platforms:
+        - macos
+    - path: flutter_scene_generated/opengl_es_vulkan/
+      platforms:
+        - android
+        - linux
+        - windows
+    - path: flutter_scene_generated/opengl_es/
+      platforms:
+        - web
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware

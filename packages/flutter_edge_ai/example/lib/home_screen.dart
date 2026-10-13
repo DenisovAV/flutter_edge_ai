@@ -7,6 +7,7 @@ import 'package:flutter_edge_ai_example/image_search_screen.dart';
 import 'package:flutter_edge_ai_example/multimodal_rag_screen.dart';
 import 'package:flutter_edge_ai_example/model_selection_screen.dart';
 import 'package:flutter_edge_ai_example/stt_models_screen.dart';
+import 'package:flutter_edge_ai_example/tiny_island_screen.dart';
 import 'package:flutter_edge_ai_example/translate_models_screen.dart';
 import 'package:flutter_edge_ai_example/tts_models_screen.dart';
 import 'package:flutter_edge_ai_example/utils/installed_model_lookup.dart';
@@ -150,6 +151,17 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icons.hub_outlined,
               color: Colors.indigoAccent,
               onTap: () => _push(const MultimodalRagScreen()),
+            ),
+            const SizedBox(height: 16),
+            _NavigationCard(
+              key: const Key('home-tiny-island'),
+              title: 'Tiny Island',
+              subtitle:
+                  'Control a 3D scene with words; EmbeddingGemma 2 decides '
+                  '(choose Text 270M under Embedding Models)',
+              icon: Icons.landscape,
+              color: Colors.cyan,
+              onTap: () => _push(const TinyIslandScreen()),
             ),
             const SizedBox(height: 16),
             _NavigationCard(

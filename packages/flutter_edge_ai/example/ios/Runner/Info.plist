@@ -55,5 +55,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Flutter GPU, for the Tiny Island 3D scene (flutter_scene). -->
+	<key>FLTEnableFlutterGPU</key>
+	<true/>
 </dict>
 </plist>

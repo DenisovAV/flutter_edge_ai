@@ -30,5 +30,8 @@
 	<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voice memos are recorded and transcribed on this device.</string>
+	<!-- Flutter GPU, for the Tiny Island 3D scene (flutter_scene). -->
+	<key>FLTEnableFlutterGPU</key>
+	<true/>
 </dict>
 </plist>

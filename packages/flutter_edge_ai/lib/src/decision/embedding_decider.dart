@@ -354,7 +354,7 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
 
 /// The decider of an `EmbeddingModel`. Holds no native resource: the model is
 /// borrowed and never closed here.
-final class EmbeddingDecider implements Decider {
+final class EmbeddingDecider extends Decider {
   EmbeddingDecider({
     required this.embedder,
     required List<DeciderOption> options,
@@ -419,9 +419,11 @@ final class EmbeddingDecider implements Decider {
     maxOptions: null,
     supportsContext: false,
     calibratedProbabilities: temperature != null,
-    questionKinds: const {'choice'},
     modalities: embedder.modalities,
   );
+
+  @override
+  bool get isClosed => _closed;
 
   @override
   Future<DeciderAnswer> choose(

@@ -9,7 +9,7 @@ CancelToken class
 CanceledError class final
 CorruptionAction enum
 CorruptionDetectionResult class
-Decider class abstract interface
+Decider class abstract base
 DeciderAnswer class final
 DeciderCalibration class final
 DeciderCapabilities class final

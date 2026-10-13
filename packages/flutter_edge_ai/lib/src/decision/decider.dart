@@ -5,6 +5,7 @@ import 'package:meta/meta.dart' show experimental, immutable;
 import '../embedding/embedding_input.dart';
 import '../embedding/embedding_modality.dart';
 import '../message.dart';
+import 'decider_exceptions.dart';
 import 'decider_method.dart';
 import 'decider_option.dart';
 import 'embedding_decider.dart' show chooseAllWithSharedEmbeddings;
@@ -15,10 +16,20 @@ import 'embedding_decider.dart' show chooseAllWithSharedEmbeddings;
 /// backend) or `InferenceModel.createDecider` (engines that score options;
 /// none does yet). A decider BORROWS its model and never closes it.
 ///
+/// `abstract base`: outside core it can be extended (by a `base`, `final` or
+/// `sealed` class) but not implemented, so a member added here in a later
+/// release reaches every subclass through this class instead of breaking it.
+/// Extend it for a decider of your own or a test fake — `final class
+/// FakeDecider extends Decider` implementing [capabilities], [options],
+/// [isClosed], [choose] and [close].
+///
 /// Experimental: the members may change in a minor release while the API
-/// settles. `implements` it only for test fakes.
+/// settles.
 @experimental
-abstract interface class Decider {
+abstract base class Decider {
+  /// For subclasses.
+  const Decider();
+
   /// What this decider can do.
   DeciderCapabilities get capabilities;
 
@@ -45,10 +56,20 @@ abstract interface class Decider {
 
   /// The fitted decider as a JSON-encodable map, to be stored and given to
   /// `EmbeddingModel.loadDecider` later instead of fitting again. Versioned;
-  /// see the README for the format. Throws [UnsupportedError] for a decider
-  /// with nothing to store, and [StateError] when an option's metadata is
-  /// not JSON-encodable.
-  Map<String, Object?> toArtifact();
+  /// the format is documented at https://flutteredge.ai/docs/decisions.
+  /// Throws [StateError] when an option's metadata is not JSON-encodable.
+  ///
+  /// This default throws `DeciderUnsupportedException`: a decider with
+  /// nothing to store (one implemented outside core, unless it overrides
+  /// this) has no artifact.
+  Map<String, Object?> toArtifact() => throw DeciderUnsupportedException(
+    '$runtimeType has no artifact: it stores nothing that '
+    'EmbeddingModel.loadDecider could restore.',
+  );
+
+  /// Whether [choose] can no longer answer: [close] was called (see each
+  /// decider for other reasons).
+  bool get isClosed;
 
   /// Marks this decider closed; [choose] fails afterwards. Idempotent. The
   /// model the decider was created from stays open: it is borrowed.
@@ -215,7 +236,6 @@ final class DeciderCapabilities {
     required this.maxOptions,
     required this.supportsContext,
     required this.calibratedProbabilities,
-    required this.questionKinds,
     required this.modalities,
   });
 
@@ -227,9 +247,6 @@ final class DeciderCapabilities {
 
   /// Whether answers carry calibrated probabilities and a confidence.
   final bool calibratedProbabilities;
-
-  /// The Jev question kinds it answers. Only `choice` for now.
-  final Set<String> questionKinds;
 
   /// What an input may carry.
   final Set<EmbeddingModality> modalities;

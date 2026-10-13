@@ -61,21 +61,25 @@ Future<Decider> _decider(
   embedderId: 'fake',
 );
 
-/// A decider implemented outside core, for chooseAll.
-final class _OtherDecider implements Decider {
+/// A decider implemented outside core, for chooseAll: it extends Decider and
+/// leaves toArtifact to the base class.
+final class _OtherDecider extends Decider {
   int calls = 0;
+  bool _closed = false;
 
   @override
   DeciderCapabilities get capabilities => const DeciderCapabilities(
     maxOptions: 1,
     supportsContext: true,
     calibratedProbabilities: false,
-    questionKinds: {'choice'},
     modalities: {EmbeddingModality.text},
   );
 
   @override
   List<DeciderOption> get options => [DeciderOption('x', description: 'x')];
+
+  @override
+  bool get isClosed => _closed;
 
   @override
   Future<DeciderAnswer> choose(
@@ -100,10 +104,7 @@ final class _OtherDecider implements Decider {
   }
 
   @override
-  Map<String, Object?> toArtifact() => throw UnsupportedError('nothing');
-
-  @override
-  Future<void> close() async {}
+  Future<void> close() async => _closed = true;
 }
 
 /// An InferenceModel that implements nothing but inherits the defaults.
@@ -518,7 +519,6 @@ void main() {
       final capabilities = decider.capabilities;
       expect(capabilities.maxOptions, isNull);
       expect(capabilities.calibratedProbabilities, isFalse);
-      expect(capabilities.questionKinds, {'choice'});
       expect(capabilities.modalities, {EmbeddingModality.text});
       expect(decider.options.map((o) => o.id), ['a', 'b', 'c']);
     });
@@ -526,8 +526,10 @@ void main() {
     test('close stops the decider and leaves the embedder open', () async {
       final embedder = _embedder();
       final decider = await _decider(embedder);
+      expect(decider.isClosed, isFalse);
       await decider.close();
       await decider.close();
+      expect(decider.isClosed, isTrue);
       expect(embedder.isClosed, isFalse);
       await expectLater(decider.choose(_in('about a')), throwsStateError);
     });
@@ -613,6 +615,26 @@ void main() {
         throwsA(isA<DeciderUnsupportedException>()),
       );
       expect(embedder.calls, isEmpty);
+    });
+  });
+
+  group('a decider implemented outside core', () {
+    test('extends Decider; without an artifact, toArtifact throws '
+        'DeciderUnsupportedException', () async {
+      final other = _OtherDecider();
+      expect(
+        other.toArtifact,
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('_OtherDecider'),
+          ),
+        ),
+      );
+      expect(other.isClosed, isFalse);
+      await other.close();
+      expect(other.isClosed, isTrue);
     });
   });
 

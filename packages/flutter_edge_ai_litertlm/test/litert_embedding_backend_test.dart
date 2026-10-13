@@ -84,6 +84,9 @@ void main() {
     File(
       '$bundles/eg2_npu.litertlm',
     ).writeAsBytesSync(eg2Container(textStamp: ('Qualcomm', 'SM8850')));
+    File(
+      '$bundles/eg2_ptl.litertlm',
+    ).writeAsBytesSync(eg2Container(textStamp: ('IntelOpenVINO', 'PTL')));
     tokenizers = _CountingTokenizers();
     EmbeddingTokenizerRegistry.instance.registerAll([tokenizers]);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -294,8 +297,8 @@ void main() {
     });
 
     test(
-      'a per-SoC bundle with npu on this host is refused unless the host '
-      'is Qualcomm Android or Linux arm64',
+      'a Qualcomm per-SoC bundle with npu on this host is refused unless the '
+      'host is Qualcomm Android or Linux arm64',
       () async {
         await expectLater(
           backend.describe(
@@ -308,7 +311,12 @@ void main() {
           _loadRefusal(
             'LiteRT-LM',
             allOf(
-              contains('Qualcomm Android and Qualcomm Linux arm64 only'),
+              contains(
+                Abi.current() == Abi.windowsX64
+                    ? 'runs Intel NPU bundles only'
+                    : 'Qualcomm Android and Qualcomm Linux arm64, and on Intel '
+                          'NPUs with Windows x64, only',
+              ),
               contains('${Abi.current()}'),
             ),
           ),
@@ -341,6 +349,45 @@ void main() {
       expect(config.backend, PreferredBackend.npu);
       expect(config.declaredMedia, {EmbeddingModality.image});
       expect(config.cacheBase, '/cache/flutter_edge_ai/emb');
+    });
+
+    test('an Intel per-SoC bundle with npu on Windows x64 hands the pass its '
+        'target and the directory beside the executable', () async {
+      liteRtLmNpuHost = _IntelWindows();
+      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      final descriptor = await backend.describe(
+        _bundle(model: 'eg2_ptl.litertlm'),
+        _config(
+          '$bundles/eg2_ptl.litertlm',
+          preferredBackend: PreferredBackend.npu,
+        ),
+      );
+      expect(descriptor.activeBackend, PreferredBackend.npu);
+      final config = descriptor.config as LiteRtLmEmbeddingConfig;
+      expect(
+        config.npuTarget,
+        const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL'),
+      );
+      expect(config.npuDispatchDir, r'C:\Apps\demo');
+      expect(config.backend, PreferredBackend.npu);
+    });
+
+    test('an Intel per-SoC bundle with npu on Qualcomm Android is refused '
+        'before the Qualcomm stack is prepared', () async {
+      final host = _QualcommAndroid();
+      liteRtLmNpuHost = host;
+      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+      await expectLater(
+        backend.describe(
+          _bundle(model: 'eg2_ptl.litertlm'),
+          _config(
+            '$bundles/eg2_ptl.litertlm',
+            preferredBackend: PreferredBackend.npu,
+          ),
+        ),
+        _loadRefusal('LiteRT-LM', contains('Intel ones run on windows_x64')),
+      );
+      expect(host.prepared, isFalse);
     });
 
     test('a bundle describe() cannot read is refused, not guessed', () async {
@@ -556,6 +603,7 @@ Future<EmbeddingTokenizer> _tokenize(String _) =>
 
 /// A Qualcomm Android phone whose app bundled the NPU stack.
 final class _QualcommAndroid implements LiteRtLmNpuHost {
+  bool prepared = false;
   @override
   String get operatingSystem => 'android';
   @override
@@ -563,9 +611,34 @@ final class _QualcommAndroid implements LiteRtLmNpuHost {
   @override
   Future<NpuStackCheck> qualcommStack() async => const NpuStackCheck.bundled();
   @override
+  Future<NpuStackCheck> intelStack() =>
+      throw StateError('an Android host has no Intel stack to ask about');
+  @override
   bool get hasNpu => true;
   @override
   String get noNpuReason => '';
   @override
-  Future<String> prepareDispatchDir() async => '/data/app/npu';
+  Future<String> prepareDispatchDir() async {
+    prepared = true;
+    return '/data/app/npu';
+  }
+}
+
+/// A Windows x64 PC: its build carries the Intel stack beside the executable.
+final class _IntelWindows implements LiteRtLmNpuHost {
+  @override
+  String get operatingSystem => 'windows';
+  @override
+  String get abi => 'windows_x64';
+  @override
+  Future<NpuStackCheck> qualcommStack() =>
+      throw StateError('a Windows host has no Qualcomm stack to ask about');
+  @override
+  Future<NpuStackCheck> intelStack() async => const NpuStackCheck.bundled();
+  @override
+  bool get hasNpu => throw StateError('Windows has no NPU probe');
+  @override
+  String get noNpuReason => '';
+  @override
+  Future<String> prepareDispatchDir() async => r'C:\Apps\demo';
 }

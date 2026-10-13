@@ -97,9 +97,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         ? const <edge.Tool>[]
         : List<edge.Tool>.of(tools);
     if (toolChoice == edge.ToolChoice.required && effectiveTools.isEmpty) {
-      throw llama.LlamaArgumentException(
-        'ToolChoice.required needs enabled tools.',
-      );
+      throw ArgumentError('ToolChoice.required needs enabled tools.');
     }
     final result = LlamaInferenceChat(
       sessionCreator: () => _makeSession(
@@ -116,7 +114,11 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         modelType: modelType ?? this.modelType,
         tools: effectiveTools,
         maxOutputTokens: maxOutputTokens,
-        toolChoice: llama.ToolChoice.values.byName(toolChoice.name),
+        toolChoice: switch (toolChoice) {
+          edge.ToolChoice.auto => llama.ToolChoice.auto,
+          edge.ToolChoice.required => llama.ToolChoice.required,
+          edge.ToolChoice.none => llama.ToolChoice.none,
+        },
       ),
       maxTokens: maxTokens,
       tokenBuffer: tokenBuffer,
@@ -159,9 +161,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         ? const <edge.Tool>[]
         : List<edge.Tool>.of(tools);
     if (toolChoice == edge.ToolChoice.required && effectiveTools.isEmpty) {
-      throw llama.LlamaArgumentException(
-        'ToolChoice.required needs enabled tools.',
-      );
+      throw ArgumentError('ToolChoice.required needs enabled tools.');
     }
     final result = LlamaInferenceChat(
       sessionCreator: () => _makeSession(
@@ -178,7 +178,11 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         modelType: modelType ?? this.modelType,
         tools: effectiveTools,
         maxOutputTokens: maxOutputTokens,
-        toolChoice: llama.ToolChoice.values.byName(toolChoice.name),
+        toolChoice: switch (toolChoice) {
+          edge.ToolChoice.auto => llama.ToolChoice.auto,
+          edge.ToolChoice.required => llama.ToolChoice.required,
+          edge.ToolChoice.none => llama.ToolChoice.none,
+        },
       ),
       maxTokens: maxTokens,
       tokenBuffer: tokenBuffer,
@@ -268,23 +272,19 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
     int? maxOutputTokens,
     llama.ToolChoice toolChoice = llama.ToolChoice.auto,
   }) {
-    if (_closed) throw llama.LlamaStateException('The model is closed.');
+    if (_closed) throw StateError('The model is closed.');
     if (enableVisionModality == true && !supportImage ||
         enableAudioModality == true && !supportAudio) {
-      throw llama.LlamaUnsupportedException(
+      throw UnsupportedError(
         'Load a compatible projector and enable supportImage/supportAudio on getActiveModel first.',
       );
     }
     if (kIsWeb && loraPath != null) {
-      throw llama.LlamaUnsupportedException(
-        'llamadart 0.11.1 does not expose native LoRA operations on Web.',
-      );
+      throw UnsupportedError('This connector does not wire Web LoRA adapters.');
     }
-    final limit = maxOutputTokens ?? 128;
-    if (limit <= 0 || limit >= maxTokens) {
-      throw llama.LlamaArgumentException(
-        'Use a positive output limit below context size.',
-      );
+    final limit = maxOutputTokens;
+    if (limit != null && (limit <= 0 || limit >= maxTokens)) {
+      throw ArgumentError('Use a positive output limit below context size.');
     }
     final sampling = edge.SamplingParams.resolve(
       edge.SamplingParams(
@@ -297,17 +297,17 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
       thinking: enableThinking,
     );
     final operation = _lifecycle.then((_) async {
-      if (_closed) throw llama.LlamaStateException('The model is closed.');
+      if (_closed) throw StateError('The model is closed.');
       if (detached &&
           maxConcurrentSessions != null &&
           _detached.length >= maxConcurrentSessions!) {
-        throw llama.LlamaStateException(
+        throw StateError(
           'maxConcurrentSessions ($maxConcurrentSessions) reached; close a detached session first.',
         );
       }
       if (tools.isNotEmpty &&
           !(await engine.capabilities).supportsToolCalling) {
-        throw llama.LlamaUnsupportedException(
+        throw UnsupportedError(
           'The active runtime does not support tool calling.',
         );
       }
@@ -321,14 +321,16 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
           seed: sampling.randomSeed,
           topK: sampling.topK,
           topP: sampling.topP,
-          maxTokens: limit,
+          maxTokens: limit ?? maxTokens - 1,
         ),
+        outputLimit: limit,
         systemInstruction: systemInstruction,
         enableThinking: enableThinking,
         enableVision: enableVisionModality ?? supportImage,
         enableAudio: enableAudioModality ?? supportAudio,
         maxImages: maxNumImages,
-        loraPath: loraPath ?? defaultLoraPath,
+        loraPath: loraPath,
+        defaultLoraPath: defaultLoraPath,
         tools: tools,
         toolChoice: toolChoice,
         onClose: () {
@@ -340,7 +342,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
       if (!detached) await _session?.close();
       if (_closed) {
         await next.close();
-        throw llama.LlamaStateException('The model is closed.');
+        throw StateError('The model is closed.');
       }
       if (detached) {
         _detached.add(next);

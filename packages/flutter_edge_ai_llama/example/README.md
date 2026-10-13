@@ -6,9 +6,9 @@ Windows, Linux and Web runners.
 
 ## First run
 
-Use Flutter **3.47.1**. The example resolves core from this workspace, including the merged GGUF/LoRA
-changes in #649. Hosted core 2.3.1 lacks them; external apps need the
-[development override](../README.md#add-it-to-your-app) until the next patch.
+The package needs Flutter 3.44 / Dart 3.12 and core 2.3.2+. For the repository's
+reproducible checks use Flutter 3.47.1; ordinary app development can use a newer
+compatible stable SDK. The workspace example resolves core locally.
 
 From `packages/flutter_edge_ai_llama/`:
 
@@ -58,3 +58,8 @@ This UI intentionally demonstrates text chat. Copyable
 [tools, thinking, media and LoRA examples](../doc/advanced_usage.md) show the
 other features. See the [qualification matrix](../doc/platforms.md) for tested
 devices/backends and open release checks.
+
+On Android enter a GGUF URL and click **Load URL**. Core streams the download
+into app storage; the demo avoids the Android file picker's whole-file heap copy.
+On iOS/desktop choose a local GGUF. A successful replacement deletes only the
+previous demo-owned copies. The iOS runner includes both model-memory entitlements.

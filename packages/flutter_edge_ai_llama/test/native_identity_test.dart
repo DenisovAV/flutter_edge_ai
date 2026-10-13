@@ -11,6 +11,7 @@ import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
+import 'package:flutter_edge_ai_llama/src/llama_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -76,16 +77,18 @@ void main() {
           .getModelFilePaths(restored);
       expect(paths?[restored.files[1].prefsKey], adapter.path);
       final engine = _Engine();
-      final provider = LlamaEngineProvider(
+      final provider = LlamaEngineProvider.withLoader(
         loader: (location, _) async {
           expect(location, model.path);
           return engine;
         },
       );
-      final loaded = await provider.createModel(
-        restored,
-        RuntimeConfig(modelPath: model.path, maxTokens: 2048),
-      ) as LlamaInferenceModel;
+      final loaded =
+          await provider.createModel(
+                restored,
+                RuntimeConfig(modelPath: model.path, maxTokens: 2048),
+              )
+              as LlamaInferenceModel;
       try {
         expect(loaded.defaultLoraPath, adapter.path);
         expect(loaded.fileType, edge.ModelFileType.gguf);
@@ -125,6 +128,8 @@ class _Engine extends llama.LlamaEngine {
   llama.LlamaRuntime get runtime => llama.LlamaRuntime.llamaCpp;
   @override
   Future<int?> getResolvedGpuLayers() async => 0;
+  @override
+  Future<String> getBackendName() async => 'CPU';
   @override
   Future<int> getContextSize() async => 2048;
   @override

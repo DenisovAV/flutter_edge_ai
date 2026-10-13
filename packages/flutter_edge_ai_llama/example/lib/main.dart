@@ -50,7 +50,7 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
   bool _generating = false;
   bool _stopped = false;
   Timer? _renderTimer;
-  String _status = kIsWeb
+  String _status = kIsWeb || defaultTargetPlatform == TargetPlatform.android
       ? 'Enter a GGUF URL to begin.'
       : 'Load a local GGUF model to begin.';
   String _backend = 'Not loaded';
@@ -78,6 +78,9 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
         return;
       }
       _model = loaded;
+      if (!kIsWeb && defaultTargetPlatform != TargetPlatform.android) {
+        await pruneImportedModels(_path.text.trim());
+      }
       await _newChat();
       if (mounted) {
         setState(() {
@@ -110,15 +113,21 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
 
   Future<void> _chooseModel() async {
     if (_loading || _generating) return;
-    if (kIsWeb) {
+    if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) {
       await _load();
       return;
     }
     setState(() => _loading = true);
     try {
       final file = await openFile(
-        acceptedTypeGroups: const [
-          XTypeGroup(label: 'GGUF models', extensions: ['gguf']),
+        acceptedTypeGroups: [
+          XTypeGroup(
+            label: 'GGUF models',
+            extensions: const ['gguf'],
+            uniformTypeIdentifiers: defaultTargetPlatform == TargetPlatform.iOS
+                ? const ['public.data']
+                : null,
+          ),
         ],
       );
       if (file == null || !mounted) return;
@@ -157,7 +166,7 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
         modelType: edge.ModelType.general,
         fileType: edge.ModelFileType.gguf,
       );
-      if (kIsWeb) {
+      if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) {
         await installation.fromNetwork(_path.text.trim()).install();
       } else {
         await installation.fromFile(_path.text.trim()).install();
@@ -168,6 +177,9 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
         return;
       }
       _model = loaded;
+      if (!kIsWeb && defaultTargetPlatform != TargetPlatform.android) {
+        await pruneImportedModels(_path.text.trim());
+      }
       await _newChat();
       if (mounted) {
         setState(() {
@@ -216,6 +228,7 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
       _turns.addAll([_Turn(true, input), reply]);
       _prompt.clear();
     });
+    var committed = false;
     try {
       await chat.addQueryChunk(edge.Message.text(text: input, isUser: true));
       await for (final response in chat.generateChatResponseAsync()) {
@@ -238,13 +251,13 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
           });
         }
       }
+      committed = !_stopped;
       final metrics = chat.session.getSessionMetrics();
       if (mounted) {
         setState(() {
           _status = _stopped
               ? 'Stopped. The interrupted turn was discarded; you can continue.'
-              : '${metrics.inputTokens} input · ${metrics.outputTokens > 0 ? '${metrics.outputTokens} output tokens' : 'output count unavailable'}'
-                    '${(chat.session as LlamaInferenceSession).lastFinishReason == 'length' ? ' · Output limit reached' : ''}';
+              : '${metrics.inputTokens} input · ${metrics.outputTokens > 0 ? '${metrics.outputTokens} output tokens' : 'output count unavailable'}';
         });
       }
     } catch (error) {
@@ -259,7 +272,7 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
       if (mounted) {
         reply.flush();
         setState(() {
-          if (!(chat.session as LlamaInferenceSession).lastTurnCommitted) {
+          if (!committed) {
             _turns.remove(reply);
             reply.dispose();
             if (_turns.isNotEmpty && _turns.last.isUser) {
@@ -339,9 +352,14 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
                     builder: (context, constraints) {
                       final field = TextField(
                         controller: _path,
-                        readOnly: !kIsWeb,
-                        decoration: const InputDecoration(
-                          labelText: kIsWeb
+                        readOnly:
+                            !kIsWeb &&
+                            defaultTargetPlatform != TargetPlatform.android,
+                        decoration: InputDecoration(
+                          labelText:
+                              kIsWeb ||
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.android
                               ? 'GGUF model URL'
                               : 'Local GGUF model',
                           border: OutlineInputBorder(),
@@ -354,7 +372,9 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
                         child: Text(
                           _loading
                               ? 'Loading…'
-                              : kIsWeb
+                              : kIsWeb ||
+                                    defaultTargetPlatform ==
+                                        TargetPlatform.android
                               ? 'Load URL'
                               : 'Choose model',
                         ),

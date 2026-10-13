@@ -20,6 +20,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
+from smoke_result import require_smoke_success
+
 PACKAGE = Path(__file__).resolve().parents[1]
 
 
@@ -108,12 +110,15 @@ def main():
             wrapper.write_text(f"#!/bin/sh\nexec {shlex.quote(args.chrome)} --proxy-server={shlex.quote(setting)} --proxy-bypass-list='<-loopback>' \"$@\"\n")
             wrapper.chmod(0o700)
             command = [args.flutter, "test", "test/web_smoke_test.dart", "--platform", "chrome",
-                       "--wasm", "--cross-origin-isolation", "--reporter", "expanded",
+                       "--wasm", "--cross-origin-isolation", "--reporter", "json",
                        f"--dart-define=GGUF_WEB_MODEL_URL={args.model_url}"]
             if args.storage_helper_url:
                 command.append(f"--dart-define=GGUF_WEB_STORAGE_HELPER_URL={args.storage_helper_url}")
             result = subprocess.run(command, cwd=PACKAGE,
-                                    env={**os.environ, "CHROME_EXECUTABLE": str(wrapper)})
+                                    env={**os.environ, "CHROME_EXECUTABLE": str(wrapper)}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            print(result.stdout, flush=True)
+            if result.returncode == 0:
+                require_smoke_success(result.stdout, "real browser facade installs a URL")
             return result.returncode
     finally:
         proxy.shutdown()

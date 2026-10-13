@@ -1,3 +1,6 @@
+## 2.3.2
+- The active model keeps its LoRA across a restart; `ModelFileType.gguf` (#649).
+
 ## 2.3.1
 - Combined text, image and audio inputs: `EmbeddingInput(text:, images:, audio:)`.
 

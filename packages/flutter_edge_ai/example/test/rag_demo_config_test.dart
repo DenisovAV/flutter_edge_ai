@@ -32,7 +32,7 @@ void main() {
       for (final model in catalog.EmbeddingModel.values)
         if (model.npuSoc case final soc?) soc: model.ragProfileId,
     };
-    expect(npu.keys, ['SM8850', 'SM8650', 'QCS8275']);
+    expect(npu.keys, ['SM8850', 'SM8650', 'QCS8275', 'PTL']);
     ids.addAll(npu.values);
 
     expect(ids.toSet(), hasLength(ids.length));
@@ -207,7 +207,8 @@ void main() {
   });
 
   test('the per-SoC NPU bundles: pinned like the generic ones, loaded with '
-      'npu, and an id of their own per SoC, shared by its 270m and 440m', () {
+      'npu, and an id of their own per SoC, shared by its 270m, 440m and '
+      '740m', () {
     final npu = [
       for (final model in catalog.EmbeddingModel.values)
         if (model.npuSoc != null) model,
@@ -215,15 +216,27 @@ void main() {
     expect(npu.map((m) => m.name), [
       'embeddingGemma2Text270mSm8850',
       'embeddingGemma2TextVision440mSm8850',
+      'embeddingGemma2TextVisionAudio740mSm8850',
       'embeddingGemma2Text270mSm8650',
       'embeddingGemma2TextVision440mSm8650',
       'embeddingGemma2Text270mQcs8275',
       'embeddingGemma2TextVision440mQcs8275',
+      'embeddingGemma2Text270mPtl',
+      'embeddingGemma2TextVision440mPtl',
     ]);
     const cpuTextId = 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1';
     for (final model in npu) {
       final soc = model.npuSoc!;
-      final repo = model.embedsImages
+      final vendor = switch (model.npuVendor) {
+        catalog.EmbeddingNpuVendor.qualcomm => 'Qualcomm',
+        catalog.EmbeddingNpuVendor.intel => 'Intel',
+      };
+      expect(vendor, soc == 'PTL' ? 'Intel' : 'Qualcomm', reason: model.name);
+      final repo = model.embedsAudio
+          ? 'embeddinggemma-2-740m-litert-lm/resolve/'
+                '24d962e906c7d332c6428e71c9676855024569e2/'
+                'embeddinggemma-2-740m'
+          : model.embedsImages
           ? 'embeddinggemma-2-text-vision-440m-litert-lm/resolve/'
                 'e301f74d5551b0c2641bd5cb4652a76239d5c5f8/'
                 'embeddinggemma-2-text-vision-440m'
@@ -232,13 +245,13 @@ void main() {
                 'embeddinggemma-2-text-270m';
       expect(
         model.url,
-        'https://huggingface.co/litert-community/${repo}_Qualcomm_$soc.litertlm',
+        'https://huggingface.co/litert-community/${repo}_${vendor}_$soc.litertlm',
         reason: model.name,
       );
       expect(model.isLiteRtLmBundle, isTrue);
       expect(model.needsAuth, isFalse);
       expect(model.sha256, hasLength(64));
-      expect(model.filename, contains('_Qualcomm_${soc}__rev-'));
+      expect(model.filename, contains('_${vendor}_${soc}__rev-'));
       expect(model.embedderBackend, PreferredBackend.npu);
       expect(
         model.ragProfileId,
@@ -278,22 +291,61 @@ void main() {
       catalog.EmbeddingModel.embeddingGemma2TextVision440mSm8850.ragProfileId,
     );
     expect(
+      catalog
+          .EmbeddingModel
+          .embeddingGemma2TextVisionAudio740mSm8850
+          .imageRagProfileId,
+      catalog
+          .EmbeddingModel
+          .embeddingGemma2TextVision440mSm8850
+          .imageRagProfileId,
+    );
+    expect(
       catalog.EmbeddingModel.embeddingGemma2Text270mSm8850.ragProfileId,
       isNot(catalog.EmbeddingModel.embeddingGemma2Text270mQcs8275.ragProfileId),
     );
+    // Intel Panther Lake: Hugging Face's lfs.oid pins, and the -npu-ptl id
+    // its 270m and 440m share (byte-identical text towers).
+    const ptl270m = catalog.EmbeddingModel.embeddingGemma2Text270mPtl;
+    const ptl440m = catalog.EmbeddingModel.embeddingGemma2TextVision440mPtl;
+    expect(ptl270m.ragProfileId, '$cpuTextId-npu-ptl');
+    expect(ptl440m.ragProfileId, ptl270m.ragProfileId);
+    expect(ptl440m.imageRagProfileId, '$cpuTextId-npu-ptl-vis140');
+    expect(ptl270m.embedsImages, isFalse);
+    expect(
+      ptl270m.sha256,
+      '048e219d702d23cf19cb9a75e7595e61e320bc61a3919e0cbf1a30dfb5cc64f4',
+    );
+    expect(
+      ptl440m.sha256,
+      '7f4c104b30ea6185516439aef534b84d9e7066366112506d5d8843e350fd08c9',
+    );
   });
 
-  test('the NPU bundles are listed on Android and Linux only', () {
+  test('the Qualcomm NPU bundles are listed on Android and Linux only, the '
+      'Intel ones on Windows only', () {
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     for (final platform in TargetPlatform.values) {
       debugDefaultTargetPlatformOverride = platform;
       final listed = catalog.listedEmbeddingModels.where(
         (m) => m.npuSoc != null,
       );
-      final expected =
+      final qualcomm =
           platform == TargetPlatform.android ||
           platform == TargetPlatform.linux;
-      expect(listed.isNotEmpty, expected, reason: '$platform');
+      final intel = platform == TargetPlatform.windows;
+      expect(
+        listed.where((m) => m.npuVendor == catalog.EmbeddingNpuVendor.qualcomm),
+        hasLength(qualcomm ? 7 : 0),
+        reason: '$platform',
+      );
+      expect(
+        listed.map((m) => m.name),
+        intel
+            ? ['embeddingGemma2Text270mPtl', 'embeddingGemma2TextVision440mPtl']
+            : isNot(contains('embeddingGemma2Text270mPtl')),
+        reason: '$platform',
+      );
       expect(
         catalog.listedEmbeddingModels,
         containsAll([

@@ -1,3 +1,6 @@
+## 0.5.7
+- `VoiceSession.runAudioTurn`: the model hears the recording, no speech-to-text.
+
 ## 0.5.6
 - Require `flutter_edge_ai` ^2.3.0 and `flutter_edge_ai_litertlm` ^1.13.0.
 

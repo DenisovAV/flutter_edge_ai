@@ -21,9 +21,12 @@ on:
       - '.github/workflows/llama.yml'
       - '.github/actions/setup-flutter-llama/**'
   workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: edge-ai-llama-${{ github.event.pull_request.number || github.ref }}
@@ -33,7 +36,24 @@ env:
   PACKAGE_DIRECTORY: packages/flutter_edge_ai_llama
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      runtime: ${{ steps.filter.outputs.runtime }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            runtime:
+              - 'packages/flutter_edge_ai_llama/**'
+              - 'pubspec.yaml'
+              - 'pubspec.lock'
+              - '.github/workflows/llama.yml'
+              - '.github/actions/setup-flutter-llama/**'
   contracts:
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
@@ -47,15 +67,13 @@ jobs:
           python-version: "3.13"
       - uses: ./.github/actions/setup-flutter-llama
       - run: python tool/verify.py contracts
-      # Core #649 is merged but absent from hosted 2.3.1. Restore the hosted
-      # package gate and update the dependency floor when that patch ships.
-      - name: Package archive preparation against merged core (not hosted validation)
-        run: |
-          echo "::warning::Hosted consumer validation awaits the core patch containing #649."
-          python tool/verify.py package --core-path ../flutter_edge_ai
+      - name: Hosted package archive validation
+        run: python tool/verify.py package
       - name: Fetch immutable CPU smoke fixture
+        if: github.event_name != 'pull_request' || needs.changes.outputs.runtime == 'true'
         run: python tool/fetch_test_model.py
       - name: Real Web CPU smoke
+        if: github.event_name != 'pull_request' || needs.changes.outputs.runtime == 'true'
         run: |
           python tool/serve_web_fixture.py --model-path tool/fixtures/chat.gguf &
           fixture_pid=$!
@@ -63,6 +81,8 @@ jobs:
           python tool/verify.py web --model-url http://127.0.0.1:8098/chat.gguf --storage-helper-url http://127.0.0.1:8098/cache_api.js
 
   release-build:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
     name: Release build (${{ matrix.platform }})
     strategy:
       fail-fast: false
@@ -96,6 +116,8 @@ jobs:
       - run: python tool/verify.py build --platform ${{ matrix.platform }}
 
   desktop-runtime:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
     name: Native CPU (${{ matrix.runner }})
     strategy:
       fail-fast: false
@@ -139,6 +161,8 @@ jobs:
         run: xvfb-run -a python tool/verify.py device --device linux --model-path tool/fixtures/chat.gguf
 
   ios-runtime:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
     name: iOS simulator CPU
     runs-on: macos-26
     timeout-minutes: 40
@@ -172,6 +196,8 @@ jobs:
           if-no-files-found: ignore
 
   android-runtime:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
     name: Android emulator CPU
     runs-on: ubuntu-latest
     timeout-minutes: 40

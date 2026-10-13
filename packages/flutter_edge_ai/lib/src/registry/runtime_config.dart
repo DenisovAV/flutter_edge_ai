@@ -338,7 +338,8 @@ class ActiveEmbedderParams {
   /// written: `npu` when asked for, `cpu` otherwise.
   ///
   /// NPU is a key of its own because one backend honours it — the LiteRT-LM
-  /// pass runs an EmbeddingGemma 2 per-SoC bundle on a Qualcomm NPU — and its
+  /// pass runs an EmbeddingGemma 2 per-SoC bundle on its Qualcomm or Intel
+  /// NPU — and its
   /// vectors live in another space than the CPU bundle's. A cached embedder
   /// must therefore never answer a request for the other side: a CPU embedder
   /// handed to an `npu` caller, or an NPU one to a caller who did not ask for

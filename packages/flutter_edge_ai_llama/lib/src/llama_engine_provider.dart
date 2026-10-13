@@ -9,29 +9,37 @@ import 'model_location.dart'
     if (dart.library.js_interop) 'model_location_web.dart';
 
 /// Engine loading seam for deterministic connector contract tests.
-typedef LlamaEngineLoader = Future<llama.LlamaEngine> Function(
-  String path,
-  llama.ModelParams params,
-);
+typedef _LlamaEngineLoader =
+    Future<llama.LlamaEngine> Function(String path, llama.ModelParams params);
 
 /// Resolves the projector paired with the selected model, natively or on Web.
 ///
 /// Core has no GGUF projector install slot. The app must install/cache the
 /// projector and return its local path or browser URL through this resolver.
-typedef LlamaProjectorResolver = Future<llama.ModelSource?> Function(
-  edge.InferenceModelSpec spec,
-  RuntimeConfig config,
-);
+typedef LlamaProjectorResolver =
+    Future<llama.ModelSource?> Function(
+      edge.InferenceModelSpec spec,
+      RuntimeConfig config,
+    );
 
 /// Registers GGUF inference with Flutter Edge AI on native and Web runtimes.
 ///
 /// Models are selected by the declared [edge.ModelFileType.gguf] type.
 class LlamaEngineProvider implements InferenceEngineProvider {
   /// Creates a provider, optionally resolving model-specific projectors.
-  const LlamaEngineProvider({this.loader, this.projectorResolver});
+  const LlamaEngineProvider({this.projectorResolver}) : _loader = null;
+
+  /// Test-only injection; applications use the default constructor.
+  // ignore: prefer_initializing_formals — keeps the test callback parameter readable.
+  @visibleForTesting
+  const LlamaEngineProvider.withLoader({
+    required Future<llama.LlamaEngine> Function(String, llama.ModelParams)
+    loader,
+    this.projectorResolver,
+  }) : _loader = loader; // ignore: prefer_initializing_formals
 
   /// Optional engine factory for tests.
-  final LlamaEngineLoader? loader;
+  final _LlamaEngineLoader? _loader;
 
   /// Application-owned projector installation and pairing policy.
   final LlamaProjectorResolver? projectorResolver;
@@ -51,53 +59,47 @@ class LlamaEngineProvider implements InferenceEngineProvider {
     RuntimeConfig config,
   ) async {
     if (!canHandle(spec)) {
-      throw llama.LlamaUnsupportedException(
-        'Declare the model as ModelFileType.gguf.',
-      );
+      throw UnsupportedError('Declare the model as ModelFileType.gguf.');
     }
     if (config.maxTokens <= 0) {
-      throw llama.LlamaArgumentException(
-        'A positive context size is required.',
-      );
+      throw ArgumentError('A positive context size is required.');
     }
     if (config.activationDataType != null ||
         config.enableSpeculativeDecoding == true ||
         (config.loraRanks?.isNotEmpty ?? false)) {
-      throw llama.LlamaUnsupportedException(
+      throw UnsupportedError(
         'LiteRT activation/MTP and MediaPipe LoRA-rank controls do not map to this GGUF connector.',
       );
     }
     if (config.preferredBackend == edge.PreferredBackend.npu) {
-      throw llama.LlamaUnsupportedException(
+      throw UnsupportedError(
         'The llama.cpp GGUF runtime supports CPU/GPU, not NPU.',
       );
     }
     if ((config.maxConcurrentSessions ?? 1) < 1 ||
         (config.supportImage && (config.maxNumImages ?? 1) < 1)) {
-      throw llama.LlamaArgumentException(
-        'Session and image limits must be positive.',
-      );
+      throw ArgumentError('Session and image limits must be positive.');
     }
     if (config.preferredVisionBackend != null ||
         config.preferredAudioBackend != null) {
-      throw llama.LlamaUnsupportedException(
+      throw UnsupportedError(
         'llamadart does not expose separate vision/audio encoder backend selectors.',
       );
     }
     if ((config.supportImage || config.supportAudio) &&
         projectorResolver == null) {
-      throw llama.LlamaUnsupportedException(
+      throw UnsupportedError(
         'Image/audio input requires a compatible GGUF projector. Configure projectorResolver on LlamaEngineProvider.',
       );
     }
     if (kIsWeb && spec.loraSource != null) {
-      throw llama.LlamaUnsupportedException(
-        'Native LoRA runtime operations are unavailable on Web in llamadart 0.11.1.',
+      throw UnsupportedError(
+        'This connector does not wire Web LoRA adapters; use a native runtime or install a model without an adapter.',
       );
     }
     final location = await resolveModelLocation(spec, config);
     if (location.isEmpty) {
-      throw llama.LlamaArgumentException(
+      throw ArgumentError(
         'A resolved local path or installed Web model URL is required.',
       );
     }
@@ -106,55 +108,57 @@ class LlamaEngineProvider implements InferenceEngineProvider {
       edge.PreferredBackend.gpu => llama.ComputeDevice.gpu,
       _ => llama.ComputeDevice.auto,
     };
+    String? defaultLoraPath;
+    if (spec.loraSource != null) {
+      final paths =
+          config.artifactPaths ??
+          await edge.FlutterEdgeAiPlugin.instance.modelManager
+              .getModelFilePaths(spec);
+      defaultLoraPath = paths?[spec.files[1].prefsKey];
+      if (defaultLoraPath == null) {
+        throw StateError(
+          'Install the LoRA companion before loading this model.',
+        );
+      }
+    }
     final params = llama.ModelParams(
       contextSize: config.maxTokens,
+      loras: [
+        if (defaultLoraPath != null)
+          llama.LoraAdapterConfig.source(
+            llama.ModelSource.path(defaultLoraPath),
+          ),
+      ],
       device: device,
       gpuLayers: device == llama.ComputeDevice.cpu
           ? 0
           : llama.ModelParams.maxGpuLayers,
     );
-    final engine = await (loader ?? loadGgufEngine)(location, params);
+    final engine = await (_loader ?? _loadGgufEngine)(location, params);
     try {
       if (engine.runtime != llama.LlamaRuntime.llamaCpp) {
-        throw llama.LlamaUnsupportedException(
-          'GGUF must resolve to the llama.cpp runtime.',
-        );
+        throw UnsupportedError('GGUF must resolve to the llama.cpp runtime.');
       }
       if (config.supportImage || config.supportAudio) {
         final projector = await projectorResolver!(spec, config);
         if (projector == null) {
-          throw llama.LlamaUnsupportedException(
-            'No projector is paired with this model.',
-          );
+          throw UnsupportedError('No projector is paired with this model.');
         }
         await engine.loadMultimodalProjectorSource(projector);
         final capabilities = await engine.capabilities;
         if (config.supportImage && !capabilities.supportsVision ||
             config.supportAudio && !capabilities.supportsAudio) {
-          throw llama.LlamaUnsupportedException(
+          throw UnsupportedError(
             'The loaded projector does not report the requested vision/audio capability.',
           );
         }
       }
-      String? defaultLoraPath;
-      if (spec.loraSource != null) {
-        final paths =
-            config.artifactPaths ??
-            await edge.FlutterEdgeAiPlugin.instance.modelManager
-                .getModelFilePaths(spec);
-        defaultLoraPath = paths?[spec.files[1].prefsKey];
-        if (defaultLoraPath == null) {
-          throw llama.LlamaStateException(
-            'Install the LoRA companion before loading this model.',
-          );
-        }
-      }
-      final layers = await engine.getResolvedGpuLayers();
+      final backendName = await engine.getBackendName();
       return LlamaInferenceModel(
         engine: engine,
         modelType: spec.modelType,
         maxTokens: await engine.getContextSize(),
-        activeBackend: resolveBackend(layers, config.preferredBackend),
+        activeBackend: resolveBackend(backendName, config.preferredBackend),
         supportImage: config.supportImage,
         supportAudio: config.supportAudio,
         maxNumImages: config.maxNumImages,
@@ -169,7 +173,7 @@ class LlamaEngineProvider implements InferenceEngineProvider {
 }
 
 /// Loads GGUF with an explicit format, including installed extensionless blob URLs.
-Future<llama.LlamaEngine> loadGgufEngine(
+Future<llama.LlamaEngine> _loadGgufEngine(
   String location,
   llama.ModelParams params,
 ) => llama.LlamaEngine.load(

@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:llamadart/llamadart.dart';
-
 /// Serializes access to the single runtime context shared by logical sessions.
 class EngineQueue {
   bool _invalid = false;
@@ -27,7 +25,7 @@ class EngineQueue {
       ]);
       if (!acquired) return null;
       if (_invalid && !allowInvalid) {
-        throw LlamaStateException(
+        throw StateError(
           'Shared runtime cleanup failed; close and reload this model before using it again.',
         );
       }

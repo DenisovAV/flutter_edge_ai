@@ -9,6 +9,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/download.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/qairt_linux.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/qnn_runtime.dart';
+import 'package:flutter_edge_ai_litertlm/src/hook/unsupported_target.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:hooks/hooks.dart';
 
@@ -782,8 +783,19 @@ Future<void> _processBundle({
   required String dirName,
 }) async {
   // Skip the bundle entirely if it has no checksum for this platform.
-  // Both bundles use this as the "is this target supported" gate.
-  if (!bundle.checksums.containsKey(bundle.archiveName(dirName))) return;
+  // Both bundles use this as the "is this target supported" gate. The skip is
+  // non-fatal on purpose, so an app that uses another engine still builds; only
+  // Windows ARM64 says so (see `missingArchiveNotice`, #326).
+  final archiveName = bundle.archiveName(dirName);
+  if (!bundle.checksums.containsKey(archiveName)) {
+    final notice = missingArchiveNotice(
+      packageName: _packageName,
+      dirName: dirName,
+      archiveName: archiveName,
+    );
+    if (notice != null) stderr.writeln(notice);
+    return;
+  }
 
   // Cross-package version-skew guard (throws on a different owner declaring a
   // different version of this shared bundle). Match/absent/same-owner are no-ops

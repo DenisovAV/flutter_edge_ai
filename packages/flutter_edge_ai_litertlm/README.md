@@ -42,8 +42,8 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.3.1`,
-`flutter_edge_ai_litertlm: ^1.13.1`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.3.2`,
+`flutter_edge_ai_litertlm: ^1.13.2`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
@@ -140,7 +140,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (text and images); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -212,12 +212,13 @@ final vector = await embedder.embed(
   the bundle runs through `@litert-lm/core`'s `EmbeddingEngine` on WebGPU,
   which needs one more line in `web/index.html` — see
   [Web setup](#web-setup-early-preview) — and a browser with WebGPU.
-- **Text on every bundle; images on the 440m and the 740m (native and
-  web); audio on the 740m, natively (all 1.13.1).** On the 270m,
+- **Text on every bundle; images on the 440m and the 740m; audio on the
+  740m.** Natively all from 1.13.1; on the web text and images from 1.13.1,
+  audio and combined inputs from 1.13.2. On the 270m,
   `getActiveEmbedder(supportImage: true)` fails with `EmbeddingLoadException`
   naming the 440m bundle, and on the 270m and the 440m `supportAudio: true`
-  fails naming the 740m — natively before any engine or cache is made. On the
-  web `supportAudio: true` fails on every bundle.
+  fails naming the 740m — read from the bundle's own header before any engine
+  or cache is made, on the web too (a few KB of the installed file).
 - **At most 1024 tokens per input**, task prefix, BOS and EOS included
   (`maxInputTokens == 1024`). Keep chunks at 512 tokens or fewer: memory grows
   with the input length (on an M4 Pro Mac about +170 MB at 128 tokens, +340 MB
@@ -361,9 +362,8 @@ page.
 The 740m bundle carries the 440m's text and vision towers (the same text and
 image vectors) plus an audio encoder, so a text can find a spoken sentence or a
 sound, and one vector can hold several parts — a photo with its caption, a clip
-with a note. Audio and combined inputs are native-only: on the web
-`supportAudio: true` is refused. Declare what you send when you get the
-embedder:
+with a note. Natively from 1.13.1, on the web (WebGPU) from 1.13.2. Declare
+what you send when you get the embedder:
 
 ```dart
 const audioRevision = '24d962e906c7d332c6428e71c9676855024569e2';
@@ -396,25 +396,31 @@ final note = await embedder.embed(
   channel count — the engine mixes down to mono and resamples to 16 kHz. Ogg
   and M4A fail with `EmbeddingFormatNotSupportedException` before anything is
   sent; a corrupt file of an accepted type fails with
-  `EmbeddingEngineException` (`nativeCode` 2) and the embedder keeps working.
-  One clip per vector.
+  `EmbeddingEngineException` (natively `nativeCode` 2; on the web it carries
+  the runtime's message, "Failed to initialize miniaudio decoder") and the
+  embedder keeps working. The web decodes with the same miniaudio, compiled to
+  WebAssembly. One clip per vector.
 - **Length:** about 25 tokens per second of audio, so a clip of up to about
   40 seconds fits the 1024-token cap; a 60-second clip fails with
-  `EmbeddingInputTooLongException(maxInputTokens: 1024, actualTokens: 1504)`.
-  Split long recordings.
+  `EmbeddingInputTooLongException(maxInputTokens: 1024, actualTokens: 1504)`,
+  natively and on the web alike. Split long recordings.
 - **Combined inputs:** `EmbeddingInput(text:, images:, audio:)` puts the text
   (with its task prefix), then the images in order, then the audio into one
   vector — that order whatever order you write the arguments in. Several
   images in one input are a combined input too. Declare every medium you send
   (`supportImage: true, supportAudio: true`); the cap counts all parts
-  together (about 140 tokens per image). On the web, where each vector holds
-  one part, any input with more than one part fails with
-  `UnsupportedEmbeddingCombinationException` before anything is sent.
+  together (about 140 tokens per image), on the web too.
 - **Cost** (CPU, measured on an M4 Pro Mac): a 485 MB bundle; at every load the
   engine writes 385 MB of weight caches (text 71 MB, vision 218 MB, audio
   95 MB) in the app's cache directory, also when you only embed text; about
-  0.2–0.3 s per 3-second clip. For text use the 270m, for text and images the
-  440m.
+  0.2–0.3 s per 3-second clip. On the web (WebGPU, Tesla T4, Chrome 155)
+  `getActiveEmbedder(supportAudio: true)` on the 740m took about 17 s, of
+  which the engine's create is about 5 s (9 s with images too; no weight
+  cache there); a 3-second clip takes about 0.3 s, the first one about 4 s
+  while WebGPU compiles. The audio tower runs on WebGPU: on the CPU
+  (WebAssembly) it takes about 18 s per clip, on the page's main thread. Not
+  measured next to a `.litertlm` LLM on the same page. For text use the 270m,
+  for text and images the 440m.
 - **Index ids:** audio vectors do not depend on the vision budget, so an audio
   store keeps the text profile id (rag tells the stores apart by their
   `documents` modality).
@@ -424,13 +430,15 @@ final note = await embedder.embed(
   vector by up to cos 0.05. Text and image vectors do not move that way. Our
   native build and Google's `litert-lm` Python wheel give identical text
   vectors and audio vectors within cos 0.97 (the wheel even varies by thread
-  scheduling run to run); one build is deterministic on one platform. What
-  holds across builds is retrieval: a text finds its clip on every build we
-  measured.
+  scheduling run to run); one build is deterministic on one platform. The web
+  (WebGPU) is within cos 0.97 of both. What holds across builds is retrieval:
+  a text finds its clip on every build we measured, the web included, and a
+  web query finds the clips embedded natively.
 
 `EmbeddingModel.activeBackend` is `cpu` on native and `gpu` for EmbeddingGemma
 2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Qualcomm
-NPU ([below](#embeddinggemma-2-on-a-qualcomm-npu)); any other
+NPU ([below](#embeddinggemma-2-on-a-qualcomm-npu)) or an Intel one
+([below](#embeddinggemma-2-on-an-intel-npu-windows)); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and
@@ -469,8 +477,10 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
   VENTUNO Q). Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
   MT6991/MT6993 and Intel PTL builds; the Qualcomm ones load here but are not
-  verified by us, and the others are refused (no dispatch for them ships). What
-  a bundle is compiled for is read from the bundle itself, not from its name.
+  verified by us, Intel PTL runs on Windows
+  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and
+  the others are refused (no dispatch for them ships). What a bundle is
+  compiled for is read from the bundle itself, not from its name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
   SM8650 (Galaxy S24): a text in about 9 ms (53 ms on its CPU), an image in
   about 0.31 s, the 270m loaded in 0.85 s. Against the CPU bundle, the cosine is
@@ -480,10 +490,11 @@ assert(embedder.activeBackend == PreferredBackend.npu);
 - **Nothing switches backend.** NPU and CPU vectors are not interchangeable,
   so every mismatch is an `EmbeddingLoadException` that says what to do: a
   per-SoC bundle without `PreferredBackend.npu`; the generic bundle with `npu`;
-  `npu` on iOS, macOS, Windows, Linux x64 or the web; an app built without
-  `qualcomm_npu`; a device without a reachable Qualcomm NPU; a bundle the NPU
-  cannot run (another SoC's — the load embeds one test text to find out). A
-  loaded embedder is never handed to a request for the other backend.
+  `npu` on iOS, macOS, Linux x64 or the web; a Qualcomm bundle on Windows; an
+  app built without `qualcomm_npu`; a device without a reachable Qualcomm NPU;
+  a bundle the NPU cannot run (another SoC's — the load embeds one test text
+  to find out). A loaded embedder is never handed to a request for the other
+  backend.
 - **Give an NPU index its own profile id.** Vectors from the SM8850 bundle and
   from the generic bundle live in different spaces, so a RAG store built with
   one never takes the other's queries. The example app uses the CPU text id
@@ -493,10 +504,44 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   `FlutterEdgeAiActiveEmbedder.forActiveModel` keys on the installed file name,
   so it separates them by itself.
 - Text up to 1024 tokens (the bundles carry no longer signature), and images
-  on the 440m, as on CPU. The 740m's per-SoC bundles are not verified.
+  on the 440m, as on CPU; audio on the 740m's per-SoC bundles from 1.13.2,
+  with their audio encoder on the CPU (verified on SM8850, Galaxy S26+).
 - On Linux the NPU calls run with SIGPROF blocked, as the LLM engine's create
   does: QNN does not survive the debug VM's profiler signal. Linux needs
   native-v0.18.0-e or newer, which reads the bundles' external weights by path.
+
+### EmbeddingGemma 2 on an Intel NPU (Windows)
+
+Google's `…_Intel_PTL.litertlm` bundles are compiled for the Intel Panther Lake
+NPU. From 1.13.2 this package runs them on **Windows x64** with
+`PreferredBackend.npu`, through the Intel stack (`LiteRtDispatch.dll`, OpenVINO
+and TBB) that every Windows x64 build already carries beside the executable — no
+opt-in flag:
+
+```dart
+const revision = '9be6e8b90982095dc05c2bd162e4b954ee4dbac7';
+await FlutterEdgeAi.installEmbedder()
+    .modelFromNetwork(
+      'https://huggingface.co/litert-community/'
+      'embeddinggemma-2-text-270m-litert-lm/resolve/$revision/'
+      'embeddinggemma-2-text-270m_Intel_PTL.litertlm',
+    )
+    .install();
+final embedder = await FlutterEdgeAi.getActiveEmbedder(
+  preferredBackend: PreferredBackend.npu,
+);
+```
+
+- **The load checks the NPU.** It embeds one test text and refuses unless it
+  gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
+  drive, gets an `EmbeddingLoadException` rather than wrong vectors.
+- The same rules as on Qualcomm: refused without `npu`, refused on any other
+  platform (an Intel bundle on Android or Linux, a Qualcomm bundle on Windows),
+  refused with the reason when `LiteRtDispatch.dll` is not beside the
+  executable, and never moved to CPU.
+- **Its own profile id.** The example app uses the CPU text id plus `-npu-ptl`
+  (and `…-vis140` for an image index); the 270m and the 440m share it, because
+  their text towers are byte-identical.
 
 ## Embeddings on web
 
@@ -610,7 +655,8 @@ window.litertLmReady = (async () => {
 ```
 
 `window.EmbeddingEngine` (1.13.1) is what EmbeddingGemma 2 `.litertlm`
-embedders run on, text and images, on WebGPU. A page without that line fails
+embedders run on, on WebGPU: text and images, and from 1.13.2 audio and
+combined inputs (no further line). A page without that line fails
 the embedder's load with an `EmbeddingLoadException` that names it; so does a
 browser without WebGPU, which has no fallback here (the CPU path of
 `@litert-lm/core` 0.18.0 cannot read these bundles' external weights). The LLM
@@ -636,8 +682,8 @@ Native platforms need no web setup.
 | Android  | ✅ FFI (GPU via OpenCL, NPU on Qualcomm — opt-in, below) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
-| Windows  | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
-| Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text and images on WebGPU) |
+| Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
+| Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
 The native library (`native-v0.18.0-e`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
@@ -735,12 +781,29 @@ compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
 x64 build ignores the flag.
 
 **Embeddings.** The same flag runs EmbeddingGemma 2 per-SoC bundles on the NPU
-([EmbeddingGemma 2 on a Qualcomm NPU](#embeddinggemma-2-on-a-qualcomm-npu)).
+([EmbeddingGemma 2 on a Qualcomm NPU](#embeddinggemma-2-on-a-qualcomm-npu));
+Windows runs the Intel ones without it
+([EmbeddingGemma 2 on an Intel NPU](#embeddinggemma-2-on-an-intel-npu-windows)).
 Unlike the LLM path, an embedder never falls back: when the NPU cannot run the
 bundle, `getActiveEmbedder` fails with `EmbeddingLoadException` and the reason,
 because CPU vectors would land in another space.
 
 ## Troubleshooting
+
+### Windows ARM64: LiteRT-LM inference is not available
+
+Symptom: a native Windows ARM64 build (a Snapdragon X laptop) succeeds, then
+the first `.litertlm` model fails with `Failed to load dynamic library
+'StreamProxy.dll'` (error 126). The build hook now prints why while it builds.
+
+Cause: there is no `windows_arm64` LiteRT-LM archive. Upstream does not build
+LiteRT-LM for Windows ARM64, so there is nothing to package. The hook skips the
+target instead of failing, so an app that uses another engine still builds.
+
+What works today: MediaPipe has no desktop engine and the ONNX engine is
+Windows x64 only (ARM64 is not released), so the option is to build the app for
+x64, which runs under Windows x64 emulation. See
+[#326](https://github.com/DenisovAV/flutter_edge_ai/issues/326).
 
 ### Wrong digits from a long prompt on GPU
 

@@ -34,6 +34,22 @@ void main() {
   );
 
   test(
+    'replacement prunes only the demo-owned copy and keeps external files',
+    () async {
+      final source = File('${scratch.path}/source.gguf');
+      await source.writeAsString('first');
+      final previous = File(await importModel(source.path));
+      final replacement = File(await importModel(source.path));
+      await pruneImportedModels(replacement.path);
+      expect(await previous.exists(), isFalse);
+      expect(await replacement.readAsString(), 'first');
+      expect(await source.exists(), isTrue);
+      await pruneImportedModels(source.path);
+      expect(await replacement.exists(), isTrue);
+    },
+  );
+
+  test(
     'failed imports leave no partial model and reject unrelated formats',
     () async {
       await expectLater(

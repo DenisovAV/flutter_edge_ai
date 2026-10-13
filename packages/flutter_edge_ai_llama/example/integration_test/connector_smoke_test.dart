@@ -14,9 +14,11 @@ const _cpuThreads = int.fromEnvironment('GGUF_CPU_THREADS');
 Future<llama.LlamaEngine> _loadWithThreadBudget(
   String path,
   llama.ModelParams params,
-) => loadGgufEngine(
-  path,
-  params.copyWith(
+) => llama.LlamaEngine.load(
+  llama.LlamaModel(
+    llama.ModelSource.path(path, format: llama.ModelFormat.gguf),
+  ),
+  params: params.copyWith(
     numberOfThreads: _cpuThreads,
     numberOfThreadsBatch: _cpuThreads,
   ),
@@ -31,7 +33,8 @@ void main() {
       expect(
         _modelPath.isNotEmpty || _modelUrl.isNotEmpty,
         isTrue,
-        reason: 'Supply GGUF_MODEL_PATH on the target device or GGUF_MODEL_URL. This required smoke never skips.',
+        reason:
+            'Supply GGUF_MODEL_PATH on the target device or GGUF_MODEL_URL. This required smoke never skips.',
       );
       await tester.pumpWidget(
         const MaterialApp(home: Scaffold(body: Text('GGUF qualification'))),
@@ -47,9 +50,10 @@ void main() {
         logStage('stage=initialize cpuThreads=$_cpuThreads');
         await edge.FlutterEdgeAi.initialize(
           inferenceEngines: [
-            LlamaEngineProvider(
-              loader: _cpuThreads > 0 ? _loadWithThreadBudget : null,
-            ),
+            if (_cpuThreads > 0)
+              LlamaEngineProvider.withLoader(loader: _loadWithThreadBudget)
+            else
+              const LlamaEngineProvider(),
           ],
         );
         final installation = edge.FlutterEdgeAi.installModel(
@@ -69,7 +73,7 @@ void main() {
             preferredBackend: edge.PreferredBackend.cpu,
           );
           try {
-            expect(model, isA<LlamaInferenceModel>());
+            expect(model, isA<edge.InferenceModel>());
             expect(model.activeBackend, edge.PreferredBackend.cpu);
             logStage('cycle=$cycle stage=chat');
             final chat = await model.openChat(
@@ -148,6 +152,7 @@ void main() {
             await model.close();
           }
         }
+        logStage('completed=3');
       });
     },
     timeout: const Timeout(Duration(minutes: 10)),

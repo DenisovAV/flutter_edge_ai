@@ -19,14 +19,19 @@
 /// `wasm_binding_types.js`):
 ///
 /// ```js
-/// EmbeddingEngine.create({model, backend, visionBackend?, maxInputLength,
-///     minInputLength?, visionTokensPerImage?})      // Promise<EmbeddingEngine>
+/// EmbeddingEngine.create({model, backend, visionBackend?, audioBackend?,
+///     maxInputLength, minInputLength?, visionTokensPerImage?})
+///                                                   // Promise<EmbeddingEngine>
 /// engine.computeEmbedding(input, {normalize, insertSpecialTokens,
 ///     inputOverflowStrategy})  // Promise<{embedding: number[], inputLength,
 ///                              //   truncatedLength?, numChunks}>
-///   // input: a string, or {type: 'image', data: ArrayBuffer}
+///   // input: a string, {type: 'image', data: ArrayBuffer},
+///   // {type: 'audio', data: ArrayBuffer}, or an array of them (one vector)
 /// engine.delete()                                   // Promise<void>
 /// ```
+///
+/// [WindowLiteRtLmWebRuntime.readPrefix] is the page's own `fetch()`: the
+/// first bytes of the installed bundle, for its container header.
 ///
 /// With `backend: GPU` (4, the backend the pass asks for) `create` sets up the
 /// module's one WebGPU device itself, from
@@ -38,6 +43,8 @@ library;
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
+
+import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
 
 import 'litert_lm_web_embedding_pass.dart';
 
@@ -77,6 +84,30 @@ extension type _EmbeddingResponse._(JSObject _) implements JSObject {
   external JSNumber? get inputLength;
   external JSNumber? get truncatedLength;
   external JSNumber? get numChunks;
+}
+
+@JS('fetch')
+external JSPromise<_Response> _fetch(JSString url, JSObject init);
+
+extension type _Response._(JSObject _) implements JSObject {
+  external bool get ok;
+  external int get status;
+  external _ReadableStream? get body;
+}
+
+extension type _ReadableStream._(JSObject _) implements JSObject {
+  external _Reader getReader();
+  external JSPromise<JSAny?> cancel();
+}
+
+extension type _Reader._(JSObject _) implements JSObject {
+  external JSPromise<_ReadResult> read();
+  external JSPromise<JSAny?> cancel();
+}
+
+extension type _ReadResult._(JSObject _) implements JSObject {
+  external bool get done;
+  external JSUint8Array? get value;
 }
 
 /// The [LiteRtLmWebRuntime] of the page: `window.litertLmReady` and
@@ -139,6 +170,10 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
     if (settings.visionBackend case final vision?) {
       js['visionBackend'] = _backendValue(vision).toJS;
     }
+    // The same rule: absent = the audio tower disabled.
+    if (settings.audioBackend case final audio?) {
+      js['audioBackend'] = _backendValue(audio).toJS;
+    }
     if (settings.minInputLength case final min?) {
       js['minInputLength'] = min.toJS;
     }
@@ -147,6 +182,48 @@ final class WindowLiteRtLmWebRuntime implements LiteRtLmWebRuntime {
     }
     final engine = await _EmbeddingEngine.create(js).toDart;
     return _WindowEngine(engine);
+  }
+
+  /// `fetch(url)`, read until [length] bytes arrived, then cancelled. An
+  /// `http(s):` URL also asks for just that range (`Range` is a
+  /// CORS-safelisted header); a `blob:` URL — the page's own copy, Cache API
+  /// or OPFS — is a local read either way.
+  @override
+  Future<Uint8List> readPrefix(String url, int length) async {
+    final init = JSObject();
+    if (url.startsWith('http:') || url.startsWith('https:')) {
+      init['headers'] = JSObject()..['Range'] = 'bytes=0-${length - 1}'.toJS;
+    }
+    final response = await _fetch(url.toJS, init).toDart;
+    if (!response.ok) {
+      // An error page can be large or streamed: drop it before throwing.
+      try {
+        await response.body?.cancel().toDart;
+      } catch (e) {
+        edgeAiLog('[LiteRtLmWebEmbeddingPass] cancelling the read of $url: $e');
+      }
+      throw StateError('fetch($url) answered HTTP ${response.status}');
+    }
+    final body = response.body;
+    if (body == null) return Uint8List(0);
+    final reader = body.getReader();
+    final bytes = BytesBuilder(copy: false);
+    try {
+      while (bytes.length < length) {
+        final chunk = await reader.read().toDart;
+        if (chunk.done) break;
+        if (chunk.value case final value?) bytes.add(value.toDart);
+      }
+    } finally {
+      try {
+        // Stops the rest of the body: a few KB were wanted, not the model.
+        await reader.cancel().toDart;
+      } catch (e) {
+        edgeAiLog('[LiteRtLmWebEmbeddingPass] cancelling the read of $url: $e');
+      }
+    }
+    final read = bytes.takeBytes();
+    return read.length > length ? Uint8List.sublistView(read, 0, length) : read;
   }
 }
 
@@ -161,14 +238,10 @@ final class _WindowEngine implements LiteRtLmWebEngine {
     LiteRtLmWebEmbeddingOptions options,
   ) async {
     final JSAny part = switch (input) {
-      LiteRtLmWebText(:final text) => text.toJS,
-      // An ArrayBuffer of exactly the file — what the runtime itself makes
-      // of a Blob before handing it to WebAssembly. A fresh copy: the input's
-      // bytes are an unmodifiable view, whose buffer has no JS twin.
-      LiteRtLmWebImage(:final bytes) =>
-        JSObject()
-          ..['type'] = 'image'.toJS
-          ..['data'] = Uint8List.fromList(bytes).buffer.toJS,
+      LiteRtLmWebParts(:final parts) => [
+        for (final part in parts) _part(part),
+      ].toJS,
+      _ => _part(input),
     };
     final jsOptions = JSObject()
       ..['normalize'] = options.normalize.toJS
@@ -191,6 +264,25 @@ final class _WindowEngine implements LiteRtLmWebEngine {
           : _int(response.numChunks, 'numChunks'),
     );
   }
+
+  /// One part as `computeEmbedding` takes it: a string, or `{type, data}`.
+  static JSAny _part(LiteRtLmWebInput input) => switch (input) {
+    LiteRtLmWebText(:final text) => text.toJS,
+    LiteRtLmWebImage(:final bytes) => _media('image', bytes),
+    LiteRtLmWebAudio(:final bytes) => _media('audio', bytes),
+    LiteRtLmWebParts() => throw ArgumentError.value(
+      input,
+      'input',
+      'parts inside parts',
+    ),
+  };
+
+  /// `{type, data: ArrayBuffer}` of exactly the file — what the runtime
+  /// itself makes of a Blob before handing it to WebAssembly. A fresh copy:
+  /// the input's bytes are an unmodifiable view, whose buffer has no JS twin.
+  static JSObject _media(String type, Uint8List bytes) => JSObject()
+    ..['type'] = type.toJS
+    ..['data'] = Uint8List.fromList(bytes).buffer.toJS;
 
   @override
   Future<void> delete() => _engine.delete().toDart;

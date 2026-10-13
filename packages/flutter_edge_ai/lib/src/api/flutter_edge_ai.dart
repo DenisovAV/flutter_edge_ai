@@ -655,8 +655,9 @@ class FlutterEdgeAi {
   ///   reused when it covers the request; otherwise it is rebuilt with the
   ///   UNION of what it had and what is asked, so declarations only widen.
   /// - [preferredBackend]: [PreferredBackend.npu] runs an EmbeddingGemma 2
-  ///   per-SoC `.litertlm` bundle on the NPU (flutter_edge_ai_litertlm, on
-  ///   Qualcomm Android and Qualcomm Linux arm64). Such a bundle runs nowhere
+  ///   per-SoC `.litertlm` bundle on the NPU (flutter_edge_ai_litertlm: on
+  ///   Qualcomm Android and Qualcomm Linux arm64, and from 1.13.2 on Intel
+  ///   Panther Lake with Windows x64). Such a bundle runs nowhere
   ///   else, and its vectors are not the CPU bundle's, so the backend refuses
   ///   rather than switches: an NPU bundle without `npu`, `npu` with the
   ///   generic bundle, and `npu` where no NPU can run it are

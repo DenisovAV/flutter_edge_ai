@@ -117,11 +117,31 @@ class AgentLoop {
   /// "multimodal model" half cannot be checked from Dart (no capability
   /// introspection API): if the flag is set but the model is text-only, the
   /// image reaches the engine and is dropped there — a caller precondition.
+  ///
+  /// Pass [audioBytes] to ask with a recording — the spoken question, for a
+  /// model with an audio encoder (Gemma 4 E2B or E4B as `.litertlm`, on a
+  /// native platform). It rides on the same first message as [userMessage] and
+  /// [imageBytes]; [userMessage] may be empty when the audio carries the
+  /// question. Tool-result follow-ups in the turn carry no media. The bytes
+  /// reach the engine unchanged: a `.litertlm` model (LiteRT-LM) decodes an
+  /// audio FILE, so send a WAV (16 kHz mono 16-bit PCM in a RIFF container), not
+  /// bare PCM samples. Audio is native-only: LiteRT-LM on the web throws
+  /// `UnsupportedError`, which ends the returned stream, and MediaPipe's web
+  /// `.task` files have no audio encoder. After a stopped turn (a cancelled
+  /// subscription), a `.litertlm` chat rebuilds its conversation from the turns'
+  /// text, so the recordings of earlier turns are gone from its context.
+  ///
+  /// PRECONDITION, as for images: [chat] must have been created with
+  /// `supportAudio: true` (see [AgentSession.fromModel]). Without it the FFI
+  /// session drops the audio and the model answers as if nothing was said, so a
+  /// missing flag fails the returned stream with an [ArgumentError] before
+  /// anything reaches the chat's history. Empty [audioBytes] fail the same way.
   Stream<AgentEvent> run(
     InferenceChat chat,
     String userMessage, {
     bool Function()? isCancelled,
     Uint8List? imageBytes,
+    Uint8List? audioBytes,
   }) {
     // Delegate the loop + history-balancing to core's
     // generateChatResponseWithTools (one audited implementation — cancel,
@@ -175,14 +195,35 @@ class AgentLoop {
           );
         }
       }
+      if (audioBytes != null) {
+        if (!chat.supportAudio) {
+          throw ArgumentError.value(
+            chat,
+            'chat',
+            'AgentLoop.run(audioBytes:) requires a chat created with '
+                'supportAudio: true, backed by a model with an audio encoder. '
+                'Without it the engine drops the audio and the model answers '
+                'as if nothing was said.',
+          );
+        }
+        if (audioBytes.isEmpty) {
+          throw ArgumentError.value(
+            audioBytes,
+            'audioBytes',
+            'audioBytes must not be empty.',
+          );
+        }
+      }
+      // One user message for the whole turn: its text and whatever media it
+      // carries, as Message.withImage / withAudio would build them.
       await chat.addQueryChunk(
-        imageBytes == null
-            ? Message(text: userMessage, isUser: true)
-            : Message.withImage(
-                text: userMessage,
-                imageBytes: imageBytes,
-                isUser: true,
-              ),
+        Message(
+          text: userMessage,
+          isUser: true,
+          imageBytes: imageBytes,
+          images: imageBytes == null ? const [] : [imageBytes],
+          audioBytes: audioBytes,
+        ),
       );
       await for (final r in chat.generateChatResponseWithTools(
         onToolCall: (call) {

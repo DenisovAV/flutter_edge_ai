@@ -2,7 +2,7 @@ name: flutter_edge_ai_workspace
 publish_to: none
 
 environment:
-  sdk: ">=3.13.1 <4.0.0"
+  sdk: ">=3.12.0 <4.0.0"
 
 # Native Dart pub workspace (Dart 3.6+). Each member opts in with
 # `resolution: workspace` in its own pubspec.yaml.

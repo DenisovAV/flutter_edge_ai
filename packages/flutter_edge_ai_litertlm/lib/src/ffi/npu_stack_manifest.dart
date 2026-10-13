@@ -6,8 +6,9 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../npu_stacks.dart';
 
-/// Whether this build bundles the Qualcomm NPU stack (Android, Linux arm64),
-/// and why not.
+/// Whether this build bundles a vendor's NPU stack — the Qualcomm one
+/// (Android, Linux arm64, [checkQualcommNpuStack]) or, for EmbeddingGemma 2,
+/// the Intel one (Windows x64, `checkIntelNpuStack`) — and why not.
 final class NpuStackCheck {
   const NpuStackCheck.bundled() : bundled = true, known = true, reason = null;
   const NpuStackCheck.missing(String this.reason)

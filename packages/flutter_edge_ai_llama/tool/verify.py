@@ -13,6 +13,7 @@ import tempfile
 from threading import Event, Thread
 
 from serve_web_fixture import create_server
+from smoke_result import require_smoke_success
 
 PACKAGE = Path(__file__).resolve().parents[1]
 
@@ -48,7 +49,7 @@ def sample_native_apps(directory, stop, simulator_device=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("lane", choices=("contracts", "native", "web", "package", "build", "device"))
+    parser.add_argument("lane", choices=("contracts", "native", "web", "package", "build", "device", "capabilities"))
     parser.add_argument("--flutter", default="flutter")
     parser.add_argument("--model-path", type=Path)
     parser.add_argument("--model-url")
@@ -61,13 +62,17 @@ def main():
                         help="Apple runtime lanes: retain recent app thread samples in RUNNER_TEMP")
     parser.add_argument("--core-path", type=Path,
                         help="Package preparation only: validate against this unreleased core; hosted validation remains required before publishing")
+    parser.add_argument("--capability", choices=("tools", "audio", "vision", "lora", "gpu"))
+    parser.add_argument("--projector-path", type=Path)
+    parser.add_argument("--input-path", type=Path)
+    parser.add_argument("--adapter-path", type=Path)
     args = parser.parse_args()
     # Resolve PATHEXT on Windows so CreateProcess receives flutter.bat.
     flutter = shutil.which(args.flutter) or args.flutter
     sdk = Path(flutter).parent / ("dart.bat" if os.name == "nt" else "dart")
     dart = str(sdk) if sdk.exists() else "dart"
 
-    def run(command, directory=PACKAGE):
+    def run(command, directory=PACKAGE, smoke=None):
         print("Running:", subprocess.list2cmdline([str(x) for x in command]), flush=True)
         stop = Event()
         monitor = None
@@ -77,7 +82,11 @@ def main():
             monitor = Thread(target=sample_native_apps, args=(diagnostics, stop, simulator), daemon=True)
             monitor.start()
         try:
-            subprocess.run([str(x) for x in command], cwd=directory, check=True)
+            result = subprocess.run([str(x) for x in command], cwd=directory, check=True,
+                                    **({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT, "text": True} if smoke else {}))
+            if smoke:
+                print(result.stdout, flush=True)
+                require_smoke_success(result.stdout, smoke)
         finally:
             stop.set()
             if monitor is not None:
@@ -119,6 +128,14 @@ def main():
         if not name or name.group(1) != "flutter_edge_ai" or not version or not minimum or version.group(1) != minimum.group(0):
             parser.error("--core-path must be flutter_edge_ai at the connector's minimum dependency version")
 
+    if args.lane == "capabilities":
+        required = [args.model_path]
+        if args.capability in ("audio", "vision"):
+            required += [args.projector_path, args.input_path]
+        if args.capability == "lora": required += [args.adapter_path]
+        if args.capability is None or any(path is None or not path.is_file() for path in required):
+            parser.error("capabilities requires --capability and existing model/projector/input/adapter fixtures for that feature")
+
     version = json.loads(subprocess.check_output([flutter, "--version", "--machine"], text=True))
     expected = (PACKAGE / ".flutter-version").read_text().strip()
     if version["frameworkVersion"] != expected:
@@ -149,15 +166,15 @@ def main():
                 thread.start()
                 try:
                     fixture = f"--dart-define=GGUF_MODEL_URL=http://127.0.0.1:{server.server_address[1]}/chat.gguf"
-                    run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture, *thread_defines], PACKAGE / "example")
+                    run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture, *thread_defines, "--reporter", "json"], PACKAGE / "example", smoke="packaged native runtime installs")
                 finally:
                     server.shutdown()
                     thread.join()
                     server.server_close()
             else:
-                run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture, *thread_defines], PACKAGE / "example")
+                run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", platform, fixture, *thread_defines, "--reporter", "json"], PACKAGE / "example", smoke="packaged native runtime installs")
         else:
-            run([flutter, "test", "test/native_smoke_test.dart", fixture])
+            run([flutter, "test", "test/native_smoke_test.dart", fixture, "--reporter", "json"], smoke="published facade installs GGUF")
     elif args.lane == "web":
         run([sys.executable, "tool/fetch_web_assets.py"])
         command = [sys.executable, "tool/run_web_smoke.py", "--flutter", flutter, "--model-url", args.model_url]
@@ -195,7 +212,7 @@ def main():
             result = subprocess.run([flutter, "pub", "publish", "--dry-run", "--ignore-warnings"], cwd=staged, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         print(result.stdout, flush=True)
         result.check_returncode()
-        allowed = ("doesn't mention current version",)
+        allowed = ()
         if args.core_path is not None:
             allowed += ("Non-dev dependencies are overridden in pubspec_overrides.yaml.",)
         warnings = [block for block in result.stdout.split("\n* ")[1:]]
@@ -205,7 +222,15 @@ def main():
         fixture = (f"--dart-define=GGUF_MODEL_PATH={args.model_path.resolve()}" if args.model_path
                    else f"--dart-define=GGUF_MODEL_URL={args.model_url}")
         run([flutter, "pub", "get"], PACKAGE / "example")
-        run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", args.device, fixture, *thread_defines], PACKAGE / "example")
+        run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", args.device, fixture, *thread_defines, "--reporter", "json"], PACKAGE / "example", smoke="packaged native runtime installs")
+    elif args.lane == "capabilities":
+        labels = {"tools": "native typed thinking", "audio": "native audio projector", "vision": "native vision projector", "lora": "native LoRA session", "gpu": "explicit GPU loads"}
+        prefix = "TOOL" if args.capability == "tools" else args.capability.upper()
+        defines = [f"--dart-define=GGUF_{prefix}_MODEL_PATH={args.model_path.resolve()}"]
+        if args.projector_path: defines.append(f"--dart-define=GGUF_{prefix}_PROJECTOR_PATH={args.projector_path.resolve()}")
+        if args.input_path: defines.append(f"--dart-define=GGUF_{prefix}_FILE_PATH={args.input_path.resolve()}")
+        if args.adapter_path: defines.append(f"--dart-define=GGUF_LORA_ADAPTER_PATH={args.adapter_path.resolve()}")
+        run([flutter, "test", "test/native_capabilities_test.dart", "--plain-name", labels[args.capability], "--reporter", "json", *defines], smoke=labels[args.capability])
     elif args.lane == "build":
         run([flutter, "pub", "get"], PACKAGE / "example")
         target = "apk" if args.platform == "android" else args.platform

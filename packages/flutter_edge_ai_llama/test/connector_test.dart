@@ -6,15 +6,20 @@ import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
+import 'package:flutter_edge_ai_llama/src/llama_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart' as llama;
+
+import 'lora_fixture_stub.dart' if (dart.library.io) 'lora_fixture_native.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  late String adapterPath;
   late _FakeEngine engine;
   late LlamaInferenceModel model;
-  setUp(() {
+  setUp(() async {
+    adapterPath = await createLoraFixture();
     engine = _FakeEngine();
     model = LlamaInferenceModel(
       engine: engine,
@@ -24,6 +29,7 @@ void main() {
   });
   tearDown(() async {
     await model.close();
+    await removeLoraFixture(adapterPath);
     EngineRegistry.instance.reset();
   });
 
@@ -49,7 +55,7 @@ void main() {
   });
 
   test('provider refuses binary GGUF before loading', () async {
-    final provider = LlamaEngineProvider(
+    final provider = LlamaEngineProvider.withLoader(
       loader: (_, _) async => fail('Binary files must not reach llama'),
     );
     await expectLater(
@@ -57,7 +63,7 @@ void main() {
         _spec('model.gguf', edge.ModelFileType.binary),
         const RuntimeConfig(modelPath: '/models/model.gguf', maxTokens: 2048),
       ),
-      throwsA(isA<llama.LlamaUnsupportedException>()),
+      throwsA(isA<UnsupportedError>()),
     );
   });
 
@@ -69,7 +75,13 @@ void main() {
       modelType: edge.ModelType.general,
       fileType: edge.ModelFileType.gguf,
     );
-    final provider = LlamaEngineProvider(loader: (_, _) async => engine);
+    final provider = LlamaEngineProvider.withLoader(
+      loader: (_, params) async {
+        expect(params.loras.single.source!.path, '/models/adapter.gguf');
+        engine.activeAdapter = params.loras.single.source!.path;
+        return engine;
+      },
+    );
     final config = RuntimeConfig(
       modelPath: '/models/model.gguf',
       maxTokens: 2048,
@@ -82,7 +94,7 @@ void main() {
     if (kIsWeb) {
       await expectLater(
         provider.createModel(spec, config),
-        throwsA(isA<llama.LlamaUnsupportedException>()),
+        throwsA(isA<UnsupportedError>()),
       );
       expect(engine.requests, isEmpty);
       return;
@@ -97,7 +109,8 @@ void main() {
     );
     await session.getResponse();
     expect(engine.adaptersAtGeneration, ['/models/adapter.gguf']);
-    expect(engine.activeAdapter, isNull);
+    expect(engine.activeAdapter, '/models/adapter.gguf');
+    expect(engine.loraEvents, isEmpty);
   });
 
   test(
@@ -115,10 +128,7 @@ void main() {
         await engine.disposeStarted.future.timeout(const Duration(seconds: 2));
         expect(notifications, 0);
         expect(engine.disposals, 0);
-        expect(
-          () => model.createSession(),
-          throwsA(isA<llama.LlamaStateException>()),
-        );
+        expect(() => model.createSession(), throwsA(isA<StateError>()));
       } finally {
         gate.complete();
         await closing;
@@ -130,7 +140,7 @@ void main() {
   );
 
   test('provider forwards context and CPU selection through load', () async {
-    final provider = LlamaEngineProvider(
+    final provider = LlamaEngineProvider.withLoader(
       loader: (path, params) async {
         expect(path, '/models/test.gguf');
         expect(params.contextSize, 2048);
@@ -155,7 +165,9 @@ void main() {
   test(
     'explicit GPU selection rejects CPU fallback and disposes runtime',
     () async {
-      final provider = LlamaEngineProvider(loader: (_, _) async => engine);
+      final provider = LlamaEngineProvider.withLoader(
+        loader: (_, _) async => engine,
+      );
       await expectLater(
         provider.createModel(
           _spec('model.gguf'),
@@ -165,7 +177,7 @@ void main() {
             preferredBackend: edge.PreferredBackend.gpu,
           ),
         ),
-        throwsA(isA<llama.LlamaUnsupportedException>()),
+        throwsA(isA<UnsupportedError>()),
       );
       expect(engine.disposals, 1);
     },
@@ -174,7 +186,9 @@ void main() {
   test(
     'GPU reporting preserves verified offload and unknown runtime identity',
     () async {
-      final provider = LlamaEngineProvider(loader: (_, _) async => engine);
+      final provider = LlamaEngineProvider.withLoader(
+        loader: (_, _) async => engine,
+      );
       for (final layers in <int?>[12, null]) {
         engine.gpuLayers = layers;
         final loaded = await provider.createModel(
@@ -195,7 +209,7 @@ void main() {
   );
 
   test('provider rejects unsupported configuration before loading', () async {
-    final provider = LlamaEngineProvider(
+    final provider = LlamaEngineProvider.withLoader(
       loader: (_, _) async => fail('Unsupported configurations must not load'),
     );
     for (final config in [
@@ -222,20 +236,22 @@ void main() {
     ]) {
       await expectLater(
         provider.createModel(_spec('test.gguf'), config),
-        throwsA(isA<llama.LlamaUnsupportedException>()),
+        throwsA(isA<UnsupportedError>()),
       );
     }
   });
 
   test('load cleanup disposes an unexpected runtime', () async {
     engine.fakeRuntime = llama.LlamaRuntime.liteRtLm;
-    final provider = LlamaEngineProvider(loader: (_, _) async => engine);
+    final provider = LlamaEngineProvider.withLoader(
+      loader: (_, _) async => engine,
+    );
     await expectLater(
       provider.createModel(
         _spec('test.gguf'),
         const RuntimeConfig(modelPath: 'test.gguf', maxTokens: 2048),
       ),
-      throwsA(isA<llama.LlamaUnsupportedException>()),
+      throwsA(isA<UnsupportedError>()),
     );
     expect(engine.disposals, 1);
   });
@@ -296,7 +312,7 @@ void main() {
       final second = await model.createSession(maxOutputTokens: 64);
       expect(
         first.addQueryChunk(edge.Message.text(text: 'invalid', isUser: true)),
-        throwsA(isA<llama.LlamaStateException>()),
+        throwsA(isA<StateError>()),
       );
       await second.addQueryChunk(edge.Message.text(text: 'new', isUser: true));
       await second.getResponse();
@@ -309,11 +325,11 @@ void main() {
   test('disabled modalities and orphan tool results fail loudly', () async {
     await expectLater(
       model.createChat(toolChoice: edge.ToolChoice.required),
-      throwsA(isA<llama.LlamaArgumentException>()),
+      throwsA(isA<ArgumentError>()),
     );
     expect(
       () => model.createSession(enableVisionModality: true),
-      throwsA(isA<llama.LlamaUnsupportedException>()),
+      throwsA(isA<UnsupportedError>()),
     );
     final session = await model.createSession();
     for (final message in [
@@ -326,14 +342,14 @@ void main() {
     ]) {
       await expectLater(
         session.addQueryChunk(message),
-        throwsA(isA<llama.LlamaUnsupportedException>()),
+        throwsA(isA<UnsupportedError>()),
       );
     }
     await expectLater(
       session.addQueryChunk(
         edge.Message.toolResponse(toolName: 'search', response: {'ok': true}),
       ),
-      throwsA(isA<llama.LlamaArgumentException>()),
+      throwsA(isA<ArgumentError>()),
     );
   });
 
@@ -343,10 +359,7 @@ void main() {
     await session.addQueryChunk(
       edge.Message.text(text: 'short raw text', isUser: true),
     );
-    await expectLater(
-      session.getResponse(),
-      throwsA(isA<llama.LlamaContextException>()),
-    );
+    await expectLater(session.getResponse(), throwsA(isA<StateError>()));
     expect(engine.requests, isEmpty);
   });
 
@@ -354,7 +367,7 @@ void main() {
     for (final limit in [0, -1, 2048]) {
       expect(
         () => model.createSession(maxOutputTokens: limit),
-        throwsA(isA<llama.LlamaArgumentException>()),
+        throwsA(isA<ArgumentError>()),
       );
     }
     expect(
@@ -415,7 +428,9 @@ void main() {
   test(
     'provider retains installed family for sessions and both chat paths',
     () async {
-      final provider = LlamaEngineProvider(loader: (_, _) async => engine);
+      final provider = LlamaEngineProvider.withLoader(
+        loader: (_, _) async => engine,
+      );
       final loaded = await provider.createModel(
         _spec('gemma.gguf', edge.ModelFileType.gguf, edge.ModelType.gemma4),
         const RuntimeConfig(modelPath: 'gemma.gguf', maxTokens: 2048),
@@ -476,48 +491,55 @@ void main() {
     );
   }
 
-  test('session thinking uses installed family and partial overrides keep defaults', () async {
-    final provider = LlamaEngineProvider(loader: (_, _) async => engine);
-    final loaded = await provider.createModel(
-      _spec('qwen.gguf', edge.ModelFileType.gguf, edge.ModelType.qwen3),
-      const RuntimeConfig(modelPath: 'qwen.gguf', maxTokens: 2048),
-    );
-    try {
-      for (final session in [
-        await loaded.createSession(enableThinking: true, randomSeed: 42),
-        await loaded.openSession(enableThinking: true, topP: .9),
-      ]) {
-        await session.addQueryChunk(
+  test(
+    'session thinking uses installed family and partial overrides keep defaults',
+    () async {
+      final provider = LlamaEngineProvider.withLoader(
+        loader: (_, _) async => engine,
+      );
+      final loaded = await provider.createModel(
+        _spec('qwen.gguf', edge.ModelFileType.gguf, edge.ModelType.qwen3),
+        const RuntimeConfig(modelPath: 'qwen.gguf', maxTokens: 2048),
+      );
+      try {
+        for (final session in [
+          await loaded.createSession(enableThinking: true, randomSeed: 42),
+          await loaded.openSession(enableThinking: true, topP: .9),
+        ]) {
+          await session.addQueryChunk(
+            edge.Message.text(text: 'hi', isUser: true),
+          );
+          await session.getResponse();
+          expect(engine.lastParams!.temp, .6);
+          expect(engine.lastParams!.topK, 20);
+          expect(
+            engine.lastParams!.seed,
+            identical(session, loaded.session) ? 42 : 1,
+          );
+          expect(
+            engine.lastParams!.topP,
+            identical(session, loaded.session) ? .95 : .9,
+          );
+        }
+        final explicit = await loaded.openSession(
+          temperature: .2,
+          topK: 12,
+          topP: .75,
+          randomSeed: 7,
+        );
+        await explicit.addQueryChunk(
           edge.Message.text(text: 'hi', isUser: true),
         );
-        await session.getResponse();
-        expect(engine.lastParams!.temp, .6);
-        expect(engine.lastParams!.topK, 20);
-        expect(
-          engine.lastParams!.seed,
-          identical(session, loaded.session) ? 42 : 1,
-        );
-        expect(
-          engine.lastParams!.topP,
-          identical(session, loaded.session) ? .95 : .9,
-        );
+        await explicit.getResponse();
+        expect(engine.lastParams!.temp, .2);
+        expect(engine.lastParams!.topK, 12);
+        expect(engine.lastParams!.topP, .75);
+        expect(engine.lastParams!.seed, 7);
+      } finally {
+        await loaded.close();
       }
-      final explicit = await loaded.openSession(
-        temperature: .2,
-        topK: 12,
-        topP: .75,
-        randomSeed: 7,
-      );
-      await explicit.addQueryChunk(edge.Message.text(text: 'hi', isUser: true));
-      await explicit.getResponse();
-      expect(engine.lastParams!.temp, .2);
-      expect(engine.lastParams!.topK, 12);
-      expect(engine.lastParams!.topP, .75);
-      expect(engine.lastParams!.seed, 7);
-    } finally {
-      await loaded.close();
-    }
-  });
+    },
+  );
 
   test(
     'explicit sampling skips greedy family; explicit greedy remains greedy',
@@ -677,10 +699,7 @@ void main() {
     );
     await firstToken.future;
     final cancels = engine.cancels;
-    await expectLater(
-      session.getResponse(),
-      throwsA(isA<llama.LlamaStateException>()),
-    );
+    await expectLater(session.getResponse(), throwsA(isA<StateError>()));
     expect(engine.cancels, cancels);
     await subscription.cancel();
   });
@@ -698,15 +717,14 @@ void main() {
         (_) => firstToken.complete(),
       );
       await firstToken.future;
-      await Future.wait([model.close(), model.close()])
-          .timeout(const Duration(seconds: 2));
+      await Future.wait([
+        model.close(),
+        model.close(),
+      ]).timeout(const Duration(seconds: 2));
       await subscription.cancel();
       expect(engine.disposals, 1);
       expect(closed, 1);
-      expect(
-        () => model.createSession(),
-        throwsA(isA<llama.LlamaStateException>()),
-      );
+      expect(() => model.createSession(), throwsA(isA<StateError>()));
       expect(model.sessions, isEmpty);
     },
   );
@@ -746,6 +764,231 @@ void main() {
       'additionalProperties': false,
     },
   );
+  for (final stopped in [false, true]) {
+    test(
+      'tool results survive ${stopped ? "stop" : "error"} and remain replayable',
+      () async {
+        engine.script = [_toolChunk(0, 'search', '{"q":"a"}', id: 'a')];
+        final chat = await model.openChat(tools: [tool]);
+        await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
+        final call =
+            await chat.generateChatResponse() as LlamaFunctionCallResponse;
+        await chat.addQuery(
+          LlamaToolResponseMessage(
+            callId: call.id,
+            toolName: call.name,
+            response: {'ok': true},
+          ),
+        );
+        engine.script = null;
+        if (stopped) {
+          engine.blockGeneration = true;
+          final first = Completer<void>();
+          final stream = chat.generateChatResponseAsync().listen((_) {
+            if (!first.isCompleted) first.complete();
+          });
+          await first.future.timeout(const Duration(seconds: 2));
+          await chat.session.stopGeneration();
+          await stream.cancel();
+          engine.blockGeneration = false;
+        } else {
+          engine.failAfterFirstToken = true;
+          await expectLater(
+            chat.generateChatResponseAsync().toList(),
+            throwsA(isA<llama.LlamaInferenceException>()),
+          );
+          engine.failAfterFirstToken = false;
+        }
+        expect(
+          chat.fullHistory.where(
+            (m) => m.type == edge.MessageType.toolResponse,
+          ),
+          hasLength(1),
+        );
+        final history = List<edge.Message>.of(chat.fullHistory);
+        await chat.clearHistory(replayHistory: history);
+        await chat.addQuery(edge.Message.text(text: 'next', isUser: true));
+        await chat.generateChatResponse();
+        expect(engine.requests.last.map((m) => m.role), [
+          llama.LlamaChatRole.user,
+          llama.LlamaChatRole.assistant,
+          llama.LlamaChatRole.tool,
+          llama.LlamaChatRole.user,
+        ]);
+      },
+    );
+  }
+
+  test('queued stop preserves answers to committed tool calls', () async {
+    engine.script = [_toolChunk(0, 'search', '{"q":"a"}', id: 'a')];
+    final chat = await model.openChat(tools: [tool]);
+    await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
+    final call = await chat.generateChatResponse() as LlamaFunctionCallResponse;
+    await chat.addQuery(
+      LlamaToolResponseMessage(
+        callId: call.id,
+        toolName: call.name,
+        response: {'ok': true},
+      ),
+    );
+    engine.script = null;
+    engine.blockGeneration = true;
+    final owner = await model.openSession();
+    await owner.addQueryChunk(edge.Message.text(text: 'owner', isUser: true));
+    final first = Completer<void>();
+    final running = owner.getResponseAsync().listen((_) {
+      if (!first.isCompleted) first.complete();
+    });
+    await first.future;
+    final queued = chat.generateChatResponseAsync().listen((_) {});
+    await Future<void>.delayed(Duration.zero);
+    await chat.session.stopGeneration();
+    await queued.cancel();
+    await owner.stopGeneration();
+    await running.cancel();
+    engine.blockGeneration = false;
+    await chat.addQuery(edge.Message.text(text: 'next', isUser: true));
+    await chat.generateChatResponse();
+    expect(
+      chat.fullHistory.where((m) => m.type == edge.MessageType.toolResponse),
+      hasLength(1),
+    );
+  });
+
+  test(
+    'unset output cap uses the remaining rendered context each turn',
+    () async {
+      final chat = await model.openChat();
+      engine.promptTokens = 200;
+      await chat.addQuery(edge.Message.text(text: 'first', isUser: true));
+      await chat.generateChatResponse();
+      expect(engine.lastParams!.maxTokens, 1848);
+      engine.promptTokens = 800;
+      await chat.addQuery(edge.Message.text(text: 'second', isUser: true));
+      await chat.generateChatResponse();
+      expect(engine.lastParams!.maxTokens, 1248);
+    },
+  );
+
+  test(
+    'truncated tools and empty thinking turns fail without committing',
+    () async {
+      for (final script in [
+        [
+          _chunk('<tool_call>{"name":"search","arguments":{"q":"fl'),
+          _chunk(null, finishReason: 'length'),
+        ],
+        [_thinking('hidden'), _chunk(null, finishReason: 'length')],
+      ]) {
+        engine.script = script;
+        final chat = await model.openChat(tools: [tool], enableThinking: true);
+        await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
+        await expectLater(
+          chat.generateChatResponseAsync().toList(),
+          throwsA(isA<llama.LlamaInferenceException>()),
+        );
+        expect(chat.fullHistory, isEmpty);
+      }
+      engine.script = [
+        _chunk('plain truncated answer'),
+        _chunk(null, finishReason: 'length'),
+      ];
+      final plain = await model.openChat();
+      await plain.addQuery(edge.Message.text(text: 'plain', isUser: true));
+      expect(
+        (await plain.generateChatResponse() as edge.TextResponse).token,
+        'plain truncated answer',
+      );
+    },
+  );
+
+  test(
+    'replay groups thinking, text and calls into one assistant turn',
+    () async {
+      engine.script = [
+        _thinking('reason'),
+        _chunk('searching'),
+        _toolChunk(0, 'search', '{"q":"a"}', id: 'a'),
+      ];
+      final chat = await model.openChat(tools: [tool], enableThinking: true);
+      await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
+      final call =
+          await chat.generateChatResponse() as LlamaFunctionCallResponse;
+      await chat.addQuery(
+        LlamaToolResponseMessage(
+          callId: call.id,
+          toolName: call.name,
+          response: {'ok': true},
+        ),
+      );
+      await chat.clearHistory(
+        replayHistory: List<edge.Message>.of(chat.fullHistory),
+      );
+      engine.script = [_chunk('done')];
+      await chat.generateChatResponse();
+      expect(engine.requests.last.map((m) => m.role), [
+        llama.LlamaChatRole.user,
+        llama.LlamaChatRole.assistant,
+        llama.LlamaChatRole.tool,
+      ]);
+      expect(engine.requests.last[1].parts, hasLength(3));
+    },
+  );
+
+  test(
+    'missing session adapter does not invalidate an unaffected peer',
+    () async {
+      final bad = await model.openSession(loraPath: '$adapterPath.missing');
+      await bad.addQueryChunk(edge.Message.text(text: 'bad', isUser: true));
+      await expectLater(bad.getResponse(), throwsA(isA<ArgumentError>()));
+      final peer = await model.openSession();
+      await peer.addQueryChunk(edge.Message.text(text: 'good', isUser: true));
+      expect(await peer.getResponse(), 'Hello world');
+      expect(engine.loraEvents, isEmpty);
+    },
+    skip: kIsWeb,
+  );
+
+  test(
+    'session override restores the installed adapter before a peer runs',
+    () async {
+      final installed = LlamaInferenceModel(
+        engine: engine,
+        maxTokens: 2048,
+        activeBackend: edge.PreferredBackend.cpu,
+        defaultLoraPath: 'installed.gguf',
+      );
+      engine.activeAdapter = 'installed.gguf';
+      final custom = await installed.openSession(loraPath: adapterPath);
+      final base = await installed.openSession();
+      await custom.addQueryChunk(
+        edge.Message.text(text: 'custom', isUser: true),
+      );
+      await base.addQueryChunk(
+        edge.Message.text(text: 'installed', isUser: true),
+      );
+      await Future.wait([custom.getResponse(), base.getResponse()]);
+      expect(engine.adaptersAtGeneration, [adapterPath, 'installed.gguf']);
+      expect(engine.activeAdapter, 'installed.gguf');
+      await installed.close();
+    },
+    skip: kIsWeb,
+  );
+
+  test('backend identity overrides an auto GPU-layer request', () async {
+    engine.gpuLayers = 999;
+    engine.backendName = 'CPU';
+    final provider = LlamaEngineProvider.withLoader(
+      loader: (_, _) async => engine,
+    );
+    final loaded = await provider.createModel(
+      _spec('cpu.gguf'),
+      const RuntimeConfig(modelPath: 'cpu.gguf', maxTokens: 2048),
+    );
+    expect(loaded.activeBackend, edge.PreferredBackend.cpu);
+    await loaded.close();
+  });
+
   test(
     'fragmented tool calls preserve schemas and call IDs through results',
     () async {
@@ -767,7 +1010,7 @@ void main() {
       expect(engine.lastToolChoice, llama.ToolChoice.required);
       await expectLater(
         chat.addQuery(edge.Message.text(text: 'next', isUser: true)),
-        throwsA(isA<llama.LlamaStateException>()),
+        throwsA(isA<StateError>()),
       );
       await chat.addQuery(
         LlamaToolResponseMessage(
@@ -889,7 +1132,7 @@ void main() {
     ]) {
       await expectLater(
         chat.addQuery(edge.Message.toolCall(text: payload)),
-        throwsA(isA<llama.LlamaArgumentException>()),
+        throwsA(isA<ArgumentError>()),
       );
       expect(chat.fullHistory, isEmpty);
     }
@@ -900,7 +1143,7 @@ void main() {
           edge.Message.toolCall(text: '{'),
         ],
       ),
-      throwsA(isA<llama.LlamaArgumentException>()),
+      throwsA(isA<ArgumentError>()),
     );
     expect(chat.fullHistory, isEmpty);
     await chat.addQuery(edge.Message.text(text: 'retry', isUser: true));
@@ -924,7 +1167,7 @@ void main() {
             toolName: 'search',
           ),
         ),
-        throwsA(isA<llama.LlamaArgumentException>()),
+        throwsA(isA<ArgumentError>()),
       );
       await chat.addQuery(
         LlamaToolResponseMessage(
@@ -956,7 +1199,7 @@ void main() {
     final existing = await model.createChat();
     await expectLater(
       model.createChat(tools: [tool, tool]),
-      throwsA(isA<llama.LlamaArgumentException>()),
+      throwsA(isA<ArgumentError>()),
     );
     expect(model.session, same(existing.session));
     await existing.addQuery(
@@ -970,7 +1213,7 @@ void main() {
     final session = await model.openSession();
     await expectLater(
       session.addQueryChunk(edge.Message.text(text: '', isUser: true)),
-      throwsA(isA<llama.LlamaArgumentException>()),
+      throwsA(isA<ArgumentError>()),
     );
     expect(session.messages, isEmpty);
   });
@@ -1010,7 +1253,7 @@ void main() {
     engine.toolSupport = false;
     await expectLater(
       model.createChat(tools: [tool]),
-      throwsA(isA<llama.LlamaUnsupportedException>()),
+      throwsA(isA<UnsupportedError>()),
     );
     expect(engine.requests, isEmpty);
   });
@@ -1074,16 +1317,13 @@ void main() {
       maxConcurrentSessions: 1,
     );
     final a = await model.openSession();
-    await expectLater(
-      model.openSession(),
-      throwsA(isA<llama.LlamaStateException>()),
-    );
+    await expectLater(model.openSession(), throwsA(isA<StateError>()));
     await a.close();
     final b = await model.openSession();
     await model.close();
     await expectLater(
       b.addQueryChunk(edge.Message.text(text: 'closed')),
-      throwsA(isA<llama.LlamaStateException>()),
+      throwsA(isA<StateError>()),
     );
     expect(model.sessions, isEmpty);
   });
@@ -1143,7 +1383,7 @@ void main() {
   test(
     'projector pairing and capabilities are validated before serving media',
     () async {
-      final provider = LlamaEngineProvider(
+      final provider = LlamaEngineProvider.withLoader(
         loader: (_, _) async => engine,
         projectorResolver: (_, _) async =>
             llama.ModelSource.path('projector.gguf'),
@@ -1194,7 +1434,7 @@ void main() {
             imageBytes: [Uint8List(1), Uint8List(1)],
           ),
         ),
-        throwsA(isA<llama.LlamaArgumentException>()),
+        throwsA(isA<ArgumentError>()),
       );
       await loaded.close();
       engine.visionSupport = false;
@@ -1207,19 +1447,19 @@ void main() {
             supportImage: true,
           ),
         ),
-        throwsA(isA<llama.LlamaUnsupportedException>()),
+        throwsA(isA<UnsupportedError>()),
       );
     },
   );
 
   test('per-session LoRA is applied and removed before a peer runs', () async {
-    final a = await model.openSession(loraPath: 'adapter.gguf');
+    final a = await model.openSession(loraPath: adapterPath);
     final b = await model.openSession();
     await a.addQueryChunk(edge.Message.text(text: 'adapted', isUser: true));
     await b.addQueryChunk(edge.Message.text(text: 'base', isUser: true));
     await Future.wait([a.getResponse(), b.getResponse()]);
-    expect(engine.adaptersAtGeneration, ['adapter.gguf', null]);
-    expect(engine.loraEvents, ['set:adapter.gguf', 'remove:adapter.gguf']);
+    expect(engine.adaptersAtGeneration, [adapterPath, null]);
+    expect(engine.loraEvents, ['set:$adapterPath', 'remove:$adapterPath']);
     engine.failAfterFirstToken = true;
     await a.addQueryChunk(edge.Message.text(text: 'fail', isUser: true));
     await expectLater(
@@ -1233,7 +1473,7 @@ void main() {
     'failed LoRA cleanup rolls back and prevents contaminated peer inference',
     () async {
       engine.failLoraCleanup = true;
-      final adapted = await model.openChat(loraPath: 'adapter.gguf');
+      final adapted = await model.openChat(loraPath: adapterPath);
       final peer = await model.openSession();
       await adapted.addQuery(edge.Message.text(text: 'adapted', isUser: true));
       await expectLater(
@@ -1242,10 +1482,7 @@ void main() {
       );
       expect(adapted.fullHistory, isEmpty);
       await peer.addQueryChunk(edge.Message.text(text: 'peer', isUser: true));
-      await expectLater(
-        peer.getResponse(),
-        throwsA(isA<llama.LlamaStateException>()),
-      );
+      await expectLater(peer.getResponse(), throwsA(isA<StateError>()));
       expect(engine.requests.length, 1);
     },
     skip: kIsWeb,
@@ -1274,6 +1511,15 @@ class _FakeEngine extends llama.LlamaEngine {
   llama.LlamaRuntime fakeRuntime = llama.LlamaRuntime.llamaCpp;
   int promptTokens = 10;
   int? gpuLayers = 0;
+  String? backendName;
+  @override
+  Future<String> getBackendName() async =>
+      backendName ??
+      (gpuLayers == null
+          ? 'unknown'
+          : gpuLayers! > 0
+          ? 'Vulkan'
+          : 'CPU');
   int cancels = 0;
   int disposals = 0;
   Completer<void>? disposeGate;

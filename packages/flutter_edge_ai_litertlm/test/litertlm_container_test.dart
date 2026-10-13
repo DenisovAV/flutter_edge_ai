@@ -4,8 +4,12 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container_io.dart';
+import 'package:flutter_edge_ai_litertlm/src/litertlm_flatbuffer.dart'
+    show litertlmHeaderEnd;
 import 'package:flutter_test/flutter_test.dart';
+
+import 'web/eg2_header_fixtures.dart';
 
 /// The container headers of the three EmbeddingGemma 2 bundles, cut at their
 /// header end. See test/ffi/fixtures/README.md.
@@ -180,4 +184,84 @@ void main() {
       });
     },
   );
+
+  group('readLitertlmModelTypesFrom: the same header through a reader of the '
+      'file\'s first bytes (the web\'s fetch)', () {
+    for (final (fixture, end, audio) in [
+      (_header270m, 880, false),
+      (_header440m, 1552, false),
+      (_header740m, 2176, true),
+    ]) {
+      test('$fixture: the preamble, then up to the header end — the native '
+          'reader\'s answer', () async {
+        final bytes = File(fixture).readAsBytesSync();
+        final asked = <int>[];
+        final types = await readLitertlmModelTypesFrom((length) async {
+          asked.add(length);
+          // A file far longer than its header: the reader serves only the
+          // prefix it is asked for.
+          return Uint8List.sublistView(bytes, 0, length);
+        });
+        expect(asked, [32, end]);
+        expect(types, readLitertlmModelTypes(fixture));
+        expect(litertlmHasAudioEncoder(types), audio);
+      });
+    }
+
+    test('a file shorter than its header end: FormatException', () async {
+      final bytes = File(_header740m).readAsBytesSync();
+      await expectLater(
+        readLitertlmModelTypesFrom(
+          (length) async =>
+              Uint8List.sublistView(bytes, 0, length.clamp(0, 1000)),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('ends at 1000, expected 2176'),
+          ),
+        ),
+      );
+      await expectLater(
+        readLitertlmModelTypesFrom((_) async => Uint8List(10)),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('ends at 10, expected 32'),
+          ),
+        ),
+      );
+    });
+
+    test('what the reader throws passes through', () async {
+      final failure = StateError('TypeError: Failed to fetch');
+      await expectLater(
+        readLitertlmModelTypesFrom((_) async => throw failure),
+        throwsA(same(failure)),
+      );
+    });
+
+    test('a header end with a non-zero high word is out of range (read as two '
+        'uint32 halves, so dart2js can run it)', () {
+      final bytes = File(_header740m).readAsBytesSync();
+      ByteData.sublistView(bytes).setUint32(28, 1, Endian.little);
+      expect(
+        () => litertlmHeaderEnd(bytes),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('out of range'),
+          ),
+        ),
+      );
+    });
+
+    test('the browser suites\' base64 copies are the fixtures', () {
+      expect(eg2Header270m, File(_header270m).readAsBytesSync());
+      expect(eg2Header740m, File(_header740m).readAsBytesSync());
+    });
+  });
 }

@@ -12,9 +12,20 @@ import fetch_test_model
 import fetch_web_assets
 import validate_web_build
 import verify as package_verify
+from smoke_result import require_smoke_success
 
 
 class ToolingTests(unittest.TestCase):
+    def test_smoke_gate_rejects_missing_skipped_and_failed_model_execution(self):
+        start = {"type": "testStart", "test": {"id": 7, "name": "required model"}}
+        for done in [None, {"type": "testDone", "testID": 7, "result": "success", "skipped": True}, {"type": "testDone", "testID": 7, "result": "failure"}]:
+            events = [start, {"type": "done", "success": True}]
+            if done is not None: events.append(done)
+            with self.assertRaisesRegex(RuntimeError, "did not execute"):
+                require_smoke_success("\n".join(json.dumps(e) for e in events), "required model")
+        events = [start, {"type": "testDone", "testID": 7, "result": "success", "skipped": False}, {"type": "done", "success": True}]
+        require_smoke_success("\n".join(json.dumps(e) for e in events), "required model")
+
     def test_windows_native_lane_uses_packaged_host_for_real_dll_discovery(self):
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "chat.gguf"
@@ -23,7 +34,7 @@ class ToolingTests(unittest.TestCase):
                  patch.object(sys, "platform", "win32"), \
                  patch.object(package_verify.shutil, "which", return_value="flutter"), \
                  patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
-                 patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+                 patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True}))) as run:
                 package_verify.main()
             command = run.call_args_list[-1].args[0]
             self.assertIn("integration_test/connector_smoke_test.dart", command)
@@ -40,7 +51,7 @@ class ToolingTests(unittest.TestCase):
                  patch.object(sys, "platform", "darwin"), \
                  patch.object(package_verify, "create_server", return_value=server) as create_server, \
                  patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
-                 patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+                 patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True}))) as run:
                 package_verify.main()
             command = run.call_args_list[-1].args[0]
             self.assertIn("integration_test/connector_smoke_test.dart", command)
@@ -63,8 +74,8 @@ class ToolingTests(unittest.TestCase):
                  patch.object(package_verify, "create_server", return_value=server), \
                  patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
                  patch.object(package_verify.subprocess, "run", side_effect=[
-                     subprocess.CompletedProcess([], 0),
-                     subprocess.CompletedProcess([], 0),
+                     subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
+                     subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
                      failure,
                  ]):
                 with self.assertRaises(subprocess.CalledProcessError):
@@ -75,7 +86,7 @@ class ToolingTests(unittest.TestCase):
     def test_packaged_cpu_budget_is_passed_to_the_real_device_smoke(self):
         with patch.object(sys, "argv", ["verify.py", "device", "--device", "emulator-5554", "--model-url", "https://example.test/model.gguf", "--cpu-threads", "1"]), \
              patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
-             patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+             patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True}))) as run:
             package_verify.main()
         command = run.call_args_list[-1].args[0]
         self.assertIn("integration_test/connector_smoke_test.dart", command)
@@ -100,7 +111,7 @@ class ToolingTests(unittest.TestCase):
                 "456 /tmp/flutter_edge_ai_llama_demo.app/Contents/MacOS/flutter_edge_ai_llama_demo\n"
                 "789 /tmp/Runner.app/Runner\n"))
             with patch.object(package_verify.subprocess, "run", side_effect=[
-                processes, subprocess.CompletedProcess([], 0), subprocess.CompletedProcess([], 0),
+                processes, subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})), subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
             ]) as run:
                 package_verify.sample_native_apps(Path(directory), stop)
             samples = [call.args[0] for call in run.call_args_list if call.args[0][0] == "sample"]
@@ -112,7 +123,7 @@ class ToolingTests(unittest.TestCase):
             stop.wait.side_effect = [False, True]
             processes = subprocess.CompletedProcess([], 0, stdout="789 /tmp/Runner.app/Runner\n")
             with patch.object(package_verify.subprocess, "run", side_effect=[
-                processes, subprocess.CompletedProcess([], 0), subprocess.CompletedProcess([], 0),
+                processes, subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})), subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
             ]) as run:
                 package_verify.sample_native_apps(Path(directory), stop, "test-simulator")
             commands = [call.args[0] for call in run.call_args_list]
@@ -195,7 +206,7 @@ class ToolingTests(unittest.TestCase):
              patch.object(package_verify.shutil, "which", return_value=flutter), \
              patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}') as version, \
              patch.object(package_verify.subprocess, "run", side_effect=[
-                 subprocess.CompletedProcess([], 0),
+                 subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
                  subprocess.CompletedProcess([], 0, stdout="Validating package...\n"),
              ]) as run:
             package_verify.main()
@@ -255,7 +266,7 @@ class ToolingTests(unittest.TestCase):
                      patch.object(sys, "argv", ["verify.py", "package", "--core-path", str(core)]), \
                      patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
                      patch.object(package_verify.subprocess, "run", side_effect=[
-                         subprocess.CompletedProcess([], 0),
+                         subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
                          subprocess.CompletedProcess([], 0, stdout="Validating package...\n"),
                      ]) as run:
                     package_verify.main()
@@ -265,7 +276,7 @@ class ToolingTests(unittest.TestCase):
         with patch.object(sys, "argv", ["verify.py", "package"]), \
              patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
              patch.object(package_verify.subprocess, "run", side_effect=[
-                 subprocess.CompletedProcess([], 0),
+                 subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
                  subprocess.CompletedProcess([], 0, stdout='Validating package...\n* Your dependency on "flutter_edge_ai" should allow more than one version.\n'),
              ]):
             with self.assertRaisesRegex(RuntimeError, "Unexpected publish-validation"):
@@ -293,7 +304,7 @@ class ToolingTests(unittest.TestCase):
         with patch.object(sys, "argv", ["verify.py", "package"]), \
              patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
              patch.object(package_verify.subprocess, "run", side_effect=[
-                 subprocess.CompletedProcess([], 0),
+                 subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
                  subprocess.CompletedProcess([], 0, stdout="Validating package...\n* Non-dev dependencies are overridden in pubspec_overrides.yaml.\n"),
              ]):
             with self.assertRaisesRegex(RuntimeError, "Unexpected publish-validation"):
@@ -318,7 +329,7 @@ class ToolingTests(unittest.TestCase):
         with patch.object(sys, "argv", ["verify.py", "package", "--flutter", "flutter"]), \
              patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
              patch.object(package_verify.subprocess, "run", side_effect=[
-                 subprocess.CompletedProcess([], 0),
+                 subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
                  subprocess.CompletedProcess([], 0, stdout="Validating package...\n* Unexpected warning\n"),
              ]):
             with self.assertRaisesRegex(RuntimeError, "Unexpected publish-validation"):
@@ -346,7 +357,7 @@ class ToolingTests(unittest.TestCase):
                 target.write_bytes(b'{"bridge_assets_tag":"v0.1.54"}')
             with patch.object(fetch_web_assets, "download", download), patch.object(fetch_web_assets, "OUT", output):
                 with self.assertRaisesRegex(RuntimeError, "manifest checksum"):
-                    fetch_web_assets.main()
+                    fetch_web_assets.main([])
             self.assertEqual(downloaded, ["manifest.json"])
             self.assertEqual(sentinel.read_bytes(), b"existing runtime")
 

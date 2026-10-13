@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai_example/agent_demo_screen.dart';
 import 'package:flutter_edge_ai_example/downloaded_models_screen.dart';
 import 'package:flutter_edge_ai_example/embedding_models_screen.dart';
 import 'package:flutter_edge_ai_example/image_search_screen.dart';
+import 'package:flutter_edge_ai_example/multimodal_rag_screen.dart';
 import 'package:flutter_edge_ai_example/model_selection_screen.dart';
 import 'package:flutter_edge_ai_example/stt_models_screen.dart';
 import 'package:flutter_edge_ai_example/translate_models_screen.dart';
@@ -137,6 +138,18 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icons.image_search,
               color: Colors.lightGreen,
               onTap: () => _push(const ImageSearchScreen()),
+            ),
+            const SizedBox(height: 16),
+            _NavigationCard(
+              key: const Key('home-multimodal-rag'),
+              title: 'Multimodal RAG',
+              subtitle:
+                  'Find notes, photos and voice memos by meaning, hear a '
+                  'meeting live, ask Gemma 4 — EmbeddingGemma 2 and Gemma 4, '
+                  'all on the device',
+              icon: Icons.hub_outlined,
+              color: Colors.indigoAccent,
+              onTap: () => _push(const MultimodalRagScreen()),
             ),
             const SizedBox(height: 16),
             _NavigationCard(

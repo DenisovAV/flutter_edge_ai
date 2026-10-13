@@ -8,7 +8,6 @@ import 'package:flutter_edge_ai/src/infrastructure/web_opfs_interop_stub.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_opfs_service.dart';
 import 'package:flutter_edge_ai_llama/src/model_location_web.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:llamadart/llamadart.dart' as llama;
 
 final _spec = InferenceModelSpec(
   name: 'weights',
@@ -40,7 +39,7 @@ void main() {
     await expectLater(
       resolveModelLocation(_spec, _config, resolver: resolver),
       throwsA(
-        isA<llama.LlamaUnsupportedException>().having(
+        isA<UnsupportedError>().having(
           (e) => e.toString(),
           'diagnostic',
           contains('WebStorageMode.cacheApi'),
@@ -62,7 +61,7 @@ void main() {
         _spec,
         const RuntimeConfig(modelPath: 'opfs://weights', maxTokens: 512),
       ),
-      throwsA(isA<llama.LlamaUnsupportedException>()),
+      throwsA(isA<UnsupportedError>()),
     );
   });
 

@@ -13,7 +13,7 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the development package
 
-Use Flutter **3.47.1 / Dart 3.13.1**. From the repository root:
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.3.2+**. Connector CI uses Flutter 3.47.1 for reproducible checks. From the repository root:
 
 ```
 cd packages/flutter_edge_ai_llama/example
@@ -81,9 +81,8 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 ## Add the development package
 
 The package is not on pub.dev yet. Use the example or a path dependency on
-`packages/flutter_edge_ai_llama` in your clone. The merged GGUF/LoRA changes in core #649 await the next published patch;
-hosted 2.3.1 lacks them. The workspace example uses local core. External apps
-need the development override shown in the package README.
+`packages/flutter_edge_ai_llama` in your clone. Core 2.3.2 includes the dedicated GGUF type and paired-adapter restoration;
+external apps resolve it from pub.dev without a development override.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
 `llamadart_llama_cpp_flutter: 0.0.21` SwiftPM companion.
@@ -125,3 +124,11 @@ oldest supported OS versions and advanced features on other platforms remain
 unqualified. See the
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
 for exact models, platforms and remaining release checks.
+
+When adding `flutter_edge_ai_litertlm`, the root `[llama_cpp]` hook selection is
+required to prevent conflicting runtime libraries. Without it, Android/Linux/Windows
+builds fail, and on iOS without the companion the wrong LiteRT-LM can load.
+On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is required too. The LiteRT-LM macOS CocoaPods
+recipe and this SwiftPM recipe are not yet qualified together. Web LoRA is not wired
+by this connector and is rejected, even on a bridge that supports adapters.
+The package README provides Web asset setup using helpers included in its archive.

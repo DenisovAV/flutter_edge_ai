@@ -52,9 +52,11 @@
 //   the failing call, before any other native call.
 // - NPU (an EmbeddingGemma 2 per-SoC bundle, placed by `describe()`, see
 //   litert_lm_npu.dart): the main backend is "npu", the tower backends stay
-//   NULL so present towers run on it too (D26), and the Qualcomm dispatch
-//   directory is handed to every executor (main, vision, audio; upstream
-//   ignores a tower the bundle lacks). `engine_create` succeeds even when the
+//   NULL so present towers run on it too (D26), and the vendor's dispatch
+//   directory (Qualcomm's prepared libraries, or on Windows the executable's
+//   directory with the Intel stack) is handed to every executor (main,
+//   vision, audio; upstream ignores a tower the bundle lacks).
+//   `engine_create` succeeds even when the
 //   NPU graph cannot run (measured: it only logs a failed warm-up), so the load
 //   embeds one probe text and refuses unless it gets a finite, non-zero
 //   vector of the right size. On Linux every NPU call runs with SIGPROF
@@ -76,7 +78,7 @@ import '../ffi/litert_lm_library.dart';
 import '../ffi/sigprof_mask.dart';
 import 'embedding_parts.dart';
 import 'litert_lm_embedding_common.dart';
-import 'litertlm_container.dart';
+import 'litertlm_container_io.dart';
 import 'litertlm_npu_target.dart';
 import 'vision_budget.dart';
 
@@ -94,9 +96,6 @@ const _statusOk = 0;
 const _statusUnknown = 2;
 const _statusInvalidArgument = 3;
 
-/// The bundle to install for audio, named in the refusal.
-const _audioBundle = 'embeddinggemma-2-740m';
-
 /// Throws [EmbeddingLoadException] unless the `.litertlm` bundle at
 /// [modelPath] has an audio encoder, read from its container header (D23:
 /// ModelInfo claims audio on the 270m and the 440m). A header this reader
@@ -109,12 +108,8 @@ const _audioBundle = 'embeddinggemma-2-740m';
 /// the close.
 void requireLiteRtLmAudioEncoder(String modelPath) {
   final file = _fileName(modelPath);
-  Never cannotRead(Object e, String reason) => throw EmbeddingLoadException(
-    'could not read the container of $file to find its audio encoder: '
-    '$reason',
-    engine: liteRtLmEngineTag,
-    cause: e,
-  );
+  Never cannotRead(Object e, String reason) =>
+      throw liteRtLmUnreadableContainer(file, reason, e);
   final List<String> types;
   try {
     types = readLitertlmModelTypes(modelPath);
@@ -123,12 +118,7 @@ void requireLiteRtLmAudioEncoder(String modelPath) {
   } on FormatException catch (e) {
     cannotRead(e, e.message);
   }
-  if (!litertlmHasAudioEncoder(types)) {
-    throw EmbeddingLoadException(
-      '$file has no audio encoder; install $_audioBundle',
-      engine: liteRtLmEngineTag,
-    );
-  }
+  if (!litertlmHasAudioEncoder(types)) throw liteRtLmNoAudioEncoder(file);
 }
 
 /// What `LiteRtEmbeddingBackend.describe` hands core for a `.litertlm`
@@ -174,9 +164,11 @@ final class LiteRtLmEmbeddingConfig {
   /// the NPU; null runs the bundle on CPU.
   final LiteRtLmNpuTarget? npuTarget;
 
-  /// Where LiteRT loads the Qualcomm dispatch and QNN libraries from, prepared
-  /// by `describe()` on the caller's isolate (Android extracts them through a
-  /// platform channel, which this worker has none of). Set with [npuTarget].
+  /// Where LiteRT loads the vendor's dispatch from — the Qualcomm dispatch and
+  /// QNN libraries, or on Windows the Intel stack beside the executable —
+  /// resolved by `describe()` on the caller's isolate (Android extracts the
+  /// Qualcomm libraries through a platform channel, which this worker has
+  /// none of). Set with [npuTarget].
   final String? npuDispatchDir;
 
   /// The backend the engine is created on.
@@ -188,6 +180,16 @@ final class LiteRtLmEmbeddingConfig {
 /// core's worker isolate.
 EmbeddingPass buildLiteRtLmEmbeddingPass(LiteRtLmEmbeddingConfig config) =>
     LiteRtLmEmbeddingPass(config);
+
+/// Why a bundle compiled for [target] fails the NPU probe embed, for the
+/// refusal: another SoC's bundle, or a stack that cannot reach this device's
+/// NPU — a QNN runtime without this Hexagon version's Skel, or on Windows a PC
+/// without an Intel NPU or its driver.
+@visibleForTesting
+String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) => target.isIntel
+    ? 'on another SoC, or on a PC without an Intel NPU or its driver'
+    : 'on another SoC, or with a QNN runtime that has no Skel for this '
+          "device's Hexagon version";
 
 /// Every C function the pass calls. A `libLiteRtLm` that exports fewer is
 /// refused at load by [checkLiteRtLmEmbeddingSymbols], by name, instead of
@@ -338,9 +340,12 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         // Only when images will be embedded: the budget means nothing to a
         // text request, and the bundle's own default is 140 anyway.
         visionTokensPerImage: images ? _config.visionTokensPerImage : null,
+        audio: audio,
       );
       _options = _createOptions(b);
-      if (_onNpu) _probeNpu(b, info.dimension);
+      if (_config.npuTarget case final target?) {
+        _probeNpu(b, info.dimension, target);
+      }
     } catch (_) {
       _free();
       rethrow;
@@ -614,7 +619,11 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   /// vision tower of a per-SoC bundle is compiled for the same SoC and loaded
   /// by the same dispatch, and probing it would cost an image embedding
   /// (about 0.3 s on an SM8650) at every load.
-  void _probeNpu(LiteRtLmEmbeddingBindings b, int dimension) {
+  void _probeNpu(
+    LiteRtLmEmbeddingBindings b,
+    int dimension,
+    LiteRtLmNpuTarget target,
+  ) {
     final bytes = utf8.encode(_probeText);
     final buffer = _alloc<Uint8>(bytes.length);
     final Pointer<LiteRtLmInputData> part;
@@ -641,9 +650,8 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       if (response == nullptr) {
         throw EmbeddingLoadException(
           'LiteRT-LM could not run $_file on the NPU of this device: '
-          '$message. The bundle is compiled for ${_config.npuTarget}; on '
-          'another SoC, or with a QNN runtime that has no Skel for this '
-          "device's Hexagon version, it fails this way.",
+          '$message. The bundle is compiled for $target; '
+          '${liteRtLmNpuProbeFailureCauses(target)}, it fails this way.',
           engine: liteRtLmEngineTag,
           nativeCode: code == _statusOk ? null : code,
         );
@@ -656,7 +664,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
             : _vectorFault(values, size);
         if (fault != null) {
           throw EmbeddingLoadException(
-            '$_file on the ${_config.npuTarget} NPU returned $fault for a '
+            '$_file on the $target NPU returned $fault for a '
             'test input; it is not used.',
             engine: liteRtLmEngineTag,
           );
@@ -918,23 +926,33 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     required int maxInputLength,
     required String cacheDir,
     required int? visionTokensPerImage,
+    required bool audio,
   }) {
     final path = _config.modelPath.toNativeUtf8(allocator: _alloc);
     final backend = (_onNpu ? 'npu' : 'cpu').toNativeUtf8(allocator: _alloc);
+    // Tower backends NULL (D26): present towers run on the main backend, and
+    // naming one the bundle lacks fails create with code 5. One exception:
+    // the per-SoC 740m bundles compile the audio encoder for cpu/gpu only —
+    // on the NPU its NULL backend fails create with "Audio backend constraint
+    // mismatch. Model requires one of [cpu,gpu] but Audio backend is NPU"
+    // (Galaxy S26+, SM8850, 2026-10-13). Audio is declared only on a bundle
+    // whose container has an audio encoder, so naming it here is safe.
+    final audioBackend = _onNpu && audio
+        ? 'cpu'.toNativeUtf8(allocator: _alloc)
+        : nullptr;
     final Pointer<LiteRtLmEmbeddingEngineSettings> settings;
     try {
-      // Tower backends NULL (D26): present towers run on the main backend,
-      // and naming one the bundle lacks fails create with code 5.
       b.litert_lm_clear_last_error();
       settings = b.litert_lm_embedding_engine_settings_create(
         path.cast(),
         backend.cast(),
         nullptr,
-        nullptr,
+        audioBackend.cast(),
       );
     } finally {
       _alloc.free(path);
       _alloc.free(backend);
+      if (audioBackend != nullptr) _alloc.free(audioBackend);
     }
     if (settings == nullptr) {
       final (:code, :message) = _lastError(b);
@@ -977,6 +995,12 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       if (_onNpu && dispatchDir != null) {
         // Every executor: the towers run on the main backend, and each has
         // its own settings. Upstream skips a tower the bundle lacks.
+        //
+        // Intel (Windows): the LLM path also sets `use_hw_masking_for_npu`
+        // false there, because the kWH mask method failed a CFG check
+        // (0xc0000409) on Intel's NPU. The embedding settings have no such
+        // setter, and whether the EmbeddingEngine needs it is not established
+        // on Intel NPU hardware.
         final dir = dispatchDir.toNativeUtf8(allocator: _alloc);
         try {
           b

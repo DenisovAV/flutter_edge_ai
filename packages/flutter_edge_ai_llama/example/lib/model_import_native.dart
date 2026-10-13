@@ -24,3 +24,21 @@ Future<String> importModel(String path) async {
     rethrow;
   }
 }
+
+/// Removes only copies owned by this example, after a replacement loads.
+Future<void> pruneImportedModels(String keepPath) async {
+  final support = await getApplicationSupportDirectory();
+  final directory = Directory('${support.path}/gguf_lab');
+  final kept = File(keepPath).absolute.path;
+  if (!kept.startsWith('${directory.absolute.path}${Platform.pathSeparator}') ||
+      !await directory.exists()) {
+    return;
+  }
+  await for (final entry in directory.list(followLinks: false)) {
+    if (entry is File &&
+        entry.absolute.path != kept &&
+        entry.path.toLowerCase().endsWith('.gguf')) {
+      await entry.delete();
+    }
+  }
+}

@@ -15,13 +15,14 @@
 // with a `LiteRtStamp` metadata entry (`litert/core/build_stamp.h`, LiteRT pin
 // 26895c9f): a 250-byte buffer of two NUL-padded fields, the SoC manufacturer
 // (125 bytes) and the SoC model (125 bytes) — `Qualcomm` / `SM8850` in the
-// SM8850 bundles. The generic bundles carry no stamp in any section.
+// SM8850 bundles, `IntelOpenVINO` / `PTL` in the Intel ones. The generic
+// bundles carry no stamp in any section.
 //
 // How it is read: the container header (LiteRT-LM `litertlm_header_schema.fbs`,
 // pin b2f686e2) lists the sections; each `TFLiteModel` section is a TFLite
 // flatbuffer whose `Model.metadata` (field 6) names its entries and whose
 // `Model.buffers` (field 4) holds their bytes. Only the few hundred bytes those
-// lookups touch are read — the compiled sections are 127-259 MB — so this is
+// lookups touch are read — the compiled sections are 127-434 MB — so this is
 // cheap enough for every load (a few dozen small reads).
 
 import 'dart:io';
@@ -34,13 +35,19 @@ final class LiteRtLmNpuTarget {
   const LiteRtLmNpuTarget({required this.vendor, required this.soc});
 
   /// The SoC manufacturer as the compiler stamped it: `Qualcomm`, `Google`,
-  /// `MediaTek`, `Intel`.
+  /// `MediaTek`, `IntelOpenVINO`.
   final String vendor;
 
-  /// The SoC model as the compiler stamped it, e.g. `SM8850`, `QCS8275`.
+  /// The SoC model as the compiler stamped it, e.g. `SM8850`, `QCS8275`,
+  /// `PTL`.
   final String soc;
 
   bool get isQualcomm => vendor.toLowerCase() == 'qualcomm';
+
+  /// Compiled by LiteRT's OpenVINO plugin for an Intel NPU: Google's
+  /// `…_Intel_PTL` bundles are stamped `IntelOpenVINO` / `PTL` (read from the
+  /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
+  bool get isIntel => vendor.toLowerCase() == 'intelopenvino';
 
   @override
   bool operator ==(Object other) =>

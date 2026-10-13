@@ -142,9 +142,9 @@ replaced the model before it ran (`EmbedderClosedException`) is retried once.
 Queries over text documents use `TaskType.retrievalQuery`; pass `queryTask:`
 for another task, e.g. `TaskType.questionAnswering`.
 
-## EmbeddingGemma 2 (one `.litertlm` file, native)
+## EmbeddingGemma 2 (one `.litertlm` file)
 
-EmbeddingGemma 2 text ships as one `.litertlm` bundle that carries its own
+EmbeddingGemma 2 ships as one `.litertlm` bundle that carries its own
 tokenizer: install the model alone — no `tokenizerFrom…()` call, and no
 `flutter_edge_ai_embeddings` or `embeddingTokenizers:` needed. The repo is not
 gated:
@@ -183,8 +183,9 @@ final eg2Index = await rag.open(
 ```
 
 - Android, iOS, macOS, Linux, Windows (`flutter_edge_ai_litertlm` 1.13.0 for
-  text, 1.13.1 for images), and Web from 1.13.1 (text and images, on WebGPU
-  through `@litert-lm/core`'s EmbeddingEngine). The Web page needs
+  text, 1.13.1 for images and audio), and Web on WebGPU through
+  `@litert-lm/core`'s EmbeddingEngine (1.13.1 for text and images, 1.13.2 for
+  audio and combined inputs). The Web page needs
   `window.EmbeddingEngine = m.EmbeddingEngine;` next to `window.Engine =
   m.Engine;` in its `@litert-lm/core` module script; without it the load fails
   with an `EmbeddingLoadException` naming that line. The browser needs WebGPU:
@@ -197,7 +198,8 @@ final eg2Index = await rag.open(
   or cache is made (below); on Web only after the bundle was read, when the
   runtime refuses to create the engine. `supportAudio: true` needs the 740m
   bundle (below): on the 270m and the 440m it throws `EmbeddingLoadException`
-  naming the 740m, and on Web it is refused on every bundle.
+  naming the 740m, read from the bundle's container header before any engine
+  exists — on Web too.
 - `maxInputTokens` is 1024 — task prefix, BOS and EOS included. Keep chunks at
   512 tokens or fewer: memory grows with the input length. A longer text throws
   `EmbeddingInputTooLongException` with the exact `actualTokens` (natively
@@ -267,20 +269,28 @@ final npuIndex = await rag.open(
 ```
 
 - Verified SoCs: SM8850, SM8650 and QCS8275. Google also publishes SM8550,
-  SM8750 (load, not verified by us), Tensor G5/G6, MediaTek MT6991/MT6993 and
-  Intel PTL (refused). What a bundle targets is read from the bundle.
+  SM8750 (load, not verified by us), Intel PTL (Windows, below), Tensor G5/G6
+  and MediaTek MT6991/MT6993 (refused). What a bundle targets is read from the
+  bundle.
 - Its vectors are close to the CPU bundle's, not equal (SM8650: cosine
   0.79–0.86 for a few words, 0.99 from about 200 words; images 0.86–0.88), so
   never compare NPU vectors with CPU ones; within the NPU space retrieval
   holds (text → image 10/10).
 - Nothing falls back: a per-SoC bundle without `npu`, the generic bundle with
-  `npu`, `npu` on iOS/macOS/Windows/Linux x64/Web, a build without
-  `qualcomm_npu`, a device without a reachable Qualcomm NPU, and a bundle the
-  NPU cannot run (another SoC's) each throw `EmbeddingLoadException` with the
-  fix. A loaded embedder is never reused for the other backend.
+  `npu`, `npu` on iOS/macOS/Linux x64/Web, a Qualcomm bundle on Windows, a
+  build without `qualcomm_npu`, a device without a reachable Qualcomm NPU, and
+  a bundle the NPU cannot run (another SoC's) each throw
+  `EmbeddingLoadException` with the fix. A loaded embedder is never reused for
+  the other backend.
 - Give an NPU index its own profile id (above); never open a CPU index with an
   NPU embedder or the reverse. `FlutterEdgeAiActiveEmbedder.forActiveModel`
   keys on the file name, so it separates them by itself.
+- **Intel Panther Lake (Windows x64, `flutter_edge_ai_litertlm` 1.13.2).** `…_Intel_PTL.litertlm` (270m, 440m) loads the
+  same way with `preferredBackend: PreferredBackend.npu`, with no opt-in flag:
+  every Windows x64 build carries the Intel stack (LiteRtDispatch.dll,
+  OpenVINO, TBB) beside the executable, and its absence is refused by name.
+  Profile id: the CPU text id plus `-npu-ptl`, shared by the 270m and the 440m.
+  An Intel bundle on Android or Linux is refused.
 
 ### EmbeddingGemma 2 images (440m; `flutter_edge_ai_litertlm` 1.13.1 native, 1.13.1 Web)
 
@@ -397,13 +407,13 @@ page itself: there are no isolates there.
   the retrieval-query prefix found the same photos with a smaller margin. Do
   not set `queryTask` for it: that applies to text documents only.
 
-### EmbeddingGemma 2 audio and combined inputs (740m; `flutter_edge_ai_litertlm` 1.13.1, native)
+### EmbeddingGemma 2 audio and combined inputs (740m; `flutter_edge_ai_litertlm` 1.13.1 native, 1.13.2 Web)
 
 The 740m bundle (`litert-community/embeddinggemma-2-740m-litert-lm`, revision
 `24d962e906c7d332c6428e71c9676855024569e2`, ungated, 485 MB) has the 440m's
 text and vision towers — the same text and image vectors, so the same profile
-ids — plus an audio encoder. Audio and combined inputs are native-only: on
-Web `supportAudio: true` is refused.
+ids — plus an audio encoder. On Web audio and combined inputs run on WebGPU
+(from 1.13.2) with the same formats, limits and errors.
 
 ```dart
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
@@ -446,8 +456,9 @@ final vector = await embedder.embed(
 - Formats: WAV, MP3 and FLAC, any rate and channel count (the engine mixes
   down to mono and resamples to 16 kHz). Ogg and M4A throw
   `EmbeddingFormatNotSupportedException` before anything is sent; a corrupt
-  file of an accepted type throws `EmbeddingEngineException` (`nativeCode` 2)
-  and the model keeps working. One clip per vector.
+  file of an accepted type throws `EmbeddingEngineException` (`nativeCode` 2
+  on native; on Web the runtime's message) and the model keeps working. One
+  clip per vector.
 - Length: about 25 tokens per second, so up to about 40 seconds fit the
   1024-token cap; a 60-second clip throws `EmbeddingInputTooLongException`
   with `actualTokens` 1504. Split long recordings.
@@ -456,18 +467,22 @@ final vector = await embedder.embed(
   order the arguments are written in. Declare every medium it carries. Any
   input with more than one part — several modalities, or several images — is
   a combined input: an engine that embeds one part per vector (every other one
-  here, and EmbeddingGemma 2 on Web) refuses it with
+  here, and EmbeddingGemma 2 on Web before `flutter_edge_ai_litertlm` 1.13.2)
+  refuses it with
   `UnsupportedEmbeddingCombinationException` before anything is sent.
 - An audio index keeps the text profile id: audio vectors do not depend on the
   vision budget, and the store's `documents` modality keeps it apart from a
   text store. A text query over it is sent raw (`TaskType.none`).
 - Audio vectors are not bit-portable: the audio encoder quantizes activations
   to 8 bits, so another CPU kernel can move a clip's vector by up to cos 0.05
-  (text and image vectors do not move that way). Retrieval holds: every test
-  sentence was found by its text query on every build measured.
+  (text and image vectors do not move that way); Web (WebGPU) audio vectors
+  are within cos 0.97 of the native ones. Retrieval holds: every test
+  sentence was found by its text query on every build measured, Web included.
 - Cost (CPU, M4 Pro Mac): 385 MB of weight caches written at every load (text
   71 MB, vision 218 MB, audio 95 MB), also for text-only use; about 0.2–0.3 s
-  per 3-second clip. Use the 270m for text, the 440m for text and images.
+  per 3-second clip. On Web (WebGPU, Tesla T4) about 0.3 s per clip after a
+  first one of about 4 s, and no weight cache. Use the 270m for text, the 440m
+  for text and images.
 
 ## Index and search
 
@@ -867,8 +882,7 @@ location.
   model has no vision encoder — "has no vision encoder; install
   embeddinggemma-2-text-vision-440m" on the 270m — or is not an EmbeddingGemma
   2 bundle. From an audio index: "has no audio encoder; install
-  embeddinggemma-2-740m" on the 270m and the 440m; on Web every bundle refuses
-  audio.
+  embeddinggemma-2-740m" on the 270m and the 440m, natively and on Web.
 - `EmbeddingFormatNotSupportedException` from `add` or `search` on an image
   index: HEIC, WebP, TIFF or AVIF; convert to JPEG or PNG.
 - `VectorStoreException` "… is not a valid embedding profile" on open: the

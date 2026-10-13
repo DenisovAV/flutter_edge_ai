@@ -165,6 +165,11 @@ flutter:
     # integration_test/tools/generate_eg2_audio_clips.py): the device suites'
     # test clips and the text→audio retrieval set.
     - assets/eg2_audio/
+    # The Knowledge screen's sample voice memos and two-voice meeting, spoken
+    # by our own TTS (see integration_test/tools/generate_knowledge_memos.dart).
+    - assets/knowledge/
+    - assets/knowledge/memos/
+    - assets/knowledge/photos/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware

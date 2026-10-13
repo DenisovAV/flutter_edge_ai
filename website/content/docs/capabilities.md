@@ -32,7 +32,8 @@ native platforms).
   EmbeddingGemma 2 `.litertlm` bundles — text, and JPEG/PNG/GIF/BMP images
   with the 440m and 740m bundles, on native platforms and (since litertlm
   1.13.1, on WebGPU) on the Web; WAV/MP3/FLAC audio with the 740m bundle and
-  several parts in one vector, on native platforms (litertlm 1.13.1); ONNX runs `.onnx`
+  several parts in one vector, on native platforms (litertlm 1.13.1) and on
+  the Web (1.13.2, WebGPU); ONNX runs `.onnx`
   models (MiniLM, EmbeddingGemma). The `.tflite` and `.onnx` models take their
   tokenizer from `flutter_edge_ai_embeddings`; an EmbeddingGemma 2 bundle
   carries its own. On the Web, ONNX embeddings accept WordPiece (BERT-style)

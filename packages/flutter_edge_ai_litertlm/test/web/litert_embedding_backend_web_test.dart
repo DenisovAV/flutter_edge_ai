@@ -14,6 +14,7 @@ library;
 
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
+import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart' show resolveWebModelUrl;
@@ -23,6 +24,8 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embeddi
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_web_embeddings.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'eg2_header_fixtures.dart';
 
 final _tflite = EmbeddingModelSpec(
   name: 'embeddinggemma',
@@ -39,9 +42,10 @@ RuntimeConfig _bundleConfig({
   bool supportImage = false,
   bool supportAudio = false,
   PreferredBackend? preferredBackend,
+  String modelPath = 'opfs://eg2.litertlm',
 }) => RuntimeConfig(
   maxTokens: 0,
-  modelPath: 'opfs://eg2.litertlm',
+  modelPath: modelPath,
   supportImage: supportImage,
   supportAudio: supportAudio,
   preferredBackend: preferredBackend,
@@ -84,21 +88,12 @@ void main() {
     expect(descriptor.build(), isA<LiteRtLmWebEmbeddingPass>());
   });
 
-  test('describe() on a bundle: images are declared to the pass, audio is '
-      'refused, and a vision budget other than 140/70 is refused', () async {
+  test('describe() on a bundle: images are declared to the pass, and a '
+      'vision budget other than 140/70 is refused', () async {
     final images =
         (await backend.describe(_eg2, _bundleConfig(supportImage: true))).config
             as LiteRtLmWebEmbeddingConfig;
     expect(images.declaredMedia, {EmbeddingModality.image});
-
-    await expectLater(
-      backend.describe(_eg2, _bundleConfig(supportAudio: true)),
-      throwsA(
-        isA<EmbeddingLoadException>()
-            .having((e) => e.engine, 'engine', 'LiteRT-LM')
-            .having((e) => e.message, 'message', contains('1.13.1')),
-      ),
-    );
 
     final seventy =
         (await const LiteRtEmbeddingBackend(
@@ -211,5 +206,90 @@ void main() {
         ),
       );
     }
+  });
+
+  test('describe() with audio reads the bundle\'s container header through '
+      'the page (1.13.2): the 740m declares audio to the pass; the 270m is '
+      'refused naming the 740m; a path the page cannot open is a load error '
+      'naming the file', () async {
+    String blobUrl(Uint8List bytes) {
+      globalContext['__bytes'] = bytes.toJS;
+      return (globalContext.callMethod<JSString>(
+        'eval'.toJS,
+        'URL.createObjectURL(new Blob([window.__bytes]))'.toJS,
+      )).toDart;
+    }
+
+    final audio =
+        (await backend.describe(
+              _eg2,
+              _bundleConfig(
+                supportImage: true,
+                supportAudio: true,
+                modelPath: blobUrl(eg2Header740m),
+              ),
+            )).config
+            as LiteRtLmWebEmbeddingConfig;
+    expect(audio.declaredMedia, {
+      EmbeddingModality.image,
+      EmbeddingModality.audio,
+    });
+    expect(audio.audioBackend, LiteRtLmWebBackend.gpu);
+
+    await expectLater(
+      backend.describe(
+        _eg2,
+        _bundleConfig(supportAudio: true, modelPath: blobUrl(eg2Header270m)),
+      ),
+      throwsA(
+        isA<EmbeddingLoadException>()
+            .having((e) => e.engine, 'engine', 'LiteRT-LM')
+            .having(
+              (e) => e.message,
+              'message',
+              'eg2.litertlm has no audio encoder; install '
+                  'embeddinggemma-2-740m',
+            ),
+      ),
+    );
+
+    // A header whose root offset points past its end — under dart2js the
+    // DataView's own RangeError, which must still read as a corrupt header.
+    final corrupt = Uint8List.fromList(eg2Header740m)
+      ..setAll(32, [0xF0, 0xFF, 0x00, 0x00]);
+    await expectLater(
+      backend.describe(
+        _eg2,
+        _bundleConfig(supportAudio: true, modelPath: blobUrl(corrupt)),
+      ),
+      throwsA(
+        isA<EmbeddingLoadException>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            startsWith(
+              'could not read the container of eg2.litertlm to find its '
+              'audio encoder',
+            ),
+            contains('header flatbuffer is truncated'),
+          ),
+        ),
+      ),
+    );
+
+    // opfs:// without streaming storage set up: the resolver refuses.
+    await expectLater(
+      backend.describe(_eg2, _bundleConfig(supportAudio: true)),
+      throwsA(
+        isA<EmbeddingLoadException>().having(
+          (e) => e.message,
+          'message',
+          contains(
+            "could not open eg2.litertlm from the page's model storage "
+            '(opfs://eg2.litertlm)',
+          ),
+        ),
+      ),
+    );
   });
 }

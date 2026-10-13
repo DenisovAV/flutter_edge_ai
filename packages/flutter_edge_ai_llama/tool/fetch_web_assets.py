@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Stage checksum-verified, unmodified runtime assets for the Web demo/tests."""
 
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -31,7 +32,12 @@ def download(name, destination):
     )
 
 
-def main():
+def main(argv=None):
+    global OUT
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, default=OUT, help="Application web/webgpu_bridge directory")
+    args = parser.parse_args(argv)
+    OUT = args.output
     with tempfile.TemporaryDirectory(prefix="edge-llama-web-") as temporary:
         staging = Path(temporary)
         download("manifest.json", staging / "manifest.json")
@@ -56,7 +62,7 @@ def main():
         for name in (*FILES, "manifest.json"):
             shutil.copyfile(staging / name, OUT / name)
     test_link = PACKAGE / "test/webgpu_bridge"
-    if not test_link.exists():
+    if OUT == PACKAGE / "example/web/webgpu_bridge" and not test_link.exists():
         test_link.symlink_to("../example/web/webgpu_bridge", target_is_directory=True)
     print(f"Staged unmodified {TAG} assets in {OUT}")
 

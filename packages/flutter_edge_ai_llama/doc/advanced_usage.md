@@ -64,8 +64,7 @@ calls must be answered before the next generation.
 Thinking deltas become `ThinkingResponse` only when `enableThinking` is true.
 The model can ignore the thinking switch; hidden reasoning still consumes
 runtime/output budget. The low-level String session methods return answer text
-and JSON tool calls; use the connector chat or session `getResponses()` for
-typed thinking and tools. The synchronous chat response follows Edge AI's
+and JSON tool calls; use the chat `generateChatResponseAsync()` API for typed thinking and tools. The synchronous chat response follows Edge AI's
 single-response API: it returns a call group when present, otherwise joined text.
 
 ## Images, audio and LoRA
@@ -92,16 +91,17 @@ budget preflight does not estimate media embeddings; the runtime enforces its
 actual multimodal context requirements. Separate encoder backend overrides
 are unavailable in llamadart and fail explicitly.
 
-Native sessions accept `loraPath`, applying the adapter during their exclusive
-turn and removing it before a peer runs. Installed `InferenceModelSpec`
+Installed native adapters load once with the model. Sessions may override them
+with `loraPath`; the override is removed and the installed adapter restored before
+a peer runs. Missing local override files fail before runtime mutation. Installed `InferenceModelSpec`
 LoRA companions are resolved through core's file manager and used by default.
-If applying/removing an adapter fails, the shared runtime is invalidated:
+If a runtime adapter mutation or restoration fails, the shared runtime is invalidated:
 close/reload the model before any peer can infer with uncertain adapter state.
-Web LoRA operations are unavailable in llamadart 0.11.1 and remain unsupported.
+This connector does not wire Web LoRA, even when the bridge supports it.
+Installed and per-session Web adapters are rejected explicitly.
 Core restores the model and its paired LoRA after restart. If the adapter is
 missing, it restores neither rather than silently loading the base model.
-GGUF adapter filenames use `model__adapter.gguf`. This requires the merged
-core #649 changes described in the [development setup](../README.md#add-it-to-your-app).
+GGUF adapter filenames use `model__adapter.gguf`. This requires core 2.3.2+.
 
 ## Compatibility boundaries
 
@@ -123,8 +123,11 @@ LiteRT activation/MTP controls and MediaPipe LoRA ranks remain unsupported for
 this GGUF adapter. They describe other engines and cannot be meaningfully
 forwarded to llama.cpp through this contract.
 
-Explicit GPU requests fail if the runtime reports zero GPU layers; unknown
-backend identity remains unknown. Runtime usage drives metrics; output tokens are zero/unknown when usage is not
-reported. Throughput includes prefill. The demo labels missing output counts as unavailable. Native termination is available as
-`LlamaInferenceSession.lastFinishReason`. Only completed turns commit history;
-cancellation/error removes pending input and partial output.
+Backend reporting uses the runtime backend name, not the requested offload count.
+Explicit GPU requests reject a reported CPU backend; unknown identity stays unknown. Runtime usage drives metrics; output tokens are zero/unknown when usage is not
+reported. Throughput includes prefill. The demo labels missing output counts as unavailable. Completed turns commit history. Cancellation/errors remove pending user input and
+partial assistant output; results of already committed tool calls are retained.
+
+Omitted output caps use remaining rendered context. A truncated tool turn or an
+empty completion throws and rolls back. Completed results of prior committed tool
+calls survive interruption; replay groups thinking, text and calls in one assistant turn.

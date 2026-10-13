@@ -46,7 +46,7 @@ class SchemaToolDefinition extends llama.ToolDefinition {
       ) {
     if (schema.isEmpty) schema.addAll({'type': 'object', 'properties': {}});
     if (name.trim().isEmpty || schema['type'] != 'object') {
-      throw llama.LlamaArgumentException(
+      throw ArgumentError(
         'Tool names must be nonempty and parameters must be an object JSON Schema.',
       );
     }

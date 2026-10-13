@@ -4,14 +4,14 @@ publish_to: 'none'
 version: 0.1.0+1
 
 environment:
-  sdk: ^3.13.1
+  sdk: ^3.12.0
 
 dependencies:
   flutter:
     sdk: flutter
   flutter_edge_ai_llama:
     path: ..
-  flutter_edge_ai: ^2.3.1
+  flutter_edge_ai: ^2.3.2
   llamadart: ^0.11.1
   llamadart_llama_cpp_flutter: 0.0.21
   file_selector: ^1.0.4
@@ -28,6 +28,7 @@ hooks:
           windows: [cpu]
 
 dev_dependencies:
+  file_selector_platform_interface: ^2.6.0
   integration_test:
     sdk: flutter
   flutter_test:

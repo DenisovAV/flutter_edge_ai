@@ -3,7 +3,11 @@
 // its own, because NPU and CPU vectors are not interchangeable. The host is a
 // fake: every answer it gives is a property of a device a test host is not.
 
+import 'dart:io';
+
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_common.dart'
+    show liteRtLmWebNpuRefusal;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
@@ -13,6 +17,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 const _file = 'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm';
 const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+
+/// What Google's `…_Intel_PTL.litertlm` bundles are stamped with.
+const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
 
 Matcher _refusal(Object message) => throwsA(
   isA<EmbeddingLoadException>()
@@ -63,6 +70,7 @@ void main() {
               contains('generic EmbeddingGemma 2 bundle'),
               contains('no NPU graph'),
               contains('_Qualcomm_<SoC>.litertlm'),
+              contains('<model>_Intel_PTL.litertlm'),
               contains('SM8850, SM8650, QCS8275 are verified'),
               contains('omit preferredBackend'),
             ),
@@ -115,7 +123,7 @@ void main() {
     for (final (os, abi) in [
       ('ios', 'ios_arm64'),
       ('macos', 'macos_arm64'),
-      ('windows', 'windows_x64'),
+      ('windows', 'windows_arm64'),
       ('linux', 'linux_x64'),
       ('android', 'android_x64'),
     ]) {
@@ -123,36 +131,75 @@ void main() {
         host
           ..operatingSystem = os
           ..abi = abi;
-        await expectLater(
-          place(),
-          _refusal(
-            allOf(
-              contains('Qualcomm Android and Qualcomm Linux arm64 only'),
-              contains('this is $os ($abi)'),
-              contains('generic EmbeddingGemma 2 bundle'),
+        for (final target in const [_sm8850, _ptl]) {
+          await expectLater(
+            place(target: target),
+            _refusal(
+              allOf(
+                contains(
+                  'Qualcomm Android and Qualcomm Linux arm64, and on Intel '
+                  'NPUs with Windows x64, only',
+                ),
+                contains('this is $os ($abi)'),
+                contains('generic EmbeddingGemma 2 bundle'),
+              ),
             ),
-          ),
-        );
+            reason: '$target',
+          );
+        }
         expect(host.asked, isEmpty);
       });
     }
 
-    test('compiled for another vendor is refused, even on Android', () async {
-      for (final target in const [
-        LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
-        LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
-        LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL'),
+    test('compiled for another vendor is refused, on Android and on Windows '
+        'alike', () async {
+      for (final (os, abi) in [
+        ('android', 'android_arm64'),
+        ('windows', 'windows_x64'),
       ]) {
-        await expectLater(
-          place(target: target),
-          _refusal(
-            allOf(
-              contains('compiled for a ${target.vendor} NPU (${target.soc})'),
-              contains('Qualcomm NPUs only'),
+        host
+          ..operatingSystem = os
+          ..abi = abi;
+        for (final target in const [
+          LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
+          LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
+          // Only LiteRT's OpenVINO stamp is an Intel bundle this runs.
+          LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL'),
+        ]) {
+          await expectLater(
+            place(target: target),
+            _refusal(
+              allOf(
+                contains('compiled for a ${target.vendor} NPU (${target.soc})'),
+                contains('Qualcomm and Intel NPUs only'),
+              ),
             ),
-          ),
-        );
+            reason: '$abi $target',
+          );
+        }
       }
+      expect(host.asked, isEmpty);
+    });
+
+    test('compiled for Qualcomm is refused on Windows x64, which runs Intel '
+        'bundles', () async {
+      host
+        ..operatingSystem = 'windows'
+        ..abi = 'windows_x64';
+      await expectLater(
+        place(),
+        _refusal(
+          allOf(
+            contains('compiled for the Qualcomm SM8850 NPU'),
+            contains(
+              'on windows (windows_x64) flutter_edge_ai_litertlm runs Intel '
+              'NPU bundles only; Qualcomm ones run on android_arm64 and '
+              'linux_arm64',
+            ),
+            contains('generic EmbeddingGemma 2 bundle'),
+          ),
+        ),
+      );
       expect(host.asked, isEmpty);
     });
 
@@ -222,6 +269,146 @@ void main() {
       },
     );
   });
+
+  group('an Intel (Panther Lake) bundle', () {
+    setUp(
+      () => host
+        ..operatingSystem = 'windows'
+        ..abi = 'windows_x64'
+        ..dispatchDir = r'C:\Apps\demo',
+    );
+
+    test('with npu on Windows x64 runs on the NPU, with the dispatch next to '
+        'the executable — no Qualcomm stack and no FastRPC asked', () async {
+      final placement = await place(target: _ptl);
+      expect(placement.backend, PreferredBackend.npu);
+      expect(placement.target, _ptl);
+      expect(placement.target!.isIntel, isTrue);
+      expect(placement.dispatchDir, r'C:\Apps\demo');
+      expect(host.asked, ['intelStack', 'dispatchDir']);
+    });
+
+    test('without npu is refused like any per-SoC bundle', () async {
+      await expectLater(
+        place(target: _ptl, requested: null),
+        _refusal(
+          allOf(
+            contains('compiled for the IntelOpenVINO PTL NPU'),
+            contains('on a PTL device'),
+          ),
+        ),
+      );
+      expect(host.asked, isEmpty);
+    });
+
+    test('on Qualcomm Android and Linux arm64 is refused before anything is '
+        'asked', () async {
+      for (final (os, abi) in [
+        ('android', 'android_arm64'),
+        ('linux', 'linux_arm64'),
+      ]) {
+        host
+          ..operatingSystem = os
+          ..abi = abi;
+        await expectLater(
+          place(target: _ptl),
+          _refusal(
+            allOf(
+              contains('compiled for the IntelOpenVINO PTL NPU'),
+              contains(
+                'on $os ($abi) flutter_edge_ai_litertlm runs Qualcomm NPU '
+                'bundles only; Intel ones run on windows_x64',
+              ),
+            ),
+          ),
+          reason: abi,
+        );
+      }
+      expect(host.asked, isEmpty);
+    });
+
+    test('where the Intel stack is missing is refused with why', () async {
+      host.intel = const NpuStackCheck.missing(
+        r'LiteRtDispatch.dll is not beside the executable (C:\Apps\demo)',
+      );
+      await expectLater(
+        place(target: _ptl),
+        _refusal(
+          r'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm needs the '
+          r'IntelOpenVINO PTL NPU, and LiteRtDispatch.dll is not beside the '
+          r'executable (C:\Apps\demo).',
+        ),
+      );
+      expect(host.asked, ['intelStack']);
+    });
+
+    test('whose dispatch directory cannot be resolved is refused, the cause '
+        'kept', () async {
+      host.dispatchError = const NpuDispatchUnavailableException('no exe');
+      await expectLater(
+        place(target: _ptl),
+        _refusal(contains('its Intel libraries could not be prepared: no exe')),
+      );
+    });
+  });
+
+  test('the web refusal names both NPU hosts, Intel included', () {
+    expect(
+      liteRtLmWebNpuRefusal,
+      allOf(
+        contains('Qualcomm Android and Qualcomm Linux arm64'),
+        contains('Intel NPUs with Windows x64'),
+        contains('not on the web'),
+      ),
+    );
+  });
+
+  group('the Intel stack check', () {
+    late Directory dir;
+
+    setUp(() => dir = Directory.systemTemp.createTempSync('intel_npu_'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    test('finds LiteRtDispatch.dll in the directory it is given', () {
+      File(
+        '${dir.path}${Platform.pathSeparator}LiteRtDispatch.dll',
+      ).writeAsBytesSync(const [0]);
+      final check = checkIntelNpuStack(dir.path);
+      expect(check.bundled, isTrue);
+      expect(check.known, isTrue);
+    });
+
+    test('says where it looked when the dispatch is not there — other Intel '
+        'libraries do not count', () {
+      File(
+        '${dir.path}${Platform.pathSeparator}openvino.dll',
+      ).writeAsBytesSync(const [0]);
+      final check = checkIntelNpuStack(dir.path);
+      expect(check.bundled, isFalse);
+      expect(check.known, isTrue, reason: 'a missing file is an answer');
+      expect(
+        check.reason,
+        allOf(
+          contains('LiteRtDispatch.dll is not beside the executable'),
+          contains(dir.path),
+          contains('ship all the DLLs'),
+        ),
+      );
+    });
+
+    test('the platform host looks beside the running executable', () async {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      expect(windowsNpuDispatchDir, exeDir);
+      // No test runner ships LiteRtDispatch.dll beside itself.
+      final check = await const LiteRtLmPlatformNpuHost().intelStack();
+      expect(check.bundled, isFalse);
+      expect(check.reason, contains('($exeDir)'));
+    });
+
+    test('Windows hands LiteRT the executable\'s directory', () async {
+      expect(await npuDispatchDirFor('windows'), windowsNpuDispatchDir);
+    });
+  });
 }
 
 final class _FakeHost implements LiteRtLmNpuHost {
@@ -232,6 +419,10 @@ final class _FakeHost implements LiteRtLmNpuHost {
   String abi = 'android_arm64';
 
   NpuStackCheck stack = const NpuStackCheck.bundled();
+
+  NpuStackCheck intel = const NpuStackCheck.bundled();
+
+  String dispatchDir = '/data/app/code_cache/npu';
 
   bool _hasNpu = true;
 
@@ -257,10 +448,16 @@ final class _FakeHost implements LiteRtLmNpuHost {
   }
 
   @override
+  Future<NpuStackCheck> intelStack() async {
+    asked.add('intelStack');
+    return intel;
+  }
+
+  @override
   Future<String> prepareDispatchDir() async {
     asked.add('dispatchDir');
     final error = dispatchError;
     if (error != null) throw error;
-    return '/data/app/code_cache/npu';
+    return dispatchDir;
   }
 }

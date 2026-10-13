@@ -33,10 +33,11 @@ import 'vision_budget.dart';
 /// EmbeddingEngine.
 ///
 /// EmbeddingGemma 2 runs on CPU, or — for a bundle compiled for one SoC
-/// (`…_Qualcomm_SM8850.litertlm`), loaded with
+/// (`…_Qualcomm_SM8850.litertlm`, `…_Intel_PTL.litertlm`), loaded with
 /// `getActiveEmbedder(preferredBackend: PreferredBackend.npu)` — on that SoC's
-/// NPU, on Qualcomm Android and Qualcomm Linux arm64, in an app built with
-/// `hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true`.
+/// NPU: on Qualcomm Android and Qualcomm Linux arm64 in an app built with
+/// `hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true`, and
+/// on Intel NPUs with Windows x64 (Panther Lake).
 /// Nothing switches backend on its own: the generic bundle with `npu`, a
 /// per-SoC bundle without it, and `npu` where it cannot run are refused with
 /// an `EmbeddingLoadException`, because NPU and CPU vectors are not

@@ -34,8 +34,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.3.0
-  flutter_edge_ai_speech: ^0.5.6
+  flutter_edge_ai: ^2.3.2
+  flutter_edge_ai_speech: ^0.5.7
 ```
 
 ## Register the backend
@@ -326,6 +326,54 @@ final session = VoiceSession.fromChat(
 For the full agent (skills / MCP), wrap an `AgentSession` in a `VoiceResponder`
 and use `VoiceSession.custom`; `AgentSession.ask(…, isCancelled:)` makes barge-in
 halt the agent loop before the next tool.
+
+### Audio turns: the model hears the recording
+
+A model with an audio encoder (Gemma 4 E2B/E4B) can take the recording itself,
+not a transcript of it. `runAudioTurn` skips speech-to-text: the PCM goes to the
+chat as audio, and the reply streams and is spoken exactly as in `runTurn`.
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true, // loads the audio encoder
+);
+final chat = await model.createChat(supportAudio: true, maxOutputTokens: 128);
+final session = VoiceSession.fromChat(
+  recognizer: recognizer, chat: chat, synthesizer: synthesizer);
+
+await for (final event in session.runAudioTurn(pcm16kMono)) {
+  // the events of runTurn, without VoiceTranscriptEvent
+}
+```
+
+- **Same turn, no STT.** There is no `VoiceTranscriptEvent`;
+  `VoiceTurnCompleteEvent` and `VoiceTurnInterruptedEvent` carry an empty
+  transcript. `streamAudio`, `interrupt()` and its bounded drain, a tools chat
+  with `onToolCall`, and the one-turn-at-a-time `StateError` work as in
+  `runTurn`. A recording under 2 bytes (a push-to-talk tap) completes with an
+  empty `VoiceTurnCompleteEvent` without asking the model, as an empty
+  transcript does. The recognizer is still required, and `runTurn` still uses
+  it.
+- **Barge-in forgets the recordings.** After an interrupted reply, a
+  `.litertlm` chat rebuilds its conversation from the turns' text, and an
+  audio turn has none: the model keeps its own replies but loses what was said
+  in earlier audio turns. Measured on Gemma 4 E2B: told a secret word in an
+  audio turn, it named it after an uninterrupted second turn, and not after an
+  interrupted one.
+- **The format.** `runAudioTurn` takes the same 16 kHz mono 16-bit PCM as
+  `runTurn`. `runAudioTurn` adds the WAV header, because a `.litertlm` model
+  decodes an audio file, not bare samples.
+- **The flags.** `supportAudio` on `getActiveModel` creates the engine with its
+  audio encoder. `createChat` takes it from the model unless you pass it, and
+  the chat's flag is what `fromChat` checks: on a chat whose `supportAudio` is
+  false, `runAudioTurn` throws a `StateError`.
+- **Native only.** No web engine takes audio input.
+- **A custom responder.** `VoiceResponder` takes an optional `respondToAudio`
+  next to `respond`. It gets the recording as that WAV, ready for a `.litertlm`
+  chat: an `AgentSession` takes it as is, with
+  `respondToAudio: (wav) => agentTokens(agent.ask('', audioBytes: wav))`,
+  where `agentTokens` is whatever maps your agent's events to text.
 
 ## Platform support
 

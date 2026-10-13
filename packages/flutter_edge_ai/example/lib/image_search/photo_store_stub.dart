@@ -5,7 +5,8 @@ import 'photo_store.dart';
 
 /// A platform with neither `dart:io` nor the web's file system: nothing is
 /// kept. Bundled samples still show.
-PhotoStore createPhotoStore() => const _NoPhotoStore();
+PhotoStore createPhotoStore({String directoryName = 'image_search_photos'}) =>
+    const _NoPhotoStore();
 
 final class _NoPhotoStore implements PhotoStore {
   const _NoPhotoStore();
@@ -19,6 +20,11 @@ final class _NoPhotoStore implements PhotoStore {
   ImageProvider imageFor(String reference) =>
       assetImageFor(reference) ??
       (throw UnsupportedError('No photo files on this platform: $reference'));
+
+  @override
+  Future<Uint8List> read(String reference) => Future.error(
+    UnsupportedError('No photo files on this platform: $reference'),
+  );
 
   @override
   Future<void> forget(String reference) async {}

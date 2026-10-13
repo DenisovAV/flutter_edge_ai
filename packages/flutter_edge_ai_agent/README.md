@@ -116,7 +116,7 @@ which provides `LiteRtLmEngine`:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.3.0
-  flutter_edge_ai_agent: ^0.2.9
+  flutter_edge_ai_agent: ^0.2.10
   flutter_edge_ai_litertlm: ^1.13.0
 ```
 
@@ -194,6 +194,37 @@ Passing `imageBytes` to a session built without `supportImage: true` fails the
 returned stream with an `ArgumentError` instead of quietly answering as if there
 were no image — the flag is what's checked; that the model is actually
 multimodal stays your responsibility (it can't be introspected from Dart).
+
+## Asking with a recording
+
+`ask` also takes the recording itself, for a model with an audio encoder
+(Gemma 4 E2B/E4B): the spoken question goes to the model as audio, with no
+speech-to-text. Load the model and build the session with `supportAudio: true`:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true, // loads the audio encoder
+);
+final session = await AgentSession.fromModel(
+  model,
+  registry: registry,
+  supportAudio: true, // required
+);
+
+// wav: a WAV file, 16 kHz mono 16-bit PCM
+await for (final event in session.ask('', audioBytes: wav)) {
+  // …
+}
+```
+
+The text may be empty or add to the recording, and an image can go with it. A
+`.litertlm` model decodes an audio file, so pass a WAV, not bare PCM samples.
+A session built without `supportAudio: true` fails the stream with an
+`ArgumentError`, as do empty bytes; nothing reaches the chat history. Audio
+input is native-only. After a stopped turn (a cancelled subscription) a
+`.litertlm` chat is rebuilt from text, so the recordings of earlier turns are
+gone from its context.
 
 ## SKILL.md format
 

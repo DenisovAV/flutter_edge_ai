@@ -34,8 +34,8 @@ If you experience or witness unacceptable behavior, please open an issue or cont
 ### Prerequisites
 
 **Required:**
-- Flutter **3.47.1** or higher to work on the monorepo (apps can use 3.44)
-- Dart **3.13.1** or higher
+- Flutter **3.47.0** or higher to work on the monorepo (apps can use 3.44)
+- Dart **3.12.0** or higher
 - Platform-specific toolchains:
   - **Android**: Android Studio / Android SDK
   - **iOS**: current Xcode, CocoaPods 1.11+

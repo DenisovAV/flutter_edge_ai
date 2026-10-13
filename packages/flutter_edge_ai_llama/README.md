@@ -11,12 +11,9 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
-The tested dependencies are Flutter **3.47.1 / Dart 3.13.1**,
-`flutter_edge_ai` from merged core #649, `llamadart 0.11.1` and the Apple companion `0.0.21`.
-This draft requires the merged GGUF/LoRA changes from core #649. They are not
-in hosted core 2.3.1 yet. The checked-in example resolves core from this workspace;
-external apps need the development override below until the next core patch is
-published. GGUF embeddings are deferred to a separate contribution.
+The minimum is Flutter **3.44 / Dart 3.12**, with core **2.3.2+**,
+llamadart **0.11.1+** and Apple companion **0.0.21**. Connector CI uses Flutter
+3.47.1 / Dart 3.13.1 for reproducible checks. GGUF embeddings are deferred.
 
 ## Try a chat in a few minutes
 
@@ -86,7 +83,7 @@ the path below with the package directory relative to your app's pubspec:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.3.1
+  flutter_edge_ai: ^2.3.2
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
@@ -98,23 +95,14 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Until the core patch containing #649 is published, add this development-only
-`pubspec_overrides.yaml` beside your app's pubspec, pointing at the same clone:
-
-```yaml
-dependency_overrides:
-  flutter_edge_ai:
-    path: ../flutter_edge_ai/packages/flutter_edge_ai
-```
-
-Hosted core **2.3.1 does not contain `ModelFileType.gguf`**. The release dependency
-floor and hosted consumer gate will be updated when that patch is available.
-The checked-in workspace example needs no override.
-
 Merge the hook settings into your **application's** pubspec. In a pub workspace,
 put them in the workspace root. Dependency settings do not propagate: without
 this selection, llamadart 0.11.1 includes LiteRT-LM too where available.
 Registering only the GGUF provider changes routing, not packaged runtime files.
+When `flutter_edge_ai_litertlm` is also present, `[llama_cpp]` is mandatory to avoid
+duplicate libraries and ambiguous runtime loading. Without the define, builds
+fail on Android/Linux/Windows; on iOS without the companion the wrong LiteRT-LM
+library can be loaded. On Apple the llama.cpp companion is required too.
 Also omit `flutter_edge_ai_litertlm` and `llamadart_litert_lm_flutter` to keep
 the app llama.cpp only. Core itself bundles no inference runtime.
 
@@ -122,6 +110,10 @@ On Apple platforms, run `flutter config --enable-swift-package-manager` before
 building your app, then use deployment targets
 iOS **16.4+** / macOS **14+**, matching the example's Xcode configuration.
 The direct companion dependency links the matching llama.cpp XCFramework.
+On iOS enable `com.apple.developer.kernel.extended-virtual-addressing` and
+`com.apple.developer.kernel.increased-memory-limit`; see the example entitlements.
+The LiteRT-LM macOS CocoaPods recipe disables SwiftPM and conflicts with this
+companion recipe; that combined setup is not qualified.
 Windows users need the Microsoft Visual C++ runtime for the app architecture.
 See [platform setup](doc/platforms.md#consumer-setup) for backend selection.
 
@@ -173,7 +165,9 @@ with `getActiveModel`; conversation history starts fresh. No connector-specific
 restore call is needed.
 
 `maxTokens` is the whole context budget (prompt, history and response).
-`maxOutputTokens` limits one response. Stop with
+`maxOutputTokens` optionally limits one response; omitted values use the remaining
+rendered context. Truncated tool turns and empty answers fail without committing
+partial history. Completed tool results survive cancellation or an error. Stop with
 `await chat.session.stopGeneration()`; an interrupted turn is discarded so the
 conversation can continue. Close the model when your feature is finished.
 
@@ -185,8 +179,7 @@ This contribution provides inference only. GGUF embeddings are preserved for a
 The connector uses core 2.3's public `engine.dart` / `engine_web.dart` APIs.
 Dedicated GGUF identity removes the routing conflict with MediaPipe. Core restores
 paired LoRA adapters after restart and refuses restoration if an adapter is missing.
-These changes are merged upstream but await a published core patch; this PR
-remains a development contribution until hosted validation passes.
+They ship in core 2.3.2, the minimum version required by this connector.
 
 ## Troubleshooting
 
@@ -195,13 +188,40 @@ remains a development contribution until hosted validation passes.
 | No engine handles the model | Declare `ModelFileType.gguf` and register `LlamaEngineProvider`. |
 | Model loading fails | Check the model path, available memory, and that the file is a complete, compatible GGUF. |
 | Context budget exceeded | Start a new chat, shorten the prompt, or increase `maxTokens` if memory permits. There is no automatic context compaction. |
-| Reply ends early | Increase `maxOutputTokens`; the demo reports when its output limit is reached. |
+| Reply ends early | Increase `maxOutputTokens`; the demo explicitly caps replies at 128 tokens; omit the cap for longer replies. |
 | Browser worker/model request fails | Prepare the assets, use COOP/COEP headers, and check model-host CORS. OPFS handles are unsupported; use cacheApi or network URLs. |
 | GPU request is rejected | Check that the packaged backend and device support GPU offload. CPU is the baseline; unknown offload is reported as unknown. |
 
 ## More details
 
 - [Advanced API usage](doc/advanced_usage.md): tools, thinking, independent chats, media and LoRA.
-- [Platform setup and qualification](doc/platforms.md): exact models, measured evidence and remaining release gates.
+- [Platform setup and qualification](doc/platforms.md): current capabilities, setup requirements and qualification gaps.
 - [Example walkthrough](example/README.md): first run and a short showcase sequence.
 - [Contributor checks](doc/development.md): tests, builds and package validation.
+
+## Web setup from an installed package
+
+The installed package includes `tool/fetch_web_assets.py`,
+`tool/validate_web_build.py` and the example's Web files. Find its `rootUri` in
+your app's `.dart_tool/package_config.json` (resolve it relative to that file).
+With Python 3 and curl installed, stage the checksum-verified bridge into your app:
+
+```sh
+python3 <package-root>/tool/fetch_web_assets.py --output <app-root>/web/webgpu_bridge
+```
+
+Copy `example/web/cache_api.js`, `cache_api.LICENSE` and `_headers` into your
+app's `web/` directory. Hosts that ignore `_headers` need equivalent server configuration.
+Use the module bootstrap in `example/web/index.html`: it loads the local bridge,
+sets its worker/core/Wasm URLs before Flutter starts, and reports load errors.
+Build with `flutter build web --wasm`, then run:
+
+```sh
+python3 <package-root>/tool/validate_web_build.py <app-root>/build/web
+```
+
+Serve the app,
+worker and Wasm responses with COOP `same-origin` and COEP `require-corp`.
+Model hosts need CORS. See the example `_headers` file for compatible hosts.
+Vulkan is included by default on supported native Android/Linux/Windows targets;
+the example's root hooks explicitly select CPU-only bundles.

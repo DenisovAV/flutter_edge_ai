@@ -177,15 +177,24 @@ class AgentSession {
   /// [ArgumentError] rather than quietly answering as if there were no image;
   /// the "multimodal model" half is a caller precondition (undetectable from
   /// Dart — see [AgentLoop.run]).
+  ///
+  /// Pass [audioBytes] to ask with a recording: the spoken question, for a
+  /// model with an audio encoder, with [userMessage] empty or as extra text.
+  /// The session must have been built with `supportAudio: true`; otherwise
+  /// the stream fails with an [ArgumentError] instead of answering as if
+  /// nothing was said. A `.litertlm` model takes a WAV file (16 kHz mono 16-bit
+  /// PCM), not bare samples — see [AgentLoop.run].
   Stream<AgentEvent> ask(
     String userMessage, {
     bool Function()? isCancelled,
     Uint8List? imageBytes,
+    Uint8List? audioBytes,
   }) => _loop.run(
     chat,
     userMessage,
     isCancelled: isCancelled,
     imageBytes: imageBytes,
+    audioBytes: audioBytes,
   );
 
   /// Close the underlying chat session.

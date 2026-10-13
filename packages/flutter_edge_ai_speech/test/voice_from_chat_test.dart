@@ -224,4 +224,85 @@ void main() {
     final tokens = await VoiceSession.textTokensOf(responses()).toList();
     expect(tokens, ['Hello', ' world']);
   });
+
+  group('fromChat and audio turns', () {
+    test(
+      'a chat with supportAudio hears the recording as a WAV, no text',
+      () async {
+        final chat = _AudioChat(supportAudio: true);
+        final session = VoiceSession.fromChat(
+          recognizer: _NoopRecognizer(),
+          chat: chat,
+          synthesizer: _NoopSynth(),
+        );
+        final pcm = Uint8List.fromList([1, 0, 2, 0]);
+
+        final events = await session.runAudioTurn(pcm).toList();
+
+        final message = chat.received.single;
+        expect(message.isUser, isTrue);
+        expect(message.text, isEmpty);
+        expect(message.audioBytes, VoiceSession.wavFromPcm16kMono(pcm));
+        expect(events.whereType<VoiceReplyTextEvent>().map((e) => e.chunk), [
+          'Paris',
+        ]);
+      },
+    );
+
+    test('a chat without supportAudio cannot run an audio turn', () {
+      final session = VoiceSession.fromChat(
+        recognizer: _NoopRecognizer(),
+        chat: _AudioChat(supportAudio: false),
+        synthesizer: _NoopSynth(),
+      );
+      expect(() => session.runAudioTurn(Uint8List(4)), throwsStateError);
+    });
+
+    test('wavFromPcm16kMono writes a 16 kHz mono PCM16 RIFF header', () {
+      final pcm = Uint8List.fromList(List.filled(6, 7));
+      final wav = VoiceSession.wavFromPcm16kMono(pcm);
+      final header = ByteData.sublistView(wav, 0, 44);
+      String ascii(int at) => String.fromCharCodes(wav.sublist(at, at + 4));
+
+      expect(wav.length, 44 + pcm.length);
+      expect(ascii(0), 'RIFF');
+      expect(header.getUint32(4, Endian.little), 36 + pcm.length);
+      expect(ascii(8), 'WAVE');
+      expect(ascii(12), 'fmt ');
+      expect(header.getUint16(20, Endian.little), 1); // PCM
+      expect(header.getUint16(22, Endian.little), 1); // mono
+      expect(header.getUint32(24, Endian.little), 16000);
+      expect(header.getUint32(28, Endian.little), 32000); // byte rate
+      expect(header.getUint16(32, Endian.little), 2); // block align
+      expect(header.getUint16(34, Endian.little), 16);
+      expect(ascii(36), 'data');
+      expect(header.getUint32(40, Endian.little), pcm.length);
+      expect(wav.sublist(44), pcm);
+    });
+  });
+}
+
+/// A tools-free chat that records what it is fed and answers 'Paris'.
+class _AudioChat extends InferenceChat {
+  _AudioChat({required super.supportAudio})
+    : super(sessionCreator: null, maxTokens: 1024);
+
+  final List<Message> received = [];
+
+  @override
+  Future<void> addQueryChunk(
+    Message m, [
+    bool noTool = false,
+    bool prefix = false,
+  ]) async => received.add(m);
+
+  @override
+  Stream<ModelResponse> generateChatResponseAsync() async* {
+    yield const TextResponse('Paris');
+  }
+
+  @override
+  Future<void> stopGeneration() async {}
+  @override
+  Future<void> close() async {}
 }

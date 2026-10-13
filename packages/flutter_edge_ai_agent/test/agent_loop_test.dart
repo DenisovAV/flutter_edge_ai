@@ -23,12 +23,15 @@ class _FakeAgentChat extends InferenceChat {
   /// Flat form: one [ModelResponse] per turn (each becomes a single-element
   /// token stream). Keeps every pre-streaming test constructing the fake the
   /// same way — `[a, b, c]` is still three separate turns.
-  _FakeAgentChat(List<ModelResponse> responses, {super.supportImage})
-    : _turns = [
-        for (final r in responses) [r],
-      ],
-      _errorAfterTurns = const {},
-      super(sessionCreator: null, maxTokens: 1024);
+  _FakeAgentChat(
+    List<ModelResponse> responses, {
+    super.supportImage,
+    super.supportAudio,
+  }) : _turns = [
+         for (final r in responses) [r],
+       ],
+       _errorAfterTurns = const {},
+       super(sessionCreator: null, maxTokens: 1024);
 
   /// Streaming form: each inner list is one turn's ORDERED token/call stream,
   /// so a turn can emit several [TextResponse] tokens (and/or a call). This is
@@ -36,8 +39,11 @@ class _FakeAgentChat extends InferenceChat {
   /// [errorAfterTurns] names turn indices whose stream THROWS after yielding its
   /// responses — models a native decode error mid-stream, AFTER a tool-call was
   /// already parsed + committed to history by generateChatResponseAsync.
-  _FakeAgentChat.turns(this._turns, {this._errorAfterTurns = const {}})
-    : super(sessionCreator: null, maxTokens: 1024);
+  _FakeAgentChat.turns(
+    this._turns, {
+    this._errorAfterTurns = const {},
+    super.supportAudio,
+  }) : super(sessionCreator: null, maxTokens: 1024);
 
   final List<List<ModelResponse>> _turns;
   final Set<int> _errorAfterTurns;
@@ -751,11 +757,9 @@ void main() {
 
       final events = await loop.run(chat, 'x').toList();
 
-      expect(
-        events.whereType<TextChunkEvent>().map((e) => e.text).toList(),
-        ['hi'],
-        reason: 'empty tokens dropped, no blank TextChunkEvent',
-      );
+      expect(events.whereType<TextChunkEvent>().map((e) => e.text).toList(), [
+        'hi',
+      ], reason: 'empty tokens dropped, no blank TextChunkEvent');
       expect((events.last as DoneEvent).text, 'hi');
     });
 
@@ -1193,6 +1197,124 @@ void main() {
 
       expect(chat.received.single.hasImage, isTrue);
       expect(chat.received.single.imageBytes, bytes);
+    });
+  });
+
+  group('AgentLoop — audio input', () {
+    AgentLoop loop() => AgentLoop(
+      registry: SkillRegistry(),
+      executors: [_FakeExecutor(SkillType.textOnly)],
+    );
+
+    test('sends the recording on the turn\'s user message', () async {
+      final chat = _FakeAgentChat([
+        const TextResponse('Paris'),
+      ], supportAudio: true);
+      final audio = Uint8List.fromList([82, 73, 70, 70]);
+
+      await loop().run(chat, 'answer briefly', audioBytes: audio).toList();
+
+      final message = chat.received.single;
+      expect(message.hasAudio, isTrue);
+      expect(message.audioBytes, audio);
+      expect(message.text, 'answer briefly');
+      expect(message.isUser, isTrue);
+      expect(message.hasImage, isFalse);
+    });
+
+    test('carries an image and a recording on the same message', () async {
+      final chat = _FakeAgentChat(
+        [const TextResponse('a cat')],
+        supportImage: true,
+        supportAudio: true,
+      );
+      final image = Uint8List.fromList([1, 2]);
+      final audio = Uint8List.fromList([3, 4]);
+
+      await loop().run(chat, '', imageBytes: image, audioBytes: audio).toList();
+
+      final message = chat.received.single;
+      expect(message.imageBytes, image);
+      expect(message.images, [image]);
+      expect(message.audioBytes, audio);
+    });
+
+    test(
+      'takes an empty text when the recording carries the question',
+      () async {
+        final chat = _FakeAgentChat([
+          const TextResponse('Paris'),
+        ], supportAudio: true);
+
+        final events = await loop()
+            .run(chat, '', audioBytes: Uint8List.fromList([1]))
+            .toList();
+
+        expect(chat.received.single.text, '');
+        expect((events.last as DoneEvent).text, 'Paris');
+      },
+    );
+
+    test(
+      'fails, and writes nothing to history, without supportAudio',
+      () async {
+        // The FFI session drops audio it was not set up for, and the model
+        // answers as if nothing was said. The guard makes that an error.
+        final chat = _FakeAgentChat([const TextResponse('never reached')]);
+
+        await expectLater(
+          loop()
+              .run(chat, 'what did I say?', audioBytes: Uint8List.fromList([1]))
+              .toList(),
+          throwsArgumentError,
+        );
+        expect(chat.received, isEmpty);
+        expect(chat.generateCallCount, 0);
+      },
+    );
+
+    test('fails on empty audioBytes', () async {
+      final chat = _FakeAgentChat([
+        const TextResponse('never reached'),
+      ], supportAudio: true);
+
+      await expectLater(
+        loop().run(chat, '', audioBytes: Uint8List(0)).toList(),
+        throwsArgumentError,
+      );
+      expect(chat.received, isEmpty);
+    });
+
+    test('tool-result follow-ups in the turn carry no audio', () async {
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('missing-skill')],
+        [const TextResponse('done')],
+      ], supportAudio: true);
+      final audio = Uint8List.fromList([5, 6, 7]);
+
+      await loop().run(chat, '', audioBytes: audio).toList();
+
+      expect(chat.received.first.audioBytes, audio);
+      expect(chat.toolResponses, isNotEmpty);
+      for (final response in chat.toolResponses) {
+        expect(response.hasAudio, isFalse);
+      }
+    });
+
+    test('AgentSession.ask forwards audioBytes to the loop', () async {
+      final chat = _FakeAgentChat([
+        const TextResponse('ok'),
+      ], supportAudio: true);
+      final session = AgentSession(
+        chat: chat,
+        registry: SkillRegistry(),
+        executors: [_FakeExecutor(SkillType.textOnly)],
+      );
+      final audio = Uint8List.fromList([8, 8]);
+
+      await session.ask('', audioBytes: audio).toList();
+
+      expect(chat.received.single.audioBytes, audio);
     });
   });
 }

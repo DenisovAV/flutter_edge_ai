@@ -86,12 +86,21 @@ class _FakeResponder {
   int stopCalls = 0;
   bool stopThrows = false;
   int respondCalls = 0;
+  int audioCalls = 0;
+  Uint8List? heard;
 
-  VoiceResponder build() => VoiceResponder(
+  VoiceResponder build({bool hearsAudio = true}) => VoiceResponder(
     respond: (userText) {
       respondCalls++;
       return ctrl.stream;
     },
+    respondToAudio: hearsAudio
+        ? (pcm) {
+            audioCalls++;
+            heard = pcm;
+            return ctrl.stream;
+          }
+        : null,
     stop: () async {
       stopCalls++;
       if (stopThrows) throw StateError('stop boom');
@@ -827,6 +836,139 @@ void main() {
         expect(events.whereType<VoiceTurnInterruptedEvent>(), isEmpty);
       },
     );
+  });
+
+  group('runAudioTurn (the recording goes to the model, no STT)', () {
+    test('emits ReplyText(s) → ReplyAudio → Complete with no transcript, and '
+        'never calls the recognizer', () async {
+      final r = _FakeResponder();
+      final recognizer = _FakeRecognizer('never used');
+      final session = VoiceSession.custom(
+        recognizer: recognizer,
+        responder: r.build(),
+        synthesizer: _FakeSynth(),
+      );
+      final pcm = _pcm();
+      final events = <VoiceEvent>[];
+      final sub = session.runAudioTurn(pcm).listen(events.add);
+      await Future<void>.delayed(Duration.zero);
+      r.ctrl.add('Paris');
+      r.ctrl.add('.');
+      await r.ctrl.close();
+      await sub.asFuture<void>();
+
+      expect(events.map((e) => e.runtimeType).toList(), [
+        VoiceReplyTextEvent,
+        VoiceReplyTextEvent,
+        VoiceReplyAudioEvent,
+        VoiceTurnCompleteEvent,
+      ]);
+      final complete = events.last as VoiceTurnCompleteEvent;
+      expect(complete.transcript, isEmpty);
+      expect(complete.replyText, 'Paris.');
+      expect((events[2] as VoiceReplyAudioEvent).isFinal, isTrue);
+      expect(recognizer.calls, 0);
+      expect(r.audioCalls, 1);
+      expect(r.respondCalls, 0);
+      expect(r.heard, same(pcm));
+    });
+
+    test(
+      'with streamAudio: clause chunks, then the zero-byte final marker',
+      () async {
+        final r = _FakeResponder();
+        final synth = _RecordingSynth();
+        final session = VoiceSession.custom(
+          recognizer: _FakeRecognizer('never used'),
+          responder: r.build(),
+          synthesizer: synth,
+          streamAudio: true,
+        );
+        final events = <VoiceEvent>[];
+        final sub = session.runAudioTurn(_pcm()).listen(events.add);
+        await Future<void>.delayed(Duration.zero);
+        r.ctrl.add('Paris is the capital. ');
+        await Future<void>.delayed(Duration.zero);
+        r.ctrl.add('It is in France.');
+        await r.ctrl.close();
+        await sub.asFuture<void>();
+
+        expect(events.whereType<VoiceTranscriptEvent>(), isEmpty);
+        expect(synth.synthesized, [
+          'Paris is the capital. ',
+          'It is in France.',
+        ]);
+        final audio = events.whereType<VoiceReplyAudioEvent>().toList();
+        expect(audio.map((a) => a.isFinal), [false, false, true]);
+        expect(audio.last.pcm, isEmpty);
+        final complete = events.last as VoiceTurnCompleteEvent;
+        expect(complete.transcript, isEmpty);
+        expect(complete.replyText, 'Paris is the capital. It is in France.');
+      },
+    );
+
+    test('interrupt during the reply stops the responder and ends the turn '
+        'interrupted, with an empty transcript', () async {
+      final r = _FakeResponder();
+      final session = VoiceSession.custom(
+        recognizer: _FakeRecognizer('never used'),
+        responder: r.build(),
+        synthesizer: _FakeSynth(),
+      );
+      final events = <VoiceEvent>[];
+      session.runAudioTurn(_pcm()).listen(events.add);
+      await Future<void>.delayed(Duration.zero);
+      r.ctrl.add('Par');
+      await Future<void>.delayed(Duration.zero);
+      await session.interrupt();
+
+      expect(r.stopCalls, 1);
+      expect(events.whereType<VoiceReplyAudioEvent>(), isEmpty);
+      final terminal = events.last as VoiceTurnInterruptedEvent;
+      expect(terminal.transcript, isEmpty);
+      expect(terminal.partialReplyText, 'Par');
+      expect(session.isTurnInFlight, isFalse);
+    });
+
+    test('a responder error becomes the stream error', () async {
+      final r = _FakeResponder();
+      final session = VoiceSession.custom(
+        recognizer: _FakeRecognizer('never used'),
+        responder: r.build(),
+        synthesizer: _FakeSynth(),
+      );
+      final done = expectLater(
+        session.runAudioTurn(_pcm()),
+        emitsThrough(emitsError(isA<StateError>())),
+      );
+      await Future<void>.delayed(Duration.zero);
+      r.ctrl.addError(StateError('the model cannot hear'));
+      await r.ctrl.close();
+      await done;
+      expect(session.isTurnInFlight, isFalse);
+    });
+
+    test('a responder without respondToAudio throws StateError', () {
+      final session = VoiceSession.custom(
+        recognizer: _FakeRecognizer('hi'),
+        responder: _FakeResponder().build(hearsAudio: false),
+        synthesizer: _FakeSynth(),
+      );
+      expect(() => session.runAudioTurn(_pcm()), throwsStateError);
+      expect(session.isTurnInFlight, isFalse);
+    });
+
+    test('one turn in flight, whichever kind', () {
+      final r = _FakeResponder();
+      final session = VoiceSession.custom(
+        recognizer: _FakeRecognizer('hi'),
+        responder: r.build(),
+        synthesizer: _FakeSynth(),
+      );
+      session.runAudioTurn(_pcm()).listen((_) {});
+      expect(() => session.runTurn(_pcm()), throwsStateError);
+      expect(() => session.runAudioTurn(_pcm()), throwsStateError);
+    });
   });
 }
 

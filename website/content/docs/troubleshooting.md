@@ -326,6 +326,28 @@ build for a platform, then cache it under `~/.cache/flutter_gemma/native/`
   path; `flutter_edge_ai_litertlm` and `flutter_edge_ai_onnx` take it silently. If a
   new release "did not take", look for that directory first.
 
+## Another package bundles its own LiteRT-LM
+
+**`The LiteRT-LM library at … is not the one flutter_edge_ai_litertlm ships (it
+lacks litert_lm_engine_settings_set_kernel_batch_size)`** — a `StateError` (an
+`EmbeddingLoadException` for an embedder) when a `.litertlm` model, an embedder
+or speech loads. Another package in the app ships its own LiteRT-LM under the
+same library name — `llamadart` does by default. On iOS that app still builds:
+Flutter renames our framework to `LiteRtLm1.framework`, and `LiteRtLm.framework`
+is the other package's build, which flutter_edge_ai_litertlm refuses rather than
+binds. On Android, Linux and Windows the build fails instead.
+
+For llamadart, leave its LiteRT-LM runtime out in the app's `pubspec.yaml` (the
+workspace root's, if the app is a workspace member), then run `flutter clean`
+once:
+
+```
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+```
+
 ## Embeddings
 
 - **`EmbeddingLoadException` naming `web/litert_embeddings.js`** on web, at the first `getActiveEmbedder()` after upgrading to `flutter_edge_ai_litertlm` 1.13.0. The LiteRT.js bundle changed its API, and your app's `web/` still holds the copy of an earlier version. Copy all four files again from the package's `web/` (`litert_embeddings.js`, `sentencepiece.js`, `litert.js`, `tensorflow.js`). See [Installation → Web](/docs/installation#web).

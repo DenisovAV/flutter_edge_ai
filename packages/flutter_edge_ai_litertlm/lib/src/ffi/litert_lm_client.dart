@@ -16,6 +16,7 @@ import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
+import 'litert_lm_runtime_check.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
@@ -499,6 +500,9 @@ class LiteRtLmFfiClient {
   String? get nativeLogPath => _nativeLogPath;
 
   /// Load the native library and create bindings.
+  ///
+  /// Refuses another package's LiteRT-LM under our library's name with a
+  /// [StateError] ([checkOwnLiteRtLmBuild]) before anything is bound to it.
   void _ensureBindings() {
     if (_bindings != null) return;
 
@@ -513,14 +517,14 @@ class LiteRtLmFfiClient {
       // phase in example/ios/Runner.xcodeproj/project.pbxproj) — needed
       // because gpu_registry.cc uses relative-basename dlopen which iOS
       // dyld 4 cannot resolve from .framework names alone.
-      lib = DynamicLibrary.open(
-        '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm',
-      );
+      const libPath = '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm';
+      lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
       proxyLib = DynamicLibrary.open(
         '@executable_path/Frameworks/StreamProxy.framework/StreamProxy',
       );
     } else if (Platform.isMacOS) {
-      lib = DynamicLibrary.open('LiteRtLm.framework/LiteRtLm');
+      const libPath = 'LiteRtLm.framework/LiteRtLm';
+      lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
       proxyLib = DynamicLibrary.open('StreamProxy.framework/StreamProxy');
     } else if (Platform.isLinux) {
       // Load order matters: libLiteRt.so must be loaded first with
@@ -575,7 +579,8 @@ class LiteRtLmFfiClient {
           throw Exception('Failed to load $fullPath with RTLD_GLOBAL');
         }
       }
-      lib = DynamicLibrary.open('libLiteRtLm.so');
+      const libPath = 'libLiteRtLm.so';
+      lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isWindows) {
       // Preload LiteRt.dll first so the WebGPU accelerator and TopK sampler
       // can resolve LiteRt* C API + their own exports through the process
@@ -600,7 +605,8 @@ class LiteRtLmFfiClient {
           throw Exception('Failed to preload $name (LoadLibraryEx)');
         }
       }
-      lib = DynamicLibrary.open('LiteRtLm.dll');
+      const libPath = 'LiteRtLm.dll';
+      lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isAndroid) {
       // LiteRT-LM ships native libs only for android_arm64 — bail with a
       // typed message before dlopen surfaces a generic ENOENT on x86_64
@@ -627,7 +633,11 @@ class LiteRtLmFfiClient {
       // because the two race for "first to open", and the loser used to decide
       // the outcome silently. The helper also verifies the load rather than
       // trusting a non-NULL handle — see its header and #447.
-      lib = openLiteRtLmRequiringDefaultScope('libLiteRtLm.so');
+      const libPath = 'libLiteRtLm.so';
+      lib = requireOwnLiteRtLmBuild(
+        openLiteRtLmRequiringDefaultScope(libPath),
+        libPath,
+      );
     } else {
       throw UnsupportedError(
         'Platform not supported for FFI: ${Platform.operatingSystem}',

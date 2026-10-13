@@ -23,6 +23,7 @@ import 'package:flutter_edge_ai/engine_io.dart';
 import 'package:ffi/ffi.dart';
 
 import 'litert_default_scope.dart';
+import 'litert_lm_runtime_check.dart';
 
 // ----- Opaque handle typedefs ------------------------------------------------
 
@@ -207,6 +208,20 @@ List<String> _candidatesFor(String hostDir) => hostNativeLibraryCandidates(
   ],
 );
 
+/// [DynamicLibrary.open] of [path], or null when it does not load.
+DynamicLibrary? _openOrNull(String path) {
+  try {
+    return DynamicLibrary.open(path);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Opens the library that carries the LiteRT C API here: the LiteRT-LM
+/// library on Apple and Android, Google's libLiteRt on Linux and Windows.
+///
+/// Where it is the LiteRT-LM library, another package's LiteRT-LM under that
+/// name is refused with a [StateError] ([checkOwnLiteRtLmBuild]).
 DynamicLibrary _openLiteRt() {
   if (Platform.isMacOS || Platform.isIOS) {
     // libLiteRt is statically linked into LiteRtLm.framework on Apple
@@ -214,9 +229,11 @@ DynamicLibrary _openLiteRt() {
     // same dylib. The `@executable_path/../Frameworks/...` path resolves
     // at runtime; outside an app bundle we fall back to a dev prebuilt.
     const bundled = 'LiteRtLm.framework/LiteRtLm';
-    try {
-      return DynamicLibrary.open(bundled);
-    } catch (_) {}
+    // Checked outside the open's error handling: a foreign framework is
+    // refused, never skipped for a dev prebuilt below, which would load on a
+    // developer's Mac and hide the problem until the app reached a user.
+    final bundledLib = _openOrNull(bundled);
+    if (bundledLib != null) return requireOwnLiteRtLmBuild(bundledLib, bundled);
 
     // iOS always resolves the bundled framework; it has no dev checkout and no
     // ~/Library/Caches. Offering it macOS .dylib paths would make the failure
@@ -234,14 +251,16 @@ DynamicLibrary _openLiteRt() {
       // Existence-check first so the message below can tell "no such file"
       // from "found it but it would not load"...
       if (!File(p).existsSync()) continue;
-      try {
-        return DynamicLibrary.open(p);
-      } catch (_) {
-        // ...and keep going when a candidate exists but will not load — wrong
-        // arch, missing companion, stale build. Without this the first
-        // existing-but-broken candidate aborts the search and the remaining
-        // ones, including the version-validated hook cache, are never tried.
-      }
+      // ...and keep going when a candidate exists but will not load — wrong
+      // arch, missing companion, stale build. Without this the first
+      // existing-but-broken candidate aborts the search and the remaining
+      // ones, including the version-validated hook cache, are never tried.
+      final lib = _openOrNull(p);
+      if (lib == null) continue;
+      // A dev prebuilt that loads but is not a build of ours is the same kind
+      // of candidate: the failure below names it, and the next one is tried.
+      if (lib.providesSymbol(liteRtLmOwnBuildSymbol)) return lib;
+      tried.last = '$p (lacks $liteRtLmOwnBuildSymbol)';
     }
     throw UnsupportedError(
       'LiteRtLm framework/dylib not found or would not load. Tried (cwd: '
@@ -274,12 +293,20 @@ DynamicLibrary _openLiteRt() {
         'MediaPipe `.task` text inference still works on this ABI.',
       );
     }
-    return openLiteRtLmPreferringDefaultScope('libLiteRtLm.so');
+    const path = 'libLiteRtLm.so';
+    return requireOwnLiteRtLmBuild(
+      openLiteRtLmPreferringDefaultScope(path),
+      path,
+    );
   }
   // Linux and Windows need no equivalent: glibc promotes an already-loaded
   // object when a later dlopen asks for RTLD_GLOBAL, and PE modules are
   // reachable through the loaded-module list regardless. See the header of
   // litert_default_scope.dart.
+  //
+  // Nor the own-build check: these open Google's prebuilt libLiteRt, which
+  // carries no symbol of ours. Their libLiteRtLm is checked where the LLM
+  // client and the EmbeddingGemma 2 pass open it.
   if (Platform.isLinux) return DynamicLibrary.open('libLiteRt.so');
   if (Platform.isWindows) return DynamicLibrary.open('LiteRt.dll');
   throw UnsupportedError(

@@ -13,7 +13,10 @@ import 'dart:typed_data';
 import '../embedding/common_embedding_model.dart'
     show CommonEmbeddingModel, EmbedderReplacement;
 import '../embedding/embedding_exceptions.dart'
-    show EmbedderClosedException, EmbeddingModalityNotLoadedException;
+    show
+        EmbedderClosedException,
+        EmbeddingCancelledException,
+        EmbeddingModalityNotLoadedException;
 import '../embedding/embedding_input.dart';
 import '../embedding/embedding_model.dart';
 import '../embedding/task_type.dart';
@@ -218,7 +221,9 @@ Future<Decider> createEmbeddingDecider(
     );
   }
 
+  // The runner checks the token before it starts the fit, and during it.
   final fit = await runner.runDeciderFit(
+    cancelToken: cancelToken,
     DeciderFitRequest(
       dimension: d,
       optionCount: opts.length,
@@ -238,7 +243,12 @@ Future<Decider> createEmbeddingDecider(
     ),
   );
 
-  return EmbeddingDecider(
+  // A cancel that lands as the fit returns still fails the call: a cancelled
+  // createDecider never hands back a decider.
+  if (cancelToken?.isCancelled ?? false) {
+    throw const EmbeddingCancelledException('createDecider was cancelled.');
+  }
+  final decider = EmbeddingDecider(
     embedder: embedder,
     embedderId: embedderId,
     options: opts,
@@ -255,6 +265,15 @@ Future<Decider> createEmbeddingDecider(
     fitTime: fit.fitTime,
     linearIterations: fit.linearIterations,
   );
+  // The embedder may have been closed while the fit ran. A decider that
+  // could never answer is not returned; one on a model core built takes
+  // core's replacement at its first choose.
+  if (decider.isClosed) {
+    throw const EmbedderClosedException(
+      'The embedding model was closed while the decider was being created.',
+    );
+  }
+  return decider;
 }
 
 void _validateOptions(
@@ -404,7 +423,7 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
 /// arrives unchanged.
 final class EmbeddingDecider extends Decider {
   EmbeddingDecider({
-    required EmbeddingModel embedder,
+    required this._embedder,
     required this.embedderId,
     required List<DeciderOption> options,
     required this.method,
@@ -420,8 +439,7 @@ final class EmbeddingDecider extends Decider {
     this.fitTime,
     this.linearIterations,
     this.storedMediaExamples,
-  }) : _embedder = embedder,
-       options = List.unmodifiable(options),
+  }) : options = List.unmodifiable(options),
        _index = {for (var o = 0; o < options.length; o++) options[o].id: o},
        _allCandidates = List.unmodifiable(
          List<int>.generate(options.length, (o) => o),

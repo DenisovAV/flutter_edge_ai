@@ -1,6 +1,8 @@
 // Fitting an embedding decider from embedded option inputs: centroids, the
 // optional linear layer and the calibration. Pure data in, pure data out, so
-// it runs on a background isolate (fit_runner_io.dart) or inline on web.
+// it runs on an isolate of its own (fit_runner_io.dart) or, on web, on the
+// page's thread with a pacer that gives the event loop a turn every few
+// milliseconds (fit_runner_web.dart). Every loop over rows asks the pacer.
 //
 // The reference for every number is the decision measurements' `dq1.py`
 // (2026-10-13): `centroids`, the C3ii cross-fit with `keep95`, `fit_linear`,
@@ -11,6 +13,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'dense_kernel.dart';
+import 'fit_pacer.dart';
 import 'softmax_regression.dart';
 
 /// Weight decay of the `linear` method. dq1: held-out rows and cross-fitting
@@ -103,26 +106,39 @@ final class DeciderFit {
   final Duration fitTime;
 }
 
-/// Fits [request]. Throws [ArgumentError] when the calibration cannot be
-/// fitted from these inputs.
-DeciderFit fitDecider(DeciderFitRequest request) {
+/// Fits [request], asking [pacer] (when given) between units of work.
+/// Throws [ArgumentError] when the calibration cannot be fitted from these
+/// inputs, [StateError] when a fitted value is not finite, and whatever a
+/// pause throws (a cancel).
+Future<DeciderFit> fitDecider(
+  DeciderFitRequest request, {
+  FitPacer? pacer,
+}) async {
   final watch = Stopwatch()..start();
   final d = request.dimension;
   final c = request.optionCount;
   final x = request.inputs;
   final labels = request.labels;
 
-  final centroids64 = optionCentroids(x, labels, d, c, ids: request.optionIds);
+  final centroids64 = await optionCentroids(
+    x,
+    labels,
+    d,
+    c,
+    ids: request.optionIds,
+    pacer: pacer,
+  );
 
   SoftmaxFit? linear;
   if (request.linear) {
-    linear = fitSoftmaxRegression(
+    linear = await fitSoftmaxRegression(
       x: x,
       labels: labels,
       dimension: d,
       classes: c,
       decay: linearWeightDecay,
       simd: request.simd,
+      pacer: pacer,
     );
   }
 
@@ -134,7 +150,7 @@ DeciderFit fitDecider(DeciderFitRequest request) {
     case 'minSimilarity':
       threshold = request.fixedThreshold;
     case 'crossFit':
-      final signal = crossFitSignal(
+      final signal = await crossFitSignal(
         x,
         labels,
         request.ranks,
@@ -142,6 +158,7 @@ DeciderFit fitDecider(DeciderFitRequest request) {
         c,
         request.simd,
         ids: request.optionIds,
+        pacer: pacer,
       );
       threshold = keepThreshold(signal, request.keep!);
     case 'labelled':
@@ -160,6 +177,7 @@ DeciderFit fitDecider(DeciderFitRequest request) {
               : _linearLogit(lx, i * d, linear, o, d, c);
         }
         signal[i] = best;
+        if (pauseFor(pacer) case final turn?) await turn;
       }
       final ok = <bool>[
         for (var i = 0; i < rows; i++) _argmax(scores, i * c, c) == ly[i],
@@ -175,7 +193,7 @@ DeciderFit fitDecider(DeciderFitRequest request) {
       }
       // After the threshold: rows answered too poorly for any threshold are
       // refused by that, the more useful message.
-      temperature = fitTemperature(scores, ly, c);
+      temperature = await fitTemperature(scores, ly, c, pacer: pacer);
     default:
       throw ArgumentError.value(request.calibration, 'calibration');
   }
@@ -271,24 +289,23 @@ void checkFittedParameters({
 /// Throws [StateError] for an option whose inputs cancel out: their mean is
 /// the zero vector, which has no direction to compare with (dq1 divides by
 /// its zero norm and gets NaN). [ids] name the options in that message.
-Float64List optionCentroids(
+Future<Float64List> optionCentroids(
   Float64List x,
   Int32List labels,
   int d,
   int c, {
   bool Function(int row)? include,
   List<String>? ids,
-}) {
+  FitPacer? pacer,
+}) async {
   final sums = Float64List(c * d);
   final counts = Int32List(c);
   for (var i = 0; i < labels.length; i++) {
     if (include != null && !include(i)) continue;
     final o = labels[i];
     counts[o]++;
-    final so = o * d, xo = i * d;
-    for (var j = 0; j < d; j++) {
-      sums[so + j] += x[xo + j];
-    }
+    _addRow(sums, o * d, x, i * d, d);
+    if (pauseFor(pacer) case final turn?) await turn;
   }
   for (var o = 0; o < c; o++) {
     if (counts[o] == 0) {
@@ -320,7 +337,7 @@ Float64List optionCentroids(
 /// dq1's out-of-fold signal (b) for the C3 calibrations: input `i` of each
 /// option sits in fold `ranks[i] % 5`; each held-out input's highest cosine to
 /// the centroids of the other four folds.
-Float64List crossFitSignal(
+Future<Float64List> crossFitSignal(
   Float64List x,
   Int32List labels,
   Int32List ranks,
@@ -328,7 +345,8 @@ Float64List crossFitSignal(
   int c,
   bool? simd, {
   List<String>? ids,
-}) {
+  FitPacer? pacer,
+}) async {
   final rows = labels.length;
   final out = Float64List(rows);
   final kernel = DenseKernel(d: d, columns: c, simd: simd);
@@ -340,26 +358,19 @@ Float64List crossFitSignal(
         if (ranks[i] % 5 == f) i,
     ];
     if (held.isEmpty) continue;
-    final cf = optionCentroids(
+    final cf = await optionCentroids(
       x,
       labels,
       d,
       c,
       include: (i) => ranks[i] % 5 != f,
       ids: ids,
+      pacer: pacer,
     );
-    for (var o = 0; o < c; o++) {
-      for (var j = 0; j < d; j++) {
-        transposed[j * kernel.cp + o] = cf[o * d + j];
-      }
-    }
+    _transpose(cf, transposed, d, c, kernel.cp);
     for (final i in held) {
-      kernel.multiply(x, i * d, transposed, z);
-      var best = double.negativeInfinity;
-      for (var o = 0; o < c; o++) {
-        if (z[o] > best) best = z[o];
-      }
-      out[i] = best;
+      out[i] = _bestCosine(kernel, x, i * d, transposed, z, c);
+      if (pauseFor(pacer) case final turn?) await turn;
     }
   }
   return out;
@@ -393,7 +404,12 @@ double keepThreshold(Float64List signal, double keep) {
 /// flat distribution fits best. (One labelled row always lands on an end
 /// when it is answered right; when it is answered wrong the error budget
 /// refuses it.) Throws [StateError] for a score that is not finite.
-double fitTemperature(Float64List scores, Int32List labels, int c) {
+Future<double> fitTemperature(
+  Float64List scores,
+  Int32List labels,
+  int c, {
+  FitPacer? pacer,
+}) async {
   for (final v in scores) {
     if (!v.isFinite) {
       throw StateError(
@@ -428,6 +444,7 @@ double fitTemperature(Float64List scores, Int32List labels, int c) {
       }
       final q = z[labels[i]] / sum;
       nll += -math.log(q > 1e-12 ? q : 1e-12);
+      if (pauseFor(pacer) case final turn?) await turn;
     }
     nll /= rows;
     if (nll < bestNll) {
@@ -475,6 +492,39 @@ double errorBudgetThreshold(Float64List signal, List<bool> ok, double budget) {
     if (errors / k <= budget) last = value;
   }
   return last ?? 1.0 + 1e-9;
+}
+
+/// `sums[so, so + d) += x[xo, xo + d)`.
+void _addRow(Float64List sums, int so, Float64List x, int xo, int d) {
+  for (var j = 0; j < d; j++) {
+    sums[so + j] += x[xo + j];
+  }
+}
+
+/// [cf] (c × d) transposed into [out] (d × cp).
+void _transpose(Float64List cf, Float64List out, int d, int c, int cp) {
+  for (var o = 0; o < c; o++) {
+    for (var j = 0; j < d; j++) {
+      out[j * cp + o] = cf[o * d + j];
+    }
+  }
+}
+
+/// Row [xo] of [x]'s highest cosine to the c centroids in [transposed].
+double _bestCosine(
+  DenseKernel kernel,
+  Float64List x,
+  int xo,
+  Float64List transposed,
+  Float64List z,
+  int c,
+) {
+  kernel.multiply(x, xo, transposed, z);
+  var best = double.negativeInfinity;
+  for (var o = 0; o < c; o++) {
+    if (z[o] > best) best = z[o];
+  }
+  return best;
 }
 
 double _linearLogit(

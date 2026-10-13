@@ -8,11 +8,21 @@
 // optimiser below is a line-by-line port of `torch/optim/lbfgs.py` (torch
 // 2.x: `_cubic_interpolate`, `_strong_wolfe`, `LBFGS.step`) in float64, so a
 // fit here follows the reference's path up to summation order.
+//
+// Memory: the L-BFGS history holds 20 pairs of parameter-sized vectors, so
+// about 2 · 20 · (d·C + C) · 8 bytes — 37 MB at d = 768 and 150 options,
+// ~0.5 GB at 2000 — allocated once as it fills and then reused as a ring.
+// Each objective evaluation allocates one gradient (kept by the line search).
+//
+// Every loop over rows, and the two-loop recursion over the history, asks a
+// [FitPacer] whether to pause, so the fit can share a thread (web); without
+// one it never awaits.
 
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'dense_kernel.dart';
+import 'fit_pacer.dart';
 
 /// The fitted layer: `logits = x · W + b`.
 final class SoftmaxFit {
@@ -40,7 +50,7 @@ final class SoftmaxFit {
 
 /// Fits softmax regression on [x] (n × d row-major) and [labels] (each in
 /// [0, classes)), weight decay [decay].
-SoftmaxFit fitSoftmaxRegression({
+Future<SoftmaxFit> fitSoftmaxRegression({
   required Float64List x,
   required Int32List labels,
   required int dimension,
@@ -49,7 +59,8 @@ SoftmaxFit fitSoftmaxRegression({
   int maxIter = 500,
   int historySize = 20,
   bool? simd,
-}) {
+  FitPacer? pacer,
+}) async {
   final objective = SoftmaxObjective(
     x: x,
     labels: labels,
@@ -59,11 +70,12 @@ SoftmaxFit fitSoftmaxRegression({
     simd: simd,
   );
   final theta = Float64List(objective.parameterCount);
-  final result = minimizeLbfgs(
-    objective.evaluate,
+  final result = await minimizeLbfgs(
+    (at, grad) => objective.evaluate(at, grad, pacer: pacer),
     theta,
     maxIter: maxIter,
     historySize: historySize,
+    pacer: pacer,
   );
   final wCount = dimension * classes;
   return SoftmaxFit(
@@ -109,44 +121,73 @@ final class SoftmaxObjective {
 
   int get parameterCount => dimension * classes + classes;
 
-  /// The objective at [theta]; writes its gradient into [grad].
-  double evaluate(Float64List theta, Float64List grad) {
-    final d = dimension, c = classes, cp = _kernel.cp;
+  /// The objective at [theta]; writes its gradient into [grad]. Asks [pacer]
+  /// after every row.
+  Future<double> evaluate(
+    Float64List theta,
+    Float64List grad, {
+    FitPacer? pacer,
+  }) async {
+    _load(theta);
+    final gb = Float64List(classes);
     final n = labels.length;
-    final w = _w, g = _g, z = _z, r = _r;
-    final biasAt = d * c;
+    var loss = 0.0;
+    for (var i = 0; i < n; i++) {
+      loss += _row(i, theta, gb);
+      if (pauseFor(pacer) case final turn?) await turn;
+    }
+    final penalty = _gradient(theta, grad, gb);
+    return loss / n + decay * penalty;
+  }
+
+  /// W into the padded kernel matrix; the gradient accumulator cleared.
+  void _load(Float64List theta) {
+    final d = dimension, c = classes, cp = _kernel.cp;
+    final w = _w;
     for (var j = 0; j < d; j++) {
       for (var k = 0; k < c; k++) {
         w[j * cp + k] = theta[j * c + k];
       }
     }
-    g.fillRange(0, g.length, 0);
-    final gb = Float64List(c);
-    var loss = 0.0;
-    for (var i = 0; i < n; i++) {
-      final xo = i * d;
-      _kernel.multiply(x, xo, w, z);
-      var m = double.negativeInfinity;
-      for (var k = 0; k < c; k++) {
-        final v = z[k] + theta[biasAt + k];
-        z[k] = v;
-        if (v > m) m = v;
-      }
-      var sum = 0.0;
-      for (var k = 0; k < c; k++) {
-        final e = math.exp(z[k] - m);
-        r[k] = e;
-        sum += e;
-      }
-      final y = labels[i];
-      loss += m + math.log(sum) - z[y];
-      for (var k = 0; k < c; k++) {
-        final v = (r[k] / sum - (k == y ? 1.0 : 0.0)) / n;
-        r[k] = v;
-        gb[k] += v;
-      }
-      _kernel.addOuter(x, xo, r, g);
+    _g.fillRange(0, _g.length, 0);
+  }
+
+  /// Row [i]'s cross-entropy; adds its gradient to the accumulator and [gb].
+  double _row(int i, Float64List theta, Float64List gb) {
+    final d = dimension, c = classes;
+    final n = labels.length;
+    final z = _z, r = _r;
+    final biasAt = d * c;
+    final xo = i * d;
+    _kernel.multiply(x, xo, _w, z);
+    var m = double.negativeInfinity;
+    for (var k = 0; k < c; k++) {
+      final v = z[k] + theta[biasAt + k];
+      z[k] = v;
+      if (v > m) m = v;
     }
+    var sum = 0.0;
+    for (var k = 0; k < c; k++) {
+      final e = math.exp(z[k] - m);
+      r[k] = e;
+      sum += e;
+    }
+    final y = labels[i];
+    final loss = m + math.log(sum) - z[y];
+    for (var k = 0; k < c; k++) {
+      final v = (r[k] / sum - (k == y ? 1.0 : 0.0)) / n;
+      r[k] = v;
+      gb[k] += v;
+    }
+    _kernel.addOuter(x, xo, r, _g);
+    return loss;
+  }
+
+  /// The full gradient into [grad]; returns ‖W‖².
+  double _gradient(Float64List theta, Float64List grad, Float64List gb) {
+    final d = dimension, c = classes, cp = _kernel.cp;
+    final g = _g;
+    final biasAt = d * c;
     var penalty = 0.0;
     for (var j = 0; j < d; j++) {
       for (var k = 0; k < c; k++) {
@@ -158,7 +199,7 @@ final class SoftmaxObjective {
     for (var k = 0; k < c; k++) {
       grad[biasAt + k] = gb[k];
     }
-    return loss / n + decay * penalty;
+    return penalty;
   }
 }
 
@@ -170,10 +211,16 @@ final class LbfgsResult {
   final int evaluations;
 }
 
+/// An objective: its value at `x`, its gradient written into `grad`.
+typedef LbfgsObjective =
+    Future<double> Function(Float64List x, Float64List grad);
+
 /// `torch.optim.LBFGS(..., line_search_fn="strong_wolfe").step(closure)`,
-/// minimising [evaluate] from [x] in place.
-LbfgsResult minimizeLbfgs(
-  double Function(Float64List x, Float64List grad) evaluate,
+/// minimising [evaluate] from [x] in place. [pacer] is asked between the
+/// history entries of the two-loop recursion (and by [evaluate], if it
+/// takes one).
+Future<LbfgsResult> minimizeLbfgs(
+  LbfgsObjective evaluate,
   Float64List x, {
   double lr = 1,
   int maxIter = 500,
@@ -181,67 +228,67 @@ LbfgsResult minimizeLbfgs(
   double toleranceGrad = 1e-7,
   double toleranceChange = 1e-9,
   int historySize = 20,
-}) {
+  FitPacer? pacer,
+}) async {
   final maxEvals = maxEval ?? maxIter * 5 ~/ 4;
   final size = x.length;
   var flatGrad = Float64List(size);
-  var loss = evaluate(x, flatGrad);
+  var loss = await evaluate(x, flatGrad);
   var currentEvals = 1;
   if (_maxAbs(flatGrad) <= toleranceGrad) {
     return LbfgsResult(loss, 0, currentEvals);
   }
 
-  late Float64List d;
+  // The search direction. torch's `q` becomes `d`; one buffer serves both,
+  // since `s` (from the previous `d`) is computed before `q` is.
+  final d = Float64List(size);
   var t = 0.0;
-  final oldDirs = <Float64List>[];
-  final oldStps = <Float64List>[];
-  final ro = <double>[];
+  final history = _History(historySize, size);
   var hDiag = 1.0;
-  Float64List? prevFlatGrad;
+  final prevFlatGrad = Float64List(size);
   var prevLoss = loss;
   final al = Float64List(historySize);
+  final at = Float64List(size);
 
   var nIter = 0;
   while (nIter < maxIter) {
     nIter++;
     if (nIter == 1) {
-      d = _scaled(flatGrad, -1);
+      for (var i = 0; i < size; i++) {
+        d[i] = flatGrad[i] * -1;
+      }
       hDiag = 1;
     } else {
-      final y = Float64List(size);
-      final s = Float64List(size);
+      final y = history.nextDir;
+      final s = history.nextStep;
       for (var i = 0; i < size; i++) {
-        y[i] = flatGrad[i] - prevFlatGrad![i];
+        y[i] = flatGrad[i] - prevFlatGrad[i];
         s[i] = d[i] * t;
       }
       final ys = _dot(y, s);
       if (ys > 1e-10) {
-        if (oldDirs.length == historySize) {
-          oldDirs.removeAt(0);
-          oldStps.removeAt(0);
-          ro.removeAt(0);
-        }
-        oldDirs.add(y);
-        oldStps.add(s);
-        ro.add(1.0 / ys);
+        history.push(1.0 / ys);
         hDiag = ys / _dot(y, y);
       }
-      final numOld = oldDirs.length;
-      final q = _scaled(flatGrad, -1);
+      final numOld = history.length;
+      for (var i = 0; i < size; i++) {
+        d[i] = flatGrad[i] * -1;
+      }
       for (var i = numOld - 1; i >= 0; i--) {
-        al[i] = _dot(oldStps[i], q) * ro[i];
-        _axpy(q, -al[i], oldDirs[i]);
+        al[i] = _dot(history.step(i), d) * history.ro(i);
+        _axpy(d, -al[i], history.dir(i));
+        if (pauseFor(pacer) case final turn?) await turn;
       }
       for (var i = 0; i < size; i++) {
-        q[i] = q[i] * hDiag;
+        d[i] = d[i] * hDiag;
       }
-      d = q;
       for (var i = 0; i < numOld; i++) {
-        final beI = _dot(oldDirs[i], d) * ro[i];
-        _axpy(d, al[i] - beI, oldStps[i]);
+        final beI = _dot(history.dir(i), d) * history.ro(i);
+        _axpy(d, al[i] - beI, history.step(i));
+        if (pauseFor(pacer) case final turn?) await turn;
       }
     }
-    prevFlatGrad = Float64List.fromList(flatGrad);
+    prevFlatGrad.setAll(0, flatGrad);
     prevLoss = loss;
 
     if (nIter == 1) {
@@ -257,7 +304,7 @@ LbfgsResult minimizeLbfgs(
     final gtd = _dot(flatGrad, d);
     if (gtd > -toleranceChange) break;
 
-    final ls = _strongWolfe(
+    final ls = await _strongWolfe(
       evaluate,
       x,
       t,
@@ -265,6 +312,7 @@ LbfgsResult minimizeLbfgs(
       loss,
       flatGrad,
       gtd,
+      at,
       toleranceChange: toleranceChange,
       maxLs: maxEvals - currentEvals,
     );
@@ -284,39 +332,96 @@ LbfgsResult minimizeLbfgs(
   return LbfgsResult(loss, nIter, currentEvals);
 }
 
+/// torch's `old_dirs`, `old_stps` and `ro`, oldest first, as a ring of at
+/// most [capacity] pairs: the vectors are allocated while the history fills
+/// and reused after, never one pair per iteration.
+final class _History {
+  _History(this.capacity, this.size)
+    : _ro = Float64List(capacity),
+      nextDir = Float64List(size),
+      nextStep = Float64List(size);
+
+  final int capacity;
+  final int size;
+  final _dirs = <Float64List>[];
+  final _steps = <Float64List>[];
+  final Float64List _ro;
+  int _start = 0;
+
+  /// How many pairs are held.
+  int length = 0;
+
+  /// Where the next `y` and `s` are computed; [push] keeps them.
+  Float64List nextDir;
+  Float64List nextStep;
+
+  /// Keeps [nextDir] and [nextStep] with `ro` [ro] as the newest pair,
+  /// dropping the oldest when full; the buffers it drops (or new ones while
+  /// filling) become the next [nextDir] and [nextStep].
+  void push(double ro) {
+    if (length < capacity) {
+      _dirs.add(nextDir);
+      _steps.add(nextStep);
+      _ro[length] = ro;
+      length++;
+      nextDir = Float64List(size);
+      nextStep = Float64List(size);
+      return;
+    }
+    final oldest = _start;
+    final freedDir = _dirs[oldest];
+    final freedStep = _steps[oldest];
+    _dirs[oldest] = nextDir;
+    _steps[oldest] = nextStep;
+    _ro[oldest] = ro;
+    nextDir = freedDir;
+    nextStep = freedStep;
+    _start = (_start + 1) % capacity;
+  }
+
+  /// Pair [i], 0 the oldest.
+  Float64List dir(int i) => _dirs[(_start + i) % capacity];
+  Float64List step(int i) => _steps[(_start + i) % capacity];
+  double ro(int i) => _ro[(_start + i) % capacity];
+}
+
 typedef _Eval = ({double f, Float64List g});
 
-_Eval _directional(
-  double Function(Float64List x, Float64List grad) evaluate,
+/// The objective at `x + t·d`, evaluated at [at] (overwritten). The gradient
+/// is a new list: the line search keeps it.
+Future<_Eval> _directional(
+  LbfgsObjective evaluate,
   Float64List x,
   double t,
   Float64List d,
-) {
-  final at = Float64List(x.length);
+  Float64List at,
+) async {
   for (var i = 0; i < x.length; i++) {
     at[i] = x[i] + t * d[i];
   }
   final g = Float64List(x.length);
-  final f = evaluate(at, g);
+  final f = await evaluate(at, g);
   return (f: f, g: g);
 }
 
-({double f, Float64List g, double t, int evals}) _strongWolfe(
-  double Function(Float64List x, Float64List grad) evaluate,
+/// torch's `_strong_wolfe`. No gradient here is ever written after it is
+/// made, so the brackets hold them without torch's defensive clones.
+Future<({double f, Float64List g, double t, int evals})> _strongWolfe(
+  LbfgsObjective evaluate,
   Float64List x,
   double t,
   Float64List d,
   double f,
   Float64List g,
-  double gtd, {
+  double gtd,
+  Float64List at, {
   double c1 = 1e-4,
   double c2 = 0.9,
   double toleranceChange = 1e-9,
   int maxLs = 25,
-}) {
+}) async {
   final dNorm = _maxAbs(d);
-  g = Float64List.fromList(g);
-  var (f: fNew, g: gNew) = _directional(evaluate, x, t, d);
+  var (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at);
   var lsFuncEvals = 1;
   var gtdNew = _dot(gNew, d);
 
@@ -332,7 +437,7 @@ _Eval _directional(
     if (fNew > (f + c1 * t * gtd) || (lsIter > 1 && fNew >= fPrev)) {
       bracket = [tPrev, t];
       bracketF = [fPrev, fNew];
-      bracketG = [gPrev, Float64List.fromList(gNew)];
+      bracketG = [gPrev, gNew];
       bracketGtd = [gtdPrev, gtdNew];
       break;
     }
@@ -346,7 +451,7 @@ _Eval _directional(
     if (gtdNew >= 0) {
       bracket = [tPrev, t];
       bracketF = [fPrev, fNew];
-      bracketG = [gPrev, Float64List.fromList(gNew)];
+      bracketG = [gPrev, gNew];
       bracketGtd = [gtdPrev, gtdNew];
       break;
     }
@@ -365,9 +470,9 @@ _Eval _directional(
     );
     tPrev = tmp;
     fPrev = fNew;
-    gPrev = Float64List.fromList(gNew);
+    gPrev = gNew;
     gtdPrev = gtdNew;
-    (f: fNew, g: gNew) = _directional(evaluate, x, t, d);
+    (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at);
     lsFuncEvals++;
     gtdNew = _dot(gNew, d);
     lsIter++;
@@ -411,7 +516,7 @@ _Eval _directional(
       insufProgress = false;
     }
 
-    (f: fNew, g: gNew) = _directional(evaluate, x, t, d);
+    (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at);
     lsFuncEvals++;
     gtdNew = _dot(gNew, d);
     lsIter++;
@@ -419,7 +524,7 @@ _Eval _directional(
     if (fNew > (f + c1 * t * gtd) || fNew >= bracketF[lowPos]) {
       bracket[highPos] = t;
       bracketF[highPos] = fNew;
-      bracketG[highPos] = Float64List.fromList(gNew);
+      bracketG[highPos] = gNew;
       bracketGtd[highPos] = gtdNew;
       (lowPos, highPos) = bracketF[0] <= bracketF[1] ? (0, 1) : (1, 0);
     } else {
@@ -433,7 +538,7 @@ _Eval _directional(
       }
       bracket[lowPos] = t;
       bracketF[lowPos] = fNew;
-      bracketG[lowPos] = Float64List.fromList(gNew);
+      bracketG[lowPos] = gNew;
       bracketGtd[lowPos] = gtdNew;
     }
   }
@@ -502,14 +607,6 @@ void _axpy(Float64List y, double alpha, Float64List x) {
   for (var i = 0; i < y.length; i++) {
     y[i] += alpha * x[i];
   }
-}
-
-Float64List _scaled(Float64List v, double factor) {
-  final out = Float64List(v.length);
-  for (var i = 0; i < v.length; i++) {
-    out[i] = v[i] * factor;
-  }
-  return out;
 }
 
 /// torch's `v.abs().max()`, which is NaN when any entry is: a NaN gradient

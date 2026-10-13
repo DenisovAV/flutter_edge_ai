@@ -11,7 +11,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/src/interface.dart' show FlutterEdgeAiPlugin;
 import 'package:flutter_edge_ai/src/registry/embedding_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
 

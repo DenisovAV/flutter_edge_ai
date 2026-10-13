@@ -48,11 +48,11 @@ void main() {
     );
   });
 
-  test('a NaN in the gradient is not read as convergence', () {
+  test('a NaN in the gradient is not read as convergence', () async {
     // torch's `abs().max()` keeps a NaN, so the optimiser does not stop at
     // the start claiming a minimum; ignoring it returned the zero start as a
     // fitted layer with a finite loss.
-    double f(Float64List x, Float64List g) {
+    Future<double> f(Float64List x, Float64List g) async {
       var value = 0.0;
       for (var i = 0; i < x.length; i++) {
         value += x[i] * x[i];
@@ -63,7 +63,7 @@ void main() {
     }
 
     final x = Float64List(4);
-    final result = minimizeLbfgs(f, x);
+    final result = await minimizeLbfgs(f, x);
     expect(
       result.iterations,
       greaterThan(0),

@@ -136,9 +136,9 @@ void main() {
     expect(_exRows, 28);
   });
 
-  test('cross-fit signal and threshold equal dq1 C3ii (keep 0.95)', () {
+  test('cross-fit signal and threshold equal dq1 C3ii (keep 0.95)', () async {
     final x = _unitRows(0, _exRows);
-    final signal = crossFitSignal(
+    final signal = await crossFitSignal(
       x,
       Int32List.fromList(_exLabels),
       Int32List.fromList(_exRanks),
@@ -194,8 +194,8 @@ void main() {
     expect(abstained, greaterThan(0));
   });
 
-  test('softmax regression reaches dq1 fit_linear\'s optimum', () {
-    final fit = fitSoftmaxRegression(
+  test('softmax regression reaches dq1 fit_linear\'s optimum', () async {
+    final fit = await fitSoftmaxRegression(
       x: _unitRows(0, _exRows),
       labels: Int32List.fromList(_exLabels),
       dimension: _d,

@@ -27,9 +27,13 @@ final class DeciderMethod {
   /// measurements). Ranks by the regression's log-probability.
   ///
   /// The best measured method at 5–30 examples per option. Needs at least two
-  /// options. Fitting runs on a background isolate (inline on web) and costs
-  /// time that grows with options × inputs: see the README for measured fit
-  /// times.
+  /// options. Fitting costs time that grows with options × inputs and memory
+  /// of about 2 · 20 · (dimension · options + options) · 8 bytes for the
+  /// optimiser's history (37 MB at 768 × 150, ~0.5 GB at 2000 options).
+  /// Natively it runs on an isolate of its own, which a cancel kills; on web
+  /// it runs on the page's thread in slices of a few milliseconds, yielding
+  /// to the event loop between them. Measured fit times:
+  /// https://flutteredge.ai/docs/decisions.
   static const linear = DeciderMethod._('linear');
 
   /// Stable name, also used in artifacts: `centroid`, `linear`.

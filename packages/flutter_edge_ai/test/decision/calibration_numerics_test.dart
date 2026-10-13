@@ -62,9 +62,9 @@ void main() {
 
   group('fitTemperature', () {
     test('rows that are all answered right with room to spare cannot '
-        'calibrate: the best temperature is the grid floor', () {
-      expect(
-        () => fitTemperature(
+        'calibrate: the best temperature is the grid floor', () async {
+      await expectLater(
+        fitTemperature(
           Float64List.fromList([1, 0, 0.9, 0.1]),
           Int32List.fromList([0, 0]),
           2,
@@ -79,19 +79,22 @@ void main() {
       );
     });
 
-    test('rows answered wrong everywhere cannot calibrate: the ceiling', () {
-      expect(
-        () => fitTemperature(
-          Float64List.fromList([0, 1]),
-          Int32List.fromList([0]),
-          2,
-        ),
-        throwsArgumentError,
-      );
-    });
+    test(
+      'rows answered wrong everywhere cannot calibrate: the ceiling',
+      () async {
+        await expectLater(
+          fitTemperature(
+            Float64List.fromList([0, 1]),
+            Int32List.fromList([0]),
+            2,
+          ),
+          throwsArgumentError,
+        );
+      },
+    );
 
-    test('an interior optimum is returned', () {
-      final temperature = fitTemperature(
+    test('an interior optimum is returned', () async {
+      final temperature = await fitTemperature(
         Float64List.fromList([1, 0, 0.45, 0.55]),
         Int32List.fromList([0, 0]),
         2,
@@ -100,16 +103,19 @@ void main() {
       expect(temperature, lessThan(10));
     });
 
-    test('scores that are not finite are an error, not temperature 1', () {
-      expect(
-        () => fitTemperature(
-          Float64List.fromList([double.nan, 0, 0.4, 0.6]),
-          Int32List.fromList([0, 0]),
-          2,
-        ),
-        throwsStateError,
-      );
-    });
+    test(
+      'scores that are not finite are an error, not temperature 1',
+      () async {
+        await expectLater(
+          fitTemperature(
+            Float64List.fromList([double.nan, 0, 0.4, 0.6]),
+            Int32List.fromList([0, 0]),
+            2,
+          ),
+          throwsStateError,
+        );
+      },
+    );
   });
 
   test('fromLabelled with one labelled row is always refused', () async {

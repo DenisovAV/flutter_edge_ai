@@ -149,14 +149,21 @@ abstract base class EmbeddingModel {
   /// with a null [activeBackend] it must name the backend too. The space id
   /// also holds the dimension, [activeBackend] and the task prefix, so a
   /// decider fitted on the CPU file is never loaded onto an NPU bundle's
-  /// vectors. [cancelToken] stops the embedding of the options.
+  /// vectors.
+  ///
+  /// [cancelToken] stops the embedding of the options and the fit (natively
+  /// the fit's isolate is killed; on web the fit stops at its next yield);
+  /// the call then fails with `EmbeddingCancelledException` and returns no
+  /// decider.
   ///
   /// Errors arrive as a FAILED FUTURE: [ArgumentError] for options it cannot
   /// use (none, duplicate ids, an option with nothing to embed, a calibration
-  /// these options cannot support), [StateError] for a vector that is not
-  /// finite or not [dimension] long, and this model's own failures unchanged
-  /// — an over-long input is `EmbeddingInputTooLongException`, never
-  /// truncated.
+  /// these options or labelled rows cannot support), [StateError] for a
+  /// vector that is not finite or not [dimension] long and for a fit that
+  /// is not finite (an option whose inputs cancel out), and this model's own
+  /// failures — an over-long input is `EmbeddingInputTooLongException`, never
+  /// truncated; an input's failure names its option and input, with its type
+  /// and fields kept.
   ///
   /// Experimental: may change in a minor release while the API settles.
   @experimental

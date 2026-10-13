@@ -29,15 +29,23 @@ class AvailabilityPage extends StatefulWidget {
   State<AvailabilityPage> createState() => _AvailabilityPageState();
 }
 
-class _AvailabilityPageState extends State<AvailabilityPage> {
+class _AvailabilityPageState extends State<AvailabilityPage>
+    with WidgetsBindingObserver {
   BuiltInAiAvailability? _status;
   int? _progress;
-  Object? _error;
+  bool _preparing = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkAvailability();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _checkAvailability();
   }
 
   Future<void> _checkAvailability() async {
@@ -50,7 +58,8 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
   Future<void> _prepare() async {
     setState(() {
       _error = null;
-      _progress = 0;
+      _progress = null;
+      _preparing = true;
     });
     try {
       await BuiltInAi.ensureReady(
@@ -59,22 +68,29 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
         },
       );
       await _checkAvailability();
-    } catch (error) {
-      if (mounted) setState(() => _error = error);
+    } on BuiltInAiUnavailableException catch (error) {
+      if (mounted) setState(() => _error = _statusMessage(error.status));
     } finally {
-      if (mounted) setState(() => _progress = null);
+      if (mounted) {
+        setState(() {
+          _preparing = false;
+          _progress = null;
+        });
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final status = _status;
     final unsupported = BuiltInAiModels.forCurrentPlatform == null;
-    final canPrepare =
-        !unsupported &&
-        status != null &&
-        status != BuiltInAiAvailability.available &&
-        !status.name.startsWith('unavailable');
+    final canPrepare = !unsupported && status?.isTransient == true;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Built-in AI')),
@@ -100,25 +116,38 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
                           ? 'This platform has no built-in AI model.'
                           : status == null
                           ? 'Checking the operating system…'
-                          : 'Built-in AI is ${status.name}.',
+                          : _statusMessage(status),
+                      key: const Key('status'),
                     ),
-                    if (_progress case final percent?) ...[
+                    if (_preparing) ...[
                       const SizedBox(height: 16),
-                      LinearProgressIndicator(value: percent / 100),
+                      LinearProgressIndicator(
+                        value: _progress == null ? null : _progress! / 100,
+                      ),
                       const SizedBox(height: 8),
-                      Text('Preparing: $percent%'),
+                      Text(
+                        _progress == null
+                            ? 'Preparing the OS model…'
+                            : 'Preparing: $_progress%',
+                      ),
                     ],
                     if (_error case final error?) ...[
                       const SizedBox(height: 16),
-                      Text('Could not prepare the model: $error'),
+                      Text(error),
                     ],
                     const SizedBox(height: 20),
-                    FilledButton(
-                      onPressed: canPrepare && _progress == null
-                          ? _prepare
-                          : null,
-                      child: const Text('Prepare built-in AI'),
-                    ),
+                    if (canPrepare)
+                      FilledButton(
+                        onPressed: _preparing ? null : _prepare,
+                        child: const Text(
+                          'Prepare built-in AI (downloads may be several GB)',
+                        ),
+                      )
+                    else
+                      OutlinedButton(
+                        onPressed: _preparing ? null : _checkAvailability,
+                        child: const Text('Check again'),
+                      ),
                   ],
                 ),
               ),
@@ -129,3 +158,19 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
     );
   }
 }
+
+String _statusMessage(BuiltInAiAvailability status) => switch (status) {
+  BuiltInAiAvailability.available => 'Built-in AI is ready.',
+  BuiltInAiAvailability.downloadable =>
+    'The OS model needs to be downloaded. Choose Prepare to continue.',
+  BuiltInAiAvailability.downloading =>
+    'The OS is downloading the model. Choose Prepare to wait for it.',
+  BuiltInAiAvailability.unavailableDeviceUnsupported =>
+    'This device cannot run its OS built-in AI model.',
+  BuiltInAiAvailability.unavailableOsTooOld =>
+    'Update the operating system to use built-in AI.',
+  BuiltInAiAvailability.unavailableDisabled =>
+    'Turn on Apple Intelligence or the system AI feature, then check again.',
+  BuiltInAiAvailability.unavailableOther =>
+    'Built-in AI could not be reached. Check the platform setup and try again.',
+};

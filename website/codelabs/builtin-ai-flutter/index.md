@@ -2,7 +2,7 @@ author: Sasha Denisov
 summary: Build a Flutter chat with the AI model supplied by the operating system
 id: builtin-ai-flutter
 categories: flutter, ai, on-device, built-in-ai
-environments: android, ios, macos, windows, web
+environments: android, ios, macos, web
 status: Published
 
 # Built-in AI in Flutter: Your First Prompt with the OS Model
@@ -23,7 +23,7 @@ flutter_edge_ai
     ↓
 flutter_edge_ai_builtin_ai
     ↓
-Gemini Nano · Apple Foundation Models · Phi Silica · browser Prompt API
+Gemini Nano · Apple Foundation Models · browser Prompt API
 ```
 
 The platform owns the weights. Your Dart code checks whether they are available,
@@ -40,12 +40,15 @@ prepares them when necessary, and then talks through the same
 
 ### What you'll need
 
-* Flutter 3.44 or newer and Dart 3.12 or newer
+* Flutter 3.47 or newer and Dart 3.12 or newer
 * one device that exposes a supported built-in model:
-  * Android: Gemini Nano through ML Kit GenAI / AICore (`minSdk 26`)
-  * iOS or macOS: Apple Foundation Models with Apple Intelligence enabled
-  * Windows: Phi Silica through Windows AI Foundry
-  * web: Chrome or Edge with the Prompt API enabled
+  * Android: a device on [Google's Prompt API support list](/docs/builtin-ai)
+    with a locked bootloader and AICore (`minSdk 26`); emulators are not
+    supported, and provisioning after setup can take minutes or hours
+  * iOS or macOS: OS 26, Apple Intelligence enabled, and an app built with
+    Xcode 26
+  * web: desktop Chrome with the Prompt API enabled and the hardware described
+    in [Built-in AI](/docs/builtin-ai)
 
 Availability belongs to the actual device, not the Flutter target. An app can
 compile successfully on an older or unsupported device and receive an
@@ -107,6 +110,7 @@ Future<void> main() async {
 
   await FlutterEdgeAi.initialize(
     inferenceEngines: const [BuiltInAiEngine()],
+  webStorageMode: WebStorageMode.streaming,
   );
 
   runApp(const BuiltInAiApp());
@@ -119,6 +123,20 @@ the core which engine can handle a model whose file type is
 
 Run `step_01_starter`. The app has an engine, but it does not assume the current
 device has a usable model. That question comes next.
+
+For web, copy `cache_api.js` and `opfs_helper.js` from
+`packages/flutter_edge_ai/web/` into the app's `web/` directory and load
+them before `flutter_bootstrap.js`, as shown by every step app's
+`web/index.html`. Run with:
+
+```bash
+flutter run -d web-server --web-port=8080
+```
+
+Open the URL in your regular desktop Chrome profile. Enable
+`chrome://flags/#prompt-api-for-gemini-nano` for local development; a
+deployed site needs an origin-trial token. `flutter run -d chrome` uses a
+fresh profile where that flag is absent.
 
 ## Step 2: Ask the device
 Duration: 12
@@ -137,7 +155,10 @@ The important states are:
 | `available` | The model is ready now |
 | `downloadable` | This device supports it, but the OS must fetch it |
 | `downloading` | The OS is already preparing it |
-| `unavailable...` | This device, OS or configuration cannot use it |
+| `unavailableDeviceUnsupported` | Use a supported physical device |
+| `unavailableOsTooOld` | Update the operating system |
+| `unavailableDisabled` | Enable Apple Intelligence or the system AI feature |
+| `unavailableOther` | Check platform setup and try the probe again |
 
 Do not convert an unavailable state into a download spinner. It cannot be fixed
 by waiting. Show a clear message or continue to another engine.
@@ -148,6 +169,8 @@ For `downloadable` or `downloading`, let the operating system finish preparing
 the feature:
 
 ```dart
+// Call from the Prepare button so the user consents to a potentially
+// multi-gigabyte OS download.
 await BuiltInAi.ensureReady(
   onProgress: (percent) {
     setState(() => _progress = percent);
@@ -181,7 +204,12 @@ Duration: 14
 
 ### Select the platform model
 
-After `ensureReady`, get the ready-made specification and register its identity
+Only offer **Start** when availability is `available`. For `downloadable`
+or `downloading`, retain the status card and offer **Prepare** with the size
+notice instead. Re-check after preparation, when the app resumes, or when the
+reader taps **Check again**.
+
+After the status becomes available, get the ready-made specification and register its identity
 with core:
 
 ```dart
@@ -205,7 +233,6 @@ active.
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final session = await model.createSession();
 ```
 
 `maxTokens` is the entire context window—prompt, history and answer—not just an
@@ -214,19 +241,26 @@ answer-length limit.
 ### Ask once
 
 ```dart
-await session.addQueryChunk(
-  Message.text(text: prompt, isUser: true),
-);
-
-final answer = await session.getResponse();
+final session = await model.createSession();
+try {
+  await session.addQueryChunk(
+    Message.text(text: prompt, isUser: true),
+  );
+  final answer = await session.getResponse();
+  if (answer.trim().isEmpty) {
+    // Tell the reader that no answer was produced.
+  }
+} finally {
+  await session.close();
+}
 ```
 
 `isUser: true` matters: `Message.isUser` defaults to false. Leaving it out
 marks the prompt as a model message and can produce an empty or incorrect turn.
 
-Run `step_03_first_prompt`, tap **Start built-in AI**, and ask the pre-filled
-question. Preparation and model creation stay separate from generation, so an
-error message can say which phase failed.
+Run `step_03_first_prompt`, prepare the model if the OS requests it, tap
+**Start built-in AI**, and ask the pre-filled question. Every Ask uses a fresh
+session, so hidden history cannot shape later answers or fill the context.
 
 ## Step 4: Stream and clean up
 Duration: 8
@@ -246,13 +280,22 @@ await for (final chunk in session.getResponseAsync()) {
 Each string is the new chunk only. Append it; do not replace the accumulated
 answer with the latest chunk.
 
-Sessions and models own native resources. Close both when the page goes away:
+Sessions and models own native resources. The step app closes each fresh
+session after its answer and reports cleanup failures with
+`FlutterError.reportError`. When the page goes away, it closes the model:
 
 ```dart
 @override
 void dispose() {
-  _session?.close().catchError((Object _) {});
-  _model?.close().catchError((Object _) {});
+  final model = _model;
+  _model = null;
+  if (model != null) {
+    unawaited(model.close().catchError((Object error, StackTrace stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(exception: error, stack: stackTrace),
+      );
+    }));
+  }
   _prompt.dispose();
   super.dispose();
 }
@@ -264,10 +307,10 @@ Run the `complete` app. It now follows the whole built-in path:
 button tap → ensure ready → select OS identity → open session → stream answer
 ```
 
-No application code names Gemini Nano, Apple Foundation Models or Phi Silica.
+No application code names Gemini Nano or Apple Foundation Models.
 The current platform chooses that implementation behind the same Dart API.
 
-## Next steps
+## What's next
 Duration: 3
 
 This tutorial stops at one small, understandable success path. A production app

@@ -83,8 +83,8 @@ class CodelabsPage extends StatelessComponent {
       blurb:
           'Check whether the device supplies a language model, prepare it, '
           'send one prompt and stream the answer through the same Dart API on '
-          'Android, Apple platforms, Windows and the web.',
-      duration: '45 min',
+          'Android, Apple platforms and the web.',
+      duration: '48 min',
       level: 'Beginner',
       tags: ['built-in AI', 'Gemini Nano', 'Apple Intelligence'],
       accent: Brand.green,

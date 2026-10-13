@@ -92,9 +92,9 @@ BEGIN
             VALUE "CompanyName", "dev.fluttergemma" "\0"
             VALUE "FileDescription", "Built-in AI Codelab" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "quickstart" "\0"
+            VALUE "InternalName", "builtin_ai_codelab" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 dev.fluttergemma. All rights reserved." "\0"
-            VALUE "OriginalFilename", "quickstart.exe" "\0"
+            VALUE "OriginalFilename", "builtin_ai_codelab.exe" "\0"
             VALUE "ProductName", "Built-in AI Codelab" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END

@@ -801,7 +801,7 @@ Update each `^X.Y.Z` for EVERY package the site pins — `flutter_edge_ai`, `flu
 
 ### 12d. Update the shipped agent skills — they are read by a MACHINE
 
-`packages/flutter_edge_ai/skills/` holds eight `SKILL.md` files that ship inside
+`packages/flutter_edge_ai/skills/` holds nine `SKILL.md` files that ship inside
 the core archive and are installed into users' coding agents by
 `dart run skills@ get --all`. They are not a nice-to-have copy of the docs: an agent
 follows them literally when writing code against this package.
@@ -823,6 +823,7 @@ Map the change to the skill that covers it:
 | STT, TTS, `VoiceSession` | `flutter-edge-ai-speech` |
 | embeddings, vector stores | `flutter-edge-ai-rag` |
 | `MemorySnapshot`, memory diagnostics | `flutter-edge-ai-diagnostics` |
+| `Decider`, `createDecider`/`loadDecider`, `DeciderOption`, `DeciderCalibration`, Jev Choice JSON | `flutter-edge-ai-decisions` |
 
 **Do not go looking by hand.** Ask the diff which skills it puts in doubt:
 

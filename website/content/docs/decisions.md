@@ -109,7 +109,14 @@ Future<void> decide() async {
 tie the option given first ranks first. `answer.margin` is best minus
 runner-up. `choose(input, among: [...])` restricts the candidates to some
 option ids: an unknown id throws `ArgumentError`, an empty set abstains with
-`AbstainReason.noCandidates` without embedding anything.
+`AbstainReason.noCandidates` without embedding anything (a closed embedder or
+an input the model was not loaded for still fails, as with candidates).
+
+`ScoreKind`, `AbstainReason` and `DeciderMethod` are classes with constant
+values, not enums, so a value added in a later release does not break your
+`switch` — give it a default branch. A `DeciderAnswer` checks itself: exactly
+one of `choice` and `abstainReason`, `choice` first in `ranked`, `ranked`
+highest first, `confidence` in [0, 1] and only with `probabilities`.
 
 ### A raw score is not a probability
 
@@ -128,8 +135,14 @@ accuracy.
 |---|---|---|
 | `DeciderCalibration.crossFit({keep: 0.95})` — default | The options' own inputs: 5-fold cross-fit (input `i` of each option in fold `i % 5`), each held-out input scored against the other folds' centroids, threshold keeps `keep` of them | Two inputs per option |
 | `DeciderCalibration.minSimilarity(t)` | A fixed cosine `t` | A value measured for your model file and prompt |
-| `DeciderCalibration.fromLabelled(rows, maxError: 0.05)` | The lowest cosine at which labelled rows keep their error within `maxError`; plus a temperature → probabilities | Held-out labelled requests, not the examples |
+| `DeciderCalibration.fromLabelled(rows, maxError: 0.05)` | The lowest cosine at which labelled rows keep their error within `maxError` (rows of one cosine counted together); plus a temperature → probabilities | Held-out labelled requests — not the examples or descriptions — some of them hard |
 | `DeciderCalibration.none()` | Never abstains | — |
+
+`fromLabelled` refuses (`ArgumentError`) rows it cannot calibrate on: when no
+threshold keeps their error within `maxError`, and when the best temperature
+is an end of its grid — rows all answered right with room to spare would make
+a near-tie look certain (one row always ends up refused one way or the other).
+The rows are copied when the calibration is made.
 
 A softmax probability cannot abstain: with two options any request looks
 confident. Measured with EmbeddingGemma 2 on CLINC150 (k = 10 examples per
@@ -185,8 +198,8 @@ single query took 30–31 ms at every N. The N = 500 rows were slower in both ru
 one input per option, one after another (35–60 ms each). Phones and NPUs are not
 measured yet.
 
-Fitting `linear` (softmax regression, float64 L-BFGS on a background isolate)
-on an Apple M4 Pro, release (AOT) build:
+Fitting `linear` (softmax regression, float64 L-BFGS on an isolate of its
+own) on an Apple M4 Pro, release (AOT) build:
 
 | Options × examples | Fit |
 |---|---|
@@ -196,8 +209,28 @@ on an Apple M4 Pro, release (AOT) build:
 | 50 × 10 | 1.9 s |
 | 150 × 5 / 10 / 30 | 7.2 / 16.4 / 50 s |
 
-`centroid` fits nothing; its default cross-fit took 0.2 s at 150 × 30. On web
-the fit runs inline and blocks the page while it runs.
+`centroid` fits nothing; its default cross-fit took 0.2 s at 150 × 30. The
+optimiser keeps a history of 20 pairs of parameter-sized vectors: about
+2 · 20 · (768 · C + C) · 8 bytes — 37 MB at 150 options, ~0.5 GB at 2000 —
+on top of the inputs.
+
+On web there is no isolate to spare: the fit runs on the page's thread in
+slices of 4 ms and yields to the event loop between them (and checks the
+cancel token there), so the page keeps drawing and taking input while it
+fits. Measured on an Apple M4 Pro in Chrome 155 (headless), release builds
+(`flutter build web`, dart2js and `--wasm`), synthetic unit rows (768
+dimensions, 10 per option), cross-fit calibration:
+
+| Options × 10 | `centroid` fit, dart2js / wasm | `linear` fit, dart2js / wasm | Longest gap between ticks of a 16 ms timer, `linear` (`centroid`) |
+|---|---|---|---|
+| 10 | 5 / 8 ms | 48 / 63 ms | 21–22 ms (fit shorter than a tick) |
+| 50 | 17 / 17 ms | 0.91 / 1.04 s | 20–24 ms (17–18 ms) |
+| 150 | 113 / 121 ms | 10.2 / 11.4 s | 22–23 ms (21 ms) |
+
+Run without yielding, the same fits held the page for their whole length —
+10.1 s (dart2js) and 11.4 s (wasm) at 150 `linear` — so yielding costs about
+1 %. The web fit computes the same numbers as the VM:
+`test/web/decider_web_test.dart` holds it to the VM's results in the browser.
 
 ## Many decisions over one input
 
@@ -256,24 +289,30 @@ Future<InferenceChat> chatWithLikelyTools(
       for (final tool in tools)
         DeciderOption(tool.name, description: tool.description),
     ],
-    calibration: const DeciderCalibration.minSimilarity(0.6),
+    calibration: const DeciderCalibration.none(),
   );
   final picked = await router.choose(
     DeciderInput(EmbeddingInput.text(request)),
     topK: 3,
   );
   return model.createChat(
-    tools: [
-      for (final r in picked.ranked) tools.firstWhere((t) => t.name == r.id),
-    ],
+    tools: picked.choice == null
+        ? <Tool>[]
+        : [
+            for (final r in picked.ranked)
+              tools.firstWhere((t) => t.name == r.id),
+          ],
     supportsFunctionCalls: true,
     modelType: ModelType.functionGemma,
   );
 }
 ```
 
-A fixed threshold belongs to one model file and one prompt; measure yours, or
-give each tool a few example requests and keep the default cross-fit.
+Descriptions alone cannot cross-fit, so this router never abstains: it
+always offers the three nearest tools. To let it say "no tool", give each tool
+a few example requests and keep the default cross-fit; `choice == null` then
+offers none. A fixed `minSimilarity` threshold belongs to one model file and
+one prompt: use one only after measuring it for yours.
 
 ## Store and restore
 
@@ -293,20 +332,51 @@ Future<Decider> restore(EmbeddingModel embedder, String stored) =>
     embedder.loadDecider(jsonDecode(stored) as Map<String, Object?>);
 ```
 
-The artifact is pinned to its **embedding space**: the model's installed file
-names, the dimension, the backend and the task prefix. A decider fitted on the
+The artifact is pinned to its **embedding space**: the model's installed
+files, the dimension, the backend and the task prefix. The files are named by
+their install names and, natively, their sizes in bytes — file names and
+sizes, not the bytes themselves, so install new weights under a new name (on
+web, where core does not read sizes, the names alone). A decider fitted on the
 CPU file is refused on a per-SoC NPU bundle with
-`DeciderSpaceMismatchException` — their vectors sit at cosine 0.8–0.9 to each
-other. A malformed or newer artifact is a `FormatException`. Media examples are
-not stored (their count is); a restored option lists its text examples.
-
-A decider borrows its embedder and never closes it. When core replaces the
-active embedder — another backend, image or audio support — `choose` fails with
-`EmbedderClosedException`: load the artifact on the new embedder.
+`DeciderSpaceMismatchException`: EmbeddingGemma 2's NPU vectors against its
+CPU file's measured cosine 0.83 on average for short texts, rising to 0.995 at
+400 words, and 0.86–0.88 for images. A malformed or newer artifact, or one
+that contradicts itself, is a `FormatException`. Media examples are not stored
+(their count is); a restored option lists its text examples.
 
 A model that `FlutterEdgeAi.getActiveEmbedder()` did not build (a custom
-subclass, a test fake) has no installed files to name its space; pass
-`embedderId:` to `createDecider` and `loadDecider`.
+subclass, a test fake) has no installed files to name its space, and a model
+that reports no backend (`activeBackend` null: LiteRT.js and ONNX on web)
+cannot tell WebGPU from WASM — both are refused with `ArgumentError` unless
+you pass `embedderId:` to `createDecider` and `loadDecider`. An `embedderId`
+replaces the installed-file check: you own the identity, so change it whenever
+the weights (or, for a model without a backend, the backend) change.
+
+A decider borrows its embedder and never closes it. On an embedder
+`getActiveEmbedder()` returned, it follows core: when that embedder is closed
+— core widened it for images or audio, another backend, a re-install, a
+worker that died, or the app closed it — the next `choose` asks core for the
+active embedder again (with the backend and media the old one was built with,
+under the cache's usual reuse rule, so it may load the model again) and
+retries there. If that embedder is another embedding space, `choose` throws
+`DeciderSpaceMismatchException`. On a custom model it fails with
+`EmbedderClosedException` and `decider.isClosed` is true: load the artifact
+on the new model.
+
+## Progress, cancel and your own deciders
+
+`createDecider(onProgress: (done, total) => …)` counts the inputs it embeds —
+each option's description and examples, then `fromLabelled`'s rows — from
+`(0, total)` to `(total, total)`. It does not cover the fit after them, which
+for `linear` at 150 options takes seconds. `cancelToken:` stops the embedding
+and the fit (natively the fit's isolate is killed, on web it stops at the next
+yield): `EmbeddingCancelledException`, and no decider. A failed option input
+names its option and input: `Option "returns", example 3: …`, with the
+exception's type and fields kept.
+
+A decider of your own, or a test fake, `extends Decider` (an abstract base
+class: members added later reach it with a default). `toArtifact()` defaults
+to throwing `DeciderUnsupportedException`.
 
 ## Jev Choice JSON
 
@@ -322,12 +392,13 @@ abstained answer has `"choice": null`.
 
 | Failure | Thrown |
 |---|---|
-| No options, duplicate ids, an option with nothing to embed, a calibration the options cannot support, an unknown `among` id | `ArgumentError` |
+| No options, duplicate ids, an option with nothing to embed, a calibration the options or labelled rows cannot support, an unknown `among` id, a model without installed files or a backend and no `embedderId` | `ArgumentError` |
 | `DeciderInput.context` given to an embedding decider | `DeciderUnsupportedException` |
-| `InferenceModel.createDecider` (no engine scores options yet) | `DeciderUnsupportedException` |
-| An artifact from another embedding space | `DeciderSpaceMismatchException` |
-| A malformed or newer artifact | `FormatException` |
+| `InferenceModel.createDecider` (no engine scores options yet); `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
+| An artifact from another embedding space; core's replacement embedder in another space | `DeciderSpaceMismatchException` |
+| A malformed, contradictory or newer artifact | `FormatException` |
 | An input longer than the model's limit — never truncated | `EmbeddingInputTooLongException` |
-| A vector that is not finite or has the wrong length; `choose` after `close` | `StateError` |
+| `createDecider` cancelled | `EmbeddingCancelledException` |
+| A vector that is not finite or has the wrong length; an option whose inputs cancel out; `choose` after `close` | `StateError` |
 
 Every error arrives as a failed future.

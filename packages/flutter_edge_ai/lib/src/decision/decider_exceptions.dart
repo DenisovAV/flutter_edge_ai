@@ -31,12 +31,15 @@ final class DeciderUnsupportedException extends DeciderException {
   const DeciderUnsupportedException(super.message);
 }
 
-/// A stored decider was fitted in another embedding space than the embedder
-/// asked to load it: another model file, dimension, backend or task prefix.
+/// A decider was fitted in another embedding space than the embedder asked
+/// to load it, or than the one core now serves in place of the decider's
+/// own: another model file, dimension, backend or task prefix.
 ///
-/// Vectors from two spaces are not comparable (an NPU bundle's vectors sit at
-/// cosine 0.8–0.9 to the CPU file's), so the artifact is refused instead of
-/// silently giving wrong answers. Fit the decider again on this embedder.
+/// Vectors from two spaces are not comparable (EmbeddingGemma 2's NPU
+/// vectors against its CPU file's, measured: cosine 0.83 on average for short
+/// texts, rising to 0.995 at 400 words, 0.86–0.88 for images), so the
+/// decider is refused instead of silently giving wrong answers. Fit it again
+/// on this embedder.
 @experimental
 final class DeciderSpaceMismatchException extends DeciderException {
   const DeciderSpaceMismatchException(

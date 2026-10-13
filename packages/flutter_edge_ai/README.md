@@ -310,6 +310,7 @@ Pick one of N options — an intent, an action, a screen, a tool — for an inpu
 or abstain when none fits. Every embedding model can do it:
 
 ```dart
+// ignore_for_file: experimental_member_use
 final embedder = await FlutterEdgeAi.getActiveEmbedder();
 final decider = await embedder.createDecider(options: [
   DeciderOption('set_timer', examples: [

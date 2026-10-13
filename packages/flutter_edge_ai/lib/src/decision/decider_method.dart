@@ -75,10 +75,14 @@ final class DeciderCalibration {
   /// set to keep [keep] of those held-out scores.
   ///
   /// No labelled data needed. Measured with EmbeddingGemma 2 at 2–20 options
-  /// and 10 examples each: 90–94 % of in-scope requests answered with ≤ 0.8 %
-  /// error, 87–99 % of out-of-scope requests refused. At 150 options and 5
-  /// examples the error on answered requests was 6.8 %, over a 5 % budget —
-  /// use [DeciderCalibration.fromLabelled] there.
+  /// and 10 examples each: 90–94 % of in-scope requests answered and 87–99 %
+  /// of out-of-scope requests refused — which requests are answered depends
+  /// on the threshold alone, the same for both methods. The error on the
+  /// answered ones was measured with [DeciderMethod.linear] only: ≤ 0.8 %
+  /// there, and 6.8 % at 150 options with 5 examples, over a 5 % budget (use
+  /// [DeciderCalibration.fromLabelled] there). The default
+  /// [DeciderMethod.centroid] is less accurate, so its error on answered
+  /// requests is higher; it was not measured.
   ///
   /// Needs at least two inputs (description plus examples) per option; a
   /// zero-shot option set takes [DeciderCalibration.minSimilarity] or
@@ -104,11 +108,19 @@ final class DeciderCalibration {
   /// options' own examples.
   ///
   /// The decider embeds [labelled] once at creation and fits:
+  /// - the abstain threshold: the lowest cosine at which the labelled rows
+  ///   answered at or above it (rows of one cosine together) keep their
+  ///   error within [maxError];
   /// - a softmax temperature, by negative log-likelihood on a grid of 241
   ///   values from 1e-3 to 10 — the decider then reports calibrated
-  ///   probabilities and a confidence;
-  /// - the abstain threshold: the lowest cosine at which the labelled rows
-  ///   answered at or above it keep their error within [maxError].
+  ///   probabilities and a confidence.
+  ///
+  /// `createDecider` fails with [ArgumentError] when no threshold keeps the
+  /// error within [maxError], and when the best temperature is an end of the
+  /// grid: rows all answered right with room to spare (1e-3) — which would
+  /// report a near-tie as certain — or all answered poorly (10) cannot
+  /// calibrate. Give it real held-out requests, some of them hard; one row
+  /// is never enough.
   ///
   /// [maxError] must be in [0, 1). Every `optionId` must name an option.
   /// [labelled] is copied: a later change to the caller's list does not

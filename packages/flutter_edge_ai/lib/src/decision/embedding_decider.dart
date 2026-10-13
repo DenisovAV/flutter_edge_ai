@@ -40,8 +40,17 @@ const deciderArtifactVersion = 1;
 /// identity, its dimension, its backend and the task prefix. Two deciders
 /// share vectors only within one space.
 ///
-/// The identity is [embedderId] when given; otherwise the installed file
-/// names of a model core built. Throws [ArgumentError] when neither exists.
+/// The identity is [embedderId] when given — the caller's name for the
+/// weights, which REPLACES the installed-file guard below; otherwise the
+/// installed files of a model core built: their names and, natively, their
+/// sizes in bytes (file names and sizes, not the bytes themselves; on web the
+/// names alone). Throws [ArgumentError] when neither exists.
+///
+/// The backend term is `embedder.activeBackend`. A model that does not
+/// report one (null: LiteRT.js and ONNX on web, a custom subclass) is
+/// refused without an [embedderId] — WebGPU and WASM would otherwise share
+/// one space; with one, the id has no backend term and the caller's id must
+/// tell those apart.
 String deciderSpaceId(EmbeddingModel embedder, {String? embedderId}) {
   final String identity;
   if (embedderId != null) {
@@ -50,7 +59,13 @@ String deciderSpaceId(EmbeddingModel embedder, {String? embedderId}) {
     }
     identity = _escape(embedderId);
   } else if (embedder case CommonEmbeddingModel(:final installedFiles?)) {
-    identity = installedFiles.map(_escape).join('+');
+    identity = installedFiles
+        .map(
+          (f) => f.bytes == null
+              ? _escape(f.name)
+              : '${_escape(f.name)}@${f.bytes}',
+        )
+        .join('+');
   } else {
     throw ArgumentError.value(
       null,
@@ -61,9 +76,20 @@ String deciderSpaceId(EmbeddingModel embedder, {String? embedderId}) {
           'weights do',
     );
   }
-  final backend = embedder.activeBackend?.name ?? 'unknown';
+  final backend = embedder.activeBackend;
+  if (backend == null && embedderId == null) {
+    throw ArgumentError.value(
+      null,
+      'embedderId',
+      'this ${embedder.runtimeType} does not report its backend '
+          '(activeBackend is null), so the decider cannot tell its vectors '
+          "from another backend's: pass embedderId, an id that names the "
+          'weights and the backend they run on',
+    );
+  }
   return 'model=$identity;dim=${embedder.dimension};'
-      'backend=$backend;prefix=${deciderTaskType.prefix}';
+      '${backend == null ? '' : 'backend=${backend.name};'}'
+      'prefix=${deciderTaskType.prefix}';
 }
 
 /// Jev's confidence, `(N · pmax − 1) / (N − 1)`, for [n] ≥ 2 candidates,
@@ -77,7 +103,11 @@ double deciderConfidence(double pmax, int n) =>
 String _escape(String part) {
   final out = StringBuffer();
   for (final unit in part.codeUnits) {
-    if (unit <= 0x1F || unit == 0x25 || unit == 0x2B || unit == 0x3B) {
+    if (unit <= 0x1F ||
+        unit == 0x25 ||
+        unit == 0x2B ||
+        unit == 0x3B ||
+        unit == 0x40) {
       out.write('%${unit.toRadixString(16).toUpperCase().padLeft(2, '0')}');
     } else {
       out.writeCharCode(unit);

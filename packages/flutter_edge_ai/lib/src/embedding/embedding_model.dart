@@ -134,11 +134,17 @@ abstract base class EmbeddingModel {
   ///
   /// [embedderId] names the model's weights in the decider's embedding-space
   /// id. A model `FlutterEdgeAi.getActiveEmbedder` returned is named by its
-  /// installed file names unless one is given; any other model (a test fake,
-  /// a custom subclass) needs one. The space id also holds the dimension,
-  /// [activeBackend] and the task prefix, so a decider fitted on the CPU file
-  /// is never loaded onto an NPU bundle's vectors. [cancelToken] stops the
-  /// embedding of the options.
+  /// installed files unless one is given: their names and, natively, their
+  /// sizes in bytes — file names and sizes, not the bytes themselves (on web
+  /// the names alone). Any other model (a test fake, a custom subclass)
+  /// needs an [embedderId], and so does a model whose [activeBackend] is
+  /// null (LiteRT.js and ONNX on web): without a backend to tell WebGPU from
+  /// WASM, the call is refused with [ArgumentError]. An [embedderId]
+  /// REPLACES the installed-file guard: the caller owns the identity, and
+  /// with a null [activeBackend] it must name the backend too. The space id
+  /// also holds the dimension, [activeBackend] and the task prefix, so a
+  /// decider fitted on the CPU file is never loaded onto an NPU bundle's
+  /// vectors. [cancelToken] stops the embedding of the options.
   ///
   /// Errors arrive as a FAILED FUTURE: [ArgumentError] for options it cannot
   /// use (none, duplicate ids, an option with nothing to embed, a calibration

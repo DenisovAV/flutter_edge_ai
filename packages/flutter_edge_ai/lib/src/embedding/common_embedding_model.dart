@@ -39,6 +39,11 @@ const _mediaPermits = 2;
 /// almost everything.
 const _embedAllWindow = 2;
 
+/// One installed file of the spec a model runs: its install name and, where
+/// core can read it, its size in bytes (null on web, where the bytes live in
+/// the browser's storage and their size is not read).
+typedef InstalledEmbedderFile = ({String name, int? bytes});
+
 /// The embedding model core hands out. See [EmbeddingModel] for the contract.
 final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
   CommonEmbeddingModel._(
@@ -46,7 +51,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     required this.activeBackend,
     required this._engine,
     required this._label,
-    List<String>? installedFiles,
+    List<InstalledEmbedderFile>? installedFiles,
   }) : installedFiles = installedFiles == null
            ? null
            : List.unmodifiable(installedFiles) {
@@ -63,7 +68,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     PreferredBackend? activeBackend,
     String engine = 'Test',
     String label = 'test-model',
-    List<String>? installedFiles,
+    List<InstalledEmbedderFile>? installedFiles,
   }) : this._(
          host,
          activeBackend: activeBackend,
@@ -75,8 +80,8 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
   /// Starts [descriptor]'s pass on this platform's host (§4.2 step 4) and
   /// returns the model once it is loaded and checked against
   /// [declaredMedia]. [label] — the model file — names it in messages.
-  /// [installedFiles] are the installed file names of the spec it runs, which
-  /// name its embedding space for deciders.
+  /// [installedFiles] are the installed files of the spec it runs — names,
+  /// and sizes where known — which name its embedding space for deciders.
   ///
   /// Fails with `EmbeddingLoadException`. A pass whose load failed is closed
   /// behind the error; [onFailedLoadCleanup] gets a future that ends when it
@@ -85,7 +90,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     EmbeddingPassDescriptor<Object> descriptor, {
     required Set<EmbeddingModality> declaredMedia,
     required String label,
-    List<String>? installedFiles,
+    List<InstalledEmbedderFile>? installedFiles,
     void Function(Future<void> cleanup)? onFailedLoadCleanup,
   }) async {
     final running = await host.startEmbeddingHost(
@@ -110,10 +115,11 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
   @override
   final PreferredBackend? activeBackend;
 
-  /// The installed file names of the spec this model runs — model first,
-  /// then its tokenizer — or null for a model built without one (tests). The
-  /// embedding-space identity of the deciders created from it.
-  final List<String>? installedFiles;
+  /// The installed files of the spec this model runs — model first, then its
+  /// tokenizer — with their sizes in bytes where core read them at load, or
+  /// null for a model built without one (tests). The embedding-space identity
+  /// of the deciders created from it.
+  final List<InstalledEmbedderFile>? installedFiles;
 
   bool _isClosed = false;
   String? _deathReason;

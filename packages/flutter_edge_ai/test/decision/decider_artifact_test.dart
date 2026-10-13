@@ -162,8 +162,7 @@ void main() {
     expect(artifact['taskType'], 'classification');
     expect(
       artifact['spaceId'],
-      'model=fake-v1;dim=4;backend=unknown;'
-      'prefix=task: classification | query: ',
+      'model=fake-v1;dim=4;prefix=task: classification | query: ',
     );
     final calibration = artifact['calibration']! as Map;
     expect(calibration['kind'], 'crossFit');

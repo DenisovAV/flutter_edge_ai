@@ -24,6 +24,8 @@ import 'embedding_exceptions.dart';
 import 'embedding_modality.dart';
 import 'embedding_model.dart';
 import 'embedding_pass.dart' show EmbeddingPassDescriptor;
+import 'installed_file_size.dart'
+    if (dart.library.js_interop) 'installed_file_size_web.dart';
 
 /// Returns the embedder for [manager]'s active embedding spec — the cached one
 /// when it serves the request, else a new one built through the registered
@@ -140,7 +142,16 @@ Future<EmbeddingModel> loadActiveEmbedder({
       descriptor,
       declaredMedia: build.media,
       label: modelPath,
-      installedFiles: [for (final file in active.files) file.filename],
+      installedFiles: [
+        for (final file in active.files)
+          (
+            name: file.filename,
+            bytes: switch (paths[file.prefsKey]) {
+              final path? => await installedFileSize(path),
+              null => null,
+            },
+          ),
+      ],
       onFailedLoadCleanup: (cleanup) =>
           cache.trackFailedLoadCleanup(cleanup, build),
     );

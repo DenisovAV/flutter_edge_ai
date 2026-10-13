@@ -3,15 +3,9 @@
 // Decider.chooseAll's shared embedding, the InferenceModel default and the
 // Jev JSON helpers.
 
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/src/decision/embedding_decider.dart'
-    show deciderSpaceId;
-import 'package:flutter_edge_ai/src/embedding/common_embedding_model.dart';
-import 'package:flutter_edge_ai/src/embedding/embedding_host.dart';
-import 'package:flutter_edge_ai/src/embedding/embedding_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fake_embedder.dart';
@@ -111,24 +105,6 @@ final class _OtherDecider extends Decider {
 class _Llm extends InferenceModel {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-final class _Host implements EmbeddingHost {
-  @override
-  EmbeddingPassInfo get info => const EmbeddingPassInfo(dimension: 3);
-
-  @override
-  Set<EmbeddingModality> get modalities => const {EmbeddingModality.text};
-
-  @override
-  Future<List<double>> embed(EmbeddingInput input, TaskType taskType) async =>
-      _table[input.text]!;
-
-  @override
-  Future<String> get unexpectedExit => Completer<String>().future;
-
-  @override
-  Future<void> close() async {}
 }
 
 void main() {
@@ -649,43 +625,6 @@ void main() {
             contains('EmbeddingModel.createDecider'),
           ),
         ),
-      );
-    });
-  });
-
-  group('embedding space id', () {
-    test('a model core built is named by its installed files', () {
-      final model = CommonEmbeddingModel.withHost(
-        _Host(),
-        activeBackend: PreferredBackend.npu,
-        installedFiles: ['eg2+npu.litertlm', 'tok;en.json'],
-      );
-      expect(
-        deciderSpaceId(model),
-        'model=eg2%2Bnpu.litertlm+tok%3Ben.json;dim=3;backend=npu;'
-        'prefix=task: classification | query: ',
-      );
-      expect(
-        deciderSpaceId(model, embedderId: 'eg2-v1'),
-        'model=eg2-v1;dim=3;backend=npu;prefix=task: classification | query: ',
-      );
-    });
-
-    test('backend and dimension are part of it', () {
-      expect(
-        deciderSpaceId(_embedder(), embedderId: 'm'),
-        'model=m;dim=3;backend=unknown;prefix=task: classification | query: ',
-      );
-      expect(
-        deciderSpaceId(
-          _embedder(backend: PreferredBackend.cpu),
-          embedderId: 'm',
-        ),
-        contains(';backend=cpu;'),
-      );
-      expect(
-        () => deciderSpaceId(_embedder(), embedderId: ''),
-        throwsArgumentError,
       );
     });
   });

@@ -136,7 +136,7 @@ void main() async {
 |---|---|---|
 | `inferenceEngines: [LiteRtLmEngine()]` | `flutter_edge_ai_litertlm` | `.litertlm` (mobile + desktop + web) |
 | `inferenceEngines: [MediaPipeEngine()]` | `flutter_edge_ai_mediapipe` | `.task` / `.bin` (mobile + web) |
-| `inferenceEngines: [OnnxEngine()]` | `flutter_edge_ai_onnx` | ONNX models — ORT-GenAI (FFI: macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64) or Transformers.js (Web) |
+| `inferenceEngines: [OnnxEngine()]` | `flutter_edge_ai_onnx` | ONNX models — ORT-GenAI (FFI: macOS arm64, Linux x64, Windows x64, Windows ARM64, Android arm64, iOS arm64) or Transformers.js (Web) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | text embeddings: EmbeddingGemma 2 `.litertlm` (native) and `.tflite` models |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by both embedding backends above for `.tflite` and `.onnx` models; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |

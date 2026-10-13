@@ -1,3 +1,6 @@
+## 0.5.9
+- Windows ARM64: bundle the ORT and ORT-GenAI archives and enable both engines (hardware smoke test pending, #326).
+
 ## 0.5.8
 - **Breaking:** require `flutter_edge_ai` ^2.3.0; `OnnxEmbeddingForwardPass` is now `OnnxEmbeddingPass`.
 

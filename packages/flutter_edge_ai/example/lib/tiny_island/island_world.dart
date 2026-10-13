@@ -827,6 +827,8 @@ final class IslandWorld implements IslandStage {
   int _bubbleToken = 0;
 
   void _say(String? text, [double seconds = 2.6]) {
+    // Scripts still unwinding after dispose must not touch the notifier.
+    if (_disposed) return;
     final token = ++_bubbleToken;
     bubble.value = text;
     if (text == null || seconds <= 0) return;

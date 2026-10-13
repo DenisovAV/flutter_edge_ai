@@ -5,6 +5,7 @@
 // vector cache), and the HUD widgets. The real EmbeddingGemma 2 and the 3D
 // scene run in integration_test/tiny_island_test.dart.
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -229,6 +230,41 @@ void main() {
       },
     );
 
+    test(
+      'opens one at a time; a superseded open releases its decider',
+      () async {
+        final vm = TinyIslandViewModel(rig.deps, stage);
+        addTearDown(vm.dispose);
+        rig.gate = Completer<void>();
+        final first = vm.open();
+        // Let the first open reach the (gated) decider.
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        expect(rig.opened, 1);
+        final firstDecider = rig.decider!;
+        final second = vm.open();
+        rig.gate!.complete();
+        rig.gate = null;
+        await Future.wait([first, second]);
+        expect(
+          firstDecider.closed,
+          isTrue,
+          reason: 'the stale one is released',
+        );
+        expect(rig.opened, 2, reason: 'the newer open ran after it');
+        expect(rig.decider!.closed, isFalse);
+        expect(vm.status, TinyIslandStatus.ready);
+      },
+    );
+
+    test('a newer open supersedes one that has not started', () async {
+      final vm = TinyIslandViewModel(rig.deps, stage);
+      addTearDown(vm.dispose);
+      await Future.wait([vm.open(), vm.open()]);
+      expect(rig.opened, 1);
+      expect(vm.status, TinyIslandStatus.ready);
+    });
+
     test('dispose closes the decider; reopening closes the old one', () async {
       final vm = TinyIslandViewModel(rig.deps, stage);
       await vm.open();
@@ -419,6 +455,9 @@ final class _Rig {
   final progress = <int>[];
   _ScriptedDecider? decider;
 
+  /// When set, an open waits for it after creating its decider.
+  Completer<void>? gate;
+
   late final deps = TinyIslandDependencies(
     readSetup: () async => setup,
     openDecider:
@@ -429,7 +468,11 @@ final class _Rig {
           progress.add(1);
           onProgress(2, 2);
           progress.add(2);
-          return decider = _ScriptedDecider(KeywordIslandDecider(catalog));
+          final created = decider = _ScriptedDecider(
+            KeywordIslandDecider(catalog),
+          );
+          if (gate case final gate?) await gate.future;
+          return created;
         },
   );
 }

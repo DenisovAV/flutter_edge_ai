@@ -96,8 +96,21 @@ final class TinyIslandViewModel extends ChangeNotifier {
 
   /// Reads the active model and prepares the Decider. Called again after the
   /// user chose another model.
-  Future<void> open() async {
+  Future<void> open() {
     final generation = ++_generation;
+    // One open at a time: the embedder is core's cached singleton, so an
+    // older open releasing its model must finish before a newer one asks
+    // for it, or the newer one would get the model being closed. A
+    // superseded open that has not started yet does nothing.
+    final run = _openLane.then((_) => _open(generation));
+    _openLane = run.catchError((Object _) {});
+    return run;
+  }
+
+  Future<void> _openLane = Future.value();
+
+  Future<void> _open(int generation) async {
+    if (_stale(generation)) return;
     final previous = _decider;
     _decider = null;
     _set(() {

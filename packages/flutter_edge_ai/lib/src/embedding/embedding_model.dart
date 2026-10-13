@@ -4,8 +4,12 @@ import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/src/model_management/cancel_token.dart'
     show CancelToken;
-import 'package:meta/meta.dart' show nonVirtual;
+import 'package:meta/meta.dart' show experimental, nonVirtual;
 
+import '../decision/decider.dart' show Decider;
+import '../decision/decider_method.dart';
+import '../decision/decider_option.dart';
+import '../decision/embedding_decider.dart';
 import 'embedding_exceptions.dart';
 import 'embedding_input.dart';
 import 'embedding_modality.dart';
@@ -112,6 +116,71 @@ abstract base class EmbeddingModel {
   /// released. Waits as long as that takes — nothing is ever killed, since a
   /// killed worker never frees its native model.
   Future<void> close();
+
+  /// A decider that picks one of [options] for an input, or abstains.
+  ///
+  /// Every option's inputs — its description, then its examples — are
+  /// embedded once, here, with [TaskType.classification] (the prefix every
+  /// compared input gets), and fitted by [method]: centroids, plus the linear
+  /// layer for [DeciderMethod.linear]. [calibration] sets when the decider
+  /// abstains; the default cross-fit needs two inputs per option. A
+  /// `choose` then costs one [embed] and a dot product per option.
+  ///
+  /// The decider borrows this model and never closes it. When the model is
+  /// closed (core replaces the active embedder when it is asked for other
+  /// media or another backend), `choose` fails with
+  /// `EmbedderClosedException`: get the new embedder and reload the decider
+  /// with [loadDecider] from its `toArtifact()` — no re-embedding.
+  ///
+  /// [embedderId] names the model's weights in the decider's embedding-space
+  /// id. A model `FlutterEdgeAi.getActiveEmbedder` returned is named by its
+  /// installed file names unless one is given; any other model (a test fake,
+  /// a custom subclass) needs one. The space id also holds the dimension,
+  /// [activeBackend] and the task prefix, so a decider fitted on the CPU file
+  /// is never loaded onto an NPU bundle's vectors. [cancelToken] stops the
+  /// embedding of the options.
+  ///
+  /// Errors arrive as a FAILED FUTURE: [ArgumentError] for options it cannot
+  /// use (none, duplicate ids, an option with nothing to embed, a calibration
+  /// these options cannot support), [StateError] for a vector that is not
+  /// finite or not [dimension] long, and this model's own failures unchanged
+  /// — an over-long input is `EmbeddingInputTooLongException`, never
+  /// truncated.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @experimental
+  @nonVirtual
+  Future<Decider> createDecider({
+    required List<DeciderOption> options,
+    DeciderMethod method = DeciderMethod.centroid,
+    DeciderCalibration calibration = const DeciderCalibration.crossFit(),
+    String? embedderId,
+    CancelToken? cancelToken,
+  }) => createEmbeddingDecider(
+    this,
+    options: options,
+    method: method,
+    calibration: calibration,
+    embedderId: embedderId,
+    cancelToken: cancelToken,
+  );
+
+  /// The decider stored by `Decider.toArtifact()`, on this model, without
+  /// embedding anything.
+  ///
+  /// Fails with `DeciderSpaceMismatchException` when [artifact] was fitted in
+  /// another embedding space than this model's (another model file,
+  /// dimension, backend or task prefix — see [createDecider] for
+  /// [embedderId]), and with [FormatException] for an artifact this release
+  /// cannot read.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @experimental
+  @nonVirtual
+  Future<Decider> loadDecider(
+    Map<String, Object?> artifact, {
+    String? embedderId,
+  }) => loadEmbeddingDecider(this, artifact, embedderId: embedderId);
 
   /// Deprecated: use `embed(EmbeddingInput.text(text), taskType: taskType)`.
   @Deprecated(

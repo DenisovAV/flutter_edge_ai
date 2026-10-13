@@ -70,6 +70,25 @@ export 'src/embedding/embedding_exceptions.dart'
         EmbeddingLoadException,
         EmbeddingModalityNotLoadedException,
         UnsupportedEmbeddingCombinationException;
+// Deciders (experimental): pick one of N options for an input, or abstain.
+export 'src/decision/decider.dart'
+    show
+        AbstainReason,
+        Decider,
+        DeciderAnswer,
+        DeciderCapabilities,
+        DeciderInput,
+        DeciderProvenance,
+        RankedOption,
+        ScoreKind;
+export 'src/decision/decider_exceptions.dart'
+    show
+        DeciderException,
+        DeciderSpaceMismatchException,
+        DeciderUnsupportedException;
+export 'src/decision/decider_method.dart'
+    show DeciderCalibration, DeciderMethod;
+export 'src/decision/decider_option.dart' show DeciderOption;
 export 'src/media/encoded_media_format.dart'
     show EncodedMediaFormat, sniffEncodedMediaFormat;
 export 'src/message.dart' show Message, MessageType;

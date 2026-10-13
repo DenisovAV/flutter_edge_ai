@@ -140,6 +140,7 @@ Future<EmbeddingModel> loadActiveEmbedder({
       descriptor,
       declaredMedia: build.media,
       label: modelPath,
+      installedFiles: [for (final file in active.files) file.filename],
       onFailedLoadCleanup: (cleanup) =>
           cache.trackFailedLoadCleanup(cleanup, build),
     );

@@ -46,7 +46,10 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     required this.activeBackend,
     required this._engine,
     required this._label,
-  }) {
+    List<String>? installedFiles,
+  }) : installedFiles = installedFiles == null
+           ? null
+           : List.unmodifiable(installedFiles) {
     // A host that dies on its own (a crashed worker) turns this model closed
     // and tells its listeners, so the embedder cache evicts it and the next
     // caller gets a fresh one — instead of this one, whose every call fails.
@@ -60,11 +63,20 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     PreferredBackend? activeBackend,
     String engine = 'Test',
     String label = 'test-model',
-  }) : this._(host, activeBackend: activeBackend, engine: engine, label: label);
+    List<String>? installedFiles,
+  }) : this._(
+         host,
+         activeBackend: activeBackend,
+         engine: engine,
+         label: label,
+         installedFiles: installedFiles,
+       );
 
   /// Starts [descriptor]'s pass on this platform's host (§4.2 step 4) and
   /// returns the model once it is loaded and checked against
   /// [declaredMedia]. [label] — the model file — names it in messages.
+  /// [installedFiles] are the installed file names of the spec it runs, which
+  /// name its embedding space for deciders.
   ///
   /// Fails with `EmbeddingLoadException`. A pass whose load failed is closed
   /// behind the error; [onFailedLoadCleanup] gets a future that ends when it
@@ -73,6 +85,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     EmbeddingPassDescriptor<Object> descriptor, {
     required Set<EmbeddingModality> declaredMedia,
     required String label,
+    List<String>? installedFiles,
     void Function(Future<void> cleanup)? onFailedLoadCleanup,
   }) async {
     final running = await host.startEmbeddingHost(
@@ -86,6 +99,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
       activeBackend: descriptor.activeBackend,
       engine: descriptor.engineTag,
       label: label,
+      installedFiles: installedFiles,
     );
   }
 
@@ -95,6 +109,11 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
 
   @override
   final PreferredBackend? activeBackend;
+
+  /// The installed file names of the spec this model runs — model first,
+  /// then its tokenizer — or null for a model built without one (tests). The
+  /// embedding-space identity of the deciders created from it.
+  final List<String>? installedFiles;
 
   bool _isClosed = false;
   String? _deathReason;

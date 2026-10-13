@@ -9,12 +9,16 @@ import 'package:flutter_edge_ai/src/model.dart';
 import 'package:flutter_edge_ai/src/sampling.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
+import 'package:meta/meta.dart' show experimental;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 // Conditional default instance: the mobile/desktop default pulls dart:io;
 // the web variant is a throwing stub (FlutterEdgeAiWeb registers itself at
 // runtime). This keeps dart:io off the web/wasm import graph.
 import 'default.dart' if (dart.library.js_interop) 'default_web.dart';
+import 'decision/decider.dart' show Decider;
+import 'decision/decider_exceptions.dart' show DeciderUnsupportedException;
+import 'decision/decider_option.dart' show DeciderOption;
 import 'embedding/embedding_model.dart';
 
 // Embedding types that used to be declared here; re-exported so the rest of
@@ -462,6 +466,22 @@ abstract class InferenceModel {
   /// that does not answer behaves as before. `implements` does not inherit the
   /// default body, so such an implementation has to declare it.
   bool get isClosed => false;
+
+  /// A decider that picks one of [options] by scoring each with this model.
+  ///
+  /// No engine scores options yet, so this default fails with
+  /// `DeciderUnsupportedException` (as a failed future). Engines that can
+  /// will override it; until then use `EmbeddingModel.createDecider`, which
+  /// every embedding backend supports.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @experimental
+  Future<Decider> createDecider({required List<DeciderOption> options}) async {
+    throw DeciderUnsupportedException(
+      '$runtimeType does not score options. Create the decider from an '
+      'EmbeddingModel instead: EmbeddingModel.createDecider().',
+    );
+  }
 
   Future<void> close();
 }

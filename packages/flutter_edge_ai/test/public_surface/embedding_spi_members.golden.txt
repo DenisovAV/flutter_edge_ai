@@ -65,13 +65,13 @@ abstract base class EmbeddingModel
   getter Set<EmbeddingModality> modalities
   method void addCloseListener(void Function() listener) abstract
   method Future<void> close() abstract
-  method Future<Decider> createDecider({required List<DeciderOption> options, DeciderMethod method = DeciderMethod.centroid, DeciderCalibration calibration = const DeciderCalibration.crossFit(), String? embedderId, CancelToken? cancelToken, void Function(int, int)? onProgress}) @nonVirtual
+  method Future<Decider> createDecider({required List<DeciderOption> options, DeciderMethod method = DeciderMethod.centroid, DeciderCalibration calibration = const DeciderCalibration.crossFit(), String? embedderId, CancelToken? cancelToken, void Function(int, int)? onProgress}) @nonVirtual @experimental
   method Future<List<double>> embed(EmbeddingInput input, {required TaskType taskType}) abstract
   method Future<List<List<double>>> embedAll(List<EmbeddingInput> inputs, {required TaskType taskType, CancelToken? cancelToken})
   method Future<List<double>> generateEmbedding(String text, {TaskType taskType = TaskType.retrievalQuery}) @nonVirtual @Deprecated
   method Future<List<List<double>>> generateEmbeddings(List<String> texts, {TaskType taskType = TaskType.retrievalQuery}) @nonVirtual @Deprecated
   method Future<int> getDimension() @nonVirtual @Deprecated
-  method Future<Decider> loadDecider(Map<String, Object?> artifact, {String? embedderId}) @nonVirtual
+  method Future<Decider> loadDecider(Map<String, Object?> artifact, {String? embedderId}) @nonVirtual @experimental
 
 function List<double> finalizeEmbedding(EmbeddingOutputContract contract, ForwardResult result, {List<int>? attentionMask})
 function List<double> meanPoolAndNormalize(ForwardResult result, {List<int>? attentionMask})

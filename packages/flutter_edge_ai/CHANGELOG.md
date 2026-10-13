@@ -1,3 +1,6 @@
+## 2.4.0
+- Experimental `Decider` API: pick one of N options or abstain (`EmbeddingModel.createDecider`).
+
 ## 2.3.2
 - The active model keeps its LoRA across a restart; `ModelFileType.gguf` (#649).
 

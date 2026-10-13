@@ -129,6 +129,7 @@ Future<Decider> createEmbeddingDecider(
   required DeciderCalibration calibration,
   String? embedderId,
   CancelToken? cancelToken,
+  void Function(int done, int total)? onProgress,
 }) async {
   final opts = List<DeciderOption>.unmodifiable(options);
   // Read once: an unmodifiable copy the calibration made.
@@ -200,6 +201,13 @@ Future<Decider> createEmbeddingDecider(
     }
   }
 
+  final total = inputs.length + (labelledRows?.length ?? 0);
+  var done = 0;
+  final void Function()? embedded = onProgress == null
+      ? null
+      : () => onProgress(++done, total);
+  onProgress?.call(0, total);
+
   final x = await embedDeciderRows(
     embedder,
     inputs,
@@ -207,6 +215,7 @@ Future<Decider> createEmbeddingDecider(
     dimension: d,
     name: optionInput,
     cancelToken: cancelToken,
+    onEmbedded: embedded,
   );
 
   Float64List? labelledX;
@@ -218,6 +227,7 @@ Future<Decider> createEmbeddingDecider(
       dimension: d,
       name: (i) => 'Labelled row $i',
       cancelToken: cancelToken,
+      onEmbedded: embedded,
     );
   }
 

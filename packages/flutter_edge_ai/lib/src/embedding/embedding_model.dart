@@ -156,6 +156,14 @@ abstract base class EmbeddingModel {
   /// the call then fails with `EmbeddingCancelledException` and returns no
   /// decider.
   ///
+  /// [onProgress] counts the inputs this call embeds — each option's
+  /// description and examples, then the rows of
+  /// [DeciderCalibration.fromLabelled] — as `(done, total)`: `(0, total)`
+  /// first, then once per input as its vector comes back, ending at
+  /// `(total, total)`. It does not cover the fit that follows: a
+  /// [DeciderMethod.linear] fit at 150 options takes seconds after the last
+  /// call. A throw from it fails the call.
+  ///
   /// Errors arrive as a FAILED FUTURE: [ArgumentError] for options it cannot
   /// use (none, duplicate ids, an option with nothing to embed, a calibration
   /// these options or labelled rows cannot support), [StateError] for a
@@ -174,6 +182,7 @@ abstract base class EmbeddingModel {
     DeciderCalibration calibration = const DeciderCalibration.crossFit(),
     String? embedderId,
     CancelToken? cancelToken,
+    void Function(int done, int total)? onProgress,
   }) => createEmbeddingDecider(
     this,
     options: options,
@@ -181,6 +190,7 @@ abstract base class EmbeddingModel {
     calibration: calibration,
     embedderId: embedderId,
     cancelToken: cancelToken,
+    onProgress: onProgress,
   );
 
   /// The decider stored by `Decider.toArtifact()`, on this model, without

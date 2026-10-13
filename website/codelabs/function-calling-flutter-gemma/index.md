@@ -329,7 +329,7 @@ turn. There is no second place here:
 ```dart
       final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 1024,
-        preferredBackend: PreferredBackend.cpu,
+        activationDataType: ActivationDataType.float32,
       );
 ```
 
@@ -337,16 +337,18 @@ turn. There is no second place here:
 you declare a function. Tools belong to the session.
 
 The two arguments it *does* take are worth a moment. `maxTokens: 1024` is what
-this checkpoint is built for. The CPU backend is a workaround for **this file**,
-and the distinction matters more than the workaround does.
+this checkpoint is built for. `activationDataType: ActivationDataType.float32` is
+a workaround for **this file**, and the distinction matters more than the
+workaround does.
 
 The `.litertlm` you just downloaded was converted before litetune began setting
 `prefer_activation_type=fp32`. Without that key the GPU path answers every
 prompt with `<pad>` repeated to the token limit — measured on Android and on
 macOS Metal alike, with no exception, no warning, and a chat that looks alive
-while it returns filler. On CPU the same weights ask for `multiply` correctly.
+while it returns filler. Asking for float32 activations fixes it: the same
+weights call `multiply` correctly on the GPU.
 
-So this is not "FunctionGemma needs a CPU", and it is not a platform bug. It is
+So this is not "FunctionGemma cannot use a GPU", and it is not a platform bug. It is
 one published artifact carrying a conversion setting that predates the fix. Step
 4 converts the model again with a current litetune, and that artifact scores the
 same on GPU as on CPU and runs about 1.5× faster — which is a fair summary of
@@ -1105,15 +1107,16 @@ disk records which family a `.litertlm` belongs to. Tune a different base and
 `ModelChoice.fromDisk` is the line to change.
 
 The three also disagree about how to be opened, so each `ModelChoice` carries
-that too. FunctionGemma's download keeps Step 2's `maxTokens: 1024` on the CPU
-— the `<pad>` workaround belongs to that one file — while Gemma 4 and a model
-you converted in Step 4 get a 4096-token context and the engine's default
-backend:
+that too. FunctionGemma's download keeps Step 2's `maxTokens: 1024` and float32
+activations — the `<pad>` workaround belongs to that one file — while Gemma 4
+and a model you converted in Step 4 get a 4096-token context and the engine's
+defaults:
 
 ```dart
       final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: widget.model.maxTokens,
         preferredBackend: widget.model.preferredBackend,
+        activationDataType: widget.model.activationDataType,
       );
 ```
 

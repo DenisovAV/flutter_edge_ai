@@ -806,6 +806,32 @@ Windows x64 only (ARM64 is not released), so the option is to build the app for
 x64, which runs under Windows x64 emulation. See
 [#326](https://github.com/DenisovAV/flutter_edge_ai/issues/326).
 
+### FunctionGemma answers with nothing, or only `<pad>`, on the GPU
+
+Symptom: a FunctionGemma `.litertlm` on `PreferredBackend.gpu` loads, reports
+`gpu`, and then every prompt returns no text and no call (or `<pad>` to the
+token limit), with no exception and no warning. On the CPU the same file works.
+
+Cause: the bundle was converted before litetune 0.1.4 and declares no
+`prefer_activation_type`, so the GPU runs at FP16, which these weights cannot
+survive. It is the file, not the platform: Android (Adreno and Mali) and macOS
+Metal are reported, and an Adreno 616 reproduced it. A bundle that declares the
+key, such as Gemma 4, is not affected.
+
+Fix: nothing, for `ModelType.functionGemma` on native platforms (the web build
+has no activation setting). The engine reads the bundle's header and, when it
+declares no `prefer_activation_type`, builds the GPU attempt at
+`ActivationDataType.float32`; the log line saying so is printed in debug builds
+only. The CPU is left alone, and so is a value you pass:
+`activationDataType: ActivationDataType.float16` keeps the default.
+
+Other models are not changed, and some need the argument. A plain
+`gemma3-270m-it` floods `<pad>` on the GPU too (every Gemma 3 270M bundle does,
+on macOS and Android: LiteRT-LM#3280) and needs
+`activationDataType: ActivationDataType.float32` passed explicitly, as the
+function-calling codelab does for its pinned file. The larger Gemma bundles
+(Gemma 3 1B, Gemma 4) are not affected.
+
 ### Wrong digits from a long prompt on GPU
 
 Gemma 4 can copy numbers wrongly out of a prompt of about 2,000 tokens or more

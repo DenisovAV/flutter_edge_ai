@@ -365,7 +365,9 @@ class FlutterEdgeAi {
   /// - [supportAudio]: Enable audio input support for Gemma 3n E4B (default: false)
   /// - [maxNumImages]: Maximum number of images if supportImage is true
   /// - [activationDataType]: activation type for the text decoder of native
-  ///   `.litertlm` models (Android, iOS, desktop); null honors the model file,
+  ///   `.litertlm` models (Android, iOS, desktop); null honors the model file
+  ///   (except a `ModelType.functionGemma` bundle that declares no
+  ///   `prefer_activation_type`, which gets float32 on its GPU attempt),
   ///   and a value overrides LiteRT-LM's own choice (float16 on GPU by
   ///   default). Pass
   ///   [ActivationDataType.float32] if the GPU writes wrong digits — it needs

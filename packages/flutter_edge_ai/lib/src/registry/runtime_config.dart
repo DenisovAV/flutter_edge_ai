@@ -83,7 +83,9 @@ class RuntimeConfig {
   final bool? enableSpeculativeDecoding;
 
   /// Activation type for the native LiteRT-LM engine's text decoder. Null
-  /// leaves it to the model file; when set, it overrides LiteRT-LM's own
+  /// leaves it to the model file (except a `ModelType.functionGemma` bundle
+  /// that declares no `prefer_activation_type`, which gets float32 on its GPU
+  /// attempt); when set, it overrides LiteRT-LM's own
   /// choice (float16 on GPU by default). Set [ActivationDataType.float32]
   /// when a GPU writes wrong digits
   /// (LiteRT-LM#2814, #3012). The vision and audio encoders keep the model's

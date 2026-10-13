@@ -956,7 +956,11 @@ class LiteRtLmFfiClient {
         throw Exception(
           'Failed to create engine. Model may be invalid: $modelPath'
           '${float32OnGpu ? ' (float32 activations need more GPU memory than '
-                    'the default — try without activationDataType)' : ''}',
+                    'the default. If you set activationDataType, try without '
+                    'it; if you did not, the engine chose float32 for a '
+                    'FunctionGemma bundle that declares no '
+                    'prefer_activation_type, and ActivationDataType.float16 '
+                    'asks for the default instead)' : ''}',
         );
       }
 

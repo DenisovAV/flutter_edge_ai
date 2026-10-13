@@ -9,6 +9,7 @@ import 'ffi/backend_preference.dart';
 import 'ffi/ffi_inference_model.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_stack_manifest.dart';
+import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 
 /// Minimum context window (`max_num_tokens`) for `.litertlm` models.
@@ -80,14 +81,24 @@ int clampLitertlmContextTokens(
   String audioBackend,
   int? activationDataType,
 })
-encoderInitArgs(RuntimeConfig config, PreferredBackend activeBackend) => (
+encoderInitArgs(
+  RuntimeConfig config,
+  PreferredBackend activeBackend, {
+  ActivationDataType? gpuDefaultActivation,
+}) => (
   backend: ffiBackendWireName(activeBackend),
   enableVision: config.supportImage,
   visionBackend: encoderBackendWireName(config.preferredVisionBackend),
   maxNumImages: config.supportImage ? (config.maxNumImages ?? 1) : 0,
   enableAudio: config.supportAudio,
   audioBackend: encoderBackendWireName(config.preferredAudioBackend),
-  activationDataType: activationDataTypeWireValue(config.activationDataType),
+  // The caller's value wins on every backend. The engine's own default (see
+  // `gpuActivationDefault`) is for a GPU attempt only: only the GPU executor
+  // reads the type, and a CPU or NPU attempt is left as the bundle has it.
+  activationDataType: activationDataTypeWireValue(
+    config.activationDataType ??
+        (activeBackend == PreferredBackend.gpu ? gpuDefaultActivation : null),
+  ),
 );
 
 /// LiteRT-LM (.litertlm) inference engine. Pure factory: builds and returns a
@@ -146,6 +157,49 @@ class LiteRtLmEngine
       }
     }
 
+    // FunctionGemma bundles converted before litetune 0.1.4 declare no
+    // activation type and, at the FP16 a GPU defaults to, answer with `<pad>`
+    // or nothing. The header is read only when the answer can matter (see
+    // `activationHeaderMatters`).
+    ActivationDataType? gpuDefaultActivation;
+    if (activationHeaderMatters(
+      requested: config.activationDataType,
+      preferredBackend: config.preferredBackend,
+      modelType: spec.modelType,
+    )) {
+      final read = await tryReadBundleActivationDeclaration(config.modelPath);
+      final error = read.error;
+      if (error != null) {
+        // A failed read leaves the GPU attempt at FP16, where this bundle can
+        // answer with nothing. A release build is where that gets reported and
+        // edgeAiLog is silent there, so it is printed, once per load.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_litertlm] WARNING: could not read which activation '
+          'type this FunctionGemma .litertlm declares, so a GPU attempt runs '
+          'at the engine default (float16), where a bundle without one can '
+          'answer with nothing. Pass '
+          'activationDataType: ActivationDataType.float32 to be sure. '
+          '${error.split('\n').first}',
+        );
+      }
+      gpuDefaultActivation = gpuActivationDefault(
+        requested: null,
+        preferredBackend: config.preferredBackend,
+        modelType: spec.modelType,
+        declaresKey: read.declaresKey,
+      );
+      if (gpuDefaultActivation != null) {
+        edgeAiLog(
+          '[LiteRtLmEngine] this FunctionGemma bundle declares no '
+          'prefer_activation_type, and at the GPU default of float16 such a '
+          'bundle answers with <pad> only: a GPU attempt uses '
+          '${gpuDefaultActivation.name}. Pass '
+          'activationDataType: ActivationDataType.float16 to keep the default.',
+        );
+      }
+    }
+
     final ffiRuntime = await initializeFfiRuntime<LiteRtLmFfiClient>(
       preferredBackend: config.preferredBackend,
       logTag: '[LiteRtLmEngine]',
@@ -155,7 +209,11 @@ class LiteRtLmEngine
       initializeClient: (client, backend) => _oneNpuInitAtATime(
         backend,
         () async {
-          final args = encoderInitArgs(config, backend);
+          final args = encoderInitArgs(
+            config,
+            backend,
+            gpuDefaultActivation: gpuDefaultActivation,
+          );
           // Per ATTEMPT, not per request: a requested NPU falls back npu -> gpu
           // -> cpu (`ffiBackendFallbackOrder`), and the floor this skips exists
           // for the two it falls back to. Computing it once from the REQUESTED

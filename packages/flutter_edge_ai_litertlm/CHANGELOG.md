@@ -1,3 +1,6 @@
+## Unreleased
+- FunctionGemma bundles that declare no `prefer_activation_type` run on the GPU at float32 (#552).
+
 ## 1.13.3
 - README: Qwen3 0.6B bundle that loads (#659); NPU mask formula corrected.
 

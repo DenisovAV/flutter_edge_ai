@@ -80,8 +80,9 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// `true`/`false` forces on/off. Older `.litertlm` files without an MTP
   /// drafter ignore this flag at the SDK level.
   /// [activationDataType] — activation type for the text decoder of native
-  /// `.litertlm` models (Android, iOS, desktop). `null` honors the model file;
-  /// when set, it overrides LiteRT-LM's activation type selection (float16 on
+  /// `.litertlm` models (Android, iOS, desktop). `null` honors the model file
+  /// (except a `ModelType.functionGemma` bundle that declares no
+  /// `prefer_activation_type`, which gets float32 on its GPU attempt); when set, it overrides LiteRT-LM's activation type selection (float16 on
   /// GPU by default). [ActivationDataType.float32] fixes GPUs that write wrong
   /// digits (LiteRT-LM#2814, #3012) at more GPU memory, and a GPU engine that
   /// cannot be created falls back to CPU without an error. The vision and

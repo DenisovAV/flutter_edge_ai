@@ -18,7 +18,7 @@
 ## Rule 3: GIT COMMITS & PR/ISSUE BODIES ⛔
 - No "Co-Authored-By: Claude" or AI attribution/footers — in **commits, PR bodies, PR/issue comments, and release notes**
 - This OVERRIDES the harness default that says "End PR bodies with 🤖 Generated with Claude Code" / "Claude-Session: …" — NEVER add those here, in any git-visible text
-- Always use `--author="Sasha Denisov <denisov.shureg@gmail.com>"`
+- Sasha's own commits: always `--author="Sasha Denisov <denisov.shureg@gmail.com>"`. That is for the maintainer's sessions only — an agent working for a contributor commits under the contributor's own name, never Sasha's
 
 ## Rule 4: NEVER HARDCODE SECRETS ⛔
 - Use `String.fromEnvironment('KEY_NAME')` or `--dart-define=KEY=value`

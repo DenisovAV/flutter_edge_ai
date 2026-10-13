@@ -38,17 +38,20 @@ done
 # Codelab step apps carry the same snippet — a learner's app needs the staging
 # phase as much as an example does, and a codelab that ships a stale copy
 # teaches it. Apps are DISCOVERED, not listed, so a new step cannot escape the
-# check; and an app that depends on flutter_edge_ai but has no macos/Podfile is
-# itself a failure here (getting-started's step_01_starter has no plugin and no
-# Podfile, by design, so it is skipped by the same test).
+# check; and an app that depends on flutter_edge_ai_litertlm but has no
+# macos/Podfile is itself a failure here (getting-started's step_01_starter has
+# no plugin and no Podfile, by design, so it is skipped by the same test).
+# Only LiteRT-LM has companions to stage: an app on core without it (the
+# built-in AI codelab) must NOT carry the snippet, whose phase exits 1 when the
+# litertlm hook never installed the stager.
 codelab_podfiles=0
 for pubspec in $(find codelabs -mindepth 3 -maxdepth 3 -name pubspec.yaml \
                    -not -path '*/_*' | sort); do
-  grep -qE '^  flutter_(gemma|edge_ai):' "$pubspec" || continue
+  grep -qE '^  flutter_(gemma|edge_ai)_litertlm:' "$pubspec" || continue
   f="$(dirname "$pubspec")/macos/Podfile"
   if [ ! -f "$f" ]; then
     echo "MISSING: $f" >&2
-    echo "  That app depends on flutter_edge_ai, so it needs the snippet too." >&2
+    echo "  That app depends on flutter_edge_ai_litertlm, so it needs the snippet too." >&2
     exit 1
   fi
   awk '/^post_install do \|installer\|/{p=1} p' "$f" \

@@ -351,13 +351,24 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
   `VoiceTurnCompleteEvent` and `VoiceTurnInterruptedEvent` carry an empty
   transcript. `streamAudio`, `interrupt()` and its bounded drain, a tools chat
   with `onToolCall`, and the one-turn-at-a-time `StateError` work as in
-  `runTurn`. The recognizer is still required, and `runTurn` still uses it.
+  `runTurn`. A recording under 2 bytes (a push-to-talk tap) completes with an
+  empty `VoiceTurnCompleteEvent` without asking the model, as an empty
+  transcript does. The recognizer is still required, and `runTurn` still uses
+  it.
+- **Barge-in forgets the recordings.** After an interrupted reply, a
+  `.litertlm` chat rebuilds its conversation from the turns' text, and an
+  audio turn has none: the model keeps its own replies but loses what was said
+  in earlier audio turns. Measured on Gemma 4 E2B: told a secret word in an
+  audio turn, it named it after an uninterrupted second turn, and not after an
+  interrupted one.
 - **The format.** `runAudioTurn` takes the same 16 kHz mono 16-bit PCM as
   `runTurn`. `fromChat` adds the WAV header, because a `.litertlm` model decodes
   an audio file, not bare samples.
 - **The flags.** `supportAudio` on `getActiveModel` creates the engine with its
-  audio encoder; on the chat it is what `fromChat` checks. Without it on the
-  chat, `runAudioTurn` throws a `StateError`.
+  audio encoder. `createChat` takes it from the model unless you pass it, and
+  the chat's flag is what `fromChat` checks: on a chat whose `supportAudio` is
+  false, `runAudioTurn` throws a `StateError`.
+- **Native only.** No web engine takes audio input.
 - **A custom responder.** `VoiceResponder` takes an optional `respondToAudio`
   next to `respond`; it gets the bare PCM, so wrap it in a WAV yourself before
   sending it to a `.litertlm` chat.

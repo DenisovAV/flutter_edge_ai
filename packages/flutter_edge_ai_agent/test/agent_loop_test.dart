@@ -757,9 +757,11 @@ void main() {
 
       final events = await loop.run(chat, 'x').toList();
 
-      expect(events.whereType<TextChunkEvent>().map((e) => e.text).toList(), [
-        'hi',
-      ], reason: 'empty tokens dropped, no blank TextChunkEvent');
+      expect(
+        events.whereType<TextChunkEvent>().map((e) => e.text).toList(),
+        ['hi'],
+        reason: 'empty tokens dropped, no blank TextChunkEvent',
+      );
       expect((events.last as DoneEvent).text, 'hi');
     });
 
@@ -1246,11 +1248,11 @@ void main() {
           const TextResponse('Paris'),
         ], supportAudio: true);
 
-        final events = await loop()
-            .run(chat, '', audioBytes: Uint8List.fromList([1]))
-            .toList();
+        final audio = Uint8List.fromList([1]);
+        final events = await loop().run(chat, '', audioBytes: audio).toList();
 
         expect(chat.received.single.text, '');
+        expect(chat.received.single.audioBytes, audio);
         expect((events.last as DoneEvent).text, 'Paris');
       },
     );

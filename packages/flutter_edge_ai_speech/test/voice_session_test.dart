@@ -930,6 +930,46 @@ void main() {
       expect(session.isTurnInFlight, isFalse);
     });
 
+    test('an interrupt right after listen ends the turn before the model is '
+        'asked, as an interrupt during STT does in runTurn', () async {
+      final r = _FakeResponder();
+      final session = VoiceSession.custom(
+        recognizer: _FakeRecognizer('never used'),
+        responder: r.build(),
+        synthesizer: _FakeSynth(),
+      );
+      final events = <VoiceEvent>[];
+      session.runAudioTurn(_pcm()).listen(events.add);
+      await session.interrupt();
+
+      expect(r.audioCalls, 0);
+      expect(events, hasLength(1));
+      final terminal = events.single as VoiceTurnInterruptedEvent;
+      expect(terminal.transcript, isEmpty);
+      expect(terminal.partialReplyText, isEmpty);
+      expect(session.isTurnInFlight, isFalse);
+    });
+
+    test('a recording without a whole sample completes without asking the '
+        'model, as an empty transcript does in runTurn', () async {
+      for (final pcm in [Uint8List(0), Uint8List(1)]) {
+        final r = _FakeResponder();
+        final session = VoiceSession.custom(
+          recognizer: _FakeRecognizer('never used'),
+          responder: r.build(),
+          synthesizer: _FakeSynth(),
+        );
+
+        final events = await session.runAudioTurn(pcm).toList();
+
+        expect(r.audioCalls, 0, reason: '${pcm.length} bytes');
+        final complete = events.single as VoiceTurnCompleteEvent;
+        expect(complete.transcript, isEmpty);
+        expect(complete.replyText, isEmpty);
+        expect(session.isTurnInFlight, isFalse);
+      }
+    });
+
     test('a responder error becomes the stream error', () async {
       final r = _FakeResponder();
       final session = VoiceSession.custom(
@@ -939,12 +979,22 @@ void main() {
       );
       final done = expectLater(
         session.runAudioTurn(_pcm()),
-        emitsThrough(emitsError(isA<StateError>())),
+        emitsThrough(
+          emitsError(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'the model cannot hear',
+            ),
+          ),
+        ),
       );
       await Future<void>.delayed(Duration.zero);
       r.ctrl.addError(StateError('the model cannot hear'));
       await r.ctrl.close();
       await done;
+      expect(r.audioCalls, 1);
+      expect(r.respondCalls, 0);
       expect(session.isTurnInFlight, isFalse);
     });
 
@@ -958,16 +1008,21 @@ void main() {
       expect(session.isTurnInFlight, isFalse);
     });
 
-    test('one turn in flight, whichever kind', () {
+    test('one turn in flight, whichever kind', () async {
       final r = _FakeResponder();
       final session = VoiceSession.custom(
         recognizer: _FakeRecognizer('hi'),
         responder: r.build(),
         synthesizer: _FakeSynth(),
       );
-      session.runAudioTurn(_pcm()).listen((_) {});
+      final turn = session.runAudioTurn(_pcm()).toList();
       expect(() => session.runTurn(_pcm()), throwsStateError);
       expect(() => session.runAudioTurn(_pcm()), throwsStateError);
+
+      await Future<void>.delayed(Duration.zero);
+      await r.ctrl.close();
+      await turn;
+      expect(session.isTurnInFlight, isFalse);
     });
   });
 }

@@ -161,9 +161,14 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
 ```
 
 Barge-in and the one-turn-at-a-time rule work as in `runTurn`; the complete and
-interrupted events carry an empty transcript. For a chat without
-`supportAudio`, `runAudioTurn` throws a `StateError`. With
-`VoiceSession.custom`, pass `respondToAudio` to the `VoiceResponder`.
+interrupted events carry an empty transcript, and a recording under 2 bytes (a
+push-to-talk tap) completes without asking the model. One difference: after a
+barge-in, a `.litertlm` chat rebuilds its conversation from text, so the model
+forgets what was said in earlier audio turns. `createChat` takes
+`supportAudio` from the model unless you pass it; on a chat whose
+`supportAudio` is false, `runAudioTurn` throws a `StateError`. With
+`VoiceSession.custom`, pass `respondToAudio` to the `VoiceResponder`. Audio
+input is native-only.
 
 ## Platforms
 

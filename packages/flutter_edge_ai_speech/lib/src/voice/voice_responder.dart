@@ -26,7 +26,8 @@ class VoiceResponder {
 
   /// Portable stop of in-flight generation (e.g. `chat.stopGeneration`).
   ///
-  /// CONTRACT: stop() must cause the [respond] stream to terminate promptly.
+  /// CONTRACT: stop() must cause the in-flight [respond] or [respondToAudio]
+  /// stream to terminate promptly.
   /// [VoiceSession.interrupt] drains with a timeout, so a stop() that does not
   /// end the stream will not hang the session — but it defers the interrupt and
   /// leaves generation running in the background. stop() MAY throw; interrupt()

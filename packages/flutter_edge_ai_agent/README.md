@@ -221,7 +221,10 @@ await for (final event in session.ask('', audioBytes: wav)) {
 The text may be empty or add to the recording, and an image can go with it. A
 `.litertlm` model decodes an audio file, so pass a WAV, not bare PCM samples.
 A session built without `supportAudio: true` fails the stream with an
-`ArgumentError`, as do empty bytes; nothing reaches the chat history.
+`ArgumentError`, as do empty bytes; nothing reaches the chat history. Audio
+input is native-only. After a stopped turn (a cancelled subscription) a
+`.litertlm` chat is rebuilt from text, so the recordings of earlier turns are
+gone from its context.
 
 ## SKILL.md format
 

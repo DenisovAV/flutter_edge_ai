@@ -119,13 +119,17 @@ class AgentLoop {
   /// image reaches the engine and is dropped there — a caller precondition.
   ///
   /// Pass [audioBytes] to ask with a recording — the spoken question, for a
-  /// model with an audio encoder (Gemma 4 E2B/E4B, Gemma 3n). It rides on the
-  /// same first message as [userMessage] and [imageBytes]; [userMessage] may be
-  /// empty when the audio carries the question. Tool-result follow-ups in the
-  /// turn carry no media. The bytes reach the engine unchanged: a `.litertlm`
-  /// model (LiteRT-LM) decodes an audio FILE, so send a WAV (16 kHz mono 16-bit
-  /// PCM in a RIFF container), not bare PCM samples. LiteRT-LM on the web has no
-  /// audio and throws `UnsupportedError`, which ends the returned stream.
+  /// model with an audio encoder (Gemma 4 E2B or E4B as `.litertlm`, on a
+  /// native platform). It rides on the same first message as [userMessage] and
+  /// [imageBytes]; [userMessage] may be empty when the audio carries the
+  /// question. Tool-result follow-ups in the turn carry no media. The bytes
+  /// reach the engine unchanged: a `.litertlm` model (LiteRT-LM) decodes an
+  /// audio FILE, so send a WAV (16 kHz mono 16-bit PCM in a RIFF container), not
+  /// bare PCM samples. Audio is native-only: LiteRT-LM on the web throws
+  /// `UnsupportedError`, which ends the returned stream, and MediaPipe's web
+  /// `.task` files have no audio encoder. After a stopped turn (a cancelled
+  /// subscription), a `.litertlm` chat rebuilds its conversation from the turns'
+  /// text, so the recordings of earlier turns are gone from its context.
   ///
   /// PRECONDITION, as for images: [chat] must have been created with
   /// `supportAudio: true` (see [AgentSession.fromModel]). Without it the FFI

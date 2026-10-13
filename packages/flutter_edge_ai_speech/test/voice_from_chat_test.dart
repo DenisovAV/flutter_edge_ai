@@ -12,6 +12,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
         ThinkingResponse,
         FunctionCallResponse,
         Tool;
+import 'package:flutter_edge_ai_speech/src/voice/pcm_wav.dart';
 import 'package:flutter_edge_ai_speech/src/voice/voice_event.dart'
     show VoiceReplyTextEvent;
 import 'package:flutter_edge_ai_speech/src/voice/voice_session.dart';
@@ -243,7 +244,7 @@ void main() {
         final message = chat.received.single;
         expect(message.isUser, isTrue);
         expect(message.text, isEmpty);
-        expect(message.audioBytes, VoiceSession.wavFromPcm16kMono(pcm));
+        _expectWav16kMono(message.audioBytes!, pcm);
         expect(events.whereType<VoiceReplyTextEvent>().map((e) => e.chunk), [
           'Paris',
         ]);
@@ -270,15 +271,43 @@ void main() {
       final events = await session.runAudioTurn(pcm).toList();
 
       expect(calls, ['get_time']);
-      expect(
-        chat.received.first.audioBytes,
-        VoiceSession.wavFromPcm16kMono(pcm),
-      );
+      _expectWav16kMono(chat.received.first.audioBytes!, pcm);
       expect(chat.received.skip(1).where((m) => m.audioBytes != null), isEmpty);
       expect(events.whereType<VoiceReplyTextEvent>().map((e) => e.chunk), [
         'noon',
       ]);
     });
+
+    test(
+      'an interrupt right after listen runs no tool and asks no model',
+      () async {
+        final chat = _ScriptChat([
+          [const FunctionCallResponse(name: 'get_time', args: {})],
+          [const TextResponse('noon')],
+        ], supportAudio: true);
+        final calls = <String>[];
+        final session = VoiceSession.fromChat(
+          recognizer: _NoopRecognizer(),
+          chat: chat,
+          synthesizer: _NoopSynth(),
+          onToolCall: (call) async {
+            calls.add(call.name);
+            return {'time': '12:00'};
+          },
+        );
+        final events = <Object>[];
+        session
+            .runAudioTurn(Uint8List.fromList([3, 0, 4, 0]))
+            .listen(events.add);
+        await session.interrupt();
+        // Let a detached reply, if one started, run its tool loop.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(calls, isEmpty);
+        expect(chat.generations, 0);
+        expect(chat.received, isEmpty);
+      },
+    );
 
     test('a chat without supportAudio cannot run an audio turn', () {
       final session = VoiceSession.fromChat(
@@ -291,26 +320,32 @@ void main() {
 
     test('wavFromPcm16kMono writes a 16 kHz mono PCM16 RIFF header', () {
       final pcm = Uint8List.fromList(List.filled(6, 7));
-      final wav = VoiceSession.wavFromPcm16kMono(pcm);
-      final header = ByteData.sublistView(wav, 0, 44);
-      String ascii(int at) => String.fromCharCodes(wav.sublist(at, at + 4));
-
-      expect(wav.length, 44 + pcm.length);
-      expect(ascii(0), 'RIFF');
-      expect(header.getUint32(4, Endian.little), 36 + pcm.length);
-      expect(ascii(8), 'WAVE');
-      expect(ascii(12), 'fmt ');
-      expect(header.getUint16(20, Endian.little), 1); // PCM
-      expect(header.getUint16(22, Endian.little), 1); // mono
-      expect(header.getUint32(24, Endian.little), 16000);
-      expect(header.getUint32(28, Endian.little), 32000); // byte rate
-      expect(header.getUint16(32, Endian.little), 2); // block align
-      expect(header.getUint16(34, Endian.little), 16);
-      expect(ascii(36), 'data');
-      expect(header.getUint32(40, Endian.little), pcm.length);
-      expect(wav.sublist(44), pcm);
+      _expectWav16kMono(wavFromPcm16kMono(pcm), pcm);
     });
   });
+}
+
+/// [wav] is [pcm] in a canonical 44-byte RIFF header for 16 kHz mono 16-bit
+/// PCM. The expected values are literals, not the writer's own output.
+void _expectWav16kMono(Uint8List wav, Uint8List pcm) {
+  final header = ByteData.sublistView(wav, 0, 44);
+  String ascii(int at) => String.fromCharCodes(wav.sublist(at, at + 4));
+
+  expect(wav.length, 44 + pcm.length);
+  expect(ascii(0), 'RIFF');
+  expect(header.getUint32(4, Endian.little), 36 + pcm.length);
+  expect(ascii(8), 'WAVE');
+  expect(ascii(12), 'fmt ');
+  expect(header.getUint32(16, Endian.little), 16); // fmt chunk size
+  expect(header.getUint16(20, Endian.little), 1); // PCM
+  expect(header.getUint16(22, Endian.little), 1); // mono
+  expect(header.getUint32(24, Endian.little), 16000);
+  expect(header.getUint32(28, Endian.little), 32000); // byte rate
+  expect(header.getUint16(32, Endian.little), 2); // block align
+  expect(header.getUint16(34, Endian.little), 16);
+  expect(ascii(36), 'data');
+  expect(header.getUint32(40, Endian.little), pcm.length);
+  expect(wav.sublist(44), pcm);
 }
 
 /// A tools-free chat that records what it is fed and answers 'Paris'.

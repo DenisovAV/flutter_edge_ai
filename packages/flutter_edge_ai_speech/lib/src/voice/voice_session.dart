@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai/engine.dart'
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'clause_splitter.dart';
+import 'pcm_wav.dart';
 import 'voice_event.dart';
 import 'voice_responder.dart';
 
@@ -148,40 +149,6 @@ class VoiceSession {
     isUser: true,
   );
 
-  /// [pcm] — 16 kHz mono 16-bit little-endian samples — in a RIFF/WAV
-  /// container, the form LiteRT-LM decodes. Exposed for testing.
-  @visibleForTesting
-  static Uint8List wavFromPcm16kMono(Uint8List pcm) {
-    const sampleRate = 16000;
-    const channels = 1;
-    const bitsPerSample = 16;
-    const byteRate = sampleRate * channels * bitsPerSample ~/ 8;
-    const blockAlign = channels * bitsPerSample ~/ 8;
-    final wav = Uint8List(44 + pcm.length);
-    final header = ByteData.sublistView(wav, 0, 44);
-    void ascii(int offset, String text) {
-      for (var i = 0; i < text.length; i++) {
-        header.setUint8(offset + i, text.codeUnitAt(i));
-      }
-    }
-
-    ascii(0, 'RIFF');
-    header.setUint32(4, 36 + pcm.length, Endian.little);
-    ascii(8, 'WAVE');
-    ascii(12, 'fmt ');
-    header.setUint32(16, 16, Endian.little); // fmt chunk size
-    header.setUint16(20, 1, Endian.little); // PCM
-    header.setUint16(22, channels, Endian.little);
-    header.setUint32(24, sampleRate, Endian.little);
-    header.setUint32(28, byteRate, Endian.little);
-    header.setUint16(32, blockAlign, Endian.little);
-    header.setUint16(34, bitsPerSample, Endian.little);
-    ascii(36, 'data');
-    header.setUint32(40, pcm.length, Endian.little);
-    wav.setRange(44, wav.length, pcm);
-    return wav;
-  }
-
   /// Keep only [TextResponse] tokens from a chat response stream. Thinking and
   /// function-call parsing already happened inside the chat, so this neither
   /// double-filters nor drops (§12 note). Exposed for testing the mapping
@@ -231,8 +198,9 @@ class VoiceSession {
   /// Sample rate of emitted reply audio (delegates to the synthesizer).
   int get replySampleRate => _synthesizer.sampleRate;
 
-  /// True while a turn is in flight (a second [runTurn] would throw
-  /// StateError, and [interrupt] is a genuine no-op only when this is false).
+  /// True while a turn is in flight (a second [runTurn] or [runAudioTurn]
+  /// would throw StateError, and [interrupt] is a genuine no-op only when this
+  /// is false).
   bool get isTurnInFlight => _activeController != null;
 
   /// Run one push-to-talk turn on a recorded utterance (16 kHz mono 16-bit LE
@@ -265,7 +233,15 @@ class VoiceSession {
   /// VoiceTranscriptEvent; the reply text and audio exactly as in [runTurn]
   /// (one-shot, or clause by clause with streamAudio); VoiceTurnCompleteEvent
   /// and VoiceTurnInterruptedEvent carry an empty transcript. [interrupt], the
-  /// bounded drain and the one-turn-in-flight rule are the same.
+  /// bounded drain and the one-turn-in-flight rule are the same. A recording
+  /// without a whole sample (under 2 bytes: a push-to-talk tap) ends the turn
+  /// with an empty VoiceTurnCompleteEvent and the model is not asked, as an
+  /// empty transcript does in [runTurn].
+  ///
+  /// One difference from [runTurn] lies in the engine: after a stopped turn
+  /// (an [interrupt] during the reply), a `.litertlm` chat rebuilds its
+  /// conversation from the turns' text. An audio turn has none, so the model
+  /// loses what was said in earlier audio turns; its own replies stay.
   ///
   /// Throws [StateError] when the responder has no respondToAudio, or a turn
   /// is in flight.
@@ -404,6 +380,11 @@ class VoiceSession {
       final String transcript;
       if (respondToAudio != null) {
         transcript = '';
+        // Yield once, as runTurn does while it transcribes: an interrupt()
+        // made right after listen() must be seen by the check below, before
+        // the responder starts. Without it the reply (and its tool calls)
+        // runs although the turn was interrupted.
+        await Future<void>.value();
       } else {
         transcript = await _recognizer.transcribe(pcm);
         controller.add(VoiceTranscriptEvent(transcript, isFinal: true));
@@ -417,7 +398,9 @@ class VoiceSession {
         );
         return;
       }
-      if (respondToAudio == null && transcript.trim().isEmpty) {
+      // Nothing to answer: STT heard nothing, or the recording has no whole
+      // 16-bit sample (a push-to-talk tap), which the model cannot decode.
+      if (respondToAudio == null ? transcript.trim().isEmpty : pcm.length < 2) {
         finish(const VoiceTurnCompleteEvent('', ''));
         return;
       }

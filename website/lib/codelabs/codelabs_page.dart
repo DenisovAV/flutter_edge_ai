@@ -79,6 +79,18 @@ class CodelabsPage extends StatelessComponent {
       href: '/codelabs/package-skills-flutter-gemma',
     ),
     _Codelab(
+      title: 'Built-in AI in Flutter: Your First Prompt with the OS Model',
+      blurb:
+          'Check whether the device supplies a language model, prepare it, '
+          'send one prompt and stream the answer through the same Dart API on '
+          'Android, Apple platforms, Windows and the web.',
+      duration: '45 min',
+      level: 'Beginner',
+      tags: ['built-in AI', 'Gemini Nano', 'Apple Intelligence'],
+      accent: Brand.green,
+      href: '/codelabs/builtin-ai-flutter',
+    ),
+    _Codelab(
       title: 'Inference Engines in Flutter: From a Downloaded Model to Built-in AI',
       blurb:
           'LiteRT-LM runs a .litertlm file you ship or download. Built-in AI '

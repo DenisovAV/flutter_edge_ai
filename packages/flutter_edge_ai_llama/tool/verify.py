@@ -82,10 +82,11 @@ def main():
             monitor = Thread(target=sample_native_apps, args=(diagnostics, stop, simulator), daemon=True)
             monitor.start()
         try:
-            result = subprocess.run([str(x) for x in command], cwd=directory, check=True,
+            result = subprocess.run([str(x) for x in command], cwd=directory, check=not smoke,
                                     **({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT, "text": True} if smoke else {}))
             if smoke:
                 print(result.stdout, flush=True)
+                result.check_returncode()
                 require_smoke_success(result.stdout, smoke)
         finally:
             stop.set()

@@ -59,10 +59,10 @@ while importing. Projector storage remains app-owned.
 
 ## Qualification
 
-The PR contains dated models, devices, commands and results. The previous reviewed
-head `2c37b95` passed all six platform builds, desktop CPU generation, Android/iOS
-packaged CPU lifecycle and browser worker/Wasm generation. Changes in the current
-review revision must pass those lanes again before claiming current qualification.
+The required CI baseline covers the builds and runtime lanes below. Passing that
+baseline qualifies the tested CPU fixture and lifecycle, not every combination in
+the support matrix. Dated devices, models, commands and results are recorded in the
+[contribution PR](https://github.com/DenisovAV/flutter_edge_ai/pull/628).
 
 | Platform | Automated baseline | Additional qualification needed |
 | --- | --- | --- |

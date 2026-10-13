@@ -1,3 +1,5 @@
+import contextlib
+import io
 import hashlib
 import json
 from pathlib import Path
@@ -91,6 +93,19 @@ class ToolingTests(unittest.TestCase):
         command = run.call_args_list[-1].args[0]
         self.assertIn("integration_test/connector_smoke_test.dart", command)
         self.assertIn("--dart-define=GGUF_CPU_THREADS=1", command)
+
+    def test_failed_device_smoke_preserves_output_and_remains_failed(self):
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["verify.py", "device", "--device", "ios", "--model-url", "https://example.test/model.gguf"]), \
+             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+             patch.object(package_verify.subprocess, "run", side_effect=[
+                 subprocess.CompletedProcess([], 0),
+                 subprocess.CompletedProcess([], 0),
+                 subprocess.CompletedProcess(["flutter", "test"], 1, stdout="runtime smoke failed before completion"),
+             ]), contextlib.redirect_stdout(output):
+            with self.assertRaises(subprocess.CalledProcessError):
+                package_verify.main()
+        self.assertIn("runtime smoke failed before completion", output.getvalue())
 
     def test_invalid_cpu_budgets_fail_before_flutter(self):
         for arguments in (["device", "--device", "ios", "--model-url", "https://example.test/model.gguf", "--cpu-threads", "0"],

@@ -81,6 +81,7 @@ on its own; there is no command to remember.
 | `flutter-edge-ai-inference` | engines, installing a model from Hugging Face, sessions and chats, streaming, system prompts, images and audio, backends — and the platform setup for Android, iOS, macOS, Windows, Linux and web |
 | `flutter-edge-ai-function-calling` | declaring tools, `FunctionCallResponse`, the built-in tool loop, returning errors as results |
 | `flutter-edge-ai-rag` | embedding models, `flutter_edge_ai_rag` (`RagIndex`, embedding profiles), SQLite/Qdrant providers, filters and their schema, ownership |
+| `flutter-edge-ai-decisions` | the experimental `Decider` API: picking one of N options or abstaining, calibration, tool routing for function calling, storing a fitted decider, Jev Choice JSON |
 | `flutter-edge-ai-speech` | Whisper, moonshine and Parakeet STT; Matcha, Qwen3 and Inflect TTS; 16 kHz PCM; `VoiceSession` |
 | `flutter-edge-ai-mediapipe` | `.task` and `.bin` models on Android, iOS and web |
 | `flutter-edge-ai-onnx` | ORT-GenAI generation and ONNX embeddings, native and through Transformers.js |

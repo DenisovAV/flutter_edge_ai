@@ -4,7 +4,10 @@ import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await FlutterEdgeAi.initialize(inferenceEngines: const [BuiltInAiEngine()]);
+  await FlutterEdgeAi.initialize(
+    inferenceEngines: const [BuiltInAiEngine()],
+    webStorageMode: WebStorageMode.streaming,
+  );
   runApp(const BuiltInAiApp());
 }
 

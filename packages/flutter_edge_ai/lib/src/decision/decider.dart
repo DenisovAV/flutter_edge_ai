@@ -91,25 +91,57 @@ final class DeciderInput {
 }
 
 /// What a score in [DeciderAnswer.ranked] is.
+///
+/// A class with constant instances rather than an enum, as [DeciderMethod]
+/// is, so a kind added in a later release does not break an app's
+/// exhaustive `switch`.
 @experimental
-enum ScoreKind {
+@immutable
+final class ScoreKind {
+  const ScoreKind._(this.name);
+
   /// Cosine similarity in [-1, 1] (the `centroid` method). Not a probability.
-  cosine,
+  static const cosine = ScoreKind._('cosine');
 
   /// Natural-log probability under the decider's own model, before any
   /// calibration (the `linear` method; option scoring by an LLM).
-  logprob,
+  static const logprob = ScoreKind._('logprob');
+
+  /// Every kind this release knows, in declaration order.
+  static const values = [cosine, logprob];
+
+  /// Stable name: `cosine`, `logprob`.
+  final String name;
+
+  @override
+  String toString() => 'ScoreKind.$name';
 }
 
 /// Why a decider abstained.
+///
+/// A class with constant instances rather than an enum, as [DeciderMethod]
+/// is, so a reason added in a later release does not break an app's
+/// exhaustive `switch`.
 @experimental
-enum AbstainReason {
+@immutable
+final class AbstainReason {
+  const AbstainReason._(this.name);
+
   /// The request's abstain signal — its highest cosine to a candidate's
   /// centroid — is below the calibrated threshold: it fits none of them.
-  belowThreshold,
+  static const belowThreshold = AbstainReason._('belowThreshold');
 
   /// `among` left no candidate.
-  noCandidates,
+  static const noCandidates = AbstainReason._('noCandidates');
+
+  /// Every reason this release knows, in declaration order.
+  static const values = [belowThreshold, noCandidates];
+
+  /// Stable name: `belowThreshold`, `noCandidates`.
+  final String name;
+
+  @override
+  String toString() => 'AbstainReason.$name';
 }
 
 /// One candidate of an answer.
@@ -209,6 +241,13 @@ final class DeciderCapabilities {
 final class DeciderAnswer {
   /// For deciders implemented outside core (and test fakes). Lists are
   /// copied.
+  ///
+  /// Throws [ArgumentError] for an answer that contradicts itself: exactly
+  /// one of [choice] and [abstainReason] is set; [choice] is the first of
+  /// [ranked] when [ranked] is not empty; [ranked] is sorted by score,
+  /// highest first; [confidence] is in [0, 1] and only given with
+  /// [probabilities]; a [RankedOption.probability] equals that option's
+  /// entry in [probabilities] when both are given.
   DeciderAnswer({
     required this.choice,
     required List<RankedOption> ranked,
@@ -221,7 +260,57 @@ final class DeciderAnswer {
   }) : ranked = List.unmodifiable(ranked),
        probabilities = probabilities == null
            ? null
-           : Map.unmodifiable(probabilities);
+           : Map.unmodifiable(probabilities) {
+    if ((choice == null) == (abstainReason == null)) {
+      throw ArgumentError(
+        'A DeciderAnswer has either a choice or an abstainReason, exactly '
+        'one of them; got choice $choice, abstainReason $abstainReason.',
+      );
+    }
+    if (choice != null && this.ranked.isNotEmpty) {
+      if (this.ranked.first.id != choice) {
+        throw ArgumentError.value(
+          choice,
+          'choice',
+          'is not the best ranked option (${this.ranked.first.id})',
+        );
+      }
+    }
+    for (var i = 1; i < this.ranked.length; i++) {
+      if (!(this.ranked[i - 1].score >= this.ranked[i].score)) {
+        throw ArgumentError.value(
+          this.ranked.map((r) => r.score).toList(),
+          'ranked',
+          'must be sorted by score, highest first',
+        );
+      }
+    }
+    final p = this.probabilities;
+    if (confidence case final c?) {
+      if (p == null) {
+        throw ArgumentError.value(
+          c,
+          'confidence',
+          'is only given with calibrated probabilities',
+        );
+      }
+      if (!(c >= 0 && c <= 1)) {
+        throw ArgumentError.value(c, 'confidence', 'must be in [0, 1]');
+      }
+    }
+    if (p != null) {
+      for (final r in this.ranked) {
+        if (r.probability case final rp? when rp != p[r.id]) {
+          throw ArgumentError.value(
+            rp,
+            'ranked',
+            'option "${r.id}" has probability $rp, but probabilities says '
+                '${p[r.id]}',
+          );
+        }
+      }
+    }
+  }
 
   /// The chosen option's id, or null when the decider abstained.
   final String? choice;

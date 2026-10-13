@@ -214,7 +214,7 @@ void main() {
           'no labelled rows': (
             _abc(),
             DeciderMethod.centroid,
-            const DeciderCalibration.fromLabelled([]),
+            DeciderCalibration.fromLabelled(const []),
             'needs labelled rows',
           ),
           'a labelled row for an unknown option': (
@@ -229,7 +229,7 @@ void main() {
             _abc(),
             DeciderMethod.centroid,
             DeciderCalibration.fromLabelled([(input: _t('a1'), optionId: 'a')]),
-            'repeats an option example',
+            'repeats an option input',
           ),
         };
     for (final MapEntry(

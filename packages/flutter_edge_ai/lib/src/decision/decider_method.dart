@@ -107,13 +107,15 @@ final class DeciderCalibration {
   ///   answered at or above it keep their error within [maxError].
   ///
   /// [maxError] must be in [0, 1). Every `optionId` must name an option.
-  const DeciderCalibration.fromLabelled(
+  /// [labelled] is copied: a later change to the caller's list does not
+  /// reach the calibration.
+  DeciderCalibration.fromLabelled(
     List<({EmbeddingInput input, String optionId})> labelled, {
     double this.maxError = 0.05,
   }) : kind = 'labelled',
        keep = null,
        threshold = null,
-       _labelled = labelled;
+       _labelled = List.unmodifiable(labelled);
 
   /// `none`, `crossFit`, `minSimilarity` or `labelled`.
   final String kind;

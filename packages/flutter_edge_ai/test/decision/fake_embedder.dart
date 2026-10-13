@@ -32,6 +32,9 @@ final class FakeEmbedder extends EmbeddingModel with CloseNotifier {
   /// Thrown by the next embed, then cleared.
   Object? failNext;
 
+  /// Runs at the start of every embed, before anything else.
+  void Function(EmbeddingInput input)? onEmbed;
+
   bool _closed = false;
 
   @override
@@ -42,6 +45,7 @@ final class FakeEmbedder extends EmbeddingModel with CloseNotifier {
     EmbeddingInput input, {
     required TaskType taskType,
   }) async {
+    onEmbed?.call(input);
     calls.add((input.text, taskType));
     if (_closed) throw const EmbedderClosedException();
     if (failNext case final error?) {

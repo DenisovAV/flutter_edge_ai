@@ -88,7 +88,9 @@ Future<Decider> createEmbeddingDecider(
   CancelToken? cancelToken,
 }) async {
   final opts = List<DeciderOption>.unmodifiable(options);
-  _validateOptions(opts, method, calibration);
+  // Read once: an unmodifiable copy the calibration made.
+  final labelledRows = labelledRowsOf(calibration);
+  _validateOptions(opts, method, calibration, labelledRows);
   final spaceId = deciderSpaceId(embedder, embedderId: embedderId);
   final d = embedder.dimension;
 
@@ -110,15 +112,18 @@ Future<Decider> createEmbeddingDecider(
     }
   }
 
-  final labelledRows = labelledRowsOf(calibration);
   final labelledLabels = <int>[];
   if (labelledRows != null) {
     final index = {for (var o = 0; o < opts.length; o++) opts[o].id: o};
-    final exampleTexts = {
-      for (final option in opts)
+    // Every text the options are made of: a held-out row equal to one of
+    // them is not held out.
+    final optionTexts = {
+      for (final option in opts) ...[
+        ?option.description,
         for (final example in option.examples)
           if (example.modalities.length == 1 && example.text != null)
             example.text!,
+      ],
     };
     for (final row in labelledRows) {
       final o =
@@ -131,14 +136,14 @@ Future<Decider> createEmbeddingDecider(
       final text = row.input.text;
       if ((row.input.modalities.length == 1 &&
               text != null &&
-              exampleTexts.contains(text)) ||
+              optionTexts.contains(text)) ||
           opts.any((op) => op.examples.any((e) => identical(e, row.input)))) {
         throw ArgumentError.value(
           text ?? row.input,
           'calibration',
-          'a labelled row repeats an option example; held-out rows must be '
-              'new requests or the threshold is fitted on data the decider '
-              'already knows',
+          'a labelled row repeats an option input (an example or a '
+              'description); held-out rows must be new requests or the '
+              'threshold is fitted on data the decider already knows',
         );
       }
       labelledLabels.add(o);
@@ -209,6 +214,7 @@ void _validateOptions(
   List<DeciderOption> options,
   DeciderMethod method,
   DeciderCalibration calibration,
+  List<({EmbeddingInput input, String optionId})>? labelledRows,
 ) {
   if (options.isEmpty) {
     throw ArgumentError.value(options, 'options', 'must not be empty');
@@ -282,7 +288,7 @@ void _validateOptions(
           'must be in [0, 1)',
         );
       }
-      if (labelledRowsOf(calibration)!.isEmpty) {
+      if (labelledRows!.isEmpty) {
         throw ArgumentError.value(
           0,
           'calibration',

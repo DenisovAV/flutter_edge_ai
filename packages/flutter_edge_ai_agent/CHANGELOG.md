@@ -1,3 +1,6 @@
+## 0.2.10
+- `AgentSession.ask` and `AgentLoop.run` take `audioBytes`: ask with a recording.
+
 ## 0.2.9
 - Require `flutter_edge_ai` ^2.3.0 (imports its engine library).
 

@@ -139,6 +139,32 @@ await for (final event in session.runTurn(pcm16kMono)) {
 (`package:record`) and plays the reply (`pcmToWav` + `package:just_audio`),
 exactly as the example `stt_screen`/`tts_screen` do.
 
+### Audio turns: the model hears the recording
+
+A model with an audio encoder (Gemma 4 E2B/E4B) can take the recording itself.
+`runAudioTurn` skips speech-to-text: `fromChat` wraps the PCM in a WAV header
+and sends it to the chat, and the reply is spoken as in `runTurn`. Load the
+model and create the chat with `supportAudio: true`:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true, // loads the audio encoder
+);
+final chat = await model.createChat(supportAudio: true, maxOutputTokens: 128);
+final session = VoiceSession.fromChat(
+  recognizer: recognizer, chat: chat, synthesizer: synthesizer);
+
+await for (final event in session.runAudioTurn(pcm16kMono)) {
+  // the events of runTurn, without VoiceTranscriptEvent
+}
+```
+
+Barge-in and the one-turn-at-a-time rule work as in `runTurn`; the complete and
+interrupted events carry an empty transcript. For a chat without
+`supportAudio`, `runAudioTurn` throws a `StateError`. With
+`VoiceSession.custom`, pass `respondToAudio` to the `VoiceResponder`.
+
 ## Platforms
 
 | Platform | STT | TTS |

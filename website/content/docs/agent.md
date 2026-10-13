@@ -48,7 +48,7 @@ used below).
 ```
 dependencies:
   flutter_edge_ai: ^2.3.2
-  flutter_edge_ai_agent: ^0.2.9
+  flutter_edge_ai_agent: ^0.2.10
   flutter_edge_ai_litertlm: ^1.13.2   # an inference engine (LiteRtLmEngine)
 ```
 
@@ -157,6 +157,40 @@ drop would give you a confident answer about a photo the model never saw. The
 flag is what's checked; that the model is actually multimodal stays your
 responsibility (it can't be introspected from Dart) — a text-only model behind
 `supportImage: true` will simply ignore the image.
+
+## Asking with a recording
+
+`ask` also takes the recording itself, for a model with an audio encoder
+(Gemma 4 E2B/E4B): the spoken question goes to the model as audio, with no
+speech-to-text in between, so the model hears the voice itself, not a transcript.
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true, // loads the audio encoder
+);
+final session = await AgentSession.fromModel(
+  model,
+  registry: registry,
+  supportAudio: true, // required
+);
+
+// wav: a WAV file, 16 kHz mono 16-bit PCM
+await for (final event in session.ask('', audioBytes: wav)) {
+  // …
+}
+```
+
+- **Both flags.** `supportAudio` on `getActiveModel` creates the engine with its
+  audio encoder; on the session it lets the audio through. A session built
+  without it fails the stream with `ArgumentError` before anything reaches the
+  chat history, because the engine would otherwise drop the audio and the model
+  would answer as if nothing was said. Empty bytes fail the same way.
+- **A file, not samples.** A `.litertlm` model decodes an audio file, so pass a
+  WAV (16 kHz mono 16-bit PCM in a RIFF container), not bare PCM. If you record
+  bare PCM, add the 44-byte WAV header first.
+- **Text and image.** The text may be empty or add to the recording, and an
+  image can go in the same `ask`. Tool results later in the turn carry no media.
 
 ## Bundled starter skills
 

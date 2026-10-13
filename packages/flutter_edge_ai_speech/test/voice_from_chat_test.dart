@@ -46,7 +46,7 @@ class _FixedRecognizer implements SpeechRecognizer {
 /// 'done' text turn), so the real `generateChatResponseWithTools` loop can be
 /// driven through `VoiceSession.fromChat` without a native session.
 class _ScriptChat extends InferenceChat {
-  _ScriptChat(this._turns)
+  _ScriptChat(this._turns, {super.supportAudio})
     : super(
         sessionCreator: null,
         maxTokens: 1024,
@@ -55,13 +55,14 @@ class _ScriptChat extends InferenceChat {
   final List<List<ModelResponse>> _turns;
   int _i = 0;
   int generations = 0;
+  final List<Message> received = [];
 
   @override
   Future<void> addQueryChunk(
     Message m, [
     bool noTool = false,
     bool prefix = false,
-  ]) async {}
+  ]) async => received.add(m);
 
   @override
   Stream<ModelResponse> generateChatResponseAsync() async* {
@@ -248,6 +249,36 @@ void main() {
         ]);
       },
     );
+
+    test('a tools chat runs the tool loop on the recording', () async {
+      final chat = _ScriptChat([
+        [const FunctionCallResponse(name: 'get_time', args: {})],
+        [const TextResponse('noon')],
+      ], supportAudio: true);
+      final calls = <String>[];
+      final session = VoiceSession.fromChat(
+        recognizer: _NoopRecognizer(),
+        chat: chat,
+        synthesizer: _NoopSynth(),
+        onToolCall: (call) async {
+          calls.add(call.name);
+          return {'time': '12:00'};
+        },
+      );
+      final pcm = Uint8List.fromList([3, 0, 4, 0]);
+
+      final events = await session.runAudioTurn(pcm).toList();
+
+      expect(calls, ['get_time']);
+      expect(
+        chat.received.first.audioBytes,
+        VoiceSession.wavFromPcm16kMono(pcm),
+      );
+      expect(chat.received.skip(1).where((m) => m.audioBytes != null), isEmpty);
+      expect(events.whereType<VoiceReplyTextEvent>().map((e) => e.chunk), [
+        'noon',
+      ]);
+    });
 
     test('a chat without supportAudio cannot run an audio turn', () {
       final session = VoiceSession.fromChat(

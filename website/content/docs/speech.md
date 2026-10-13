@@ -35,7 +35,7 @@ inference.
 ```
 dependencies:
   flutter_edge_ai: ^2.3.2
-  flutter_edge_ai_speech: ^0.5.6
+  flutter_edge_ai_speech: ^0.5.7
 ```
 
 ## Register the backend
@@ -326,6 +326,41 @@ final session = VoiceSession.fromChat(
 For the full agent (skills / MCP), wrap an `AgentSession` in a `VoiceResponder`
 and use `VoiceSession.custom`; `AgentSession.ask(…, isCancelled:)` makes barge-in
 halt the agent loop before the next tool.
+
+### Audio turns: the model hears the recording
+
+A model with an audio encoder (Gemma 4 E2B/E4B) can take the recording itself,
+not a transcript of it. `runAudioTurn` skips speech-to-text: the PCM goes to the
+chat as audio, and the reply streams and is spoken exactly as in `runTurn`.
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true, // loads the audio encoder
+);
+final chat = await model.createChat(supportAudio: true, maxOutputTokens: 128);
+final session = VoiceSession.fromChat(
+  recognizer: recognizer, chat: chat, synthesizer: synthesizer);
+
+await for (final event in session.runAudioTurn(pcm16kMono)) {
+  // the events of runTurn, without VoiceTranscriptEvent
+}
+```
+
+- **Same turn, no STT.** There is no `VoiceTranscriptEvent`;
+  `VoiceTurnCompleteEvent` and `VoiceTurnInterruptedEvent` carry an empty
+  transcript. `streamAudio`, `interrupt()` and its bounded drain, a tools chat
+  with `onToolCall`, and the one-turn-at-a-time `StateError` work as in
+  `runTurn`. The recognizer is still required, and `runTurn` still uses it.
+- **The format.** `runAudioTurn` takes the same 16 kHz mono 16-bit PCM as
+  `runTurn`. `fromChat` adds the WAV header, because a `.litertlm` model decodes
+  an audio file, not bare samples.
+- **The flags.** `supportAudio` on `getActiveModel` creates the engine with its
+  audio encoder; on the chat it is what `fromChat` checks. Without it on the
+  chat, `runAudioTurn` throws a `StateError`.
+- **A custom responder.** `VoiceResponder` takes an optional `respondToAudio`
+  next to `respond`; it gets the bare PCM, so wrap it in a WAV yourself before
+  sending it to a `.litertlm` chat.
 
 ## Platform support
 

@@ -248,7 +248,7 @@ packages:
       path: "../../flutter_edge_ai_agent"
       relative: true
     source: path
-    version: "0.2.9"
+    version: "0.2.10"
   flutter_edge_ai_builtin_ai:
     dependency: "direct main"
     description:
@@ -311,7 +311,7 @@ packages:
       path: "../../flutter_edge_ai_speech"
       relative: true
     source: path
-    version: "0.5.6"
+    version: "0.5.7"
   flutter_edge_ai_sqlite:
     dependency: "direct main"
     description:

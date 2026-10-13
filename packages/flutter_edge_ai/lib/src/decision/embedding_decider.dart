@@ -171,6 +171,7 @@ Future<Decider> createEmbeddingDecider(
     DeciderFitRequest(
       dimension: d,
       optionCount: opts.length,
+      optionIds: [for (final option in opts) option.id],
       inputs: x,
       labels: Int32List.fromList(labels),
       ranks: Int32List.fromList(ranks),

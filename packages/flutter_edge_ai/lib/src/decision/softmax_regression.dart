@@ -512,11 +512,18 @@ Float64List _scaled(Float64List v, double factor) {
   return out;
 }
 
+/// torch's `v.abs().max()`, which is NaN when any entry is: a NaN gradient
+/// never reads as "converged". (`if (!(a <= m)) m = a` alone is not enough:
+/// the next finite entry replaces the NaN, since `a <= NaN` is false.)
 double _maxAbs(Float64List v) {
   var m = 0.0;
   for (final x in v) {
     final a = x.abs();
-    if (a > m) m = a;
+    if (a > m) {
+      m = a;
+    } else if (a.isNaN) {
+      return a;
+    }
   }
   return m;
 }

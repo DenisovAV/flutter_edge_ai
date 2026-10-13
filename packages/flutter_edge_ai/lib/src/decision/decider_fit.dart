@@ -23,6 +23,7 @@ final class DeciderFitRequest {
   const DeciderFitRequest({
     required this.dimension,
     required this.optionCount,
+    required this.optionIds,
     required this.inputs,
     required this.labels,
     required this.ranks,
@@ -38,6 +39,9 @@ final class DeciderFitRequest {
 
   final int dimension;
   final int optionCount;
+
+  /// The options' ids, by index: what a refusal names.
+  final List<String> optionIds;
 
   /// The options' inputs, row-major (rows × dimension).
   final Float64List inputs;
@@ -108,7 +112,7 @@ DeciderFit fitDecider(DeciderFitRequest request) {
   final x = request.inputs;
   final labels = request.labels;
 
-  final centroids64 = optionCentroids(x, labels, d, c);
+  final centroids64 = optionCentroids(x, labels, d, c, ids: request.optionIds);
 
   SoftmaxFit? linear;
   if (request.linear) {
@@ -137,6 +141,7 @@ DeciderFit fitDecider(DeciderFitRequest request) {
         d,
         c,
         request.simd,
+        ids: request.optionIds,
       );
       threshold = keepThreshold(signal, request.keep!);
     case 'labelled':
@@ -186,8 +191,18 @@ DeciderFit fitDecider(DeciderFitRequest request) {
     }
   }
 
+  final centroids = Float32List.fromList(centroids64);
+  checkFittedParameters(
+    centroids: centroids,
+    dimension: d,
+    weights: weights,
+    bias: bias,
+    loss: linear?.loss,
+    threshold: threshold,
+    temperature: temperature,
+  );
   return DeciderFit(
-    centroids: Float32List.fromList(centroids64),
+    centroids: centroids,
     threshold: threshold,
     temperature: temperature,
     weights: weights,
@@ -198,13 +213,69 @@ DeciderFit fitDecider(DeciderFitRequest request) {
   );
 }
 
+/// Throws [StateError] unless every fitted value is finite and every
+/// centroid has a direction: a decision is never computed from a NaN, and a
+/// NaN centroid would otherwise win every request (it sorts first).
+void checkFittedParameters({
+  required List<double> centroids,
+  required int dimension,
+  List<double>? weights,
+  List<double>? bias,
+  double? loss,
+  double? threshold,
+  double? temperature,
+}) {
+  void finite(List<double>? values, String what) {
+    if (values == null) return;
+    for (final v in values) {
+      if (!v.isFinite) {
+        throw StateError(
+          'The decider fit produced a non-finite $what; a decision is never '
+          'computed from it.',
+        );
+      }
+    }
+  }
+
+  finite(centroids, 'centroid');
+  for (var o = 0; o * dimension < centroids.length; o++) {
+    var norm = 0.0;
+    for (var j = 0; j < dimension; j++) {
+      final v = centroids[o * dimension + j];
+      norm += v * v;
+    }
+    if (norm == 0) {
+      throw StateError('The decider fit produced a zero centroid (option $o).');
+    }
+  }
+  finite(weights, 'linear weight');
+  finite(bias, 'linear bias');
+  for (final (value, what) in [
+    (loss, 'linear loss'),
+    (threshold, 'threshold'),
+    (temperature, 'temperature'),
+  ]) {
+    if (value != null && !value.isFinite) {
+      throw StateError(
+        'The decider fit produced a non-finite $what ($value); a decision is '
+        'never computed from it.',
+      );
+    }
+  }
+}
+
 /// dq1's `centroids`: each option's mean input, renormalised (float64).
+///
+/// Throws [StateError] for an option whose inputs cancel out: their mean is
+/// the zero vector, which has no direction to compare with (dq1 divides by
+/// its zero norm and gets NaN). [ids] name the options in that message.
 Float64List optionCentroids(
   Float64List x,
   Int32List labels,
   int d,
   int c, {
   bool Function(int row)? include,
+  List<String>? ids,
 }) {
   final sums = Float64List(c * d);
   final counts = Int32List(c);
@@ -228,6 +299,14 @@ Float64List optionCentroids(
       sums[so + j] = mean;
       norm += mean * mean;
     }
+    if (norm == 0) {
+      final name = ids == null ? 'option $o' : 'option "${ids[o]}"';
+      throw StateError(
+        'The inputs of $name cancel out: their mean is the zero vector, so '
+        'the option has no direction to compare a request with. Give it '
+        'inputs that mean the same thing.',
+      );
+    }
     norm = math.sqrt(norm);
     for (var j = 0; j < d; j++) {
       sums[so + j] /= norm;
@@ -245,8 +324,9 @@ Float64List crossFitSignal(
   Int32List ranks,
   int d,
   int c,
-  bool? simd,
-) {
+  bool? simd, {
+  List<String>? ids,
+}) {
   final rows = labels.length;
   final out = Float64List(rows);
   final kernel = DenseKernel(d: d, columns: c, simd: simd);
@@ -264,6 +344,7 @@ Float64List crossFitSignal(
       d,
       c,
       include: (i) => ranks[i] % 5 != f,
+      ids: ids,
     );
     for (var o = 0; o < c; o++) {
       for (var j = 0; j < d; j++) {

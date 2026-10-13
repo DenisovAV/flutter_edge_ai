@@ -253,6 +253,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
         preferredBackend: preferredBackend,
         supportImage: supportImage,
         supportAudio: supportAudio,
+        entryPoint: createEmbeddingModel,
         verifyInstalled: true,
       ),
     );

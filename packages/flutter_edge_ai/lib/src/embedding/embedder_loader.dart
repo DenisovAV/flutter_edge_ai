@@ -38,6 +38,12 @@ import 'installed_file_size.dart'
 /// [verifyInstalled] re-checks that the active spec's files are still
 /// installed before building (the mobile shell's long-standing check).
 ///
+/// [entryPoint] is the shell's own `createEmbeddingModel`. A model built here
+/// keeps a call to it, with this call's backend and the build's media, as
+/// its `replacement`: a decider created from the model takes the embedder
+/// core serves in its place when the model is closed, under the cache's
+/// reuse rule like any other caller.
+///
 /// Throws [StateError] when no embedding spec is active or its files cannot be
 /// resolved, or when no registered backend can run it;
 /// [EmbeddingLoadException] when the backend refuses the request or the model
@@ -52,6 +58,12 @@ Future<EmbeddingModel> loadActiveEmbedder({
   required PreferredBackend? preferredBackend,
   required bool supportImage,
   required bool supportAudio,
+  required Future<EmbeddingModel> Function({
+    PreferredBackend? preferredBackend,
+    bool supportImage,
+    bool supportAudio,
+  })
+  entryPoint,
   bool verifyInstalled = false,
 }) async {
   final active = manager.activeEmbeddingModel;
@@ -152,6 +164,11 @@ Future<EmbeddingModel> loadActiveEmbedder({
             },
           ),
       ],
+      replacement: () => entryPoint(
+        preferredBackend: preferredBackend,
+        supportImage: build.media.contains(EmbeddingModality.image),
+        supportAudio: build.media.contains(EmbeddingModality.audio),
+      ),
       onFailedLoadCleanup: (cleanup) =>
           cache.trackFailedLoadCleanup(cleanup, build),
     );

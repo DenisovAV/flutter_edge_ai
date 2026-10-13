@@ -126,10 +126,15 @@ abstract base class EmbeddingModel {
   /// abstains; the default cross-fit needs two inputs per option. A
   /// `choose` then costs one [embed] and a dot product per option.
   ///
-  /// The decider borrows this model and never closes it. When the model is
-  /// closed (core replaces the active embedder when it is asked for other
-  /// media or another backend), `choose` fails with
-  /// `EmbedderClosedException`: get the new embedder and reload the decider
+  /// The decider borrows this model and never closes it. When a model
+  /// `FlutterEdgeAi.getActiveEmbedder` returned is closed — core replaced it
+  /// (other media, another backend, a re-install), its worker died, or the
+  /// app closed it — the decider's next `choose` asks core for the active
+  /// embedder again, with the backend and media this model was built with
+  /// (so it may load the model again), and retries there when that
+  /// embedder's space id is the decider's; another space fails with
+  /// `DeciderSpaceMismatchException`. On any other model `choose` fails with
+  /// `EmbedderClosedException` and the decider reports `isClosed`: reload it
   /// with [loadDecider] from its `toArtifact()` — no re-embedding.
   ///
   /// [embedderId] names the model's weights in the decider's embedding-space

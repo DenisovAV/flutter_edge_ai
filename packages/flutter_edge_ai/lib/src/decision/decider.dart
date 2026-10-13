@@ -45,9 +45,11 @@ abstract base class Decider {
   /// candidate.
   ///
   /// Errors arrive as a FAILED FUTURE: `DeciderUnsupportedException` for
-  /// context this decider does not take, the model's own failures unchanged
-  /// (`EmbedderClosedException`, `EmbeddingInputTooLongException` — an input
-  /// is never truncated — …), [StateError] after [close].
+  /// context this decider does not take, `DeciderSpaceMismatchException` when
+  /// the embedder core now serves is in another embedding space, the model's
+  /// own failures unchanged (`EmbedderClosedException`,
+  /// `EmbeddingInputTooLongException` — an input is never truncated — …),
+  /// [StateError] after [close].
   Future<DeciderAnswer> choose(
     DeciderInput input, {
     Iterable<String>? among,
@@ -67,8 +69,10 @@ abstract base class Decider {
     'EmbeddingModel.loadDecider could restore.',
   );
 
-  /// Whether [choose] can no longer answer: [close] was called (see each
-  /// decider for other reasons).
+  /// Whether [choose] can no longer answer: [close] was called, or — for an
+  /// embedding decider — its model is closed and core serves none in its
+  /// place (a model `getActiveEmbedder` did not build). A decider on a model
+  /// core replaced is not closed: its next [choose] takes the replacement.
   bool get isClosed;
 
   /// Marks this decider closed; [choose] fails afterwards. Idempotent. The

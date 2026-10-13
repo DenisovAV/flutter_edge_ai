@@ -44,6 +44,11 @@ const _embedAllWindow = 2;
 /// the browser's storage and their size is not read).
 typedef InstalledEmbedderFile = ({String name, int? bytes});
 
+/// How a model core built is replaced once closed: the shell entry point it
+/// was built through (`createEmbeddingModel`), asked again for what it was
+/// built with. The embedder cache's own rule decides what that returns.
+typedef EmbedderReplacement = Future<EmbeddingModel> Function();
+
 /// The embedding model core hands out. See [EmbeddingModel] for the contract.
 final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
   CommonEmbeddingModel._(
@@ -52,6 +57,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     required this._engine,
     required this._label,
     List<InstalledEmbedderFile>? installedFiles,
+    this.replacement,
   }) : installedFiles = installedFiles == null
            ? null
            : List.unmodifiable(installedFiles) {
@@ -69,12 +75,14 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     String engine = 'Test',
     String label = 'test-model',
     List<InstalledEmbedderFile>? installedFiles,
+    EmbedderReplacement? replacement,
   }) : this._(
          host,
          activeBackend: activeBackend,
          engine: engine,
          label: label,
          installedFiles: installedFiles,
+         replacement: replacement,
        );
 
   /// Starts [descriptor]'s pass on this platform's host (§4.2 step 4) and
@@ -82,6 +90,8 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
   /// [declaredMedia]. [label] — the model file — names it in messages.
   /// [installedFiles] are the installed files of the spec it runs — names,
   /// and sizes where known — which name its embedding space for deciders.
+  /// [replacement] gets the model core serves in its place once it is
+  /// closed; the loader sets it.
   ///
   /// Fails with `EmbeddingLoadException`. A pass whose load failed is closed
   /// behind the error; [onFailedLoadCleanup] gets a future that ends when it
@@ -91,6 +101,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     required Set<EmbeddingModality> declaredMedia,
     required String label,
     List<InstalledEmbedderFile>? installedFiles,
+    EmbedderReplacement? replacement,
     void Function(Future<void> cleanup)? onFailedLoadCleanup,
   }) async {
     final running = await host.startEmbeddingHost(
@@ -105,6 +116,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
       engine: descriptor.engineTag,
       label: label,
       installedFiles: installedFiles,
+      replacement: replacement,
     );
   }
 
@@ -120,6 +132,12 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
   /// null for a model built without one (tests). The embedding-space identity
   /// of the deciders created from it.
   final List<InstalledEmbedderFile>? installedFiles;
+
+  /// Gets the embedder core serves in this one's place — through the shell
+  /// entry point that built this one, asked for the backend and media it was
+  /// built with — or null for a model built without a shell (tests). A
+  /// decider created from this model calls it once this model is closed.
+  final EmbedderReplacement? replacement;
 
   bool _isClosed = false;
   String? _deathReason;

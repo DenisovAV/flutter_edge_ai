@@ -3,13 +3,15 @@
 // threshold. Implemented once, over `embed`/`embedAll`, so every embedding
 // backend has it. Not exported: apps receive it as a `Decider`.
 
+import 'dart:async';
 import 'dart:collection' show LinkedHashMap;
 import 'dart:convert'
     show JsonUnsupportedObjectError, base64, jsonDecode, jsonEncode;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../embedding/common_embedding_model.dart' show CommonEmbeddingModel;
+import '../embedding/common_embedding_model.dart'
+    show CommonEmbeddingModel, EmbedderReplacement;
 import '../embedding/embedding_exceptions.dart'
     show EmbedderClosedException, EmbeddingModalityNotLoadedException;
 import '../embedding/embedding_input.dart';
@@ -238,6 +240,7 @@ Future<Decider> createEmbeddingDecider(
 
   return EmbeddingDecider(
     embedder: embedder,
+    embedderId: embedderId,
     options: opts,
     method: method,
     calibration: calibration.kind,
@@ -356,18 +359,24 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
     final decider = all[i];
     if (decider is EmbeddingDecider) {
       decider._checkUsable(input, topK);
-      (groups[decider.embedder] ??= []).add(i);
+      (groups[decider._embedder] ??= []).add(i);
     } else {
       others.add(i);
     }
   }
   for (final MapEntry(key: embedder, value: members) in groups.entries) {
     final first = all[members.first] as EmbeddingDecider;
-    final (vector, embedTime) = await first._embed(input);
+    final (vector, embedTime, used) = await first._embed(input);
     for (final i in members) {
       final decider = all[i] as EmbeddingDecider;
       decider._checkUsable(input, topK);
-      assert(identical(decider.embedder, embedder));
+      // The first decider moved to the embedder core serves in place of a
+      // closed one; the others of its group follow, each checking its own
+      // space id.
+      if (!identical(decider._embedder, used)) {
+        assert(identical(decider._embedder, embedder));
+        decider._adopt(used);
+      }
       answers[i] = decider._score(
         vector,
         decider._allCandidates,
@@ -384,9 +393,19 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
 
 /// The decider of an `EmbeddingModel`. Holds no native resource: the model is
 /// borrowed and never closed here.
+///
+/// On a model core built (`getActiveEmbedder`), a request that fails with
+/// `EmbedderClosedException` — the model was replaced (wider media, another
+/// backend, a re-install) or its worker died, so the request never ran —
+/// takes the embedder core serves in its place, once, through the shell
+/// entry point the model was built through, and is retried there when that
+/// embedder's space id is this decider's; another space is a
+/// [DeciderSpaceMismatchException]. On any other model the exception
+/// arrives unchanged.
 final class EmbeddingDecider extends Decider {
   EmbeddingDecider({
-    required this.embedder,
+    required EmbeddingModel embedder,
+    required this.embedderId,
     required List<DeciderOption> options,
     required this.method,
     required this.calibration,
@@ -401,13 +420,25 @@ final class EmbeddingDecider extends Decider {
     this.fitTime,
     this.linearIterations,
     this.storedMediaExamples,
-  }) : options = List.unmodifiable(options),
+  }) : _embedder = embedder,
+       options = List.unmodifiable(options),
        _index = {for (var o = 0; o < options.length; o++) options[o].id: o},
        _allCandidates = List.unmodifiable(
          List<int>.generate(options.length, (o) => o),
        );
 
-  final EmbeddingModel embedder;
+  /// The embedder this decider uses: the one it was created from, or the one
+  /// core served in its place.
+  EmbeddingModel get embedder => _embedder;
+  EmbeddingModel _embedder;
+
+  /// The caller's `embedderId`, or null: the space id of a replacement is
+  /// computed with it.
+  final String? embedderId;
+
+  /// The replacement in flight, shared by every request that found the
+  /// embedder closed.
+  Future<EmbeddingModel>? _replacing;
 
   @override
   final List<DeciderOption> options;
@@ -449,11 +480,16 @@ final class EmbeddingDecider extends Decider {
     maxOptions: null,
     supportsContext: false,
     calibratedProbabilities: temperature != null,
-    modalities: embedder.modalities,
+    modalities: _embedder.modalities,
   );
 
+  /// True after [close], and when the embedder is closed and core cannot
+  /// serve another in its place (a model core did not build). A decider on a
+  /// replaced core embedder is not closed: its next [choose] takes the
+  /// replacement.
   @override
-  bool get isClosed => _closed;
+  bool get isClosed =>
+      _closed || (_embedder.isClosed && _replacementOf(_embedder) == null);
 
   @override
   Future<DeciderAnswer> choose(
@@ -466,8 +502,13 @@ final class EmbeddingDecider extends Decider {
     if (candidates.isEmpty) {
       // Nothing to embed, but the answer must not depend on that: a request
       // that fails with candidates fails without them too.
-      if (embedder.isClosed) throw const EmbedderClosedException();
-      final loaded = embedder.modalities;
+      var model = _embedder;
+      if (model.isClosed) {
+        final resolve =
+            _replacementOf(model) ?? (throw const EmbedderClosedException());
+        model = await _replace(model, resolve);
+      }
+      final loaded = model.modalities;
       for (final modality in input.input.modalities) {
         if (!loaded.contains(modality)) {
           throw EmbeddingModalityNotLoadedException(
@@ -487,7 +528,7 @@ final class EmbeddingDecider extends Decider {
         provenance: _provenance(Duration.zero, Duration.zero, null),
       );
     }
-    final (vector, embedTime) = await _embed(input);
+    final (vector, embedTime, _) = await _embed(input);
     return _score(vector, candidates, topK, embedTime);
   }
 
@@ -520,13 +561,81 @@ final class EmbeddingDecider extends Decider {
     return chosen.toList()..sort();
   }
 
-  Future<(Float64List, Duration)> _embed(DeciderInput input) async {
+  /// [input]'s unit vector, the time its embedding took and the embedder
+  /// that made it.
+  Future<(Float64List, Duration, EmbeddingModel)> _embed(
+    DeciderInput input,
+  ) async {
+    var model = _embedder;
     final watch = Stopwatch()..start();
-    final raw = await embedder.embed(input.input, taskType: deciderTaskType);
+    List<double> raw;
+    try {
+      raw = await model.embed(input.input, taskType: deciderTaskType);
+    } on EmbedderClosedException {
+      // The request never ran: the model was closed before it started. On a
+      // model core built, take the one core serves in its place and retry
+      // there, once; a second EmbedderClosedException arrives unchanged.
+      final resolve = _replacementOf(model);
+      if (resolve == null) rethrow;
+      model = await _replace(model, resolve);
+      watch.reset();
+      raw = await model.embed(input.input, taskType: deciderTaskType);
+    }
     final elapsed = watch.elapsed;
     final vector = Float64List(dimension);
     unitRowInto(raw, dimension, vector, 0, 'the input');
-    return (vector, elapsed);
+    return (vector, elapsed, model);
+  }
+
+  /// How core replaces [model], or null when it does not (a model core did
+  /// not build).
+  static EmbedderReplacement? _replacementOf(EmbeddingModel model) =>
+      model is CommonEmbeddingModel ? model.replacement : null;
+
+  /// The embedder core serves in place of [closed], adopted when its space
+  /// id is this decider's. One resolution for every request that found
+  /// [closed] closed; a request that comes after another one moved on gets
+  /// the embedder already adopted.
+  Future<EmbeddingModel> _replace(
+    EmbeddingModel closed,
+    EmbedderReplacement resolve,
+  ) {
+    final current = _embedder;
+    if (!identical(current, closed) && !current.isClosed) {
+      return Future.value(current);
+    }
+    final pending = _replacing;
+    if (pending != null) return pending;
+    final replacing = Future.sync(() async {
+      final next = await resolve();
+      _adopt(next);
+      return next;
+    });
+    _replacing = replacing;
+    unawaited(
+      replacing
+          .then<void>((_) {}, onError: (Object _, StackTrace _) {})
+          .whenComplete(() {
+            if (identical(_replacing, replacing)) _replacing = null;
+          }),
+    );
+    return replacing;
+  }
+
+  /// Uses [next] from now on — when its embedding space is this decider's.
+  void _adopt(EmbeddingModel next) {
+    final actual = deciderSpaceId(next, embedderId: embedderId);
+    if (actual != spaceId) {
+      throw DeciderSpaceMismatchException(
+        'The embedder core now serves in place of this decider\'s is in '
+        'another embedding space (another model file, dimension, backend or '
+        'task prefix): its vectors do not compare with this decider\'s. Fit '
+        'the decider again on it.',
+        expected: spaceId,
+        actual: actual,
+      );
+    }
+    _embedder = next;
   }
 
   ScoreKind get _scoreKind =>
@@ -919,6 +1028,7 @@ Future<Decider> loadEmbeddingDecider(
 
   return EmbeddingDecider(
     embedder: embedder,
+    embedderId: embedderId,
     options: options,
     method: method,
     calibration: calibrationKind,

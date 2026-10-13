@@ -161,7 +161,6 @@ DeciderFit fitDecider(DeciderFitRequest request) {
         }
         signal[i] = best;
       }
-      temperature = fitTemperature(scores, ly, c);
       final ok = <bool>[
         for (var i = 0; i < rows; i++) _argmax(scores, i * c, c) == ly[i],
       ];
@@ -174,6 +173,9 @@ DeciderFit fitDecider(DeciderFitRequest request) {
           'linear method, or raise maxError.',
         );
       }
+      // After the threshold: rows answered too poorly for any threshold are
+      // refused by that, the more useful message.
+      temperature = fitTemperature(scores, ly, c);
     default:
       throw ArgumentError.value(request.calibration, 'calibration');
   }
@@ -365,10 +367,15 @@ Float64List crossFitSignal(
 
 /// dq1's `keep95`, for any [keep]: the ascending-sorted signal at index
 /// `floor((1 − keep) · n)`, so that share of the inputs is at or above it.
+///
+/// `1e-9` is added before the floor: `1 − keep` is not exact in doubles, and
+/// `(1 − 0.9) · 10` is 0.9999999999999998, which floored to index 0 and kept
+/// every input instead of 90 %. It cannot move an index that is not within
+/// 1e-9 of an integer, so keep 0.95 picks dq1's index at every size.
 double keepThreshold(Float64List signal, double keep) {
   final sorted = Float64List.fromList(signal)..sort();
   final index = math.min(
-    ((1 - keep) * sorted.length).floor(),
+    ((1 - keep) * sorted.length + 1e-9).floor(),
     sorted.length - 1,
   );
   return sorted[index];
@@ -378,14 +385,31 @@ double keepThreshold(Float64List signal, double keep) {
 /// [1e-3, 10] with the lowest negative log-likelihood of [labels] under
 /// `softmax(scores / T)` (probabilities floored at 1e-12; the smallest
 /// temperature wins a tie).
+///
+/// Throws [ArgumentError] when the best value is an end of the grid: the
+/// rows cannot calibrate. At 1e-3 every row is answered right with room to
+/// spare, so the likelihood only grows as the temperature falls — a near-tie
+/// would be reported as certain; at 10 they are answered so poorly that a
+/// flat distribution fits best. (One labelled row always lands on an end
+/// when it is answered right; when it is answered wrong the error budget
+/// refuses it.) Throws [StateError] for a score that is not finite.
 double fitTemperature(Float64List scores, Int32List labels, int c) {
+  for (final v in scores) {
+    if (!v.isFinite) {
+      throw StateError(
+        'A labelled row has a non-finite score; the temperature is never '
+        'fitted from it.',
+      );
+    }
+  }
   final lo = math.log(1e-3), hi = math.log(10.0);
   const steps = 241;
   final step = (hi - lo) / (steps - 1);
   final rows = labels.length;
   final z = Float64List(c);
   var bestNll = double.infinity;
-  var bestTemp = 1.0;
+  var bestStep = -1;
+  var bestTemp = double.nan;
   for (var s = 0; s < steps; s++) {
     final temp = math.exp(s == steps - 1 ? hi : s * step + lo);
     var nll = 0.0;
@@ -408,28 +432,49 @@ double fitTemperature(Float64List scores, Int32List labels, int c) {
     nll /= rows;
     if (nll < bestNll) {
       bestNll = nll;
+      bestStep = s;
       bestTemp = temp;
     }
+  }
+  if (bestStep == 0 || bestStep == steps - 1) {
+    throw ArgumentError(
+      'DeciderCalibration.fromLabelled: the labelled rows cannot calibrate '
+      'probabilities — the best softmax temperature is the end of the grid '
+      '(${bestStep == 0 ? '1e-3: every row is answered right with room to '
+                'spare, so a near-tie would be reported as certain' : '10: the '
+                'rows are answered so poorly that a flat distribution fits '
+                'best'}). Use more held-out requests, including ones the '
+      'decider gets wrong or nearly wrong, or calibrate the threshold alone '
+      'with DeciderCalibration.crossFit() or minSimilarity().',
+    );
   }
   return bestTemp;
 }
 
-/// dq1's `threshold_conf`: rows sorted by [signal] descending (stable), the
-/// signal of the last row at which the answered rows' error rate is within
-/// [budget]; `1 + 1e-9` (abstain on everything) when no prefix is.
+/// dq1's `threshold_conf`: rows sorted by [signal] descending, the lowest
+/// signal at which the answered rows' error rate is within [budget]; `1 +
+/// 1e-9` (abstain on everything) when none is.
+///
+/// Evaluated at the boundaries of groups of equal signal, not row by row as
+/// dq1 does: a request is answered when its signal is at or above the
+/// threshold, so rows of one signal are answered together, and row by row a
+/// right row given before a tied wrong one admitted both. Identical to dq1
+/// when no two signals tie.
 double errorBudgetThreshold(Float64List signal, List<bool> ok, double budget) {
   final order = List<int>.generate(signal.length, (i) => i)
-    ..sort((a, b) {
-      final bySignal = signal[b].compareTo(signal[a]);
-      return bySignal != 0 ? bySignal : a.compareTo(b);
-    });
+    ..sort((a, b) => signal[b].compareTo(signal[a]));
   var errors = 0;
-  int? last;
-  for (var k = 0; k < order.length; k++) {
-    if (!ok[order[k]]) errors++;
-    if (errors / (k + 1) <= budget) last = k;
+  double? last;
+  var k = 0;
+  while (k < order.length) {
+    final value = signal[order[k]];
+    while (k < order.length && signal[order[k]] == value) {
+      if (!ok[order[k]]) errors++;
+      k++;
+    }
+    if (errors / k <= budget) last = value;
   }
-  return last == null ? 1.0 + 1e-9 : signal[order[last]];
+  return last ?? 1.0 + 1e-9;
 }
 
 double _linearLogit(

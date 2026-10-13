@@ -160,15 +160,22 @@ void main() {
   });
 
   test('fitTemperature: the grid value with the lowest NLL', () {
-    // One row: the right class wins by 1 → the lowest temperature is best.
-    expect(
-      fitTemperature(Float64List.fromList([1, 0]), Int32List.fromList([0]), 2),
-      closeTo(1e-3, 1e-15),
-    );
-    // Wrong by 1 → the highest temperature is best.
-    expect(
-      fitTemperature(Float64List.fromList([0, 1]), Int32List.fromList([0]), 2),
-      closeTo(10, 1e-12),
-    );
+    // A right row and a nearly wrong one: an interior optimum, which the
+    // grid holds to 1 part in 40 per step.
+    final scores = Float64List.fromList([1, 0, 0.45, 0.55]);
+    final labels = Int32List.fromList([0, 0]);
+    final temperature = fitTemperature(scores, labels, 2);
+    double nll(double t) {
+      var sum = 0.0;
+      for (var i = 0; i < 2; i++) {
+        final a = scores[i * 2] / t, b = scores[i * 2 + 1] / t;
+        final m = math.max(a, b);
+        sum -= a - m - math.log(math.exp(a - m) + math.exp(b - m));
+      }
+      return sum / 2;
+    }
+
+    expect(nll(temperature), lessThanOrEqualTo(nll(temperature * 1.04)));
+    expect(nll(temperature), lessThanOrEqualTo(nll(temperature / 1.04)));
   });
 }

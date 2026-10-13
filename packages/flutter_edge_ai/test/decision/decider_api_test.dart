@@ -537,11 +537,13 @@ void main() {
       final decider = await _decider(
         _embedder(),
         method: DeciderMethod.linear,
+        // 'a or b' is nearly a tie, labelled the runner-up: rows answered
+        // right with room to spare cannot calibrate a temperature.
         calibration: DeciderCalibration.fromLabelled([
           (input: _t('about a'), optionId: 'a'),
           (input: _t('about b'), optionId: 'b'),
-          (input: _t('a or b'), optionId: 'a'),
-        ]),
+          (input: _t('a or b'), optionId: 'b'),
+        ], maxError: 0.4),
       );
       final answer = await decider.choose(_in('about b'));
       expect(answer.scoreKind, ScoreKind.logprob);
@@ -720,7 +722,8 @@ void main() {
         calibration: DeciderCalibration.fromLabelled([
           (input: _t('about a'), optionId: 'a'),
           (input: _t('about b'), optionId: 'b'),
-        ]),
+          (input: _t('a or b'), optionId: 'b'),
+        ], maxError: 0.4),
       )).choose(_in('about b'));
       final json = calibrated.toJevJson();
       expect(json['type'], 'choice');

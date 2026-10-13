@@ -10,12 +10,14 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../embedding/common_embedding_model.dart' show CommonEmbeddingModel;
-import '../embedding/embedding_exceptions.dart' show EmbedderClosedException;
+import '../embedding/embedding_exceptions.dart'
+    show EmbedderClosedException, EmbeddingModalityNotLoadedException;
 import '../embedding/embedding_input.dart';
 import '../embedding/embedding_model.dart';
 import '../embedding/task_type.dart';
 import '../model_management/cancel_token.dart' show CancelToken;
 import 'decider.dart';
+import 'decider_embedding.dart';
 import 'decider_exceptions.dart';
 import 'decider_fit.dart';
 import 'decider_method.dart';
@@ -111,6 +113,13 @@ Future<Decider> createEmbeddingDecider(
       ranks.add(rank++);
     }
   }
+  String optionInput(int i) {
+    final option = opts[labels[i]];
+    final example = ranks[i] - (option.description == null ? 0 : 1);
+    return example < 0
+        ? 'Option "${option.id}", its description'
+        : 'Option "${option.id}", example $example';
+  }
 
   final labelledLabels = <int>[];
   if (labelledRows != null) {
@@ -150,25 +159,24 @@ Future<Decider> createEmbeddingDecider(
     }
   }
 
-  final vectors = await embedder.embedAll(
+  final x = await embedDeciderRows(
+    embedder,
     inputs,
     taskType: deciderTaskType,
+    dimension: d,
+    name: optionInput,
     cancelToken: cancelToken,
   );
-  final x = _unitRows(vectors, inputs.length, d, 'an option input');
 
   Float64List? labelledX;
   if (labelledRows != null) {
-    final labelledVectors = await embedder.embedAll(
+    labelledX = await embedDeciderRows(
+      embedder,
       [for (final row in labelledRows) row.input],
       taskType: deciderTaskType,
+      dimension: d,
+      name: (i) => 'Labelled row $i',
       cancelToken: cancelToken,
-    );
-    labelledX = _unitRows(
-      labelledVectors,
-      labelledRows.length,
-      d,
-      'a labelled row',
     );
   }
 
@@ -298,58 +306,6 @@ void _validateOptions(
   }
 }
 
-/// [vectors] as unit rows; refuses a wrong count, a wrong dimension, a
-/// non-finite value or a zero vector — never a decision computed from NaN.
-Float64List _unitRows(
-  List<List<double>> vectors,
-  int expected,
-  int d,
-  String what,
-) {
-  if (vectors.length != expected) {
-    throw StateError(
-      'The embedder returned ${vectors.length} vectors for $expected inputs.',
-    );
-  }
-  final out = Float64List(expected * d);
-  for (var i = 0; i < expected; i++) {
-    _unitInto(vectors[i], d, out, i * d, what);
-  }
-  return out;
-}
-
-void _unitInto(
-  List<double> vector,
-  int d,
-  Float64List out,
-  int offset,
-  String what,
-) {
-  if (vector.length != d) {
-    throw StateError(
-      'The embedder returned ${vector.length} values for $what; its '
-      'dimension is $d.',
-    );
-  }
-  var norm = 0.0;
-  for (final v in vector) {
-    if (!v.isFinite) {
-      throw StateError(
-        'The embedder returned a non-finite value for $what; a decision is '
-        'never computed from it.',
-      );
-    }
-    norm += v * v;
-  }
-  if (norm == 0) {
-    throw StateError('The embedder returned a zero vector for $what.');
-  }
-  norm = math.sqrt(norm);
-  for (var j = 0; j < d; j++) {
-    out[offset + j] = vector[j] / norm;
-  }
-}
-
 /// `Decider.chooseAll`: one embedding per embedder, shared by its deciders.
 Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
   DeciderInput input,
@@ -470,6 +426,20 @@ final class EmbeddingDecider implements Decider {
     _checkUsable(input, topK);
     final candidates = among == null ? _allCandidates : _candidates(among);
     if (candidates.isEmpty) {
+      // Nothing to embed, but the answer must not depend on that: a request
+      // that fails with candidates fails without them too.
+      if (embedder.isClosed) throw const EmbedderClosedException();
+      final loaded = embedder.modalities;
+      for (final modality in input.input.modalities) {
+        if (!loaded.contains(modality)) {
+          throw EmbeddingModalityNotLoadedException(
+            'The input carries ${modality.name}, which this model was not '
+            'loaded for (it embeds ${loaded.map((m) => m.name).join(' and ')}).',
+            modality: modality,
+            loaded: loaded,
+          );
+        }
+      }
       return DeciderAnswer(
         choice: null,
         ranked: const [],
@@ -517,7 +487,7 @@ final class EmbeddingDecider implements Decider {
     final raw = await embedder.embed(input.input, taskType: deciderTaskType);
     final elapsed = watch.elapsed;
     final vector = Float64List(dimension);
-    _unitInto(raw, dimension, vector, 0, 'the input');
+    unitRowInto(raw, dimension, vector, 0, 'the input');
     return (vector, elapsed);
   }
 

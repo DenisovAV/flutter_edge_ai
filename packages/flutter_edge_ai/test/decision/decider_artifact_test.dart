@@ -304,6 +304,88 @@ void main() {
         );
       });
     }
+
+    /// Unit centroid i of [option] scaled by [factor], base64 float32.
+    String scaledCentroid(Map<String, Object?> option, double factor) {
+      final bytes = base64.decode(option['centroid']! as String);
+      final data = ByteData.sublistView(bytes);
+      final out = ByteData(bytes.length);
+      for (var j = 0; j < bytes.length ~/ 4; j++) {
+        out.setFloat32(
+          j * 4,
+          data.getFloat32(j * 4, Endian.little) * factor,
+          Endian.little,
+        );
+      }
+      return base64.encode(out.buffer.asUint8List());
+    }
+
+    // Each refusal names what is wrong, so a corrupted store is debuggable.
+    final named = <String, (void Function(Map<String, Object?>), String)>{
+      'a threshold on a calibration that never abstains': (
+        (a) {
+          final calibration = a['calibration']! as Map<String, Object?>;
+          calibration['kind'] = 'none';
+          calibration['threshold'] = 0.5;
+        },
+        'threshold',
+      ),
+      'a labelled calibration without its temperature': (
+        (a) => (a['calibration']! as Map)['kind'] = 'labelled',
+        'temperature',
+      ),
+      'a temperature on a calibration that is not labelled': (
+        (a) => (a['calibration']! as Map)['temperature'] = 0.5,
+        'temperature',
+      ),
+      'a centroid that is not unit length': (
+        (a) => option0(a)['centroid'] = scaledCentroid(option0(a), 1.5),
+        'unit',
+      ),
+      'a linear decider with one option': (
+        (a) => a['options'] = [option0(a)],
+        'two options',
+      ),
+      'another task type': (
+        (a) => a['taskType'] = 'retrievalQuery',
+        'taskType',
+      ),
+      'a description that is not a string': (
+        (a) => option0(a)['description'] = 3,
+        'description',
+      ),
+      'an example that is not a string': (
+        (a) => option0(a)['examples'] = [3],
+        'examples',
+      ),
+      'metadata that is not a map': (
+        (a) => option0(a)['metadata'] = [1],
+        'metadata',
+      ),
+    };
+    for (final MapEntry(key: name, value: (edit, field)) in named.entries) {
+      test(name, () async {
+        await expectLater(
+          _embedder().loadDecider(edited(edit), embedderId: 'm'),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains(field),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('a centroid within float32 rounding of unit length loads', () async {
+      await _embedder().loadDecider(
+        edited(
+          (a) => option0(a)['centroid'] = scaledCentroid(option0(a), 1.0002),
+        ),
+        embedderId: 'm',
+      );
+    });
   });
 
   test(

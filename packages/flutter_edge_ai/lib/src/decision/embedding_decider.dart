@@ -752,6 +752,13 @@ Future<Decider> loadEmbeddingDecider(
       'A "$kind" decider artifact cannot be loaded by an EmbeddingModel.',
     );
   }
+  final taskType = _field<String>(artifact, 'taskType');
+  if (taskType != deciderTaskType.name) {
+    throw FormatException(
+      'Decider artifact taskType "$taskType": this release embeds options and '
+      'inputs with "${deciderTaskType.name}" only.',
+    );
+  }
   final expected = _field<String>(artifact, 'spaceId');
   final actual = deciderSpaceId(embedder, embedderId: embedderId);
   if (expected != actual) {
@@ -788,6 +795,22 @@ Future<Decider> loadEmbeddingDecider(
   if (calibrationKind != 'none' && threshold == null) {
     throw FormatException('A $calibrationKind calibration needs a threshold.');
   }
+  if (calibrationKind == 'none' && threshold != null) {
+    throw const FormatException(
+      'A none calibration never abstains, so it has no threshold.',
+    );
+  }
+  if (calibrationKind == 'labelled' && temperature == null) {
+    throw const FormatException(
+      'A labelled calibration needs its temperature.',
+    );
+  }
+  if (calibrationKind != 'labelled' && temperature != null) {
+    throw FormatException(
+      'Only a labelled calibration has a temperature; this one is '
+      '$calibrationKind.',
+    );
+  }
   if (temperature != null && !(temperature > 0)) {
     throw const FormatException('A calibration temperature must be positive.');
   }
@@ -798,6 +821,11 @@ Future<Decider> loadEmbeddingDecider(
     throw const FormatException('A decider artifact needs options.');
   }
   final c = rawOptions.length;
+  if (linear && c < 2) {
+    throw const FormatException(
+      'A linear decider artifact needs at least two options.',
+    );
+  }
   final options = <DeciderOption>[];
   final mediaExamples = <int>[];
   final centroids = Float32List(c * d);
@@ -808,24 +836,44 @@ Future<Decider> loadEmbeddingDecider(
     if (raw is! Map<String, Object?>) {
       throw FormatException('Option $o of the decider artifact is not a map.');
     }
+    final id = raw['id'];
+    if (id is! String) {
+      throw FormatException('Option $o: "id" is ${id.runtimeType}, not text.');
+    }
+    final description = raw['description'];
+    if (description != null && description is! String) {
+      throw FormatException(
+        'Option $o: "description" is ${description.runtimeType}, not text.',
+      );
+    }
+    final examples = raw['examples'];
+    if (examples is! List<Object?>) {
+      throw FormatException(
+        'Option $o: "examples" is ${examples.runtimeType}, not a list.',
+      );
+    }
+    final texts = <EmbeddingInput>[];
+    for (final text in examples) {
+      if (text is! String) {
+        throw FormatException(
+          'Option $o: "examples" holds a ${text.runtimeType}, not text.',
+        );
+      }
+      texts.add(EmbeddingInput.text(text));
+    }
     final metadata = raw['metadata'];
     if (metadata != null && metadata is! Map<String, Object?>) {
-      throw FormatException('The metadata of option $o is not a map.');
+      throw FormatException('Option $o: "metadata" is not a map.');
     }
     try {
       options.add(
         DeciderOption(
-          _field<String>(raw, 'id'),
-          description: raw['description'] as String?,
-          examples: [
-            for (final text in _field<List<Object?>>(raw, 'examples'))
-              EmbeddingInput.text(text as String),
-          ],
+          id,
+          description: description as String?,
+          examples: texts,
           metadata: metadata as Map<String, Object?>?,
         ),
       );
-    } on TypeError {
-      throw FormatException('Option $o of the decider artifact is malformed.');
     } on ArgumentError catch (e) {
       throw FormatException('Option $o of the decider artifact: ${e.message}');
     }
@@ -834,7 +882,20 @@ Future<Decider> loadEmbeddingDecider(
       throw FormatException('Option $o: mediaExamples is not a count.');
     }
     mediaExamples.add(media);
-    centroids.setAll(o * d, _decodeFloat32(raw['centroid'], d, o));
+    final centroid = _decodeFloat32(raw['centroid'], d, o);
+    var norm = 0.0;
+    for (final v in centroid) {
+      norm += v * v;
+    }
+    // A centroid is stored unit length as float32: within 1e-3 of 1 is
+    // rounding; further is another vector, and its cosines would be scaled.
+    if ((math.sqrt(norm) - 1).abs() > 1e-3) {
+      throw FormatException(
+        'Option $o: its centroid is not unit length (norm '
+        '${math.sqrt(norm)}).',
+      );
+    }
+    centroids.setAll(o * d, centroid);
     if (linear) {
       weights!.setAll(o * d, _decodeFloat32(raw['weights'], d, o));
       final b = raw['bias'];

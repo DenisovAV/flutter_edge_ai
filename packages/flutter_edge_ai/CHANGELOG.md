@@ -2,6 +2,9 @@
 - Experimental `Decider` API: pick one of N options or abstain (`EmbeddingModel.createDecider`).
 - **Breaking for `implements InferenceModel`:** add `createDecider`; `extends` inherits the default.
 
+## 2.3.3
+- Docs: README and shipped skills checked against the code; models page linked.
+
 ## 2.3.2
 - The active model keeps its LoRA across a restart; `ModelFileType.gguf` (#649).
 

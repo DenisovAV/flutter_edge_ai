@@ -17,13 +17,13 @@ The first "memory used" number people reach for is usually **RSS**, the *residen
 
 In RSS the two look the same. Mapped weights and weights copied into the heap can show similar RSS while producing different footprint readings. A mapped model still needs a working set that fits the device to avoid repeated storage reads. On iOS, jetsam enforces its per-app limit on the footprint rather than RSS.
 
-This package reports `anonymousBytes` (the platform's footprint or `Private_Dirty + SwapPss`), `fileBackedBytes` on Android (resident clean pages: mapped files on a CPU backend, plus GPU driver buffers on some GPU backends), and `availableBytes` (headroom on iOS, a device-wide estimate on Android). Take readings before loading, after loading, and during generation. Their changes help explain the model's memory cost, with the limits below.
+This package reports `anonymousBytes` (the iOS and macOS footprint, or `Private_Dirty + SwapPss` on Android), `anonymousPeakBytes` on iOS and macOS (the footprint's lifetime peak), `fileBackedBytes` on Android (resident clean pages: mapped files on a CPU backend, plus GPU driver buffers on some GPU backends), and `availableBytes` (headroom on iOS, a device-wide estimate on Android, null on macOS). Take readings before loading, after loading, and during generation. Their changes help explain the model's memory cost, with the limits below.
 
 ## Usage
 
 ```yaml
 dependencies:
-  flutter_edge_ai_diagnostics: ^0.2.2
+  flutter_edge_ai_diagnostics: ^0.3.0
 ```
 
 If you only use it from `integration_test/` or `test/`, put it under `dev_dependencies` instead. Note that neither section strips anything from a release build: what keeps it out is not importing it from `lib/`.
@@ -57,7 +57,7 @@ On Android, clean does not mean exclusively file-backed. `Private_Clean` can inc
 
 The baseline includes every clean mapped file the process has touched. Take a reading before loading and subtract, while interpreting both counters together. Singly mapped dirty file pages count in `Private_Dirty` (inside `anonymousBytes`); `Shared_Dirty` is in neither field. Clean pages and dirty pages do not form a complete split of anonymous and file-backed memory.
 
-`fileBackedBytes` is null on iOS because this package does not read a corresponding value there yet. `TASK_VM_INFO` has an `external` field; evaluating it is a follow-up.
+`fileBackedBytes` is null on iOS and macOS because this package does not read a corresponding value there yet. `TASK_VM_INFO` has an `external` field; evaluating it is a follow-up.
 
 The platforms enforce memory differently, and the numbers reflect it:
 
@@ -68,7 +68,9 @@ The platforms enforce memory differently, and the numbers reflect it:
 
 - **A null field** means the value is not reported on this platform or OS version:
   - `anonymousBytes` and `fileBackedBytes` on an Android kernel without `/proc/self/smaps_rollup`. Mainline Linux added it in 4.14, but vendor kernels may backport it;
-  - `fileBackedBytes` on iOS: the package does not read a corresponding value yet;
+  - `fileBackedBytes` on iOS and macOS: the package does not read a corresponding value yet;
+  - `anonymousPeakBytes` on Android, which keeps no anonymous-only peak, and on an iOS or macOS version whose `task_info` reply predates the field;
+  - `availableBytes` on macOS, which has no per-app limit;
   - `availableBytes` on iOS when the call returns 0. Apple returns 0 both when no limit applies (the simulator) and when the limit is already exceeded, and the two cannot be told apart.
 - **`MemoryReadException`** means the value should exist and the read failed: a kernel error, a permission or I/O error, or a file that lacks a field it always carries.
 - **`UnsupportedError`** is thrown by `memorySnapshot()` off Android, iOS and macOS, rather than returning empty values.
@@ -77,7 +79,7 @@ The platforms enforce memory differently, and the numbers reflect it:
 
 Android, iOS and macOS. Everything is read through `dart:io` and `dart:ffi`, so the package has no Kotlin, Swift, Gradle or podspec, and no dependency on `flutter_edge_ai` itself: it measures the process, whichever engine runs in it.
 
-The Linux host test writes and flushes a 64 MiB file on the checkout's filesystem, then maps and reads it: `fileBackedBytes` rises without a comparable rise in `anonymousBytes`. The Android integration test checks the field is positive; its iOS null assertion has not been run for this change.
+The Linux host test writes and flushes a 64 MiB file on the checkout's filesystem, then maps and reads it: `fileBackedBytes` rises without a comparable rise in `anonymousBytes`. The example app's integration test asserts the field is positive on Android and null on iOS and macOS.
 
 With version 0.2.2 on vivo 1933 (Android 11, kernel 4.9), the opt-in Gemma 4 E2B test measured `fileBackedBytes` in MiB:
 

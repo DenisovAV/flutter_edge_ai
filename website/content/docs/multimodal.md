@@ -1,6 +1,6 @@
 ---
 title: Multimodal
-description: Send image and audio input to vision/audio models like Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2, and LLaVA-OneVision.
+description: Send image and audio input to models with a vision or audio encoder, e.g. Gemma 4 and Gemma 3n.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -12,9 +12,10 @@ devices with 8GB+ RAM.
 
 ## Vision (image input)
 
-Vision is supported by **Gemma 4 E2B/E4B**, **Gemma3n E2B/E4B**, **FastVLM 0.5B**
-(desktop), and the community models **Qwen2-VL 2B**, **SmolVLM2 500M**, and
-**LLaVA-OneVision 0.5B** (Android, iOS, Desktop). **Gemma 4** vision runs on all
+Vision needs a model with a vision encoder — e.g. **Gemma 4 E2B/E4B**, **Gemma 3n
+E2B/E4B** and **FastVLM 0.5B** (desktop); [Models](/docs/models) lists which
+models take images. The OS built-in model takes images on Android (Gemini Nano —
+see [Built-in AI](/docs/builtin-ai)). **Gemma 4** vision runs on all
 four platforms (Android, iOS, Desktop, and Web with the MediaPipe `-web.task`
 build, which has no thinking or Gemma 4 function calling); **Gemma3n** vision runs on Android,
 iOS, and Desktop only — its web build is `.litertlm`, which is text-only. On the
@@ -87,8 +88,8 @@ GPU — see below).
 
 ## Audio (voice input)
 
-Audio input works with **Gemma 4 E2B/E4B** and **Gemma3n E2B/E4B** models that
-include the audio adapter.
+Audio input works with `.litertlm` models that include the audio encoder — e.g.
+**Gemma 4 E2B/E4B** and **Gemma 3n** `.litertlm` (see [Models](/docs/models)).
 
 | Platform | Audio support |
 |---|---|
@@ -141,13 +142,13 @@ The web `.litertlm` path (`@litert-lm/core`, early preview) does **not** support
 vision or audio yet — its JS API creates the LLM engine with no vision or audio
 executor, so an image or audio message throws `UnsupportedError`. For full
 vision on web, use **MediaPipe `.task` web** models (which do support image
-input). See
-[Troubleshooting](/docs/troubleshooting) for the full web `.litertlm` feature
-matrix.
+input; MediaPipe LLM Inference is maintenance-only — see [MediaPipe](/docs/mediapipe)). See
+[Troubleshooting](/docs/troubleshooting#litert-lm-on-web-early-preview) for the
+full web `.litertlm` feature matrix.
 
 ## Troubleshooting multimodal
 
-- Ensure you're using a multimodal model (Gemma 4, Gemma3n E2B/E4B, FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision).
+- Ensure the model has a vision (or audio) encoder — see [Models](/docs/models).
 - Set `supportImage: true` when creating the model (and `supportAudio: true` for audio).
 - Check device memory — multimodal models require more RAM.
 - Use the GPU backend for faster text decoding. Image encoding runs on CPU by

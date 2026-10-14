@@ -213,7 +213,10 @@ final photos = await rag.open(
     location: await ragLocation('photos-v1.db'),
     documents: EmbeddingModality.image,
   ),
-  embedder: myImageEmbedder,
+  embedder: FlutterEdgeAiActiveEmbedder.forActiveModel(
+    namespace: 'photos',
+    supportImage: true,
+  ),
 );
 await photos.add(
   id: 'photo-1',
@@ -225,10 +228,13 @@ final matches = await photos.search(
 );
 ```
 
-The embedders bundled with flutter_edge_ai 2.3.0 embed text only, so with them
-`open()` of an image or audio index fails with `EmbeddingLoadException`; a
-custom `RagEmbedder` can embed media today. Cross-modal scores are not on one
-scale: mixed corpora use one index per modality, and the app merges results.
+`FlutterEdgeAiActiveEmbedder` and `.forActiveModel` take `supportImage:` and
+`supportAudio:` for the media the active embedder must embed. EmbeddingGemma 2
+embeds images with its 440m and 740m bundles and audio with the 740m; on a
+bundle without that encoder `open()` fails with `EmbeddingLoadException`. A
+custom `RagEmbedder` can embed media with any other model. Cross-modal scores
+are not on one scale: mixed corpora use one index per modality, and the app
+merges results.
 
 ## Existing stores
 

@@ -56,9 +56,12 @@ longer compiles, and `isClosed` is no longer defaulted.
 
 `flutter_edge_ai_litertlm` 1.13.0 runs EmbeddingGemma 2 text: one `.litertlm`
 file that carries its own tokenizer, so it installs without
-`tokenizerFrom…()` and needs no `flutter_edge_ai_embeddings`. Native only
-(Android, iOS, macOS, Linux, Windows), CPU, at most 1024 input tokens — keep
-chunks at 512 or fewer. Images and audio arrive in litertlm 1.13.1. See
+`tokenizerFrom…()` and needs no `flutter_edge_ai_embeddings`. Natively
+(Android, iOS, macOS, Linux, Windows) on CPU, at most 1024 input tokens — keep
+chunks at 512 or fewer. litertlm 1.13.1 adds images (the 440m and 740m
+bundles), audio (the 740m), the web on WebGPU (text and images; audio and
+combined inputs from 1.13.2) and Qualcomm NPUs (per-SoC bundles, Android and
+Linux arm64); 1.13.2 adds the Intel Panther Lake NPU on Windows. See
 the [litertlm README](https://pub.dev/packages/flutter_edge_ai_litertlm) for
 the install snippet and its disk and memory cost.
 
@@ -68,9 +71,11 @@ The LiteRT.js embedding bundle changed its API. Copy `web/litert_embeddings.js`
 from `flutter_edge_ai_litertlm` 1.13.0 (with the three files next to it) into
 your app's `web/`. A stale copy fails `getActiveEmbedder()` with an
 `EmbeddingLoadException` that names the file. Web EmbeddingGemma 1 now gets
-the same task prefix and the same token ids as native for every `TaskType`. A
-`.litertlm` embedder is refused on web at `install()`, before anything
-downloads.
+the same task prefix and the same token ids as native for every `TaskType`.
+From litertlm 1.13.1 an EmbeddingGemma 2 `.litertlm` embedder runs on web too,
+on WebGPU: add `window.EmbeddingEngine = m.EmbeddingEngine;` to the
+`@litert-lm/core` script in `web/index.html` (see the litertlm README's web
+setup).
 
 ### Imports: `flutter_edge_ai.dart` for apps, `engine.dart` for engines
 
@@ -470,8 +475,9 @@ Pick by what you actually used in 0.16.x:
 | RAG on native | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
 | RAG on web | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 
-> Not sure which format your models are? Desktop is always `.litertlm`
-> (`flutter_edge_ai_litertlm`). On mobile/web check the file extension you install.
+> Not sure which format your models are? Desktop runs `.litertlm`
+> (`flutter_edge_ai_litertlm`), ONNX or built-in AI — no MediaPipe. On
+> mobile/web check the file extension you install.
 > You can add **both** engine packages and let the registry route each model by
 > its file type.
 
@@ -616,7 +622,8 @@ await FlutterEdgeAi.initialize(
 );
 ```
 
-Omit it and the first embedding throws a `StateError` naming this step. It
+Omit it and `getActiveEmbedder()` fails with an `EmbeddingLoadException`
+(its `cause` a `StateError`) naming this step. It
 never falls back to a tokenizer of its own choosing: the wrong family produces
 vectors that are quietly the wrong point in the embedding space, which no test
 downstream can tell from a working model.

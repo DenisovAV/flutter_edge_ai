@@ -1,5 +1,8 @@
-## 1.13.3
+## 1.13.4
 - EmbeddingGemma 2 reports its image token budget, so image-fitted deciders are bound to it.
+
+## 1.13.3
+- README: Qwen3 0.6B bundle that loads (#659); NPU mask formula corrected.
 
 ## 1.13.2
 - Web: EmbeddingGemma 2 audio and combined-input embeddings on WebGPU.

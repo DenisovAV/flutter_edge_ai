@@ -19,7 +19,10 @@ add brings its own capabilities. This page shows what you can swap for what.
 | **Text-to-speech** | ✅ Native | — | — | — |
 
 All means Android, iOS, macOS, Windows, Linux and Web; Native means all of
-them except Web; Mobile means Android and iOS. The packages are
+them except Web; Mobile means Android and iOS. On the Web, LiteRT-LM text
+generation runs only dedicated `-web.litertlm` exports (Gemma 4 and Gemma 3n
+today). MediaPipe's LLM Inference API is maintenance-only upstream, so new apps
+should use LiteRT-LM (`.litertlm`). The packages are
 `flutter_edge_ai_litertlm` (plus `flutter_edge_ai_speech` for speech),
 `flutter_edge_ai_onnx`, `flutter_edge_ai_mediapipe` and
 `flutter_edge_ai_builtin_ai`.
@@ -85,7 +88,8 @@ places.
 
 **Which runtime runs a model** follows the file type you declare when you
 install it (`ModelFileType`). If no registered engine can run it, creating the
-model throws a `StateError` that names the package to add. Embedding and speech
+model throws a `StateError` that names the `ModelFileType` and the registered
+engines. Embedding and speech
 backends are chosen the same way; a vector store is chosen by its
 `VectorStoreSpec.providerId` among the providers passed to `FlutterEdgeAiRag`.
 

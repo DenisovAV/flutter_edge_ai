@@ -800,6 +800,24 @@ void main() {
       expect(stage.performed, ['jump', 'dance']);
     });
 
+    test("a bundle's own voice threshold reaches the voice decider", () async {
+      final vm = await openVoiceVm(
+        setup: const TinyIslandEmbedderSetup(
+          embedderName: 'EmbeddingGemma 2 (740M) · Qualcomm SM8850 NPU',
+          model: 'embeddingGemma2TextVisionAudio740mSm8850',
+          voiceProblem: null,
+          voiceThreshold: islandVoiceThresholdSm8850,
+        ),
+      );
+      expect(vm.voiceStatus, TinyIslandVoiceStatus.ready);
+      expect(voice.recipe!.calibration.threshold, islandVoiceThresholdSm8850);
+      expect(voice.model, 'embeddingGemma2TextVisionAudio740mSm8850-voice');
+      expect(
+        vm.voiceCalibrationLabel,
+        'fixed threshold $islandVoiceThresholdSm8850',
+      );
+    });
+
     test('a tap shorter than a spoken request decides nothing', () async {
       final vm = await openVoiceVm();
       recorder.next = _wav(const Duration(milliseconds: 200));

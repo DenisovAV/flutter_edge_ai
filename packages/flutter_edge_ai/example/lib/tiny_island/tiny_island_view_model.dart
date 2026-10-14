@@ -83,7 +83,6 @@ final class TinyIslandViewModel extends ChangeNotifier {
       throw StateError('The island catalog repeats an action id.');
     }
     _recipe = _deps.recipe(catalog);
-    _voiceRecipe = _deps.voiceRecipe(catalog);
   }
 
   final TinyIslandDependencies _deps;
@@ -91,7 +90,9 @@ final class TinyIslandViewModel extends ChangeNotifier {
   final List<IslandAction> catalog;
   late final Map<String, IslandAction> _byId;
   late final IslandDeciderRecipe _recipe;
-  late final IslandDeciderRecipe _voiceRecipe;
+
+  /// The active bundle's, set by [open] when it takes spoken requests.
+  IslandDeciderRecipe? _voiceRecipe;
 
   IslandEmbedderLane get _lane => _deps.lane ?? islandEmbedderLane;
 
@@ -160,8 +161,9 @@ final class TinyIslandViewModel extends ChangeNotifier {
   String? get voiceNote => _voiceNote;
   String? _voiceNote;
 
-  /// How the spoken requests' decider decides when to abstain.
-  String get voiceCalibrationLabel => _voiceRecipe.calibrationLabel;
+  /// How the spoken requests' decider decides when to abstain; empty while
+  /// speaking is off.
+  String get voiceCalibrationLabel => _voiceRecipe?.calibrationLabel ?? '';
 
   /// Texts embedded so far while [voiceStatus] is preparing.
   int get voicePrepared => _voicePrepared;
@@ -268,6 +270,7 @@ final class TinyIslandViewModel extends ChangeNotifier {
       _prepareNote = null;
       _voiceStatus = TinyIslandVoiceStatus.off;
       _voiceNote = null;
+      _voiceRecipe = null;
       _voicePrepared = 0;
       _voicePreparedOf = 0;
     });
@@ -336,7 +339,11 @@ final class TinyIslandViewModel extends ChangeNotifier {
       if (ready.voiceProblem case final problem?) {
         _set(() => _voiceNote = problem);
       } else {
-        await _prepareVoice(generation, cancel, embedder, ready.model);
+        final recipe = _voiceRecipe = _deps.voiceRecipe(
+          catalog,
+          threshold: ready.voiceThreshold,
+        );
+        await _prepareVoice(generation, cancel, embedder, ready.model, recipe);
       }
     } catch (e, st) {
       if (_stale(generation)) {
@@ -361,13 +368,14 @@ final class TinyIslandViewModel extends ChangeNotifier {
     CancelToken cancel,
     EmbeddingModel embedder,
     String model,
+    IslandDeciderRecipe recipe,
   ) async {
     _set(() => _voiceStatus = TinyIslandVoiceStatus.preparing);
     try {
       final prepared = await _deps.prepare(
         embedder: embedder,
         model: '$model-voice',
-        recipe: _voiceRecipe,
+        recipe: recipe,
         store: _deps.store,
         embedderId: _deps.embedderId,
         cancelToken: cancel,

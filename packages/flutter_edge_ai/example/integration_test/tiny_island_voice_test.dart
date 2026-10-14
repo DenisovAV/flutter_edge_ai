@@ -36,7 +36,11 @@
 //     --dart-define=TINY_ISLAND_VOICE_DIR=<clip dir; default
 //         <documents>/island_voice>
 //     --dart-define=TINY_ISLAND_AUDIO_EMBEDDER_FILE=<a local copy of the 740m>
-//   (both optional; the bundle downloads from Hugging Face otherwise, and on
+//     --dart-define=TINY_ISLAND_AUDIO_EMBEDDER_MODEL=<catalog name; default
+//         embeddingGemma2TextVisionAudio740m, the CPU bundle>
+//     --dart-define=TINY_ISLAND_VOICE_THRESHOLD_ONLY=true  (stop after the
+//         threshold sweep a new bundle needs before speaking is on there)
+//   (all optional; the bundle downloads from Hugging Face otherwise, and on
 //   macOS a local copy must sit inside the app's container)
 //
 // No setUp/setUpAll (Rule 6b).
@@ -66,9 +70,22 @@ const _audioEmbedderFile = String.fromEnvironment(
   'TINY_ISLAND_AUDIO_EMBEDDER_FILE',
 );
 
+/// The catalog entry to run: the 740M CPU bundle, or a per-SoC one such as
+/// embeddingGemma2TextVisionAudio740mSm8850 (text on the NPU, audio on the
+/// CPU).
+const _audioEmbedderModel = String.fromEnvironment(
+  'TINY_ISLAND_AUDIO_EMBEDDER_MODEL',
+  defaultValue: 'embeddingGemma2TextVisionAudio740m',
+);
+
 const _manifestHeader = 'file\tset\tvoice\tlanguage\taction\ttext';
 
 const _maxErrors = [0.05, 0.10, 0.20];
+
+/// Stops after the voice threshold sweep (the app's options against plain
+/// audio): what a new bundle or backend needs before speaking is turned on
+/// there, without the spoken-example configurations.
+const _thresholdOnly = bool.fromEnvironment('TINY_ISLAND_VOICE_THRESHOLD_ONLY');
 
 void _log(String line) {
   // ignore: avoid_print
@@ -373,6 +390,57 @@ void _reportVoices(String name, List<_Row> rows) {
 }
 
 /// The highest cosine of the held-out and out-of-scope clips.
+/// The fixed threshold spoken requests need: answered share, error on the
+/// answered and out-of-scope clips refused for a sweep of thresholds, and
+/// the lowest one whose answered held-out clips keep their error within each
+/// of [_maxErrors] (fromLabelled's rule), over the best cosine of each clip.
+void _reportVoiceThreshold(String name, List<_Row> rows) {
+  final held = [
+    for (final r in rows)
+      if (r.clip.set == 'held_out') r,
+  ];
+  final out = [
+    for (final r in rows)
+      if (r.clip.set == 'out_of_scope') r,
+  ];
+  bool right(_Row r) => r.best == r.clip.want;
+  String at(double t) {
+    final answered = [
+      for (final r in held)
+        if (r.similarity! >= t) r,
+    ];
+    final wrong = answered.where((r) => !right(r)).length;
+    final refused = out.where((r) => r.similarity! < t).length;
+    return 'answered ${_pct(answered.length, held.length)}, error '
+        '${_pct(wrong, answered.length)}, out-of-scope refused '
+        '${_pct(refused, out.length)}';
+  }
+
+  final top = held.where(right).length;
+  _log(
+    '$name | threshold sweep over ${held.length} held-out and '
+    '${out.length} out-of-scope clips, top-1 ${_pct(top, held.length)}',
+  );
+  for (var t = 0.60; t < 0.905; t += 0.01) {
+    _log('$name | t ${t.toStringAsFixed(2)}: ${at(t)}');
+  }
+  final sorted = [for (final r in held) r.similarity!]..sort();
+  for (final budget in _maxErrors) {
+    final pick = sorted.firstWhere((t) {
+      final answered = [
+        for (final r in held)
+          if (r.similarity! >= t) r,
+      ];
+      return answered.where((r) => !right(r)).length <=
+          budget * answered.length;
+    }, orElse: () => double.infinity);
+    _log(
+      '$name | budget $budget: threshold ${pick.toStringAsFixed(4)}, '
+      '${pick.isFinite ? at(pick) : 'nothing answered'}',
+    );
+  }
+}
+
 void _reportSpread(String name, List<_Row> rows) {
   for (final set in ['held_out', 'out_of_scope']) {
     _log(
@@ -413,7 +481,13 @@ void main() {
         );
       }
 
-      const model = catalog.EmbeddingModel.embeddingGemma2TextVisionAudio740m;
+      final model = catalog.EmbeddingModel.values.firstWhere(
+        (m) => m.name == _audioEmbedderModel && m.embedsAudio,
+        orElse: () => fail(
+          'TINY_ISLAND_AUDIO_EMBEDDER_MODEL=$_audioEmbedderModel is not an '
+          'EmbeddingGemma 2 bundle with an audio encoder',
+        ),
+      );
       await installTinyIslandEmbedder(model, localFile: _audioEmbedderFile);
       final real = await FlutterEdgeAi.getActiveEmbedder(
         preferredBackend: model.embedderBackend,
@@ -458,18 +532,20 @@ void main() {
         '${_ms(audioTimes.skip(1))}',
       );
       var forms = [('audio', audio)];
-      try {
-        final times = await embedEvery(queries, prefixed);
-        _log('prefix+audio embedding per query clip: ${_ms(times)}');
-        forms = [...forms, ('prefix+audio', prefixed)];
-      } on Object catch (e) {
-        _log('prefix+audio refused by the embedder: $e');
-      }
-      for (final (name, form) in forms) {
-        _log(
-          '$name embedding per option-example clip: '
-          '${_ms(await embedEvery(examples, form))}',
-        );
+      if (!_thresholdOnly) {
+        try {
+          final times = await embedEvery(queries, prefixed);
+          _log('prefix+audio embedding per query clip: ${_ms(times)}');
+          forms = [...forms, ('prefix+audio', prefixed)];
+        } on Object catch (e) {
+          _log('prefix+audio refused by the embedder: $e');
+        }
+        for (final (name, form) in forms) {
+          _log(
+            '$name embedding per option-example clip: '
+            '${_ms(await embedEvery(examples, form))}',
+          );
+        }
       }
 
       final recipe = islandDeciderRecipe(buildIslandCatalog());
@@ -507,6 +583,11 @@ void main() {
         '${_ms(spoken.map((r) => r.scoreTime))}',
       );
       await app.close();
+      _reportVoiceThreshold('plain audio against the app options', spoken);
+      if (_thresholdOnly) {
+        expect(spoken, hasLength(queries.length));
+        return;
+      }
 
       // Option sets, each in the form the clips are asked in.
       List<DeciderOption> options(

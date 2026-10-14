@@ -86,9 +86,14 @@ lightest; a per-SoC NPU bundle runs on the NPU).
   German clip): of 27 requests 22 played the right action, 1 the wrong one
   and 4 got a shrug; all 6 out-of-scope ones got a shrug. A human voice is
   not measured. The first visit fits the second decider once the typed one
-  is ready (31–35 s more on the M4 Pro and the iOS Simulator). Speaking is off
-  with the other bundles, an NPU bundle and on the web, where that threshold
-  was not measured.
+  is ready (31–35 s more on the M4 Pro and the iOS Simulator). With the
+  Galaxy S26+'s SM8850 NPU bundle the actions are embedded on the NPU and the
+  audio on the CPU, and the cosines come out lower: its own threshold, 0.657,
+  measured on a DDP Galaxy S26+ with the same clips, answers 15 % of the
+  held-out requests, 4.7 % of those wrong, and refuses all out-of-scope ones;
+  the 33 screen clips gave 7 of 27 requests the right action, none a wrong
+  one, 20 a shrug, and 6 of 6 out-of-scope shrugs. Speaking is off with the
+  other bundles and on the web, where no threshold was measured.
 - **Build hook and the pub cache.** `hook/build.dart` converts
   `assets/island/models/*.glb` (Kenney, CC0) at build time. flutter_scene's
   own build hook also writes generated shader bundles into its package

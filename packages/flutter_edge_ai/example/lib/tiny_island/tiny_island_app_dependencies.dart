@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import '../models/embedding_model.dart' as catalog;
 import '../utils/installed_model_lookup.dart';
 import 'island_decider_store.dart';
+import 'island_voice.dart';
 import 'island_voice_recorder.dart';
 import 'island_web_gpu.dart';
 import 'tiny_island_dependencies.dart';
@@ -63,24 +64,25 @@ Future<TinyIslandSetup> readTinyIslandSetup() async {
     model: model.name,
     preferredBackend: model.embedderBackend,
     voiceProblem: _voiceProblem(model),
+    voiceThreshold: islandVoiceThresholds[model.name] ?? islandVoiceThreshold,
   );
 }
 
-/// Why [model] takes no spoken requests here; null when it does. The voice
-/// threshold was measured on the 740M CPU bundle only (`island_voice.dart`).
+/// Why [model] takes no spoken requests here; null when it does: a bundle
+/// with an audio encoder whose voice threshold was measured
+/// ([islandVoiceThresholds]), natively.
 String? _voiceProblem(catalog.EmbeddingModel model) {
   if (!model.embedsAudio) {
     return 'Speaking needs EmbeddingGemma 2 Text + Vision + Audio (740M), the '
         'bundle with an audio encoder.';
   }
   if (kIsWeb) {
-    return 'The voice threshold was measured on the CPU bundle, not on '
-        'WebGPU: speaking is off on the web.';
+    return 'The voice threshold was measured natively, not on WebGPU: '
+        'speaking is off on the web.';
   }
-  if (model.embedderBackend != null) {
-    return 'The voice threshold was measured on the CPU bundle; this one '
-        'embeds the actions on the ${model.embedderBackend!.name.toUpperCase()}, '
-        'where it was not measured.';
+  if (!islandVoiceThresholds.containsKey(model.name)) {
+    return 'No voice threshold was measured for this bundle, so speaking is '
+        'off with it.';
   }
   return null;
 }

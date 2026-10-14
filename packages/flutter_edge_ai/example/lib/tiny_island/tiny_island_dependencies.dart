@@ -34,6 +34,7 @@ final class TinyIslandEmbedderSetup extends TinyIslandSetup {
     required this.model,
     this.preferredBackend,
     this.voiceProblem = 'This bundle has no audio encoder.',
+    this.voiceThreshold = islandVoiceThreshold,
   });
 
   /// E.g. "EmbeddingGemma 2 Text (270M)".
@@ -50,6 +51,10 @@ final class TinyIslandEmbedderSetup extends TinyIslandSetup {
   /// Why spoken requests are not taken with this bundle, ready to show; null
   /// when they are (the embedder is then loaded with `supportAudio`).
   final String? voiceProblem;
+
+  /// The fixed threshold of the decider for spoken requests, measured for
+  /// this bundle ([islandVoiceThresholds]).
+  final double voiceThreshold;
 }
 
 /// The screen cannot run; [message] says why, ready to show.
@@ -122,8 +127,13 @@ final class TinyIslandDependencies {
   /// app.
   final PrepareIslandDecider prepare;
 
-  /// How the decider for spoken requests is fitted over the catalog.
-  final IslandDeciderRecipe Function(List<IslandAction> catalog) voiceRecipe;
+  /// How the decider for spoken requests is fitted over the catalog, at the
+  /// bundle's threshold.
+  final IslandDeciderRecipe Function(
+    List<IslandAction> catalog, {
+    double threshold,
+  })
+  voiceRecipe;
 
   /// Makes the screen's microphone recorder: [RecordIslandVoiceRecorder] in
   /// the app. Null: no microphone, spoken requests come only through

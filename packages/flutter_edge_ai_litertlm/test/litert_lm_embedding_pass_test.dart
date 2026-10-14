@@ -849,11 +849,11 @@ void main() {
         'TaskType', () async {
       for (final taskType in TaskType.values) {
         final vector = await p.embed(
-          EmbeddingInput.text('Привет, мир 🌍'),
+          EmbeddingInput.text('Grüße, Welt 🌍'),
           taskType,
         );
         expect(vector, native.lastVector);
-        expect(native.lastTexts, ['${taskType.prefix}Привет, мир 🌍']);
+        expect(native.lastTexts, ['${taskType.prefix}Grüße, Welt 🌍']);
         expect(native.lastPartTypes, [
           LiteRtLmInputDataType.kLiteRtLmInputDataTypeText,
         ]);

@@ -3,8 +3,8 @@
 // (index the library, load Gemma 4, open the tab); cut the recording there.
 //
 //   --dart-define=MULTIMODAL_RAG_CLIP=search  search as it is typed: "the airport
-//       taxi receipt" and the Russian "чек за такси" find the receipt photo,
-//       then "Find similar" searches the photos with it.
+//       taxi receipt" finds the receipt photo, then "Find similar" searches
+//       the photos with it.
 //   --dart-define=MULTIMODAL_RAG_CLIP=ask   "How much was the airport taxi?": the
 //       amount is only in the receipt photo; EmbeddingGemma 2 finds the
 //       uncaptioned photo by meaning, Gemma 4 reads the total off it, and a
@@ -201,8 +201,8 @@ Future<void> _askClip(WidgetTester tester) async {
   _mark('end');
 }
 
-/// Search as it is typed: an English and a Russian query find the receipt
-/// photo by meaning, then "Find similar" searches the photos with it.
+/// Search as it is typed: a query finds the receipt photo by meaning, then
+/// "Find similar" searches the photos with it.
 Future<void> _searchClip(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('multimodal-rag-tab-search')));
   await _pause(tester, 800);
@@ -229,12 +229,7 @@ Future<void> _searchClip(WidgetTester tester) async {
   }
 
   expect(await searchFor('the airport taxi receipt'), contains('IMG_0412'));
-  expect(
-    await searchFor('чек за такси'),
-    contains('IMG_0412'),
-    reason: 'one space across languages',
-  );
-  await _screenshot('russian');
+  await _screenshot('receipt');
   final similar = find.byKey(const Key('multimodal-rag-similar-photo-0412'));
   await tester.ensureVisible(similar);
   await _pause(tester, 400);

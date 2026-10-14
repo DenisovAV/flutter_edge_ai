@@ -14,20 +14,34 @@ and then continue the conversation with the result.
 
 ### Models with function calling support
 
-- **Gemma 4** (E2B, E4B) — full support (native function-call tokens).
-- **Gemma3n E4B** — function calling on the downloadable E4B `.litertlm` build;
-  not on E2B or the MediaPipe `.task` builds.
-- **FunctionGemma 270M** — Google's specialized function-calling model.
-- **DeepSeek R1** — function calling + thinking mode.
-- **Qwen** models (0.5B, 0.6B, 1.5B) — full support.
-- **Phi-4 Mini** — advanced reasoning with function calling.
+A call takes one of two paths, chosen from `modelType` and the file type:
+
+- **The runtime's own tool path** — **Gemma 4** (E2B, E4B) and **FunctionGemma
+  270M** on a `.litertlm`: the declarations reach LiteRT-LM as structured data
+  and the calls come back parsed (see
+  [Who renders the declarations](#who-renders-the-declarations)).
+- **Prompt-based** — every other model installed with
+  `supportsFunctionCalls: true` (except Gemma 4, which needs a `.litertlm` — see
+  [Platform support](#platform-support)): the chat writes the tools into the
+  prompt and parses the calls back out of the text. For example:
+  - **Gemma 3n E4B** — on the downloadable E4B `.litertlm` build; not on E2B or
+    the MediaPipe `.task` builds.
+  - **FunctionGemma 270M** as a MediaPipe `.task`.
+  - **DeepSeek R1** — function calling + thinking mode.
+  - **Qwen 2.5 0.5B / 1.5B** (`.task`) and **Qwen3 0.6B** (`.litertlm` — use
+    `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`; `Qwen3-0.6B.litertlm` no longer
+    loads, [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
+  - **Phi-4 Mini**.
+  - The [Built-in AI](#built-in-ai-os-models) OS models.
+
+See [Models](/docs/models) for which models declare function calling.
 
 ### Models without function calling support
 
 - **Gemma 3 270M** — text generation only.
 - **Gemma 3 1B** — text generation only.
 - **SmolLM 135M** — text generation only.
-- **LFM2.5 230M** — text generation only.
+- **LFM2.5 230M (Liquid AI)** — text generation only.
 - **SmolLM3 3B** — text generation with reasoning, no function calling.
 - **Phi-4 Mini Reasoning** — reasoning model, no function calling.
 - **FastVLM 0.5B** — vision model, no function calling.

@@ -14,9 +14,12 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
 3. Switch over all four `ModelResponse` subtypes. It is sealed — a switch that leaves out `ThinkingResponse` does not compile.
 4. Return tool results as data, errors included. Never throw from a tool.
 5. Prefer `generateChatResponseWithTools` to a hand-written loop.
-6. Use a model that can call tools: Gemma 4, Gemma 3n, FunctionGemma,
-   Phi-4 Mini, Qwen 2.5, Qwen3 or DeepSeek R1. Gemma 3 1B, Gemma 3 270M,
-   SmolLM and LFM2.5 cannot — they describe the action in prose instead.
+6. Use a model that can call tools (https://flutteredge.ai/docs/models):
+   Gemma 4, FunctionGemma, Phi-4 Mini, Qwen 2.5, Qwen3, DeepSeek R1,
+   Gemma 3n E4B `.litertlm`, or the OS built-in model. Gemma 3 1B, Gemma 3
+   270M, SmolLM, SmolLM3, LFM2.5, Phi-4 Mini Reasoning and the vision models
+   (FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision) cannot — they describe the
+   action in prose instead.
 
 ## Declare a tool
 

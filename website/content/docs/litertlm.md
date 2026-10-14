@@ -34,8 +34,13 @@ EmbeddingGemma 1 / Gecko
 | Web | ⚠️ early preview via `@litert-lm/core` (text-only) |
 
 > **Web is a text-only preview.** It runs through `@litert-lm/core` (WebGPU/WASM)
-> and supports function calling and thinking, but **not** vision, audio or LoRA. Qwen3's emitted `<think>` tags are parsed by core on Web. Native platforms have the full feature set. On web you also need the JS
-> handshake in `web/index.html` (see [Web setup](#web-setup)).
+> and supports function calling and thinking, but **not** vision or audio; core
+> parses `<think>` tags from any model that emits them. Only the dedicated
+> `-web.litertlm` exports load (Gemma 4 and Gemma 3n today): a native `.litertlm`
+> installs on web and then fails at the first generation. Native platforms add
+> vision and audio. LoRA is not supported on any `.litertlm` path (it throws
+> `UnsupportedError`) — it works only with MediaPipe `.task` models. On web you
+> also need the JS handshake in `web/index.html` (see [Web setup](#web-setup)).
 
 ## Setup
 
@@ -175,12 +180,13 @@ silently — the model answers from the first prefill chunk alone, fluently,
 with no error and nothing in the log:
 
 - **Qualcomm.** A compiled bundle carries a prefill mask of
-  `2 B × num_attention_heads × prefill × (cache_length + prefill)`. Above ~1 MiB
-  every chunk after the first is dropped. For the 4-head Gemma 3 bundles that
-  makes **896** the largest working `cache_length` at prefill 128 — and *every*
-  published `qualcomm.*` Gemma 3 bundle is built above the line (270M at cache
-  4096 is 4.125 MiB, 1B ekv1280 is 1.375 MiB). A 16-head model such as Qwen3-0.6B
-  has no working value at prefill 128 at all.
+  `2 B × (attention heads ÷ KV heads) × prefill × (cache_length + prefill)`. Above
+  ~1 MiB every chunk after the first is dropped. For Gemma 3 (4 attention heads
+  per KV head) that makes **896** the largest working `cache_length` at prefill
+  128 — and *every* published `qualcomm.*` Gemma 3 bundle is built above the line
+  (270M at cache 4096 is 4.125 MiB, 1B ekv1280 is 1.375 MiB). Garbled Qwen3
+  output on the NPU is a different bug
+  ([LiteRT-LM#3846](https://github.com/google-ai-edge/LiteRT-LM/issues/3846)).
 - **Intel.** The second chunk is lost regardless of mask size — a different
   defect on the OpenVINO path, which Gemma 4 bundles do not hit.
 
@@ -193,8 +199,10 @@ so pass the `cache_length` the bundle was compiled for. Note that requesting
 initialize, the engine falls back to GPU and then CPU, and the floor applies
 again to those attempts — so a value chosen for an NPU bundle is raised to 1024
 on the fallback rather than crashing it. The NPU candidate is attempted only on
-Windows and on Android phones with Qualcomm FastRPC; on other Android phones,
-macOS, Linux and iOS it is skipped, because nothing there can run it — and on
+Windows, on Android phones with Qualcomm FastRPC, and on Qualcomm Linux arm64
+boards that pass the FastRPC checks above — the last two only when the app sets
+`qualcomm_npu`; on other Android phones, macOS, other Linux machines and iOS it
+is skipped, because nothing there can run it — and on
 macOS the native runtime was measured accepting `npu` anyway, which made
 `activeBackend` report an NPU that does not exist on the machine. On Windows
 the check is per OS, so a PC without an Intel NPU still attempts it, and

@@ -75,9 +75,10 @@ The LiteRT.js embedding bundle changed its API. Copy `web/litert_embeddings.js`
 from `flutter_edge_ai_litertlm` 1.13.0 (with the three files next to it) into
 your app's `web/`. A stale copy fails `getActiveEmbedder()` with an
 `EmbeddingLoadException` that names the file. Web EmbeddingGemma 1 now gets
-the same task prefix and the same token ids as native for every `TaskType`. A
-`.litertlm` embedder is refused on web at `install()`, before anything
-downloads.
+the same task prefix and the same token ids as native for every `TaskType`. In
+1.13.0 a `.litertlm` embedder was refused on web at `install()`; since 1.13.1 it
+runs on WebGPU, with `window.EmbeddingEngine = m.EmbeddingEngine;` in
+`web/index.html` (see [Installation → Web](/docs/installation#web)).
 
 ### Imports: `flutter_edge_ai.dart` for apps, `engine.dart` for engines
 
@@ -403,7 +404,9 @@ that release; RAG later changed in 2.0 as documented above.
 
 1. Add the opt-in packages for the formats/features you use (see table below).
 2. Call `await FlutterEdgeAi.initialize(inferenceEngines: [...], ...)` once in `main()`, passing the engines/backends from the packages you added.
-3. Everything else stays the same.
+3. Then apply the 2.0–2.3 sections above: RAG moved to `flutter_edge_ai_rag`
+   (2.0), `isThinking` became `enableThinking` (2.1), sampling defaults come
+   from the model (2.2), and the embedding API changed (2.3).
 
 ## 1. pubspec.yaml
 
@@ -418,8 +421,8 @@ dependencies:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.3.0                 # core — always required
-  flutter_edge_ai_litertlm: ^1.13.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai: ^2.3.2                 # core — always required
+  flutter_edge_ai_litertlm: ^1.13.2       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.2.2       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.0      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
   flutter_edge_ai_rag: ^1.1.0             # add for on-device RAG (RagIndex) + one store below
@@ -431,8 +434,8 @@ Pick by what you actually used in 0.16.x:
 
 | In 0.16.x you used… | Add |
 |---|---|
-| `.litertlm` models (Gemma 4, Qwen3, FastVLM, any desktop) | `flutter_edge_ai_litertlm` |
-| `.task` / `.bin` models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4, …) | `flutter_edge_ai_mediapipe` |
+| `.litertlm` models (any desktop model included) | `flutter_edge_ai_litertlm` |
+| `.task` / `.bin` models | `flutter_edge_ai_mediapipe` |
 | `generateEmbedding()` / `installEmbedder()` | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`). `generateEmbedding` is `embed` since 2.3.0 |
 | RAG (`addDocument` / `searchSimilar`), fastest on native | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
 | RAG on web (or a portable store on any platform) | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
@@ -490,9 +493,11 @@ dependencies:
 
 `LiteRtEmbeddingBackend()` itself is unchanged — only where the class is
 imported from. Since litertlm 1.8.0 it also needs a tokenizer registered
-beside it: add `flutter_edge_ai_embeddings` to your pubspec and pass
-`embeddingTokenizers: [GemmaEmbeddingTokenizers()]`, or the first embedding
-throws a `StateError` naming that step. You still depend on
+beside it for `.tflite` models (an EmbeddingGemma 2 `.litertlm` carries its
+own): add `flutter_edge_ai_embeddings` to your pubspec and pass
+`embeddingTokenizers: [GemmaEmbeddingTokenizers()]`, or `getActiveEmbedder()`
+fails with an `EmbeddingLoadException` whose cause is a `StateError` naming
+that step. You still depend on
 `flutter_edge_ai_embeddings` (it owns the tokenizers); you just no longer import
 a backend class from it. If you'd rather run embeddings over an
 ONNX/ORT model instead, `flutter_edge_ai_onnx`'s `OnnxEmbeddingBackend` is a

@@ -125,8 +125,8 @@ template (`OgaTokenizerApplyChatTemplate`) — the engine never builds turn
 markers itself.
 
 `activeBackend` is `null`: ORT-GenAI picks the execution provider from the
-model's `genai_config.json`, which the plugin never reads, so there is no honest
-answer to report.
+model's `genai_config.json`, whose execution-provider section the plugin does
+not read, so there is no honest answer to report.
 
 ### Model layout: a directory, not a file
 

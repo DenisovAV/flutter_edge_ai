@@ -437,6 +437,26 @@ compiler can't run.
 If they're present but still failing, it is not a missing Visual C++ runtime —
 neither DLL imports one. Look at the GPU driver instead.
 
+### macOS: generation or embedding slows down while the app is in the background
+
+App Nap throttles a backgrounded macOS app after about a minute, and on-device
+models then run several times slower (measured: an EmbeddingGemma 2 image went
+from 0.35 s to 2–7 s, with memory flat). An app that embeds or generates while
+it is in the background should hold an activity for the duration of that work,
+from its macOS runner:
+
+```swift
+let activity = ProcessInfo.processInfo.beginActivity(
+  options: .userInitiated, reason: "Indexing photos")
+// … the work …
+ProcessInfo.processInfo.endActivity(activity)
+```
+
+An `NSAppSleepDisabled` key in `Info.plist` did not turn App Nap off in our
+measurements; the activity does. The example app holds one for its whole
+lifetime (`example/macos/Runner/AppDelegate.swift`), because its integration
+tests run in the background.
+
 ### Model file not found / `Cannot find: gemma-...litertlm`
 
 On desktop the model is downloaded to a `flutter_gemma/` folder outside

@@ -1,6 +1,6 @@
 ---
 title: Embeddings & RAG
-description: Embed text with EmbeddingGemma 1 and 2 across nine task types, and build profile-safe on-device RAG with pluggable SQLite or Qdrant storage.
+description: Embed text, images and audio with EmbeddingGemma 2, EmbeddingGemma 1, Gecko or ONNX models across nine task types, and build profile-safe on-device RAG with pluggable SQLite or Qdrant storage.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -56,7 +56,7 @@ the ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
 EmbeddingGemma (1 and 2) and Gecko produce 768-dimensional vectors;
 all-MiniLM-L6-v2 produces 384. A number such as 256 in an artifact name is the
 maximum input length in tokens, not the vector dimension. See
-[Models](/docs/models#text-embedding-models) for download links.
+[Models](/docs/models#embedding-models) for download links.
 
 ## EmbeddingGemma 2
 
@@ -133,7 +133,7 @@ final vector = await embedder.embed(
 
 The 440m bundle has the 270m's text tower (the same text vectors) plus a vision
 encoder, so one model embeds text and photos, and a text finds photos. It needs
-flutter_edge_ai_litertlm 1.13.1 (1.13.1 on the Web). Declare images when you get
+flutter_edge_ai_litertlm 1.13.1, on the Web too. Declare images when you get
 the embedder, and keep the photos in an image index:
 
 ```dart
@@ -632,10 +632,12 @@ A location holds documents of one modality, declared in
 An image or audio index needs an embedder whose **modalities** include it; its
 documents carry a **content** reference (a URI, file path or asset id), never
 the media bytes. A text query over an image index is text-to-image search.
-With the active embedder, an image index needs the EmbeddingGemma 2 440m
-bundle ([above](#embeddinggemma-2-images); on the Web from litertlm 1.13.1);
-with any other model, and for audio, the index fails to open with
-**EmbeddingLoadException**.
+With the active embedder (**FlutterEdgeAiActiveEmbedder(supportImage: true)**
+or **supportAudio: true**), an image index needs the EmbeddingGemma 2 440m or
+740m bundle ([above](#embeddinggemma-2-images)) and an audio index the 740m
+([above](#embeddinggemma-2-audio-and-combined-inputs)); on the Web from
+litertlm 1.13.1 for images, 1.13.2 for audio. With any other model the index
+fails to open with **EmbeddingLoadException**.
 A custom **RagEmbedder** can embed media with any model. Cross-modal scores are not on one scale:
 mixed corpora use one index per modality.
 

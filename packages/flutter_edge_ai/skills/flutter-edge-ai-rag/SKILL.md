@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-rag
-description: Use when adding or debugging on-device RAG, semantic search, text embeddings (EmbeddingGemma 1 .tflite, EmbeddingGemma 2 .litertlm), metadata filters, embedding profiles, image or audio document indexes, or pluggable sqlite-vec/qdrant-edge storage in a flutter_edge_ai app with flutter_edge_ai_rag, flutter_edge_ai_sqlite or flutter_edge_ai_qdrant. Also use when moving RAG code to flutter_edge_ai 2.0 or to flutter_edge_ai_rag 1.1 — FlutterEdgeAi.rag is undefined, initialize(vectorStore:) was removed, addText/searchText/activeEmbedderProfileId are undefined, or open() throws "No vector-store provider can handle providerId" or "is bound to" — and when QdrantLegacyStoreException or an embedding-profile mismatch is thrown.
+description: Use when adding or debugging on-device RAG, semantic search, embeddings (EmbeddingGemma 2 .litertlm, EmbeddingGemma 1 or Gecko .tflite, ONNX models such as MiniLM), metadata filters, embedding profiles, image or audio document indexes, or pluggable sqlite-vec/qdrant-edge storage in a flutter_edge_ai app with flutter_edge_ai_rag, flutter_edge_ai_sqlite or flutter_edge_ai_qdrant. Also use when moving RAG code to flutter_edge_ai 2.0 or to flutter_edge_ai_rag 1.1 — FlutterEdgeAi.rag is undefined, initialize(vectorStore:) was removed, addText/searchText/activeEmbedderProfileId are undefined, or open() throws "No vector-store provider can handle providerId" or "is bound to" — and when QdrantLegacyStoreException or an embedding-profile mismatch is thrown.
 ---
 
 # On-device RAG with Flutter Edge AI
@@ -217,11 +217,11 @@ final eg2Index = await rag.open(
   Natively it keeps a weight cache of about 71 MB, on top of the 165 MB
   bundle, in the app's cache directory: never backed up, and rebuilt at the
   next load if the OS clears it. Web keeps no weight cache.
-- EmbeddingGemma 1 and 2 both produce 768-d vectors but are different spaces:
-  give each its own location and profile ID — the dimension check alone cannot
-  tell them apart. `FlutterEdgeAiActiveEmbedder.forActiveModel` already gives
-  them different ids (different file names); the explicit id above is for one
-  text store shared by the three EmbeddingGemma 2 bundles.
+- EmbeddingGemma 1, 2 and Gecko all produce 768-d vectors but are different
+  spaces: give each its own location and profile ID — the dimension check alone
+  cannot tell them apart. `FlutterEdgeAiActiveEmbedder.forActiveModel` already
+  gives them different ids (different file names); the explicit id above is for
+  one text store shared by the three EmbeddingGemma 2 bundles.
 
 ### EmbeddingGemma 2 on a Qualcomm NPU (`flutter_edge_ai_litertlm` 1.13.1)
 
@@ -583,11 +583,11 @@ await photos.add(
 final matches = await photos.search(query: EmbeddingInput.text('a red bicycle'));
 ```
 
-The active embedder embeds images with the EmbeddingGemma 2 440m bundle
-(above; on Web from `flutter_edge_ai_litertlm` 1.13.1). With any other model —
-the 270m, EmbeddingGemma 1, ONNX — `getActiveEmbedder(supportImage: true)`,
-and therefore `open()` of an image index with the active embedder, fails with
-`EmbeddingLoadException`. A
+The active embedder embeds images with the EmbeddingGemma 2 440m or 740m
+bundle (above; on Web from `flutter_edge_ai_litertlm` 1.13.1). With any other
+model — the 270m, EmbeddingGemma 1, Gecko, ONNX —
+`getActiveEmbedder(supportImage: true)`, and therefore `open()` of an image
+index with the active embedder, fails with `EmbeddingLoadException`. A
 custom `RagEmbedder` can embed media with any model. A text index and an image
 index can share one installed model: each adapter declares what it needs, and
 core reloads the embedder once with both.

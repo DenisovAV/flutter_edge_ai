@@ -18,7 +18,7 @@ void main() {
   for (final MapEntry(key: (c, linear), value: expected) in cases.entries) {
     test('$c options × 10, ${linear ? 'linear' : 'centroid'}', () async {
       final fit = await fitDecider(fingerprintRequest(c, linear: linear));
-      expect(fingerprintOf(fit), expected);
+      expectFingerprint(fingerprintOf(fit), expected);
     }, timeout: const Timeout(Duration(minutes: 3)));
   }
 }

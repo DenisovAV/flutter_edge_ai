@@ -126,14 +126,7 @@ void main() {
         final actual = fingerprintOf(fit);
         // ignore: avoid_print
         print('WEBFP c=$c linear=$linear $actual');
-        expect(actual.threshold, expected.threshold);
-        expect(actual.centroids, expected.centroids);
-        expect(actual.iterations, expected.iterations);
-        if (linear) {
-          expect(actual.loss!, closeTo(expected.loss!, 1e-12));
-          expect(actual.weights!, closeTo(expected.weights!, 1e-9));
-          expect(actual.bias!, closeTo(expected.bias!, 1e-9));
-        }
+        expectFingerprint(actual, expected);
         // The loop kept turning: a fit that does not yield shows a gap as
         // long as the whole fit. The bound is relative because this test's
         // compilers are debug ones: under DDC the 150-option linear fit takes

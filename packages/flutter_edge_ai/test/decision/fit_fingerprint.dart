@@ -9,6 +9,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/src/decision/decider_fit.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 /// Rows per option.
 const fingerprintRowsPerOption = 10;
@@ -76,6 +77,29 @@ double _weighted(List<double> values) {
     sum += values[i] * (i % 13 + 1);
   }
   return sum;
+}
+
+/// [actual] against [expected]: the threshold, the centroids and the
+/// iteration count exactly — no transcendental function reaches them — and
+/// the linear layer's loss, weights and bias to 1e-9 relative. The softmax
+/// calls `exp` and `log`, whose last bits are the platform's libm: Linux x64
+/// (CI) against macOS arm64 gave the same iterations, a loss 3e-15 and
+/// weights 3e-11 apart (relative), on 2026-10-14.
+void expectFingerprint(FitFingerprint actual, FitFingerprint expected) {
+  expect(actual.threshold, expected.threshold, reason: 'threshold');
+  expect(actual.centroids, expected.centroids, reason: 'centroids');
+  expect(actual.iterations, expected.iterations, reason: 'iterations');
+  for (final (name, a, e) in [
+    ('loss', actual.loss, expected.loss),
+    ('weights', actual.weights, expected.weights),
+    ('bias', actual.bias, expected.bias),
+  ]) {
+    if (e == null) {
+      expect(a, isNull, reason: name);
+    } else {
+      expect(a, closeTo(e, e.abs() * 1e-9), reason: name);
+    }
+  }
 }
 
 FitFingerprint fingerprintOf(DeciderFit fit) => (

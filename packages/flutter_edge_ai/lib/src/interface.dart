@@ -472,7 +472,8 @@ abstract class InferenceModel {
   /// No engine scores options yet, so this default fails with
   /// `DeciderUnsupportedException` (as a failed future). Engines that can
   /// will override it; until then use `EmbeddingModel.createDecider`, which
-  /// every embedding backend supports.
+  /// every embedding backend supports. `implements` does not inherit this
+  /// default body, so such an implementation has to declare it.
   ///
   /// Experimental: may change in a minor release while the API settles.
   @experimental

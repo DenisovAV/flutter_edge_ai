@@ -1,42 +1,73 @@
-// The Tiny Island screen's logic over FAKES: the action catalog, the view
-// model with the keyword fake decider and a recording stage (action
-// dispatch, the abstain path, the HUD's values, every failure it must show),
-// the embedding stand-in over a fake embedder (scoring, abstention, the
-// vector cache), and the HUD widgets. The real EmbeddingGemma 2 and the 3D
-// scene run in integration_test/tiny_island_test.dart.
+// The Tiny Island screen's logic over FAKES: the action catalog and the
+// requests it is measured and demonstrated with, the recipe and the store of
+// fitted deciders, core's real Decider over a bag-of-words embedder, the
+// view model (the shared embedder lane, failures, the scene gate) and the
+// HUD widgets. The real EmbeddingGemma 2 and the 3D scene run in
+// integration_test/tiny_island_test.dart, the calibration measurement in
+// integration_test/tiny_island_calibration_test.dart.
+
+// The Decider API is @experimental.
+// ignore_for_file: experimental_member_use
 
 import 'dart:async';
-import 'dart:io' show FileSystemException;
-import 'dart:math' as math;
-import 'dart:typed_data';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai_example/tiny_island/embedding_island_decider.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_catalog.dart';
-import 'package:flutter_edge_ai_example/tiny_island/island_decider.dart';
+import 'package:flutter_edge_ai_example/tiny_island/island_decider_preparation.dart';
+import 'package:flutter_edge_ai_example/tiny_island/island_decider_recipe.dart';
+import 'package:flutter_edge_ai_example/tiny_island/island_decider_store.dart';
+import 'package:flutter_edge_ai_example/tiny_island/island_decider_store_io.dart'
+    show FileIslandDeciderStore;
+import 'package:flutter_edge_ai_example/tiny_island/island_held_out_requests.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_hud.dart';
-import 'package:flutter_edge_ai_example/tiny_island/island_scoring.dart';
-import 'package:flutter_edge_ai_example/tiny_island/island_stage.dart';
-import 'package:flutter_edge_ai_example/tiny_island/island_vector_cache.dart';
+import 'package:flutter_edge_ai_example/tiny_island/island_suggestions.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_vocabulary.dart';
-import 'package:flutter_edge_ai_example/tiny_island/keyword_island_decider.dart';
 import 'package:flutter_edge_ai_example/tiny_island/tiny_island_dependencies.dart';
+import 'package:flutter_edge_ai_example/tiny_island/tiny_island_platform.dart';
 import 'package:flutter_edge_ai_example/tiny_island/tiny_island_view_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const _setup = TinyIslandSetup(
+import 'tiny_island_fakes.dart';
+
+const _setup = TinyIslandEmbedderSetup(
   embedderName: 'EmbeddingGemma 2 Text (270M)',
-  profileId: 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1',
+  model: 'embeddingGemma2Text270m',
 );
 
-void main() {
-  group('catalog', () {
-    final catalog = buildIslandCatalog();
+/// Lower-case, letters and digits only: "Open the chest." == "open the
+/// chest".
+String _norm(String text) => text
+    .toLowerCase()
+    .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
+    .trim();
 
-    test('has 150 to 300 actions with unique ids', () {
-      expect(catalog.length, inInclusiveRange(150, 300));
-      expect({for (final a in catalog) a.id}.length, catalog.length);
+/// Every option text of the catalog, normalised.
+Set<String> _optionTexts(List<IslandAction> catalog) => {
+  for (final action in catalog) ...[
+    _norm(action.description),
+    for (final example in action.examples) _norm(example),
+  ],
+};
+
+/// A recipe the bag-of-words embedder can satisfy: a fixed threshold.
+IslandDeciderRecipe _testRecipe(List<IslandAction> catalog) =>
+    IslandDeciderRecipe(
+      options: islandDeciderOptions(catalog),
+      method: DeciderMethod.centroid,
+      calibration: const DeciderCalibration.minSimilarity(0.5),
+    );
+
+void main() {
+  final catalog = buildIslandCatalog();
+
+  group('catalog', () {
+    test('has 184 actions with unique ids, 920 option texts', () {
+      expect(catalog, hasLength(184));
+      expect({for (final a in catalog) a.id}, hasLength(catalog.length));
+      expect(catalog.fold(0, (n, a) => n + a.examples.length + 1), 920);
     });
 
     test('every action has 3 to 6 examples, one of them Russian', () {
@@ -52,7 +83,6 @@ void main() {
           isNotEmpty,
           reason: '${action.id} has no Russian phrasing',
         );
-        expect(action.description, isNotEmpty, reason: action.id);
         expect(
           action.examples.join(' '),
           isNot(contains('{')),
@@ -71,409 +101,676 @@ void main() {
     });
   });
 
-  group('rankIslandOptions', () {
-    test('ranks, gives probabilities and the margin', () {
-      final d = rankIslandOptions(
-        scores: {'a': 0.9, 'b': 0.8, 'c': 0.1},
-        threshold: 0.5,
-        minMargin: 0.05,
-        temperature: 0.1,
-        embedTime: const Duration(milliseconds: 3),
-        scoreTime: const Duration(microseconds: 400),
+  group('held-out requests and suggestions', () {
+    final ids = {for (final a in catalog) a.id};
+    final verbOf = {for (final a in catalog) a.id: a.verb};
+    final optionTexts = _optionTexts(catalog);
+
+    test('two held-out requests per verb, each naming a catalog action', () {
+      final perVerb = <IslandVerb, int>{};
+      for (final row in islandHeldOutRequests) {
+        expect(ids, contains(row.actionId), reason: row.text);
+        perVerb.update(verbOf[row.actionId]!, (n) => n + 1, ifAbsent: () => 1);
+      }
+      expect(perVerb.keys.toSet(), IslandVerb.values.toSet());
+      expect(perVerb.values.toSet(), {2});
+      expect(
+        {for (final row in islandHeldOutRequests) _norm(row.text)},
+        hasLength(islandHeldOutRequests.length),
+        reason: 'a held-out request is repeated',
       );
-      expect(d.choice, 'a');
-      expect([for (final o in d.ranked) o.id], ['a', 'b', 'c']);
-      expect(d.margin, closeTo(0.1, 1e-9));
-      final total = d.ranked.fold(0.0, (s, o) => s + o.probability!);
-      expect(total, closeTo(1, 1e-9));
-      expect(d.ranked.first.probability, greaterThan(0.7));
-      expect(d.totalTime, const Duration(microseconds: 3400));
     });
 
-    test('abstains out of scope under the threshold', () {
-      final d = rankIslandOptions(
-        scores: {'a': 0.4, 'b': 0.1},
-        threshold: 0.5,
-        minMargin: 0,
-        temperature: 0.1,
-        embedTime: Duration.zero,
-        scoreTime: Duration.zero,
-      );
-      expect(d.choice, isNull);
-      expect(d.abstainReason, IslandAbstainReason.outOfScope);
+    test('no held-out request is an option example or description', () {
+      for (final row in islandHeldOutRequests) {
+        expect(optionTexts, isNot(contains(_norm(row.text))), reason: row.text);
+      }
     });
 
-    test('abstains as ambiguous on a near-tie', () {
-      final d = rankIslandOptions(
-        scores: {'a': 0.9, 'b': 0.899},
-        threshold: 0.5,
-        minMargin: 0.002,
-        temperature: 0.1,
-        embedTime: Duration.zero,
-        scoreTime: Duration.zero,
+    test('no suggestion chip is an option text or a held-out request', () {
+      final held = {for (final row in islandHeldOutRequests) _norm(row.text)};
+      for (final chip in islandSuggestions) {
+        expect(optionTexts, isNot(contains(_norm(chip))), reason: chip);
+        expect(held, isNot(contains(_norm(chip))), reason: chip);
+      }
+    });
+
+    test("core accepts the app's calibration rows (no leaked example)", () {
+      // The embedder fails the first embed: reaching it means every check
+      // before embedding passed, the leakage check among them.
+      final recipe = islandDeciderRecipe(catalog);
+      expect(recipe.calibration.kind, 'labelled');
+      expect(recipe.method, DeciderMethod.centroid);
+      expect(
+        _ThrowingEmbedder().createDecider(
+          options: recipe.options,
+          method: recipe.method,
+          calibration: recipe.calibration,
+          embedderId: 'fake',
+        ),
+        throwsA(isA<_Reached>()),
       );
-      expect(d.abstainReason, IslandAbstainReason.ambiguous);
+      // Control: a row that repeats an example is refused before that.
+      expect(
+        _ThrowingEmbedder().createDecider(
+          options: recipe.options,
+          calibration: DeciderCalibration.fromLabelled([
+            (
+              input: EmbeddingInput.text(catalog.first.examples.first),
+              optionId: catalog.first.id,
+            ),
+          ]),
+          embedderId: 'fake',
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('recipe', () {
+    test('the fingerprint follows the options and the calibration rows', () {
+      final a = islandDeciderRecipe(catalog);
+      expect(a.fingerprint, islandDeciderRecipe(catalog).fingerprint);
+      expect(a.fingerprint, hasLength(8));
+      final fewer = islandDeciderRecipe(catalog.take(183).toList());
+      expect(fewer.fingerprint, isNot(a.fingerprint));
+      final otherRows = IslandDeciderRecipe(
+        options: a.options,
+        method: a.method,
+        calibration: a.calibration,
+        calibrationRows: islandHeldOutRequests.skip(1).toList(),
+      );
+      expect(otherRows.fingerprint, isNot(a.fingerprint));
+      expect(a.calibrationLabel, 'calibrated on 144 held-out requests');
+    });
+  });
+
+  group('file store', () {
+    late Directory dir;
+    late FileIslandDeciderStore store;
+
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('tiny_island_store');
+      store = FileIslandDeciderStore(() async => dir);
+    });
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    test("round-trips, and prunes only the same model's older ones", () async {
+      expect(await store.read(model: 'm', fingerprint: 'aaaa'), isNull);
+      await store.write(model: 'm', fingerprint: 'aaaa', artifact: {'x': 1});
+      await store.write(model: 'other', fingerprint: 'cccc', artifact: {});
+      expect(await store.read(model: 'm', fingerprint: 'aaaa'), {'x': 1});
+      expect(
+        await store.write(model: 'm', fingerprint: 'bbbb', artifact: {'x': 2}),
+        isNull,
+      );
+      expect(await store.read(model: 'm', fingerprint: 'aaaa'), isNull);
+      expect(await store.read(model: 'm', fingerprint: 'bbbb'), {'x': 2});
+      expect(await store.read(model: 'other', fingerprint: 'cccc'), isEmpty);
+      expect(dir.listSync().map((f) => f.uri.pathSegments.last).toSet(), {
+        'm--bbbb.json',
+        'other--cccc.json',
+      });
+    });
+
+    test('a damaged file is an error to show, not an empty store', () async {
+      File('${dir.path}/m--aaaa.json').writeAsStringSync('{"truncat');
+      await expectLater(
+        store.read(model: 'm', fingerprint: 'aaaa'),
+        throwsFormatException,
+      );
+    });
+
+    test('a write that cannot happen throws', () async {
+      final blocked = FileIslandDeciderStore(
+        () async => Directory('${dir.path}/file/sub'),
+      );
+      File('${dir.path}/file').writeAsStringSync('');
+      await expectLater(
+        blocked.write(model: 'm', fingerprint: 'a', artifact: {}),
+        throwsA(isA<FileSystemException>()),
+      );
+    });
+  });
+
+  group('prepareIslandDecider over core', () {
+    late FakeEmbedder embedder;
+    late MemoryIslandDeciderStore store;
+    final recipe = _testRecipe(catalog);
+
+    setUp(() {
+      embedder = FakeEmbedder(1);
+      store = MemoryIslandDeciderStore();
+    });
+
+    Future<PreparedIslandDecider> prepare({
+      String embedderId = 'fake',
+      IslandDeciderStore? into,
+      IslandDeciderRecipe? using,
+      List<int>? progress,
+    }) => prepareIslandDecider(
+      embedder: embedder,
+      model: 'm',
+      recipe: using ?? recipe,
+      store: into ?? store,
+      embedderId: embedderId,
+      cancelToken: CancelToken(),
+      onProgress: (done, _) => progress?.add(done),
+    );
+
+    test(
+      'fits with classification, stores, then loads without embedding',
+      () async {
+        final progress = <int>[];
+        final first = await prepare(progress: progress);
+        expect(first.loaded, isFalse);
+        expect(first.stored, isTrue);
+        expect(first.refitReason, isNull);
+        expect(embedder.embeds, 920);
+        expect(embedder.tasks, {TaskType.classification});
+        expect(progress.first, 0);
+        expect(progress.last, 920);
+        final answer = await first.decider.choose(
+          DeciderInput(EmbeddingInput.text('water the flowers')),
+        );
+        expect(answer.choice, 'water(flowers)');
+
+        embedder.embeds = 0;
+        final second = await prepare();
+        expect(second.loaded, isTrue);
+        expect(embedder.embeds, 0, reason: 'nothing embedded at load');
+        expect(
+          (await second.decider.choose(
+            DeciderInput(EmbeddingInput.text('water the flowers')),
+          )).choice,
+          'water(flowers)',
+        );
+      },
+    );
+
+    test('another embedding space is fitted again, and says why', () async {
+      await prepare();
+      final again = await prepare(embedderId: 'another-space');
+      expect(again.loaded, isFalse);
+      expect(again.refitReason, contains('another embedding space'));
+      expect(again.stored, isTrue);
+    });
+
+    test('a damaged artifact is fitted again, and says why', () async {
+      await store.write(
+        model: 'm',
+        fingerprint: recipe.fingerprint,
+        artifact: {'format': 'something else'},
+      );
+      final again = await prepare();
+      expect(again.loaded, isFalse);
+      expect(again.refitReason, contains('not readable'));
+    });
+
+    test('an artifact for other actions is fitted again', () async {
+      final other = _testRecipe(catalog.take(10).toList());
+      final fitted = await prepare(using: other);
+      await store.write(
+        model: 'm',
+        fingerprint: recipe.fingerprint,
+        artifact: fitted.decider.toArtifact(),
+      );
+      final again = await prepare();
+      expect(again.loaded, isFalse);
+      expect(again.refitReason, contains('other actions'));
+    });
+
+    test('a store that fails is reported; the decider still works', () async {
+      final prepared = await prepare(into: _FailingStore());
+      expect(prepared.stored, isFalse);
+      expect(prepared.storeProblem, contains('could not be stored'));
+      expect(prepared.refitReason, contains('could not be read'));
+      expect(
+        (await prepared.decider.choose(
+          DeciderInput(EmbeddingInput.text('jump')),
+        )).choice,
+        'jump',
+      );
     });
   });
 
   group('view model', () {
-    late _RecordingStage stage;
-    late _Rig rig;
+    late FakeCore core;
+    late RecordingStage stage;
+    late MemoryIslandDeciderStore store;
+    late IslandEmbedderLane lane;
+    late TinyIslandSetup setup;
 
     setUp(() {
-      stage = _RecordingStage();
-      rig = _Rig();
+      core = FakeCore();
+      stage = RecordingStage();
+      store = MemoryIslandDeciderStore();
+      lane = IslandEmbedderLane();
+      setup = _setup;
     });
 
-    Future<TinyIslandViewModel> openVm() async {
-      final vm = TinyIslandViewModel(rig.deps, stage);
+    TinyIslandDependencies deps({PrepareIslandDecider? prepare}) =>
+        TinyIslandDependencies(
+          readSetup: () async => setup,
+          loadEmbedder: (_) => core.getActiveEmbedder(),
+          store: store,
+          recipe: _testRecipe,
+          prepare: prepare ?? prepareIslandDecider,
+          embedderId: 'fake',
+          lane: lane,
+        );
+
+    /// A view model whose scene has loaded, opened.
+    Future<TinyIslandViewModel> openVm({PrepareIslandDecider? prepare}) async {
+      final vm = TinyIslandViewModel(deps(prepare: prepare), stage);
       addTearDown(vm.dispose);
+      vm.sceneLoaded();
       await vm.open();
       return vm;
     }
 
-    test('opens the decider and reports what the HUD shows', () async {
+    test('opens the Decider and says how it was prepared', () async {
       final vm = await openVm();
       expect(vm.status, TinyIslandStatus.ready);
       expect(vm.error, isNull);
       expect(vm.embedderName, 'EmbeddingGemma 2 Text (270M)');
-      expect(vm.deciderName, 'Keyword match (test fake)');
-      expect(vm.optionCount, vm.catalog.length);
+      expect(vm.backend, 'cpu');
+      expect(vm.optionCount, 184);
+      expect(vm.prepareNote, contains('fitted on this device'));
+      expect(vm.prepareNote, contains('stored in memory'));
       expect(vm.prepareTime, isNotNull);
-      expect(rig.progress, isNotEmpty, reason: 'progress is reported');
+
+      // A second visit loads what the first stored.
+      final again = await openVm();
+      expect(again.status, TinyIslandStatus.ready);
+      expect(again.prepareNote, startsWith('loaded from'));
     });
 
     test('plays the chosen action on the stage', () async {
       final vm = await openVm();
       await vm.submit('water the flowers');
       final turn = vm.lastTurn!;
-      expect(turn.decision!.choice, 'water(flowers)');
+      expect(turn.answer!.choice, 'water(flowers)');
+      expect(turn.answer!.scoreKind, ScoreKind.cosine);
+      expect(turn.answer!.ranked.first.probability, isNull);
       expect(turn.action!.verb, IslandVerb.water);
-      expect(turn.action!.thing, IslandThing.flowers);
       expect(stage.performed, ['water(flowers)']);
       expect(stage.shrugs, 0);
       expect(turn.outcome!.performed, isTrue);
-      expect(turn.decision!.ranked.length, greaterThanOrEqualTo(4));
-      expect(turn.decision!.optionCount, vm.catalog.length);
-    });
-
-    test('shows what the stage declined', () async {
-      stage.outcome = const IslandOutcome.declined(
-        'The chest is already open.',
-      );
-      final vm = await openVm();
-      await vm.submit('open the chest');
-      expect(vm.lastTurn!.outcome!.note, 'The chest is already open.');
-      expect(vm.lastTurn!.outcome!.performed, isFalse);
     });
 
     test('abstains on chatter: the character shrugs, nothing plays', () async {
       final vm = await openVm();
       await vm.submit('what is the capital of France');
-      final decision = vm.lastTurn!.decision!;
-      expect(decision.choice, isNull);
-      expect(decision.abstainReason, IslandAbstainReason.outOfScope);
-      expect(vm.lastTurn!.action, isNull);
+      final answer = vm.lastTurn!.answer!;
+      expect(answer.choice, isNull);
+      expect(answer.abstainReason, AbstainReason.belowThreshold);
       expect(stage.performed, isEmpty);
       expect(stage.shrugs, 1);
     });
 
-    test('keeps the newest request first and ignores blank ones', () async {
-      final vm = await openVm();
-      await vm.submit('   ');
-      expect(vm.turns, isEmpty);
-      await vm.submit('jump');
-      await vm.submit('dance');
-      expect([for (final t in vm.turns) t.request], ['dance', 'jump']);
-    });
+    test(
+      'a setup problem is shown, with the model list when it helps',
+      () async {
+        setup = const TinyIslandSetupProblem('No embedding model is active.');
+        final vm = await openVm();
+        expect(vm.status, TinyIslandStatus.failed);
+        expect(vm.error, 'No embedding model is active.');
+        expect(vm.suggestModelList, isTrue);
+        expect(core.built, isEmpty);
 
-    test('a setup problem is shown with a way to the model list', () async {
-      rig.setup = const TinyIslandSetup(
-        problem: 'No embedding model is active.',
-      );
-      final vm = await openVm();
-      expect(vm.status, TinyIslandStatus.failed);
-      expect(vm.error, 'No embedding model is active.');
-      expect(vm.suggestModelList, isTrue);
-      expect(rig.opened, 0);
-    });
+        setup = const TinyIslandSetupProblem(
+          'This browser has no WebGPU.',
+          modelListHelps: false,
+        );
+        await vm.open();
+        expect(vm.suggestModelList, isFalse, reason: 'no model would load');
+      },
+    );
 
     test('a model that does not load is shown, never replaced', () async {
-      rig.openError = const EmbeddingLoadException(
-        'No EmbeddingGemma 2 here.',
-        engine: 'LiteRT-LM',
+      final vm = TinyIslandViewModel(
+        TinyIslandDependencies(
+          readSetup: () async => _setup,
+          loadEmbedder: (_) async => throw const EmbeddingLoadException(
+            'No EmbeddingGemma 2 here.',
+            engine: 'LiteRT-LM',
+          ),
+          store: store,
+          lane: lane,
+        ),
+        stage,
       );
-      final vm = await openVm();
+      addTearDown(vm.dispose);
+      vm.sceneLoaded();
+      await vm.open();
       expect(vm.status, TinyIslandStatus.failed);
-      expect(vm.error, 'No EmbeddingGemma 2 here.');
+      expect(vm.error, contains('No EmbeddingGemma 2 here.'));
       expect(vm.suggestModelList, isTrue);
       await vm.submit('jump');
       expect(vm.turns, isEmpty, reason: 'nothing decides without a decider');
     });
 
-    test('a failed decision stays on its turn; nothing plays', () async {
-      final vm = await openVm();
-      rig.decider!.failNext = StateError('The embedder is closed.');
+    test('input waits for the scene; a failed scene keeps it off', () async {
+      final vm = TinyIslandViewModel(deps(), stage);
+      addTearDown(vm.dispose);
+      await vm.open();
+      expect(vm.status, TinyIslandStatus.ready);
+      expect(vm.canSend, isFalse, reason: 'the scene has not loaded');
       await vm.submit('jump');
-      expect(vm.lastTurn!.error, 'The embedder is closed.');
-      expect(vm.deciding, isFalse);
+      expect(vm.turns, isEmpty);
       expect(stage.performed, isEmpty);
-      expect(stage.shrugs, 0);
+
+      vm.sceneLoaded();
+      expect(vm.canSend, isTrue);
+      await vm.submit('jump');
+      expect(stage.performed, ['jump']);
+
+      vm.sceneFailed('The island stopped drawing: lost context');
+      expect(vm.canSend, isFalse);
+      expect(vm.sceneError, contains('lost context'));
+    });
+
+    test('a closed embedder mid-session fails the screen; Try again '
+        'recovers', () async {
+      final vm = await openVm();
+      // Not a model core built: the decider cannot move to a replacement.
+      await core.built.single.close();
+      await vm.submit('jump');
+      expect(vm.status, TinyIslandStatus.failed);
+      expect(vm.error, contains('EmbedderClosedException'));
+      expect(vm.lastTurn!.error, isNotNull);
+      expect(vm.canSend, isFalse);
+
+      await vm.open();
+      expect(vm.status, TinyIslandStatus.ready);
+      expect(core.built, hasLength(2));
+      await vm.submit('jump');
+      expect(vm.lastTurn!.answer!.choice, 'jump');
+    });
+
+    test('a DeciderException fails the screen, not just the turn', () async {
+      late ScriptedDecider scripted;
+      final vm = await openVm(prepare: _scripted(catalog, (d) => scripted = d));
+      scripted.failNext = const DeciderSpaceMismatchException(
+        'another space',
+        expected: 'a',
+        actual: 'b',
+      );
+      await vm.submit('jump');
+      expect(vm.status, TinyIslandStatus.failed);
+      expect(vm.suggestModelList, isTrue);
+      expect(vm.deciding, isFalse);
     });
 
     test(
-      'a choice outside the catalog is an error, not a silent no-op',
+      'an input error stays on its turn; the Decider keeps working',
       () async {
-        final vm = await openVm();
-        rig.decider!.answerWith = 'fly_to(moon)';
-        await vm.submit('fly to the moon');
-        expect(vm.lastTurn!.error, contains('fly_to(moon)'));
-        expect(stage.performed, isEmpty);
+        late ScriptedDecider scripted;
+        final vm = await openVm(
+          prepare: _scripted(catalog, (d) => scripted = d),
+        );
+        scripted.failNext = const EmbeddingInputTooLongException(
+          'too long',
+          maxInputTokens: 1024,
+          actualTokens: 2000,
+        );
+        await vm.submit('jump');
+        expect(vm.status, TinyIslandStatus.ready);
+        expect(vm.lastTurn!.error, contains('too long'));
+        await vm.submit('jump');
+        expect(stage.performed, ['jump']);
       },
     );
 
-    test('refuses new actions while four are still playing', () async {
-      final vm = await openVm();
-      stage.hold = Completer<void>();
-      for (final request in ['jump', 'dance', 'wave', 'spin around']) {
-        unawaited(vm.submit(request));
-        await Future<void>.delayed(Duration.zero);
-      }
-      expect(vm.playing, 4);
-      await vm.submit('nod');
-      expect(vm.lastTurn!.error, contains('still playing 4 actions'));
-      expect(stage.performed, hasLength(4));
-      stage.hold!.complete();
-      await Future<void>.delayed(Duration.zero);
-      expect(vm.playing, 0);
+    test('a choice outside the catalog is an error, not a no-op', () async {
+      late ScriptedDecider scripted;
+      final vm = await openVm(prepare: _scripted(catalog, (d) => scripted = d));
+      scripted.answerWith = 'fly_to(moon)';
+      await vm.submit('fly to the moon');
+      expect(vm.lastTurn!.error, contains('fly_to(moon)'));
+      expect(stage.performed, isEmpty);
     });
 
-    test("keeps the island's last remark across turns", () async {
-      stage.outcome = const IslandOutcome.declined(
-        'The chest is already open.',
-      );
-      final vm = await openVm();
-      await vm.submit('open the chest');
-      stage.outcome = const IslandOutcome.done();
-      await vm.submit('jump');
-      expect(vm.lastNote, 'open(chest): The chest is already open.');
-    });
-
-    test('an answer with nothing ranked does not wedge the screen', () async {
-      final vm = await openVm();
-      rig.decider!.answerEmpty = true;
+    test('nothing ranked does not wedge the screen', () async {
+      late ScriptedDecider scripted;
+      final vm = await openVm(prepare: _scripted(catalog, (d) => scripted = d));
+      scripted.answerEmpty = true;
       await vm.submit('jump');
       expect(vm.deciding, isFalse);
-      expect(vm.lastTurn!.decision!.choice, isNull);
+      expect(vm.lastTurn!.answer!.ranked, isEmpty);
       expect(stage.shrugs, 1);
     });
 
-    test(
-      'opens one at a time; a superseded open releases its decider',
-      () async {
-        final vm = TinyIslandViewModel(rig.deps, stage);
-        addTearDown(vm.dispose);
-        rig.gate = Completer<void>();
-        final first = vm.open();
-        // Let the first open reach the (gated) decider.
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-        expect(rig.opened, 1);
-        final firstDecider = rig.decider!;
-        final second = vm.open();
-        rig.gate!.complete();
-        rig.gate = null;
-        await Future.wait([first, second]);
-        expect(
-          firstDecider.closed,
-          isTrue,
-          reason: 'the stale one is released',
-        );
-        expect(rig.opened, 2, reason: 'the newer open ran after it');
-        expect(rig.decider!.closed, isFalse);
-        expect(vm.status, TinyIslandStatus.ready);
-      },
-    );
-
-    test('a newer open supersedes one that has not started', () async {
-      final vm = TinyIslandViewModel(rig.deps, stage);
-      addTearDown(vm.dispose);
-      await Future.wait([vm.open(), vm.open()]);
-      expect(rig.opened, 1);
-      expect(vm.status, TinyIslandStatus.ready);
+    test('refuses new requests while four are still playing', () async {
+      final vm = await openVm(prepare: _scripted(catalog, (_) {}));
+      stage.hold = Completer<void>();
+      for (final request in ['jump', 'dance', 'tell me a joke', 'wave']) {
+        unawaited(vm.submit(request));
+        while (vm.deciding) {
+          await pumpEventQueue();
+        }
+      }
+      expect(vm.playing, 4, reason: 'the shrug counts too');
+      expect(stage.shrugs, 1);
+      // Past the cap, neither an action nor a shrug is queued.
+      await vm.submit('what is the capital of France');
+      expect(vm.lastTurn!.error, contains('still playing 4 actions'));
+      expect(stage.shrugs, 1);
+      await vm.submit('nod');
+      expect(vm.lastTurn!.error, contains('still playing 4 actions'));
+      expect(stage.performed, ['jump', 'dance', 'wave']);
+      stage.hold!.complete();
+      await pumpEventQueue();
+      expect(vm.playing, 0);
     });
 
-    test('dispose closes the decider; reopening closes the old one', () async {
-      final vm = TinyIslandViewModel(rig.deps, stage);
+    test('dispose closes the decider and the embedder', () async {
+      late ScriptedDecider scripted;
+      final vm = TinyIslandViewModel(
+        deps(prepare: _scripted(catalog, (d) => scripted = d)),
+        stage,
+      );
       await vm.open();
-      final first = rig.decider!;
-      await vm.open();
-      expect(first.closed, isTrue);
-      final second = rig.decider!;
       vm.dispose();
-      await Future<void>.delayed(Duration.zero);
-      expect(second.closed, isTrue);
-    });
-  });
-
-  group('embedding stand-in', () {
-    late _WordEmbedder model;
-    late MemoryIslandVectorCache cache;
-    final catalog = buildIslandCatalog();
-
-    setUp(() {
-      model = _WordEmbedder();
-      cache = MemoryIslandVectorCache();
+      await lane.run(() async {});
+      expect(scripted.closed, isTrue);
+      expect(core.built.single.isClosed, isTrue);
     });
 
-    Future<EmbeddingIslandDecider> create({List<int>? progress}) =>
-        EmbeddingIslandDecider.create(
-          model: model,
-          name: 'fake',
-          profileId: 'fake/profile:1',
-          catalog: catalog,
-          cache: cache,
-          onProgress: (done, _) => progress?.add(done),
-          closeModel: true,
-          threshold: 0.8,
-        );
+    // The lane. Core's embedder is one per process: without the lane, the
+    // two tests below fail — the stale open closes the model the newer one
+    // got from core.
 
-    test('embeds every example and description once, then caches', () async {
-      final progress = <int>[];
-      final decider = await create(progress: progress);
-      final texts = catalog.fold(0, (n, a) => n + a.examples.length + 1);
-      expect(model.calls, texts);
-      expect(progress.last, texts);
-      expect(model.tasks, {TaskType.sentenceSimilarity});
-      expect(decider.optionCount, catalog.length);
+    test('a screen left while its model loads never closes the model a '
+        'newer screen uses', () async {
+      core.loadGate = Completer<void>();
+      final left = TinyIslandViewModel(deps(), stage)..sceneLoaded();
+      final leftOpen = left.open();
+      await pumpEventQueue();
+      left.dispose();
+      final next = TinyIslandViewModel(deps(), stage)..sceneLoaded();
+      addTearDown(next.dispose);
+      final nextOpen = next.open();
+      // Without the lane, the newer open now waits on the same model load.
+      await pumpEventQueue();
+      core.loadGate!.complete();
+      core.loadGate = null;
+      await Future.wait([leftOpen, nextOpen]);
 
-      model.calls = 0;
-      await create();
-      expect(model.calls, 0, reason: 'the second visit reads the cache');
+      expect(next.status, TinyIslandStatus.ready, reason: '${next.error}');
+      expect(core.built, hasLength(2));
+      expect(core.built.first.isClosed, isTrue, reason: 'the left one');
+      expect(core.built.last.isClosed, isFalse, reason: 'the newer one');
+      await next.submit('jump');
+      expect(next.lastTurn!.answer!.choice, 'jump');
     });
 
-    test('chooses the closest action and abstains on chatter', () async {
-      final decider = await create();
-      final hit = await decider.decide('please water the flowers');
-      expect(hit.choice, 'water(flowers)');
-      expect(hit.ranked.first.score, greaterThan(0.8));
-      expect(hit.embedTime, greaterThan(Duration.zero));
+    test('an open superseded on the same screen never closes what the newer '
+        'open got', () async {
+      core.loadGate = Completer<void>();
+      final vm = TinyIslandViewModel(deps(), stage)..sceneLoaded();
+      addTearDown(vm.dispose);
+      final first = vm.open();
+      await pumpEventQueue();
+      final second = vm.open();
+      await pumpEventQueue();
+      core.loadGate!.complete();
+      core.loadGate = null;
+      await Future.wait([first, second]);
 
-      final miss = await decider.decide('what is the capital of France');
-      expect(miss.choice, isNull);
-      expect(miss.abstainReason, IslandAbstainReason.outOfScope);
-      expect(miss.threshold, 0.8);
+      expect(vm.status, TinyIslandStatus.ready, reason: '${vm.error}');
+      expect(core.built.last.isClosed, isFalse);
+      await vm.submit('jump');
+      expect(vm.lastTurn!.answer!.choice, 'jump');
     });
 
-    test('a cache that cannot be written costs the next visit only', () async {
-      final decider = await EmbeddingIslandDecider.create(
-        model: model,
-        name: 'fake',
-        profileId: 'p',
-        catalog: catalog,
-        cache: _FailingCache(),
-        threshold: 0.8,
-      );
-      expect(
-        (await decider.decide('water the flowers')).choice,
-        'water(flowers)',
-      );
-    });
+    test('leaving while the catalog is embedded cancels the fit', () async {
+      // The first model's embeds never finish: only the cancel ends that
+      // open, and the next screen's open waits for it in the lane.
+      core.nextEmbedGate = Completer<void>();
+      final left = TinyIslandViewModel(deps(), stage)..sceneLoaded();
+      final leftOpen = left.open();
+      while (left.status != TinyIslandStatus.preparing) {
+        await pumpEventQueue();
+      }
+      left.dispose();
+      await leftOpen.timeout(const Duration(seconds: 5));
 
-    test(
-      'stops between batches when cancelled, and close closes the model',
-      () async {
-        await expectLater(
-          EmbeddingIslandDecider.create(
-            model: model,
-            name: 'fake',
-            profileId: 'p',
-            catalog: catalog,
-            cache: cache,
-            isCancelled: () => true,
-          ),
-          throwsStateError,
-        );
-        final decider = await create();
-        await decider.close();
-        expect(model.isClosed, isTrue);
-      },
-    );
+      final next = await openVm();
+      expect(next.status, TinyIslandStatus.ready);
+      expect(core.built.first.isClosed, isTrue);
+      expect(core.built.last.isClosed, isFalse);
+    });
   });
 
   group('HUD', () {
-    Future<TinyIslandViewModel> vmAfter(String request) async {
-      final rig = _Rig();
-      final vm = TinyIslandViewModel(rig.deps, _RecordingStage());
+    Future<TinyIslandViewModel> vmAfter(
+      String request, {
+      double? probability,
+      bool empty = false,
+    }) async {
+      final deps = TinyIslandDependencies(
+        readSetup: () async => _setup,
+        loadEmbedder: (_) async => FakeEmbedder(1),
+        store: MemoryIslandDeciderStore(),
+        prepare: _scripted(catalog, (d) {
+          d.probability = probability;
+          d.answerEmpty = empty;
+        }),
+        embedderId: 'fake',
+        lane: IslandEmbedderLane(),
+      );
+      final vm = TinyIslandViewModel(deps, RecordingStage())..sceneLoaded();
       await vm.open();
       await vm.submit(request);
       return vm;
     }
 
-    testWidgets('shows the choice, three runners-up and the timing', (
+    Widget host(TinyIslandViewModel vm) => MaterialApp(
+      home: Scaffold(
+        body: Column(
+          children: [
+            TinyIslandStatusBar(viewModel: vm, onChooseModel: () {}),
+            TinyIslandHud(viewModel: vm),
+          ],
+        ),
+      ),
+    );
+
+    String text(WidgetTester tester, String key) =>
+        tester.widget<Text>(find.byKey(Key(key))).data!;
+
+    testWidgets('a raw cosine is shown as a cosine, never as a percentage', (
       tester,
     ) async {
       final vm = await tester.runAsync(() => vmAfter('open the chest'));
       addTearDown(vm!.dispose);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Column(
-              children: [
-                TinyIslandStatusBar(viewModel: vm, onChooseModel: () {}),
-                TinyIslandHud(viewModel: vm),
-              ],
-            ),
-          ),
-        ),
-      );
-      expect(find.byKey(const Key('tiny-island-choice')), findsOneWidget);
-      expect(find.textContaining('open(chest)'), findsWidgets);
-      expect(find.text('Open the treasure chest.'), findsOneWidget);
+      await tester.pumpWidget(host(vm));
+      expect(text(tester, 'tiny-island-choice'), 'open(chest)');
+      final score = text(tester, 'tiny-island-choice-score');
+      expect(score, contains('cosine'));
+      expect(score, isNot(contains('%')));
       for (var i = 0; i < 3; i++) {
-        expect(find.byKey(Key('tiny-island-alternative-$i')), findsOneWidget);
+        final alt = text(tester, 'tiny-island-alternative-$i');
+        expect(alt, isNot(contains('%')));
       }
-      final timing = tester.widget<Text>(
-        find.byKey(const Key('tiny-island-timing')),
-      );
       expect(
-        timing.data,
-        startsWith('Chosen among ${vm.catalog.length} actions in '),
+        text(tester, 'tiny-island-timing'),
+        startsWith('Chosen among 184 actions in '),
       );
-      expect(timing.data, contains('embed '));
-      expect(timing.data, contains('score '));
-      final status = tester.widget<Text>(
-        find.byKey(const Key('tiny-island-backend')),
-      );
-      expect(status.data, contains('backend unknown'));
-      expect(status.data, contains('${vm.catalog.length} actions'));
+      final status = text(tester, 'tiny-island-backend');
+      expect(status, contains('backend cpu'));
+      expect(status, contains('184 actions'));
+      expect(status, contains('calibrated on 144 held-out requests'));
     });
 
-    testWidgets('shows why it abstained', (tester) async {
+    testWidgets('a calibrated probability is shown as one', (tester) async {
+      final vm = await tester.runAsync(
+        () => vmAfter('open the chest', probability: 0.87),
+      );
+      addTearDown(vm!.dispose);
+      await tester.pumpWidget(host(vm));
+      expect(text(tester, 'tiny-island-choice-score'), contains('p 87%'));
+    });
+
+    testWidgets('says why it abstained, with the threshold', (tester) async {
       final vm = await tester.runAsync(() => vmAfter('tell me a joke'));
       addTearDown(vm!.dispose);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: TinyIslandHud(viewModel: vm)),
-        ),
-      );
+      await tester.pumpWidget(host(vm));
       expect(find.byKey(const Key('tiny-island-abstain')), findsOneWidget);
-      final reason = tester.widget<Text>(
-        find.byKey(const Key('tiny-island-abstain-reason')),
-      );
-      expect(reason.data, startsWith('Nothing on the island matches'));
       expect(
-        tester.widget<Text>(find.byKey(const Key('tiny-island-timing'))).data,
-        startsWith('Weighed '),
+        text(tester, 'tiny-island-abstain-reason'),
+        allOf(startsWith('Nothing on the island fits'), contains('0.500')),
+      );
+      expect(text(tester, 'tiny-island-timing'), startsWith('Weighed '));
+    });
+
+    testWidgets('an answer with nothing ranked renders', (tester) async {
+      final vm = await tester.runAsync(() => vmAfter('jump', empty: true));
+      addTearDown(vm!.dispose);
+      await tester.pumpWidget(host(vm));
+      expect(tester.takeException(), isNull);
+      expect(
+        text(tester, 'tiny-island-abstain-reason'),
+        'There were no actions to choose among.',
       );
     });
 
-    testWidgets('a failed setup offers the model list', (tester) async {
-      final rig = _Rig()
-        ..setup = const TinyIslandSetup(
-          problem: 'No embedding model is active.',
-        );
-      final vm = TinyIslandViewModel(rig.deps, _RecordingStage());
+    testWidgets('a store problem is on the status line', (tester) async {
+      final vm = TinyIslandViewModel(
+        TinyIslandDependencies(
+          readSetup: () async => _setup,
+          loadEmbedder: (_) async => FakeEmbedder(1),
+          store: MemoryIslandDeciderStore(),
+          prepare: _scripted(catalog, (_) {}, storeProblem: 'disk full'),
+          embedderId: 'fake',
+          lane: IslandEmbedderLane(),
+        ),
+        RecordingStage(),
+      );
+      addTearDown(vm.dispose);
+      await tester.runAsync(vm.open);
+      await tester.pumpWidget(host(vm));
+      expect(
+        text(tester, 'tiny-island-backend'),
+        contains('disk full: the next visit fits it again'),
+      );
+    });
+
+    testWidgets('a failed setup offers the model list and a retry', (
+      tester,
+    ) async {
+      final vm = TinyIslandViewModel(
+        TinyIslandDependencies(
+          readSetup: () async =>
+              const TinyIslandSetupProblem('No embedding model is active.'),
+          loadEmbedder: (_) async => FakeEmbedder(1),
+          store: MemoryIslandDeciderStore(),
+          lane: IslandEmbedderLane(),
+        ),
+        RecordingStage(),
+      );
       addTearDown(vm.dispose);
       await tester.runAsync(vm.open);
       var chose = 0;
@@ -494,6 +791,30 @@ void main() {
     });
   });
 
+  group('platforms', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('Windows and Linux get a reason, the others none', () {
+      for (final platform in TargetPlatform.values) {
+        debugDefaultTargetPlatformOverride = platform;
+        final reason = tinyIslandUnsupportedReason();
+        if (platform == TargetPlatform.windows ||
+            platform == TargetPlatform.linux) {
+          expect(reason, contains('Flutter GPU'), reason: '$platform');
+        } else {
+          expect(reason, isNull, reason: '$platform');
+        }
+      }
+    });
+
+    test('the scene hint names the cause per platform', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(tinyIslandSceneHint(), contains('Skia'));
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(tinyIslandSceneHint(), contains('FLTEnableFlutterGPU'));
+    });
+  });
+
   test('formatIslandDuration', () {
     expect(formatIslandDuration(const Duration(milliseconds: 36)), '36 ms');
     expect(formatIslandDuration(const Duration(microseconds: 4200)), '4.2 ms');
@@ -501,160 +822,71 @@ void main() {
   });
 }
 
-/// The screen's dependencies, with knobs.
-final class _Rig {
-  TinyIslandSetup setup = _setup;
-  Object? openError;
-  int opened = 0;
-  final progress = <int>[];
-  _ScriptedDecider? decider;
-
-  /// When set, an open waits for it after creating its decider.
-  Completer<void>? gate;
-
-  late final deps = TinyIslandDependencies(
-    readSetup: () async => setup,
-    openDecider:
-        (setup, catalog, {required onProgress, required isCancelled}) async {
-          opened++;
-          if (openError case final error?) throw error;
-          onProgress(1, 2);
-          progress.add(1);
-          onProgress(2, 2);
-          progress.add(2);
-          final created = decider = _ScriptedDecider(
-            KeywordIslandDecider(catalog),
-          );
-          if (gate case final gate?) await gate.future;
-          return created;
-        },
-  );
-}
-
-/// The keyword fake, with a failure or an answer that can be forced.
-final class _ScriptedDecider implements IslandDecider {
-  _ScriptedDecider(this._inner);
-
-  final KeywordIslandDecider _inner;
-  Object? failNext;
-  String? answerWith;
-  bool answerEmpty = false;
-  bool closed = false;
-
-  @override
-  String get name => _inner.name;
-
-  @override
-  String? get backend => _inner.backend;
-
-  @override
-  int get optionCount => _inner.optionCount;
-
-  @override
-  Future<IslandDecision> decide(String request) async {
-    if (failNext case final error?) {
-      failNext = null;
-      throw error;
-    }
-    final decision = await _inner.decide(request);
-    if (answerEmpty) {
-      return IslandDecision(
-        choice: null,
-        ranked: const [],
-        margin: 0,
-        abstainReason: IslandAbstainReason.outOfScope,
-        embedTime: decision.embedTime,
-        scoreTime: decision.scoreTime,
-        optionCount: decision.optionCount,
+/// A preparation that hands the view model a [ScriptedDecider] over the
+/// keyword fake, as if fitted.
+PrepareIslandDecider _scripted(
+  List<IslandAction> catalog,
+  void Function(ScriptedDecider decider) configure, {
+  String? storeProblem,
+}) =>
+    ({
+      required embedder,
+      required model,
+      required recipe,
+      required store,
+      required cancelToken,
+      required onProgress,
+      embedderId,
+    }) async {
+      final decider = ScriptedDecider(KeywordDecider(catalog));
+      configure(decider);
+      return PreparedIslandDecider(
+        decider: decider,
+        loaded: false,
+        stored: storeProblem == null,
+        storeProblem: storeProblem,
       );
-    }
-    if (answerWith case final id?) {
-      return IslandDecision(
-        choice: id,
-        ranked: [IslandRankedOption(id: id, score: 1)],
-        margin: 1,
-        embedTime: decision.embedTime,
-        scoreTime: decision.scoreTime,
-        optionCount: decision.optionCount,
-      );
-    }
-    return decision;
-  }
+    };
 
-  @override
-  Future<void> close() async {
-    closed = true;
-    await _inner.close();
-  }
+final class _Reached implements Exception {
+  const _Reached();
 }
 
-final class _RecordingStage implements IslandStage {
-  final performed = <String>[];
-  int shrugs = 0;
-  IslandOutcome outcome = const IslandOutcome.done();
-
-  /// When set, every action plays until it completes.
-  Completer<void>? hold;
+/// Fails the first embed: proves a createDecider got that far.
+final class _ThrowingEmbedder extends EmbeddingModel {
+  @override
+  int get dimension => 8;
 
   @override
-  Future<IslandOutcome> perform(IslandAction action) async {
-    performed.add(action.id);
-    if (hold case final hold?) await hold.future;
-    return outcome;
-  }
-
-  @override
-  Future<void> shrug() async => shrugs++;
-}
-
-/// Bag-of-words vectors: texts that share words point the same way.
-final class _WordEmbedder extends EmbeddingModel {
-  int calls = 0;
-  final tasks = <TaskType>{};
-  bool _closed = false;
-
-  @override
-  int get dimension => 128;
-
-  @override
-  bool get isClosed => _closed;
+  bool get isClosed => false;
 
   @override
   Future<List<double>> embed(
     EmbeddingInput input, {
     required TaskType taskType,
-  }) async {
-    if (_closed) throw const EmbedderClosedException();
-    calls++;
-    tasks.add(taskType);
-    // A visible cost, so the stand-in's embed timing is above zero.
-    await Future<void>.delayed(const Duration(microseconds: 50));
-    final v = List<double>.filled(dimension, 0);
-    v[dimension - 1] = 0.05;
-    for (final word in RegExp(
-      r'[\p{L}]+',
-      unicode: true,
-    ).allMatches(input.text!.toLowerCase())) {
-      final w = word[0]!;
-      if (const {'the', 'a', 'to', 'please', 'of'}.contains(w)) continue;
-      v[w.hashCode.abs() % (dimension - 1)] += 1;
-    }
-    final norm = math.sqrt(v.fold(0.0, (s, x) => s + x * x));
-    return [for (final x in v) x / norm];
-  }
+  }) => Future.error(const _Reached());
 
   @override
   void addCloseListener(void Function() listener) {}
 
   @override
-  Future<void> close() async => _closed = true;
+  Future<void> close() async {}
 }
 
-final class _FailingCache implements IslandVectorCache {
+final class _FailingStore implements IslandDeciderStore {
   @override
-  Future<Float32List?> read(String key) async => null;
+  String get where => 'a broken disk';
 
   @override
-  Future<void> write(String key, Float32List vectors) =>
-      Future.error(const FileSystemException('No space left on device'));
+  Future<Map<String, Object?>?> read({
+    required String model,
+    required String fingerprint,
+  }) => Future.error(const FileSystemException('Input/output error'));
+
+  @override
+  Future<String?> write({
+    required String model,
+    required String fingerprint,
+    required Map<String, Object?> artifact,
+  }) => Future.error(const FileSystemException('No space left on device'));
 }

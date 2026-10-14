@@ -1,25 +1,30 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_scene/scene.dart' show CameraControls, SceneView;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
+import 'package:flutter/services.dart' show MaxLengthEnforcement;
+import 'package:flutter_scene/scene.dart'
+    show CameraControls, RenderView, SceneView;
 
 import 'embedding_models_screen.dart';
 import 'tiny_island/island_hud.dart';
+import 'tiny_island/island_suggestions.dart';
 import 'tiny_island/island_world.dart';
 import 'tiny_island/tiny_island_app_dependencies.dart';
 import 'tiny_island/tiny_island_dependencies.dart';
+import 'tiny_island/tiny_island_platform.dart';
 import 'tiny_island/tiny_island_view_model.dart';
 
 /// Tiny Island: a small 3D scene (flutter_scene) where you tell the character
-/// what to do in your own words, and an on-device Decider — EmbeddingGemma 2
-/// — picks one of about two hundred actions, or abstains.
+/// what to do in your own words, and core's Decider over the active
+/// EmbeddingGemma 2 picks one of about two hundred actions, or abstains.
 ///
 /// The model is the ACTIVE embedder, chosen on the Embedding Models list
 /// (EmbeddingGemma 2 Text 270M is the lightest that works). The scene needs
-/// Flutter GPU: on by default in this app's Android, iOS and macOS manifests;
-/// pass `--enable-flutter-gpu` on Windows and Linux. The web renders through
-/// flutter_scene's own WebGL2 backend.
+/// Flutter GPU: on in this app's Android, iOS and macOS manifests; the web
+/// renders through flutter_scene's WebGL2 backend. Not offered on Windows
+/// and Linux (see `tinyIslandUnsupportedReason`).
 class TinyIslandScreen extends StatefulWidget {
   const TinyIslandScreen({super.key, this.dependencies, this.onChooseModel});
 
@@ -40,52 +45,86 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
   late final TinyIslandViewModel _vm = TinyIslandViewModel(_deps, _world);
   final _input = TextEditingController();
   final _inputFocus = FocusNode();
-  bool _sceneReady = false;
-  String? _sceneError;
 
-  /// Requests to try, from the catalog and outside it.
-  static const _suggestions = [
-    'walk over to the well',
-    'open the treasure chest',
-    'water the flowers',
-    'turn on the lamp',
-    'make it night',
-    'light the campfire',
-    'make it rain',
-    'sit on the bench',
-    'dance for me',
-    'show me the house up close',
-    'сделай закат',
-    'geh zum Baum',
-    'what is the capital of France?',
-  ];
+  /// Longer requests are not commands; the cap also keeps an error under
+  /// the field on screen.
+  static const _maxRequestLength = 200;
+
+  FlutterExceptionHandler? _previousOnError;
+  FlutterExceptionHandler? _ourOnError;
 
   @override
   void initState() {
     super.initState();
+    _catchSceneErrors();
     // open() keeps every failure in the view model's state, for the screen.
     unawaited(_vm.open());
     unawaited(_loadWorld());
   }
 
+  /// Builds the scene and compiles its pipelines, so a scene that cannot be
+  /// drawn here fails now, visibly, instead of leaving an empty view.
   Future<void> _loadWorld() async {
     try {
       await _world.load();
+      if (!mounted || !_world.isLoaded) return;
+      await _world.scene.warmUp([
+        RenderView(camera: _world.camera),
+      ], sliceBudget: const Duration(milliseconds: 50));
       if (!mounted) return;
-      setState(() => _sceneReady = true);
+      _vm.sceneLoaded();
     } catch (e, st) {
       debugPrint('[TinyIsland] the scene did not load: $e\n$st');
       if (!mounted) return;
-      setState(() {
-        _sceneError =
-            'The 3D scene did not load: $e\n\n'
-            '${kIsWeb ? 'The browser needs WebGL2.' : 'flutter_scene renders through Flutter GPU: run with --enable-flutter-gpu (Windows, Linux), or keep the FLTEnableFlutterGPU / EnableFlutterGPU flag in the app manifest (iOS, macOS, Android).'}';
-      });
+      _vm.sceneFailed(
+        'The 3D scene did not load: $e\n\n${tinyIslandSceneHint()}',
+      );
     }
+  }
+
+  /// A frame that fails to draw after the scene loaded is reported through
+  /// FlutterError, not to this screen. While the screen is up it listens
+  /// there too, shows the failure in place of the scene (which stops the
+  /// failing frames) and passes the error on unchanged.
+  void _catchSceneErrors() {
+    final previous = _previousOnError = FlutterError.onError;
+    FlutterError.onError = _ourOnError = (details) {
+      if (mounted &&
+          _vm.sceneReady &&
+          _vm.sceneError == null &&
+          _isSceneError(details)) {
+        // Reported during paint: change state after this frame.
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _vm.sceneError != null) return;
+          _vm.sceneFailed(
+            'The island stopped drawing: ${details.exceptionAsString()}\n\n'
+            '${tinyIslandSceneHint()}',
+          );
+        });
+      }
+      if (previous != null) {
+        previous(details);
+      } else {
+        FlutterError.presentError(details);
+      }
+    };
+  }
+
+  static bool _isSceneError(FlutterErrorDetails details) {
+    if (details.library == 'flutter_scene') return true;
+    if ('${details.stack}'.contains('package:flutter_scene/')) return true;
+    // A release web build has minified stacks; there a failure while
+    // painting, with the scene on screen, is taken to be the scene's.
+    return kIsWeb &&
+        kReleaseMode &&
+        details.context?.toDescription() == 'during paint()';
   }
 
   @override
   void dispose() {
+    if (identical(FlutterError.onError, _ourOnError)) {
+      FlutterError.onError = _previousOnError;
+    }
     _vm.dispose();
     _world.dispose();
     _input.dispose();
@@ -110,8 +149,8 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
   void _send([String? text]) {
     final request = text ?? _input.text;
     // Enter while a request is being decided keeps the typed text for later.
-    if (request.trim().isEmpty || _vm.deciding) return;
-    _input.clear();
+    if (request.trim().isEmpty || !_vm.canSend) return;
+    if (text == null) _input.clear();
     unawaited(_vm.submit(request));
   }
 
@@ -132,7 +171,7 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
               child: Stack(
                 children: [
                   Positioned.fill(child: _scene()),
-                  if (_sceneReady)
+                  if (_vm.sceneReady && _vm.sceneError == null)
                     Positioned.fill(child: _BubbleOverlay(world: _world)),
                   Positioned(
                     left: 8,
@@ -155,7 +194,7 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
   }
 
   Widget _scene() {
-    if (_sceneError case final error?) {
+    if (_vm.sceneError case final error?) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -166,7 +205,7 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
         ),
       );
     }
-    if (!_sceneReady) {
+    if (!_vm.sceneReady) {
       return const Center(child: CircularProgressIndicator());
     }
     // Drag to orbit, scroll or pinch to zoom; keys stay with the text field.
@@ -180,31 +219,45 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
           autofocus: false,
           child: SceneView(
             _world.scene,
-            // Compiles the pipelines before the first frame shows, instead
-            // of stalling the first frames that draw each material.
-            warmUp: true,
-            onTick: (elapsed, dt) => _world.tick(dt),
+            // Compiled in _loadWorld, where a failure is shown.
+            warmUp: false,
+            // 60 is plenty for these animations, and halves the redraws
+            // of a 120 Hz display (battery, heat, and on the web a GPU
+            // shared with the Decider's WebGPU).
+            maxFrameRate: 60,
+            onTick: _tick,
           ),
         );
       },
     );
   }
 
+  void _tick(Duration elapsed, double dt) {
+    if (_vm.sceneError != null) return;
+    try {
+      _world.tick(dt);
+    } catch (e, st) {
+      debugPrint('[TinyIsland] the island stopped: $e\n$st');
+      _vm.sceneFailed('The island stopped animating: $e');
+    }
+  }
+
   Widget _suggestionRow() {
-    final ready = _vm.status == TinyIslandStatus.ready;
+    final canSend = _vm.canSend;
     return SizedBox(
       height: 44,
       child: ListView(
+        key: const Key('tiny-island-suggestions'),
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         children: [
-          for (final (i, text) in _suggestions.indexed)
+          for (final (i, text) in islandSuggestions.indexed)
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: ActionChip(
                 key: Key('tiny-island-suggestion-$i'),
                 label: Text(text),
-                onPressed: ready && !_vm.deciding ? () => _send(text) : null,
+                onPressed: canSend ? () => _send(text) : null,
               ),
             ),
         ],
@@ -213,7 +266,10 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
   }
 
   Widget _inputRow() {
-    final ready = _vm.status == TinyIslandStatus.ready;
+    final ready =
+        _vm.status == TinyIslandStatus.ready &&
+        _vm.sceneReady &&
+        _vm.sceneError == null;
     return SafeArea(
       top: false,
       child: Padding(
@@ -225,21 +281,30 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
                 key: const Key('tiny-island-input'),
                 controller: _input,
                 focusNode: _inputFocus,
+                // Disabled until the Decider AND the scene are ready, so no
+                // request is sent to an island still loading.
                 enabled: ready,
+                maxLength: _maxRequestLength,
+                maxLengthEnforcement: MaxLengthEnforcement.enforced,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) {
                   _send();
                   _inputFocus.requestFocus();
                 },
-                decoration: const InputDecoration(
-                  hintText: 'e.g. go water the flowers',
+                decoration: InputDecoration(
+                  hintText: ready
+                      ? 'e.g. go water the flowers'
+                      : _vm.sceneError != null
+                      ? 'The island cannot be shown here'
+                      : 'Getting the island ready...',
+                  counterText: '',
                 ),
               ),
             ),
             IconButton(
               key: const Key('tiny-island-send'),
               icon: const Icon(Icons.send),
-              onPressed: ready && !_vm.deciding ? _send : null,
+              onPressed: _vm.canSend ? _send : null,
             ),
           ],
         ),

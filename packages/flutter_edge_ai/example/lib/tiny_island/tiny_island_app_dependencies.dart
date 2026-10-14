@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import '../models/embedding_model.dart' as catalog;
 import '../utils/installed_model_lookup.dart';
 import 'island_decider_store.dart';
+import 'island_voice_recorder.dart';
 import 'island_web_gpu.dart';
 import 'tiny_island_dependencies.dart';
 
@@ -12,13 +13,20 @@ const _install =
     'EmbeddingGemma 2 bundle works; the 270M is the lightest), then come back.';
 
 /// The app's wiring of the Tiny Island screen: the embedding model the
-/// Embedding Models list left active, which must be EmbeddingGemma 2, and
-/// fitted deciders kept in the app's cache directory (memory on the web).
-TinyIslandDependencies tinyIslandAppDependencies() => TinyIslandDependencies(
+/// Embedding Models list left active, which must be EmbeddingGemma 2, fitted
+/// deciders kept in the app's cache directory (OPFS on the web), and the
+/// microphone for spoken requests ([recorder] replaces it: the demo
+/// recording hands the screen prepared clips).
+TinyIslandDependencies tinyIslandAppDependencies({
+  IslandVoiceRecorder Function()? recorder,
+}) => TinyIslandDependencies(
   readSetup: readTinyIslandSetup,
-  loadEmbedder: (setup) =>
-      FlutterEdgeAi.getActiveEmbedder(preferredBackend: setup.preferredBackend),
+  loadEmbedder: (setup) => FlutterEdgeAi.getActiveEmbedder(
+    preferredBackend: setup.preferredBackend,
+    supportAudio: setup.voiceProblem == null,
+  ),
   store: createIslandDeciderStore(),
+  recorder: recorder ?? RecordIslandVoiceRecorder.new,
 );
 
 /// Which EmbeddingGemma 2 bundle is active, or why this screen cannot run.
@@ -54,5 +62,25 @@ Future<TinyIslandSetup> readTinyIslandSetup() async {
     embedderName: model.displayName,
     model: model.name,
     preferredBackend: model.embedderBackend,
+    voiceProblem: _voiceProblem(model),
   );
+}
+
+/// Why [model] takes no spoken requests here; null when it does. The voice
+/// threshold was measured on the 740M CPU bundle only (`island_voice.dart`).
+String? _voiceProblem(catalog.EmbeddingModel model) {
+  if (!model.embedsAudio) {
+    return 'Speaking needs EmbeddingGemma 2 Text + Vision + Audio (740M), the '
+        'bundle with an audio encoder.';
+  }
+  if (kIsWeb) {
+    return 'The voice threshold was measured on the CPU bundle, not on '
+        'WebGPU: speaking is off on the web.';
+  }
+  if (model.embedderBackend != null) {
+    return 'The voice threshold was measured on the CPU bundle; this one '
+        'embeds the actions on the ${model.embedderBackend!.name.toUpperCase()}, '
+        'where it was not measured.';
+  }
+  return null;
 }

@@ -37,7 +37,7 @@
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Voice memos are recorded and transcribed on this device.</string>
+	<string>Speech is recorded on this device: voice memos, speech to transcribe and spoken commands.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

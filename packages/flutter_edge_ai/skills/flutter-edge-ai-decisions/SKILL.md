@@ -31,7 +31,11 @@ CI that fails on warnings fail.
    answered requests can exceed a 5 % budget (CLINC150, 150 options: 6 %);
    there, calibrate with `fromLabelled` on held-out requests. It sees only
    requests that belong to an option, so check that its threshold still
-   refuses the ones that fit none. Always handle `answer.choice == null`.
+   refuses the ones that fit none. An audio request against text options
+   scores lower than the same request typed (EmbeddingGemma 2 740m: 0.745
+   against 0.866 for about the same error), so give spoken requests a decider
+   of their own, calibrated on spoken requests. Always handle
+   `answer.choice == null`.
 4. A raw score is not a probability. `RankedOption.probability`,
    `DeciderAnswer.probabilities` and `DeciderAnswer.confidence` are null unless
    the decider was calibrated with `DeciderCalibration.fromLabelled` on held-out

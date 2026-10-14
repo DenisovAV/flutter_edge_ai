@@ -10,6 +10,8 @@ import 'island_catalog.dart';
 import 'island_decider_preparation.dart';
 import 'island_decider_recipe.dart';
 import 'island_stage.dart';
+import 'island_voice.dart';
+import 'island_voice_recorder.dart';
 import 'tiny_island_dependencies.dart';
 
 enum TinyIslandStatus {
@@ -23,11 +25,30 @@ enum TinyIslandStatus {
   failed,
 }
 
+/// Whether the screen takes spoken requests.
+enum TinyIslandVoiceStatus {
+  /// Not with this bundle or platform; [TinyIslandViewModel.voiceNote] says
+  /// why.
+  off,
+
+  /// Fitting the decider for spoken requests (after the typed one is ready).
+  preparing,
+  ready,
+
+  /// Preparing it failed; [TinyIslandViewModel.voiceNote] says how. Typed
+  /// requests still work.
+  failed,
+}
+
 /// One request and what came of it. Written by the view model only.
 final class TinyIslandTurn {
-  TinyIslandTurn(this.request);
+  TinyIslandTurn(this.request, {this.spoken});
 
+  /// The typed text, or a label for a spoken request.
   final String request;
+
+  /// How long a spoken request was; null for a typed one.
+  final Duration? spoken;
 
   /// The Decider's answer; null while deciding, and when it failed.
   DeciderAnswer? answer;
@@ -62,6 +83,7 @@ final class TinyIslandViewModel extends ChangeNotifier {
       throw StateError('The island catalog repeats an action id.');
     }
     _recipe = _deps.recipe(catalog);
+    _voiceRecipe = _deps.voiceRecipe(catalog);
   }
 
   final TinyIslandDependencies _deps;
@@ -69,11 +91,18 @@ final class TinyIslandViewModel extends ChangeNotifier {
   final List<IslandAction> catalog;
   late final Map<String, IslandAction> _byId;
   late final IslandDeciderRecipe _recipe;
+  late final IslandDeciderRecipe _voiceRecipe;
 
   IslandEmbedderLane get _lane => _deps.lane ?? islandEmbedderLane;
 
   EmbeddingModel? _embedder;
   Decider? _decider;
+  Decider? _voiceDecider;
+  IslandVoiceRecorder? _recorder;
+
+  /// The recorder's start, awaited by [stopListening] so a quick tap never
+  /// stops a recording that has not started.
+  Future<void>? _recording;
   bool _disposed = false;
 
   /// Bumped by every [open]: an older open that finishes late releases what
@@ -122,6 +151,28 @@ final class TinyIslandViewModel extends ChangeNotifier {
   /// How the decider decides when to abstain.
   String get calibrationLabel => _recipe.calibrationLabel;
 
+  /// Whether spoken requests are taken, and [voiceNote] about it.
+  TinyIslandVoiceStatus get voiceStatus => _voiceStatus;
+  TinyIslandVoiceStatus _voiceStatus = TinyIslandVoiceStatus.off;
+
+  /// Why speaking is off or failed, or how its decider came to be; null
+  /// until the active bundle is read.
+  String? get voiceNote => _voiceNote;
+  String? _voiceNote;
+
+  /// How the spoken requests' decider decides when to abstain.
+  String get voiceCalibrationLabel => _voiceRecipe.calibrationLabel;
+
+  /// Texts embedded so far while [voiceStatus] is preparing.
+  int get voicePrepared => _voicePrepared;
+  int _voicePrepared = 0;
+  int get voicePreparedOf => _voicePreparedOf;
+  int _voicePreparedOf = 0;
+
+  /// The microphone is recording a spoken request.
+  bool get listening => _listening;
+  bool _listening = false;
+
   /// Where fitted deciders are kept.
   String get storeWhere => _deps.store.where;
 
@@ -143,6 +194,16 @@ final class TinyIslandViewModel extends ChangeNotifier {
       _sceneReady &&
       _sceneError == null &&
       !_deciding;
+
+  /// Whether the mic button can start a spoken request now.
+  bool get canSpeak =>
+      canSend &&
+      _voiceStatus == TinyIslandVoiceStatus.ready &&
+      _deps.recorder != null &&
+      !_listening;
+
+  /// Shorter recordings are a tap on the mic, not a request.
+  static const minSpoken = Duration(milliseconds: 300);
 
   /// Requests of this visit, newest first (at most [_maxTurns]).
   List<TinyIslandTurn> get turns => List.unmodifiable(_turns);
@@ -205,6 +266,10 @@ final class TinyIslandViewModel extends ChangeNotifier {
       _prepared = 0;
       _preparedOf = 0;
       _prepareNote = null;
+      _voiceStatus = TinyIslandVoiceStatus.off;
+      _voiceNote = null;
+      _voicePrepared = 0;
+      _voicePreparedOf = 0;
     });
     try {
       final setup = await _deps.readSetup();
@@ -268,6 +333,11 @@ final class TinyIslandViewModel extends ChangeNotifier {
         _prepareNote = note;
         _status = TinyIslandStatus.ready;
       });
+      if (ready.voiceProblem case final problem?) {
+        _set(() => _voiceNote = problem);
+      } else {
+        await _prepareVoice(generation, cancel, embedder, ready.model);
+      }
     } catch (e, st) {
       if (_stale(generation)) {
         await _release();
@@ -279,6 +349,59 @@ final class TinyIslandViewModel extends ChangeNotifier {
         _error = _describe(e);
         _suggestModelList =
             e is EmbeddingLoadException || e is DeciderSpaceMismatchException;
+      });
+    }
+  }
+
+  /// Prepares the decider for spoken requests on [embedder], once typed
+  /// requests already work: the stored one or a fresh fit, filed apart from
+  /// the typed one. A failure turns speaking off and leaves typing alone.
+  Future<void> _prepareVoice(
+    int generation,
+    CancelToken cancel,
+    EmbeddingModel embedder,
+    String model,
+  ) async {
+    _set(() => _voiceStatus = TinyIslandVoiceStatus.preparing);
+    try {
+      final prepared = await _deps.prepare(
+        embedder: embedder,
+        model: '$model-voice',
+        recipe: _voiceRecipe,
+        store: _deps.store,
+        embedderId: _deps.embedderId,
+        cancelToken: cancel,
+        onProgress: (done, total) {
+          if (_stale(generation)) return;
+          _set(() {
+            _voicePrepared = done;
+            _voicePreparedOf = total;
+          });
+        },
+      );
+      if (_stale(generation)) {
+        await prepared.decider.close();
+        await _release();
+        return;
+      }
+      _voiceDecider = prepared.decider;
+      final note = _describePreparation(prepared);
+      debugPrint(
+        '[TinyIsland] voice Decider ready: $voiceCalibrationLabel, $note',
+      );
+      _set(() {
+        _voiceStatus = TinyIslandVoiceStatus.ready;
+        _voiceNote = note;
+      });
+    } catch (e, st) {
+      if (_stale(generation)) {
+        await _release();
+        return;
+      }
+      debugPrint('[TinyIsland] preparing the voice Decider failed: $e\n$st');
+      _set(() {
+        _voiceStatus = TinyIslandVoiceStatus.failed;
+        _voiceNote = 'preparing it failed: ${_describe(e)}';
       });
     }
   }
@@ -304,7 +427,86 @@ final class TinyIslandViewModel extends ChangeNotifier {
     final text = request.trim();
     final decider = _decider;
     if (text.isEmpty || !canSend || decider == null) return;
-    final turn = TinyIslandTurn(text);
+    await _decide(
+      TinyIslandTurn(text),
+      decider,
+      DeciderInput(EmbeddingInput.text(text)),
+    );
+  }
+
+  /// The mic button is pressed: starts recording a spoken request.
+  Future<void> startListening() async {
+    if (!canSpeak) return;
+    final recorder = _recorder ??= _deps.recorder!();
+    _set(() {
+      _listening = true;
+      _error = null;
+    });
+    final recording = _recording = recorder.start();
+    try {
+      await recording;
+    } catch (e, st) {
+      debugPrint('[TinyIsland] the microphone did not start: $e\n$st');
+      _set(() {
+        _listening = false;
+        _error = 'The microphone did not start: ${_describe(e)}';
+      });
+    }
+  }
+
+  /// The mic button is released: stops recording and decides what was said.
+  Future<void> stopListening() async {
+    final recorder = _recorder;
+    if (!_listening || recorder == null) return;
+    _set(() => _listening = false);
+    final Uint8List? wav;
+    try {
+      // A recorder still starting is stopped once it has started.
+      await _recording;
+      wav = await recorder.stop();
+    } catch (e, st) {
+      debugPrint('[TinyIsland] the recording failed: $e\n$st');
+      _set(() => _error = 'The recording failed: ${_describe(e)}');
+      return;
+    }
+    if (wav == null) {
+      _set(() => _error = 'Nothing was recorded.');
+      return;
+    }
+    await submitSpoken(wav);
+  }
+
+  /// Decides the spoken request [wav] (a WAV file) with the decider for
+  /// spoken requests, and plays the result as [submit] does. The mic button
+  /// ends here; tests and the demo recording hand it a clip directly.
+  Future<void> submitSpoken(Uint8List wav) async {
+    final decider = _voiceDecider;
+    if (!canSend || decider == null) return;
+    final Duration length;
+    try {
+      length = islandWavDuration(wav);
+    } on ArgumentError catch (e) {
+      _set(() => _error = 'The recording is not a WAV file: ${e.message}');
+      return;
+    }
+    if (length < minSpoken) {
+      _set(() => _error = 'Hold the mic while you speak, then let go.');
+      return;
+    }
+    final seconds = (length.inMilliseconds / 1000).toStringAsFixed(1);
+    await _decide(
+      TinyIslandTurn('spoken request, $seconds s', spoken: length),
+      decider,
+      DeciderInput(EmbeddingInput.audio(wav)),
+    );
+  }
+
+  Future<void> _decide(
+    TinyIslandTurn turn,
+    Decider decider,
+    DeciderInput input,
+  ) async {
+    final text = turn.request;
     _set(() {
       _deciding = true;
       _error = null;
@@ -313,7 +515,7 @@ final class TinyIslandViewModel extends ChangeNotifier {
     });
     final DeciderAnswer answer;
     try {
-      answer = await decider.choose(DeciderInput(EmbeddingInput.text(text)));
+      answer = await decider.choose(input);
     } catch (e, st) {
       debugPrint('[TinyIsland] deciding "$text" failed: $e\n$st');
       // A closed embedder (core could not serve another), a decider error
@@ -327,7 +529,9 @@ final class TinyIslandViewModel extends ChangeNotifier {
           decider.isClosed;
       _set(() {
         turn.error = _describe(e);
-        if (broken && identical(_decider, decider)) {
+        if (broken &&
+            (identical(_decider, decider) ||
+                identical(_voiceDecider, decider))) {
           _status = TinyIslandStatus.failed;
           _error = 'The Decider stopped working: ${_describe(e)}';
           _suggestModelList = e is DeciderSpaceMismatchException;
@@ -394,15 +598,16 @@ final class TinyIslandViewModel extends ChangeNotifier {
   /// the lane (from [_open] or [dispose]). A failed close is logged; it
   /// never replaces the error the screen shows.
   Future<void> _release() async {
-    final decider = _decider;
+    final deciders = [?_decider, ?_voiceDecider];
     final embedder = _embedder;
     _decider = null;
+    _voiceDecider = null;
     _embedder = null;
-    if (decider != null) {
+    for (final decider in deciders) {
       try {
         await decider.close();
       } catch (e, st) {
-        debugPrint('[TinyIsland] closing the Decider failed: $e\n$st');
+        debugPrint('[TinyIsland] closing a Decider failed: $e\n$st');
       }
     }
     if (embedder != null) {
@@ -431,6 +636,13 @@ final class TinyIslandViewModel extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _cancel?.cancel('The Tiny Island screen was closed.');
+    if (_recorder case final recorder?) {
+      unawaited(
+        recorder.dispose().catchError((Object e, StackTrace st) {
+          debugPrint('[TinyIsland] releasing the microphone failed: $e\n$st');
+        }),
+      );
+    }
     // dispose() cannot await: the release waits its turn in the lane, so a
     // newer screen asks core for the embedder only after it is closed.
     unawaited(

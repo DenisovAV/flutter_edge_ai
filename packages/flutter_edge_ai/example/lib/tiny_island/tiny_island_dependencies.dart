@@ -5,6 +5,8 @@ import 'island_catalog.dart';
 import 'island_decider_preparation.dart';
 import 'island_decider_recipe.dart';
 import 'island_decider_store.dart';
+import 'island_voice.dart';
+import 'island_voice_recorder.dart';
 
 /// [prepareIslandDecider]'s shape, so tests can hand the screen a scripted
 /// decider.
@@ -31,6 +33,7 @@ final class TinyIslandEmbedderSetup extends TinyIslandSetup {
     required this.embedderName,
     required this.model,
     this.preferredBackend,
+    this.voiceProblem = 'This bundle has no audio encoder.',
   });
 
   /// E.g. "EmbeddingGemma 2 Text (270M)".
@@ -43,6 +46,10 @@ final class TinyIslandEmbedderSetup extends TinyIslandSetup {
   /// What to ask `getActiveEmbedder` for: npu for a per-SoC bundle, null
   /// (CPU) for the others.
   final PreferredBackend? preferredBackend;
+
+  /// Why spoken requests are not taken with this bundle, ready to show; null
+  /// when they are (the embedder is then loaded with `supportAudio`).
+  final String? voiceProblem;
 }
 
 /// The screen cannot run; [message] says why, ready to show.
@@ -88,6 +95,8 @@ final class TinyIslandDependencies {
     this.catalog = buildIslandCatalog,
     this.recipe = islandDeciderRecipe,
     this.prepare = prepareIslandDecider,
+    this.voiceRecipe = islandVoiceDeciderRecipe,
+    this.recorder,
     this.embedderId,
     this.lane,
   });
@@ -112,6 +121,14 @@ final class TinyIslandDependencies {
   /// Loads the stored decider or fits one: [prepareIslandDecider] in the
   /// app.
   final PrepareIslandDecider prepare;
+
+  /// How the decider for spoken requests is fitted over the catalog.
+  final IslandDeciderRecipe Function(List<IslandAction> catalog) voiceRecipe;
+
+  /// Makes the screen's microphone recorder: [RecordIslandVoiceRecorder] in
+  /// the app. Null: no microphone, spoken requests come only through
+  /// `TinyIslandViewModel.submitSpoken`.
+  final IslandVoiceRecorder Function()? recorder;
 
   /// Names the embedding space for `createDecider`/`loadDecider`. Null in
   /// the app: core names it by the installed file, its size and its

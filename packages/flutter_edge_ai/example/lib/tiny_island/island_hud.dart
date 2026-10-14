@@ -91,15 +91,18 @@ class TinyIslandHud extends StatelessWidget {
     if (turn == null) {
       children.add(
         Text(
-          'Tell the character what to do, in your own words. The Decider '
-          'picks one of ${vm.optionCount} actions, or shrugs.',
+          'Tell the character what to do, in your own words'
+          '${vm.voiceStatus == TinyIslandVoiceStatus.ready ? ' — type it, or hold the mic and say it' : ''}. '
+          'The Decider picks one of ${vm.optionCount} actions, or shrugs.',
           style: _muted,
         ),
       );
     } else {
       children.add(
         Text(
-          '"${turn.request}"',
+          turn.spoken == null
+              ? '"${turn.request}"'
+              : 'You said it: ${turn.request}',
           key: const Key('tiny-island-request'),
           style: const TextStyle(fontStyle: FontStyle.italic),
         ),
@@ -244,6 +247,19 @@ class TinyIslandHud extends StatelessWidget {
 
 /// The Decider itself: which model, on what, how many actions, how it was
 /// calibrated and prepared; or what it is doing, or why it cannot run.
+/// The status bar's line about spoken requests; null before the active
+/// bundle is read.
+String? _voiceLine(TinyIslandViewModel vm) => switch (vm.voiceStatus) {
+  TinyIslandVoiceStatus.preparing =>
+    'Preparing the Decider for spoken requests: embedded '
+        '${vm.voicePrepared} of ${vm.voicePreparedOf} texts',
+  TinyIslandVoiceStatus.ready =>
+    'Voice: plain audio, no transcript · ${vm.voiceCalibrationLabel}'
+        '${vm.voiceNote == null ? '' : ' · ${vm.voiceNote}'}',
+  TinyIslandVoiceStatus.off || TinyIslandVoiceStatus.failed =>
+    vm.voiceNote == null ? null : 'Voice off: ${vm.voiceNote}',
+};
+
 class TinyIslandStatusBar extends StatelessWidget {
   const TinyIslandStatusBar({
     super.key,
@@ -279,13 +295,31 @@ class TinyIslandStatusBar extends StatelessWidget {
           ),
         ],
       ),
-      TinyIslandStatus.ready => Text(
-        'Decider: ${vm.embedderName} · backend ${vm.backend ?? 'unknown'} · '
-        '${vm.optionCount} actions · ${vm.calibrationLabel}'
-        '${vm.prepareNote == null ? '' : ' · ${vm.prepareNote}'}'
-        '${vm.prepareTime == null ? '' : ' · ready in ${formatIslandPrepareTime(vm.prepareTime!)}'}',
-        key: const Key('tiny-island-backend'),
-        style: _muted,
+      TinyIslandStatus.ready => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Decider: ${vm.embedderName} · backend ${vm.backend ?? 'unknown'} · '
+            '${vm.optionCount} actions · ${vm.calibrationLabel}'
+            '${vm.prepareNote == null ? '' : ' · ${vm.prepareNote}'}'
+            '${vm.prepareTime == null ? '' : ' · ready in ${formatIslandPrepareTime(vm.prepareTime!)}'}',
+            key: const Key('tiny-island-backend'),
+            style: _muted,
+          ),
+          if (_voiceLine(vm) case final line?) ...[
+            const SizedBox(height: 2),
+            Text(line, key: const Key('tiny-island-voice'), style: _muted),
+          ],
+          if (vm.voiceStatus == TinyIslandVoiceStatus.preparing) ...[
+            const SizedBox(height: 4),
+            LinearProgressIndicator(
+              value: vm.voicePreparedOf == 0
+                  ? null
+                  : vm.voicePrepared / vm.voicePreparedOf,
+            ),
+          ],
+        ],
       ),
       TinyIslandStatus.failed => Column(
         crossAxisAlignment: CrossAxisAlignment.start,

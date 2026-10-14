@@ -159,6 +159,14 @@ the cross-fit refused 89 / 90 / 94 %. When requests that fit no option matter,
 keep the cross-fit, or check that the threshold `fromLabelled` picked still
 refuses them.
 
+An input of another modality than the options needs its own threshold. A
+spoken request compared with text options reaches lower cosines than the same
+request typed: in the example's Tiny Island (EmbeddingGemma 2 740m, synthetic
+speech) typed requests calibrate at 0.866 and spoken ones at 0.745 for about
+the same error. One decider has one threshold, so Tiny Island keeps a second
+decider over the same options for spoken requests, with
+`minSimilarity(0.745)` measured on spoken requests.
+
 ## Measured accuracy
 
 All numbers: Google's int4 `embeddinggemma-2-text-270m.litertlm` through

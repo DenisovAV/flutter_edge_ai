@@ -25,9 +25,12 @@ import 'package:flutter_edge_ai_example/tiny_island/island_held_out_requests.dar
 import 'package:flutter_edge_ai_example/tiny_island/island_hud.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_suggestions.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_vocabulary.dart';
+import 'package:flutter_edge_ai_example/tiny_island/island_voice.dart';
+import 'package:flutter_edge_ai_example/tiny_island/island_voice_recorder.dart';
 import 'package:flutter_edge_ai_example/tiny_island/tiny_island_dependencies.dart';
 import 'package:flutter_edge_ai_example/tiny_island/tiny_island_platform.dart';
 import 'package:flutter_edge_ai_example/tiny_island/tiny_island_view_model.dart';
+import 'package:flutter_edge_ai_example/utils/audio_converter.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'tiny_island_fakes.dart';
@@ -651,6 +654,215 @@ void main() {
     });
   });
 
+  group('voice', () {
+    late FakeCore core;
+    late RecordingStage stage;
+    late MemoryIslandDeciderStore store;
+    late _FakeRecorder recorder;
+    late _AudioDecider voice;
+
+    const voiceSetup = TinyIslandEmbedderSetup(
+      embedderName: 'EmbeddingGemma 2 Text + Vision + Audio (740M)',
+      model: 'embeddingGemma2TextVisionAudio740m',
+      voiceProblem: null,
+    );
+
+    setUp(() {
+      core = FakeCore();
+      stage = RecordingStage();
+      store = MemoryIslandDeciderStore();
+      recorder = _FakeRecorder();
+      voice = _AudioDecider(catalog, answer: 'jump');
+    });
+
+    /// Typed requests get a keyword decider, spoken ones [voice] (or
+    /// [voiceFails] is thrown).
+    PrepareIslandDecider prepareBoth({Object? voiceFails}) =>
+        ({
+          required embedder,
+          required model,
+          required recipe,
+          required store,
+          required cancelToken,
+          required onProgress,
+          embedderId,
+        }) async {
+          if (model.endsWith('-voice')) {
+            if (voiceFails case final error?) throw error;
+            voice
+              ..model = model
+              ..recipe = recipe;
+            return PreparedIslandDecider(
+              decider: voice,
+              loaded: false,
+              stored: true,
+            );
+          }
+          return PreparedIslandDecider(
+            decider: KeywordDecider(catalog),
+            loaded: false,
+            stored: true,
+          );
+        };
+
+    Future<TinyIslandViewModel> openVoiceVm({
+      PrepareIslandDecider? prepare,
+      TinyIslandSetup setup = voiceSetup,
+      bool microphone = true,
+      bool disposeAtEnd = true,
+    }) async {
+      final vm = TinyIslandViewModel(
+        TinyIslandDependencies(
+          readSetup: () async => setup,
+          loadEmbedder: (_) => core.getActiveEmbedder(),
+          store: store,
+          recipe: _testRecipe,
+          prepare: prepare ?? prepareBoth(),
+          recorder: microphone ? () => recorder : null,
+          embedderId: 'fake',
+          lane: IslandEmbedderLane(),
+        ),
+        stage,
+      );
+      if (disposeAtEnd) addTearDown(vm.dispose);
+      vm.sceneLoaded();
+      await vm.open();
+      return vm;
+    }
+
+    test(
+      'a bundle without audio takes no spoken requests and says why',
+      () async {
+        final vm = await openVoiceVm(setup: _setup);
+        expect(vm.status, TinyIslandStatus.ready);
+        expect(vm.voiceStatus, TinyIslandVoiceStatus.off);
+        expect(vm.voiceNote, 'This bundle has no audio encoder.');
+        expect(vm.canSpeak, isFalse);
+        expect(voice.model, isNull, reason: 'no voice decider is prepared');
+        await vm.startListening();
+        expect(recorder.started, 0);
+        await vm.submitSpoken(_wav(const Duration(seconds: 1)));
+        expect(vm.turns, isEmpty);
+      },
+    );
+
+    test('the voice decider has its own recipe and is filed apart from the '
+        'typed one', () async {
+      final vm = await openVoiceVm(prepare: prepareIslandDecider);
+      expect(vm.status, TinyIslandStatus.ready);
+      expect(vm.voiceStatus, TinyIslandVoiceStatus.ready);
+      expect(vm.voiceCalibrationLabel, 'fixed threshold $islandVoiceThreshold');
+      expect(vm.voiceNote, contains('fitted on this device'));
+      expect(vm.canSpeak, isTrue);
+      expect(
+        await store.read(
+          model: 'embeddingGemma2TextVisionAudio740m-voice',
+          fingerprint: islandVoiceDeciderRecipe(catalog).fingerprint,
+        ),
+        isNotNull,
+      );
+      expect(
+        await store.read(
+          model: 'embeddingGemma2TextVisionAudio740m',
+          fingerprint: _testRecipe(catalog).fingerprint,
+        ),
+        isNotNull,
+        reason: 'storing the voice decider kept the typed one',
+      );
+
+      final again = await openVoiceVm(prepare: prepareIslandDecider);
+      expect(again.prepareNote, startsWith('loaded from'));
+      expect(again.voiceNote, startsWith('loaded from'));
+    });
+
+    test('a held mic records, and the spoken request goes to the voice '
+        'decider as audio', () async {
+      final vm = await openVoiceVm();
+      expect(voice.recipe!.calibration.threshold, islandVoiceThreshold);
+      final wav = _wav(const Duration(milliseconds: 1500));
+      recorder.next = wav;
+      await vm.startListening();
+      expect(vm.listening, isTrue);
+      expect(vm.canSpeak, isFalse, reason: 'one recording at a time');
+      await vm.stopListening();
+      expect(vm.listening, isFalse);
+      expect((recorder.started, recorder.stopped), (1, 1));
+      final turn = vm.lastTurn!;
+      expect(turn.spoken, const Duration(milliseconds: 1500));
+      expect(turn.request, 'spoken request, 1.5 s');
+      expect(voice.inputs.single.input.audio, wav);
+      expect(voice.inputs.single.input.text, isNull);
+      expect(turn.answer!.choice, 'jump');
+      expect(stage.performed, ['jump']);
+
+      await vm.submit('dance');
+      expect(voice.inputs, hasLength(1), reason: 'typed text is not spoken');
+      expect(stage.performed, ['jump', 'dance']);
+    });
+
+    test('a tap shorter than a spoken request decides nothing', () async {
+      final vm = await openVoiceVm();
+      recorder.next = _wav(const Duration(milliseconds: 200));
+      await vm.startListening();
+      await vm.stopListening();
+      expect(vm.turns, isEmpty);
+      expect(voice.inputs, isEmpty);
+      expect(vm.error, contains('Hold the mic'));
+    });
+
+    test('a microphone that does not start is shown; typing still '
+        'works', () async {
+      final vm = await openVoiceVm();
+      recorder.startError = StateError('No microphone is available.');
+      await vm.startListening();
+      expect(vm.listening, isFalse);
+      expect(vm.error, contains('No microphone is available.'));
+      await vm.stopListening();
+      expect(recorder.stopped, 0);
+      await vm.submit('jump');
+      expect(stage.performed, ['jump']);
+    });
+
+    test('a voice decider that fails to prepare turns speaking off, not the '
+        'screen', () async {
+      final vm = await openVoiceVm(
+        prepare: prepareBoth(
+          voiceFails: const EmbeddingLoadException(
+            'no audio tower',
+            engine: 'LiteRT-LM',
+          ),
+        ),
+      );
+      expect(vm.status, TinyIslandStatus.ready);
+      expect(vm.voiceStatus, TinyIslandVoiceStatus.failed);
+      expect(vm.voiceNote, contains('no audio tower'));
+      expect(vm.canSpeak, isFalse);
+      await vm.submit('jump');
+      expect(stage.performed, ['jump']);
+    });
+
+    test('without a microphone a clip handed over is still decided', () async {
+      final vm = await openVoiceVm(microphone: false);
+      expect(vm.voiceStatus, TinyIslandVoiceStatus.ready);
+      expect(vm.canSpeak, isFalse);
+      await vm.submitSpoken(_wav(const Duration(seconds: 1)));
+      expect(stage.performed, ['jump']);
+    });
+
+    test(
+      'leaving the screen closes both deciders and the microphone',
+      () async {
+        final vm = await openVoiceVm(disposeAtEnd: false);
+        await vm.startListening();
+        vm.dispose();
+        await pumpEventQueue();
+        expect(voice.isClosed, isTrue);
+        expect(recorder.disposed, isTrue);
+        expect(core.built.single.isClosed, isTrue);
+      },
+    );
+  });
+
   group('HUD', () {
     Future<TinyIslandViewModel> vmAfter(
       String request, {
@@ -896,4 +1108,95 @@ final class _FailingStore implements IslandDeciderStore {
     required String fingerprint,
     required Map<String, Object?> artifact,
   }) => Future.error(const FileSystemException('No space left on device'));
+}
+
+/// [length] of 16 kHz mono silence as a WAV file.
+Uint8List _wav(Duration length) =>
+    AudioConverter.pcmToWav(Uint8List(length.inMilliseconds * 32));
+
+final class _FakeRecorder implements IslandVoiceRecorder {
+  /// What the next [stop] returns.
+  Uint8List? next;
+
+  /// Thrown by the next [start].
+  Object? startError;
+  int started = 0;
+  int stopped = 0;
+  bool disposed = false;
+
+  @override
+  Future<void> start() async {
+    started++;
+    if (startError case final error?) {
+      startError = null;
+      throw error;
+    }
+  }
+
+  @override
+  Future<Uint8List?> stop() async {
+    stopped++;
+    return next;
+  }
+
+  @override
+  Future<void> dispose() async => disposed = true;
+}
+
+/// Takes any input, audio included, and always answers [answer]; records
+/// what it was asked and how it was prepared.
+final class _AudioDecider extends Decider {
+  _AudioDecider(List<IslandAction> catalog, {required this.answer})
+    : options = List.unmodifiable([
+        for (final action in catalog)
+          DeciderOption(action.id, description: action.description),
+      ]);
+
+  final String answer;
+  final inputs = <DeciderInput>[];
+  String? model;
+  IslandDeciderRecipe? recipe;
+  bool _closed = false;
+
+  @override
+  final List<DeciderOption> options;
+
+  @override
+  DeciderCapabilities get capabilities => const DeciderCapabilities(
+    maxOptions: null,
+    supportsContext: false,
+    calibratedProbabilities: false,
+    modalities: {EmbeddingModality.text, EmbeddingModality.audio},
+  );
+
+  @override
+  bool get isClosed => _closed;
+
+  @override
+  Future<void> close() async => _closed = true;
+
+  @override
+  Future<DeciderAnswer> choose(
+    DeciderInput input, {
+    Iterable<String>? among,
+    int topK = 5,
+  }) async {
+    if (_closed) throw StateError('The decider is closed.');
+    inputs.add(input);
+    return DeciderAnswer(
+      choice: answer,
+      ranked: [RankedOption(id: answer, score: 0.8)],
+      scoreKind: ScoreKind.cosine,
+      margin: double.infinity,
+      provenance: const DeciderProvenance(
+        method: DeciderMethod.centroid,
+        calibration: 'minSimilarity',
+        spaceId: 'audio',
+        embedTime: Duration(milliseconds: 5),
+        scoreTime: Duration.zero,
+        threshold: islandVoiceThreshold,
+        similarity: 0.8,
+      ),
+    );
+  }
 }

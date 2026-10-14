@@ -242,6 +242,44 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
     }
   }
 
+  /// Hold to talk: recording runs while the button is held, and the request
+  /// is decided when it is let go.
+  Widget _micButton() {
+    final listening = _vm.listening;
+    final enabled = _vm.canSpeak || listening;
+    return Tooltip(
+      // Not on a long press: the button is held while speaking, and the
+      // tooltip would cover it.
+      triggerMode: TooltipTriggerMode.manual,
+      message: switch (_vm.voiceStatus) {
+        TinyIslandVoiceStatus.ready => 'Hold to speak',
+        TinyIslandVoiceStatus.preparing => 'Preparing spoken requests...',
+        _ => _vm.voiceNote ?? 'Speaking is off',
+      },
+      child: Listener(
+        key: const Key('tiny-island-mic'),
+        onPointerDown: (_) => unawaited(_vm.startListening()),
+        onPointerUp: (_) => unawaited(_vm.stopListening()),
+        onPointerCancel: (_) => unawaited(_vm.stopListening()),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: CircleAvatar(
+            radius: 20,
+            backgroundColor: listening
+                ? Colors.red.shade600
+                : enabled
+                ? const Color(0xFF2a5a8a)
+                : Colors.white12,
+            child: Icon(
+              listening ? Icons.mic : Icons.mic_none,
+              color: enabled ? Colors.white : Colors.white38,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _suggestionRow() {
     final canSend = _vm.canSend;
     return SizedBox(
@@ -292,7 +330,9 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
                   _inputFocus.requestFocus();
                 },
                 decoration: InputDecoration(
-                  hintText: ready
+                  hintText: _vm.listening
+                      ? 'Listening... let go of the mic to send'
+                      : ready
                       ? 'e.g. go water the flowers'
                       : _vm.sceneError != null
                       ? 'The island cannot be shown here'
@@ -301,6 +341,7 @@ class _TinyIslandScreenState extends State<TinyIslandScreen> {
                 ),
               ),
             ),
+            if (_vm.voiceStatus != TinyIslandVoiceStatus.off) _micButton(),
             IconButton(
               key: const Key('tiny-island-send'),
               icon: const Icon(Icons.send),

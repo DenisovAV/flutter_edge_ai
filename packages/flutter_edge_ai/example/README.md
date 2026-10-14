@@ -68,13 +68,27 @@ lightest; a per-SoC NPU bundle runs on the NPU).
   browser without it gets that message, not a model list. On Windows and
   Linux the home card is disabled: the runners do not enable Flutter GPU.
 - **First visit.** The Decider embeds the 920 action texts and 144 held-out
-  calibration requests once per model (60–82 s measured on an M4 Pro CPU, a
+  calibration requests once per model (37–82 s measured on an M4 Pro CPU, a
   debug build, while the scene loads), then stores the fitted decider
   (`Decider.toArtifact()`, 0.8 MB) in the app's
   cache directory — not application support, which iCloud and Android Auto
   Backup copy. Later visits load it (`loadDecider`, 0.6–1.2 s with the model
   load). On the web it is kept in the browser's private file system (OPFS),
   so a page load with the same model loads it too.
+- **Speaking.** With EmbeddingGemma 2 Text + Vision + Audio (740M) on the CPU,
+  hold the mic button and say the request. The recording (16 kHz WAV) is
+  embedded as plain audio, never transcribed, and decided by a second Decider
+  over the same actions with a fixed threshold of 0.745: spoken requests
+  reach lower cosines than typed ones, whose threshold is 0.866. Measured on
+  synthetic speech (macOS voices): 51 % of 426 spoken held-out requests
+  answered, 4.6 % of those wrong, all 86 spoken out-of-scope requests
+  refused. 33 further clips through the screen (two English voices, one
+  German clip): of 27 requests 22 played the right action, 1 the wrong one
+  and 4 got a shrug; all 6 out-of-scope ones got a shrug. A human voice is
+  not measured. The first visit fits the second decider once the typed one
+  is ready (31–35 s more on the M4 Pro and the iOS Simulator). Speaking is off
+  with the other bundles, an NPU bundle and on the web, where that threshold
+  was not measured.
 - **Build hook and the pub cache.** `hook/build.dart` converts
   `assets/island/models/*.glb` (Kenney, CC0) at build time. flutter_scene's
   own build hook also writes generated shader bundles into its package

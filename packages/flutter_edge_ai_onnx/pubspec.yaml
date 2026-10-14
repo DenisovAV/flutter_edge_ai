@@ -1,6 +1,6 @@
 name: flutter_edge_ai_onnx
 description: "ONNX Runtime engine for flutter_edge_ai: GenAI inference and embeddings on 5 native platforms; web via Transformers.js and onnxruntime-web."
-version: 0.5.8
+version: 0.5.9
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_onnx
 topics: [gemma, llm, onnx, onnxruntime, on-device]
@@ -55,10 +55,8 @@ dev_dependencies:
   shared_preferences: ^2.5.2
 
 # `hook/build.dart` (Phase 3 Task 4) owns the two co-located ORT-GenAI/ORT
-# CodeAssets — macOS arm64 only for now (native-assets pipeline, no
-# `flutter: plugin:` block needed, same as flutter_edge_ai_litertlm). Non-macOS
-# archives are a stubbed "pending D2" gap in the hook until the mobile
-# throughput go/no-go lands. `GenAiFfiClient` still supports
+# CodeAssets — native-assets pipeline (no `flutter: plugin:` block needed,
+# same as flutter_edge_ai_litertlm). `GenAiFfiClient` still supports
 # `FLUTTER_GEMMA_ORT_GENAI_LIBS` (a directory holding both dylibs) as a host-test
 # override that bypasses the CodeAsset bundle entirely — same posture as the
 # EMBEDDING arm's `OrtFfiClient` / `FLUTTER_GEMMA_ORT_LIBRARY`.

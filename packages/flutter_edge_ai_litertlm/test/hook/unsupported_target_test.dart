@@ -15,7 +15,8 @@ void main() {
       expect(notice, startsWith('[flutter_edge_ai_litertlm] '));
       expect(notice, contains('litertlm-windows_arm64.tar.gz'));
       expect(notice, contains('MediaPipe has no desktop engine'));
-      expect(notice, contains('ONNX engine is Windows x64 only'));
+      expect(notice, contains('flutter_edge_ai_onnx'));
+      expect(notice, contains('not run on ARM64 hardware'));
       expect(notice, contains('x64'));
       expect(notice, contains('issues/326'));
     },

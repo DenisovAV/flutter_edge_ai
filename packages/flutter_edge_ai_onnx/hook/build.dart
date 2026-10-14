@@ -7,7 +7,8 @@
 // Document this supply-chain divergence: unlike every other bundle in this
 // monorepo, these two archives are never re-hosted by us.
 //
-// **macOS arm64, linux_x64, windows_x64, android_arm64, ios arm64 (v1)** —
+// **macOS arm64, linux_x64, windows_x64/windows_arm64, android_arm64, ios
+// arm64 (v1)** —
 // iOS is now landed too, but shaped differently from every other platform:
 // Microsoft ships ONE self-contained artifact for iOS
 // (`onnxruntime-genai-ios-<ver>.zip` → `onnxruntime-genai.xcframework`) whose
@@ -96,7 +97,7 @@ class _Archive {
 }
 
 /// Archives for this version pair, keyed by (os, arch[, iOSSdk]). macOS
-/// arm64, linux_x64, windows_x64, android_arm64, and ios arm64 (device +
+/// arm64, linux_x64, windows_x64/windows_arm64, android_arm64, and ios arm64 (device +
 /// Apple-Silicon simulator) are landed (host-fetchable — the Android AAR
 /// extraction and the iOS zip extraction are both build-time steps, no
 /// device involved to GET the CodeAssets bundled; the device throughput/RAM
@@ -224,6 +225,30 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
             '8a303e52dc7be8fb2a5331929af451a25ac59774102d7fd09ef673adc85c5ebf',
         extractedLibPath:
             'onnxruntime-genai-0.14.0-win-x64/lib/onnxruntime-genai.dll',
+        assetName: 'onnxruntime-genai',
+      ),
+    );
+  }
+  if (os == OS.windows && arch == Architecture.arm64) {
+    return const _OrtBundle(
+      dirName: 'windows_arm64',
+      ort: _Archive(
+        url:
+            'https://github.com/microsoft/onnxruntime/releases/download/'
+            'v1.27.0/onnxruntime-win-arm64-1.27.0.zip',
+        sha256:
+            'a32f2650575b3c20df462e337519fd1cc4105356130d11dba9771c6f374d952f',
+        extractedLibPath: 'onnxruntime-win-arm64-1.27.0/lib/onnxruntime.dll',
+        assetName: 'onnxruntime',
+      ),
+      genai: _Archive(
+        url:
+            'https://github.com/microsoft/onnxruntime-genai/releases/'
+            'download/v0.14.0/onnxruntime-genai-0.14.0-win-arm64.zip',
+        sha256:
+            'b6daeedb6395406e4cefbd6577a0d2196611e360086f7767c153b1d4b3cb3f1b',
+        extractedLibPath:
+            'onnxruntime-genai-0.14.0-win-arm64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );

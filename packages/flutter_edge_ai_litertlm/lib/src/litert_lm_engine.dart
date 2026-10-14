@@ -33,14 +33,15 @@ const int kMinLitertlmContextTokens = 1024;
 /// fact: those bundles bake `kv_cache_max_len` 1024 and underflow below it.
 /// NPU bundles are compiled for one `cache_length`, and on Qualcomm the
 /// prefill mask the compiled graph carries
-/// (`2 B x num_attention_heads x prefill x (cache_length + prefill)`) must stay
-/// at or under ~1 MiB or every prefill chunk after the first is dropped — the
-/// model answers from chunk 0 alone, with no error. For the 4-head Gemma 3
-/// bundles that puts the largest working value at **896**, i.e. BELOW this
-/// floor; clamping up to 1024 is exactly the setting that breaks them
-/// (LiteRT-LM#3508). A 16-head model has no working value at prefill 128 at
-/// all. So on NPU the caller's number is passed through untouched: the safe
-/// context is a property of the bundle, and only the caller knows it.
+/// (`2 B x (attention heads / KV heads) x prefill x (cache_length + prefill)`)
+/// must stay at or under ~1 MiB or every prefill chunk after the first is
+/// dropped — the model answers from chunk 0 alone, with no error. For the
+/// Gemma 3 bundles (4 attention heads per KV head) that puts the largest
+/// working value at prefill 128 at **896**, i.e. BELOW this floor; clamping up
+/// to 1024 is exactly the setting that breaks them (LiteRT-LM#3508). Garbled
+/// Qwen3 output on the NPU is a different bug (LiteRT-LM#3846). So on NPU the
+/// caller's number is passed through untouched: the safe context is a property
+/// of the bundle, and only the caller knows it.
 ///
 /// Pass the backend of the ATTEMPT, not the one the caller asked for. A
 /// requested NPU falls back npu -> gpu -> cpu, and the floor still has to apply

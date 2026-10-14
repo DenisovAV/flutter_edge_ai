@@ -2,7 +2,7 @@
 
 First off, **thank you** for considering contributing to `flutter_edge_ai`! 🎉
 
-This project brings on-device AI to Flutter on Android, iOS, Web, macOS, Windows and Linux — LLM inference (Gemma, Qwen, Phi, DeepSeek, …) through pluggable engines (LiteRT-LM, MediaPipe, ONNX Runtime, the OS's own models), plus embeddings, RAG, speech and agent skills. Your contributions help make AI more accessible and privacy-preserving for everyone.
+This project brings on-device AI to Flutter on Android, iOS, Web, macOS, Windows and Linux — LLM inference with any model a registered engine runs, through pluggable engines (LiteRT-LM, MediaPipe, ONNX Runtime, the OS's own models), plus embeddings, RAG, speech and agent skills. Your contributions help make AI more accessible and privacy-preserving for everyone.
 
 ---
 

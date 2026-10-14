@@ -10,10 +10,10 @@ Detailed setup and reference for running flutter_edge_ai on **macOS, Windows, an
 Linux**. Desktop platforms run LiteRT-LM **directly via `dart:ffi`** — no Java,
 no separate process, no IPC.
 
-LiteRT-LM (`.litertlm`) is the **primary, default** desktop engine — but not the
-only one. **`flutter_edge_ai_onnx`** ([ONNX Runtime](/docs/onnx) — ORT-GenAI
-generation + ORT embeddings) also runs on all three desktop OSes
-(macOS/Windows/Linux), and the OS built-in model is available through
+LiteRT-LM (`.litertlm`) is the **primary** desktop engine (core registers no
+engine, so register `LiteRtLmEngine()`), but not the only one. **`flutter_edge_ai_onnx`** ([ONNX Runtime](/docs/onnx) — ORT-GenAI
+generation + ORT embeddings) also runs on desktop (macOS arm64, Linux x64 and
+Windows x64), and the OS built-in model is available through
 **`flutter_edge_ai_builtin_ai`** ([Built-in AI](/docs/builtin-ai)) on **macOS**
 (Apple Foundation Models) and, since 0.3.0, on **Windows** (AI Foundry / Phi
 Silica — nothing to configure to build: `flutter_local_ai` resolves the Windows
@@ -30,7 +30,7 @@ statement: **there is no MediaPipe engine on desktop.** See
 │              Flutter Desktop App                     │
 │                                                      │
 │   ┌──────────────────────────────────────────────┐ │
-│   │  FlutterEdgeAiDesktop (lib/desktop/)           │ │
+│   │  FlutterEdgeAiDesktop (lib/src/desktop/)       │ │
 │   │           ↓                                    │ │
 │   │  LiteRtLmFfiClient                            │ │
 │   │  (flutter_edge_ai_litertlm/lib/src/ffi/)        │ │
@@ -57,9 +57,8 @@ library loading sequence differs per platform.
 
 **Model format (LiteRT-LM engine):** the LiteRT-LM engine on desktop accepts only
 `.litertlm` files. MediaPipe `.bin` / `.task` models used on web won't load on
-desktop. See [litert-community on Hugging Face](https://huggingface.co/litert-community)
-for compatible models. (The [ONNX engine](/docs/onnx) uses its own `.onnx` model
-directories instead.)
+desktop. Any `.litertlm` model works; see [Models](/docs/models). (The
+[ONNX engine](/docs/onnx) uses its own `.onnx` model directories instead.)
 
 </Warning>
 
@@ -506,7 +505,7 @@ lifetime, because its integration tests run in the background.
 ### Model file not found
 
 On desktop the model is downloaded to the platform's standard "app support"
-directory (see [Troubleshooting → desktop storage](/docs/troubleshooting)). Use
+directory (see [Troubleshooting → desktop storage](/docs/troubleshooting#desktop-storage-locations)). Use
 `FlutterEdgeAi.installModel(...).fromNetwork(...).install()` to download, or
 `.fromFile(absolutePath)` if you already have it locally.
 

@@ -37,7 +37,7 @@ dependencies:
   # Optional — on-device agent skills:
   flutter_edge_ai_agent: latest_version        # agent skills the model runs itself (text / JS / native-intent / MCP)
 
-  # Optional — memory diagnostics (Android + iOS):
+  # Optional — memory diagnostics (Android + iOS + macOS):
   flutter_edge_ai_diagnostics: latest_version  # what a model costs in memory the OS cannot reclaim, read from the OS
 ```
 
@@ -45,12 +45,12 @@ dependencies:
 
 | You want to… | Add |
 |---|---|
-| Run `.litertlm` models (Gemma 4, Qwen3, FastVLM, + all desktop) | `flutter_edge_ai_litertlm` |
-| Run `.task` / `.bin` models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) | `flutter_edge_ai_mediapipe` |
-| Run the OS system model with no download (Gemini Nano / Apple FM / Windows AI Foundry) | `flutter_edge_ai_builtin_ai` |
+| Run `.litertlm` models on any platform, desktop included (see [Models](/docs/models)) | `flutter_edge_ai_litertlm` |
+| Run `.task` / `.bin` models on mobile and web (see [Models](/docs/models)); MediaPipe is maintenance-only, so prefer `.litertlm` in new apps | `flutter_edge_ai_mediapipe` |
+| Run the OS system model with no download (Gemini Nano / Apple FM / Windows AI Foundry / the browser Prompt API) | `flutter_edge_ai_builtin_ai` |
 | Run ONNX models — ORT-GenAI (native) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
 | Generate text embeddings with EmbeddingGemma 2 (`.litertlm`) | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
-| Embed images with EmbeddingGemma 2 (the 440m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
+| Embed images with EmbeddingGemma 2 (the 440m or 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
 | Embed audio, or several parts in one vector, with EmbeddingGemma 2 (the 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) with `flutter_edge_ai` 2.3.1; 1.13.2 on Web |
 | Generate text embeddings with EmbeddingGemma 1 / Gecko (`.tflite`) | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
@@ -58,7 +58,7 @@ dependencies:
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` (Flutter 3.47+) |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Run on-device agent skills the model executes itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
-| Measure what a model costs in memory the OS cannot reclaim (Android + iOS) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
+| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
 
 Core registers **no** AI runtime by itself — wire inference, embedding, and
 speech packages in `FlutterEdgeAi.initialize(...)` below. RAG is independent:
@@ -137,7 +137,8 @@ void main() async {
 | `inferenceEngines: [LiteRtLmEngine()]` | `flutter_edge_ai_litertlm` | `.litertlm` (mobile + desktop + web) |
 | `inferenceEngines: [MediaPipeEngine()]` | `flutter_edge_ai_mediapipe` | `.task` / `.bin` (mobile + web) |
 | `inferenceEngines: [OnnxEngine()]` | `flutter_edge_ai_onnx` | ONNX models — ORT-GenAI (FFI: macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64) or Transformers.js (Web) |
-| `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | text embeddings: EmbeddingGemma 2 `.litertlm` (native) and `.tflite` models |
+| `inferenceEngines: [BuiltInAiEngine()]` | `flutter_edge_ai_builtin_ai` | the OS model, `ModelFileType.builtIn` (Android, iOS, macOS, Windows, Web) |
+| `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | embeddings: EmbeddingGemma 2 `.litertlm` (text, images, audio; native and WebGPU) and `.tflite` models |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by both embedding backends above for `.tflite` and `.onnx` models; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
@@ -151,7 +152,7 @@ model to the engine that handles its file type. For RAG, register
 
 **Common settings:**
 
-- `huggingFaceToken`: authentication token for gated models (Gemma3n, Gemma 3 1B / 270M, EmbeddingGemma).
+- `huggingFaceToken`: authentication token for gated models (Gemma3n, Gemma 3 1B / 270M, EmbeddingGemma 1).
 - `maxDownloadRetries`: number of retry attempts for failed downloads (default: 10).
 - `webStorageMode` **(Web only)**: storage strategy for model files (default: `cacheApi`).
   - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB).
@@ -305,10 +306,10 @@ Qualcomm's QAIRT SDK for Linux arm64 boards. Without the flag `npu` falls back
 to GPU, then CPU. See [LiteRT-LM](/docs/litertlm).
 
 **ProGuard/R8 (only if you use `flutter_edge_ai_mediapipe`):** the package ships
-its own consumer ProGuard rules; from 1.0.6 a release build needs no rules in
-your app (built on AGP 9.1). On 1.0.5 and earlier R8 fails the release build
-with `Missing class` (seen on AGP 9) — upgrade to 1.0.6, or add to your
-`proguard-rules.pro`:
+its own consumer ProGuard rules, so a release build needs no rules in your app
+(built on AGP 9.1). The old `flutter_gemma_mediapipe` 1.0.5 and earlier failed
+R8 with `Missing class` (seen on AGP 9); if you are still on it, move to
+`flutter_edge_ai_mediapipe`, or add to your `proguard-rules.pro`:
 
 ```
 -dontwarn com.google.auto.value.**
@@ -340,9 +341,10 @@ classes), so it needs no ProGuard rules.
 **`flutter_edge_ai_builtin_ai`** brings in `flutter_local_ai`, which declares
 `minSdk 26` (the ML Kit GenAI / AICore floor) — raise your app's `minSdk` to 26
 or the manifest merger fails. The ML Kit Prompt API `beta4` artifact carries
-Kotlin 2.3 metadata, so the app also needs **Kotlin 2.3.21**. Unlike
-flutter_edge_ai's own plugins it applies KGP itself, so `android.builtInKotlin=true`
-is not usable in an app that depends on it.
+Kotlin 2.3 metadata, so the app also needs **Kotlin 2.3.21**. Since 0.2.0
+`flutter_local_ai` no longer applies KGP itself (Flutter 3.44+ does); it only
+puts KGP 2.3.21 on its buildscript classpath, so it does not stop an app on
+AGP 9 from using built-in Kotlin — other plugins in the app still may.
 
 </Info>
 
@@ -418,7 +420,10 @@ window.LlmInference = LlmInference;
 </script>
 ```
 
-**`flutter_edge_ai_litertlm`** (`.litertlm` web models — early preview). The
+**`flutter_edge_ai_litertlm`** (`.litertlm` web models — early preview, text
+only). Only dedicated web exports (`-web.litertlm`) load — Gemma 4 and Gemma 3n
+today; a native `.litertlm` installs on web and then fails at the first
+generation. The
 `@litert-lm/core` ESM doesn't assign window globals and module scripts are
 deferred, so Dart must await `window.litertLmReady` before any static interop:
 
@@ -505,9 +510,10 @@ Cross-Origin-Embedder-Policy: require-corp
 
 <Info>
 
-**Model compatibility:** mobile `.task` models often don't work on web — use the
-`-web.task` (MediaPipe) or `.litertlm` (LiteRT-LM) web variant. Check the model
-repo for web-compatible builds.
+**Model compatibility:** mobile `.task` models often don't work on web, and
+native `.litertlm` models never do — use the `-web.task` (MediaPipe) or
+`-web.litertlm` (LiteRT-LM) web variant. Check the model repo for
+web-compatible builds.
 
 </Info>
 
@@ -604,10 +610,9 @@ void main() async {
 ### Which models require authentication?
 
 **Gated (auth required):** Gemma3n (E2B, E4B), Gemma 3 1B, Gemma 3 270M,
-EmbeddingGemma.
+EmbeddingGemma 1 (`.tflite`). EmbeddingGemma 2 is public.
 
-**Public (no auth):** Gemma 4 (the litert-community builds), DeepSeek, Qwen3,
-Qwen 2.5, SmolLM, LFM2.5, Phi-4, FastVLM.
+For every other model, see the HF token column on [Models](/docs/models).
 
 To use a gated repo: visit the model page → "Request Access" button.
 

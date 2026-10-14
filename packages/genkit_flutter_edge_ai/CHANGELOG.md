@@ -1,3 +1,6 @@
+## 0.9.2
+- README: any engine's models; Quick Start installs Gemma 4 E2B .litertlm.
+
 ## 0.9.1
 - The embedder calls `embedAll` and re-resolves a closed embedder; require `flutter_edge_ai` ^2.3.0.
 

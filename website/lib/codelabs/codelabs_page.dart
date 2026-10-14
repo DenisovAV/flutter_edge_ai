@@ -182,8 +182,7 @@ class CodelabsPage extends StatelessComponent {
             Component.text(
               'Hands-on, step-by-step guides for running language models '
               'inside a Flutter app, ordered from first run to full '
-              'pipelines. Start with the quickstart; the ones marked '
-              '"Coming soon" are still being written.',
+              'pipelines. Start with the quickstart.',
             ),
           ]),
         ]),

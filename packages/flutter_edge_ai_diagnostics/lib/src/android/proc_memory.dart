@@ -32,8 +32,9 @@ int? anonymousBytesFromSmapsRollup(String text) {
 }
 
 /// `Private_Clean + Shared_Clean` from the text of `/proc/self/smaps_rollup`:
-/// resident clean pages, mostly mapped files. Clean anonymous pages can also
-/// be included, for example after a read from zram or `MADV_FREE`.
+/// resident clean pages (mapped files, and on some GPU backends GPU driver
+/// buffers; see [MemorySnapshot.fileBackedBytes]). Clean anonymous pages can
+/// also be included, for example after a read from zram or `MADV_FREE`.
 ///
 /// Null unless both fields are present, for the same reason as
 /// [anonymousBytesFromSmapsRollup]. `Pss_File` reports proportional file-backed

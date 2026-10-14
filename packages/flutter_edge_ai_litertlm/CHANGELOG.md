@@ -1,3 +1,6 @@
+## 1.13.3
+- README: Qwen3 0.6B bundle that loads (#659); NPU mask formula corrected.
+
 ## 1.13.2
 - Web: EmbeddingGemma 2 audio and combined-input embeddings on WebGPU.
 - EmbeddingGemma 2 on the Intel Panther Lake NPU (Windows).

@@ -47,10 +47,11 @@ Depend on both packages (`flutter_edge_ai: ^2.3.2`,
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
-> **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
-> flutter_edge_ai package upgraded together:** `flutter_edge_ai_embeddings`
-> 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 · `flutter_edge_ai_mediapipe` 1.2.2 ·
-> `flutter_edge_ai_builtin_ai` 0.3.5 · `flutter_edge_ai_speech` 0.5.6 ·
+> **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
+> 1.13.1), and 2.3.0 needs every flutter_edge_ai package upgraded together:**
+> `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
+> `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
+> `flutter_edge_ai_speech` 0.5.6 ·
 > `flutter_edge_ai_agent` 0.2.9 · `flutter_edge_ai_rag` 1.1.0 ·
 > `flutter_edge_ai_sqlite` 2.1.0 · `flutter_edge_ai_qdrant` 2.1.0 ·
 > `genkit_flutter_edge_ai` 0.9.1. Run `flutter pub upgrade`, not
@@ -812,6 +813,21 @@ on Metal and Adreno, the same way on every run. The published Gemma 4
 `.litertlm` files ask for half-precision activations; pass
 `activationDataType: ActivationDataType.float32` to `getActiveModel` for full
 precision.
+
+### `Qwen3-0.6B.litertlm` fails to load
+
+Symptom: since 1.7.0 the engine fails to create for `Qwen3-0.6B.litertlm` from
+[litert-community/Qwen3-0.6B](https://huggingface.co/litert-community/Qwen3-0.6B),
+with `piece must not include null character` in the native error.
+
+Cause: the SentencePiece version in LiteRT-LM since v0.17.0 rejects one piece
+of that bundle's tokenizer
+([LiteRT-LM #3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865)).
+Only this file is affected; Qwen3 0.6B itself works.
+
+Fix: install `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from the same
+repository instead (measured working on `native-v0.18.0-e`). See
+[#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659).
 
 ### Linux: any tool call aborts the app (fixed in 1.11.1)
 

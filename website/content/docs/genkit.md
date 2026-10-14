@@ -15,8 +15,9 @@ and cloud models behind a single `ai.generate` call.
 ## genkit_flutter_edge_ai
 
 Wraps flutter_edge_ai as a Genkit model and embedder provider. Once registered,
-every Genkit feature (streaming, tool use, embeddings, prompt templates) works
-with the on-device model exactly as it would with any cloud provider.
+streaming, tool use, embeddings and prompt templates go through the standard
+Genkit API; what a request can use depends on the installed model (see the
+notes below).
 
 ### Add to pubspec.yaml
 
@@ -58,9 +59,9 @@ await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
     .fromAsset('assets/gemma-3-1b-it-int4.task')
     .install();
 
-// For a .litertlm model declare the type in BOTH places — installModel(
-// fileType: ModelFileType.litertlm) and FlutterEdgeAiModelConfig(fileType: ...).
-// Both default to ModelFileType.task, which routes the model to MediaPipe.
+// For a .litertlm model pass fileType: ModelFileType.litertlm to
+// installModel(); it defaults to ModelFileType.task, which routes the model to
+// MediaPipe. FlutterEdgeAiModelConfig.fileType does not affect routing.
 
 // 3. Create a Genkit instance with the plugin.
 final ai = Genkit(plugins: [
@@ -77,6 +78,10 @@ final ai = Genkit(plugins: [
   ),
 ]);
 ```
+
+New apps should prefer `.litertlm`: Google's MediaPipe LLM Inference API is
+maintenance-only, its `.task` models do not load on the iOS GPU, and it has no
+desktop.
 
 Model and embedder ids are `flutter-edge-ai/<name>` (they were
 `flutter-gemma/<name>`), and 0.7.0 drops the old `genkit_flutter_gemma` Dart
@@ -144,8 +149,9 @@ final documentVectors = await ai.embed(
 ```
 
 Index with `retrievalDocument` and search with the default
-`retrievalQuery`; see [Embeddings & RAG](/docs/embeddings-and-rag). The
-embedder takes text only: a document with no text part is an
+`retrievalQuery`. The embedder runs the model `installEmbedder()` made active,
+EmbeddingGemma 2 included; see [Embeddings & RAG](/docs/embeddings-and-rag). It
+takes text only: a document with no text part is an
 `INVALID_ARGUMENT`. Since 0.9.1 it resolves the active embedder again for
 every request, so it follows a model core replaced or closed in between.
 
@@ -159,10 +165,12 @@ final response = await ai.generate(
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,                // context window (input + output), not reply length
-    maxOutputTokens: 256,           // cap on the reply (.litertlm; MediaPipe ignores it)
+    maxOutputTokens: 256,           // cap on the reply (every engine except MediaPipe)
     temperature: 0.5,
     topK: 40,
     supportImage: true,
+    supportAudio: true,             // audio input
+    enableThinking: true,           // reasoning arrives as a ReasoningPart
     toolChoice: 'auto',             // tool calling mode: 'auto' / 'required' / 'none'
     // Optional per-component backend ('cpu'/'gpu'/'npu'):
     preferredBackend: 'gpu',        // text decoder
@@ -171,6 +179,11 @@ final response = await ai.generate(
   ),
 );
 ```
+
+With `enableThinking: true` the reasoning comes before the reply as a
+`ReasoningPart` (in `response.message?.content`, or each streamed
+`chunk.content`); read it with `part.reasoning`. `response.text` holds the reply
+alone.
 
 Leave `temperature`, `topK` and `topP` unset to get the model's own sampler: the
 one a `.litertlm` file ships, else the defaults its family publishes. On
@@ -469,7 +482,7 @@ final response = await ai.generate(model: smart, prompt: 'Explain quantum tunnel
 <Info>
 
 `genkit_hybrid` works with **any** Genkit models, not just flutter_edge_ai. You
-can combine `gemini-2.5-flash` (cloud) with a local Ollama model, or any other
-pair that Genkit supports.
+can combine `gemini-2.5-flash` (cloud) with a model from any other Genkit
+plugin.
 
 </Info>

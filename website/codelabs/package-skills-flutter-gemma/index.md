@@ -567,7 +567,7 @@ works for each:
 * **ground answers in your own documents** — `flutter-edge-ai-rag`
 * **transcribe and speak** — `flutter-edge-ai-speech`
 * **use the model the OS already has** — `flutter-edge-ai-builtin-ai`
-* **measure process memory on Android and iOS** — `flutter-edge-ai-diagnostics`
+* **measure process memory on Android, iOS and macOS** — `flutter-edge-ai-diagnostics`
 * **run `.task` or ONNX models** — `flutter-edge-ai-mediapipe`,
   `flutter-edge-ai-onnx`
 

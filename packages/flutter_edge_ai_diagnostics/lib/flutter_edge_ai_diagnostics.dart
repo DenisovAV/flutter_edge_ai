@@ -1,5 +1,5 @@
 /// Opt-in memory diagnostics for flutter_edge_ai apps, read from the OS on
-/// Android and iOS.
+/// Android, iOS and macOS.
 library;
 
 export 'src/diagnostics_stub.dart'

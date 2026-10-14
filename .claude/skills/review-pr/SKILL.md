@@ -59,7 +59,7 @@ From the diff, detect which package(s)/area(s) are affected:
 - `flutter_edge_ai_speech/` — opt-in STT (moonshine / Whisper / Parakeet) + TTS (Matcha / Qwen3 / Inflect) over the LiteRT C API; shares the litertlm bundle
 - `flutter_edge_ai_agent/` — opt-in SKILL.md agent skills over the function-calling loop (no Web)
 - `flutter_edge_ai_builtin_ai/` — OS models: Gemini Nano (Android), Apple Foundation Models (iOS/macOS), Windows AI Foundry, Chrome Prompt API (Web). Pure Dart since 0.3.0: no native sources and no pigeon of its own — it adapts the `flutter_local_ai` plugin, which owns every backend.
-- `flutter_edge_ai_diagnostics/` — memory diagnostics (`MemorySnapshot`) read from the OS on Android and iOS through `dart:io`/`dart:ffi`. No native sources, no dependency on core. A failed read must throw `MemoryReadException`; null is reserved for a value the platform does not have.
+- `flutter_edge_ai_diagnostics/` — memory diagnostics (`MemorySnapshot`) read from the OS on Android, iOS and macOS through `dart:io`/`dart:ffi`. No native sources, no dependency on core. A failed read must throw `MemoryReadException`; null is reserved for a value the platform does not have.
 - `genkit_flutter_edge_ai/`, `genkit_hybrid/` — Genkit integration packages (Dart; no native)
 - `flutter_edge_ai/example/` — example app + `integration_test/` E2E
 

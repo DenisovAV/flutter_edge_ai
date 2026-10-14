@@ -33,7 +33,14 @@ import 'fit_runner_io.dart'
 
 /// The task every embedding decider embeds options and inputs with. The
 /// EmbeddingGemma 2 model card: one prefix on every compared input.
-const deciderTaskType = TaskType.classification;
+///
+/// Sentence similarity: of the EmbeddingGemma 2 prompts measured on CLINC150
+/// and the example's Tiny Island catalog (2026-10-14) — classification,
+/// question answering, a document prompt for the options, and Google
+/// Decision Maker's `title: <option> | text:` candidates — it was the most
+/// accurate on both, and its cross-fit refused the most out-of-scope
+/// requests. On HWU64 classification was 2.6–4.3 points more accurate.
+const deciderTaskType = TaskType.sentenceSimilarity;
 
 /// The `format` of a decider artifact.
 const deciderArtifactFormat = 'flutter_edge_ai.decider';

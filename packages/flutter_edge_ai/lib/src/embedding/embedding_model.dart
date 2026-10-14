@@ -120,7 +120,7 @@ abstract base class EmbeddingModel {
   /// A decider that picks one of [options] for an input, or abstains.
   ///
   /// Every option's inputs — its description, then its examples — are
-  /// embedded once, here, with [TaskType.classification] (the prefix every
+  /// embedded once, here, with [TaskType.sentenceSimilarity] (the prefix every
   /// compared input gets), and fitted by [method]: centroids, plus the linear
   /// layer for [DeciderMethod.linear]. [calibration] sets when the decider
   /// abstains; the default cross-fit needs two inputs per option. A

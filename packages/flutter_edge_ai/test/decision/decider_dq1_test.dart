@@ -3,7 +3,9 @@
 // vectors (CLINC150, LiteRT-LM 0.18.0, classification prompt). The fixture
 // stores the vectors as the float16 they were saved as and what dq1's own
 // functions computed from them; here the decider computes the same from the
-// same vectors.
+// same vectors. The prompt the vectors were embedded with does not enter that
+// arithmetic, so the fixture holds for the decider's own prompt (sentence
+// similarity) as well.
 
 import 'dart:convert';
 import 'dart:io';

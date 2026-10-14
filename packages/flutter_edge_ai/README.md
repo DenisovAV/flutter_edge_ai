@@ -328,13 +328,13 @@ final answer = await decider.choose(
 print(answer.choice ?? 'none of these (${answer.abstainReason})');
 ```
 
-Options and inputs are embedded with `TaskType.classification`; an option is
-the centroid of its examples (and description). The decider abstains when the
+Options and inputs are embedded with `TaskType.sentenceSimilarity`; an option
+is the centroid of its examples (and description). The decider abstains when the
 input's best cosine is below a threshold cross-fitted on the options' own
 examples. Store a fitted decider with `toArtifact()` and restore it with
 `loadDecider` — pinned to its embedding space, so a CPU-fitted decider is never
-loaded onto an NPU bundle. Measured with EmbeddingGemma 2 on CLINC150, the
-numbers and their limits:
+loaded onto an NPU bundle. Measured with EmbeddingGemma 2 on CLINC150 and
+HWU64, the numbers and their limits:
 [Decisions](https://flutteredge.ai/docs/decisions).
 
 ## Three things that fail quietly

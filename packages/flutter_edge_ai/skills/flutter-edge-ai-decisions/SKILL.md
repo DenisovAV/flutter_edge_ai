@@ -16,10 +16,10 @@ CI that fails on warnings fail.
 1. A decider comes from a model: `EmbeddingModel.createDecider` works with every
    embedding backend. `InferenceModel.createDecider` throws
    `DeciderUnsupportedException` — no engine scores options yet.
-2. Options and requests are embedded with `TaskType.classification`. Give each
-   option 5–30 example requests (`examples:`); a `description` alone is
-   zero-shot and much weaker (CLINC150, 150 options: 0.69–0.76 accuracy
-   from label names alone, 0.89–0.91 from 5–10 examples per option, centroid).
+2. Options and requests are embedded with `TaskType.sentenceSimilarity`. Give
+   each option 5–30 example requests (`examples:`); a `description` alone is
+   zero-shot and much weaker (CLINC150, 150 options: 0.75 accuracy from label
+   names alone, 0.92–0.94 from 5–10 examples per option, centroid).
 3. Abstaining is the hard part, and a softmax cannot do it: with two options any
    request looks confident. The abstain signal is the request's highest cosine
    to an option centroid. The default `DeciderCalibration.crossFit()` fits its
@@ -257,10 +257,10 @@ final jevOptions = DeciderOption.fromJevChoice({
 });
 // Criteria are descriptions only, so the default cross-fit does not apply.
 // PLACEHOLDER — measure the threshold for your model file and prompt; this
-// value is not one (0.825–0.85 was measured for EmbeddingGemma 2 int4 with
-// the classification prompt). Without a measured value, use
-// DeciderCalibration.none() and never abstain.
-const measuredThreshold = 0.83;
+// value is not one (0.875 was measured for EmbeddingGemma 2 int4 text 270m
+// with 5–10 examples per option, not for descriptions alone). Without a
+// measured value, use DeciderCalibration.none() and never abstain.
+const measuredThreshold = 0.87;
 final jevDecider = await embedder.createDecider(
   options: jevOptions,
   calibration: DeciderCalibration.minSimilarity(measuredThreshold),

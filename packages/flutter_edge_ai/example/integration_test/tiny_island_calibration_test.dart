@@ -2,7 +2,7 @@
 // core's Decider over the 184 island actions (920 texts), EmbeddingGemma 2,
 // scored on held-out requests it never saw — the 144 labelled paraphrases of
 // lib/tiny_island/island_held_out_requests.dart — and on out-of-scope
-// requests (below), which should abstain.
+// requests (tiny_island_requests.dart), which should abstain.
 //
 // Configurations, each printed as `[calib]` lines:
 // - centroid + DeciderCalibration.crossFit() (core's default): every
@@ -35,44 +35,10 @@ import 'package:flutter_edge_ai_example/tiny_island/island_held_out_requests.dar
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'tiny_island_requests.dart';
 import 'tiny_island_support.dart';
 
 const _measureLinear = bool.fromEnvironment('TINY_ISLAND_MEASURE_LINEAR');
-
-/// Requests about nothing on the island. None of them is a screen-test case
-/// or a suggestion chip.
-const _outOfScope = [
-  'what is the weather like in Berlin tomorrow',
-  'what is 17 times 23',
-  'who won the football match yesterday',
-  'how are you today',
-  'what time is it',
-  'translate good morning into Spanish',
-  'set an alarm for seven',
-  'call my mother',
-  'what is the capital of Australia',
-  'recommend a good book',
-  'how do I bake bread',
-  'what is the meaning of life',
-  'play some jazz music',
-  'send an email to my boss',
-  'how many legs does a spider have',
-  'what is the square root of 144',
-  'book a table for two tonight',
-  'order a pizza',
-  'remind me to buy milk',
-  'explain quantum computing',
-  'write a poem about the sea',
-  'how tall is Mount Everest',
-  'convert 10 miles to kilometres',
-  'who painted the Mona Lisa',
-  'what is your favourite colour',
-  'what is the forecast for the weekend',
-  'what is five plus seven',
-  'tell me a funny story',
-  'wie spät ist es',
-  'wer ist der Bundeskanzler',
-];
 
 void _log(String line) {
   // ignore: avoid_print
@@ -267,7 +233,7 @@ void main() {
       );
       _report(
         '$m crossFit(0.95), all held-out as test',
-        await _evaluate(crossFit, held, _outOfScope),
+        await _evaluate(crossFit, held, tinyIslandOutOfScopeRequests),
         fit: crossFitTime,
       );
 
@@ -285,7 +251,7 @@ void main() {
             _report(
               '$name $label: calibrated on ${train.length}, tested on '
               '${test.length}',
-              await _evaluate(decider, test, _outOfScope),
+              await _evaluate(decider, test, tinyIslandOutOfScopeRequests),
               fit: time,
             );
           } on ArgumentError catch (e) {
@@ -296,7 +262,7 @@ void main() {
           final (full, time) = await create(method, _labelled(held, maxError));
           _report(
             '$name full set (its own rows are training data)',
-            await _evaluate(full, held, _outOfScope),
+            await _evaluate(full, held, tinyIslandOutOfScopeRequests),
             fit: time,
             showMistakes: false,
           );

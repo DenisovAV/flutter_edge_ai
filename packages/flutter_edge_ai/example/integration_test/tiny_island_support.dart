@@ -52,16 +52,28 @@ bool tinyIslandExpectsNpu() =>
 /// body (no setUp: Rule 6b).
 Future<catalog.EmbeddingModel> ensureTinyIslandEmbedder() async {
   final model = tinyIslandEmbedder();
+  await installTinyIslandEmbedder(model, localFile: _embedderFile);
+  return model;
+}
+
+/// Installs [model] and records it as the catalog's selection, as
+/// [ensureTinyIslandEmbedder] does for the bundle the defines name: from
+/// [localFile] (checked against the catalog's SHA-256) when it is not empty,
+/// else from the network.
+Future<void> installTinyIslandEmbedder(
+  catalog.EmbeddingModel model, {
+  String localFile = '',
+}) async {
   await bootstrapGemma();
-  if (_embedderFile.isNotEmpty) {
-    final digest = await sha256.bind(File(_embedderFile).openRead()).first;
+  if (localFile.isNotEmpty) {
+    final digest = await sha256.bind(File(localFile).openRead()).first;
     expect(
       '$digest',
       model.sha256,
-      reason: '$_embedderFile is not the pinned ${model.filename}',
+      reason: '$localFile is not the pinned ${model.filename}',
     );
     await FlutterEdgeAi.installEmbedder()
-        .modelFromFile(_embedderFile, filename: model.filename)
+        .modelFromFile(localFile, filename: model.filename)
         .install();
     await persistVerifiedEmbeddingCatalogSelection(
       model,
@@ -77,5 +89,4 @@ Future<catalog.EmbeddingModel> ensureTinyIslandEmbedder() async {
       model,
     ).install();
   }
-  return model;
 }

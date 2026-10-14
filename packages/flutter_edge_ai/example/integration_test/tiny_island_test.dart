@@ -3,9 +3,10 @@
 //
 // 1. First visit, no stored decider: the screen fits one (920 option texts
 //    plus 144 calibration rows embedded) and stores it in the app's cache.
-// 2. Every case below is sent and checked: the EXACT action id (or an
-//    abstention), no error on the turn. All cases run before the test fails,
-//    so the log shows each one; then "N of M" is the real count.
+// 2. Every case (tinyIslandScreenCases in tiny_island_requests.dart) is
+//    sent and checked: the EXACT action id (or an abstention), no error on
+//    the turn. All cases run before the test fails, so the log shows each
+//    one; then "N of M" is the real count.
 // 3. Second visit: the stored decider is loaded (the status line says so),
 //    and the first request sent once the input is enabled plays.
 //
@@ -48,6 +49,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'tiny_island_requests.dart';
 import 'tiny_island_support.dart';
 
 const _shots = bool.fromEnvironment('TINY_ISLAND_SHOTS');
@@ -61,85 +63,6 @@ void _log(String line) {
   // ignore: avoid_print
   print('[island] $line');
 }
-
-/// A request, the action it must choose (null: it must abstain), and how
-/// long the island needs to play it.
-typedef _Case = ({String request, String? expect, double play, String? shot});
-
-const _cases = <_Case>[
-  (
-    request: 'stroll over to the well',
-    expect: 'walk_to(well)',
-    play: 4,
-    shot: null,
-  ),
-  (
-    request: 'crack open the treasure chest',
-    expect: 'open(chest)',
-    play: 6,
-    shot: 'chest',
-  ),
-  (
-    request: 'pour some water on the flowers',
-    expect: 'water(flowers)',
-    play: 5,
-    shot: null,
-  ),
-  (
-    request: 'what is the capital of France?',
-    expect: null,
-    play: 1.2,
-    shot: 'abstain',
-  ),
-  (request: 'make the sun set', expect: 'make_sunset', play: 2.5, shot: null),
-  (
-    request: 'turn the lantern on',
-    expect: 'turn_on(lamp)',
-    play: 6,
-    shot: null,
-  ),
-  (
-    request: 'build a campfire',
-    expect: 'light(campfire)',
-    play: 5,
-    shot: 'night',
-  ),
-  (
-    request: 'grab a seat on the bench',
-    expect: 'sit_on(bench)',
-    play: 5,
-    shot: null,
-  ),
-  (request: 'geh zum Baum', expect: 'walk_to(tree)', play: 5, shot: null),
-  (request: 'I want it to rain', expect: 'start_rain', play: 3, shot: 'rain'),
-  (request: 'dance a little jig', expect: 'dance', play: 6, shot: null),
-  (
-    request: 'do a dance at the fire pit',
-    expect: 'dance_by(campfire)',
-    play: 6,
-    shot: null,
-  ),
-  (request: 'tell me a joke', expect: null, play: 2.5, shot: null),
-  (
-    request: 'climb up the oak tree',
-    expect: 'climb(tree)',
-    play: 5,
-    shot: null,
-  ),
-  (request: 'how much is two plus two', expect: null, play: 2.5, shot: null),
-  (
-    request: 'close the lid of the chest',
-    expect: 'close(chest)',
-    play: 5,
-    shot: null,
-  ),
-  (
-    request: 'turn out the lights in the cottage',
-    expect: 'lights_off(house)',
-    play: 4,
-    shot: null,
-  ),
-];
 
 String _norm(String text) => text
     .toLowerCase()
@@ -339,7 +262,7 @@ void main() {
       ],
       for (final row in islandHeldOutRequests) _norm(row.text),
     };
-    for (final c in _cases) {
+    for (final c in tinyIslandScreenCases) {
       expect(
         known,
         isNot(contains(_norm(c.request))),
@@ -375,8 +298,8 @@ void main() {
     await _play(tester, 2);
     await _screenshot('start');
 
-    final outcomes = <(_Case, _Outcome)>[];
-    for (final c in _cases) {
+    final outcomes = <(TinyIslandScreenCase, _Outcome)>[];
+    for (final c in tinyIslandScreenCases) {
       final outcome = await _send(tester, c.request);
       outcomes.add((c, outcome));
       await _play(tester, c.play);

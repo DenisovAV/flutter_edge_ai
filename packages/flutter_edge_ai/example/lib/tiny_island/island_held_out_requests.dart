@@ -9,8 +9,8 @@
 // suggestion chips and the screen test's requests are different sentences
 // again (see island_suggestions.dart and integration_test/tiny_island_test.dart).
 //
-// Mostly English, about a fifth Russian (the catalog has one Russian phrasing
-// per option) and a few German (the catalog has none: cross-lingual).
+// Mostly English; 17 Russian (the catalog has one Russian phrasing per
+// option) and 3 German (the catalog has none: cross-lingual).
 
 /// One held-out request and the action id it means.
 typedef IslandHeldOutRequest = ({String text, String actionId});

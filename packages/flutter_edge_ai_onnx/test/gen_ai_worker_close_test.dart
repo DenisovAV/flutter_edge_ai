@@ -278,21 +278,25 @@ void main() {
       // hung on CI until its 30 s timeout, which said nothing of where.
       final log = logFor('reset_stops');
       final client = await _orReport(loaded(log), log, 'load()');
-      try {
-        final turn = _Turn(client.generate(_script({'untilStopped': true})));
-        await _waitForLine(log, 'generate');
-        await client.resetSession();
-        await _orReport(turn.ended, log, 'the turn');
-        expect(turn.error, isNull);
-        expect(
-          _linesOf(log),
-          ['load', 'generate', 'stopped', 'reset'],
-          reason: 'the turn ends because it saw the reset, then the reset runs',
-        );
-      } finally {
-        await _orReport(client.shutdown(), log, 'shutdown()');
-      }
-    });
+      // A teardown, not a finally: a shutdown that fails in a finally replaces
+      // the body's failure, which names the step that stalled.
+      addTearDown(() => _orReport(client.shutdown(), log, 'shutdown()'));
+      final turn = _Turn(client.generate(_script({'untilStopped': true})));
+      await _waitForLine(log, 'generate');
+      await client.resetSession();
+      await _orReport(turn.ended, log, 'the turn');
+      expect(turn.error, isNull);
+      // The worker logs the reset one yield after the turn ends.
+      await _waitForLine(log, 'reset');
+      expect(_linesOf(log), [
+        'load',
+        'generate',
+        'stopped',
+        'reset',
+      ], reason: 'the turn ends because it saw the reset, then the reset runs');
+      // The bounds above add up to 35 s, past the default 30 s timeout, which
+      // would fire first and name no step.
+    }, timeout: const Timeout(Duration(seconds: 60)));
 
     test('a turn the worker had not started when shutdown() arrived gets the '
         "worker's own answer", () async {

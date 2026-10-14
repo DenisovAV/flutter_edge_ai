@@ -16,7 +16,7 @@
 // the app's container (that file says how). Without them the test is
 // skipped, so this file stays out of a default device run.
 //
-// Measured, for audio-only inputs and again with the classification prefix
+// Measured, for audio-only inputs and again with the decider's prefix
 // as a text part in front of the clip (`EmbeddingInput(text: '', audio: ...)`:
 // an audio-only input carries no task prefix, while every option text does):
 // - the app's recipe (text examples, calibrated on the 144 held-out requests
@@ -442,7 +442,8 @@ void main() {
           final watch = Stopwatch()..start();
           await embedder.embed(
             form(clip.wav),
-            taskType: TaskType.classification,
+            // The decider's prompt, so the cache hands it these vectors.
+            taskType: TaskType.sentenceSimilarity,
           );
           times.add(watch.elapsed);
         }

@@ -176,17 +176,15 @@ English, one-sentence requests.
 | 2–20 options, linear, cross-fit, 10 examples | 90–94 % of in-scope answered, ≤ 0.6 % error on them, 92–99 % of out-of-subset and 98–99.8 % of CLINC out-of-scope refused |
 | 150 options, linear, cross-fit, 5 / 10 / 30 examples | out-of-scope refused 89 / 90 / 94 %; error on answered 6.0 / 3.8 / 3.1 % |
 | Linear, fixed cosine 0.875, 2–20 options, 5–10 examples | about as good as the cross-fit for this file and prompt |
-| Tiny Island (the example app): 184 actions, centroid, 5 examples each; 144 held-out paraphrases (141 English, 3 German) and 30 out-of-scope requests; macOS CPU | cross-fit: 93.1 % answered, 8.2 % error on them, 30 of 30 out-of-scope refused. `fromLabelled(maxError: 0.05)`, two folds: 93.1 / 51.4 % answered, 10.4 / 0 % error (7 of 104 answers wrong over both), 30 of 30 refused; `linear` with it: 70.8 / 75 % answered, 3.9 / 3.7 % error |
+| Tiny Island (the example app): 184 actions, centroid, 5 examples each; 144 held-out paraphrases (141 English, 3 German) and 30 out-of-scope requests; EmbeddingGemma 2 text 270m, macOS CPU | cross-fit: 93.8 % answered, 3.0 % error on them, 30 of 30 out-of-scope refused. `fromLabelled(maxError: 0.05)`, two folds: 98.6 / 100 % answered, 4.2 / 4.2 % error (6 of 143 answers wrong over both), 30 of 30 refused; `linear` gave the same answers and adds 15 s to the fit |
 
 Which inputs are answered and refused depends only on the abstain signal and
 its threshold, the same for both methods; the error on the answered ones was
 measured with `linear`, and `centroid` makes more (it is less accurate). At 150
-options with 5 examples, the cross-fit's error (6.0 %) is over a 5 % budget,
-and with many look-alike options (Tiny Island's verbs on the same few things)
-it is over too (8.2 %): calibrate with `fromLabelled` on held-out requests
-there, expect it to answer fewer, and give it enough of them. Calibrated on 72
-rows, Tiny Island's centroid threshold landed at 0.866 on one half and 0.921
-on the other: 10.4 % and 0 % error on the rows left out.
+options with 5 examples, the cross-fit's error (6.0 %) is over a 5 % budget:
+calibrate with `fromLabelled` there. On Tiny Island the cross-fit stays within
+it (3.0 %); the app calibrates with `fromLabelled` anyway, which answers more of
+the requests (99 % against 94 %) at 4.2 % error.
 
 **The prompt.** Sentence similarity was the most accurate EmbeddingGemma 2
 prompt on CLINC150 and on the example app's Tiny Island catalog (184 actions),

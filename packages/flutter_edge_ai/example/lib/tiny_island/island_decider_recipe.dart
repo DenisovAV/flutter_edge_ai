@@ -101,7 +101,7 @@ final class IslandDeciderRecipe {
 
 /// One Decider option per island action: its id is the action id, and it is
 /// the centroid of the action's description and example phrasings (core
-/// embeds them with `TaskType.classification`). The verb and thing ride
+/// embeds them with `TaskType.sentenceSimilarity`). The verb and thing ride
 /// along as metadata; they are never embedded.
 List<DeciderOption> islandDeciderOptions(List<IslandAction> catalog) => [
   for (final action in catalog)
@@ -121,15 +121,12 @@ List<DeciderOption> islandDeciderOptions(List<IslandAction> catalog) => [
 /// Measured on macOS CPU with EmbeddingGemma 2 Text (270M), 184 actions, 920
 /// texts, two folds of the 144 held-out requests plus 30 out-of-scope ones
 /// (integration_test/tiny_island_calibration_test.dart): the default
-/// cross-fit answers 93 % of in-scope requests but 8 % of those answers are
-/// wrong. Calibrated on one half of the labelled requests and tested on the
-/// other, it answers 93 % with 10 % wrong, or 51 % with none wrong (72 rows
-/// put the threshold at 0.866 or 0.921; over both halves, 72 % answered and
-/// 7 of 104 answers wrong); all 144 put it at 0.900. The cross-fit and both
-/// halves refuse all 30 out-of-scope requests. The linear method stays within
-/// budget on both halves (71–75 % answered, 4 of 105 wrong) but adds
-/// 18–28 s to the fit; three fewer wrong answers in 144 requests do not pay
-/// for that on the first visit, so the screen keeps centroids.
+/// cross-fit answers 94 % of in-scope requests, 3 % of those answers wrong.
+/// Calibrated on one half of the labelled requests and tested on the other,
+/// it answers 99–100 % with 4 % wrong (72 rows put the threshold at 0.877 or
+/// 0.866; over both halves 6 of 143 answers wrong); all 144 put it at 0.866.
+/// Both refuse all 30 out-of-scope requests. The linear method gives the
+/// same answers and adds 15 s to the fit, so the screen keeps centroids.
 ///
 /// The calibration is fitted in the embedding space it runs in — the CPU
 /// bundle, a per-SoC NPU bundle and the web's WebGPU each fit their own

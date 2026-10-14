@@ -266,7 +266,7 @@ void main() {
     );
 
     test(
-      'fits with classification, stores, then loads without embedding',
+      'fits with sentence similarity, stores, then loads without embedding',
       () async {
         final progress = <int>[];
         final first = await prepare(progress: progress);
@@ -274,7 +274,7 @@ void main() {
         expect(first.stored, isTrue);
         expect(first.refitReason, isNull);
         expect(embedder.embeds, 920);
-        expect(embedder.tasks, {TaskType.classification});
+        expect(embedder.tasks, {TaskType.sentenceSimilarity});
         expect(progress.first, 0);
         expect(progress.last, 920);
         final answer = await first.decider.choose(

@@ -6,7 +6,7 @@
 /// large-file temps, that the sweep enumerates + deletes there, and that a real
 /// download's temp actually lands in that directory.
 ///
-/// Run (Android device / FTL):
+/// Run (Android device; on a DDP phone via the ddp-device-test skill):
 ///   flutter test integration_test/download_temp_reclaim_device_test.dart -d <android>
 library;
 

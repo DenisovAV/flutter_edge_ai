@@ -5,12 +5,12 @@ import 'package:genkit/genkit.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:workshop_genkit_flutter_hybrid_ai/services/ai_engine.dart';
 
-// FTL pushes the model here via `--other-files`; if present we install from it
+// A device run can stage the model here (adb push); if present we install from it
 // (no flaky on-device download). Absent (local run) → normal HF download.
 const _stagedModel =
     '/data/local/tmp/flutter_edge_ai_test/gemma3-1b-it-int4.litertlm';
 
-// On-device smoke test for FTL / a real device.
+// On-device smoke test for a real device (local or remote).
 // Run with both secrets:
 //   --dart-define=HF_TOKEN=hf_xxx --dart-define=GEMINI_API_KEY=AIza...
 // It downloads Gemma-3-1B on first run (the embedder is intentionally skipped

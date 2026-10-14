@@ -30,7 +30,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        // Required for on-device integration tests (flutter integration_test / FTL).
+        // Required for on-device integration tests (flutter test, or am instrument on a remote phone).
         // Without it, gradle falls back to the legacy android.test runner which
         // hangs scanning the APK for test classes and ANRs on startup.
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

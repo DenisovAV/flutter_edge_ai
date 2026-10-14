@@ -54,17 +54,35 @@ flutter run --dart-define=HUGGINGFACE_TOKEN=hf_your_token_here
 flutter run
 ```
 
-**Tiny Island (3D) on Windows and Linux:** the Tiny Island screen renders
-with [flutter_scene](https://pub.dev/packages/flutter_scene), which needs
-Flutter GPU. Android, iOS and macOS turn it on in their manifests
-(`EnableFlutterGPU` / `FLTEnableFlutterGPU`); the web needs nothing; on Windows
-and Linux pass the flag:
-```bash
-flutter run --enable-flutter-gpu
-```
-Its models (`assets/island/models/*.glb`, Kenney, CC0) are converted at build
-time by `hook/build.dart`. The Decider runs on the active embedding model:
-choose EmbeddingGemma 2 Text (270M) under Embedding Models first.
+**Tiny Island (3D):** tell a character on a small 3D island what to do in
+your own words; core's Decider (`EmbeddingModel.createDecider`, experimental)
+over the active embedding model picks one of 184 actions, or abstains. Choose
+an EmbeddingGemma 2 bundle under Embedding Models first (Text 270M is the
+lightest; a per-SoC NPU bundle runs on the NPU).
+
+- **Platforms.** The scene renders with
+  [flutter_scene](https://pub.dev/packages/flutter_scene) through Flutter GPU,
+  which this app's Android, iOS and macOS manifests turn on
+  (`EnableFlutterGPU` / `FLTEnableFlutterGPU`). The web renders through
+  flutter_scene's WebGL2 backend, and EmbeddingGemma 2 there needs WebGPU: a
+  browser without it gets that message, not a model list. On Windows and
+  Linux the home card is disabled: the runners do not enable Flutter GPU.
+- **First visit.** The Decider embeds the 920 action texts and 144 held-out
+  calibration requests once per model (67–82 s measured on an M4 Pro CPU, a
+  debug build, while the scene loads), then stores the fitted decider
+  (`Decider.toArtifact()`, 0.8 MB) in the app's
+  cache directory — not application support, which iCloud and Android Auto
+  Backup copy. Later visits load it (`loadDecider`, 0.6–1.2 s with the model
+  load). On the web it is kept in memory only, so every page load fits it
+  again.
+- **Build hook and the pub cache.** `hook/build.dart` converts
+  `assets/island/models/*.glb` (Kenney, CC0) at build time. flutter_scene's
+  own build hook also writes generated shader bundles into its package
+  directory in the shared pub cache (`flutter_scene-<version>/
+  flutter_scene_generated/`). Two checkouts that build the example with
+  different Flutter versions at once can overwrite each other's bundle there,
+  and a read-only `PUB_CACHE` fails the build: build one checkout at a time
+  when they use different Flutter versions.
 
 ### 3. Local Models Setup (Optional)
 

@@ -9,7 +9,9 @@
 #   ddp.sh forward                  adb forwarder for the remaining lifetime (run it
 #                                   in the background; it runs `adb connect` itself and
 #                                   prints "listening on localhost:<port>")
-#   ddp.sh cancel                   ends the session (billing stops) and deletes the state
+#   ddp.sh cancel [session]         ends the session (billing stops) and deletes the state
+#   ddp.sh sessions                 the project's latest sessions, from the server: finds
+#                                   one the state file lost (cancel it by name)
 #
 # Env: DDP_PROJECT (default krups-develop), DDP_STATE (default ~/.ddp/session.json),
 # DDP_FORWARDER_DIR (default ~/.ddp: Google's demo_adb_forwarder.py + .venv).
@@ -27,6 +29,18 @@ name() {
 }
 get() { curl -fsS -H "Authorization: Bearer $(token)" "$API/$(name)"; }
 
+# Runs "$@" and replaces $STATE with its output only if that names a session.
+# `cmd >"$STATE"` empties the file before cmd runs, and a failed call would lose
+# the one record of which session is billing.
+save() {
+  local tmp; tmp=$(mktemp "$STATE.XXXXXX")
+  if "$@" >"$tmp" && [[ -n $(field name <"$tmp" 2>/dev/null) ]]; then
+    mv "$tmp" "$STATE"
+  else
+    rm -f "$tmp"; echo "request failed; $STATE left as it was" >&2; return 1
+  fi
+}
+
 remaining_seconds() {
   python3 - "$1" <<'EOF'
 import datetime, sys
@@ -38,8 +52,8 @@ EOF
 extend() {
   local seconds=$(( $1 * 60 ))
   # "${n}:cancel" style: in zsh "$n:c..." would apply a history modifier.
-  curl -fsS -X PATCH -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" \
-    -d "{\"ttl\": \"${seconds}s\"}" "$API/$(name)?updateMask=ttl" >"$STATE"
+  save curl -fsS -X PATCH -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" \
+    -d "{\"ttl\": \"${seconds}s\"}" "$API/$(name)?updateMask=ttl"
   echo "expireTime $(field expireTime <"$STATE")"
 }
 
@@ -53,13 +67,14 @@ case ${1:-} in
     fi
     model=${id%-*}; version=${id##*-}
     mkdir -p "$(dirname "$STATE")"
-    curl -fsS -X POST -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" \
+    save curl -fsS -X POST -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" \
       -d "{\"androidDevice\": {\"androidModelId\": \"$model\", \"androidVersionId\": \"$version\"},
            \"clientInfo\": {\"client\": \"skills/cloud/developer-device-platform-basics\"}}" \
-      "$API/projects/$PROJECT/deviceSessions" >"$STATE"
+      "$API/projects/$PROJECT/deviceSessions" \
+      || { echo "the session may still have been created: ddp.sh sessions" >&2; exit 1; }
     echo "reserved $(name) ($id); billed per minute until 'ddp.sh cancel'"
     for _ in $(seq 120); do
-      get >"$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+      save get || true   # a failed poll keeps the last state and polls again
       state=$(field state <"$STATE")
       [[ $state == ACTIVE ]] && break
       [[ $state == FINISHED || $state == ERROR || $state == UNAVAILABLE ]] && {
@@ -70,23 +85,30 @@ case ${1:-} in
     # The default lifetime can be as short as 15 minutes: set it explicitly.
     extend "$minutes" ;;
   status)
-    get >"$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+    save get
     echo "$(name) $(field state <"$STATE") expires $(field expireTime <"$STATE")" ;;
   extend)
     extend "${2:?minutes}" ;;
   forward)
-    get >"$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+    save get
     ttl=$(remaining_seconds "$(field expireTime <"$STATE")")
     cd "$FWD_DIR"
     # --access_token: works when Application Default Credentials have expired.
     exec .venv/bin/python3 demo_adb_forwarder.py --device_session "$(name)" --ttl "$ttl" \
       --access_token "$(token)" ;;
   cancel)
-    n=$(name)
+    n=${2:-$(name)}
     curl -fsS -X POST -H "Authorization: Bearer $(token)" -H "Content-Type: application/json" \
       -d '{}' "$API/${n}:cancel" >/dev/null
     curl -fsS -H "Authorization: Bearer $(token)" "$API/${n}" | field state
-    rm -f "$STATE" ;;
+    # Only the saved session's record goes; cancelling another one by name keeps it.
+    if [[ -f $STATE && $(field name <"$STATE" 2>/dev/null) == "$n" ]]; then rm -f "$STATE"; fi ;;
+  sessions)
+    # The server's filter parameter answers 500 (2026-10-14): list, newest first.
+    curl -fsS -H "Authorization: Bearer $(token)" "$API/projects/$PROJECT/deviceSessions?pageSize=10" |
+      python3 -c 'import json,sys
+for s in json.load(sys.stdin).get("deviceSessions", []):
+    print(s["name"], s.get("state"), s.get("expireTime", ""), s.get("androidDevice", {}).get("androidModelId", ""))' ;;
   *)
-    sed -n '2,15p' "$0"; exit 2 ;;
+    sed -n '2,17p' "$0"; exit 2 ;;
 esac

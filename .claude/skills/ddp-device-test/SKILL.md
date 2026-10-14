@@ -55,13 +55,19 @@ available each phone is (`LOW` can mean a long wait).
 ```bash
 D=.claude/skills/ddp-device-test
 $D/ddp.sh reserve e1q-34 60          # waits for ACTIVE, then sets a 60-minute lifetime
-$D/ddp.sh forward > ~/.ddp/forwarder.log 2>&1 &   # in the background
-grep -m1 -o 'localhost:[0-9]*' ~/.ddp/forwarder.log   # within ~1 min
-export SERIAL=localhost:<port>         # the forwarder runs `adb connect` itself
+$D/ddp.sh forward > ~/.ddp/forwarder.log 2>&1 & FWD=$!   # in the background
+for _ in $(seq 60); do                 # the port appears within ~1 min
+  SERIAL=$(grep -m1 -o 'localhost:[0-9]*' ~/.ddp/forwarder.log) && break
+  kill -0 $FWD 2>/dev/null || break    # the forwarder died: read its log
+  sleep 2
+done
+export SERIAL=${SERIAL:?no port: read ~/.ddp/forwarder.log}   # it ran `adb connect` itself
 adb devices                            # localhost:<port>  device
 adb -s $SERIAL shell getprop ro.soc.model
 
-# Stage models where the tests look for them (stagedModelPath, Android):
+# Stage models where the tests look for them: the example's tests read
+# /data/local/tmp/flutter_gemma_test/ (stagedModelPath), the hybrid-AI
+# codelab's smoke test reads /data/local/tmp/flutter_edge_ai_test/.
 adb -s $SERIAL shell mkdir -p /data/local/tmp/flutter_gemma_test
 adb -s $SERIAL shell test -x /system/bin/curl && echo curl || echo no-curl   # Pixels have none
 # with curl (Samsung):
@@ -75,6 +81,9 @@ adb -s $SERIAL push <local file> /data/local/tmp/flutter_gemma_test/<file>
 $D/run_instrumented.sh <run-name> integration_test/<file>.dart [KEY=VALUE ...]
 $D/ddp.sh cancel
 ```
+
+`run_instrumented.sh` exits 0 only on a passing Dart summary with no native
+crash in the app's process.
 
 ## What goes wrong
 
@@ -91,6 +100,11 @@ $D/ddp.sh cancel
   download with it under `nohup` as above (3–7 MB/s, survives a drop, `-C -`
   resumes). Use public URLs only: never put an HF token on a shared phone; for
   a gated file use a short-lived signed URL.
+- **No secrets as `KEY=VALUE`.** A dart-define is compiled into the APK, and the
+  APK stays on a phone other people use after us. `run_instrumented.sh` refuses
+  a name containing TOKEN, KEY, SECRET or PASSWORD. Stage gated models instead;
+  a test that needs a cloud key (the hybrid-AI codelab's cloud half) runs on a
+  device of your own.
 - **Not every phone has `curl`.** Samsung images ship `/system/bin/curl`; the
   Pixel 8a (`akita-35`) does not, and `nohup` only says so in the log file while
   a size poll waits for nothing (2026-10-14, 16 billed minutes). Check
@@ -117,4 +131,7 @@ $D/ddp.sh cancel
 - **zsh:** write `"${name}:cancel"`, never `"$name:cancel"` — `:c` is a history
   modifier and the request 404s. `ddp.sh` already does this.
 - **A session left open keeps billing.** `ddp.sh status` before reserving; the
-  state file is `~/.ddp/session.json`.
+  state file is `~/.ddp/session.json`, and a failed call leaves it as it was.
+  If it is lost anyway, or `reserve` failed after the request went out,
+  `ddp.sh sessions` lists the project's latest sessions from the server and
+  `ddp.sh cancel <name>` ends one by name.

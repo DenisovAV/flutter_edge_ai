@@ -10,7 +10,8 @@ import 'package:workshop_genkit_flutter_hybrid_ai/services/ai_engine.dart';
 const _stagedModel =
     '/data/local/tmp/flutter_edge_ai_test/gemma3-1b-it-int4.litertlm';
 
-// On-device smoke test for a real device (local or remote).
+// On-device smoke test for a device of your own: both secrets are compiled
+// into the app, so never run it on a shared remote phone.
 // Run with both secrets:
 //   --dart-define=HF_TOKEN=hf_xxx --dart-define=GEMINI_API_KEY=AIza...
 // It downloads Gemma-3-1B on first run (the embedder is intentionally skipped

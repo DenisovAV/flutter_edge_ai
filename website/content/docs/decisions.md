@@ -90,9 +90,10 @@ Future<void> decide() async {
 ## How it decides
 
 1. Every option input — its `description`, then its `examples` — is embedded
-   once, at `createDecider`, with `TaskType.classification`. The input to
+   once, at `createDecider`, with `TaskType.sentenceSimilarity`. The input to
    decide on gets the same prefix: EmbeddingGemma 2's model card asks for one
-   prefix on every compared input.
+   prefix on every compared input. Why this prompt: see
+   [Measured accuracy](#measured-accuracy).
 2. An option is the **centroid** of its inputs (their normalised mean). A
    description alone is zero-shot.
 3. `choose` embeds the input and scores every candidate:
@@ -146,35 +147,59 @@ The rows are copied when the calibration is made.
 
 A softmax probability cannot abstain: with two options any request looks
 confident. Measured with EmbeddingGemma 2 on CLINC150 (k = 10 examples per
-option), a 5 %-budget threshold on the softmax rejects 2.7–21.7 % of
+option), a 5 %-budget threshold on the softmax rejects 2.9–18.4 % of
 out-of-subset requests at 2–20 options; the cross-fitted cosine rejects
-87–99 %.
+92–99 %.
+
+`fromLabelled` sees only requests that belong to an option, so its threshold
+is set by in-scope errors alone, and it falls as the decider gets more
+accurate. On CLINC150 at 150 options (`centroid`) it refused 94 % of the
+out-of-scope requests with 5 examples per option, 85 % with 10 and 4 % with 30;
+the cross-fit refused 89 / 90 / 94 %. When requests that fit no option matter,
+keep the cross-fit, or check that the threshold `fromLabelled` picked still
+refuses them.
 
 ## Measured accuracy
 
 All numbers: Google's int4 `embeddinggemma-2-text-270m.litertlm` through
-LiteRT-LM 0.18.0's EmbeddingEngine on a CPU, the classification prompt,
-CLINC150 (its own out-of-scope rows as "none of these"). They are the
-decision measurements this API reproduces numerically; one data set, English,
-one-sentence requests.
+LiteRT-LM 0.18.0's EmbeddingEngine on a CPU (Apple M4 Pro), the decider's
+sentence similarity prompt, CLINC150 (its own out-of-scope rows as "none of
+these"). The measurement code is the one this API reproduces numerically;
+English, one-sentence requests.
 
 | Setting | Result |
 |---|---|
-| 150 options, label names only (zero-shot) | 0.685–0.756 accuracy |
-| 150 options, centroid, 5 / 10 examples | 0.887–0.895 / 0.899–0.910 |
-| 150 options, linear, 5 / 10 / 30 examples | 0.907–0.913 / 0.927–0.933 / 0.946 |
-| 2–20 options, linear, 5 examples | argmax accuracy 0.981–0.997 |
-| 2–20 options, linear, cross-fit, 10 examples | 90–94 % of in-scope answered, ≤ 0.8 % error on them, 87–99 % of out-of-subset and 96–99.5 % of CLINC out-of-scope refused |
-| 150 options, linear, cross-fit, 5 / 10 / 30 examples | out-of-scope refused 80 / 85 / 90 %; error on answered 6.8 / 4.9 / 3.6 % |
-| Linear, fixed cosine 0.825–0.85, 2–20 options | about as good as the cross-fit for this file and prompt |
+| 150 options, label names only (zero-shot) | 0.753 accuracy |
+| 150 options, centroid, 5 / 10 / 30 examples | 0.916 / 0.938 / 0.948 |
+| 150 options, linear, 5 / 10 / 30 examples | 0.927 / 0.951 / 0.960 |
+| 2–20 options, linear, 5 examples | argmax accuracy 0.987–0.999 |
+| 2–20 options, linear, cross-fit, 10 examples | 90–94 % of in-scope answered, ≤ 0.6 % error on them, 92–99 % of out-of-subset and 98–99.8 % of CLINC out-of-scope refused |
+| 150 options, linear, cross-fit, 5 / 10 / 30 examples | out-of-scope refused 89 / 90 / 94 %; error on answered 6.0 / 3.8 / 3.1 % |
+| Linear, fixed cosine 0.875, 2–20 options, 5–10 examples | about as good as the cross-fit for this file and prompt |
 
 Which inputs are answered and refused depends only on the abstain signal and
 its threshold, the same for both methods; the error on the answered ones was
 measured with `linear`, and `centroid` makes more (it is less accurate). At 150
-options with 5 examples, the cross-fit's error (6.8 %) is over a 5 % budget:
-calibrate with `fromLabelled` there. Not measured yet: another data set
-for "none of the above", requests longer than a sentence, languages other than
-English, and accuracy on platforms other than Android and a cloud CPU.
+options with 5 examples, the cross-fit's error (6.0 %) is over a 5 % budget:
+calibrate with `fromLabelled` there.
+
+**The prompt.** Sentence similarity was the most accurate EmbeddingGemma 2
+prompt on CLINC150 and on the example app's Tiny Island catalog (184 actions),
+against classification, question answering, a document prompt for the
+options and Google Decision Maker's `title: <option> | text:` candidates:
+
+| | classification | sentence similarity |
+|---|---|---|
+| CLINC150, centroid, 5 / 10 / 30 examples | 0.891 / 0.901 / 0.920 | 0.916 / 0.938 / 0.948 |
+| CLINC150, cross-fit, 10 examples: out-of-scope refused | 86 % | 90 % |
+| HWU64 (64 options), centroid, 5 / 10 examples | **0.929 / 0.935** | 0.887 / 0.909 |
+| Tiny Island (740m), typed requests: right / answered at a 5 % error budget | 0.896 / 74 % | 0.958 / 93 % |
+| Tiny Island (740m), spoken requests (audio): right / answered | 0.592 / 18 % | 0.772 / 54 % |
+
+On HWU64 classification was ahead with every method, and so it is not best
+everywhere. Not measured yet: another data set for "none of the above",
+requests longer than a sentence, languages other than English, and accuracy on
+a phone or an NPU.
 
 ## Speed
 

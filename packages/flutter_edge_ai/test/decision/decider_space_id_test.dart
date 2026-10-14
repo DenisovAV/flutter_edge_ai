@@ -125,7 +125,7 @@ void main() {
       expect(
         deciderSpaceId(model),
         'model=eg2%2Bnpu%402.litertlm@1234+tok%3Ben.json;dim=3;backend=npu;'
-        'prefix=task: classification | query: ',
+        'prefix=task: sentence similarity | query: ',
       );
     });
 
@@ -137,7 +137,7 @@ void main() {
       );
       expect(
         deciderSpaceId(model, embedderId: 'eg2@v1'),
-        'model=eg2%40v1;dim=3;backend=cpu;prefix=task: classification | query: ',
+        'model=eg2%40v1;dim=3;backend=cpu;prefix=task: sentence similarity | query: ',
       );
     });
 
@@ -165,7 +165,7 @@ void main() {
       );
       expect(
         deciderSpaceId(cpu, embedderId: 'm'),
-        'model=m;dim=3;backend=cpu;prefix=task: classification | query: ',
+        'model=m;dim=3;backend=cpu;prefix=task: sentence similarity | query: ',
       );
       expect(() => deciderSpaceId(cpu, embedderId: ''), throwsArgumentError);
     });
@@ -180,7 +180,7 @@ void main() {
       expect(
         deciderSpaceId(model(140), images: true),
         'model=eg2.litertlm@1234;dim=3;backend=cpu;vision=140;'
-        'prefix=task: classification | query: ',
+        'prefix=task: sentence similarity | query: ',
       );
       expect(deciderSpaceId(model(70), images: true), contains(';vision=70;'));
       expect(deciderSpaceId(model(140)), isNot(contains('vision')));
@@ -224,7 +224,7 @@ void main() {
       final id = deciderSpaceId(embedder, embedderId: 'litert-js-webgpu');
       expect(
         id,
-        'model=litert-js-webgpu;dim=3;prefix=task: classification | query: ',
+        'model=litert-js-webgpu;dim=3;prefix=task: sentence similarity | query: ',
       );
       expect(id, isNot(contains('unknown')));
     });

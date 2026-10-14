@@ -17,8 +17,8 @@ final class DeciderMethod {
   /// mean of the option's example (and description) embeddings. No fitting:
   /// options can come from descriptions alone (zero-shot).
   ///
-  /// Measured on CLINC150 (150 options) with EmbeddingGemma 2: 1.7–3.4 points
-  /// below [linear] at 5–10 examples per option, level on HWU64.
+  /// Measured on CLINC150 (150 options) with EmbeddingGemma 2: 1.1–1.4 points
+  /// below [linear] at 5–30 examples per option, level on HWU64 (64 options).
   static const centroid = DeciderMethod._('centroid');
 
   /// Softmax regression on the frozen embeddings, fitted on the options'
@@ -95,9 +95,10 @@ final class DeciderCalibration {
 
   /// A fixed threshold on the request's highest cosine to an option centroid.
   ///
-  /// It belongs to one model file and one prompt, not to the API: 0.825–0.85
-  /// was measured for EmbeddingGemma 2 int4 with the classification prompt;
-  /// another embedder needs its own value. [threshold] must be in [-1, 1].
+  /// It belongs to one model file and one prompt, not to the API: 0.875 was
+  /// measured for EmbeddingGemma 2 int4 text 270m with the decider's prompt
+  /// (CLINC150, 5–10 examples per option); another embedder needs its own
+  /// value. [threshold] must be in [-1, 1].
   const DeciderCalibration.minSimilarity(double this.threshold)
     : kind = 'minSimilarity',
       keep = null,

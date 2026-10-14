@@ -11,7 +11,7 @@ import '../embedding/embedding_input.dart';
 ///
 /// An embedding decider represents the option by the centroid of its inputs:
 /// the [description] (when given) and every one of [examples], all embedded
-/// with `TaskType.classification`. A description alone is zero-shot; a few
+/// with `TaskType.sentenceSimilarity`. A description alone is zero-shot; a few
 /// example requests per option (5–30 measured) are what make it accurate.
 @experimental
 @immutable

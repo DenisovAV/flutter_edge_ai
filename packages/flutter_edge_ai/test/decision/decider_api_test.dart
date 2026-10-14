@@ -267,7 +267,7 @@ void main() {
 
   group('embedding', () {
     test('every option input and every request is embedded with '
-        'TaskType.classification, description first', () async {
+        'TaskType.sentenceSimilarity, description first', () async {
       final embedder = _embedder();
       final decider = await _decider(
         embedder,
@@ -278,10 +278,10 @@ void main() {
       );
       await decider.choose(_in('about a'));
       expect(embedder.calls, [
-        ('option a', TaskType.classification),
-        ('a1', TaskType.classification),
-        ('option b', TaskType.classification),
-        ('about a', TaskType.classification),
+        ('option a', TaskType.sentenceSimilarity),
+        ('a1', TaskType.sentenceSimilarity),
+        ('option b', TaskType.sentenceSimilarity),
+        ('about a', TaskType.sentenceSimilarity),
       ]);
     });
 
@@ -570,7 +570,7 @@ void main() {
         third,
       ]);
       expect(answers.map((a) => a.choice), ['a', 'x', 'b', 'a']);
-      expect(shared.calls, [('about a', TaskType.classification)]);
+      expect(shared.calls, [('about a', TaskType.sentenceSimilarity)]);
       expect(apart.calls, hasLength(1));
       expect(other.calls, 1);
       expect(answers[2].provenance.embedTime, answers[0].provenance.embedTime);

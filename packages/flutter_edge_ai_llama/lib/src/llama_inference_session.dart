@@ -185,6 +185,15 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           _ => throw const FormatException(),
         };
         if (calls.isEmpty) throw const FormatException();
+        // Reserve every caller-provided ID before generating any missing ID,
+        // including IDs on later calls in the same parallel batch.
+        final reservedIds = {...usedIds};
+        for (final item in calls) {
+          final id = (item as Map<String, dynamic>)['id'] as String?;
+          if (id != null && (id.isEmpty || !reservedIds.add(id))) {
+            throw const FormatException();
+          }
+        }
         for (final item in calls) {
           final call = item as Map<String, dynamic>;
           final function = (call['function'] ?? call) as Map<String, dynamic>;
@@ -196,7 +205,8 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           if (id == null) {
             do {
               id = 'replay_${_callSequence++}';
-            } while (usedIds.contains(id));
+            } while (reservedIds.contains(id));
+            reservedIds.add(id);
           }
           if (toolChoice == llama.ToolChoice.none ||
               !_tools.any((tool) => tool.name == name) ||

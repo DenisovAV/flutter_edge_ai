@@ -1307,6 +1307,7 @@ void main() {
     '{"name":"search","parameters":{"q":"a"}}',
     '[{"name":"search","parameters":{"q":"a"}},{"name":"search","parameters":{"q":"b"}}]',
     '{"tool_calls":[{"id":"replay_0","function":{"name":"search","arguments":{"q":"a"}}},{"function":{"name":"search","arguments":{"q":"b"}}}]}',
+    '{"tool_calls":[{"function":{"name":"search","arguments":{"q":"a"}}},{"id":"replay_0","function":{"name":"search","arguments":{"q":"b"}}}]}',
   ]) {
     test(
       'core and wrapper tool replay pairs repeated names: $payload',

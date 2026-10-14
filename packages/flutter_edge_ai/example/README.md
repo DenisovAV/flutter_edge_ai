@@ -68,7 +68,7 @@ lightest; a per-SoC NPU bundle runs on the NPU).
   browser without it gets that message, not a model list. On Windows and
   Linux the home card is disabled: the runners do not enable Flutter GPU.
 - **First visit.** The Decider embeds the 920 action texts and 144 held-out
-  calibration requests once per model (67–82 s measured on an M4 Pro CPU, a
+  calibration requests once per model (60–82 s measured on an M4 Pro CPU, a
   debug build, while the scene loads), then stores the fitted decider
   (`Decider.toArtifact()`, 0.8 MB) in the app's
   cache directory — not application support, which iCloud and Android Auto

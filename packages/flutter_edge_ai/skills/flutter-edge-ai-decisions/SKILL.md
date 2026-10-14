@@ -28,9 +28,11 @@ CI that fails on warnings fail.
    `DeciderCalibration.none()`, or `DeciderCalibration.minSimilarity(t)` with a
    `t` you MEASURED for your model file and prompt — never a guessed value.
    With many look-alike options and ~5 examples each the cross-fit's error on
-   answered requests overshoots a 5 % budget (Tiny Island, 184 actions: 15 %);
-   there, calibrate with `fromLabelled` on held-out requests (4–5 %, fewer
-   answered). Always handle `answer.choice == null`.
+   answered requests overshoots a 5 % budget (Tiny Island, 184 actions: 8 %);
+   there, calibrate with `fromLabelled` on held-out requests (fewer answered),
+   and give it enough of them: on 72 rows, centroid's error on the other half
+   was 10 % on one fold and 0 % on the other (linear: 3.7–3.9 %). Always
+   handle `answer.choice == null`.
 4. A raw score is not a probability. `RankedOption.probability`,
    `DeciderAnswer.probabilities` and `DeciderAnswer.confidence` are null unless
    the decider was calibrated with `DeciderCalibration.fromLabelled` on held-out

@@ -44,8 +44,9 @@ CI that fails on warnings fail.
    `decider.isClosed` turns true: `loadDecider(toArtifact())` on the new
    embedder, no re-embedding.
 6. An artifact is pinned to an embedding space: the installed files (names and,
-   natively, sizes — not the bytes), dimension, backend, task prefix. A
-   decider fitted on the CPU file is refused on an NPU bundle
+   natively, sizes — not the bytes), dimension, backend, task prefix, and —
+   for a decider fitted on an image — the image budget (EG2: 140 or 70
+   tokens). A decider fitted on the CPU file is refused on an NPU bundle
    (`DeciderSpaceMismatchException`); fit it again there. A model that reports
    no backend (LiteRT.js and ONNX on web) and any custom `EmbeddingModel` need
    `embedderId:`, which then names the space instead of the files.

@@ -1,7 +1,8 @@
 // The embedding-space id of a decider: what names the weights (installed file
 // names and, where core can read them, sizes — or the caller's embedderId),
-// the dimension, the backend and the task prefix. A model that does not
-// report its backend needs an embedderId.
+// the dimension, the backend, the image budget of a decider fitted on images,
+// and the task prefix. A model that does not report its backend needs an
+// embedderId.
 
 import 'dart:async';
 import 'dart:io';
@@ -37,6 +38,65 @@ final class _Host implements EmbeddingHost {
   @override
   Future<void> close() async {}
 }
+
+/// Serves text and PNG images, reporting [budget] tokens per image.
+final class _VisionHost implements EmbeddingHost {
+  _VisionHost(this.budget);
+
+  final int? budget;
+
+  @override
+  EmbeddingPassInfo get info => EmbeddingPassInfo(
+    dimension: 3,
+    modalities: const {EmbeddingModality.text, EmbeddingModality.image},
+    imageFormats: {EncodedMediaFormat.png},
+    visionTokensPerImage: budget,
+  );
+
+  @override
+  Set<EmbeddingModality> get modalities => const {
+    EmbeddingModality.text,
+    EmbeddingModality.image,
+  };
+
+  @override
+  Future<List<double>> embed(EmbeddingInput input, TaskType taskType) async =>
+      input.text == null ? const [0, 0, 1] : tableVectors[input.text]!;
+
+  @override
+  Future<String> get unexpectedExit => Completer<String>().future;
+
+  @override
+  Future<void> close() async {}
+}
+
+/// A PNG signature, enough for core's format sniffing.
+final _png = Uint8List.fromList(const [
+  0x89,
+  0x50,
+  0x4E,
+  0x47,
+  0x0D,
+  0x0A,
+  0x1A,
+  0x0A,
+  0,
+  0,
+  0,
+  0,
+]);
+
+/// Option a has a photo among its examples.
+List<DeciderOption> _imageOptions() => [
+  DeciderOption(
+    'a',
+    examples: [EmbeddingInput.text('a1'), EmbeddingInput.image(_png)],
+  ),
+  DeciderOption(
+    'b',
+    examples: [EmbeddingInput.text('b1'), EmbeddingInput.text('b2')],
+  ),
+];
 
 List<DeciderOption> _options() => [
   DeciderOption(
@@ -110,6 +170,54 @@ void main() {
       expect(() => deciderSpaceId(cpu, embedderId: ''), throwsArgumentError);
     });
 
+    test('the image budget joins the id of a decider fitted on images, '
+        'and only then', () {
+      CommonEmbeddingModel model(int? budget) => CommonEmbeddingModel.withHost(
+        _VisionHost(budget),
+        activeBackend: PreferredBackend.cpu,
+        installedFiles: [(name: 'eg2.litertlm', bytes: 1234)],
+      );
+      expect(
+        deciderSpaceId(model(140), images: true),
+        'model=eg2.litertlm@1234;dim=3;backend=cpu;vision=140;'
+        'prefix=task: classification | query: ',
+      );
+      expect(deciderSpaceId(model(70), images: true), contains(';vision=70;'));
+      expect(deciderSpaceId(model(140)), isNot(contains('vision')));
+      expect(
+        deciderSpaceId(model(null), images: true),
+        isNot(contains('vision')),
+        reason: 'an engine without a budget setting has nothing to add',
+      );
+      expect(
+        deciderSpaceId(model(140), embedderId: 'eg2-440m', images: true),
+        contains(';vision=140;'),
+        reason: 'the budget is the embedder\'s, not part of the caller\'s id',
+      );
+    });
+
+    test('an image among the labelled requests binds the decider to the '
+        'budget too', () async {
+      final model = CommonEmbeddingModel.withHost(
+        _VisionHost(140),
+        activeBackend: PreferredBackend.cpu,
+        installedFiles: [(name: 'eg2.litertlm', bytes: 1234)],
+      );
+      final decider = await model.createDecider(
+        options: _options(),
+        calibration: DeciderCalibration.fromLabelled([
+          (input: EmbeddingInput.text('about a'), optionId: 'a'),
+          (input: EmbeddingInput.text('about b'), optionId: 'b'),
+          // A wrong row keeps the temperature off the grid's end.
+          (input: EmbeddingInput.text('about a'), optionId: 'b'),
+          (input: EmbeddingInput.image(_png), optionId: 'a'),
+        ], maxError: 0.5),
+      );
+      final artifact = decider.toArtifact();
+      expect(artifact['spaceId'], contains(';vision=140;'));
+      expect(artifact['imageInputs'], isTrue);
+    });
+
     test('with an embedderId, a model without a backend gets no backend '
         'term: the id names the space', () {
       final embedder = FakeEmbedder(dimension: 3, table: tableVectors);
@@ -166,6 +274,95 @@ void main() {
         await expectLater(
           second.loadDecider(artifact),
           throwsA(isA<DeciderSpaceMismatchException>()),
+        );
+      });
+
+      test('${shell.name}: a decider fitted on an image is bound to the '
+          'image budget; one fitted on text is not', () async {
+        EmbeddingRegistry.instance
+          ..reset()
+          ..registerAll([TableBackend(visionTokensPerImage: 140)]);
+        final plugin = shell.create();
+        plugins.add(plugin);
+        await fixture.activate(plugin, model: 'm.tflite', tokenizer: 'm.json');
+        final at140 = await plugin.createEmbeddingModel(supportImage: true);
+        final imageArtifact = (await at140.createDecider(
+          options: _imageOptions(),
+          calibration: const DeciderCalibration.none(),
+        )).toArtifact();
+        final textArtifact = (await at140.createDecider(
+          options: _options(),
+          calibration: const DeciderCalibration.none(),
+        )).toArtifact();
+        expect(imageArtifact['spaceId'], contains(';vision=140;'));
+        expect(imageArtifact['imageInputs'], isTrue);
+        expect(textArtifact['spaceId'], isNot(contains('vision')));
+        expect(textArtifact.containsKey('imageInputs'), isFalse);
+        // Round trip on the same embedder keeps the flag and the space.
+        final reloaded = (await at140.loadDecider(imageArtifact)).toArtifact();
+        expect(reloaded['spaceId'], imageArtifact['spaceId']);
+        expect(reloaded['imageInputs'], isTrue);
+
+        // The app now registers the engine at 70 tokens per image.
+        await at140.close();
+        EmbeddingRegistry.instance
+          ..reset()
+          ..registerAll([TableBackend(visionTokensPerImage: 70)]);
+        final at70 = await plugin.createEmbeddingModel(supportImage: true);
+        await expectLater(
+          at70.loadDecider(imageArtifact),
+          throwsA(
+            isA<DeciderSpaceMismatchException>()
+                .having((e) => e.expected, 'expected', contains('vision=140'))
+                .having((e) => e.actual, 'actual', contains('vision=70')),
+          ),
+        );
+        final text = await at70.loadDecider(textArtifact);
+        expect(
+          (await text.choose(
+            DeciderInput(EmbeddingInput.text('about b')),
+          )).choice,
+          'b',
+        );
+      });
+
+      test('${shell.name}: core\'s replacement at another image budget is '
+          'another space for an image-fitted decider only', () async {
+        EmbeddingRegistry.instance
+          ..reset()
+          ..registerAll([TableBackend(visionTokensPerImage: 140)]);
+        final plugin = shell.create();
+        plugins.add(plugin);
+        await fixture.activate(plugin, model: 'm.tflite', tokenizer: 'm.json');
+        final at140 = await plugin.createEmbeddingModel(supportImage: true);
+        final imageDecider = await at140.createDecider(
+          options: _imageOptions(),
+          calibration: const DeciderCalibration.none(),
+        );
+        final textDecider = await at140.createDecider(
+          options: _options(),
+          calibration: const DeciderCalibration.none(),
+        );
+
+        // The app closes the embedder; the next choose re-resolves through
+        // core, which now builds at 70 tokens per image.
+        await at140.close();
+        EmbeddingRegistry.instance
+          ..reset()
+          ..registerAll([TableBackend(visionTokensPerImage: 70)]);
+        await expectLater(
+          imageDecider.choose(DeciderInput(EmbeddingInput.text('about a'))),
+          throwsA(
+            isA<DeciderSpaceMismatchException>()
+                .having((e) => e.expected, 'expected', contains('vision=140'))
+                .having((e) => e.actual, 'actual', contains('vision=70')),
+          ),
+        );
+        expect(
+          (await textDecider.choose(
+            DeciderInput(EmbeddingInput.text('about b')),
+          )).choice,
+          'b',
         );
       });
     }

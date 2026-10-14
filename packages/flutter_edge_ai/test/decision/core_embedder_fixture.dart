@@ -24,11 +24,16 @@ const tableVectors = <String, List<double>>{
   'about b': [0.05, 1, 0],
 };
 
-/// Describes a table pass for every spec, reporting [activeBackend].
+/// Describes a table pass for every spec, reporting [activeBackend] and, for
+/// a model that declared images, [visionTokensPerImage].
 final class TableBackend extends EmbeddingBackendProvider {
-  TableBackend({this.activeBackend = PreferredBackend.cpu});
+  TableBackend({
+    this.activeBackend = PreferredBackend.cpu,
+    this.visionTokensPerImage,
+  });
 
   final PreferredBackend? activeBackend;
+  final int? visionTokensPerImage;
 
   @override
   String get name => 'table';
@@ -40,23 +45,29 @@ final class TableBackend extends EmbeddingBackendProvider {
   Future<EmbeddingPassDescriptor<Object>> describe(
     EmbeddingModelSpec spec,
     RuntimeConfig config,
-  ) async => EmbeddingPassDescriptor<String>(
+  ) async => EmbeddingPassDescriptor<({int? budget})>(
     engineTag: 'Table',
     factory: _buildTablePass,
-    config: config.modelPath,
+    config: (budget: config.supportImage ? visionTokensPerImage : null),
     activeBackend: activeBackend,
   );
 }
 
-EmbeddingPass _buildTablePass(String modelPath) => _TablePass();
+EmbeddingPass _buildTablePass(({int? budget}) config) =>
+    _TablePass(config.budget);
 
 /// Runs in core's worker isolate.
 final class _TablePass extends EmbeddingPass {
+  _TablePass(this._budget);
+
+  final int? _budget;
+
   @override
   Future<EmbeddingPassInfo> load() async => EmbeddingPassInfo(
     dimension: 3,
     modalities: const {EmbeddingModality.text, EmbeddingModality.image},
     imageFormats: {EncodedMediaFormat.png},
+    visionTokensPerImage: _budget,
   );
 
   @override

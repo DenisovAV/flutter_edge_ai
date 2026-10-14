@@ -213,7 +213,8 @@ final class DeciderProvenance {
   final String calibration;
 
   /// The embedding space the decider works in: the model's identity, its
-  /// dimension, its backend and the task prefix.
+  /// dimension, its backend, the image budget of a decider fitted on images,
+  /// and the task prefix.
   final String spaceId;
 
   /// Time spent embedding the input (shared by `Decider.chooseAll`'s

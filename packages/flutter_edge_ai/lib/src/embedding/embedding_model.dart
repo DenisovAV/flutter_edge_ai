@@ -149,7 +149,9 @@ abstract base class EmbeddingModel {
   /// with a null [activeBackend] it must name the backend too. The space id
   /// also holds the dimension, [activeBackend] and the task prefix, so a
   /// decider fitted on the CPU file is never loaded onto an NPU bundle's
-  /// vectors.
+  /// vectors, and — when an option example or a labelled request is an
+  /// image — the engine's image budget (EmbeddingGemma 2: 140 or 70 tokens
+  /// per image), so image vectors of one budget never meet the other's.
   ///
   /// [cancelToken] stops the embedding of the options and the fit (natively
   /// the fit's isolate is killed; on web the fit stops at its next yield);

@@ -56,7 +56,18 @@ const deciderArtifactVersion = 1;
 /// refused without an [embedderId] — WebGPU and WASM would otherwise share
 /// one space; with one, the id has no backend term and the caller's id must
 /// tell those apart.
-String deciderSpaceId(EmbeddingModel embedder, {String? embedderId}) {
+///
+/// [images]: the decider was fitted on at least one image (an option example
+/// or a labelled request). Then the id also carries the embedder's image
+/// budget (`EmbeddingPassInfo.visionTokensPerImage`, when the engine reports
+/// one): the same image gives another vector at 70 tokens than at 140. A
+/// decider fitted on text alone leaves it out, so widening the embedder to
+/// images does not move its space.
+String deciderSpaceId(
+  EmbeddingModel embedder, {
+  String? embedderId,
+  bool images = false,
+}) {
   final String identity;
   if (embedderId != null) {
     if (embedderId.isEmpty) {
@@ -92,8 +103,12 @@ String deciderSpaceId(EmbeddingModel embedder, {String? embedderId}) {
           'weights and the backend they run on',
     );
   }
+  final vision = images && embedder is CommonEmbeddingModel
+      ? embedder.visionTokensPerImage
+      : null;
   return 'model=$identity;dim=${embedder.dimension};'
       '${backend == null ? '' : 'backend=${backend.name};'}'
+      '${vision == null ? '' : 'vision=$vision;'}'
       'prefix=${deciderTaskType.prefix}';
 }
 
@@ -135,7 +150,14 @@ Future<Decider> createEmbeddingDecider(
   // Read once: an unmodifiable copy the calibration made.
   final labelledRows = labelledRowsOf(calibration);
   _validateOptions(opts, method, calibration, labelledRows);
-  final spaceId = deciderSpaceId(embedder, embedderId: embedderId);
+  final images =
+      opts.any((o) => o.examples.any((e) => e.images.isNotEmpty)) ||
+      (labelledRows?.any((row) => row.input.images.isNotEmpty) ?? false);
+  final spaceId = deciderSpaceId(
+    embedder,
+    embedderId: embedderId,
+    images: images,
+  );
   final d = embedder.dimension;
 
   final inputs = <EmbeddingInput>[];
@@ -261,6 +283,7 @@ Future<Decider> createEmbeddingDecider(
   final decider = EmbeddingDecider(
     embedder: embedder,
     embedderId: embedderId,
+    images: images,
     options: opts,
     method: method,
     calibration: calibration.kind,
@@ -435,6 +458,7 @@ final class EmbeddingDecider extends Decider {
   EmbeddingDecider({
     required this._embedder,
     required this.embedderId,
+    required this.images,
     required List<DeciderOption> options,
     required this.method,
     required this.calibration,
@@ -463,6 +487,11 @@ final class EmbeddingDecider extends Decider {
   /// The caller's `embedderId`, or null: the space id of a replacement is
   /// computed with it.
   final String? embedderId;
+
+  /// Whether the fit saw an image (an option example or a labelled request):
+  /// then [spaceId] carries the embedder's image budget, and a replacement
+  /// must have the same one.
+  final bool images;
 
   /// The replacement in flight, shared by every request that found the
   /// embedder closed.
@@ -652,7 +681,7 @@ final class EmbeddingDecider extends Decider {
 
   /// Uses [next] from now on — when its embedding space is this decider's.
   void _adopt(EmbeddingModel next) {
-    final actual = deciderSpaceId(next, embedderId: embedderId);
+    final actual = deciderSpaceId(next, embedderId: embedderId, images: images);
     if (actual != spaceId) {
       throw DeciderSpaceMismatchException(
         'The embedder core now serves in place of this decider\'s is in '
@@ -796,6 +825,7 @@ final class EmbeddingDecider extends Decider {
       'version': deciderArtifactVersion,
       'kind': 'embedding',
       'spaceId': spaceId,
+      if (images) 'imageInputs': true,
       'dimension': d,
       'taskType': deciderTaskType.name,
       'method': method.name,
@@ -905,7 +935,15 @@ Future<Decider> loadEmbeddingDecider(
     );
   }
   final expected = _field<String>(artifact, 'spaceId');
-  final actual = deciderSpaceId(embedder, embedderId: embedderId);
+  final images = artifact['imageInputs'] ?? false;
+  if (images is! bool) {
+    throw const FormatException('Decider artifact imageInputs is not a bool.');
+  }
+  final actual = deciderSpaceId(
+    embedder,
+    embedderId: embedderId,
+    images: images,
+  );
   if (expected != actual) {
     throw DeciderSpaceMismatchException(
       'The decider was fitted in another embedding space: its vectors do not '
@@ -1057,6 +1095,7 @@ Future<Decider> loadEmbeddingDecider(
   return EmbeddingDecider(
     embedder: embedder,
     embedderId: embedderId,
+    images: images,
     options: options,
     method: method,
     calibration: calibrationKind,

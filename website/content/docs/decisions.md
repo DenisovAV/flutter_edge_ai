@@ -341,7 +341,13 @@ web, where core does not read sizes, the names alone). A decider fitted on the
 CPU file is refused on a per-SoC NPU bundle with
 `DeciderSpaceMismatchException`: EmbeddingGemma 2's NPU vectors against its
 CPU file's measured cosine 0.83 on average for short texts, rising to 0.995 at
-400 words, and 0.86–0.88 for images. A malformed or newer artifact, or one
+400 words, and 0.86–0.88 for images. A decider fitted on at least one image
+(an option example or a labelled request) also carries the embedder's image
+budget — EmbeddingGemma 2 encodes an image into 140 tokens, or 70 with
+`LiteRtEmbeddingBackend(visionTokensPerImage: 70)`, and the same photo gives
+another vector under the other budget — so it is refused at the other budget
+too; a decider fitted on text alone is not, and an embedder widened to images
+does not move its space. A malformed or newer artifact, or one
 that contradicts itself, is a `FormatException`. Media examples are not stored
 (their count is); a restored option lists its text examples.
 

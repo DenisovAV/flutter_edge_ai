@@ -9,13 +9,14 @@ abstract base class EmbeddingPass
   method Future<EmbeddingPassInfo> load() abstract
 
 final class EmbeddingPassInfo
-  constructor const EmbeddingPassInfo({required int dimension, Set<EmbeddingModality> modalities = const {EmbeddingModality.text}, int? maxInputTokens, Set<EncodedMediaFormat> imageFormats = const {}, Set<EncodedMediaFormat> audioFormats = const {}, bool combinedInputs = false})
+  constructor const EmbeddingPassInfo({required int dimension, Set<EmbeddingModality> modalities = const {EmbeddingModality.text}, int? maxInputTokens, Set<EncodedMediaFormat> imageFormats = const {}, Set<EncodedMediaFormat> audioFormats = const {}, bool combinedInputs = false, int? visionTokensPerImage})
   field final Set<EncodedMediaFormat> audioFormats
   field final bool combinedInputs
   field final int dimension
   field final Set<EncodedMediaFormat> imageFormats
   field final int? maxInputTokens
   field final Set<EmbeddingModality> modalities
+  field final int? visionTokensPerImage
   method String toString()
 
 final class EmbeddingPassDescriptor<C extends Object>

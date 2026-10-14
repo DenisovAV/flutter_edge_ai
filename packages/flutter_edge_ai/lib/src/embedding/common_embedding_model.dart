@@ -159,6 +159,10 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
   @override
   int? get maxInputTokens => _host.info.maxInputTokens;
 
+  /// What the engine reported as [EmbeddingPassInfo.visionTokensPerImage]:
+  /// the decider keys image-fitted deciders by it.
+  int? get visionTokensPerImage => _host.info.visionTokensPerImage;
+
   @override
   bool get isClosed => _isClosed;
 

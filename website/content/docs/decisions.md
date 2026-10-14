@@ -219,18 +219,19 @@ slices of 4 ms and yields to the event loop between them (and checks the
 cancel token there), so the page keeps drawing and taking input while it
 fits. Measured on an Apple M4 Pro in Chrome 155 (headless), release builds
 (`flutter build web`, dart2js and `--wasm`), synthetic unit rows (768
-dimensions, 10 per option), cross-fit calibration:
+dimensions, 10 per option), cross-fit calibration; two runs:
 
 | Options × 10 | `centroid` fit, dart2js / wasm | `linear` fit, dart2js / wasm | Longest gap between ticks of a 16 ms timer, `linear` (`centroid`) |
 |---|---|---|---|
-| 10 | 5 / 8 ms | 48 / 63 ms | 21–22 ms (fit shorter than a tick) |
-| 50 | 17 / 17 ms | 0.91 / 1.04 s | 20–24 ms (17–18 ms) |
-| 150 | 113 / 121 ms | 10.2 / 11.4 s | 22–23 ms (21 ms) |
+| 10 | 5–16 / 8 ms | 46–48 / 60–63 ms | 20–22 ms (fit shorter than a tick) |
+| 50 | 15–17 / 17–18 ms | 0.89–0.91 / 1.04–1.05 s | 20–24 ms (15–18 ms) |
+| 150 | 113–114 / 121–129 ms | 10.2–10.8 / 11.4–11.8 s | 20–23 ms (21–23 ms) |
 
 Run without yielding, the same fits held the page for their whole length —
-10.1 s (dart2js) and 11.4 s (wasm) at 150 `linear` — so yielding costs about
-1 %. The web fit computes the same numbers as the VM:
-`test/web/decider_web_test.dart` holds it to the VM's results in the browser.
+10.1–11.0 s (dart2js) and 11.4–11.7 s (wasm) at 150 `linear`; the yields
+cost less than the run-to-run spread (±2 %). The web fit computes the same
+numbers as the VM: `test/web/decider_web_test.dart` holds it to the VM's
+results in the browser.
 
 ## Many decisions over one input
 

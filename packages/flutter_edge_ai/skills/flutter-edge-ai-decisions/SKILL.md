@@ -197,9 +197,9 @@ print('${answers[0].choice} / ${answers[1].choice}');
   (37 MB at 768 × 150, ~0.5 GB at 2000 options). Natively the fit runs on an
   isolate of its own; on web it runs on the page's thread in 4 ms slices,
   yielding to the event loop between them, so the page keeps drawing while it
-  fits (Chrome 155, M4 Pro, release build, 150 × 10 synthetic rows: 10.2 s
-  dart2js / 11.4 s wasm, longest 16 ms-timer gap 23 ms). Scores are
-  log-probabilities (`ScoreKind.logprob`).
+  fits (Chrome 155, M4 Pro, release build, 150 × 10 synthetic rows:
+  10.2–10.8 s dart2js / 11.4–11.8 s wasm, longest 16 ms-timer gap 20–23 ms).
+  Scores are log-probabilities (`ScoreKind.logprob`).
 - `DeciderCalibration.crossFit({keep: 0.95})` (default), `.minSimilarity(t)`,
   `.none()`, and `.fromLabelled(rows, maxError: 0.05)`, which also fits a
   softmax temperature, so answers carry `probabilities` and a Jev `confidence`.

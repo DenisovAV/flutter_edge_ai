@@ -67,9 +67,9 @@ const _outOfScope = [
   'convert 10 miles to kilometres',
   'who painted the Mona Lisa',
   'what is your favourite colour',
-  'какая завтра погода',
-  'сколько будет пять плюс семь',
-  'расскажи анекдот',
+  'what is the forecast for the weekend',
+  'what is five plus seven',
+  'tell me a funny story',
   'wie spät ist es',
   'wer ist der Bundeskanzler',
 ];

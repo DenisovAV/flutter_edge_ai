@@ -70,8 +70,7 @@ void main() {
       expect(catalog.fold(0, (n, a) => n + a.examples.length + 1), 920);
     });
 
-    test('every action has 3 to 6 examples, one of them Russian', () {
-      final cyrillic = RegExp('[а-яё]');
+    test('every action has 3 to 6 examples, placeholders filled in', () {
       for (final action in catalog) {
         expect(
           action.examples.length,
@@ -79,15 +78,23 @@ void main() {
           reason: action.id,
         );
         expect(
-          action.examples.where(cyrillic.hasMatch),
-          isNotEmpty,
-          reason: '${action.id} has no Russian phrasing',
-        );
-        expect(
-          action.examples.join(' '),
+          [action.description, ...action.examples].join(' '),
           isNot(contains('{')),
           reason: '${action.id} kept a template placeholder',
         );
+      }
+    });
+
+    test('no option text belongs to two actions', () {
+      final owner = <String, String>{};
+      for (final action in catalog) {
+        for (final text in {
+          _norm(action.description),
+          for (final example in action.examples) _norm(example),
+        }) {
+          final other = owner.putIfAbsent(text, () => action.id);
+          expect(other, action.id, reason: '"$text" is in both');
+        }
       }
     });
 

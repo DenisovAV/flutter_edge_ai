@@ -11,8 +11,8 @@
 //
 // None of the requests is an option's example or description, nor a
 // held-out calibration request (checked first). They check the screen's
-// wiring end to end, not the Decider's accuracy: calibrated to keep its
-// errors under 5 %, it abstains on about a third of in-scope paraphrases
+// wiring end to end, not the Decider's accuracy: calibrated for a 5 % error
+// budget, it abstains on more than a quarter of in-scope paraphrases
 // (measured by tiny_island_calibration_test.dart), so a paraphrase it
 // declines is replaced here, not counted as a regression. The suggestion
 // chips are sent last and only logged. Prints `[island]` lines: each
@@ -91,7 +91,7 @@ const _cases = <_Case>[
     play: 1.2,
     shot: 'abstain',
   ),
-  (request: 'устрой закат', expect: 'make_sunset', play: 2.5, shot: null),
+  (request: 'make the sun set', expect: 'make_sunset', play: 2.5, shot: null),
   (
     request: 'turn the lantern on',
     expect: 'turn_on(lamp)',
@@ -104,7 +104,12 @@ const _cases = <_Case>[
     play: 5,
     shot: 'night',
   ),
-  (request: 'сядь на лавочку', expect: 'sit_on(bench)', play: 5, shot: null),
+  (
+    request: 'grab a seat on the bench',
+    expect: 'sit_on(bench)',
+    play: 5,
+    shot: null,
+  ),
   (request: 'geh zum Baum', expect: 'walk_to(tree)', play: 5, shot: null),
   (request: 'I want it to rain', expect: 'start_rain', play: 3, shot: 'rain'),
   (request: 'dance a little jig', expect: 'dance', play: 6, shot: null),
@@ -129,7 +134,7 @@ const _cases = <_Case>[
     shot: null,
   ),
   (
-    request: 'выключи свет в домике',
+    request: 'turn out the lights in the cottage',
     expect: 'lights_off(house)',
     play: 4,
     shot: null,

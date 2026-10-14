@@ -38,13 +38,7 @@ final class IslandAction {
 List<IslandAction> buildIslandCatalog() {
   String fill(String template, IslandThing thing) {
     final words = islandThingWords[thing]!;
-    return template
-        .replaceAll('{t2}', words.en2)
-        .replaceAll('{t}', words.en)
-        .replaceAll('{acc}', words.acc)
-        .replaceAll('{dat}', words.dat)
-        .replaceAll('{gen}', words.gen)
-        .replaceAll('{ins}', words.ins);
+    return template.replaceAll('{t2}', words.en2).replaceAll('{t}', words.en);
   }
 
   return [

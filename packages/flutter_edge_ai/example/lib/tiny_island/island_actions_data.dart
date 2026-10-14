@@ -1,113 +1,35 @@
 // The Tiny Island action catalog, as data: every option the Decider chooses
-// among, with a short description and the phrasings it learns from. English,
-// with one Russian phrasing per option for the multilingual moment
-// (EmbeddingGemma 2 is multilingual; nothing here is translated at run time).
+// among, with a short description and the phrasings it learns from, all in
+// English. Nothing is translated at run time: EmbeddingGemma 2 is
+// multilingual, and the three German held-out requests and the German
+// screen-test case, in a language with no example here, rank their action
+// first.
 //
 // `island_catalog.dart` expands it: every verb in [genericVerbPhrases] for
 // every thing in [islandThingWords], plus [thingVerbPhrases] and
 // [globalVerbPhrases]. Placeholders in the generic templates:
-//   {t}   the thing's English name        {t2}  its other English name
-//   {acc} Russian accusative ("на дерево") {dat} dative ("к дереву")
-//   {gen} genitive ("вокруг дерева")       {ins} instrumental ("за деревом")
+//   {t}   the thing's name        {t2}  its other name
 
 import 'island_vocabulary.dart';
 
-/// How a thing is named, in English and in the four Russian cases the
-/// templates use.
-typedef IslandThingWords = ({
-  String en,
-  String en2,
-  String acc,
-  String dat,
-  String gen,
-  String ins,
-});
+/// The two names of a thing the templates use.
+typedef IslandThingWords = ({String en, String en2});
 
 /// A description and the example phrasings of one action (or, for
 /// [genericVerbPhrases], of one verb for any thing).
 typedef IslandPhrases = ({String description, List<String> examples});
 
 const Map<IslandThing, IslandThingWords> islandThingWords = {
-  IslandThing.tree: (
-    en: 'oak tree',
-    en2: 'tree',
-    acc: 'дерево',
-    dat: 'дереву',
-    gen: 'дерева',
-    ins: 'деревом',
-  ),
-  IslandThing.house: (
-    en: 'house',
-    en2: 'cottage',
-    acc: 'дом',
-    dat: 'дому',
-    gen: 'дома',
-    ins: 'домом',
-  ),
-  IslandThing.lamp: (
-    en: 'street lamp',
-    en2: 'lantern',
-    acc: 'фонарь',
-    dat: 'фонарю',
-    gen: 'фонаря',
-    ins: 'фонарём',
-  ),
-  IslandThing.well: (
-    en: 'well',
-    en2: 'stone well',
-    acc: 'колодец',
-    dat: 'колодцу',
-    gen: 'колодца',
-    ins: 'колодцем',
-  ),
-  IslandThing.chest: (
-    en: 'treasure chest',
-    en2: 'chest',
-    acc: 'сундук',
-    dat: 'сундуку',
-    gen: 'сундука',
-    ins: 'сундуком',
-  ),
-  IslandThing.flowers: (
-    en: 'flower bed',
-    en2: 'flowers',
-    acc: 'клумбу',
-    dat: 'клумбе',
-    gen: 'клумбы',
-    ins: 'клумбой',
-  ),
-  IslandThing.rock: (
-    en: 'big rock',
-    en2: 'boulder',
-    acc: 'камень',
-    dat: 'камню',
-    gen: 'камня',
-    ins: 'камнем',
-  ),
-  IslandThing.bench: (
-    en: 'bench',
-    en2: 'wooden bench',
-    acc: 'скамейку',
-    dat: 'скамейке',
-    gen: 'скамейки',
-    ins: 'скамейкой',
-  ),
-  IslandThing.campfire: (
-    en: 'campfire',
-    en2: 'fire pit',
-    acc: 'костёр',
-    dat: 'костру',
-    gen: 'костра',
-    ins: 'костром',
-  ),
-  IslandThing.sign: (
-    en: 'signpost',
-    en2: 'sign',
-    acc: 'табличку',
-    dat: 'табличке',
-    gen: 'таблички',
-    ins: 'табличкой',
-  ),
+  IslandThing.tree: (en: 'oak tree', en2: 'tree'),
+  IslandThing.house: (en: 'house', en2: 'cottage'),
+  IslandThing.lamp: (en: 'street lamp', en2: 'lantern'),
+  IslandThing.well: (en: 'well', en2: 'stone well'),
+  IslandThing.chest: (en: 'treasure chest', en2: 'chest'),
+  IslandThing.flowers: (en: 'flower bed', en2: 'flowers'),
+  IslandThing.rock: (en: 'big rock', en2: 'boulder'),
+  IslandThing.bench: (en: 'bench', en2: 'wooden bench'),
+  IslandThing.campfire: (en: 'campfire', en2: 'fire pit'),
+  IslandThing.sign: (en: 'signpost', en2: 'sign'),
 };
 
 /// Verbs that apply to every thing on the island.
@@ -118,7 +40,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'walk to the {t}',
       'go over to the {t2}',
       'head to the {t}',
-      'иди к {dat}',
+      'take a walk over to the {t2}',
     ],
   ),
   IslandVerb.runTo: (
@@ -127,7 +49,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'run to the {t}',
       'sprint to the {t2}',
       'hurry over to the {t}',
-      'беги к {dat}',
+      'run straight to the {t2}',
     ],
   ),
   IslandVerb.sneakTo: (
@@ -136,7 +58,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'sneak up to the {t}',
       'tiptoe quietly to the {t2}',
       'creep slowly toward the {t}',
-      'подкрадись к {dat}',
+      'slip silently up to the {t2}',
     ],
   ),
   IslandVerb.lookAt: (
@@ -145,7 +67,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'look at the {t}',
       'turn to face the {t2}',
       'check out the {t}',
-      'посмотри на {acc}',
+      'gaze at the {t2}',
     ],
   ),
   IslandVerb.pointAt: (
@@ -154,7 +76,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'point at the {t}',
       'show me where the {t2} is',
       'point your finger at the {t}',
-      'покажи на {acc}',
+      'point toward the {t2}',
     ],
   ),
   IslandVerb.touch: (
@@ -163,7 +85,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'touch the {t}',
       'put your hand on the {t2}',
       'tap the {t}',
-      'потрогай {acc}',
+      'reach out and touch the {t2}',
     ],
   ),
   IslandVerb.kick: (
@@ -172,7 +94,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'kick the {t}',
       'give the {t2} a kick',
       'boot the {t}',
-      'пни {acc}',
+      'kick the {t2} hard',
     ],
   ),
   IslandVerb.hideBehind: (
@@ -181,7 +103,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'hide behind the {t}',
       'take cover behind the {t2}',
       'duck behind the {t}',
-      'спрячься за {ins}',
+      'stay hidden behind the {t2}',
     ],
   ),
   IslandVerb.walkAround: (
@@ -190,7 +112,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'walk around the {t}',
       'circle the {t2}',
       'do a lap around the {t}',
-      'обойди вокруг {gen}',
+      'loop around the {t2}',
     ],
   ),
   IslandVerb.waveAt: (
@@ -199,7 +121,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'wave at the {t}',
       'say hi to the {t2}',
       'wave hello to the {t}',
-      'помаши {dat}',
+      'wave to the {t2}',
     ],
   ),
   IslandVerb.danceBy: (
@@ -208,7 +130,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'dance next to the {t}',
       'do a little dance by the {t2}',
       'boogie beside the {t}',
-      'потанцуй у {gen}',
+      'have a dance party at the {t2}',
     ],
   ),
   IslandVerb.cameraOn: (
@@ -217,7 +139,7 @@ const Map<IslandVerb, IslandPhrases> genericVerbPhrases = {
       'zoom the camera in on the {t}',
       'show me the {t2} up close',
       'focus the camera on the {t}',
-      'покажи {acc} крупным планом',
+      'aim the camera at the {t2}',
     ],
   ),
 };
@@ -233,7 +155,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'climb the tree',
         'climb up into the branches of the oak',
         'get up the tree',
-        'залезь на дерево',
+        'shimmy up the trunk of the tree',
       ],
     ),
   ),
@@ -246,7 +168,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'shake the tree',
         'shake the branches of the oak',
         'give the tree a good shake',
-        'потряси дерево',
+        'shake the oak tree hard',
       ],
     ),
   ),
@@ -259,7 +181,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'hug the tree',
         'give the oak a hug',
         'wrap your arms around the tree',
-        'обними дерево',
+        'give the tree a big hug',
       ],
     ),
   ),
@@ -272,7 +194,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'sit under the tree',
         'rest in the shade of the oak',
         'take a seat beneath the tree',
-        'посиди под деревом',
+        'sit down beneath the oak',
       ],
     ),
   ),
@@ -285,7 +207,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'open the door',
         'open the front door of the house',
         'swing the cottage door open',
-        'открой дверь',
+        'open the door of the cottage',
       ],
     ),
   ),
@@ -298,7 +220,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'close the door',
         'shut the front door',
         'close the house door behind you',
-        'закрой дверь',
+        'pull the door shut',
       ],
     ),
   ),
@@ -311,7 +233,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'knock on the door',
         'knock knock on the house door',
         'rap on the cottage door',
-        'постучи в дверь',
+        'give the door a knock',
       ],
     ),
   ),
@@ -324,7 +246,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'go inside the house',
         'enter the cottage',
         'go home',
-        'зайди в дом',
+        'head indoors',
       ],
     ),
   ),
@@ -337,7 +259,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'come out of the house',
         'leave the cottage',
         'step outside',
-        'выйди из дома',
+        'walk out the front door',
       ],
     ),
   ),
@@ -350,7 +272,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'turn on the lights in the house',
         'light up the windows',
         'switch the house lights on',
-        'включи свет в доме',
+        'make the house bright inside',
       ],
     ),
   ),
@@ -363,7 +285,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'turn off the lights in the house',
         'make the windows dark',
         'switch the house lights off',
-        'выключи свет в доме',
+        'kill the lights in the house',
       ],
     ),
   ),
@@ -376,7 +298,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'turn on the lamp',
         'switch the lantern on',
         'light the street lamp',
-        'включи фонарь',
+        'light up the lantern',
       ],
     ),
   ),
@@ -389,7 +311,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'turn off the lamp',
         'switch the lantern off',
         'put out the street light',
-        'выключи фонарь',
+        'make the lantern go dark',
       ],
     ),
   ),
@@ -402,7 +324,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'draw water from the well',
         'fill the bucket at the well',
         'get some water',
-        'набери воды из колодца',
+        'collect water at the well',
       ],
     ),
   ),
@@ -415,7 +337,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'throw a coin in the well',
         'make a wish at the well',
         'toss a penny into the well',
-        'брось монетку в колодец',
+        'flip a coin into the well',
       ],
     ),
   ),
@@ -428,7 +350,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'look down into the well',
         'peek inside the well',
         'how deep is the well',
-        'загляни в колодец',
+        'glance down into the well',
       ],
     ),
   ),
@@ -441,7 +363,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'open the chest',
         'open the treasure chest',
         'lift the lid of the chest',
-        'открой сундук',
+        'unlock the treasure chest',
       ],
     ),
   ),
@@ -454,7 +376,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'close the chest',
         'shut the lid of the treasure chest',
         'close the treasure box',
-        'закрой сундук',
+        'close up the chest',
       ],
     ),
   ),
@@ -467,7 +389,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'take the treasure',
         'grab the gold from the chest',
         'loot the chest',
-        'достань сокровища из сундука',
+        'collect the treasure',
       ],
     ),
   ),
@@ -480,7 +402,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'water the flowers',
         'give the flower bed some water',
         'water the plants',
-        'полей цветы',
+        'sprinkle the flower bed',
       ],
     ),
   ),
@@ -493,7 +415,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'pick a flower',
         'pluck a flower from the bed',
         'get me a flower',
-        'сорви цветок',
+        'pick one of the flowers',
       ],
     ),
   ),
@@ -506,7 +428,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'smell the flowers',
         'sniff the roses',
         'stop and smell the flowers',
-        'понюхай цветы',
+        'breathe in the scent of the flowers',
       ],
     ),
   ),
@@ -519,7 +441,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'plant a seed',
         'plant something new in the garden',
         'sow some seeds in the flower bed',
-        'посади семечко',
+        'dig a hole and plant a seed',
       ],
     ),
   ),
@@ -532,7 +454,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'sit on the rock',
         'take a seat on the big stone',
         'perch on the boulder',
-        'сядь на камень',
+        'rest on the big rock',
       ],
     ),
   ),
@@ -545,7 +467,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'climb onto the rock',
         'stand on top of the boulder',
         'get up on the big stone',
-        'залезь на камень',
+        'climb up the boulder',
       ],
     ),
   ),
@@ -558,7 +480,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'push the rock',
         'try to move the boulder',
         'shove the big stone',
-        'толкни камень',
+        'push the boulder out of the way',
       ],
     ),
   ),
@@ -571,7 +493,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'sit on the bench',
         'take a seat on the bench',
         'have a rest on the wooden bench',
-        'сядь на скамейку',
+        'park yourself on the bench',
       ],
     ),
   ),
@@ -584,7 +506,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'lie down on the bench',
         'take a nap on the bench',
         'stretch out on the wooden bench',
-        'приляг на скамейку',
+        'lie flat on the bench',
       ],
     ),
   ),
@@ -597,7 +519,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'light the campfire',
         'start a fire',
         'make a fire in the fire pit',
-        'разожги костёр',
+        'kindle the campfire',
       ],
     ),
   ),
@@ -610,7 +532,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'put out the fire',
         'extinguish the campfire',
         'douse the flames',
-        'потуши костёр',
+        'put the campfire out',
       ],
     ),
   ),
@@ -623,7 +545,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'warm your hands by the fire',
         'warm up at the campfire',
         'I am cold, get warm by the fire',
-        'погрейся у костра',
+        'warm yourself at the fire pit',
       ],
     ),
   ),
@@ -636,7 +558,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'roast marshmallows',
         'toast a marshmallow over the fire',
         'cook something on the campfire',
-        'пожарь зефир на костре',
+        'roast marshmallows on a stick',
       ],
     ),
   ),
@@ -649,7 +571,7 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
         'read the sign',
         'what does the signpost say',
         'read what is written on the sign',
-        'прочитай табличку',
+        'read out the words on the sign',
       ],
     ),
   ),
@@ -659,15 +581,25 @@ const List<(IslandVerb, IslandThing, IslandPhrases)> thingVerbPhrases = [
 const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
   IslandVerb.jump: (
     description: 'Jump up in the air.',
-    examples: ['jump', 'hop up and down', 'jump as high as you can', 'прыгни'],
+    examples: [
+      'jump',
+      'hop up and down',
+      'jump as high as you can',
+      'jump up high',
+    ],
   ),
   IslandVerb.dance: (
     description: 'Dance on the spot.',
-    examples: ['dance', 'show me your moves', 'do a happy dance', 'потанцуй'],
+    examples: [
+      'dance',
+      'show me your moves',
+      'do a happy dance',
+      'dance for me',
+    ],
   ),
   IslandVerb.wave: (
     description: 'Wave hello to the viewer.',
-    examples: ['wave', 'wave hello', 'say hello to me', 'помаши мне'],
+    examples: ['wave', 'wave hello', 'say hello to me', 'wave goodbye'],
   ),
   IslandVerb.sleep: (
     description: 'Lie down on the ground and go to sleep.',
@@ -675,7 +607,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'go to sleep',
       'take a nap',
       'lie down and rest',
-      'ложись спать',
+      'get some sleep',
     ],
   ),
   IslandVerb.wakeUp: (
@@ -684,7 +616,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'wake up',
       'rise and shine',
       'get up, it is morning',
-      'проснись',
+      'open your eyes',
     ],
   ),
   IslandVerb.sitDown: (
@@ -693,16 +625,16 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'sit down',
       'have a seat on the grass',
       'sit on the ground',
-      'сядь',
+      'sit yourself down',
     ],
   ),
   IslandVerb.standUp: (
     description: 'Stand up.',
-    examples: ['stand up', 'get on your feet', 'get up', 'встань'],
+    examples: ['stand up', 'get on your feet', 'get up', 'rise to your feet'],
   ),
   IslandVerb.crouch: (
     description: 'Crouch down low.',
-    examples: ['crouch', 'duck down', 'get low', 'пригнись'],
+    examples: ['crouch', 'duck down', 'get low', 'keep your head down'],
   ),
   IslandVerb.spin: (
     description: 'Spin around in a circle.',
@@ -710,20 +642,25 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'spin around',
       'turn around in a full circle',
       'do a pirouette',
-      'покружись',
+      'spin in place',
     ],
   ),
   IslandVerb.nod: (
     description: 'Nod yes.',
-    examples: ['nod', 'say yes', 'nod your head', 'кивни'],
+    examples: ['nod', 'say yes', 'nod your head', 'nod along'],
   ),
   IslandVerb.shakeHead: (
     description: 'Shake your head no.',
-    examples: ['shake your head', 'say no', 'nope', 'покачай головой'],
+    examples: [
+      'shake your head',
+      'say no',
+      'nope',
+      'shake your head from side to side',
+    ],
   ),
   IslandVerb.cheer: (
     description: 'Cheer and celebrate.',
-    examples: ['cheer', 'celebrate', 'hooray, we did it', 'порадуйся'],
+    examples: ['cheer', 'celebrate', 'hooray, we did it', 'give a big cheer'],
   ),
   IslandVerb.turnLeft: (
     description: 'Turn to the left.',
@@ -731,7 +668,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'turn left',
       'face left',
       'rotate to your left',
-      'повернись налево',
+      'turn to your left',
     ],
   ),
   IslandVerb.turnRight: (
@@ -740,7 +677,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'turn right',
       'face right',
       'rotate to your right',
-      'повернись направо',
+      'turn to your right',
     ],
   ),
   IslandVerb.turnAround: (
@@ -749,7 +686,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'turn around',
       'face the other way',
       'turn your back',
-      'развернись',
+      'face backwards',
     ],
   ),
   IslandVerb.walkForward: (
@@ -758,7 +695,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'walk forward',
       'take a few steps forward',
       'move ahead a bit',
-      'иди вперёд',
+      'go forward a little',
     ],
   ),
   IslandVerb.comeBack: (
@@ -767,12 +704,12 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'come back to the middle',
       'go back to the center of the island',
       'return to where you started',
-      'вернись в центр',
+      'walk back to the centre',
     ],
   ),
   IslandVerb.stop: (
     description: 'Stop and stand still.',
-    examples: ['stop', 'stand still', 'freeze', 'стой'],
+    examples: ['stop', 'stand still', 'freeze', 'halt'],
   ),
   IslandVerb.lookAtMe: (
     description: 'Turn and look at the viewer.',
@@ -780,7 +717,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'look at me',
       'face the camera',
       'turn towards me',
-      'посмотри на меня',
+      'turn your face to me',
     ],
   ),
   IslandVerb.makeDay: (
@@ -789,7 +726,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'make it day',
       'good morning, bring out the sun',
       'switch to daytime',
-      'сделай день',
+      'bring back the daylight',
     ],
   ),
   IslandVerb.makeNight: (
@@ -798,7 +735,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'make it night',
       'turn off the sun',
       'it is night time',
-      'сделай ночь',
+      'make it dark outside',
     ],
   ),
   IslandVerb.makeSunset: (
@@ -807,7 +744,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'make it sunset',
       'evening please',
       'show me a sunset',
-      'сделай закат',
+      'turn the sky orange',
     ],
   ),
   IslandVerb.startRain: (
@@ -816,7 +753,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'make it rain',
       'start the rain',
       'let it pour',
-      'пусть пойдёт дождь',
+      'start a rain shower',
     ],
   ),
   IslandVerb.stopRain: (
@@ -825,7 +762,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'stop the rain',
       'clear skies please',
       'make the weather nice again',
-      'останови дождь',
+      'end the rain',
     ],
   ),
   IslandVerb.zoomIn: (
@@ -834,7 +771,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'zoom in',
       'get closer',
       'move the camera in',
-      'приблизь камеру',
+      'zoom the view in',
     ],
   ),
   IslandVerb.zoomOut: (
@@ -843,7 +780,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'zoom out',
       'pull the camera back',
       'show more of the scene',
-      'отдали камеру',
+      'zoom the view out',
     ],
   ),
   IslandVerb.orbitLeft: (
@@ -852,7 +789,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'rotate the camera left',
       'orbit to the left',
       'swing the view left',
-      'поверни камеру влево',
+      'circle the camera to the left',
     ],
   ),
   IslandVerb.orbitRight: (
@@ -861,7 +798,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'rotate the camera right',
       'orbit to the right',
       'swing the view right',
-      'поверни камеру вправо',
+      'circle the camera to the right',
     ],
   ),
   IslandVerb.topView: (
@@ -870,7 +807,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'top view',
       'show the island from above',
       'bird\'s eye view',
-      'вид сверху',
+      'show me an aerial view',
     ],
   ),
   IslandVerb.resetCamera: (
@@ -879,7 +816,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'reset the camera',
       'show the whole island',
       'default view',
-      'покажи весь остров',
+      'reset the view',
     ],
   ),
   IslandVerb.followMe: (
@@ -888,7 +825,7 @@ const Map<IslandVerb, IslandPhrases> globalVerbPhrases = {
       'follow the character with the camera',
       'camera, follow me',
       'keep the camera on the hero',
-      'следи за мной камерой',
+      'chase the character with the camera',
     ],
   ),
 };

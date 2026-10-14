@@ -9,8 +9,8 @@
 // suggestion chips and the screen test's requests are different sentences
 // again (see island_suggestions.dart and integration_test/tiny_island_test.dart).
 //
-// Mostly English; 17 Russian (the catalog has one Russian phrasing per
-// option) and 3 German (the catalog has none: cross-lingual).
+// 141 English and 3 German. The catalog is English only, so the German ones
+// are cross-lingual.
 
 /// One held-out request and the action id it means.
 typedef IslandHeldOutRequest = ({String text, String actionId});
@@ -18,7 +18,7 @@ typedef IslandHeldOutRequest = ({String text, String actionId});
 const List<IslandHeldOutRequest> islandHeldOutRequests = [
   // Any thing.
   (text: 'make your way to the well', actionId: 'walk_to(well)'),
-  (text: 'подойди к скамейке', actionId: 'walk_to(bench)'),
+  (text: 'go up to the bench', actionId: 'walk_to(bench)'),
   (text: 'dash over to the campfire', actionId: 'run_to(campfire)'),
   (text: 'race to the big rock as fast as you can', actionId: 'run_to(rock)'),
   (text: 'quietly creep up on the treasure chest', actionId: 'sneak_to(chest)'),
@@ -29,11 +29,11 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   (text: 'have a look at the signpost', actionId: 'look_at(sign)'),
   (text: 'glance over at the oak', actionId: 'look_at(tree)'),
   (text: 'where is the lantern? point to it', actionId: 'point_at(lamp)'),
-  (text: 'укажи на колодец', actionId: 'point_at(well)'),
+  (text: 'point out the well', actionId: 'point_at(well)'),
   (text: 'go and feel the boulder with your hand', actionId: 'touch(rock)'),
   (text: 'lay a hand on the bench', actionId: 'touch(bench)'),
   (text: 'take a kick at the well', actionId: 'kick(well)'),
-  (text: 'ударь ногой по камню', actionId: 'kick(rock)'),
+  (text: 'hit the boulder with your foot', actionId: 'kick(rock)'),
   (text: 'get out of sight behind the oak tree', actionId: 'hide_behind(tree)'),
   (text: 'hide yourself behind the cottage', actionId: 'hide_behind(house)'),
   (text: 'go all the way around the well', actionId: 'walk_around(well)'),
@@ -49,7 +49,7 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
     text: 'give me a close-up of the treasure chest',
     actionId: 'camera_on(chest)',
   ),
-  (text: 'камера на колодец', actionId: 'camera_on(well)'),
+  (text: 'camera on the well', actionId: 'camera_on(well)'),
 
   // One thing each.
   (text: 'scramble up the oak', actionId: 'climb(tree)'),
@@ -59,7 +59,7 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   (text: 'be a tree hugger', actionId: 'hug(tree)'),
   (text: 'embrace the oak tree', actionId: 'hug(tree)'),
   (text: 'relax in the shade under the oak', actionId: 'sit_under(tree)'),
-  (text: 'присядь в тени дуба', actionId: 'sit_under(tree)'),
+  (text: 'sit in the shadow of the tree', actionId: 'sit_under(tree)'),
   (text: 'open up the house', actionId: 'open(house)'),
   (text: 'pop the treasure chest open', actionId: 'open(chest)'),
   (text: 'shut the door of the cottage', actionId: 'close(house)'),
@@ -67,7 +67,7 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   (text: 'see if anyone is home by knocking', actionId: 'knock(house)'),
   (text: 'tap on the front door', actionId: 'knock(house)'),
   (text: 'step into the house', actionId: 'go_inside(house)'),
-  (text: 'войди в домик', actionId: 'go_inside(house)'),
+  (text: 'go into the little house', actionId: 'go_inside(house)'),
   (text: 'get out of the house', actionId: 'come_out(house)'),
   (text: 'come back outside', actionId: 'come_out(house)'),
   (text: 'put the lights on inside the cottage', actionId: 'lights_on(house)'),
@@ -77,11 +77,11 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   (text: 'switch on the street light', actionId: 'turn_on(lamp)'),
   (text: 'make the lantern shine', actionId: 'turn_on(lamp)'),
   (text: 'switch off the street lamp', actionId: 'turn_off(lamp)'),
-  (text: 'погаси фонарь', actionId: 'turn_off(lamp)'),
+  (text: 'shut off the lantern', actionId: 'turn_off(lamp)'),
   (text: 'pull up a bucket of water', actionId: 'draw_water(well)'),
   (text: 'fetch water from the well', actionId: 'draw_water(well)'),
   (text: 'drop a coin into the well for luck', actionId: 'throw_coin(well)'),
-  (text: 'загадай желание у колодца', actionId: 'throw_coin(well)'),
+  (text: 'make a wish with a coin', actionId: 'throw_coin(well)'),
   (text: 'peer down the well', actionId: 'peek_into(well)'),
   (text: 'what is at the bottom of the well', actionId: 'peek_into(well)'),
   (
@@ -90,9 +90,9 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   ),
   (text: 'help yourself to the treasure', actionId: 'take_treasure(chest)'),
   (text: 'the flowers look thirsty', actionId: 'water(flowers)'),
-  (text: 'полей клумбу', actionId: 'water(flowers)'),
+  (text: 'water the flower bed', actionId: 'water(flowers)'),
   (text: 'cut a flower for me', actionId: 'pick(flowers)'),
-  (text: 'нарви цветов', actionId: 'pick(flowers)'),
+  (text: 'pick some flowers for me', actionId: 'pick(flowers)'),
   (text: 'how do the flowers smell?', actionId: 'smell(flowers)'),
   (text: 'take a sniff of the flowers', actionId: 'smell(flowers)'),
   (text: 'grow a new flower in the bed', actionId: 'plant(flowers)'),
@@ -104,7 +104,7 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   (text: 'lay down on the bench', actionId: 'lie_on(bench)'),
   (text: 'have a lie-down on the bench', actionId: 'lie_on(bench)'),
   (text: 'get the campfire going', actionId: 'light(campfire)'),
-  (text: 'зажги костёр', actionId: 'light(campfire)'),
+  (text: 'set the campfire alight', actionId: 'light(campfire)'),
   (text: 'stamp out the campfire', actionId: 'put_out(campfire)'),
   (text: 'let the fire die out', actionId: 'put_out(campfire)'),
   (
@@ -127,15 +127,15 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   (text: 'time for bed', actionId: 'sleep'),
   (text: 'have a little snooze', actionId: 'sleep'),
   (text: 'time to wake up, sleepyhead', actionId: 'wake_up'),
-  (text: 'хватит спать', actionId: 'wake_up'),
+  (text: 'that is enough sleeping', actionId: 'wake_up'),
   (text: 'take a seat right there', actionId: 'sit_down'),
   (text: 'sit down on the grass', actionId: 'sit_down'),
   (text: 'stand back up', actionId: 'stand_up'),
   (text: 'on your feet', actionId: 'stand_up'),
   (text: 'squat down low', actionId: 'crouch'),
-  (text: 'присядь пониже', actionId: 'crouch'),
+  (text: 'make yourself small', actionId: 'crouch'),
   (text: 'twirl around', actionId: 'spin'),
-  (text: 'покрутись на месте', actionId: 'spin'),
+  (text: 'spin like a top', actionId: 'spin'),
   (text: 'nod in agreement', actionId: 'nod'),
   (text: 'give me a nod', actionId: 'nod'),
   (text: 'disagree with me', actionId: 'shake_head'),
@@ -143,9 +143,9 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   (text: 'throw your arms up and cheer', actionId: 'cheer'),
   (text: 'we won, celebrate!', actionId: 'cheer'),
   (text: 'make a left turn', actionId: 'turn_left'),
-  (text: 'поверни налево', actionId: 'turn_left'),
+  (text: 'swivel to the left', actionId: 'turn_left'),
   (text: 'make a right turn', actionId: 'turn_right'),
-  (text: 'поверни направо', actionId: 'turn_right'),
+  (text: 'swivel to the right', actionId: 'turn_right'),
   (text: 'about face', actionId: 'turn_around'),
   (text: 'turn the other way round', actionId: 'turn_around'),
   (text: 'step forward', actionId: 'walk_forward'),
@@ -161,7 +161,7 @@ const List<IslandHeldOutRequest> islandHeldOutRequests = [
   (text: 'let the sun come up', actionId: 'make_day'),
   (text: 'make it morning', actionId: 'make_day'),
   (text: 'let it get dark', actionId: 'make_night'),
-  (text: 'пусть наступит ночь', actionId: 'make_night'),
+  (text: 'bring on the night', actionId: 'make_night'),
   (text: 'let the sun go down', actionId: 'make_sunset'),
   (text: 'make it dusk', actionId: 'make_sunset'),
   (text: 'bring on the rain', actionId: 'start_rain'),

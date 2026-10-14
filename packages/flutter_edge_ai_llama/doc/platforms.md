@@ -85,7 +85,7 @@ the support matrix. Dated devices, models, commands and results are recorded in 
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
 package minimum. Runtime pins are llamadart 0.12.0, native artifacts v0.6.0-2,
-Apple companion 0.0.22 and connector-pinned Web assets v0.1.54. Upgrade the SDK
+Apple companion 0.0.22 and connector-pinned Web assets v0.1.59. Upgrade the SDK
 constraint and companion together. Web assets are checksum-verified. The SDK's
 llama.cpp native archive downloads do **not** yet verify pinned SHA-256 hashes;
 that work remains in [llamadart #1015](https://github.com/leehack/llamadart/issues/1015).

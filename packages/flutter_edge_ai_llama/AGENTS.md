@@ -4,7 +4,7 @@ This package adapts core 2.3.2+ through public engine libraries to published
 llamadart 0.12.0. GGUF routes only by its declared type. GGUF embeddings are deferred.
 
 - Minimum Flutter/Dart follows core (3.44/3.12). Connector CI pins Flutter 3.47.1
-  for reproducible checks; verify.py also accepts workspace 3.47.0. Do not raise the whole workspace floor for this adapter.
+  for reproducible checks; verify.py also reads the workspace SDK from `.fvmrc`. Do not raise the whole workspace floor for this adapter.
 - Run `python3 tool/verify.py contracts` and `python3 tool/verify.py package`.
   The latter validates hosted consumers without workspace resolution or overrides.
 - Shipped code uses `engine.dart` and conditional `engine_web.dart`, never core src.
@@ -21,3 +21,9 @@ llamadart 0.12.0. GGUF routes only by its declared type. GGUF embeddings are def
   Settings do not propagate; Apple workspace member packaging remains unqualified.
 - Keep [platforms.md](doc/platforms.md) current; qualification history belongs in the PR.
 - Publication, ownership, copyright and bundle IDs require maintainer decisions.
+
+- The SDK is bounded to one tested patch (`>=0.12.0 <0.12.1`); the Apple
+  companion is exact (`0.0.22`). Every SDK upgrade requires a coordinated
+  connector release, matching companion, Web bridge and full qualification.
+  Apple enforces the pair at build time; SDK 0.12.0 also constrains workspace
+  hooks/code_assets below 3.0. Never silently widen these constraints.

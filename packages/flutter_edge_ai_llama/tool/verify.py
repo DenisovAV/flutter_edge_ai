@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import re
+import signal
 from pathlib import Path
 import shutil
 import subprocess
@@ -47,6 +48,47 @@ def sample_native_apps(directory, stop, simulator_device=None):
             continue
 
 
+def run_smoke(command, directory, expected, timeout=None):
+    """Stream live JSON while retaining the report; stop only this child's tree."""
+    process = subprocess.Popen([str(x) for x in command], cwd=directory,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                               text=True, start_new_session=os.name != "nt")
+    output = []
+    def read_output():
+        for line in process.stdout:
+            output.append(line)
+            print(line, end="", flush=True)
+    reader = Thread(target=read_output, daemon=True)
+    reader.start()
+    try:
+        try:
+            code = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False)
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            reader.join(timeout=5)
+            raise subprocess.TimeoutExpired(command, timeout, output="".join(output))
+        reader.join(timeout=5)
+        report = "".join(output)
+        if code:
+            raise subprocess.CalledProcessError(code, command, output=report)
+        require_smoke_success(report, expected)
+    finally:
+        process.stdout.close()
+
+
+def workspace_flutter():
+    config = PACKAGE.parents[1] / ".fvmrc"
+    return json.loads(config.read_text())["flutter"] if config.is_file() else None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("lane", choices=("contracts", "native", "web", "package", "build", "device", "capabilities"))
@@ -56,6 +98,8 @@ def main():
     parser.add_argument("--storage-helper-url")
     parser.add_argument("--platform", choices=("android", "ios", "macos", "windows", "linux", "web"))
     parser.add_argument("--device")
+    parser.add_argument("--simulator-retry", action="store_true",
+                        help="iOS simulator only: bound each attempt to 10 minutes; reboot and retry startup once")
     parser.add_argument("--cpu-threads", type=int,
                         help="Packaged runtime smoke: explicit CPU generation/batch thread budget")
     parser.add_argument("--native-diagnostics", action="store_true",
@@ -70,7 +114,7 @@ def main():
     sdk = Path(flutter).parent / ("dart.bat" if os.name == "nt" else "dart")
     dart = str(sdk) if sdk.exists() else "dart"
 
-    def run(command, directory=PACKAGE, smoke=None):
+    def run(command, directory=PACKAGE, smoke=None, smoke_timeout=None):
         print("Running:", subprocess.list2cmdline([str(x) for x in command]), flush=True)
         stop = Event()
         monitor = None
@@ -80,12 +124,10 @@ def main():
             monitor = Thread(target=sample_native_apps, args=(diagnostics, stop, simulator), daemon=True)
             monitor.start()
         try:
-            result = subprocess.run([str(x) for x in command], cwd=directory, check=not smoke,
-                                    **({"stdout": subprocess.PIPE, "stderr": subprocess.STDOUT, "text": True} if smoke else {}))
             if smoke:
-                print(result.stdout, flush=True)
-                result.check_returncode()
-                require_smoke_success(result.stdout, smoke)
+                run_smoke(command, directory, smoke, timeout=smoke_timeout)
+            else:
+                subprocess.run([str(x) for x in command], cwd=directory, check=True)
         finally:
             stop.set()
             if monitor is not None:
@@ -111,6 +153,9 @@ def main():
     thread_defines = ([] if args.cpu_threads is None else
                       [f"--dart-define=GGUF_CPU_THREADS={args.cpu_threads}"])
 
+    if args.simulator_retry and (sys.platform != "darwin" or args.lane != "device" or
+                                 not re.fullmatch(r"[0-9A-Fa-f-]{36}", args.device or "")):
+        parser.error("--simulator-retry requires an explicit iOS simulator UDID on macOS")
     if args.native_diagnostics and (sys.platform != "darwin" or args.lane not in ("native", "device")):
         parser.error("--native-diagnostics requires an Apple native/device runtime lane")
     if args.lane == "capabilities":
@@ -123,8 +168,9 @@ def main():
 
     version = json.loads(subprocess.check_output([flutter, "--version", "--machine"], text=True))
     expected = (PACKAGE / ".flutter-version").read_text().strip()
-    if version["frameworkVersion"] not in ("3.47.0", expected):
-        parser.error(f"Use workspace Flutter 3.47.0 or CI Flutter {expected}")
+    workspace = workspace_flutter()
+    if version["frameworkVersion"] not in (workspace, expected):
+        parser.error(f"Use workspace Flutter {workspace or expected} or CI Flutter {expected}")
     if args.lane != "package":
         run([flutter, "pub", "get"])
     if args.lane == "contracts":
@@ -190,7 +236,23 @@ def main():
         fixture = (f"--dart-define=GGUF_MODEL_PATH={args.model_path.resolve()}" if args.model_path
                    else f"--dart-define=GGUF_MODEL_URL={args.model_url}")
         run([flutter, "pub", "get"], PACKAGE / "example")
-        run([flutter, "test", "integration_test/connector_smoke_test.dart", "-d", args.device, fixture, *thread_defines, "--reporter", "json"], PACKAGE / "example", smoke="packaged native runtime installs")
+        command = [flutter, "test", "integration_test/connector_smoke_test.dart", "-d", args.device, fixture, *thread_defines, "--reporter", "json"]
+        try:
+            run(command, PACKAGE / "example", smoke="packaged native runtime installs",
+                smoke_timeout=600 if args.simulator_retry else None)
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+            report = error.output or ""
+            startup_failure = ("Error waiting for a debug connection" in report or
+                               "Dart VM Service was not discovered" in report)
+            model_started = any("packaged native runtime installs" in line and '"testStart"' in line
+                                for line in report.splitlines())
+            if not args.simulator_retry or model_started or not (isinstance(error, subprocess.TimeoutExpired) or startup_failure):
+                raise
+            print("iOS simulator startup failed; rebooting for one bounded retry.", flush=True)
+            run(["xcrun", "simctl", "shutdown", args.device])
+            run(["xcrun", "simctl", "boot", args.device])
+            subprocess.run(["xcrun", "simctl", "bootstatus", args.device, "-b"], check=True, timeout=120)
+            run(command, PACKAGE / "example", smoke="packaged native runtime installs", smoke_timeout=600)
     elif args.lane == "capabilities":
         labels = {"tools": "native typed thinking", "audio": "native audio projector", "vision": "native vision projector", "lora": "native LoRA session", "gpu": "explicit GPU loads"}
         prefix = "TOOL" if args.capability == "tools" else args.capability.upper()
@@ -203,9 +265,7 @@ def main():
         run([flutter, "pub", "get"], PACKAGE / "example")
         target = "apk" if args.platform == "android" else args.platform
         command = [flutter, "build", target, "--release"]
-        if args.platform == "android":
-            command += ["--target-platform", "android-arm64"]
-        elif args.platform == "ios":
+        if args.platform == "ios":
             command += ["--no-codesign"]
         elif args.platform == "web":
             run([sys.executable, "tool/fetch_web_assets.py"])

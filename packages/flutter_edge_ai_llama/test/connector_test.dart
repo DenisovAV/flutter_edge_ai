@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 // ignore: implementation_imports — verifies actual provider selection for the declared GGUF routing contract.
@@ -745,6 +746,7 @@ void main() {
       final firstToken = Completer<void>();
       final subscription = session.getResponseAsync().listen(
         (_) => firstToken.complete(),
+        onError: (Object error) => expect(error, isA<StateError>()),
       );
       await firstToken.future;
       await Future.wait([
@@ -977,7 +979,15 @@ void main() {
         'recent answer',
         'latest',
       ]);
-      expect(chat.fullHistory.map((m) => m.text), [
+      expect(chat.fullHistory.take(6).map((m) => m.type), [
+        edge.MessageType.text,
+        edge.MessageType.toolCall,
+        edge.MessageType.toolResponse,
+        edge.MessageType.toolResponse,
+        edge.MessageType.text,
+        edge.MessageType.text,
+      ]);
+      expect(chat.fullHistory.map((m) => m.text).skip(5), [
         'recent turn',
         'recent answer',
         'latest',
@@ -1488,10 +1498,13 @@ void main() {
       final first = Completer<void>();
       final running = owner.getResponseAsync().listen((_) {
         if (!first.isCompleted) first.complete();
-      });
+      }, onError: (Object _) {});
       await first.future;
       await peer.addQueryChunk(edge.Message.text(text: 'queued', isUser: true));
-      final queued = peer.getResponseAsync().listen((_) {});
+      final queued = peer.getResponseAsync().listen(
+        (_) {},
+        onError: (Object _) {},
+      );
       await model.close().timeout(const Duration(seconds: 2));
       await Future.wait([running.cancel(), queued.cancel()]);
       expect(engine.maxActive, 1);
@@ -1856,6 +1869,461 @@ void main() {
     },
     skip: kIsWeb,
   );
+
+  test(
+    'blank generated arguments remain valid on next turn and restore',
+    () async {
+      engine.script = [_toolChunk(0, 'search', '', id: 'empty')];
+      final chat = await model.openChat(tools: [tool]);
+      await chat.addQuery(edge.Message.text(text: 'call', isUser: true));
+      final call =
+          await chat.generateChatResponse() as LlamaFunctionCallResponse;
+      expect(call.args, isEmpty);
+      await chat.addQuery(
+        LlamaToolResponseMessage(
+          callId: call.id,
+          toolName: call.name,
+          response: {'ok': true},
+        ),
+      );
+      engine.script = null;
+      await chat.generateChatResponse();
+      final saved = List<edge.Message>.of(chat.fullHistory);
+      for (var cycle = 0; cycle < 2; cycle++) {
+        final calls = engine.requests.last
+            .expand((m) => m.parts)
+            .whereType<llama.LlamaToolCallContent>();
+        expect(calls.single.rawJson, '{}');
+        await chat.clearHistory(replayHistory: saved);
+        await chat.addQuery(edge.Message.text(text: 'next', isUser: true));
+        await chat.generateChatResponse();
+      }
+    },
+  );
+
+  for (final args in ['null', '""', '"   "']) {
+    test('replay accepts no-argument parameters $args', () async {
+      final chat = await model.openChat(tools: [tool]);
+      await chat.clearHistory(
+        replayHistory: [
+          edge.Message.text(text: 'call', isUser: true),
+          edge.Message.toolCall(text: '{"name":"search","parameters":$args}'),
+          edge.Message.toolResponse(toolName: 'search', response: {'ok': true}),
+        ],
+      );
+      await chat.generateChatResponse();
+      expect(
+        engine.requests.last
+            .expand((m) => m.parts)
+            .whereType<llama.LlamaToolCallContent>()
+            .single
+            .rawJson,
+        '{}',
+      );
+    });
+  }
+
+  test(
+    'fullHistory survives session replacement and model close for recovery',
+    () async {
+      final chat = await model.createChat();
+      await chat.addQuery(edge.Message.text(text: 'saved', isUser: true));
+      await chat.generateChatResponse();
+      final original = List.of(chat.fullHistory);
+      await model.createChat();
+      expect(chat.fullHistory, original);
+      await model.close();
+      expect(chat.fullHistory, original);
+      engine = _FakeEngine();
+      model = LlamaInferenceModel(
+        engine: engine,
+        maxTokens: 2048,
+        activeBackend: edge.PreferredBackend.cpu,
+      );
+      final restored = await model.createChat();
+      await restored.clearHistory(replayHistory: chat.fullHistory);
+      await restored.addQuery(edge.Message.text(text: 'next', isUser: true));
+      await restored.generateChatResponse();
+      expect(engine.requests.last.map((m) => m.content), [
+        'saved',
+        'Hello world',
+        'next',
+      ]);
+      await restored.close();
+      expect(restored.fullHistory, hasLength(4));
+    },
+  );
+
+  for (final thinking in [false, true]) {
+    test(
+      'saved tool calls omit reasoning and runtime wire fields ($thinking)',
+      () async {
+        engine.script = [
+          _thinking('PRIVATE'),
+          _toolChunk(0, 'search', '{}', id: 'a'),
+        ];
+        final chat = await model.openChat(
+          tools: [tool],
+          enableThinking: thinking,
+        );
+        await chat.addQuery(edge.Message.text(text: 'call', isUser: true));
+        await chat.generateChatResponse();
+        final saved = chat.fullHistory
+            .singleWhere((m) => m.type == edge.MessageType.toolCall)
+            .text;
+        expect(jsonDecode(saved), {
+          'tool_calls': [
+            {'id': 'a', 'name': 'search', 'arguments': {}},
+          ],
+        });
+        expect(saved, isNot(contains('PRIVATE')));
+        await chat.clearHistory(replayHistory: chat.fullHistory);
+      },
+    );
+  }
+
+  for (final stop in [false, true]) {
+    test(
+      'restored trailing user rolls back on ${stop ? "stop" : "failure"}',
+      () async {
+        final chat = await model.openChat();
+        await chat.clearHistory(
+          replayHistory: [
+            edge.Message.text(text: 'committed', isUser: true),
+            edge.Message.text(text: 'answer'),
+            edge.Message.text(text: 'pending', isUser: true),
+          ],
+        );
+        engine.blockGeneration = stop;
+        engine.failAfterFirstToken = !stop;
+        if (stop) {
+          final first = Completer<void>();
+          final subscription = chat.generateChatResponseAsync().listen((_) {
+            if (!first.isCompleted) first.complete();
+          });
+          await first.future;
+          await chat.stopGeneration();
+          await subscription.cancel();
+        } else {
+          await expectLater(
+            chat.generateChatResponse(),
+            throwsA(isA<llama.LlamaInferenceException>()),
+          );
+        }
+        expect(chat.fullHistory.map((m) => m.text), ['committed', 'answer']);
+        engine.blockGeneration = engine.failAfterFirstToken = false;
+        await chat.addQuery(edge.Message.text(text: 'retry', isUser: true));
+        await chat.generateChatResponse();
+        expect(engine.requests.last.map((m) => m.role), [
+          llama.LlamaChatRole.user,
+          llama.LlamaChatRole.assistant,
+          llama.LlamaChatRole.user,
+        ]);
+      },
+    );
+  }
+
+  test('out-of-order repeated tool results retain IDs after replay', () async {
+    engine.script = [
+      _toolChunk(0, 'search', '{"q":"first"}', id: 'a'),
+      _toolChunk(1, 'search', '{"q":"second"}', id: 'b'),
+    ];
+    final chat = await model.openChat(tools: [tool]);
+    await chat.addQuery(edge.Message.text(text: 'parallel', isUser: true));
+    final response =
+        await chat.generateChatResponse() as edge.ParallelFunctionCallResponse;
+    // The public base list supports ordinary FunctionCallResponse entries.
+    response.calls.add(
+      const edge.FunctionCallResponse(name: 'extra', args: {}),
+    );
+    for (final id in ['b', 'a']) {
+      await chat.addQuery(
+        LlamaToolResponseMessage(
+          callId: id,
+          toolName: 'search',
+          response: {'for': id},
+        ),
+      );
+    }
+    engine.script = null;
+    await chat.generateChatResponse();
+    // Persist ordinary core fields, as an app/database or another engine does.
+    final saved = [
+      for (final message in chat.fullHistory)
+        edge.Message(
+          text: message.text,
+          type: message.type,
+          isUser: message.isUser,
+          toolName: message.toolName,
+        ),
+    ];
+    await chat.clearHistory(replayHistory: saved);
+    await chat.addQuery(edge.Message.text(text: 'next', isUser: true));
+    await chat.generateChatResponse();
+    final results = engine.requests.last
+        .expand((m) => m.parts)
+        .whereType<llama.LlamaToolResultContent>();
+    expect(results.map((r) => [r.id, r.result]), [
+      [
+        'a',
+        {'for': 'a'},
+      ],
+      [
+        'b',
+        {'for': 'b'},
+      ],
+    ]);
+  });
+
+  test(
+    'separate flat tool-call parts preserve result pairing after ordinary persistence',
+    () async {
+      final chat = await model.openChat(tools: [tool]);
+      await chat.clearHistory(
+        replayHistory: [
+          edge.Message.text(text: 'parallel', isUser: true),
+          edge.Message.toolCall(
+            text: '{"id":"a","name":"search","parameters":{"q":"first"}}',
+          ),
+          edge.Message.toolCall(
+            text: '{"id":"b","name":"search","parameters":{"q":"second"}}',
+          ),
+          LlamaToolResponseMessage(
+            callId: 'b',
+            toolName: 'search',
+            response: {'for': 'b'},
+          ),
+          LlamaToolResponseMessage(
+            callId: 'a',
+            toolName: 'search',
+            response: {'for': 'a'},
+          ),
+        ],
+      );
+      await chat.generateChatResponse();
+      final saved = [
+        for (final message in chat.fullHistory)
+          edge.Message(
+            text: message.text,
+            isUser: message.isUser,
+            type: message.type,
+            toolName: message.toolName,
+          ),
+      ];
+      await chat.clearHistory(replayHistory: saved);
+      await chat.addQuery(edge.Message.text(text: 'next', isUser: true));
+      await chat.generateChatResponse();
+      final results = engine.requests.last
+          .expand((m) => m.parts)
+          .whereType<llama.LlamaToolResultContent>();
+      expect(results.map((r) => [r.id, r.result]), [
+        [
+          'a',
+          {'for': 'a'},
+        ],
+        [
+          'b',
+          {'for': 'b'},
+        ],
+      ]);
+    },
+  );
+
+  test(
+    'staged tool replay preserves repeated results through plain-message persistence',
+    () async {
+      final chat = await model.openChat(tools: [tool]);
+      for (final message in [
+        edge.Message.text(text: 'parallel', isUser: true),
+        edge.Message.toolCall(
+          text:
+              '[{"id":"a","name":"search","parameters":{}},{"id":"b","name":"search","parameters":{}}]',
+        ),
+        LlamaToolResponseMessage(
+          callId: 'b',
+          toolName: 'search',
+          response: {'for': 'b'},
+        ),
+        LlamaToolResponseMessage(
+          callId: 'a',
+          toolName: 'search',
+          response: {'for': 'a'},
+        ),
+      ]) {
+        await chat.addQuery(message);
+      }
+      await chat.generateChatResponse();
+      final saved = [
+        for (final message in chat.fullHistory)
+          edge.Message(
+            text: message.text,
+            isUser: message.isUser,
+            type: message.type,
+            toolName: message.toolName,
+          ),
+      ];
+      await chat.clearHistory(replayHistory: saved);
+      await chat.addQuery(edge.Message.text(text: 'next', isUser: true));
+      await chat.generateChatResponse();
+      final results = engine.requests.last
+          .expand((m) => m.parts)
+          .whereType<llama.LlamaToolResultContent>();
+      expect(results.map((r) => [r.id, r.result]), [
+        [
+          'a',
+          {'for': 'a'},
+        ],
+        [
+          'b',
+          {'for': 'b'},
+        ],
+      ]);
+    },
+  );
+
+  test(
+    'unusable SDK context closes the model and preserves prior transcript',
+    () async {
+      final chat = await model.openChat();
+      await chat.addQuery(edge.Message.text(text: 'saved', isUser: true));
+      await chat.generateChatResponse();
+      engine.generationError = llama.LlamaStateException(
+        'context is unusable after a llama.cpp exception in llama_decode. Unload the model and load it again.',
+      );
+      await chat.addQuery(edge.Message.text(text: 'failure', isUser: true));
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(same(engine.generationError)),
+      );
+      expect(model.isClosed, isTrue);
+      await model.close();
+      expect(chat.fullHistory.map((m) => m.text), ['saved', 'Hello world']);
+      await expectLater(
+        model.openSession(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'cause',
+            contains('unusable'),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'queued peer receives failure when owner invalidates the model',
+    () async {
+      engine.blockGeneration = true;
+      engine.failLoraCleanup = true;
+      final owner = await model.openChat(loraPath: adapterPath);
+      final peer = await model.openChat();
+      await owner.addQuery(edge.Message.text(text: 'owner', isUser: true));
+      final first = Completer<void>();
+      final ownerErrors = <Object>[];
+      final subscription = owner.generateChatResponseAsync().listen((_) {
+        if (!first.isCompleted) first.complete();
+      }, onError: ownerErrors.add);
+      await first.future;
+      await peer.addQuery(edge.Message.text(text: 'queued', isUser: true));
+      final assertion = expectLater(
+        peer.generateChatResponse(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'cause',
+            contains('cleanup failed'),
+          ),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await owner.stopGeneration();
+      await assertion;
+      await subscription.cancel();
+      await model.close();
+      expect(ownerErrors, isNotEmpty);
+      expect(engine.requests, hasLength(1));
+    },
+    skip: kIsWeb,
+  );
+
+  test('primary SDK error survives a separate cleanup error', () async {
+    engine.failAfterFirstToken = engine.failLoraCleanup = true;
+    final diagnostics = <String?>[];
+    final originalPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) =>
+        diagnostics.add(message);
+    try {
+      final chat = await model.openChat(loraPath: adapterPath);
+      await chat.addQuery(edge.Message.text(text: 'fail', isUser: true));
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(
+          isA<llama.LlamaInferenceException>().having(
+            (e) => e.message,
+            'original',
+            'test failure',
+          ),
+        ),
+      );
+      await model.close();
+      expect(diagnostics.join(), contains('cleanup failed'));
+    } finally {
+      debugPrint = originalPrint;
+    }
+  }, skip: kIsWeb);
+
+  test('self-close disposal failures are reported', () async {
+    final failedEngine = _FakeEngine()
+      ..generationError = llama.LlamaStateException(
+        'context is unusable after a llama.cpp exception in llama_decode.',
+      )
+      ..disposalError = StateError('dispose failed');
+    final failedModel = LlamaInferenceModel(
+      engine: failedEngine,
+      maxTokens: 2048,
+      activeBackend: edge.PreferredBackend.cpu,
+    );
+    final diagnostics = <String?>[];
+    final originalPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) =>
+        diagnostics.add(message);
+    try {
+      final chat = await failedModel.openChat();
+      await chat.addQuery(edge.Message.text(text: 'fail', isUser: true));
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(same(failedEngine.generationError)),
+      );
+      await expectLater(failedModel.close(), throwsA(isA<StateError>()));
+      await Future<void>.delayed(Duration.zero);
+      expect(diagnostics.join(), contains('dispose failed'));
+    } finally {
+      debugPrint = originalPrint;
+    }
+  });
+
+  test(
+    'Web explicit GPU SDK capability rejection uses UnsupportedError',
+    () async {
+      final provider = createLlamaProviderForTest(
+        loader: (_, _) async =>
+            throw llama.LlamaUnsupportedException('WebGPU unavailable'),
+      );
+      await expectLater(
+        provider.createModel(
+          _spec('model.gguf'),
+          const RuntimeConfig(
+            modelPath: 'model.gguf',
+            preferredBackend: edge.PreferredBackend.gpu,
+            maxTokens: 2048,
+          ),
+        ),
+        throwsA(isA<UnsupportedError>()),
+      );
+    },
+    skip: !kIsWeb,
+  );
 }
 
 edge.InferenceModelSpec _spec(
@@ -1898,6 +2366,8 @@ class _FakeEngine extends llama.LlamaEngine {
   final Completer<void> disposeStarted = Completer<void>();
   bool blockGeneration = false;
   bool failAfterFirstToken = false;
+  Object? generationError;
+  Object? disposalError;
   List<llama.LlamaCompletionChunk>? script;
   List<List<llama.LlamaCompletionChunk>> scripts = [];
   bool failLoraCleanup = false;
@@ -2028,6 +2498,7 @@ class _FakeEngine extends llama.LlamaEngine {
       }
       if (blockGeneration) _release = Completer<void>();
       yield _chunk('Hello');
+      if (generationError != null) throw generationError!;
       if (failAfterFirstToken) {
         throw llama.LlamaInferenceException('test failure');
       }
@@ -2062,6 +2533,7 @@ class _FakeEngine extends llama.LlamaEngine {
     if (!disposeStarted.isCompleted) disposeStarted.complete();
     await disposeGate?.future;
     if (disposals == 0) disposals++;
+    if (disposalError != null) throw disposalError!;
   }
 }
 

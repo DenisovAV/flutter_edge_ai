@@ -94,8 +94,10 @@ Installed native adapters load once with the model. Sessions may override them
 with `loraPath`; the override is removed and the installed adapter restored before
 a peer runs. Missing local override files fail before runtime mutation. Installed `InferenceModelSpec`
 LoRA companions are resolved through core's file manager and used by default.
-If a runtime adapter mutation or restoration fails, the shared runtime is invalidated:
-close/reload the model before any peer can infer with uncertain adapter state.
+A rejected adapter remains recoverable if restoring the installed adapter succeeds.
+Failed restoration or an SDK-reported unusable native context closes the model;
+reload it before any peer can infer. Disposal/cleanup failures are reported,
+and an inference error remains the primary error when cleanup also fails.
 This connector does not wire Web LoRA, even when the bridge supports it.
 Installed and per-session Web adapters are rejected explicitly.
 Core restores the model and its paired LoRA after restart. If the adapter is
@@ -139,12 +141,17 @@ malformed generated tools and incomplete tool turns throw `StateError`.
 llamadart runtime exceptions propagate unchanged. A failed shared-runtime recovery
 closes the model so core can reload it; the original failure remains in diagnostics.
 
-`clearHistory(replayHistory: ...)` commits a validated restore before the next turn.
-A stop or error rolls back only input staged after the restore. Replayed tool calls
+`fullHistory` retains committed visible turns across context trimming and close,
+so it can be persisted or replayed into a replacement model. Only runtime history
+is trimmed. `clearHistory(replayHistory: ...)` commits validated completed turns;
+a trailing user input remains staged and rolls back on stop/error. Replayed tool calls
 accept core's `{"name": "search", "parameters": {"q": "value"}}`, a JSON list of
 those objects, and the OpenAI `tool_calls` wrapper. Missing IDs are assigned by the
 session; ordinary results pair unanswered calls by name in order. Use
-`LlamaToolResponseMessage` when repeated names need results delivered out of order.
+`LlamaToolResponseMessage` when repeated names need results delivered out of order;
+retain its `callId` when serializing an incompletely answered group. Completed
+parallel results are recorded in call order so ordinary core Message fields replay
+without losing their association.
 
 Chat `tokenBuffer` must be nonnegative and smaller than `maxTokens`. It is a
 trimming target, not a reservation that rejects a valid latest input. Output

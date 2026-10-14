@@ -86,11 +86,10 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
           .files
           .first
           .source;
-      _path.text = switch (restoredSource) {
-        edge.NetworkSource(:final url) => url,
-        edge.FileSource(:final path) => path,
-        _ => '',
-      };
+      _path.text = restoredModelInput(
+        restoredSource,
+        urlsOnly: kIsWeb || defaultTargetPlatform == TargetPlatform.android,
+      );
       if (!kIsWeb && restoredSource is edge.FileSource) {
         await pruneImportedModels(restoredSource.path);
       }
@@ -213,12 +212,10 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
           edge.FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel;
       if (!kIsWeb &&
           defaultTargetPlatform == TargetPlatform.android &&
-          previous?.files.first.source is edge.NetworkSource &&
-          active != null &&
-          previous!.files.first.filename != active.files.first.filename) {
+          shouldUninstallPreviousModel(previous, active)) {
         try {
           await edge.FlutterEdgeAi.uninstallModel(
-            previous.files.first.filename,
+            previous!.files.first.filename,
           );
         } catch (error) {
           // A cleanup failure must not discard the newly loaded model.
@@ -564,8 +561,33 @@ class _Turn {
 void validateModelUrl(String value) {
   final uri = Uri.tryParse(value);
   if (uri == null ||
-      !['http', 'https'].contains(uri.scheme) ||
-      uri.host.isEmpty) {
-    throw ArgumentError('Enter a complete HTTP or HTTPS GGUF model URL.');
+      !(uri.scheme == 'https' ||
+          uri.scheme == 'http' &&
+              ['localhost', '127.0.0.1', '::1'].contains(uri.host)) ||
+      uri.host.isEmpty ||
+      uri.pathSegments.where((part) => part.isNotEmpty).isEmpty) {
+    throw ArgumentError(
+      'Enter a complete HTTPS GGUF model URL (HTTP is allowed only for local testing).',
+    );
   }
 }
+
+/// Keeps a rehydrated local cache path out of the URL-only replacement field.
+@visibleForTesting
+String restoredModelInput(edge.ModelSource source, {required bool urlsOnly}) =>
+    switch (source) {
+      edge.NetworkSource(:final url) => url,
+      edge.FileSource(:final path) => urlsOnly ? '' : path,
+      _ => '',
+    };
+
+/// Core owns deletion policy: uninstall removes managed downloads, while
+/// external fromFile installs keep their bytes even after restart hydration.
+@visibleForTesting
+bool shouldUninstallPreviousModel(
+  edge.ModelSpec? previous,
+  edge.ModelSpec? active,
+) =>
+    previous != null &&
+    active != null &&
+    previous.files.first.filename != active.files.first.filename;

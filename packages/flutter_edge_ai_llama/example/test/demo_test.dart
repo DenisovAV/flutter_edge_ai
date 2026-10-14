@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama_demo/main.dart' as demo;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +16,9 @@ void main() {
       '/models/chat.gguf',
       'https://',
       'file:///chat.gguf',
+      'http://remote.example/chat.gguf',
+      'https://models.example',
+      'https://models.example/',
     ]) {
       expect(() => demo.validateModelUrl(value), throwsArgumentError);
     }
@@ -25,6 +29,37 @@ void main() {
       expect(() => demo.validateModelUrl(value), returnsNormally);
     }
   });
+  test('restart cache paths never become Android replacement URLs', () {
+    final restored = edge.ModelSource.file('/app/models/old.gguf');
+    expect(demo.restoredModelInput(restored, urlsOnly: true), isEmpty);
+    expect(
+      demo.restoredModelInput(restored, urlsOnly: false),
+      '/app/models/old.gguf',
+    );
+    expect(
+      demo.restoredModelInput(
+        edge.ModelSource.network('https://models.example/old.gguf'),
+        urlsOnly: true,
+      ),
+      'https://models.example/old.gguf',
+    );
+    final previous = edge.InferenceModelSpec(
+      name: 'old.gguf',
+      modelSource: restored,
+      modelType: edge.ModelType.general,
+      fileType: edge.ModelFileType.gguf,
+    );
+    final replacement = edge.InferenceModelSpec(
+      name: 'new.gguf',
+      modelSource: edge.ModelSource.network('https://models.example/new.gguf'),
+      modelType: edge.ModelType.general,
+      fileType: edge.ModelFileType.gguf,
+    );
+    expect(demo.shouldUninstallPreviousModel(previous, replacement), isTrue);
+    expect(demo.shouldUninstallPreviousModel(previous, previous), isFalse);
+    expect(demo.shouldUninstallPreviousModel(previous, null), isFalse);
+  });
+
   for (final size in const [
     Size(900, 650),
     Size(640, 480),

@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
@@ -8,6 +11,8 @@ import 'package:flutter_edge_ai_llama/src/llama_engine_provider.dart'
     show createLlamaProviderForTest;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter_edge_ai_llama_demo/model_import_native.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 
 const _modelPath = String.fromEnvironment('GGUF_MODEL_PATH');
@@ -29,6 +34,36 @@ Future<llama.LlamaEngine> _loadWithThreadBudget(
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  if (defaultTargetPlatform == TargetPlatform.iOS) {
+    testWidgets(
+      'iOS picker import moves the owned tmp copy into durable storage',
+      (tester) async {
+        final temporary = await getTemporaryDirectory();
+        final inbox = Directory('${temporary.path}/dev.llamadart-Inbox');
+        await inbox.create(recursive: true);
+        final source = File(
+          '${inbox.path}/qa_${DateTime.now().microsecondsSinceEpoch}.gguf',
+        );
+        await source.writeAsBytes([71, 71, 85, 70]);
+        File? imported;
+        try {
+          imported = File(
+            await importModel(source.path, cleanupPickerInbox: true),
+          );
+          expect(await imported.readAsBytes(), [71, 71, 85, 70]);
+          expect(await source.exists(), isFalse);
+          expect(imported.path, contains('/gguf_lab/'));
+        } finally {
+          if (await source.exists()) await source.delete();
+          if (imported != null && await imported.exists()) {
+            await imported.delete();
+          }
+          if (await inbox.list().isEmpty) await inbox.delete();
+        }
+      },
+    );
+  }
 
   testWidgets('packaged native runtime installs, generates, cancels and reloads', (
     tester,
@@ -138,9 +173,9 @@ void main() {
               );
               expect(
                 retained.length,
-                lessThan(3),
+                3,
                 reason:
-                    'Rendered context pressure must trim old complete turns.',
+                    'Runtime trimming must preserve the full visible transcript.',
               );
               expect(retained.last.text, endsWith('Turn 2.'));
             } finally {

@@ -124,9 +124,9 @@ models below about 2 GB and avoid streaming OPFS mode. See the
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
 for setup, capability limits and publication gates.
 
-When adding `flutter_edge_ai_litertlm`, the root `[llama_cpp]` hook selection is
-required to prevent conflicting runtime libraries. Without it, Android/Linux/Windows
-builds fail, and on iOS without the companion the wrong LiteRT-LM can load.
+With llamadart 0.12.0, adding `flutter_edge_ai_litertlm` keeps the SDK on
+llama.cpp automatically. Retain the root `[llama_cpp]` selection as defence in
+depth; explicitly selecting both LiteRT-LM owners fails with an actionable error.
 On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is required too. The LiteRT-LM macOS CocoaPods
 recipe and this SwiftPM recipe are not yet qualified together. Web LoRA is not wired
 by this connector and is rejected, even on a bridge that supports adapters.

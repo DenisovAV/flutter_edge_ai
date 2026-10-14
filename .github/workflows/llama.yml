@@ -29,8 +29,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: edge-ai-llama-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: edge-ai-llama-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 env:
   PACKAGE_DIRECTORY: packages/flutter_edge_ai_llama
@@ -186,7 +186,7 @@ jobs:
           xcrun simctl boot "$simulator_id"
           xcrun simctl bootstatus "$simulator_id" -b
           trap 'xcrun simctl shutdown "$simulator_id"' EXIT
-          python tool/verify.py device --device "$simulator_id" --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --cpu-threads 1 --native-diagnostics
+          python tool/verify.py device --device "$simulator_id" --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --cpu-threads 1 --native-diagnostics --simulator-retry
 
       - name: Preserve iOS runtime thread samples
         if: always()

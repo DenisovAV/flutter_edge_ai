@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
@@ -97,6 +98,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   bool _ownsEngine = false;
   bool _closed = false;
   bool _stopped = false;
+  bool _userStopped = false;
   int _callSequence = 0;
   edge.SessionMetrics _metrics = edge.SessionMetrics();
 
@@ -150,9 +152,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         : llama.LlamaChatRole.assistant;
     if (message.type == edge.MessageType.toolResponse) {
       final calls = _unansweredCalls();
-      final explicitId = message is LlamaToolResponseMessage
-          ? message.callId
-          : null;
+      final explicitId = _resultId(message);
       final matching = calls.values.where((c) => c.name == message.toolName);
       final call = explicitId != null
           ? calls[explicitId]
@@ -200,7 +200,12 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           final name = function['name'] as String;
           final raw = function['arguments'] ?? function['parameters'];
           final args =
-              (raw is String ? jsonDecode(raw) : raw) as Map<String, dynamic>;
+              (raw == null || raw is String && raw.trim().isEmpty
+                      ? <String, dynamic>{}
+                      : raw is String
+                      ? jsonDecode(raw)
+                      : raw)
+                  as Map<String, dynamic>;
           var id = call['id'] as String?;
           if (id == null) {
             do {
@@ -289,7 +294,27 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         llama.LlamaChatMessage.withContent(role: role, content: parts),
       );
     }
-    _pendingTranscript.add(message);
+    // Preserve explicit pairing even when ordinary results arrive out of order.
+    edge.Message recorded = message;
+    if (message.type == edge.MessageType.toolResponse) {
+      final result = parts.single as llama.LlamaToolResultContent;
+      recorded = result.result is Map<String, dynamic>
+          ? LlamaToolResponseMessage(
+              callId: result.id!,
+              toolName: message.toolName!,
+              response: result.result as Map<String, dynamic>,
+            )
+          : _RecordedToolResult(
+              callId: result.id!,
+              toolName: message.toolName!,
+              text: message.text,
+            );
+    } else if (message.type == edge.MessageType.toolCall) {
+      recorded = edge.Message.toolCall(
+        text: _toolCallJson(parts.whereType<llama.LlamaToolCallContent>()),
+      );
+    }
+    _pendingTranscript.add(recorded);
   }
 
   @override
@@ -336,6 +361,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         _done = ownedGeneration = Completer<void>();
         _abort = Completer<void>();
         _stopped = false;
+        _userStopped = false;
         _lastTurnCommitted = false;
         _metrics = edge.SessionMetrics();
         _lastFinishReason = null;
@@ -350,16 +376,32 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     return controller.stream;
   }
 
-  /// Commits a fully validated replay independently of the next generation.
+  /// Commits completed replay turns; a trailing user input remains staged.
   void commitReplay() {
     _ensureOpen();
     if (_done != null) {
       throw StateError('Wait for generation before restoring history.');
     }
-    _history.addAll(_pending);
-    _transcript.addAll(_pendingTranscript);
-    _pending.clear();
-    _pendingTranscript.clear();
+    // A trailing restored user input still needs a successful assistant turn.
+    final trailingUsers = _pending.reversed
+        .takeWhile((m) => m.role == llama.LlamaChatRole.user)
+        .length;
+    final count = _pending.length - trailingUsers;
+    _history.addAll(_pending.take(count));
+    final trailingMessages = trailingUsers > 0
+        ? _pendingTranscript.reversed
+              .takeWhile((m) => m.isUser && m.type == edge.MessageType.text)
+              .length
+        : 0;
+    _transcript.addAll(
+      _pendingTranscript.take(_pendingTranscript.length - trailingMessages),
+    );
+    _pending.removeRange(0, count);
+    _pendingTranscript.removeRange(
+      0,
+      _pendingTranscript.length - trailingMessages,
+    );
+    _orderTranscriptResults();
   }
 
   // Only drop complete turns before the latest user input. A tool round trip
@@ -379,16 +421,34 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     return true;
   }
 
-  void _dropOldestTranscriptTurn() {
-    final first = _transcript.indexWhere(
-      (m) => m.type == edge.MessageType.text && m.isUser,
-    );
-    if (first < 0) return;
-    final next = _transcript.indexWhere(
-      (m) => m.type == edge.MessageType.text && m.isUser,
-      first + 1,
-    );
-    _transcript.removeRange(first, next < 0 ? _transcript.length : next);
+  void _orderTranscriptResults() {
+    var order = <String, int>{};
+    for (var index = 0; index < _transcript.length; index++) {
+      final message = _transcript[index];
+      if (message.type == edge.MessageType.toolCall) {
+        final calls =
+            (jsonDecode(message.text) as Map<String, dynamic>)['tool_calls']
+                as List;
+        for (final call in calls) {
+          order[call['id'] as String] = order.length;
+        }
+      } else if (message.isUser && message.type == edge.MessageType.text) {
+        order = {};
+      } else if (message.type == edge.MessageType.toolResponse) {
+        var end = index;
+        while (end < _transcript.length &&
+            _transcript[end].type == edge.MessageType.toolResponse) {
+          end++;
+        }
+        final results = _transcript.sublist(index, end);
+        results.sort(
+          (a, b) =>
+              (order[_resultId(a)] ?? 0).compareTo(order[_resultId(b)] ?? 0),
+        );
+        _transcript.setRange(index, end, results);
+        index = end - 1;
+      }
+    }
   }
 
   void _commitAnsweredResults() {
@@ -400,6 +460,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             in message.parts.whereType<llama.LlamaToolCallContent>())
           part.id,
     };
+    var recorded = false;
     for (final message
         in _pending
             .where(
@@ -415,12 +476,16 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         (m) =>
             m.type == edge.MessageType.toolResponse &&
             m.toolName == result.name &&
-            (m is! LlamaToolResponseMessage || m.callId == result.id),
+            (_resultId(m) == null || _resultId(m) == result.id),
       );
       _history.add(message);
       _pending.remove(message);
-      if (index >= 0) _transcript.add(_pendingTranscript.removeAt(index));
+      if (index >= 0) {
+        _transcript.add(_pendingTranscript.removeAt(index));
+        recorded = true;
+      }
     }
+    if (recorded) _orderTranscriptResults();
   }
 
   Future<void> _generate(
@@ -439,6 +504,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             : llama.ModelSource.path(defaultLoraPath!);
         var adapterApplied = false;
         var baselineRemoved = false;
+        Object? primaryError;
         try {
           if (_unansweredCalls().isNotEmpty) {
             throw StateError(
@@ -459,7 +525,6 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           }
           if (_stopped || _closed) return;
           final retainedHistory = List<llama.LlamaChatMessage>.of(_history);
-          var removedTurns = 0;
           late List<llama.LlamaChatMessage> messages;
           late int promptTokens;
           while (true) {
@@ -481,7 +546,6 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                 !_dropOldestTurn(retainedHistory)) {
               break;
             }
-            removedTurns++;
           }
           final remaining = contextSize - promptTokens;
           if (remaining <= 0) {
@@ -572,7 +636,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                 id: id,
                 name: call.name,
                 arguments: args,
-                rawJson: call.rawJson,
+                rawJson: jsonEncode(args),
               ),
             );
           }
@@ -609,10 +673,12 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             ..clear()
             ..addAll(retainedHistory)
             ..addAll([..._pending, assistant]);
-          for (var i = 0; i < removedTurns; i++) {
-            _dropOldestTranscriptTurn();
-          }
           _transcript.addAll(_pendingTranscript);
+          if (_pendingTranscript.any(
+            (m) => m.type == edge.MessageType.toolResponse,
+          )) {
+            _orderTranscriptResults();
+          }
           _pending.clear();
           _pendingTranscript.clear();
           if (enableThinking && completion.thinking.isNotEmpty) {
@@ -622,9 +688,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             _transcript.add(edge.Message.text(text: completion.text));
           }
           if (calls.isNotEmpty) {
-            _transcript.add(
-              edge.Message.toolCall(text: jsonEncode(assistant.toJson())),
-            );
+            _transcript.add(edge.Message.toolCall(text: _toolCallJson(calls)));
           }
           _lastFinishReason = completion.finishReason?.wireValue;
           final usage = completion.usage;
@@ -641,7 +705,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                 : usage!.completionTokens * 1000000 / duration.inMicroseconds,
           );
           _lastTurnCommitted = true;
-          final responses = [
+          final responses = <edge.FunctionCallResponse>[
             for (final call in calls)
               LlamaFunctionCallResponse(
                 id: call.id!,
@@ -653,34 +717,60 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           if (responses.length > 1) {
             controller.add(edge.ParallelFunctionCallResponse(calls: responses));
           }
+        } catch (error, stack) {
+          primaryError = error;
+          // SDK 0.12.0 exposes native exception poisoning through these errors.
+          // Ordinary inference/adapter rejection errors remain recoverable.
+          if (error is llama.LlamaStateException &&
+                  error.message.contains(
+                    'unusable after a llama.cpp exception',
+                  ) ||
+              error is llama.LlamaException &&
+                  error.message.startsWith('llama.cpp raised an exception')) {
+            _queue.invalidate(error, stack);
+          }
+          rethrow;
         } finally {
+          Object? cleanupError;
+          StackTrace? cleanupStack;
+          Future<void> recover(Future<void> Function() action) async {
+            try {
+              await action();
+            } catch (error, stack) {
+              _queue.invalidate(error, stack);
+              cleanupError ??= error;
+              cleanupStack ??= stack;
+            }
+          }
+
           try {
             if (adapterApplied) {
-              try {
-                await engine.removeLoraSource(adapter!);
-              } catch (error, stack) {
-                _queue.invalidate(error, stack);
-                rethrow;
-              }
+              await recover(() => engine.removeLoraSource(adapter!));
+            }
+            if (baselineRemoved) {
+              await recover(() => engine.setLoraSource(baseline!));
             }
           } finally {
-            try {
-              if (baselineRemoved) {
-                try {
-                  await engine.setLoraSource(baseline!);
-                } catch (error, stack) {
-                  _queue.invalidate(error, stack);
-                  rethrow;
-                }
-              }
-            } finally {
-              _ownsEngine = false;
+            _ownsEngine = false;
+          }
+          if (cleanupError != null) {
+            if (primaryError != null) {
+              debugPrint(
+                'GGUF runtime cleanup failed after $primaryError: $cleanupError',
+              );
+            } else {
+              Error.throwWithStackTrace(cleanupError!, cleanupStack!);
             }
           }
         }
       }, cancelled: _abort!.future);
+      // Model teardown aborts queued work too; it must not look like user stop.
+      _queue.ensureValid();
+      if (_closed && !_userStopped) {
+        throw StateError('The model/session closed during generation.');
+      }
     } catch (error, stack) {
-      if (_queue.isInvalid || !_stopped && !_closed) {
+      if (_queue.isInvalid || !_userStopped) {
         controller.addError(error, stack);
       }
     } finally {
@@ -713,6 +803,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   Future<void> stopGeneration() async {
     final done = _done;
     if (done == null) return;
+    if (!_closed) _userStopped = true;
     _stopped = true;
     if (_abort != null && !_abort!.isCompleted) _abort!.complete();
     if (_ownsEngine) engine.cancelGeneration();
@@ -734,7 +825,34 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     _pending.clear();
     _history.clear();
     _pendingTranscript.clear();
-    _transcript.clear();
     onClose();
   }
 }
+
+String? _resultId(edge.Message message) => switch (message) {
+  LlamaToolResponseMessage(:final callId) => callId,
+  _RecordedToolResult(:final callId) => callId,
+  _ => null,
+};
+
+// An internal recorded result also accepts the JSON scalar/list forms supported
+// by low-level session messages; the public result helper remains Map-based.
+final class _RecordedToolResult extends edge.Message {
+  const _RecordedToolResult({
+    required this.callId,
+    required String toolName,
+    required super.text,
+  }) : super(
+         toolName: toolName,
+         type: edge.MessageType.toolResponse,
+         isUser: true,
+       );
+  final String callId;
+}
+
+String _toolCallJson(Iterable<llama.LlamaToolCallContent> calls) => jsonEncode({
+  'tool_calls': [
+    for (final call in calls)
+      {'id': call.id, 'name': call.name, 'arguments': call.arguments},
+  ],
+});

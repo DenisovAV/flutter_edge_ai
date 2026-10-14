@@ -49,8 +49,32 @@ void main() {
     },
   );
 
+  test(
+    'temporary picker move avoids leaving a duplicate and preserves symlinks',
+    () async {
+      final inbox = Directory('${scratch.path}/app/tmp/dev.llamadart-Inbox');
+      await inbox.create(recursive: true);
+      final external = File('${scratch.path}/external.gguf');
+      await external.writeAsString('owned bytes');
+      final link = Link('${inbox.path}/linked.gguf');
+      await link.create(external.path);
+      final imported = File(
+        await importModel(link.path, cleanupPickerInbox: true),
+      );
+      expect(await imported.readAsString(), 'owned bytes');
+      expect(await link.exists(), isTrue);
+      expect(await external.exists(), isTrue);
+      final otherInbox = Directory('${scratch.path}/external-Inbox');
+      await otherInbox.create();
+      final other = File('${otherInbox.path}/other.gguf');
+      await other.writeAsString('external');
+      await removePickerInboxCopy(other.path);
+      expect(await other.exists(), isTrue);
+    },
+  );
+
   test('iOS import removes only its owned picker Inbox copy', () async {
-    final inbox = Directory('${scratch.path}/app/Documents/Inbox');
+    final inbox = Directory('${scratch.path}/app/tmp/dev.llamadart-Inbox');
     await inbox.create(recursive: true);
     final source = File('${inbox.path}/picked.gguf');
     await source.writeAsString('model');
@@ -94,4 +118,6 @@ class _Paths extends PathProviderPlatform {
   Future<String?> getApplicationSupportPath() async => root;
   @override
   Future<String?> getApplicationDocumentsPath() async => '$root/Documents';
+  @override
+  Future<String?> getTemporaryPath() async => '$root/tmp';
 }

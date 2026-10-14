@@ -1,7 +1,7 @@
 # Contributor checks
 
 Use the connector CI SDK, Flutter 3.47.1 / Dart 3.13.1, for reproducible formatting.
-The runner also accepts the workspace SDK, Flutter 3.47.0. Other versions are
+The runner also accepts the workspace SDK declared in the root `.fvmrc`. Other versions are
 rejected to keep formatting checks reproducible. The package minimum follows core: Flutter 3.44 / Dart 3.12. The root workspace
 SDK and shared workflow settings remain upstream-owned.
 
@@ -55,3 +55,9 @@ Record the revision, model checksum, platform/device, backend, command and resul
 in the PR. The [current matrix](platforms.md) lists remaining qualification gaps.
 Core-only changes run contracts; connector/shared-build changes also run release
 and device jobs, which additionally run nightly and on dispatch.
+
+Web artifact validation uses Node.js to check that the copied helper exposes
+callable functions and the bootstrap actually selects the local pinned assets.
+The iOS CI lane streams the JSON report, bounds each attempt to ten minutes,
+and reboots/retries only a pre-test startup failure once. Both attempts retain
+failure output; the passing attempt must execute the required model test.

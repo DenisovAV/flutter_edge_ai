@@ -133,7 +133,15 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
           ? 0
           : llama.ModelParams.maxGpuLayers,
     );
-    final engine = await (_loader ?? _loadGgufEngine)(location, params);
+    final llama.LlamaEngine engine;
+    try {
+      engine = await (_loader ?? _loadGgufEngine)(location, params);
+    } on llama.LlamaUnsupportedException catch (error) {
+      if (kIsWeb && config.preferredBackend == edge.PreferredBackend.gpu) {
+        throw UnsupportedError(error.message);
+      }
+      rethrow;
+    }
     try {
       if (engine.runtime != llama.LlamaRuntime.llamaCpp) {
         throw UnsupportedError('GGUF must resolve to the llama.cpp runtime.');

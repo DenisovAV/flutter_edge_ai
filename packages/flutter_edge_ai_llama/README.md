@@ -176,6 +176,8 @@ restore call is needed.
 rendered context; an explicit cap is reduced to the room available. Chats trim
 old complete turns using `tokenBuffer`, preserving the system instruction,
 latest input and complete tool pairs. Trimming commits only with a successful turn.
+`fullHistory` retains committed turns across trimming and close; replay it into
+a replacement chat to recover a conversation.
 Truncated tool turns and empty answers fail without committing
 partial history. Completed tool results survive cancellation or an error. Stop with
 `await chat.session.stopGeneration()`; an interrupted turn is discarded so the
@@ -227,7 +229,8 @@ sets its worker/core/Wasm URLs before Flutter starts, and reports load errors.
 The validator permits extra headers while checking the required wildcard isolation
 rules, storage helper interface, license and pinned runtime hashes. A customized
 storage helper also needs browser tests; static interface checks do not prove its behavior.
-Build with `flutter build web --wasm`, then run:
+Release validation also requires Node.js. Build with
+`flutter build web --wasm`, then run:
 
 ```sh
 python3 <package-root>/tool/validate_web_build.py <app-root>/build/web

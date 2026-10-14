@@ -22,6 +22,7 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
         ndk {
+            abiFilters.clear()
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
         targetSdk = flutter.targetSdkVersion

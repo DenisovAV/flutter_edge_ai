@@ -33,7 +33,12 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         // Close synchronously marks this model unusable for core's cache. Awaiting
         // teardown here would deadlock the action that still owns the queue.
         unawaited(
-          close().then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+          close().then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stack) {
+              debugPrint('GGUF runtime disposal failed: $error\n$stack');
+            },
+          ),
         );
       },
     );

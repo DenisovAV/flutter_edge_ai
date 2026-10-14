@@ -17,7 +17,23 @@ import verify as package_verify
 from smoke_result import require_smoke_success
 
 
+REAL_RUN_SMOKE = package_verify.run_smoke
+
+
 class ToolingTests(unittest.TestCase):
+    def setUp(self):
+        # CLI-routing fixtures below mock subprocess.run. Streaming/process
+        # behavior is exercised separately through the real helper.
+        def smoke(command, directory, expected, timeout=None):
+            result = package_verify.subprocess.run(command, cwd=directory, check=False,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            print(result.stdout, flush=True)
+            result.check_returncode()
+            require_smoke_success(result.stdout, expected)
+        mocked = patch.object(package_verify, "run_smoke", side_effect=smoke)
+        mocked.start()
+        self.addCleanup(mocked.stop)
+
     def test_smoke_gate_rejects_missing_skipped_and_failed_model_execution(self):
         start = {"type": "testStart", "test": {"id": 7, "name": "required model"}}
         for done in [None, {"type": "testDone", "testID": 7, "result": "success", "skipped": True}, {"type": "testDone", "testID": 7, "result": "failure"}]:
@@ -336,7 +352,8 @@ class ToolingTests(unittest.TestCase):
         validate_web_build.validate_headers(headers)
         for changed in [headers.replace("require-corp", "unsafe-none"),
                         headers.replace("/*\n", "/app/*\n", 1),
-                        headers + "/worker.js\n  Cross-Origin-Opener-Policy: unsafe-none\n"]:
+                        headers + "/worker.js\n  Cross-Origin-Opener-Policy: unsafe-none\n",
+                        headers + "/worker.js\n  ! Cross-Origin-Embedder-Policy\n"]:
             with self.assertRaisesRegex(RuntimeError, "isolation|COOP"):
                 validate_web_build.validate_headers(changed)
 
@@ -349,9 +366,10 @@ class ToolingTests(unittest.TestCase):
             (runtime / "runtime.js").write_bytes(asset)
             manifest = json.dumps({"artifacts": {"runtime.js": {"size_bytes": len(asset), "sha256": hashlib.sha256(asset).hexdigest()}}}).encode()
             (runtime / "manifest.json").write_bytes(manifest)
-            for filename in ["index.html", "flutter_bootstrap.js", "main.dart.wasm"]:
+            for filename in ["flutter_bootstrap.js", "main.dart.wasm"]:
                 (root / filename).write_text("fixture")
             web = validate_web_build.PACKAGE / "example/web"
+            (root / "index.html").write_text((web / "index.html").read_text())
             helper = (web / "cache_api.js").read_text() + "\nwindow.consumerExtra = true;\n"
             (root / "cache_api.js").write_text(helper)
             (root / "cache_api.LICENSE").write_bytes((web / "cache_api.LICENSE").read_bytes())
@@ -366,6 +384,82 @@ class ToolingTests(unittest.TestCase):
                 (runtime / "runtime.js").write_bytes(b"changed runtime")
                 with self.assertRaisesRegex(RuntimeError, "corrupt runtime"):
                     validate_web_build.validate(root)
+
+    def test_javascript_checks_actual_exports_and_bootstrap_asset_selection(self):
+        web = validate_web_build.PACKAGE / "example/web"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            html = (web / "index.html").read_text()
+            helper = (web / "cache_api.js").read_text()
+            (root / "index.html").write_text(html)
+            (root / "cache_api.js").write_text(helper)
+            validate_web_build.validate_javascript(root)
+            (root / "cache_api.js").write_text("\n".join("// " + line for line in helper.splitlines()))
+            with self.assertRaisesRegex(RuntimeError, "missing cacheHas"):
+                validate_web_build.validate_javascript(root)
+            (root / "cache_api.js").write_text(helper)
+            for changed in [html.replace("webgpu_bridge/", "https://cdn.example/"),
+                            html.replace('href="$FLUTTER_BASE_HREF"', 'href="https://cdn.example/"'),
+                            html.replace("root + 'llama_webgpu_core.wasm'", "'https://cdn.example/core.wasm'"),
+                            html.replace("type=\"module\"", "type=\"text/plain\"")]:
+                (root / "index.html").write_text(changed)
+                with self.assertRaisesRegex(RuntimeError, "local pinned"):
+                    validate_web_build.validate_javascript(root)
+
+    def test_smoke_streams_before_exit_and_requires_completed_execution(self):
+        report = [
+            {"type":"testStart","test":{"id":1,"name":"required model"}},
+            {"type":"testDone","testID":1,"result":"success","skipped":False},
+            {"type":"done","success":True},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            ack = Path(directory) / "ack"
+            class Output(io.StringIO):
+                def write(self, data):
+                    if 'testStart' in data: ack.write_text("streamed before exit")
+                    return super().write(data)
+            script = ("from pathlib import Path;import time;print(" + repr(json.dumps(report[0])) + ",flush=True)\n"
+                      "while not Path(" + repr(str(ack)) + ").exists(): time.sleep(0.01)\n"
+                      "print(" + repr("\n".join(json.dumps(x) for x in report[1:])) + ",flush=True)")
+            with contextlib.redirect_stdout(Output()):
+                REAL_RUN_SMOKE([sys.executable, "-c", script], Path.cwd(), "required model", timeout=10)
+            self.assertTrue(ack.exists())
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, "did not execute"):
+            REAL_RUN_SMOKE([sys.executable, "-c", "print('{\"type\":\"done\",\"success\":true}')"], Path.cwd(), "required model", timeout=5)
+
+    def test_smoke_timeout_retains_live_startup_output(self):
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(subprocess.TimeoutExpired) as failure:
+            REAL_RUN_SMOKE([sys.executable, "-c", "import time;print('waiting for debug connection',flush=True);time.sleep(30)"], Path.cwd(), "required model", timeout=5)
+        self.assertIn("waiting for debug connection", failure.exception.output)
+
+    def test_simulator_startup_retry_is_bounded_and_preserves_failures(self):
+        arguments = ["verify.py", "device", "--device", "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "--model-url", "https://example.test/chat.gguf", "--simulator-retry"]
+        timeout = subprocess.TimeoutExpired(["flutter"], 600, output="loading test")
+        with patch.object(sys, "argv", arguments), patch.object(sys, "platform", "darwin"), \
+             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+             patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run, \
+             patch.object(package_verify, "run_smoke", side_effect=[timeout, None]) as smoke:
+            package_verify.main()
+        self.assertEqual(smoke.call_count, 2)
+        self.assertEqual([call.kwargs["timeout"] for call in smoke.call_args_list], [600, 600])
+        controls = [call.args[0][2] for call in run.call_args_list if call.args[0][:2] == ["xcrun", "simctl"]]
+        self.assertEqual(controls, ["shutdown", "boot", "bootstatus"])
+        failures = [subprocess.CalledProcessError(1, ["flutter"], output="assertion failed"),
+                    subprocess.TimeoutExpired(["flutter"], 600, output='{"type":"testStart","test":{"name":"packaged native runtime installs"}}')]
+        for error in failures:
+            with patch.object(sys, "argv", arguments), patch.object(sys, "platform", "darwin"), \
+                 patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
+                 patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
+                 patch.object(package_verify, "run_smoke", side_effect=error) as smoke:
+                with self.assertRaises(type(error)): package_verify.main()
+                self.assertEqual(smoke.call_count, 1)
+
+    def test_workspace_sdk_acceptance_follows_fvm_instead_of_a_literal(self):
+        with patch.object(sys, "argv", ["verify.py", "package"]), \
+             patch.object(package_verify, "workspace_flutter", return_value="3.48.4"), \
+             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.48.4"}'), \
+             patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="Validating package...")):
+            package_verify.main()
 
     def test_release_build_rejects_missing_or_corrupt_runtime(self):
         with tempfile.TemporaryDirectory() as directory:

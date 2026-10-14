@@ -26,7 +26,7 @@ dependencies:
   genkit_flutter_edge_ai: ^0.9.1
   flutter_edge_ai: ^2.4.0
   # Add the inference engine(s) you need:
-  flutter_edge_ai_litertlm: ^1.13.2   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.13.3   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.2.2  # .task / .bin models (mobile + web)
   # Optional — tokenizers for .tflite / .onnx embedding models (an EmbeddingGemma 2
   # .litertlm needs none; the backend is flutter_edge_ai_litertlm above):

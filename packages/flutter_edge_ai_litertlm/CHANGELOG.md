@@ -1,3 +1,6 @@
+## 1.13.3
+- EmbeddingGemma 2 reports its image token budget, so image-fitted deciders are bound to it.
+
 ## 1.13.2
 - Web: EmbeddingGemma 2 audio and combined-input embeddings on WebGPU.
 - EmbeddingGemma 2 on the Intel Panther Lake NPU (Windows).

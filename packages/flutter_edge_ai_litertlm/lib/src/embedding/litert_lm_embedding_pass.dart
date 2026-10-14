@@ -388,6 +388,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       imageFormats: vision ? liteRtLmImageFormats : const {},
       audioFormats: audio ? liteRtLmAudioFormats : const {},
       combinedInputs: true,
+      // The budget the engine was created with: only when images were
+      // declared (it is not set otherwise, see _createEngine).
+      visionTokensPerImage: images ? _config.visionTokensPerImage : null,
     );
   }
 

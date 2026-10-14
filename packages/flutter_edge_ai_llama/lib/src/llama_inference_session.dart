@@ -92,6 +92,8 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   final List<llama.LlamaChatMessage> _pending = [];
   final List<edge.Message> _transcript = [];
   final List<edge.Message> _pendingTranscript = [];
+  // IDs remain reserved while their visible turns remain in fullHistory.
+  final Set<String> _committedCallIds = {};
   Completer<void>? _done;
   Completer<void>? _abort;
   Future<void>? _closing;
@@ -135,6 +137,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   }
 
   Set<String> _usedCallIds() => {
+    ..._committedCallIds,
     for (final message in _history.followedBy(_pending))
       for (final part in message.parts)
         if (part is llama.LlamaToolCallContent && part.id != null) part.id!,
@@ -388,6 +391,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         .length;
     final count = _pending.length - trailingUsers;
     _history.addAll(_pending.take(count));
+    _rememberCallIds(_pending.take(count));
     final trailingMessages = trailingUsers > 0
         ? _pendingTranscript.reversed
               .takeWhile((m) => m.isUser && m.type == edge.MessageType.text)
@@ -419,6 +423,15 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     if (next < 0) return false;
     history.removeRange(first, math.min(next, history.length));
     return true;
+  }
+
+  void _rememberCallIds(Iterable<llama.LlamaChatMessage> messages) {
+    _committedCallIds.addAll([
+      for (final message in messages)
+        for (final call
+            in message.parts.whereType<llama.LlamaToolCallContent>())
+          call.id!,
+    ]);
   }
 
   void _orderTranscriptResults() {
@@ -673,6 +686,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             ..clear()
             ..addAll(retainedHistory)
             ..addAll([..._pending, assistant]);
+          _rememberCallIds([..._pending, assistant]);
           _transcript.addAll(_pendingTranscript);
           if (_pendingTranscript.any(
             (m) => m.type == edge.MessageType.toolResponse,

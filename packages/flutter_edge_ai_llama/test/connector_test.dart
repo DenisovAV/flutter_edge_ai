@@ -2182,6 +2182,58 @@ void main() {
   );
 
   test(
+    'tool IDs stay unique in fullHistory after runtime context trimming',
+    () async {
+      final chat = await model.openChat(tools: [tool], tokenBuffer: 256);
+      engine.promptCounter = (messages) =>
+          messages.where((m) => m.role == llama.LlamaChatRole.user).length > 1
+          ? 1900
+          : 100;
+      for (var turn = 0; turn < 3; turn++) {
+        engine.script = [_toolChunk(0, 'search', '{}', id: 'reused')];
+        await chat.addQuery(
+          edge.Message.text(text: 'turn $turn', isUser: true),
+        );
+        final call =
+            await chat.generateChatResponse() as LlamaFunctionCallResponse;
+        await chat.addQuery(
+          LlamaToolResponseMessage(
+            callId: call.id,
+            toolName: 'search',
+            response: {'turn': turn},
+          ),
+        );
+        engine.script = null;
+        await chat.generateChatResponse();
+      }
+      final calls = chat.fullHistory
+          .where((m) => m.type == edge.MessageType.toolCall)
+          .expand(
+            (m) =>
+                (jsonDecode(m.text) as Map<String, dynamic>)['tool_calls']
+                    as List,
+          );
+      expect(calls.map((call) => call['id']).toSet(), hasLength(3));
+      final saved = [
+        for (final message in chat.fullHistory)
+          edge.Message(
+            text: message.text,
+            isUser: message.isUser,
+            type: message.type,
+            toolName: message.toolName,
+          ),
+      ];
+      await chat.clearHistory(replayHistory: saved);
+      await chat.addQuery(edge.Message.text(text: 'next', isUser: true));
+      await chat.generateChatResponse();
+      expect(
+        chat.fullHistory.where((m) => m.type == edge.MessageType.toolCall),
+        hasLength(3),
+      );
+    },
+  );
+
+  test(
     'unusable SDK context closes the model and preserves prior transcript',
     () async {
       final chat = await model.openChat();

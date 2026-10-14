@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tool"))
@@ -460,6 +461,21 @@ class ToolingTests(unittest.TestCase):
              patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.48.4"}'), \
              patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="Validating package...")):
             package_verify.main()
+
+    def test_default_android_apk_rejects_32_bit_slice_or_missing_gguf_runtime(self):
+        with tempfile.TemporaryDirectory() as directory:
+            apk = Path(directory) / "app-release.apk"
+            good = [f"lib/{abi}/libllamadart.so" for abi in ["arm64-v8a", "x86_64"]]
+            for files, accepted in [(good, True),
+                                    (good + ["lib/armeabi-v7a/libflutter.so"], False),
+                                    ([good[0], "lib/x86_64/libflutter.so"], False)]:
+                with zipfile.ZipFile(apk, "w") as archive:
+                    for name in files: archive.writestr(name, b"fixture")
+                if accepted:
+                    package_verify.validate_android_apk(apk)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "ABIs|runtime"):
+                        package_verify.validate_android_apk(apk)
 
     def test_release_build_rejects_missing_or_corrupt_runtime(self):
         with tempfile.TemporaryDirectory() as directory:

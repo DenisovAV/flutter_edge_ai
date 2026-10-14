@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from threading import Event, Thread
 
 from serve_web_fixture import create_server
@@ -82,6 +83,19 @@ def run_smoke(command, directory, expected, timeout=None):
         require_smoke_success(report, expected)
     finally:
         process.stdout.close()
+
+
+def validate_android_apk(path):
+    """Default APKs must contain both supported ABIs and their GGUF runtime."""
+    with zipfile.ZipFile(path) as apk:
+        libraries = [name for name in apk.namelist() if name.startswith("lib/") and name.endswith(".so")]
+    abis = {name.split("/")[1] for name in libraries}
+    if abis != {"arm64-v8a", "x86_64"}:
+        raise RuntimeError(f"Android APK has unsupported/missing ABIs: {sorted(abis)}")
+    for abi in sorted(abis):
+        if not any(name.startswith(f"lib/{abi}/") and "llama" in name.rsplit("/", 1)[1].lower() for name in libraries):
+            raise RuntimeError(f"Android APK is missing its llama.cpp runtime for {abi}")
+    print("Android APK ABI/runtime contents: PASS", flush=True)
 
 
 def workspace_flutter():
@@ -271,6 +285,8 @@ def main():
             run([sys.executable, "tool/fetch_web_assets.py"])
             command += ["--wasm"]
         run(command, PACKAGE / "example")
+        if args.platform == "android":
+            validate_android_apk(PACKAGE / "example/build/app/outputs/flutter-apk/app-release.apk")
         if args.platform == "web":
             run([sys.executable, "tool/validate_web_build.py"])
 

@@ -27,7 +27,10 @@ CI that fails on warnings fail.
    option. A zero-shot option set (descriptions only) cannot cross-fit: use
    `DeciderCalibration.none()`, or `DeciderCalibration.minSimilarity(t)` with a
    `t` you MEASURED for your model file and prompt — never a guessed value.
-   Always handle `answer.choice == null`.
+   With many look-alike options and ~5 examples each the cross-fit's error on
+   answered requests overshoots a 5 % budget (Tiny Island, 184 actions: 15 %);
+   there, calibrate with `fromLabelled` on held-out requests (4–5 %, fewer
+   answered). Always handle `answer.choice == null`.
 4. A raw score is not a probability. `RankedOption.probability`,
    `DeciderAnswer.probabilities` and `DeciderAnswer.confidence` are null unless
    the decider was calibrated with `DeciderCalibration.fromLabelled` on held-out

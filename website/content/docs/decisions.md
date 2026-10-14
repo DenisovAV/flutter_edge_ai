@@ -167,14 +167,17 @@ one-sentence requests.
 | 2–20 options, linear, cross-fit, 10 examples | 90–94 % of in-scope answered, ≤ 0.8 % error on them, 87–99 % of out-of-subset and 96–99.5 % of CLINC out-of-scope refused |
 | 150 options, linear, cross-fit, 5 / 10 / 30 examples | out-of-scope refused 80 / 85 / 90 %; error on answered 6.8 / 4.9 / 3.6 % |
 | Linear, fixed cosine 0.825–0.85, 2–20 options | about as good as the cross-fit for this file and prompt |
+| Tiny Island (the example app): 184 actions, centroid, 5 examples each; 144 held-out paraphrases (20 of them Russian or German) and 30 out-of-scope requests; macOS CPU | cross-fit: 95.8 % answered, 15.2 % error on them, 29 of 30 out-of-scope refused. `fromLabelled(maxError: 0.05)`, two folds: 61–72 % answered, 3.8–4.5 % error, 30 of 30 refused |
 
 Which inputs are answered and refused depends only on the abstain signal and
 its threshold, the same for both methods; the error on the answered ones was
 measured with `linear`, and `centroid` makes more (it is less accurate). At 150
-options with 5 examples, the cross-fit's error (6.8 %) is over a 5 % budget:
-calibrate with `fromLabelled` there. Not measured yet: another data set
-for "none of the above", requests longer than a sentence, languages other than
-English, and accuracy on platforms other than Android and a cloud CPU.
+options with 5 examples, the cross-fit's error (6.8 %) is over a 5 % budget,
+and with many look-alike options (Tiny Island's verbs on the same few things)
+it is three times over: calibrate with `fromLabelled` on held-out requests
+there, and expect it to answer fewer. Not measured yet: requests longer than
+a sentence, a large set in languages other than English, and accuracy on
+platforms other than Android, macOS and a cloud CPU.
 
 ## Speed
 

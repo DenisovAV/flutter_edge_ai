@@ -1,17 +1,19 @@
 name: flutter_edge_ai_diagnostics
-description: "Opt-in Android and iOS process memory diagnostics: footprint, resident clean pages and available memory, read from the OS."
-version: 0.2.2
+description: "Opt-in Android, iOS and macOS process memory diagnostics: footprint, its peak, resident clean pages and available memory, read from the OS."
+version: 0.3.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_diagnostics
 topics: [memory, diagnostics, gemma, on-device]
 
-# Android and iOS only, on purpose: jetsam and lmkd are why these numbers differ
-# from RSS, and "will I be killed" is a mobile question. Every value is read
-# from the OS (/proc on Android, Mach + libsystem on iOS) through dart:io and
-# dart:ffi, so the package carries no Kotlin, Swift, Gradle or podspec.
+# Android, iOS and macOS only, on purpose: jetsam and lmkd are why these numbers
+# differ from RSS, and "will I be killed" is a mobile question; macOS shares the
+# Mach call iOS uses. Every value is read from the OS (/proc on Android, Mach +
+# libsystem on iOS and macOS) through dart:io and dart:ffi, so the package
+# carries no Kotlin, Swift, Gradle or podspec.
 platforms:
   android:
   ios:
+  macos:
 
 resolution: workspace
 

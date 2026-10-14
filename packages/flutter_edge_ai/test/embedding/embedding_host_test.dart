@@ -60,9 +60,11 @@ final class _FakePass extends EmbeddingPass {
 
   final _Config _config;
 
-  void _log(String line) => File(
-    _config.logPath,
-  ).writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+  /// Not fsync'd: the test reads the log on the same machine, from the page
+  /// cache, and an fsync makes every logged call wait for the disk, the
+  /// worker blocked meanwhile.
+  void _log(String line) =>
+      File(_config.logPath).writeAsStringSync('$line\n', mode: FileMode.append);
 
   File get _release => File('${_config.logPath}.release');
 

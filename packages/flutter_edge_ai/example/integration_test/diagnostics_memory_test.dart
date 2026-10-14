@@ -1,5 +1,6 @@
 // Device test for flutter_edge_ai_diagnostics: proves the numbers are real on an
-// actual Android or iOS process, which host tests cannot do for iOS at all.
+// actual Android, iOS or macOS process, which host tests cannot do for iOS and
+// macOS at all.
 //
 //   flutter test integration_test/diagnostics_memory_test.dart -d <device-id> --no-uninstall
 //
@@ -15,8 +16,8 @@ import 'package:integration_test/integration_test.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  // Off Android and iOS memorySnapshot() throws by design, so these skip there
-  // rather than fail.
+  // Off Android, iOS and macOS memorySnapshot() throws by design, so these skip
+  // there rather than fail.
   final skip = !FlutterEdgeAiDiagnostics.isSupported;
 
   testWidgets('reports the supported values on a real device', (tester) async {
@@ -34,9 +35,24 @@ void main() {
     } else {
       expect(snapshot.fileBackedBytes, isNull);
     }
+    // The peak is the kernel's lifetime high-water mark of the footprint, read
+    // in the same call, so it is at least the current value. Android keeps no
+    // anonymous-only peak.
+    if (Platform.isAndroid) {
+      expect(snapshot.anonymousPeakBytes, isNull);
+    } else {
+      expect(snapshot.anonymousPeakBytes, isNotNull);
+      expect(
+        snapshot.anonymousPeakBytes,
+        greaterThanOrEqualTo(snapshot.anonymousBytes!),
+      );
+    }
     // availableBytes is legitimately null on the iOS simulator (no jetsam
-    // limit), so only a real device is held to it.
-    if (Platform.isAndroid || !_isIosSimulator) {
+    // limit) and always null on macOS (no per-app limit), so only an Android
+    // device or a real iPhone is held to it.
+    if (Platform.isMacOS) {
+      expect(snapshot.availableBytes, isNull);
+    } else if (Platform.isAndroid || !_isIosSimulator) {
       expect(snapshot.availableBytes, isNotNull);
       expect(snapshot.availableBytes, greaterThan(0));
     }

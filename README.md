@@ -23,7 +23,7 @@ or [Getting started](https://flutteredge.ai/docs/getting-started).
 
 | Package | What it does | Docs |
 |---|---|---|
-| [`flutter_edge_ai`](packages/flutter_edge_ai/README.md) | Core: model installation, the engine registry, sessions and chat. Required by every package except diagnostics. | [pub.dev](https://pub.dev/packages/flutter_edge_ai) · [site](https://flutteredge.ai/docs/getting-started) |
+| [`flutter_edge_ai`](packages/flutter_edge_ai/README.md) | Core: model installation, the engine registry, sessions and chat. Required by every package except diagnostics and `genkit_hybrid`. | [pub.dev](https://pub.dev/packages/flutter_edge_ai) · [site](https://flutteredge.ai/docs/getting-started) |
 | **Engines** | | |
 | [`flutter_edge_ai_litertlm`](packages/flutter_edge_ai_litertlm/README.md) | LiteRT-LM (`.litertlm`) through `dart:ffi` on the five native platforms plus web; CPU, GPU and NPU; the LiteRT embedding backend. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_litertlm) · [site](https://flutteredge.ai/docs/litertlm) |
 | [`flutter_edge_ai_mediapipe`](packages/flutter_edge_ai_mediapipe/README.md) | MediaPipe (`.task`) on Android, iOS and web. Google's LLM Inference API is maintenance-only; new apps should use `.litertlm`. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_mediapipe) · [site](https://flutteredge.ai/docs/mediapipe) |
@@ -40,7 +40,7 @@ or [Getting started](https://flutteredge.ai/docs/getting-started).
 | [`flutter_edge_ai_diagnostics`](packages/flutter_edge_ai_diagnostics/README.md) | Process memory diagnostics on Android, iOS and macOS. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_diagnostics) · [site](https://flutteredge.ai/docs/diagnostics) |
 | **Genkit** | | |
 | [`genkit_flutter_edge_ai`](packages/genkit_flutter_edge_ai/README.md) | Genkit Dart plugin: on-device models and embedders as Genkit models. | [pub.dev](https://pub.dev/packages/genkit_flutter_edge_ai) · [site](https://flutteredge.ai/docs/genkit) |
-| [`genkit_hybrid`](packages/genkit_hybrid/README.md) | Hybrid routing for Genkit: on-device and cloud models behind one routing policy. | [pub.dev](https://pub.dev/packages/genkit_hybrid) · [site](https://flutteredge.ai/docs/genkit) |
+| [`genkit_hybrid`](packages/genkit_hybrid/README.md) | Hybrid routing for Genkit: on-device and cloud models behind one routing policy. Depends only on `genkit`. | [pub.dev](https://pub.dev/packages/genkit_hybrid) · [site](https://flutteredge.ai/docs/genkit) |
 
 Which package you need for which task, and how they fit together:
 [Packages](https://flutteredge.ai/docs/packages) and

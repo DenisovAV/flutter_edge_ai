@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-inference
-description: Use when adding on-device LLM inference to a Flutter app with flutter_edge_ai — offline chat, running Gemma, Qwen or Phi locally, installing a model from Hugging Face (gated repos included), streaming replies, a system prompt, thinking or reasoning output, image or audio prompts, picking a CPU, GPU or NPU backend, stopping generation — or setting up the recommended .litertlm engine (ModelFileType.litertlm) on Android, iOS, macOS, Windows, Linux or web, including the Android minSdk and internet permission, the Apple entitlements and Podfile, and the web index.html script tags. Also use when a reply comes back empty, the model answers identically every time, maxTokens does not shorten replies, FlutterEdgeAi is an undefined name, getActiveModel throws "No inference engine can handle this model", a session throws "Session is closed", numbers come back wrong on the GPU, or .litertlm fails to load on Android. For .task or .bin models (ModelFileType.task or ModelFileType.binary), use flutter-edge-ai-mediapipe.
+description: Use when adding on-device LLM inference to a Flutter app with flutter_edge_ai — offline chat, running an LLM locally, installing a model from Hugging Face (gated repos included), streaming replies, a system prompt, thinking or reasoning output, image or audio prompts, picking a CPU, GPU or NPU backend, stopping generation — or setting up the recommended .litertlm engine (ModelFileType.litertlm) on Android, iOS, macOS, Windows, Linux or web, including the Android minSdk and internet permission, the Apple entitlements and Podfile, and the web index.html script tags. Also use when a reply comes back empty, the model answers identically every time, maxTokens does not shorten replies, FlutterEdgeAi is an undefined name, getActiveModel throws "No inference engine can handle this model", a session throws "Session is closed", numbers come back wrong on the GPU, or .litertlm fails to load on Android. For .task or .bin models (ModelFileType.task or ModelFileType.binary), use flutter-edge-ai-mediapipe.
 ---
 
 # Running a model with flutter_edge_ai
@@ -46,6 +46,8 @@ final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024)
 ```
 
 Gemma 4 E2B is 2.6 GB and needs no token. On web use `gemma-4-E2B-it-web.litertlm` from the same repo (2.0 GB).
+
+Supported models, their file types and engines: https://flutteredge.ai/docs/models.
 
 `install()` skips the download when the file is already installed from the same source, so calling it at every launch is safe. The latest install becomes the model `getActiveModel` loads.
 
@@ -94,6 +96,7 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 **No engine registered**
 - Symptom: `StateError: No inference engine can handle this model (ModelFileType.litertlm). Add the engine package to pubspec.yaml and pass it in inferenceEngines: of FlutterEdgeAi.initialize(...)`
 - Fix: add the engine package and register its provider — or fix `fileType` if the wrong engine is registered.
+- `ModelFileType.gguf` exists in core, but its llama.cpp engine (`flutter_edge_ai_llama`) is coming soon: until then `getActiveModel` throws this error for a `.gguf` model.
 
 **`maxTokens` used as a reply length**
 
@@ -183,7 +186,7 @@ The chat keeps the history: add the next user message and generate again. `gener
 
 `createSession` and `createChat` fill a single slot on the model, so a second one closes the first. For concurrent conversations use `openSession` / `openChat`, and close each one.
 
-They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` if the chat sends images) explicitly, or the chat runs as `ModelType.gemmaIt` with images off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, and on built-in AI; everywhere else — ONNX and MediaPipe web — they throw `UnsupportedError`.
+They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` / `supportAudio:` if the chat sends images or audio) explicitly, or the chat runs as `ModelType.gemmaIt` with images and audio off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, and on built-in AI; everywhere else — ONNX and MediaPipe web — they throw `UnsupportedError`.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);
@@ -199,7 +202,8 @@ try {
 
 ## Thinking models
 
-Gemma 4, Qwen3 and DeepSeek R1 can emit reasoning on their supported engines.
+Gemma 4, Qwen3, DeepSeek R1 and `.litertlm` bundles with a thought channel
+(e.g. SmolLM3, Phi-4 Mini Reasoning) can emit reasoning on their supported engines.
 Pass `enableThinking: true` to `createChat`. Reasoning arrives as
 `ThinkingResponse` only from `generateChatResponseAsync()`;
 `generateChatResponse()` strips it. On a native `.litertlm`, reasoning that a

@@ -56,8 +56,12 @@ changes help explain the model's memory cost, with the limits below.
 
 ```
 dependencies:
-  flutter_edge_ai_diagnostics: ^0.2.2
+  flutter_edge_ai_diagnostics: ^0.3.0
 ```
+
+This page describes 0.3.0 (coming soon to pub.dev), which adds macOS and
+`anonymousPeakBytes`; 0.2.2, the current release, reads Android and iOS without
+the peak.
 
 If only `test/` or `integration_test/` uses it, put it under `dev_dependencies`
 instead. Neither section strips anything from a release build: what keeps the
@@ -88,7 +92,7 @@ On Android, clean does not mean exclusively file-backed. `Private_Clean` can inc
 
 The baseline includes every clean mapped file the process has touched. Take a reading before loading and subtract, while interpreting both counters together. Singly mapped dirty file pages count in `Private_Dirty` (inside `anonymousBytes`); `Shared_Dirty` is in neither field. Clean pages and dirty pages do not form a complete split of anonymous and file-backed memory.
 
-`fileBackedBytes` is null on iOS because this package does not read a corresponding value there yet. `TASK_VM_INFO` has an `external` field; evaluating it is a follow-up.
+`fileBackedBytes` is null on iOS and macOS because this package does not read a corresponding value there yet. `TASK_VM_INFO` has an `external` field; evaluating it is a follow-up.
 
 The platforms enforce memory differently, and the numbers reflect it:
 
@@ -150,7 +154,11 @@ you support and treat `availableBytes` as a best case.
   - `anonymousBytes` and `fileBackedBytes` on an Android kernel without
     `/proc/self/smaps_rollup`. Mainline Linux added it in 4.14, but vendor
     kernels may backport it;
-  - `fileBackedBytes` on iOS: the package does not read a corresponding value yet;
+  - `fileBackedBytes` on iOS and macOS: the package does not read a corresponding value yet;
+  - `anonymousPeakBytes` on Android, always (the kernel keeps no anonymous-only
+    peak), and on an iOS or macOS version whose `task_info` reply predates the
+    field;
+  - `availableBytes` on macOS, always: it has no per-app limit;
   - `availableBytes` on iOS when the call returns 0. Apple returns 0 both when
     no limit applies (the simulator) and when the limit is already exceeded, and
     the two cannot be told apart.
@@ -172,7 +180,7 @@ and the iPhone 17 Pro simulator (iOS 26.5). These are earlier allocation checks.
 The Linux host test writes and flushes a 64 MiB file on the checkout's
 filesystem, then maps and reads it: `fileBackedBytes` rises without a comparable
 rise in `anonymousBytes`. The Android integration test checks the field is
-positive; its iOS null assertion has not been run for this change.
+positive.
 
 With version 0.2.2 on vivo 1933 (Android 11, kernel 4.9), the opt-in Gemma 4 E2B test measured `fileBackedBytes` in MiB:
 

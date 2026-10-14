@@ -144,8 +144,8 @@ if (builtInReady) {
     fileType: ModelFileType.builtIn,
   ).fromBundled(spec.name).install();
 } else {
-  // Fallback: install an open model (Gemma / Qwen / Phi …). Gemma 4 from
-  // litert-community is public — no token needed.
+  // Fallback: install any model a registered engine runs — see /docs/models.
+  // Gemma 4 from litert-community is public — no token needed.
   await FlutterEdgeAi.installModel(
     modelType: ModelType.gemma4,
     fileType: ModelFileType.litertlm,

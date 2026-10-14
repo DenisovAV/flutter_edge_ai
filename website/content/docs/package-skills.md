@@ -95,7 +95,6 @@ The skills spell out the defaults that fail quietly, each with its fix:
 - `maxTokens` is the context window, not the reply length — cap a reply with `maxOutputTokens`.
 - `Message.isUser` defaults to `false`; a prompt without it gets an empty reply.
 - The declared `fileType`, not the file name, picks the engine, and it defaults to `.task`.
-- A metadata filter on a field missing from `filterSchema` is ignored, and search returns unfiltered results.
 - Speech-to-text takes raw 16 kHz mono PCM. A WAV file or 48 kHz audio is not rejected — it is transcribed wrong.
 - The engine packages do not re-export core: import `package:flutter_edge_ai/flutter_edge_ai.dart` as well.
 

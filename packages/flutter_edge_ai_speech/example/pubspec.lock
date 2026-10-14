@@ -194,14 +194,14 @@ packages:
       path: "../../flutter_edge_ai_embeddings"
       relative: true
     source: path
-    version: "2.3.0"
+    version: "2.3.1"
   flutter_edge_ai_litertlm:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.13.3"
+    version: "1.13.4"
   flutter_edge_ai_speech:
     dependency: "direct main"
     description:

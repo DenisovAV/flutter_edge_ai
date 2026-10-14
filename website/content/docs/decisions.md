@@ -25,7 +25,7 @@ that uses them gets the analyzer warning `experimental_member_use`. Add
 ```
 dependencies:
   flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_litertlm: ^1.13.3 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite)
+  flutter_edge_ai_litertlm: ^1.13.4 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite)
 ```
 
 Any embedding model works: `EmbeddingModel.createDecider` is implemented once in

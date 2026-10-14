@@ -20,7 +20,7 @@ const _features = [
   _FeatureData(
     icon: '🧠',
     title: 'Multimodal',
-    desc: 'Vision + audio input with Gemma 4, Gemma3n, FastVLM',
+    desc: 'Vision and audio input on models whose bundles carry the encoders — Gemma 4, Gemma 3n, Qwen2-VL and more',
     accent: Brand.orange,
   ),
   _FeatureData(
@@ -32,7 +32,7 @@ const _features = [
   _FeatureData(
     icon: '💭',
     title: 'Thinking Mode',
-    desc: 'See the reasoning chains of Gemma 4, DeepSeek R1 & Qwen3',
+    desc: 'See the reasoning of thinking models — Gemma 4, Qwen3, DeepSeek R1, Phi-4 Mini Reasoning and more',
     accent: Brand.blue,
   ),
   _FeatureData(
@@ -56,7 +56,8 @@ const _features = [
   _FeatureData(
     icon: '⚡',
     title: 'Hardware Acceleration',
-    desc: 'CPU/GPU across native targets, plus supported Qualcomm Android and Intel Windows NPUs',
+    desc:
+        'CPU/GPU on every native target and WebGPU on the web, plus NPUs: Qualcomm (Android, Linux arm64) and Intel (Windows)',
     accent: Brand.orange,
   ),
   _FeatureData(
@@ -74,7 +75,7 @@ const _features = [
   _FeatureData(
     icon: '📦',
     title: 'Opt-in Packages',
-    desc: 'Core + 11 opt-in packages — agent skills, speech, RAG & more; ship only what you use',
+    desc: 'Core + 13 opt-in packages — agent skills, speech, RAG, Genkit & more; ship only what you use',
     accent: Brand.green,
   ),
   _FeatureData(

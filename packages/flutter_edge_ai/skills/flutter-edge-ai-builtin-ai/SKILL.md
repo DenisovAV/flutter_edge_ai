@@ -97,7 +97,7 @@ final usable = availability == BuiltInAiAvailability.available ||
 | Platform | Model | Needs |
 | --- | --- | --- |
 | Android | Gemini Nano (AICore) | Pixel 9+, Galaxy S25+; `minSdk 26` |
-| iOS, macOS | Apple Foundation Models | iOS 26+ / macOS 26+ on an iPhone 15 Pro or newer, or an Apple Silicon Mac, with Apple Intelligence on. It builds from iOS 13 / macOS 12, so a macOS app needs a 12.0 deployment target; below OS 26 it reports `unavailableOsTooOld` |
+| iOS, macOS | Apple Foundation Models | iOS 26+ / macOS 26+ on an iPhone 15 Pro or newer, or an Apple Silicon Mac, with Apple Intelligence on; below OS 26 it reports `unavailableOsTooOld`. flutter_local_ai builds from iOS 13 / macOS 12; with core the app needs iOS 15.0 and a macOS 12.0 deployment target |
 | Windows | Phi Silica (Windows AI Foundry) | Windows 11 25H2+ on a Copilot+ PC or a supported GPU, in a packaged app. Streams one final chunk and ignores `maxOutputTokens` |
 | Web | Gemini Nano (Chrome Prompt API) | desktop Chrome — not mobile browsers, Firefox or Safari |
 | Web | Phi-4-mini (Edge Prompt API) | Microsoft Edge with the Prompt API flag on; Edge Dev 154–155 exposes the API but cannot run the model |

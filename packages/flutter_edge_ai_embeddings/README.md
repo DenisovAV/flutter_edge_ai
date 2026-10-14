@@ -63,9 +63,9 @@ SentencePiece whether LiteRT or ONNX Runtime runs it. Keeping them apart is why
 neither engine package depends on this one, and why an app that never embeds
 anything resolves neither.
 
-Forget the second list and the first embedding throws a `StateError` naming the
-package to add — it never silently falls back to a tokenizer with the wrong
-convention.
+Forget the second list and `getActiveEmbedder()` fails with an
+`EmbeddingLoadException` (its `cause` a `StateError`) naming the package to
+add — it never silently falls back to a tokenizer with the wrong convention.
 
 `LiteRtEmbeddingBackend` provides the embedding model that
 `FlutterEdgeAi.getActiveEmbedder()` returns, which text RAG

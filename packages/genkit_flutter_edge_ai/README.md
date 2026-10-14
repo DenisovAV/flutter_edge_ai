@@ -1,6 +1,6 @@
 # genkit_flutter_edge_ai
 
-Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) — local, on-device LLM inference (Gemma, Qwen, Phi, DeepSeek, and more), fully offline.
+Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) — local, on-device LLM inference with any model a registered flutter_edge_ai engine runs ([models](https://flutteredge.ai/docs/models)), fully offline.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/DenisovAV/flutter_edge_ai/main/packages/genkit_flutter_edge_ai/assets/cover.jpeg" alt="genkit_flutter_edge_ai_cover">
@@ -22,22 +22,16 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Parallel tool calls — several calls in one response, each with a `ref`, and every tool response goes back to the model
 - Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
-- Thinking mode (Gemma 4, DeepSeek, Qwen3)
+- Thinking mode on models that support it
 - `latencyMs`, and token usage in `response.usage` where the engine counts tokens, with time to first token and tokens/s under `usage.custom`. A single-turn model's chat (FunctionGemma) opens a fresh session after each answer and reports none
 - Configurable via `@Schema()`-annotated options, validated before a model loads
 - Errors a router can act on: a bad request is `INVALID_ARGUMENT`; no model installed is `UNAVAILABLE`; tools or media on a model configured without them, or an engine that cannot do this here, are `UNIMPLEMENTED` — `genkit_hybrid` hands both to its next branch; an installed model the app cannot run (no engine registered for it) is `FAILED_PRECONDITION`
 
 ## Supported Model Architectures
 
-| Architecture | ModelType | Notes |
-|---|---|---|
-| Gemma 4 | `ModelType.gemma4` | Multimodal (image, audio); thinking mode; native `.litertlm` tool-call tokens |
-| Gemma 3 / Gemma3n IT | `ModelType.gemmaIt` | Gemma 3 text models and Gemma3n multimodal models |
-| DeepSeek | `ModelType.deepSeek` | Thinking mode |
-| Qwen / Qwen3 / Qwen3.5+ | `ModelType.qwen` / `ModelType.qwen3` / `ModelType.qwen35` | Qwen3 supports thinking mode |
-| Llama | `ModelType.llama` | |
-| Phi | `ModelType.phi` | Phi-4 |
-| FunctionGemma | `ModelType.functionGemma` | Specialized function calling |
+Any model a registered engine runs; pass its `ModelType` in
+`FlutterEdgeAiModelConfig`. Which `ModelType` each model takes, and what it
+supports: [models](https://flutteredge.ai/docs/models).
 
 ## Setup
 
@@ -50,10 +44,10 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 
 | Package | Provider | Add it when you use… |
 |---|---|---|
-| `flutter_edge_ai_litertlm` | `LiteRtLmEngine()`, `LiteRtEmbeddingBackend()` | `.litertlm` models (Gemma 4, desktop) and/or text embeddings (EmbeddingGemma) |
-| `flutter_edge_ai_mediapipe` | `MediaPipeEngine()` | `.task` / `.bin` models (Gemma 3, mobile/web) |
+| `flutter_edge_ai_litertlm` | `LiteRtLmEngine()`, `LiteRtEmbeddingBackend()` | `.litertlm` models (every platform, incl. desktop) and LiteRT embeddings (EmbeddingGemma 1 and 2, Gecko) |
+| `flutter_edge_ai_mediapipe` | `MediaPipeEngine()` | `.task` / `.bin` models (Android, iOS, web; MediaPipe is maintenance-only upstream) |
 | `flutter_edge_ai_onnx` | `OnnxEngine()`, `OnnxEmbeddingBackend()` | ONNX models and embeddings |
-| `flutter_edge_ai_builtin_ai` | `BuiltInAiEngine()` | the OS's own model (Gemini Nano, Apple Foundation Models, Phi Silica) |
+| `flutter_edge_ai_builtin_ai` | `BuiltInAiEngine()` | the OS's own model (Gemini Nano, Apple Foundation Models, Phi Silica) or the browser's Prompt API (Chrome, Edge) |
 | `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | tokenizers for `.tflite` and `.onnx` text embeddings (an EmbeddingGemma 2 `.litertlm` needs none) |
 
 ```yaml
@@ -97,17 +91,21 @@ await FlutterEdgeAi.initialize(
   embeddingBackends: const [LiteRtEmbeddingBackend()],
   embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
 );
-await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
-    .fromAsset('assets/gemma-3-1b-it-int4.task')
-    .install();
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm, // the default, .task, routes to MediaPipe
+).fromNetwork(
+  // On web, install gemma-4-E2B-it-web.litertlm from the same repository.
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+).install();
 
 // Create Genkit with plugin
 final ai = Genkit(plugins: [
   GenkitFlutterEdgeAiPlugin(
     models: [
       FlutterEdgeAiModelConfig(
-        name: 'gemma-3-1b',
-        modelType: ModelType.gemmaIt,
+        name: 'gemma-4-e2b',
+        modelType: ModelType.gemma4,
       ),
     ],
     embedders: [
@@ -118,7 +116,7 @@ final ai = Genkit(plugins: [
 
 // Generate
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Hello!',
 );
 final reason = response.finishReason;
@@ -143,7 +141,7 @@ Pass `FlutterEdgeAiModelOptions` to customize inference:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,
@@ -162,8 +160,8 @@ final response = await ai.generate(
 | `topK` | `int?` | model's own | Top-K sampling; `1` is greedy |
 | `topP` | `double?` | model's own | Top-P (nucleus) sampling |
 | `supportImage` | `bool?` | false | Enable multimodal image input |
-| `supportAudio` | `bool?` | false | Enable audio input (Gemma 4, Gemma3n) |
-| `enableThinking` | `bool?` | false | Enable thinking mode (Gemma 4, DeepSeek, Qwen3) |
+| `supportAudio` | `bool?` | false | Enable audio input (models with an audio encoder, e.g. Gemma 4) |
+| `enableThinking` | `bool?` | false | Enable thinking mode on models that support it |
 | `randomSeed` | `int?` | 1 (ONNX, or a `.litertlm` that ships one: the model's own) | Random seed for sampling |
 | `toolChoice` | `String?` | `'auto'` | Tool calling mode: `'auto'`, `'required'`, `'none'` |
 | `systemInstruction` | `String?` | null | System-level instruction (overrides system-role messages) |
@@ -189,7 +187,7 @@ model reloaded.
 
 ```dart
 final stream = ai.generateStream(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Write a story.',
 );
 
@@ -205,7 +203,7 @@ final result = await stream.onResult; // check finishReason as in Quick Start
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'What is the weather in Paris?',
   tools: [weatherTool],
 );
@@ -229,7 +227,7 @@ prompt alone.
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
 );
@@ -264,7 +262,7 @@ call, always keeping every system message and the most recent message:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Continue our conversation…',
   messages: longHistory,
   use: [trimContext(maxInputTokens: 800)],
@@ -319,7 +317,7 @@ so it follows a model that core replaced or closed in between.
 
 ## Known Limitations
 
-- **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
+- **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_onnx` for ONNX, `flutter_edge_ai_builtin_ai` for the OS's own model, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
 - **Model installation**: The plugin does NOT manage model installation. The host app must install models via `FlutterEdgeAi.installModel()` and embedders via `FlutterEdgeAi.installEmbedder()` before using the plugin. Without one, a request fails with `UNAVAILABLE`.
 - **Model names are labels**: every configured `FlutterEdgeAiModelConfig` runs the model that is active in flutter_edge_ai, the one installed or selected last; `modelType` tells the plugin how to talk to it. The names share one queue, so generations run one at a time in the order they arrive. Each request asks flutter_edge_ai for the active model, which reuses the loaded one while nothing changed; a newly installed model, or other runtime arguments, give the next request a new one. Set `supportsTools: false` or `supportsMedia: false` on a config whose model takes no tools or media: its `supports` metadata says so, and a request that needs them fails with `UNIMPLEMENTED` instead of reaching a model that would ignore them.
 - **System role**: System messages are passed natively via `createChat(systemInstruction:)`. Only text content is supported in system messages. The capability first shipped under the old package name in `flutter_gemma` 0.13.0.

@@ -171,8 +171,9 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       //
       // Null rather than CPU, because CPU would be its own guess: ORT-GenAI
       // selects the provider from the model directory's own genai_config.json,
-      // which we never read. Null is what the contract defines for exactly
-      // this — "the platform runtime does not expose a final backend".
+      // whose execution-provider section we never read. Null is what the
+      // contract defines for exactly this — "the platform runtime does not
+      // expose a final backend".
       activeBackend: null,
       fileType: spec.fileType,
       configTopK: configTopK,

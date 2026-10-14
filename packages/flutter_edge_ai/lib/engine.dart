@@ -36,6 +36,7 @@ export 'src/media/encoded_media_format.dart' show detectImageMimeType;
 export 'src/extensions.dart' show MessageExtension;
 export 'src/parsing/sdk_response_parser.dart' show SdkResponseParser;
 export 'src/parsing/sdk_text_extractor.dart' show SdkTextExtractor;
+export 'src/parsing/tool_calls_of.dart' show toolCallsOf;
 export 'src/model_management/model_specs.dart' show TtsModelTypeManifest;
 
 // Embedding SPI. Core builds, hosts and closes every embedding model from

@@ -67,7 +67,7 @@ await for (final r in chat.generateChatResponseWithTools(
 }
 ```
 
-`onToolCall` receives a `FunctionCallResponse` with `name` and `args`, and returns the map the model reads back. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall` is reported to the model, then rethrown on the stream.
+`onToolCall` receives a `FunctionCallResponse` with `name`, `args` and, when the engine gives one, `id`, and returns the map the model reads back. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall` is reported to the model, then rethrown on the stream.
 
 ## Handling calls yourself
 
@@ -84,7 +84,11 @@ switch (response) {
     for (final call in calls) {
       final result = await runTool(call.name, call.args);
       await chat.addQueryChunk(
-        Message.toolResponse(toolName: call.name, response: result),
+        Message.toolResponse(
+          toolName: call.name,
+          response: result,
+          toolCallId: call.id, // pairs results of same-name calls
+        ),
       );
     }
     final afterAll = await chat.generateChatResponse();

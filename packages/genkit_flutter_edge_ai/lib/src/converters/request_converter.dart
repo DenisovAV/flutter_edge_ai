@@ -116,9 +116,9 @@ Future<List<gemma.Message>> convertMessages(
           'Model messages take text and tool requests.',
         );
         final text = _extractText(message.content);
-        final toolCallJson = _extractToolRequest(message.content);
-        if (toolCallJson != null) {
-          result.add(gemma.Message.toolCall(text: toolCallJson));
+        final toolCall = _toolCallMessage(message.content);
+        if (toolCall != null) {
+          result.add(toolCall);
         } else {
           result.add(gemma.Message(text: text, isUser: false));
         }
@@ -140,6 +140,7 @@ Future<List<gemma.Message>> convertMessages(
             gemma.Message.toolResponse(
               toolName: response.name,
               response: _toolResponseBody(response),
+              toolCallId: response.ref,
             ),
           );
         }
@@ -591,21 +592,42 @@ Object _transferError(Object error, String host) => switch (error) {
   _ => error,
 };
 
-/// Extracts tool requests (function calls) as JSON string from content parts.
+/// The tool requests (function calls) of a model message as one
+/// `Message.toolCall`, or null when it has none.
 ///
-/// If a single tool call is found, returns a JSON object: `{"name": ..., "parameters": ...}`.
-/// If multiple tool calls are found (parallel calls), returns a JSON array of objects.
-String? _extractToolRequest(List<Part> parts) {
-  final calls = <Map<String, dynamic>>[];
-  for (final part in parts) {
-    if (part.isToolRequest) {
-      final toolReq = part.toolRequest!;
-      calls.add({'name': toolReq.name, 'parameters': toolReq.input});
+/// Its text is a JSON object `{"name": ..., "parameters": ...}` for one call
+/// and a JSON array of them for parallel calls. Its calls carry each request's
+/// `ref` as their id, so `ToolResponse.ref` pairs a result with its call; they
+/// are left out when an input is not a JSON object, and the text stands alone.
+gemma.Message? _toolCallMessage(List<Part> parts) {
+  final requests = [
+    for (final part in parts)
+      if (part.isToolRequest) part.toolRequest!,
+  ];
+  if (requests.isEmpty) return null;
+  final json = [
+    for (final request in requests)
+      {'name': request.name, 'parameters': request.input},
+  ];
+  final calls = <gemma.FunctionCallResponse>[];
+  for (final request in requests) {
+    final input = request.input;
+    if (input != null && input is! Map) {
+      calls.clear();
+      break;
     }
+    calls.add(
+      gemma.FunctionCallResponse(
+        name: request.name,
+        args: input == null ? {} : Map<String, dynamic>.from(input as Map),
+        id: request.ref,
+      ),
+    );
   }
-  if (calls.isEmpty) return null;
-  if (calls.length == 1) return jsonEncode(calls.first);
-  return jsonEncode(calls);
+  return gemma.Message.toolCall(
+    text: jsonEncode(json.length == 1 ? json.single : json),
+    calls: calls,
+  );
 }
 
 /// A tool response as the map the model reads: its output, under `result`

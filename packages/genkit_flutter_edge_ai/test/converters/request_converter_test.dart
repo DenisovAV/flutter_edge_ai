@@ -235,6 +235,77 @@ void main() {
       expect(decoded[1]['name'], 'get_time');
     });
 
+    test('carries refs as call ids and as the ids results answer', () async {
+      final messages = [
+        Message(role: Role.model, content: [
+          ToolRequestPart(
+            toolRequest: ToolRequest(
+              ref: 'r1',
+              name: 'get_weather',
+              input: {'location': 'Paris'},
+            ),
+          ),
+          ToolRequestPart(
+            toolRequest: ToolRequest(name: 'get_time'),
+          ),
+        ]),
+        Message(role: Role.tool, content: [
+          ToolResponsePart(
+            toolResponse: ToolResponse(
+              ref: 'r1',
+              name: 'get_weather',
+              output: {'temp': '15C'},
+            ),
+          ),
+          ToolResponsePart(
+            toolResponse: ToolResponse(name: 'get_time', output: 'noon'),
+          ),
+        ]),
+      ];
+
+      final result = await convertMessages(messages);
+
+      expect(result[0].toolCalls, const [
+        gemma.FunctionCallResponse(
+          name: 'get_weather',
+          args: {'location': 'Paris'},
+          id: 'r1',
+        ),
+        gemma.FunctionCallResponse(name: 'get_time', args: {}),
+      ]);
+      // The text is what it always was, for engines that replay it.
+      expect(jsonDecode(result[0].text), [
+        {
+          'name': 'get_weather',
+          'parameters': {'location': 'Paris'},
+        },
+        {'name': 'get_time', 'parameters': null},
+      ]);
+      expect(result[1].toolCallId, 'r1');
+      expect(result[2].toolCallId, isNull);
+    });
+
+    test('an input that is not an object leaves the turn to its text',
+        () async {
+      // All the calls or none: the calls must not disagree with the text.
+      final result = await convertMessages([
+        Message(role: Role.model, content: [
+          ToolRequestPart(
+            toolRequest: ToolRequest(ref: 'r0', name: 'ping', input: {}),
+          ),
+          ToolRequestPart(
+            toolRequest: ToolRequest(ref: 'r1', name: 'echo', input: 'hi'),
+          ),
+        ]),
+      ]);
+
+      expect(result.single.toolCalls, isEmpty);
+      expect(jsonDecode(result.single.text), [
+        {'name': 'ping', 'parameters': {}},
+        {'name': 'echo', 'parameters': 'hi'},
+      ]);
+    });
+
     test('handles empty message list', () async {
       final result = await convertMessages([]);
       expect(result, isEmpty);

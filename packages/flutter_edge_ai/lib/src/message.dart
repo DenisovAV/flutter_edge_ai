@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'model_response.dart';
+
 enum MessageType {
   text,
   toolResponse,
@@ -18,6 +20,8 @@ class Message {
     this.audioBytes,
     this.type = MessageType.text,
     this.toolName,
+    this.toolCalls = const [],
+    this.toolCallId,
   });
 
   final String text;
@@ -27,6 +31,16 @@ class Message {
   final Uint8List? audioBytes;
   final MessageType type;
   final String? toolName;
+
+  /// The calls a [MessageType.toolCall] message carries, or empty when it was
+  /// built from [text] alone. An engine reads them through `toolCallsOf`
+  /// (`package:flutter_edge_ai/engine.dart`), which also parses [text] for a
+  /// message saved before these fields existed.
+  final List<FunctionCallResponse> toolCalls;
+
+  /// The [FunctionCallResponse.id] a [MessageType.toolResponse] answers, or
+  /// null when the result is paired with its call by [toolName].
+  final String? toolCallId;
 
   bool get hasImage => imageBytes != null || images.isNotEmpty;
   bool get hasAudio => audioBytes != null;
@@ -39,6 +53,8 @@ class Message {
     Uint8List? audioBytes,
     MessageType? type,
     String? toolName,
+    List<FunctionCallResponse>? toolCalls,
+    String? toolCallId,
   }) {
     return Message(
       text: text ?? this.text,
@@ -48,6 +64,8 @@ class Message {
       audioBytes: audioBytes ?? this.audioBytes,
       type: type ?? this.type,
       toolName: toolName ?? this.toolName,
+      toolCalls: toolCalls ?? this.toolCalls,
+      toolCallId: toolCallId ?? this.toolCallId,
     );
   }
 
@@ -123,9 +141,12 @@ class Message {
     return Message(text: text, audioBytes: audioBytes, isUser: isUser);
   }
 
+  /// A tool result. [toolCallId] names the call it answers when that call had
+  /// an id; without one, engines pair the result with its call by [toolName].
   factory Message.toolResponse({
     required String toolName,
     required Map<String, dynamic> response,
+    String? toolCallId,
   }) {
     // Tool responses are sent from the user's side.
     return Message(
@@ -133,12 +154,30 @@ class Message {
       toolName: toolName,
       type: MessageType.toolResponse,
       isUser: true,
+      toolCallId: toolCallId,
     );
   }
 
-  factory Message.toolCall({required String text}) {
+  /// The model's tool call(s) in a history.
+  ///
+  /// [calls] are the calls themselves. [text] is what the model wrote, kept
+  /// verbatim for engines that replay the model's own words; when it is null,
+  /// it is `{"tool_calls":[{"id","name","arguments"}]}` built from [calls]
+  /// (an `id` only for a call that has one). Give at least one of the two.
+  factory Message.toolCall({
+    String? text,
+    List<FunctionCallResponse> calls = const [],
+  }) {
+    if (text == null && calls.isEmpty) {
+      throw ArgumentError('Message.toolCall needs text or at least one call.');
+    }
     // Tool calls are from the model.
-    return Message(text: text, type: MessageType.toolCall, isUser: false);
+    return Message(
+      text: text ?? _toolCallsJson(calls),
+      type: MessageType.toolCall,
+      isUser: false,
+      toolCalls: List.unmodifiable(calls),
+    );
   }
 
   factory Message.systemInfo({required String text, String? icon}) {
@@ -156,7 +195,9 @@ class Message {
 
   @override
   String toString() {
-    return 'Message(text: $text, isUser: $isUser, imageCount: ${images.isNotEmpty ? images.length : (imageBytes == null ? 0 : 1)}, hasAudio: $hasAudio, type: $type, toolName: $toolName)';
+    final calls = toolCalls.isEmpty ? '' : ', toolCalls: $toolCalls';
+    final callId = toolCallId == null ? '' : ', toolCallId: $toolCallId';
+    return 'Message(text: $text, isUser: $isUser, imageCount: ${images.isNotEmpty ? images.length : (imageBytes == null ? 0 : 1)}, hasAudio: $hasAudio, type: $type, toolName: $toolName$calls$callId)';
   }
 
   @override
@@ -169,7 +210,9 @@ class Message {
         _listEquals(other.images, images) &&
         _listEquals(other.audioBytes, audioBytes) &&
         other.type == type &&
-        other.toolName == toolName;
+        other.toolName == toolName &&
+        _listEquals(other.toolCalls, toolCalls) &&
+        other.toolCallId == toolCallId;
   }
 
   @override
@@ -180,7 +223,9 @@ class Message {
       Object.hashAll(images) ^
       audioBytes.hashCode ^
       type.hashCode ^
-      toolName.hashCode;
+      toolName.hashCode ^
+      Object.hashAll(toolCalls) ^
+      toolCallId.hashCode;
 
   bool _listEquals<T>(List<T>? a, List<T>? b) {
     if (a == null) return b == null;
@@ -191,3 +236,14 @@ class Message {
     return true;
   }
 }
+
+String _toolCallsJson(List<FunctionCallResponse> calls) => jsonEncode({
+  'tool_calls': [
+    for (final call in calls)
+      {
+        if (call.id != null) 'id': call.id,
+        'name': call.name,
+        'arguments': call.args,
+      },
+  ],
+});

@@ -1,18 +1,19 @@
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit/plugin.dart';
 
-/// The `ref` of the [index]th tool call of a turn, counted from 0 in the order
-/// the model emitted them. Genkit matches each tool response to its request by
-/// `ref`, falling back to the tool's name, so without one two calls to the
-/// same tool in one turn collide.
+/// The `ref` of the [index]th tool call of a turn when the engine gave the call
+/// no [gemma.FunctionCallResponse.id], counted from 0 in the order the model
+/// emitted them. Genkit matches each tool response to its request by `ref`,
+/// falling back to the tool's name, so without one two calls to the same tool
+/// in one turn collide.
 String toolCallRef(int index) => 'call_$index';
 
 /// Converts a completed flutter_edge_ai response into a Genkit [ModelResponse].
 ///
 /// Maps:
 /// - Text → [ModelResponse] with [TextPart]
-/// - Function call → [ModelResponse] with [ToolRequestPart], numbered with
-///   [toolCallRef] in order
+/// - Function call → [ModelResponse] with [ToolRequestPart], its `ref` the
+///   call's id, or [toolCallRef] in order when it has none
 /// - Reasoning → prepended [ReasoningPart] before text/tool content
 ModelResponse convertFinalResponse(
   String fullText, {
@@ -31,7 +32,7 @@ ModelResponse convertFinalResponse(
       content.add(
         ToolRequestPart(
           toolRequest: ToolRequest(
-            ref: toolCallRef(index),
+            ref: call.id ?? toolCallRef(index),
             name: call.name,
             input: call.args,
           ),
@@ -61,7 +62,7 @@ ModelResponseChunk convertStreamChunk(
   ToolRequestPart call(int offset, gemma.FunctionCallResponse c) =>
       ToolRequestPart(
         toolRequest: ToolRequest(
-          ref: toolCallRef(firstToolCallIndex + offset),
+          ref: c.id ?? toolCallRef(firstToolCallIndex + offset),
           name: c.name,
           input: c.args,
         ),

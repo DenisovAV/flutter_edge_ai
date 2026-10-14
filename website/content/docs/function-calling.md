@@ -196,20 +196,27 @@ listener must handle it too:
 Send the function result back to the model so it can continue:
 
 ```dart
+// `call` is the FunctionCallResponse you just ran.
 final toolMessage = Message.toolResponse(
-  toolName: 'change_background_color',
+  toolName: call.name,
   response: {'status': 'success', 'color': 'blue'},
+  toolCallId: call.id, // null when the engine gave the call no id
 );
 await chat.addQueryChunk(toolMessage);
 final followUp = await chat.generateChatResponse();
 ```
 
+`call.id` is set by engines that give calls ids. An engine that pairs by id
+reads `toolCallId`; otherwise a result is paired with its call by `toolName`, in
+order.
+
 ### Or drive the whole loop in one call (recommended)
 
 `InferenceChat.generateChatResponseWithTools` runs that whole cycle for you — it
 streams the reply, and whenever the model calls a tool it invokes your
-`onToolCall`, feeds the result back as a `Message.toolResponse`, and continues
-until the model produces a final call-free answer (bounded by `maxToolTurns`).
+`onToolCall`, feeds the result back as a `Message.toolResponse` carrying the
+call's id, and continues until the model produces a final call-free answer
+(bounded by `maxToolTurns`).
 You only implement the tools; the parse → execute → feed-back loop is handled.
 
 ```dart
@@ -238,6 +245,23 @@ await for (final response in stream) {
 This is the same driver the voice loop uses: `VoiceSession.fromChat(…, onToolCall:)`
 runs function calls inside a spoken turn through it (see
 [Speech → Tool calling in the voice loop](/docs/speech#tool-calling-in-the-voice-loop)).
+
+### Tool calls in a saved history
+
+`chat.fullHistory` records each call as a `Message.toolCall` whose `toolCalls`
+hold the calls, ids included, and whose `text` is what the model wrote. To
+restore a conversation with `clearHistory(replayHistory:)`, keep both, and
+`toolCallId` on each `Message.toolResponse`. A message you build yourself takes
+the calls alone:
+
+```dart
+Message.toolCall(calls: [
+  FunctionCallResponse(name: 'change_background_color', args: {'color': 'blue'}, id: 'call_1'),
+]);
+// text: {"tool_calls":[{"id":"call_1","name":"change_background_color","arguments":{"color":"blue"}}]}
+```
+
+A history saved before these fields existed, with `text` alone, still replays.
 
 ## Platform support
 

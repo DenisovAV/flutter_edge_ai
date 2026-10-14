@@ -168,3 +168,4 @@ meanPoolAndNormalize function
 sanitizeHfDirName function
 sniffEncodedMediaFormat function
 supportedLoraRanks variable const
+toolCallsOf function

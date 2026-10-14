@@ -52,6 +52,24 @@ void main() {
       expect(parts[1].toolRequest!.input, {'timezone': 'CET'});
     });
 
+    test('a call id is the ref; only calls without one are numbered', () {
+      const calls = [
+        gemma.FunctionCallResponse(name: 'a', args: {}, id: 'x1'),
+        gemma.FunctionCallResponse(name: 'b', args: {}),
+      ];
+
+      final result = convertFinalResponse('', functionCalls: calls);
+      final chunk = convertStreamChunk(
+        const gemma.ParallelFunctionCallResponse(calls: calls),
+      );
+
+      expect(
+        result.message!.content.map((p) => p.toolRequest!.ref),
+        ['x1', 'call_1'],
+      );
+      expect(chunk.content.map((p) => p.toolRequest!.ref), ['x1', 'call_1']);
+    });
+
     test('includes finishReason stop', () {
       final result = convertFinalResponse('text');
       expect(result.finishReason, FinishReason.stop);

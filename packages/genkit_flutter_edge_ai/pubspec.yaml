@@ -1,6 +1,6 @@
 name: genkit_flutter_edge_ai
 description: "Genkit Dart plugin for flutter_edge_ai: on-device inference with any model a registered engine runs, plus streaming, tool calling, JSON output and embeddings."
-version: 0.9.2
+version: 0.10.0
 homepage: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/genkit_flutter_edge_ai
 repository: https://github.com/DenisovAV/flutter_edge_ai
 issue_tracker: https://github.com/DenisovAV/flutter_edge_ai/issues
@@ -23,7 +23,7 @@ dependencies:
   genkit: ^1.0.0
   # ^2.3.0: the embedder calls `EmbeddingModel.embedAll` with
   # `EmbeddingInput`, which 2.3.0 adds.
-  flutter_edge_ai: ^2.3.0
+  flutter_edge_ai: ^2.4.0
   http: ^1.6.0
   schemantic: ^1.0.0
 

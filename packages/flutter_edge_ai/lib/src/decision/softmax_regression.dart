@@ -129,6 +129,7 @@ final class SoftmaxObjective {
     FitPacer? pacer,
   }) async {
     _load(theta);
+    if (pauseFor(pacer) case final turn?) await turn;
     final gb = Float64List(classes);
     final n = labels.length;
     var loss = 0.0;
@@ -250,8 +251,11 @@ Future<LbfgsResult> minimizeLbfgs(
   final al = Float64List(historySize);
   final at = Float64List(size);
 
+  // Between two pauses runs at most a couple of parameter-sized vector
+  // operations (a few ms in a release web build at 2000 options).
   var nIter = 0;
   while (nIter < maxIter) {
+    if (pauseFor(pacer) case final turn?) await turn;
     nIter++;
     if (nIter == 1) {
       for (var i = 0; i < size; i++) {
@@ -270,6 +274,7 @@ Future<LbfgsResult> minimizeLbfgs(
         history.push(1.0 / ys);
         hDiag = ys / _dot(y, y);
       }
+      if (pauseFor(pacer) case final turn?) await turn;
       final numOld = history.length;
       for (var i = 0; i < size; i++) {
         d[i] = flatGrad[i] * -1;
@@ -303,6 +308,7 @@ Future<LbfgsResult> minimizeLbfgs(
 
     final gtd = _dot(flatGrad, d);
     if (gtd > -toleranceChange) break;
+    if (pauseFor(pacer) case final turn?) await turn;
 
     final ls = await _strongWolfe(
       evaluate,
@@ -313,6 +319,7 @@ Future<LbfgsResult> minimizeLbfgs(
       flatGrad,
       gtd,
       at,
+      pacer,
       toleranceChange: toleranceChange,
       maxLs: maxEvals - currentEvals,
     );
@@ -320,6 +327,7 @@ Future<LbfgsResult> minimizeLbfgs(
     flatGrad = ls.g;
     t = ls.t;
     _axpy(x, t, d);
+    if (pauseFor(pacer) case final turn?) await turn;
     final optCond = _maxAbs(flatGrad) <= toleranceGrad;
     currentEvals += ls.evals;
 
@@ -395,10 +403,12 @@ Future<_Eval> _directional(
   double t,
   Float64List d,
   Float64List at,
+  FitPacer? pacer,
 ) async {
   for (var i = 0; i < x.length; i++) {
     at[i] = x[i] + t * d[i];
   }
+  if (pauseFor(pacer) case final turn?) await turn;
   final g = Float64List(x.length);
   final f = await evaluate(at, g);
   return (f: f, g: g);
@@ -414,14 +424,15 @@ Future<({double f, Float64List g, double t, int evals})> _strongWolfe(
   double f,
   Float64List g,
   double gtd,
-  Float64List at, {
+  Float64List at,
+  FitPacer? pacer, {
   double c1 = 1e-4,
   double c2 = 0.9,
   double toleranceChange = 1e-9,
   int maxLs = 25,
 }) async {
   final dNorm = _maxAbs(d);
-  var (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at);
+  var (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at, pacer);
   var lsFuncEvals = 1;
   var gtdNew = _dot(gNew, d);
 
@@ -472,7 +483,7 @@ Future<({double f, Float64List g, double t, int evals})> _strongWolfe(
     fPrev = fNew;
     gPrev = gNew;
     gtdPrev = gtdNew;
-    (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at);
+    (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at, pacer);
     lsFuncEvals++;
     gtdNew = _dot(gNew, d);
     lsIter++;
@@ -516,7 +527,7 @@ Future<({double f, Float64List g, double t, int evals})> _strongWolfe(
       insufProgress = false;
     }
 
-    (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at);
+    (f: fNew, g: gNew) = await _directional(evaluate, x, t, d, at, pacer);
     lsFuncEvals++;
     gtdNew = _dot(gNew, d);
     lsIter++;

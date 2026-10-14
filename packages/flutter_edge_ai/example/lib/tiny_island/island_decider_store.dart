@@ -1,4 +1,5 @@
 export 'island_decider_store_memory.dart'
+    if (dart.library.js_interop) 'island_decider_store_web.dart'
     if (dart.library.io) 'island_decider_store_io.dart';
 
 /// Where fitted Tiny Island deciders are kept between visits, as the JSON of
@@ -8,9 +9,9 @@ export 'island_decider_store_memory.dart'
 ///
 /// Natively: one file per model in the app's CACHE directory — never in
 /// application support, which iCloud and Android Auto Backup copy; the OS may
-/// purge it, which costs one refit. On the web: memory only, for the page's
-/// life (a stored decider is about 0.8 MB, more than local storage should
-/// hold), so every page load fits it again.
+/// purge it, which costs one refit. On the web: one file per model in the
+/// origin private file system (OPFS); a stored decider is about 0.8 MB, more
+/// than local storage should hold.
 abstract interface class IslandDeciderStore {
   /// Where the artifacts live, for the status line.
   String get where;

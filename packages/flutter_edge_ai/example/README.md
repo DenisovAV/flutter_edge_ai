@@ -73,8 +73,8 @@ lightest; a per-SoC NPU bundle runs on the NPU).
   (`Decider.toArtifact()`, 0.8 MB) in the app's
   cache directory — not application support, which iCloud and Android Auto
   Backup copy. Later visits load it (`loadDecider`, 0.6–1.2 s with the model
-  load). On the web it is kept in memory only, so every page load fits it
-  again.
+  load). On the web it is kept in the browser's private file system (OPFS),
+  so a page load with the same model loads it too.
 - **Build hook and the pub cache.** `hook/build.dart` converts
   `assets/island/models/*.glb` (Kenney, CC0) at build time. flutter_scene's
   own build hook also writes generated shader bundles into its package

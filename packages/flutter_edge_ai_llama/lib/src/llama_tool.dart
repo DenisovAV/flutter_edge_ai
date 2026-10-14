@@ -4,7 +4,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
 /// A tool call retaining llamadart's identifier across the Edge AI boundary.
-class LlamaFunctionCallResponse extends edge.FunctionCallResponse {
+final class LlamaFunctionCallResponse extends edge.FunctionCallResponse {
   /// Creates a typed call with an identifier usable in [LlamaToolResponseMessage].
   const LlamaFunctionCallResponse({
     required this.id,
@@ -17,7 +17,7 @@ class LlamaFunctionCallResponse extends edge.FunctionCallResponse {
 }
 
 /// A tool result explicitly associated with one call, including repeated names.
-class LlamaToolResponseMessage extends edge.Message {
+final class LlamaToolResponseMessage extends edge.Message {
   /// Encodes [response] as the result of [callId] and [toolName].
   LlamaToolResponseMessage({
     required this.callId,

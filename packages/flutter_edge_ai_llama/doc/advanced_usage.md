@@ -72,16 +72,15 @@ single-response API: it returns a call group when present, otherwise joined text
 Configure a model-specific projector resolver on `LlamaEngineProvider`:
 
 ```dart
-import 'package:llamadart/llamadart.dart' as llama;
-
 final provider = LlamaEngineProvider(
   projectorResolver: (spec, config) async =>
-      llama.ModelSource.path('/absolute/mmproj.gguf'),
+      '/absolute/mmproj.gguf',
 );
 await FlutterEdgeAi.initialize(inferenceEngines: [provider]);
 ```
 
-Use a browser URL with `llama.ModelSource.path(...)` on Web. The app owns projector
+Return a browser URL on Web, including an app-owned cached blob URL. Native
+resolvers return an installed local path; SDK-managed downloads are not exposed. The app owns projector
 installation and exact model/projector pairing: core has no GGUF projector
 slot. The connector probes the loaded projector's vision/audio capabilities.
 Set `supportImage`/`supportAudio` on `getActiveModel` and enable the corresponding
@@ -131,3 +130,22 @@ partial assistant output; results of already committed tool calls are retained.
 Omitted output caps use remaining rendered context. A truncated tool turn or an
 empty completion throws and rolls back. Completed results of prior committed tool
 calls survive interruption; replay groups thinking, text and calls in one assistant turn.
+
+## Errors and restored history
+
+Invalid configuration or replay payloads throw `ArgumentError`; unsupported
+features throw `UnsupportedError`. Closed/invalid runtime state, empty answers,
+malformed generated tools and incomplete tool turns throw `StateError`.
+llamadart runtime exceptions propagate unchanged. A failed shared-runtime recovery
+closes the model so core can reload it; the original failure remains in diagnostics.
+
+`clearHistory(replayHistory: ...)` commits a validated restore before the next turn.
+A stop or error rolls back only input staged after the restore. Replayed tool calls
+accept core's `{"name": "search", "parameters": {"q": "value"}}`, a JSON list of
+those objects, and the OpenAI `tool_calls` wrapper. Missing IDs are assigned by the
+session; ordinary results pair unanswered calls by name in order. Use
+`LlamaToolResponseMessage` when repeated names need results delivered out of order.
+
+Chat `tokenBuffer` must be nonnegative and smaller than `maxTokens`. It is a
+trimming target, not a reservation that rejects a valid latest input. Output
+caps must be positive and are reduced to the actual remaining rendered context.

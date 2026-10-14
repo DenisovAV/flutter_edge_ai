@@ -228,64 +228,7 @@ class ToolingTests(unittest.TestCase):
         version.assert_called_once_with([flutter, "--version", "--machine"], text=True)
         self.assertEqual(run.call_args_list[0].args[0], [flutter, "pub", "get"])
 
-    def test_local_core_preparation_retains_hosted_pin_and_excludes_overrides(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            package = root / "connector"
-            core = root / "source_core"
-            package.mkdir()
-            core.mkdir()
-            (package / "pubspec.yaml").write_text("name: connector\nresolution: workspace\ndependencies:\n  flutter_edge_ai: 2.2.0\n")
-            (package / ".flutter-version").write_text("3.47.1")
-            (package / ".pubignore").write_text("pubspec_overrides.yaml\n")
-            (package / "example").mkdir()
-            (package / "example/pubspec.yaml").write_text("name: example\ndependencies:\n  flutter_edge_ai: 2.2.0\n")
-            core_source = "name: flutter_edge_ai\nversion: 2.2.0\nresolution: workspace\n"
-            (core / "pubspec.yaml").write_text(core_source)
-            checked = []
 
-            def invoke(command, **kwargs):
-                staged = Path(kwargs["cwd"])
-                self.assertIn("flutter_edge_ai: 2.2.0", (staged / "pubspec.yaml").read_text())
-                self.assertNotIn("resolution: workspace", (staged / "pubspec.yaml").read_text())
-                override = (staged / "pubspec_overrides.yaml").read_text()
-                self.assertEqual((staged / "example/pubspec_overrides.yaml").read_text(), override)
-                self.assertIn("pubspec_overrides.yaml", (staged / ".pubignore").read_text())
-                staged_core = staged.parent / "core"
-                self.assertFalse(staged_core.is_relative_to(staged))
-                self.assertNotIn("resolution: workspace", (staged_core / "pubspec.yaml").read_text())
-                self.assertIn(str(staged_core), override)
-                checked.append(command)
-                return subprocess.CompletedProcess(command, 0, stdout="Validating package...\n* Non-dev dependencies are overridden in pubspec_overrides.yaml.\n")
-
-            with patch.object(package_verify, "PACKAGE", package), \
-                 patch.object(sys, "argv", ["verify.py", "package", "--core-path", str(core)]), \
-                 patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
-                 patch.object(package_verify.subprocess, "run", side_effect=invoke):
-                package_verify.main()
-            self.assertEqual(len(checked), 2)
-            self.assertEqual((core / "pubspec.yaml").read_text(), core_source)
-            self.assertFalse((package / "pubspec_overrides.yaml").exists())
-
-    def test_local_core_preparation_accepts_caret_and_bounded_minimum(self):
-        for constraint in ["^2.2.1", "'>=2.2.1 <2.3.0'"]:
-            with self.subTest(constraint=constraint), tempfile.TemporaryDirectory() as directory:
-                package = Path(directory) / "connector"
-                core = Path(directory) / "core"
-                package.mkdir()
-                core.mkdir()
-                (package / "pubspec.yaml").write_text(f"dependencies:\n  flutter_edge_ai: {constraint}\n")
-                (package / ".flutter-version").write_text("3.47.1")
-                (core / "pubspec.yaml").write_text("name: flutter_edge_ai\nversion: 2.2.1\n")
-                with patch.object(package_verify, "PACKAGE", package), \
-                     patch.object(sys, "argv", ["verify.py", "package", "--core-path", str(core)]), \
-                     patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
-                     patch.object(package_verify.subprocess, "run", side_effect=[
-                         subprocess.CompletedProcess([], 0, stdout=json.dumps({"type":"testStart","test":{"id":1,"name":"packaged native runtime installs"}}) + "\n" + json.dumps({"type":"testDone","testID":1,"result":"success","skipped":False,"hidden":False}) + "\n" + json.dumps({"type":"done","success":True})),
-                         subprocess.CompletedProcess([], 0, stdout="Validating package...\n"),
-                     ]) as run:
-                    package_verify.main()
-                self.assertEqual(run.call_count, 2)
 
     def test_publish_gate_rejects_exact_dependency_warning(self):
         with patch.object(sys, "argv", ["verify.py", "package"]), \
@@ -297,23 +240,35 @@ class ToolingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Unexpected publish-validation"):
                 package_verify.main()
 
-    def test_local_core_preparation_rejects_wrong_package_or_version_before_flutter(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            package = root / "connector"
-            core = root / "core"
-            package.mkdir()
-            core.mkdir()
-            (package / "pubspec.yaml").write_text("dependencies:\n  flutter_edge_ai: 2.2.0\n")
-            for name, version in [("flutter_edge_ai", "2.1.3"), ("unrelated", "2.2.0")]:
-                (core / "pubspec.yaml").write_text(f"name: {name}\nversion: {version}\n")
-                with patch.object(package_verify, "PACKAGE", package), \
-                     patch.object(sys, "argv", ["verify.py", "package", "--core-path", str(core)]), \
-                     patch.object(package_verify.subprocess, "check_output") as flutter:
-                    with self.assertRaises(SystemExit) as error:
-                        package_verify.main()
-                    self.assertEqual(error.exception.code, 2)
-                    flutter.assert_not_called()
+
+    def test_obsolete_local_core_option_is_rejected_before_flutter(self):
+        with patch.object(sys, "argv", ["verify.py", "package", "--core-path", "/unused"]), \
+             patch.object(package_verify.subprocess, "check_output") as flutter:
+            with self.assertRaises(SystemExit) as error:
+                package_verify.main()
+            self.assertEqual(error.exception.code, 2)
+            flutter.assert_not_called()
+
+    def test_workspace_sdk_can_run_hosted_package_gate(self):
+        with patch.object(sys, "argv", ["verify.py", "package"]), \
+             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.0"}'), \
+             patch.object(package_verify.subprocess, "run", side_effect=[
+                 subprocess.CompletedProcess([], 0, stdout=""),
+                 subprocess.CompletedProcess([], 0, stdout="Validating package...\n"),
+             ]) as run:
+            package_verify.main()
+        self.assertEqual(run.call_count, 2)
+
+    def test_other_sdk_versions_are_rejected_before_checks(self):
+        for sdk in ["3.44.0", "3.46.0", "3.48.0"]:
+            with self.subTest(sdk=sdk), \
+                 patch.object(sys, "argv", ["verify.py", "contracts"]), \
+                 patch.object(package_verify.subprocess, "check_output", return_value=json.dumps({"frameworkVersion": sdk})), \
+                 patch.object(package_verify.subprocess, "run") as run:
+                with self.assertRaises(SystemExit) as error:
+                    package_verify.main()
+                self.assertEqual(error.exception.code, 2)
+                run.assert_not_called()
 
     def test_hosted_package_gate_rejects_a_development_override_hint(self):
         with patch.object(sys, "argv", ["verify.py", "package"]), \
@@ -375,6 +330,42 @@ class ToolingTests(unittest.TestCase):
                     fetch_web_assets.main([])
             self.assertEqual(downloaded, ["manifest.json"])
             self.assertEqual(sentinel.read_bytes(), b"existing runtime")
+
+    def test_custom_headers_preserve_isolation_and_reject_conflicting_routes(self):
+        headers = "/*\n  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: require-corp\n  X-Content-Type-Options: nosniff\n/assets/*\n  Cache-Control: public, max-age=86400\n"
+        validate_web_build.validate_headers(headers)
+        for changed in [headers.replace("require-corp", "unsafe-none"),
+                        headers.replace("/*\n", "/app/*\n", 1),
+                        headers + "/worker.js\n  Cross-Origin-Opener-Policy: unsafe-none\n"]:
+            with self.assertRaisesRegex(RuntimeError, "isolation|COOP"):
+                validate_web_build.validate_headers(changed)
+
+    def test_consumer_additions_keep_runtime_hash_and_helper_interface_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "webgpu_bridge"
+            runtime.mkdir()
+            asset = b"pinned runtime"
+            (runtime / "runtime.js").write_bytes(asset)
+            manifest = json.dumps({"artifacts": {"runtime.js": {"size_bytes": len(asset), "sha256": hashlib.sha256(asset).hexdigest()}}}).encode()
+            (runtime / "manifest.json").write_bytes(manifest)
+            for filename in ["index.html", "flutter_bootstrap.js", "main.dart.wasm"]:
+                (root / filename).write_text("fixture")
+            web = validate_web_build.PACKAGE / "example/web"
+            helper = (web / "cache_api.js").read_text() + "\nwindow.consumerExtra = true;\n"
+            (root / "cache_api.js").write_text(helper)
+            (root / "cache_api.LICENSE").write_bytes((web / "cache_api.LICENSE").read_bytes())
+            (root / "_headers").write_text((web / "_headers").read_text() + "  X-Content-Type-Options: nosniff\n")
+            with patch.object(validate_web_build, "FILES", ("runtime.js",)), \
+                 patch.object(validate_web_build, "MANIFEST_SHA256", hashlib.sha256(manifest).hexdigest()):
+                validate_web_build.validate(root)
+                (root / "cache_api.js").write_text(helper.replace("window.cacheHas", "window.missingCacheHas"))
+                with self.assertRaisesRegex(RuntimeError, "missing cacheHas"):
+                    validate_web_build.validate(root)
+                (root / "cache_api.js").write_text(helper)
+                (runtime / "runtime.js").write_bytes(b"changed runtime")
+                with self.assertRaisesRegex(RuntimeError, "corrupt runtime"):
+                    validate_web_build.validate(root)
 
     def test_release_build_rejects_missing_or_corrupt_runtime(self):
         with tempfile.TemporaryDirectory() as directory:

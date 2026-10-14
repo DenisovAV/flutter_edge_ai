@@ -43,7 +43,10 @@ and click **Load URL**; the native file picker is not used in the browser.
 3. Click **New chat** to start with empty history.
 4. Quit and reopen: the installed model reloads, with a fresh conversation.
 
-Native import copies the file into app-owned storage, preserving the original.
+On Android, paste a download URL and use **Load URL**. After a replacement loads,
+the demo uninstalls the previous core-owned download. iOS and desktop import into
+app-owned storage, preserving external originals. iOS deletes only its app-owned
+picker Inbox copy after the durable import succeeds.
 Allow space for both copies. Native generation needs no model server after
 the model and runtime are downloaded. Backgrounding the native app stops an
 active response. The composer stays visible with a phone keyboard, and text
@@ -51,7 +54,8 @@ updates are buffered to at most 30 refreshes per second.
 
 The UI uses a 2,048-token context and 128-token response limit. It reports an
 output limit or missing usage rather than inventing a count. For longer chats,
-start a new conversation when the context is full.
+old complete turns are trimmed while preserving the latest input and tool pairs.
+Start a new chat to clear the conversation explicitly.
 
 This UI intentionally demonstrates text chat. Copyable
 [chat API examples](../README.md#stream-a-response) and

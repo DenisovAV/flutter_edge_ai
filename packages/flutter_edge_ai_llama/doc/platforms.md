@@ -33,20 +33,30 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-This is required when the app also includes `flutter_edge_ai_litertlm`, to avoid
-bundling two conflicting LiteRT-LM runtimes. Core itself includes no inference
-runtime. With llamadart 0.11.1, Vulkan is included by default on supported Android,
-Linux and Windows targets. The demo explicitly selects CPU-only bundles on those
+Keep this explicit selection as defence in depth. llamadart 0.12.0 automatically
+omits its LiteRT-LM when this connector or `flutter_edge_ai_litertlm` is present;
+explicitly selecting both LiteRT-LM owners fails the native build. Core itself includes no inference
+runtime. With llamadart 0.12.0, Vulkan is included by default on supported Android,
+Linux and Windows targets. Android auto selection uses CPU; Linux/Windows use
+Vulkan where available. The demo explicitly selects CPU-only bundles on those
 platforms; apps choose backend packaging in their own hook settings.
 
-Apple applications add `llamadart_llama_cpp_flutter: 0.0.21` directly and enable
+Apple applications add `llamadart_llama_cpp_flutter: 0.0.22` directly and enable
 Flutter SwiftPM. Use iOS 16.4+ and macOS 14+. iOS applications enable the
 extended-virtual-addressing and increased-memory-limit entitlements; the example
 includes both. Do not apply those kernel entitlements on macOS. The published
 LiteRT-LM macOS CocoaPods setup disables SwiftPM, so combining that setup with this
 SwiftPM companion is not qualified; use separate apps until a shared recipe is
 validated. Windows needs the matching Visual C++ runtime. Android's example uses
-API 24+; oldest-device compatibility still requires device testing.
+API 24+ and includes arm64-v8a / x86_64 only; 32-bit armeabi-v7a is unsupported.
+The current emulator lane runs x86_64; an ARM64 phone run remains a publication gate.
+Oldest-device compatibility still requires device testing.
+
+App Store submission remains unvalidated pending [native framework metadata
+#110](https://github.com/leehack/llamadart-native/issues/110). Apple workspace
+member apps with root hook settings are unqualified: fallback frameworks can be
+embedded alongside the companion and carry inconsistent deployment metadata.
+Use a standalone Apple app until that owning-runtime path is validated.
 
 ## Example model storage
 
@@ -74,8 +84,17 @@ the support matrix. Dated devices, models, commands and results are recorded in 
 | Web | Wasm build and real worker/Wasm generation | Hardware WebGPU, advanced model/browser combinations |
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
-package minimum. Runtime pins are llamadart 0.11.1, native artifacts v0.5.0-2,
-Apple companion 0.0.21 and Web assets v0.1.54. Web assets are checksum-verified.
+package minimum. Runtime pins are llamadart 0.12.0, native artifacts v0.6.0-2,
+Apple companion 0.0.22 and connector-pinned Web assets v0.1.54. Upgrade the SDK
+constraint and companion together. Web assets are checksum-verified. The SDK's
+llama.cpp native archive downloads do **not** yet verify pinned SHA-256 hashes;
+that work remains in [llamadart #1015](https://github.com/leehack/llamadart/issues/1015).
+
+Web `cacheApi` and `none` installs buffer one byte array: use models below about
+2 GB, subject to lower device/browser memory limits. Streaming OPFS handles
+remain unsupported; select a supported storage mode before downloading.
+Memory64 runtime wiring does not lift this installation ceiling. The example
+uses a hardware-sized thread pool capped at four; CPU CI profiles are separate.
 Required smoke lanes verify machine-reported completion of the model test; skipped
 or absent model execution fails. Optional capability fixtures have their own
 [explicit runner](development.md), and are not qualified merely because contracts pass.

@@ -1,7 +1,8 @@
 # Contributor checks
 
 Use the connector CI SDK, Flutter 3.47.1 / Dart 3.13.1, for reproducible formatting.
-The package minimum follows core: Flutter 3.44 / Dart 3.12. The root workspace
+The runner also accepts the workspace SDK, Flutter 3.47.0. Other versions are
+rejected to keep formatting checks reproducible. The package minimum follows core: Flutter 3.44 / Dart 3.12. The root workspace
 SDK and shared workflow settings remain upstream-owned.
 
 From the package directory:

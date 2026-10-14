@@ -18,7 +18,8 @@ import 'package:flutter_edge_ai/src/services/model_repository.dart'
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 // ignore: implementation_imports — registers the real Web platform shell for browser tests.
 import 'package:flutter_edge_ai/src/web/flutter_edge_ai_web.dart';
-import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
+import 'package:flutter_edge_ai_llama/src/llama_engine_provider.dart'
+    show createLlamaProviderForTest;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,7 +38,7 @@ void main() {
     'Web provider selects the supplied real spec and rejects other formats',
     () async {
       final sentinel = llama.LlamaStateException('Loader reached');
-      final provider = LlamaEngineProvider.withLoader(
+      final provider = createLlamaProviderForTest(
         loader: (location, params) async {
           expect(location, 'https://example.test/model.gguf');
           throw sentinel;
@@ -108,7 +109,7 @@ void main() {
         expect(restored!.fileType, edge.ModelFileType.gguf);
         expect(restored.loraSource, spec.loraSource);
         expect(restored.files[1].filename, 'model__adapter.gguf');
-        final provider = LlamaEngineProvider.withLoader(
+        final provider = createLlamaProviderForTest(
           loader: (_, _) async => fail('Web LoRA must be rejected before load'),
         );
         await expectLater(
@@ -131,7 +132,7 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       ServiceRegistry.reset();
       edge.FlutterEdgeAiPlugin.instance = FlutterEdgeAiWeb();
-      final provider = LlamaEngineProvider.withLoader(
+      final provider = createLlamaProviderForTest(
         loader: (_, _) async => fail('Adapter must be rejected before loading'),
       );
       await edge.FlutterEdgeAi.initialize(
@@ -190,7 +191,7 @@ void main() {
       edge.FlutterEdgeAiPlugin.instance = FlutterEdgeAiWeb();
       final engines = <_WebEngine>[];
       final gate = Completer<void>();
-      final provider = LlamaEngineProvider.withLoader(
+      final provider = createLlamaProviderForTest(
         loader: (location, params) async {
           expect(location, 'https://example.test/model.gguf');
           final engine = _WebEngine();
@@ -305,8 +306,10 @@ void main() {
       window.LlamaWebGpuBridge = module.LlamaWebGpuBridge;
       window.__llamadartBridgeCoreModuleUrl = root + 'llama_webgpu_core.js';
       window.__llamadartBridgeWasmUrl = root + 'llama_webgpu_core.wasm';
+      window.__llamadartBridgeCoreModuleUrlMem64 = root + 'llama_webgpu_core_mem64.js';
+      window.__llamadartBridgeWasmUrlMem64 = root + 'llama_webgpu_core_mem64.wasm';
       window.__llamadartBridgeWorkerUrl = root + 'llama_webgpu_bridge_worker.js';
-      window.__llamadartBridgeThreadPoolSize = 1;
+      window.__llamadartBridgeThreadPoolSize = Math.max(1, Math.min(4, navigator.hardwareConcurrency || 1));
       window.dispatchEvent(new Event('llama-test-ready'));
     ''';
           web.document.head!.appendChild(script);
@@ -318,7 +321,7 @@ void main() {
           edge.FlutterEdgeAi.logLevel = edge.EdgeAiLogLevel.none;
           await edge.FlutterEdgeAi.initialize(
             inferenceEngines: [
-              LlamaEngineProvider.withLoader(
+              createLlamaProviderForTest(
                 loader: (location, params) async {
                   // ignore: avoid_print
                   print('WEB_SMOKE: loading engine');
@@ -348,7 +351,9 @@ void main() {
           llama.LlamaLogging.configure(level: llama.LlamaLogLevel.error);
           final model = await edge.FlutterEdgeAi.getActiveModel(
             maxTokens: 2048,
+            preferredBackend: edge.PreferredBackend.cpu,
           );
+          expect(model.activeBackend, edge.PreferredBackend.cpu);
           // ignore: avoid_print
           print('WEB_SMOKE: model loaded on ${model.activeBackend}');
           addTearDown(model.close);

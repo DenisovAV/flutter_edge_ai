@@ -99,8 +99,7 @@ void main() {
     'native audio projector accepts encoded WAV message bytes',
     () async {
       final provider = LlamaEngineProvider(
-        projectorResolver: (_, _) async =>
-            llama.ModelSource.path(_audioProjector),
+        projectorResolver: (_, _) async => _audioProjector,
       );
       final model = await provider.createModel(
         _spec(_audioModel),
@@ -134,8 +133,7 @@ void main() {
     'native vision projector accepts encoded PNG message bytes',
     () async {
       final provider = LlamaEngineProvider(
-        projectorResolver: (_, _) async =>
-            llama.ModelSource.path(_visionProjector),
+        projectorResolver: (_, _) async => _visionProjector,
       );
       final model = await provider.createModel(
         _spec(_visionModel),

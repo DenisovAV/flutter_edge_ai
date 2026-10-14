@@ -49,6 +49,26 @@ void main() {
     },
   );
 
+  test('iOS import removes only its owned picker Inbox copy', () async {
+    final inbox = Directory('${scratch.path}/app/Documents/Inbox');
+    await inbox.create(recursive: true);
+    final source = File('${inbox.path}/picked.gguf');
+    await source.writeAsString('model');
+    final imported = File(
+      await importModel(source.path, cleanupPickerInbox: true),
+    );
+    expect(await imported.readAsString(), 'model');
+    expect(await source.exists(), isFalse);
+    final external = File('${scratch.path}/external.gguf');
+    await external.writeAsString('external');
+    final link = Link('${inbox.path}/linked.gguf');
+    await link.create(external.path);
+    await removePickerInboxCopy(link.path);
+    await removePickerInboxCopy(external.path);
+    expect(await external.exists(), isTrue);
+    expect(await link.exists(), isTrue);
+  });
+
   test(
     'failed imports leave no partial model and reject unrelated formats',
     () async {
@@ -72,4 +92,6 @@ class _Paths extends PathProviderPlatform {
   final String root;
   @override
   Future<String?> getApplicationSupportPath() async => root;
+  @override
+  Future<String?> getApplicationDocumentsPath() async => '$root/Documents';
 }

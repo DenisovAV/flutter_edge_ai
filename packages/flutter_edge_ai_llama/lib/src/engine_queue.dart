@@ -2,10 +2,38 @@ import 'dart:async';
 
 /// Serializes access to the single runtime context shared by logical sessions.
 class EngineQueue {
-  bool _invalid = false;
+  /// Creates a shared queue with an optional once-only invalidation callback.
+  EngineQueue({this.onInvalidated});
+
+  /// Starts model teardown when recovery cannot restore known runtime state.
+  final void Function(Object, StackTrace)? onInvalidated;
+
+  /// First recovery failure; retained even when its turn was cancelled.
+  Object? invalidationCause;
+  StackTrace? _invalidationStack;
+
+  /// Whether the shared runtime can no longer serve inference.
+  bool get isInvalid => invalidationCause != null;
 
   /// Prevents further use after failure to restore shared runtime state.
-  void invalidate() => _invalid = true;
+  void invalidate(Object cause, StackTrace stack) {
+    if (isInvalid) return;
+    invalidationCause = cause;
+    _invalidationStack = stack;
+    onInvalidated?.call(cause, stack);
+  }
+
+  /// Rejects reuse with the original recovery cause and stack trace.
+  void ensureValid() {
+    if (isInvalid) {
+      Error.throwWithStackTrace(
+        StateError(
+          'Shared runtime recovery failed; reload the model. Cause: $invalidationCause',
+        ),
+        _invalidationStack!,
+      );
+    }
+  }
 
   Future<void> _tail = Future<void>.value();
 
@@ -24,11 +52,7 @@ class EngineQueue {
         if (cancelled != null) cancelled.then((_) => false),
       ]);
       if (!acquired) return null;
-      if (_invalid && !allowInvalid) {
-        throw StateError(
-          'Shared runtime cleanup failed; close and reload this model before using it again.',
-        );
-      }
+      if (!allowInvalid) ensureValid();
       return await action();
     } finally {
       // A cancelled waiter must not allow its successor to overtake the owner.

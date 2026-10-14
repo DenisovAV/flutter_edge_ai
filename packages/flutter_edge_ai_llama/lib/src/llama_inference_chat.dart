@@ -21,12 +21,21 @@ class LlamaInferenceChat extends edge.InferenceChat {
     super.modelType,
     super.fileType,
     super.toolChoice,
-  }) : super(runtimeInjectsToolDeclarations: true);
+  }) : super(runtimeInjectsToolDeclarations: true) {
+    if (tokenBuffer < 0 || tokenBuffer >= maxTokens) {
+      throw ArgumentError(
+        'tokenBuffer must be nonnegative and below context size.',
+      );
+    }
+  }
 
   LlamaInferenceSession get _llamaSession => session as LlamaInferenceSession;
 
   @override
   List<edge.Message> get fullHistory => _llamaSession.messages;
+
+  @override
+  int get imageMessageCount => fullHistory.where((m) => m.hasImage).length;
 
   @override
   int get currentTokens => _llamaSession.getSessionMetrics().totalTokens;
@@ -40,7 +49,7 @@ class LlamaInferenceChat extends edge.InferenceChat {
 
   @override
   Stream<edge.ModelResponse> generateChatResponseAsync() =>
-      _llamaSession.getResponses();
+      _llamaSession.getResponses(tokenBuffer: tokenBuffer);
 
   @override
   Future<edge.ModelResponse> generateChatResponse() async {
@@ -73,6 +82,7 @@ class LlamaInferenceChat extends edge.InferenceChat {
       for (final message in replayHistory ?? const <edge.Message>[]) {
         await addQueryChunk(message);
       }
+      _llamaSession.commitReplay();
     } catch (_) {
       // A malformed replay must not leave a partially staged conversation.
       await session.close();

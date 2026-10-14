@@ -45,6 +45,7 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          base: main
           filters: |
             runtime:
               - 'packages/flutter_edge_ai_llama/**'

@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from fetch_web_assets import FILES, MANIFEST_SHA256, PACKAGE
@@ -27,9 +28,38 @@ def validate(directory):
     for filename in ("index.html", "flutter_bootstrap.js", "main.dart.wasm", "cache_api.js", "cache_api.LICENSE", "_headers"):
         if not (directory / filename).is_file():
             raise RuntimeError(f"Release artifact is missing {filename}")
-    for filename in ("cache_api.js", "cache_api.LICENSE", "_headers"):
-        if (directory / filename).read_bytes() != (PACKAGE / "example/web" / filename).read_bytes():
-            raise RuntimeError(f"Release artifact changed {filename}")
+    validate_headers((directory / "_headers").read_text())
+    # Consumer additions are allowed. This checks the storage helper's static
+    # interface only; app/browser tests must still verify its behavior.
+    helper = (directory / "cache_api.js").read_text()
+    for name in ("cacheHas", "cacheGetBlobUrl", "cachePut", "cacheDelete",
+                 "cacheDeleteCache", "cacheGetAllKeys", "storageRequestPersistent",
+                 "storageGetQuota", "blobUrlRevoke", "createBlob"):
+        if not re.search(rf"(?:window|globalThis)\.{name}\s*=", helper):
+            raise RuntimeError(f"Storage helper is missing {name}")
+    if (directory / "cache_api.LICENSE").read_bytes() != (PACKAGE / "example/web/cache_api.LICENSE").read_bytes():
+        raise RuntimeError("Release artifact changed cache_api.LICENSE")
+
+
+def validate_headers(source):
+    required = {"cross-origin-opener-policy": "same-origin",
+                "cross-origin-embedder-policy": "require-corp"}
+    wildcard = {}
+    scope = None
+    for line in source.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            scope = line.strip()
+            continue
+        name, separator, value = line.strip().partition(":")
+        name, value = name.lower(), value.strip().lower()
+        if separator and name in required:
+            if value != required[name]:
+                raise RuntimeError(f"Conflicting isolation header: {name}")
+            if scope == "/*": wildcard[name] = value
+    if wildcard != required:
+        raise RuntimeError("_headers must apply COOP same-origin and COEP require-corp to /*")
 
 
 def main():

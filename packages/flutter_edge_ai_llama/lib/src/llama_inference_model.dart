@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
@@ -25,7 +27,17 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
     this.maxNumImages,
     this.maxConcurrentSessions,
     this.defaultLoraPath,
-  });
+  }) {
+    _queue = EngineQueue(
+      onInvalidated: (_, _) {
+        // Close synchronously marks this model unusable for core's cache. Awaiting
+        // teardown here would deadlock the action that still owns the queue.
+        unawaited(
+          close().then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+        );
+      },
+    );
+  }
 
   /// Engine owned by this model.
   final llama.LlamaEngine engine;
@@ -57,7 +69,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   @override
   edge.ModelFileType get fileType => edge.ModelFileType.gguf;
 
-  final EngineQueue _queue = EngineQueue();
+  late final EngineQueue _queue;
   final Set<LlamaInferenceSession> _detached = {};
   LlamaInferenceSession? _session;
   Future<void> _lifecycle = Future<void>.value();
@@ -271,7 +283,8 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
     List<edge.Tool> tools = const [],
     int? maxOutputTokens,
     llama.ToolChoice toolChoice = llama.ToolChoice.auto,
-  }) {
+  }) async {
+    _queue.ensureValid();
     if (_closed) throw StateError('The model is closed.');
     if (enableVisionModality == true && !supportImage ||
         enableAudioModality == true && !supportAudio) {
@@ -283,8 +296,8 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
       throw UnsupportedError('This connector does not wire Web LoRA adapters.');
     }
     final limit = maxOutputTokens;
-    if (limit != null && (limit <= 0 || limit >= maxTokens)) {
-      throw ArgumentError('Use a positive output limit below context size.');
+    if (limit != null && limit <= 0) {
+      throw ArgumentError('Use a positive output limit.');
     }
     final sampling = edge.SamplingParams.resolve(
       edge.SamplingParams(

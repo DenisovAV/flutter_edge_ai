@@ -1,7 +1,7 @@
 # Flutter Edge AI llama.cpp engine
 
 Run local GGUF chat models through Flutter Edge AI, powered by
-[llamadart](https://pub.dev/packages/llamadart). Register the providers, install
+[llamadart](https://pub.dev/packages/llamadart). Register the provider, install
 a model, then use the usual Edge AI chat API.
 
 The package has runners for Android, iOS, macOS, Windows, Linux and Web.
@@ -12,7 +12,7 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.3.2+**,
-llamadart **0.11.1+** and Apple companion **0.0.21**. Connector CI uses Flutter
+llamadart **0.12.0** and Apple companion **0.0.22**. Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. GGUF embeddings are deferred.
 
 ## Try a chat in a few minutes
@@ -37,8 +37,9 @@ the [model file directly](https://huggingface.co/bartowski/SmolLM2-135M-Instruct
 3. Try a follow-up, **Stop** during a response, or **New chat** to clear history.
 4. Restart the app: it reloads the installed model and starts a fresh conversation.
 
-The native picker copies the model into app-owned storage, preserving the
-original. Allow disk space for both copies. Model download and first-build
+On Android, paste the direct model URL above into **GGUF model URL** and use
+**Load URL**. On iOS and desktop, the picker copies the model into app-owned
+storage, preserving the external original. Allow disk space for both copies. Model download and first-build
 runtime downloads need a network connection; native generation uses local files.
 The demo uses a 2,048-token context and 128-token response limit.
 
@@ -72,7 +73,11 @@ The preparation script verifies the pinned llama.cpp bridge files and stages
 them under the example's origin. For deployment, build with
 `python3 tool/verify.py build --platform web` and host `example/build/web` with
 the same COOP/COEP headers on HTML, worker and Wasm responses. `_headers` is
-included for hosts that support it. Large models can exceed browser memory.
+included for hosts that support it. Use models below approximately **2 GB**:
+core's `cacheApi` and `none` install paths buffer one byte array, and browser memory
+can impose a lower limit. Memory64 runtime assets do not remove that storage limit.
+Do not select `WebStorageMode.streaming`: its OPFS handle is unsupported by this
+connector, even if the download completes. Choose the storage mode before installing.
 
 ## Add it to your app
 
@@ -87,7 +92,7 @@ dependencies:
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
-  llamadart_llama_cpp_flutter: 0.0.21
+  llamadart_llama_cpp_flutter: 0.0.22
 
 hooks:
   user_defines:
@@ -95,14 +100,14 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Merge the hook settings into your **application's** pubspec. In a pub workspace,
-put them in the workspace root. Dependency settings do not propagate: without
-this selection, llamadart 0.11.1 includes LiteRT-LM too where available.
-Registering only the GGUF provider changes routing, not packaged runtime files.
-When `flutter_edge_ai_litertlm` is also present, `[llama_cpp]` is mandatory to avoid
-duplicate libraries and ambiguous runtime loading. Without the define, builds
-fail on Android/Linux/Windows; on iOS without the companion the wrong LiteRT-LM
-library can be loaded. On Apple the llama.cpp companion is required too.
+Merge the hook settings into your **application's** pubspec, or its workspace
+root. Dependency settings do not propagate. llamadart 0.12.0 selects llama.cpp
+only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph.
+Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
+LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
+actionable collision error. On Apple the llama.cpp companion is required too.
+The connector constrains llamadart to the tested 0.12.0 patch; update that
+constraint and Apple companion 0.0.22 together after validating the new pair.
 Also omit `flutter_edge_ai_litertlm` and `llamadart_litert_lm_flutter` to keep
 the app llama.cpp only. Core itself bundles no inference runtime.
 
@@ -114,6 +119,11 @@ On iOS enable `com.apple.developer.kernel.extended-virtual-addressing` and
 `com.apple.developer.kernel.increased-memory-limit`; see the example entitlements.
 The LiteRT-LM macOS CocoaPods recipe disables SwiftPM and conflicts with this
 companion recipe; that combined setup is not qualified.
+App Store submission is **unvalidated** while the native framework slice metadata
+is tracked in [llamadart-native #110](https://github.com/leehack/llamadart-native/issues/110).
+Apple workspace member apps are also unqualified: root hook settings can select
+fallback frameworks alongside the SwiftPM companion. Use a standalone Apple app
+until companion discovery and deployment metadata are validated.
 Windows users need the Microsoft Visual C++ runtime for the app architecture.
 See [platform setup](doc/platforms.md#consumer-setup) for backend selection.
 
@@ -157,23 +167,23 @@ extensionless paths or URLs. Other file types are handled by their own engines.
 On Web, replace
 `.fromFile(...)` with `.fromNetwork(modelUrl)` and prepare the assets/headers above.
 
-Models installed by an earlier draft as `binary` must be installed again with
-`ModelFileType.gguf`; the connector no longer claims binary specs.
-
 Core restores the installed imported model during initialization. Load it
 with `getActiveModel`; conversation history starts fresh. No connector-specific
 restore call is needed.
 
 `maxTokens` is the whole context budget (prompt, history and response).
 `maxOutputTokens` optionally limits one response; omitted values use the remaining
-rendered context. Truncated tool turns and empty answers fail without committing
+rendered context; an explicit cap is reduced to the room available. Chats trim
+old complete turns using `tokenBuffer`, preserving the system instruction,
+latest input and complete tool pairs. Trimming commits only with a successful turn.
+Truncated tool turns and empty answers fail without committing
 partial history. Completed tool results survive cancellation or an error. Stop with
 `await chat.session.stopGeneration()`; an interrupted turn is discarded so the
 conversation can continue. Close the model when your feature is finished.
 
 ## Contribution scope
 
-This contribution provides inference only. GGUF embeddings are preserved for a
+This contribution provides inference only. GGUF embeddings are deferred to a
 [follow-up](doc/deferred_embeddings.md) against core's new embedding SPI.
 
 The connector uses core 2.3's public `engine.dart` / `engine_web.dart` APIs.
@@ -187,7 +197,7 @@ They ship in core 2.3.2, the minimum version required by this connector.
 | --- | --- |
 | No engine handles the model | Declare `ModelFileType.gguf` and register `LlamaEngineProvider`. |
 | Model loading fails | Check the model path, available memory, and that the file is a complete, compatible GGUF. |
-| Context budget exceeded | Start a new chat, shorten the prompt, or increase `maxTokens` if memory permits. There is no automatic context compaction. |
+| Context budget exceeded | Start a new chat, shorten the prompt, or increase `maxTokens` if memory permits. Old complete chat turns are trimmed; a single oversized input still needs shortening. |
 | Reply ends early | Increase `maxOutputTokens`; the demo explicitly caps replies at 128 tokens; omit the cap for longer replies. |
 | Browser worker/model request fails | Prepare the assets, use COOP/COEP headers, and check model-host CORS. OPFS handles are unsupported; use cacheApi or network URLs. |
 | GPU request is rejected | Check that the packaged backend and device support GPU offload. CPU is the baseline; unknown offload is reported as unknown. |
@@ -214,6 +224,9 @@ Copy `example/web/cache_api.js`, `cache_api.LICENSE` and `_headers` into your
 app's `web/` directory. Hosts that ignore `_headers` need equivalent server configuration.
 Use the module bootstrap in `example/web/index.html`: it loads the local bridge,
 sets its worker/core/Wasm URLs before Flutter starts, and reports load errors.
+The validator permits extra headers while checking the required wildcard isolation
+rules, storage helper interface, license and pinned runtime hashes. A customized
+storage helper also needs browser tests; static interface checks do not prove its behavior.
 Build with `flutter build web --wasm`, then run:
 
 ```sh
@@ -223,5 +236,7 @@ python3 <package-root>/tool/validate_web_build.py <app-root>/build/web
 Serve the app,
 worker and Wasm responses with COOP `same-origin` and COEP `require-corp`.
 Model hosts need CORS. See the example `_headers` file for compatible hosts.
-Vulkan is included by default on supported native Android/Linux/Windows targets;
-the example's root hooks explicitly select CPU-only bundles.
+Vulkan is included by default on supported Android/Linux/Windows targets.
+Android automatic selection uses CPU; Linux/Windows use Vulkan where available.
+The example's root hooks select CPU-only bundles. Android bundles support
+arm64-v8a and x86_64; 32-bit armeabi-v7a is unsupported.

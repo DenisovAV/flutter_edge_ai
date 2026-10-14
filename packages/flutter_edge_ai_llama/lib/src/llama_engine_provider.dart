@@ -17,7 +17,7 @@ typedef _LlamaEngineLoader =
 /// Core has no GGUF projector install slot. The app must install/cache the
 /// projector and return its local path or browser URL through this resolver.
 typedef LlamaProjectorResolver =
-    Future<llama.ModelSource?> Function(
+    Future<String?> Function(
       edge.InferenceModelSpec spec,
       RuntimeConfig config,
     );
@@ -25,14 +25,13 @@ typedef LlamaProjectorResolver =
 /// Registers GGUF inference with Flutter Edge AI on native and Web runtimes.
 ///
 /// Models are selected by the declared [edge.ModelFileType.gguf] type.
-class LlamaEngineProvider implements InferenceEngineProvider {
+final class LlamaEngineProvider implements InferenceEngineProvider {
   /// Creates a provider, optionally resolving model-specific projectors.
   const LlamaEngineProvider({this.projectorResolver}) : _loader = null;
 
   /// Test-only injection; applications use the default constructor.
   // ignore: prefer_initializing_formals — keeps the test callback parameter readable.
-  @visibleForTesting
-  const LlamaEngineProvider.withLoader({
+  const LlamaEngineProvider._withLoader({
     required Future<llama.LlamaEngine> Function(String, llama.ModelParams)
     loader,
     this.projectorResolver,
@@ -144,7 +143,25 @@ class LlamaEngineProvider implements InferenceEngineProvider {
         if (projector == null) {
           throw UnsupportedError('No projector is paired with this model.');
         }
-        await engine.loadMultimodalProjectorSource(projector);
+        if (projector.trim().isEmpty) {
+          throw ArgumentError('Projector location must be nonempty.');
+        }
+        final uri = Uri.tryParse(projector);
+        final windowsPath = RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(projector);
+        if (kIsWeb &&
+                (uri == null ||
+                    !['http', 'https', 'blob'].contains(uri.scheme)) ||
+            !kIsWeb && uri != null && uri.hasScheme && !windowsPath) {
+          throw ArgumentError(
+            kIsWeb
+                ? 'Return an HTTP(S) or cached blob projector URL.'
+                : 'Return an installed local projector path.',
+          );
+        }
+        final source = kIsWeb
+            ? llama.ModelSource.url(Uri.parse(projector))
+            : llama.ModelSource.path(projector);
+        await engine.loadMultimodalProjectorSource(source);
         final capabilities = await engine.capabilities;
         if (config.supportImage && !capabilities.supportsVision ||
             config.supportAudio && !capabilities.supportsAudio) {
@@ -153,7 +170,12 @@ class LlamaEngineProvider implements InferenceEngineProvider {
           );
         }
       }
-      final backendName = await engine.getBackendName();
+      var backendName = await engine.getBackendName();
+      // The Web bridge's name lists available devices. In the published SDK,
+      // isGpuSupported queries the loaded bridge's isGpuActive flag instead.
+      if (kIsWeb && backendName.toLowerCase().contains('webgpu')) {
+        backendName = await engine.isGpuSupported() ? 'WebGPU' : 'WASM';
+      }
       return LlamaInferenceModel(
         engine: engine,
         modelType: spec.modelType,
@@ -181,4 +203,14 @@ Future<llama.LlamaEngine> _loadGgufEngine(
     llama.ModelSource.path(location, format: llama.ModelFormat.gguf),
   ),
   params: params,
+);
+
+/// Internal injection seam for connector tests; not exported by the package.
+@visibleForTesting
+LlamaEngineProvider createLlamaProviderForTest({
+  required Future<llama.LlamaEngine> Function(String, llama.ModelParams) loader,
+  LlamaProjectorResolver? projectorResolver,
+}) => LlamaEngineProvider._withLoader(
+  loader: loader,
+  projectorResolver: projectorResolver,
 );

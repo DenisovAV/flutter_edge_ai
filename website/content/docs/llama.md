@@ -6,8 +6,8 @@ meta:
     content: https://flutteredge.ai/images/og-image.png
 ---
 
-`flutter_edge_ai_llama` is an **unreleased contribution** providing optional
-an inference engine powered by
+`flutter_edge_ai_llama` is an **unreleased contribution** providing an optional
+inference engine powered by
 [llamadart](https://pub.dev/packages/llamadart). The adapter registers through
 core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
@@ -26,9 +26,8 @@ Click **Choose model**, select `packages/flutter_edge_ai_llama/tool/fixtures/cha
 and wait for **Ready**. Send “Say hello in one sentence.” The verified download
 is about 145 MB; this small model is for trying the integration.
 
-The example also has Android, iOS, Linux, Windows and Web runners. Native model
-import copies a `.gguf` file into app-owned storage and restores its identity
-after restart. The UI focuses on text chat, cancellation and a usable phone
+The example also has Android, iOS, Linux, Windows and Web runners. Android downloads from a GGUF URL. iOS and desktop copy a selected `.gguf`
+into app-owned storage; the installed model restores after restart. The UI focuses on text chat, cancellation and a usable phone
 layout. See the
 [package README](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md)
 for the Web asset preparation and hosting headers.
@@ -67,13 +66,13 @@ Future<void> main() async {
 Replace the file path with your downloaded instruction-tuned GGUF.
 `maxTokens` is the whole conversation context; `maxOutputTokens` limits one
 response. Stop a stream with `await chat.session.stopGeneration()` and start
-a new chat when the context fills. Interrupted turns are discarded.
+a new chat to clear history. Old complete turns are trimmed when the context fills. Interrupted turns are discarded.
 
 Core restores installed models during initialization; conversation history
 starts fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers
 described in the package guide.
 
-This draft selects `ModelFileType.gguf` by its declared type. MediaPipe does not
+The connector selects `ModelFileType.gguf` by its declared type. MediaPipe does not
 claim that type. Engine imports and Web URL resolution use core's public engine
 libraries. Core restores the paired LoRA after restart and refuses restoration
 if its adapter is missing; Web LoRA execution remains unsupported.
@@ -85,7 +84,7 @@ The package is not on pub.dev yet. Use the example or a path dependency on
 external apps resolve it from pub.dev without a development override.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
-`llamadart_llama_cpp_flutter: 0.0.21` SwiftPM companion.
+`llamadart_llama_cpp_flutter: 0.0.22` SwiftPM companion.
 
 ## Select llama.cpp only
 
@@ -98,11 +97,11 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Dependency pubspec settings do not propagate to consumers. Without this
-selection, llamadart bundles both llama.cpp and LiteRT-LM on supported native
-targets. The monorepo configures llama.cpp for its own workspace tests; that
+Dependency settings do not propagate. llamadart 0.12.0 chooses llama.cpp only
+when this connector or Flutter Edge AI LiteRT-LM is in the app graph. Keep the
+explicit selection as defence in depth; selecting both LiteRT-LM owners is rejected. The monorepo configures llama.cpp for its own workspace tests; that
 does not suppress another engine package's independently owned runtime.
-Apple Flutter apps add `llamadart_llama_cpp_flutter 0.0.21` directly and enable
+Apple Flutter apps add `llamadart_llama_cpp_flutter 0.0.22` directly and enable
 SwiftPM, as in this package's example. To keep an app llama.cpp only, omit the
 separate LiteRT-LM engine and companion dependencies.
 
@@ -117,13 +116,13 @@ compatible model, template and runtime; unsupported combinations fail clearly.
 Projector installation and
 pairing remain application-owned. NPU and Web LoRA are unsupported.
 
-Historical CPU chat/lifecycle evidence covers macOS, Linux/Windows GCE,
-Android/iOS simulators and Web worker/Wasm. macOS also has model-specific
-advanced feature and Metal evidence. Physical mobile devices, hardware WebGPU,
-oldest supported OS versions and advanced features on other platforms remain
-unqualified. See the
+CI covers CPU chat/lifecycle on desktop, Android/iOS simulators and Web worker/Wasm.
+Physical Android ARM64, hardware WebGPU, oldest supported OS versions and advanced
+features still need qualification. App Store submission and Apple workspace
+member packaging are unvalidated. Web installation buffers a byte array; use
+models below about 2 GB and avoid streaming OPFS mode. See the
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
-for exact models, platforms and remaining release checks.
+for setup, capability limits and publication gates.
 
 When adding `flutter_edge_ai_litertlm`, the root `[llama_cpp]` hook selection is
 required to prevent conflicting runtime libraries. Without it, Android/Linux/Windows

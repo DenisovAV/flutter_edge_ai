@@ -9,6 +9,22 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('model URL validation refuses names before model replacement', () {
+    for (final value in [
+      'chat.gguf',
+      '/models/chat.gguf',
+      'https://',
+      'file:///chat.gguf',
+    ]) {
+      expect(() => demo.validateModelUrl(value), throwsArgumentError);
+    }
+    for (final value in [
+      'https://models.example/chat.gguf',
+      'http://127.0.0.1:8098/chat.gguf',
+    ]) {
+      expect(() => demo.validateModelUrl(value), returnsNormally);
+    }
+  });
   for (final size in const [
     Size(900, 650),
     Size(640, 480),

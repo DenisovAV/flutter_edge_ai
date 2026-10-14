@@ -11,6 +11,8 @@ import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
+import 'package:flutter_edge_ai_llama/src/llama_engine_provider.dart'
+    show createLlamaProviderForTest;
 import 'package:flutter_edge_ai_llama/src/llama_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart' as llama;
@@ -77,7 +79,7 @@ void main() {
           .getModelFilePaths(restored);
       expect(paths?[restored.files[1].prefsKey], adapter.path);
       final engine = _Engine();
-      final provider = LlamaEngineProvider.withLoader(
+      final provider = createLlamaProviderForTest(
         loader: (location, _) async {
           expect(location, model.path);
           return engine;

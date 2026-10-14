@@ -60,8 +60,6 @@ def main():
                         help="Packaged runtime smoke: explicit CPU generation/batch thread budget")
     parser.add_argument("--native-diagnostics", action="store_true",
                         help="Apple runtime lanes: retain recent app thread samples in RUNNER_TEMP")
-    parser.add_argument("--core-path", type=Path,
-                        help="Package preparation only: validate against this unreleased core; hosted validation remains required before publishing")
     parser.add_argument("--capability", choices=("tools", "audio", "vision", "lora", "gpu"))
     parser.add_argument("--projector-path", type=Path)
     parser.add_argument("--input-path", type=Path)
@@ -115,20 +113,6 @@ def main():
 
     if args.native_diagnostics and (sys.platform != "darwin" or args.lane not in ("native", "device")):
         parser.error("--native-diagnostics requires an Apple native/device runtime lane")
-    if args.core_path is not None:
-        if args.lane != "package":
-            parser.error("--core-path is only supported by the package preparation lane")
-        core_pubspec = args.core_path.resolve() / "pubspec.yaml"
-        if not core_pubspec.is_file():
-            parser.error("--core-path must contain a core pubspec.yaml")
-        core_text = core_pubspec.read_text()
-        name = re.search(r"^name:\s*([^\s#]+)", core_text, re.MULTILINE)
-        version = re.search(r"^version:\s*([^\s#]+)", core_text, re.MULTILINE)
-        pin = re.search(r"^  flutter_edge_ai:\s*([^\n#]+)", (PACKAGE / "pubspec.yaml").read_text(), re.MULTILINE)
-        minimum = re.search(r"\d+\.\d+\.\d+", pin.group(1)) if pin else None
-        if not name or name.group(1) != "flutter_edge_ai" or not version or not minimum or version.group(1) != minimum.group(0):
-            parser.error("--core-path must be flutter_edge_ai at the connector's minimum dependency version")
-
     if args.lane == "capabilities":
         required = [args.model_path]
         if args.capability in ("audio", "vision"):
@@ -139,8 +123,8 @@ def main():
 
     version = json.loads(subprocess.check_output([flutter, "--version", "--machine"], text=True))
     expected = (PACKAGE / ".flutter-version").read_text().strip()
-    if version["frameworkVersion"] != expected:
-        parser.error(f"Use the pinned Flutter SDK {expected}")
+    if version["frameworkVersion"] not in ("3.47.0", expected):
+        parser.error(f"Use workspace Flutter 3.47.0 or CI Flutter {expected}")
     if args.lane != "package":
         run([flutter, "pub", "get"])
     if args.lane == "contracts":
@@ -184,7 +168,6 @@ def main():
         run(command)
     elif args.lane == "package":
         # Validate the standalone archive and hosted consumer resolution.
-        # A local override is explicitly development-only; it never ships.
         # An enclosing repository's .pubignore can hide this entire package.
         # Validate the standalone artifact without inheriting that root rule.
         with tempfile.TemporaryDirectory(prefix="edge-llama-publish-") as directory:
@@ -196,28 +179,12 @@ def main():
             # A published adapter must resolve without its development workspace.
             pubspec = staged / "pubspec.yaml"
             pubspec.write_text(re.sub(r"^resolution: workspace\r?\n", "", pubspec.read_text(), flags=re.MULTILINE))
-            if args.core_path is not None:
-                # Keep the original hosted constraint in the archive. The
-                # temporary override is excluded by .pubignore and never ships.
-                staged_core = Path(directory) / "core"
-                shutil.copytree(args.core_path.resolve(), staged_core,
-                                ignore=shutil.ignore_patterns(".git", ".dart_tool", "build", "coverage", "example", "test", "__pycache__", "pubspec_overrides.yaml"))
-                core_pubspec = staged_core / "pubspec.yaml"
-                core_pubspec.write_text(re.sub(r"^resolution: workspace\r?\n", "", core_pubspec.read_text(), flags=re.MULTILINE))
-                override = "dependency_overrides:\n  flutter_edge_ai:\n    path: " + json.dumps(str(staged_core)) + "\n"
-                (staged / "pubspec_overrides.yaml").write_text(override)
-                if (staged / "example/pubspec.yaml").is_file():
-                    (staged / "example/pubspec_overrides.yaml").write_text(override)
-                print("PACKAGE PREPARATION: using the matching local core. This does not validate hosted consumer resolution.", flush=True)
             run([flutter, "pub", "get"], staged)
             result = subprocess.run([flutter, "pub", "publish", "--dry-run", "--ignore-warnings"], cwd=staged, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         print(result.stdout, flush=True)
         result.check_returncode()
-        allowed = ()
-        if args.core_path is not None:
-            allowed += ("Non-dev dependencies are overridden in pubspec_overrides.yaml.",)
         warnings = [block for block in result.stdout.split("\n* ")[1:]]
-        if any(not any(message in block for message in allowed) for block in warnings):
+        if warnings:
             raise RuntimeError("Unexpected publish-validation warning")
     elif args.lane == "device":
         fixture = (f"--dart-define=GGUF_MODEL_PATH={args.model_path.resolve()}" if args.model_path

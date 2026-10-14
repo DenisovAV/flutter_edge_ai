@@ -11,7 +11,7 @@
   <!-- Storage helper from flutter_edge_ai 2.1.3; see cache_api.LICENSE. -->
   <script src="cache_api.js"></script>
   <script type="module">
-    // This is the runtime asset pin shipped with llamadart 0.11.1.
+    // This is the checksum-verified runtime pin tested by this connector.
     const root = new URL('webgpu_bridge/', document.baseURI).href;
     try {
       if (!window.crossOriginIsolated) {
@@ -22,9 +22,11 @@
       window.__llamadartBridgeModuleUrl = root + 'llama_webgpu_bridge.js';
       window.__llamadartBridgeCoreModuleUrl = root + 'llama_webgpu_core.js';
       window.__llamadartBridgeWasmUrl = root + 'llama_webgpu_core.wasm';
+      window.__llamadartBridgeCoreModuleUrlMem64 = root + 'llama_webgpu_core_mem64.js';
+      window.__llamadartBridgeWasmUrlMem64 = root + 'llama_webgpu_core_mem64.wasm';
       window.__llamadartBridgeWorkerUrl = root + 'llama_webgpu_bridge_worker.js';
       window.__llamadartBridgeAssetSource = 'local';
-      window.__llamadartBridgeThreadPoolSize = 1;
+      window.__llamadartBridgeThreadPoolSize = Math.max(1, Math.min(4, navigator.hardwareConcurrency || 1));
     } catch (error) {
       window.__llamadartBridgeLoadError = String(error);
       console.error('Could not load the GGUF runtime', error);

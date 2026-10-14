@@ -78,18 +78,25 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
         return;
       }
       _model = loaded;
-      if (!kIsWeb && defaultTargetPlatform != TargetPlatform.android) {
-        await pruneImportedModels(_path.text.trim());
+      final restoredSource = edge
+          .FlutterEdgeAiPlugin
+          .instance
+          .modelManager
+          .activeInferenceModel!
+          .files
+          .first
+          .source;
+      _path.text = switch (restoredSource) {
+        edge.NetworkSource(:final url) => url,
+        edge.FileSource(:final path) => path,
+        _ => '',
+      };
+      if (!kIsWeb && restoredSource is edge.FileSource) {
+        await pruneImportedModels(restoredSource.path);
       }
       await _newChat();
       if (mounted) {
         setState(() {
-          _path.text = edge
-              .FlutterEdgeAiPlugin
-              .instance
-              .modelManager
-              .activeInferenceModel!
-              .name;
           _backend = loaded.activeBackend?.name.toUpperCase() ?? 'UNKNOWN';
           _status = 'Installed model restored. Start a new conversation.';
         });
@@ -132,7 +139,10 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
       );
       if (file == null || !mounted) return;
       setState(() => _status = 'Importing model into app storage…');
-      final imported = await importModel(file.path);
+      final imported = await importModel(
+        file.path,
+        cleanupPickerInbox: defaultTargetPlatform == TargetPlatform.iOS,
+      );
       if (!mounted) return;
       _path.text = imported;
       await _load();
@@ -152,6 +162,18 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     if (_path.text.trim().isEmpty) return;
+    final network = kIsWeb || defaultTargetPlatform == TargetPlatform.android;
+    final selected = _path.text.trim();
+    if (network) {
+      try {
+        validateModelUrl(selected);
+      } on ArgumentError catch (error) {
+        setState(() => _status = error.message.toString());
+        return;
+      }
+    }
+    final previous =
+        edge.FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel;
     setState(() {
       _loading = true;
       _chat = null;
@@ -166,10 +188,10 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
         modelType: edge.ModelType.general,
         fileType: edge.ModelFileType.gguf,
       );
-      if (kIsWeb || defaultTargetPlatform == TargetPlatform.android) {
-        await installation.fromNetwork(_path.text.trim()).install();
+      if (network) {
+        await installation.fromNetwork(selected).install();
       } else {
-        await installation.fromFile(_path.text.trim()).install();
+        await installation.fromFile(selected).install();
       }
       final loaded = await edge.FlutterEdgeAi.getActiveModel(maxTokens: 2048);
       if (!mounted) {
@@ -186,6 +208,27 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
           _backend = _model!.activeBackend?.name.toUpperCase() ?? 'UNKNOWN';
           _status = 'Ready · 2,048 context tokens · 128 output tokens';
         });
+      }
+      final active =
+          edge.FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel;
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          previous?.files.first.source is edge.NetworkSource &&
+          active != null &&
+          previous!.files.first.filename != active.files.first.filename) {
+        try {
+          await edge.FlutterEdgeAi.uninstallModel(
+            previous.files.first.filename,
+          );
+        } catch (error) {
+          // A cleanup failure must not discard the newly loaded model.
+          if (mounted) {
+            setState(
+              () => _status =
+                  'Ready. Could not remove the previous download: $error',
+            );
+          }
+        }
       }
     } catch (error) {
       if (mounted) setState(() => _status = error.toString());
@@ -515,4 +558,14 @@ class _Turn {
   void append(String token) => _buffer.write(token);
   void flush() => text.value = _buffer.toString();
   void dispose() => text.dispose();
+}
+
+/// Rejects names and incomplete URLs before replacing the loaded model.
+void validateModelUrl(String value) {
+  final uri = Uri.tryParse(value);
+  if (uri == null ||
+      !['http', 'https'].contains(uri.scheme) ||
+      uri.host.isEmpty) {
+    throw ArgumentError('Enter a complete HTTP or HTTPS GGUF model URL.');
+  }
 }

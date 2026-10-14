@@ -446,7 +446,8 @@ class ToolingTests(unittest.TestCase):
         controls = [call.args[0][2] for call in run.call_args_list if call.args[0][:2] == ["xcrun", "simctl"]]
         self.assertEqual(controls, ["shutdown", "boot", "bootstatus"])
         failures = [subprocess.CalledProcessError(1, ["flutter"], output="assertion failed"),
-                    subprocess.TimeoutExpired(["flutter"], 600, output='{"type":"testStart","test":{"name":"packaged native runtime installs"}}')]
+                    subprocess.TimeoutExpired(["flutter"], 600, output='{"type":"testStart","test":{"name":"packaged native runtime installs"}}'),
+                    subprocess.TimeoutExpired(["flutter"], 600, output='{"type":"testStart","test":{"name":"iOS picker import"}}')]
         for error in failures:
             with patch.object(sys, "argv", arguments), patch.object(sys, "platform", "darwin"), \
                  patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \

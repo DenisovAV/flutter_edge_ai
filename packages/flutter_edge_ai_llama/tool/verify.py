@@ -85,6 +85,19 @@ def run_smoke(command, directory, expected, timeout=None):
         process.stdout.close()
 
 
+def functional_test_started(report):
+    for line in report.splitlines():
+        try:
+            event = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(event, dict) or event.get("type") != "testStart": continue
+        name = event.get("test", {}).get("name", "")
+        if name and not name.startswith("loading ") and not re.search(r"\((?:setUp|tearDown)(?:All)?\)$", name):
+            return True
+    return False
+
+
 def validate_android_apk(path):
     """Default APKs must contain both supported ABIs and their GGUF runtime."""
     with zipfile.ZipFile(path) as apk:
@@ -258,9 +271,8 @@ def main():
             report = error.output or ""
             startup_failure = ("Error waiting for a debug connection" in report or
                                "Dart VM Service was not discovered" in report)
-            model_started = any("packaged native runtime installs" in line and '"testStart"' in line
-                                for line in report.splitlines())
-            if not args.simulator_retry or model_started or not (isinstance(error, subprocess.TimeoutExpired) or startup_failure):
+            tests_started = functional_test_started(report)
+            if not args.simulator_retry or tests_started or not (isinstance(error, subprocess.TimeoutExpired) or startup_failure):
                 raise
             print("iOS simulator startup failed; rebooting for one bounded retry.", flush=True)
             run(["xcrun", "simctl", "shutdown", args.device])

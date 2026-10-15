@@ -210,6 +210,18 @@ void main() {
     expect(parse('<|python_tag|>[search(q="a")]'), [search], reason: 'Llama');
   });
 
+  test('a malformed tool_calls value parses to none instead of throwing', () {
+    expect(parse('{"tool_calls":{"name":"x"}}'), isEmpty);
+    expect(parse('{"tool_calls":"x"}'), isEmpty);
+    expect(
+      parse(
+        '{"tool_calls":[{"type":"function","function":'
+        '{"name":42,"arguments":{}}}]}',
+      ),
+      isEmpty,
+    );
+  });
+
   test('text with no call parses to none', () {
     expect(parse(''), isEmpty);
     expect(parse('Sure, let me look that up.'), isEmpty);

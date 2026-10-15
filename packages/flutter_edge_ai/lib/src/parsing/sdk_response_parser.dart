@@ -174,8 +174,8 @@ class SdkResponseParser {
         fn = raw;
       }
       if (fn == null) return;
-      final name = fn['name'] as String?;
-      if (name == null) return;
+      final name = fn['name'];
+      if (name is! String) return;
       final rawArgs = fn['arguments'];
       final args = rawArgs is Map<String, dynamic>
           ? _stripEscapeTokens(rawArgs) as Map<String, dynamic>
@@ -192,8 +192,8 @@ class SdkResponseParser {
       );
     }
 
-    final topLevel = json['tool_calls'] as List<dynamic>?;
-    if (topLevel != null) {
+    final topLevel = json['tool_calls'];
+    if (topLevel is List) {
       for (final call in topLevel) {
         addFromCallObject(call);
       }

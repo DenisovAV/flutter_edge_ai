@@ -20,10 +20,13 @@ android {
         applicationId = "dev.llamadart.flutter_edge_ai_llama_demo"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 24
-        ndk {
-            abiFilters.clear()
-            abiFilters += listOf("arm64-v8a", "x86_64")
+        minSdk = 28
+        // Flutter owns ABI selection for split APKs; only constrain fat APKs/AABs.
+        if (project.findProperty("split-per-abi") != "true") {
+            ndk {
+                abiFilters.clear()
+                abiFilters += listOf("arm64-v8a", "x86_64")
+            }
         }
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION

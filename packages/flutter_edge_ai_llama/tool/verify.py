@@ -6,6 +6,7 @@ import json
 import os
 import re
 import signal
+import struct
 from pathlib import Path
 import shutil
 import subprocess
@@ -98,17 +99,72 @@ def functional_test_started(report):
     return False
 
 
+# Android's public system libraries; all other DT_NEEDED entries must be bundled.
+ANDROID_SYSTEM_LIBRARIES = {
+    'libc.so', 'libm.so', 'libdl.so', 'liblog.so', 'libandroid.so',
+    'libjnigraphics.so', 'libEGL.so', 'libGLESv1_CM.so', 'libGLESv2.so',
+    'libGLESv3.so', 'libvulkan.so', 'libz.so', 'libOpenSLES.so',
+    'libaaudio.so', 'libmediandk.so', 'libstdc++.so',
+}
+
+
+def elf_dependencies(data):
+    """Read ELF64 program/dynamic tables without executing archive binaries."""
+    if data[:6] != b'\x7fELF\x02\x01':
+        raise RuntimeError('Android native library must be little-endian ELF64')
+    offset = struct.unpack_from('<Q', data, 32)[0]
+    size, count = struct.unpack_from('<HH', data, 54)
+    segments = [struct.unpack_from('<IIQQQQQQ', data, offset + i * size) for i in range(count)]
+    loads = [segment for segment in segments if segment[0] == 1]
+    if not loads or any(segment[7] < 16384 or (segment[2] - segment[3]) % 16384 for segment in loads):
+        raise RuntimeError('Android ELF LOAD segments require 16 KB alignment')
+    dynamic = next((segment for segment in segments if segment[0] == 2), None)
+    if dynamic is None: return []
+    entries = []
+    for position in range(dynamic[2], dynamic[2] + dynamic[5], 16):
+        tag, value = struct.unpack_from('<QQ', data, position)
+        if tag == 0: break
+        entries.append((tag, value))
+    needed = [value for tag, value in entries if tag == 1]
+    if not needed: return []
+    strings = next((value for tag, value in entries if tag == 5), None)
+    string_size = next((value for tag, value in entries if tag == 10), None)
+    segment = next((segment for segment in loads if strings is not None and segment[3] <= strings < segment[3] + segment[5]), None)
+    if segment is None or string_size is None:
+        raise RuntimeError('ELF DT_NEEDED has no valid string table')
+    start = segment[2] + strings - segment[3]
+    table = data[start:start + string_size]
+    dependencies = []
+    for index in needed:
+        end = table.find(b'\0', index)
+        if end < 0: raise RuntimeError('Invalid ELF dependency string')
+        dependencies.append(table[index:end].decode('ascii'))
+    return dependencies
+
+
 def validate_android_apk(path):
-    """Default APKs must contain both supported ABIs and their GGUF runtime."""
-    with zipfile.ZipFile(path) as apk:
-        libraries = [name for name in apk.namelist() if name.startswith("lib/") and name.endswith(".so")]
-    abis = {name.split("/")[1] for name in libraries}
-    if abis != {"arm64-v8a", "x86_64"}:
-        raise RuntimeError(f"Android APK has unsupported/missing ABIs: {sorted(abis)}")
-    for abi in sorted(abis):
-        if not any(name.startswith(f"lib/{abi}/") and "llama" in name.rsplit("/", 1)[1].lower() for name in libraries):
-            raise RuntimeError(f"Android APK is missing its llama.cpp runtime for {abi}")
-    print("Android APK ABI/runtime contents: PASS", flush=True)
+    """Check supported ABIs, CPU runtime, ELF dependency closure and 16 KB layout."""
+    with zipfile.ZipFile(path) as apk, open(path, 'rb') as raw:
+        libraries = [name for name in apk.namelist() if name.startswith('lib/') and name.endswith('.so')]
+        abis = {name.split('/')[1] for name in libraries}
+        if abis != {'arm64-v8a', 'x86_64'}:
+            raise RuntimeError(f'Android APK has unsupported/missing ABIs: {sorted(abis)}')
+        for abi in sorted(abis):
+            names = {name.rsplit('/', 1)[1] for name in libraries if name.startswith(f'lib/{abi}/')}
+            if 'libllamadart.so' not in names or not any(name.startswith('libggml-cpu') for name in names):
+                raise RuntimeError(f'Android APK is missing its llama.cpp/CPU runtime for {abi}')
+            for name in sorted(names):
+                member = f'lib/{abi}/{name}'
+                dependencies = elf_dependencies(apk.read(member))
+                missing = set(dependencies) - names - ANDROID_SYSTEM_LIBRARIES
+                if missing: raise RuntimeError(f'{member} has missing DT_NEEDED libraries: {sorted(missing)}')
+                info = apk.getinfo(member)
+                if info.compress_type == zipfile.ZIP_STORED:
+                    raw.seek(info.header_offset + 26)
+                    filename_size, extra_size = struct.unpack('<HH', raw.read(4))
+                    if (info.header_offset + 30 + filename_size + extra_size) % 16384:
+                        raise RuntimeError(f'{member} needs 16 KB APK ZIP alignment')
+    print('Android APK ABI/CPU/dependency/16 KB checks: PASS', flush=True)
 
 
 def workspace_flutter():
@@ -249,9 +305,10 @@ def main():
                 ".git", ".dart_tool", "build", "coverage", "__pycache__",
                 "*.pyc", "*.log", "fixtures", "webgpu_bridge", ".gradle",
                 "Pods", "ephemeral", ".symlinks", "pubspec_overrides.yaml"))
+            # Validate a prospective release in isolation; keep the source unpublishable.
             # A published adapter must resolve without its development workspace.
             pubspec = staged / "pubspec.yaml"
-            pubspec.write_text(re.sub(r"^resolution: workspace\r?\n", "", pubspec.read_text(), flags=re.MULTILINE))
+            pubspec.write_text(re.sub(r"^(?:resolution: workspace|publish_to: [\"\']?none[\"\']?)\r?\n", "", pubspec.read_text(), flags=re.MULTILINE))
             run([flutter, "pub", "get"], staged)
             result = subprocess.run([flutter, "pub", "publish", "--dry-run", "--ignore-warnings"], cwd=staged, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         print(result.stdout, flush=True)
@@ -275,10 +332,11 @@ def main():
             if not args.simulator_retry or tests_started or not (isinstance(error, subprocess.TimeoutExpired) or startup_failure):
                 raise
             print("iOS simulator startup failed; rebooting for one bounded retry.", flush=True)
-            run(["xcrun", "simctl", "shutdown", args.device])
+            subprocess.run(["xcrun", "simctl", "shutdown", args.device], check=False, timeout=30)
             run(["xcrun", "simctl", "boot", args.device])
             subprocess.run(["xcrun", "simctl", "bootstatus", args.device, "-b"], check=True, timeout=120)
             run(command, PACKAGE / "example", smoke="packaged native runtime installs", smoke_timeout=600)
+            print("::warning::iOS simulator passed only after a startup retry; inspect the first attempt above.", flush=True)
     elif args.lane == "capabilities":
         labels = {"tools": "native typed thinking", "audio": "native audio projector", "vision": "native vision projector", "lora": "native LoRA session", "gpu": "explicit GPU loads"}
         prefix = "TOOL" if args.capability == "tools" else args.capability.upper()

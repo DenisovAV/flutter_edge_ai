@@ -1,5 +1,9 @@
 name: Pinned Flutter SDK
-description: Install the verified Flutter 3.47.1 Git tag without release-manifest discovery.
+description: Install a verified Flutter Git tag without release-manifest discovery.
+inputs:
+  flutter-version:
+    description: Contract SDK (3.47.1) or declared minimum (3.44.0).
+    default: '3.47.1'
 runs:
   using: composite
   steps:
@@ -10,8 +14,14 @@ runs:
         if [[ "$RUNNER_OS" == Windows ]]; then
           sdk_directory="$(cygpath -u "$RUNNER_TEMP")/edge-ai-flutter"
         fi
-        git clone --depth 1 --branch 3.47.1 https://github.com/flutter/flutter.git "$sdk_directory"
-        test "$(git -C "$sdk_directory" rev-parse HEAD)" = 6655482ec06e547f90abf8ae7590466f4415978d
+        flutter_version="${{ inputs.flutter-version }}"
+        case "$flutter_version" in
+          3.47.1) pinned_commit=6655482ec06e547f90abf8ae7590466f4415978d ;;
+          3.44.0) pinned_commit=559ffa3f75e7402d65a8def9c28389a9b2e6fe42 ;;
+          *) echo "Unsupported SDK pin: $flutter_version" >&2; exit 1 ;;
+        esac
+        git clone --depth 1 --branch "$flutter_version" https://github.com/flutter/flutter.git "$sdk_directory"
+        test "$(git -C "$sdk_directory" rev-parse HEAD)" = "$pinned_commit"
         "$sdk_directory/bin/flutter" --version --machine
         "$sdk_directory/bin/flutter" config --enable-swift-package-manager
         if [[ "$RUNNER_OS" == Windows ]]; then

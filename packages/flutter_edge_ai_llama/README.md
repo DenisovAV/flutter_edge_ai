@@ -12,12 +12,14 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.3.2+**,
-llamadart **0.12.0** and Apple companion **0.0.22**. Connector CI uses Flutter
+llamadart **0.12.2** and Apple companion **0.0.23**. Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. GGUF embeddings are deferred.
 
 ## Try a chat in a few minutes
 
-From `packages/flutter_edge_ai_llama/`:
+From a source checkout at `packages/flutter_edge_ai_llama/`:
+The development runners below are repository tools and are not shipped in the
+pub archive; [browse or clone the source](https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_llama) first.
 
 ```sh
 python3 tool/fetch_test_model.py
@@ -41,13 +43,13 @@ On Android, paste the direct model URL above into **GGUF model URL** and use
 **Load URL**. On iOS and desktop, the picker copies the model into app-owned
 storage, preserving the external original. Allow disk space for both copies. Model download and first-build
 runtime downloads need a network connection; native generation uses local files.
-The demo uses a 2,048-token context and 128-token response limit.
+The demo requests a 2,048-token context and 128-token response limit.
 
 For another native platform, run `flutter devices` and replace `macos` with the
 device ID, `linux`, or `windows` on a compatible host. The example already
 configures Apple SwiftPM and llama.cpp-only packaging; Android/Linux/Windows
 select CPU libraries. Its deployment floors are iOS 16.4, macOS 14 and Android
-API 24. Passing builds do not qualify every device or GPU.
+API 28. Passing builds do not qualify every device or GPU.
 
 ### Run in a browser
 
@@ -92,7 +94,7 @@ dependencies:
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
-  llamadart_llama_cpp_flutter: 0.0.22
+  llamadart_llama_cpp_flutter: 0.0.23
 
 hooks:
   user_defines:
@@ -101,13 +103,20 @@ hooks:
 ```
 
 Merge the hook settings into your **application's** pubspec, or its workspace
-root. Dependency settings do not propagate. llamadart 0.12.0 selects llama.cpp
+root. Dependency settings do not propagate. llamadart 0.12.2 selects llama.cpp
 only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph.
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-The connector constrains llamadart to the tested 0.12.0 patch; update that
-constraint and Apple companion 0.0.22 together after validating the new pair.
+The connector constrains llamadart to the tested 0.12.2 patch; update that
+constraint and Apple companion 0.0.23 together after validating the new pair.
+Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
+For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting
+those two ABIs. With `--split-per-abi`, let Flutter own the filters and pass
+`--target-platform android-arm64,android-x64`; combining explicit NDK filters
+with ABI splits is an Android Gradle Plugin conflict. The example uses API 28
+as a conservative floor; older Android versions remain unqualified.
+
 Also omit `flutter_edge_ai_litertlm` and `llamadart_litert_lm_flutter` to keep
 the app llama.cpp only. Core itself bundles no inference runtime.
 

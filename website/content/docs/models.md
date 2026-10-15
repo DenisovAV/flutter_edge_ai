@@ -8,7 +8,7 @@ meta:
 
 flutter_edge_ai runs any model a registered engine runs: `.litertlm`
 (LiteRT-LM), `.task`/`.bin` (MediaPipe), ONNX (ORT-GenAI natively,
-Transformers.js on web), or the OS model (built-in AI). The tables below list the
+Transformers.js on web), GGUF (llama.cpp), or the OS model (built-in AI). The tables below list the
 models we have run. On desktop (macOS, Windows, Linux) LiteRT-LM models must be
 `.litertlm` — there is no MediaPipe engine there; ONNX models and the OS
 built-in model also run on desktop.
@@ -25,6 +25,8 @@ based on how chat templates are handled.
 
 ### Type 1: SDK-managed templates
 
+- **`.gguf` files:** llama.cpp through the optional [llama engine](llama.md);
+  the GGUF supplies its own chat template.
 - **`.task` files:** MediaPipe-optimized format for mobile (Android/iOS) and web.
 - **`.litertlm` files:** LiteRT-LM format for Android, iOS, Desktop, and web
   (early preview). Never handled by MediaPipe — the two formats go to different
@@ -72,8 +74,8 @@ model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 `.task`, `ModelFileType.binary` for `.bin` and `.tflite`, `ModelFileType.onnx`
 for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 `ModelFileType.builtIn` for OS-provided models. `ModelFileType.gguf` (core
-2.3.2) is reserved for `.gguf` files; the llama.cpp engine that runs them,
-`flutter_edge_ai_llama`, is coming soon.
+2.3.2) selects the optional [llama.cpp engine](llama.md),
+`flutter_edge_ai_llama`, currently available from the contribution source.
 
 </Info>
 
@@ -81,6 +83,7 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 
 | Format | Android | iOS | Web | Desktop | Use Case |
 |---|:---:|:---:|:---:|:---:|---|
+| `.gguf` | ✅ | ✅ | ✅ | ✅ | Optional llama.cpp engine; model-provided templates, [qualification limits](llama.md) |
 | `.task` | ✅ | ✅ ⁴ | ✅ | ❌ | Every model shipped as `.task` (see the tables below). MediaPipe is maintenance-only — new apps should use `.litertlm` |
 | `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Every model shipped as `.litertlm` (see the tables below); EmbeddingGemma 2 embeddings (every platform; web from litertlm 1.13.1) |
 | `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4, Gemma 3 1B and Gemma 3 270M in the current catalog) |

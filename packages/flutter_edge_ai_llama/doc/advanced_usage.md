@@ -138,7 +138,9 @@ calls survive interruption; replay groups thinking, text and calls in one assist
 Invalid configuration or replay payloads throw `ArgumentError`; unsupported
 features throw `UnsupportedError`. Closed/invalid runtime state, empty answers,
 malformed generated tools and incomplete tool turns throw `StateError`.
-llamadart runtime exceptions propagate unchanged. A failed shared-runtime recovery
+SDK unsupported/model-format/argument failures map to standard `UnsupportedError`
+or `ArgumentError`; other SDK failures map to `StateError`, retaining the original
+cause and stack. A failed shared-runtime recovery
 closes the model so core can reload it; the original failure remains in diagnostics.
 
 `fullHistory` retains committed visible turns across context trimming and close,
@@ -156,3 +158,21 @@ without losing their association.
 Chat `tokenBuffer` must be nonnegative and smaller than `maxTokens`. It is a
 trimming target, not a reservation that rejects a valid latest input. Output
 caps must be positive and are reduced to the actual remaining rendered context.
+
+
+Historical tool turns remain replayable under `ToolChoice.none`; that choice
+forbids newly generated calls. Results are rendered and persisted in call order.
+Missing or reused historical IDs receive unique nine-character alphanumeric
+IDs, with explicit result references remapped together. An unanswered ID cannot
+be reused. Tool-result copies retain `callId` and typed equality includes it.
+
+Tool declarations are preflighted against the loaded template before replacing
+an existing chat. GLM-4.5, Laguna and Hunyuan-V3 accept the SDK's typed parameter
+subset; schemas requiring richer constraints fail explicitly for those grammars.
+Other formats retain the full schema. Rich SDK schema support is tracked in
+[llamadart #1007](https://github.com/leehack/llamadart/issues/1007).
+
+The connector rejects a loaded context smaller than requested; request a smaller
+`maxTokens` explicitly rather than relying on a silent Web fallback. A fatal SDK
+state failure during generation, tokenization or chat preflight closes and evicts
+the model. Reload it, then replay the saved `fullHistory`.

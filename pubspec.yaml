@@ -24,7 +24,7 @@ workspace:
   - packages/genkit_hybrid
 
 # Select only the runtime this GGUF adapter uses in workspace test builds.
-# Consumer applications must declare their own hook selection.
+# Consumer applications may retain this hook selection as defence in depth.
 hooks:
   user_defines:
     llamadart:

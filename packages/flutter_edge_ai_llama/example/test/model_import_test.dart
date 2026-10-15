@@ -51,7 +51,7 @@ void main() {
 
   test(
     'temporary picker move avoids leaving a duplicate and preserves symlinks',
-    () async {
+    () => IOOverrides.runZoned(() async {
       final inbox = Directory('${scratch.path}/app/tmp/dev.llamadart-Inbox');
       await inbox.create(recursive: true);
       final external = File('${scratch.path}/external.gguf');
@@ -70,28 +70,31 @@ void main() {
       await other.writeAsString('external');
       await removePickerInboxCopy(other.path);
       expect(await other.exists(), isTrue);
-    },
+    }, getSystemTempDirectory: () => Directory('${scratch.path}/app/tmp')),
   );
 
-  test('iOS import removes only its owned picker Inbox copy', () async {
-    final inbox = Directory('${scratch.path}/app/tmp/dev.llamadart-Inbox');
-    await inbox.create(recursive: true);
-    final source = File('${inbox.path}/picked.gguf');
-    await source.writeAsString('model');
-    final imported = File(
-      await importModel(source.path, cleanupPickerInbox: true),
-    );
-    expect(await imported.readAsString(), 'model');
-    expect(await source.exists(), isFalse);
-    final external = File('${scratch.path}/external.gguf');
-    await external.writeAsString('external');
-    final link = Link('${inbox.path}/linked.gguf');
-    await link.create(external.path);
-    await removePickerInboxCopy(link.path);
-    await removePickerInboxCopy(external.path);
-    expect(await external.exists(), isTrue);
-    expect(await link.exists(), isTrue);
-  });
+  test(
+    'iOS tmp differs from path_provider caches and only owned Inbox is moved',
+    () => IOOverrides.runZoned(() async {
+      final inbox = Directory('${scratch.path}/app/tmp/dev.llamadart-Inbox');
+      await inbox.create(recursive: true);
+      final source = File('${inbox.path}/picked.gguf');
+      await source.writeAsString('model');
+      final imported = File(
+        await importModel(source.path, cleanupPickerInbox: true),
+      );
+      expect(await imported.readAsString(), 'model');
+      expect(await source.exists(), isFalse);
+      final external = File('${scratch.path}/external.gguf');
+      await external.writeAsString('external');
+      final link = Link('${inbox.path}/linked.gguf');
+      await link.create(external.path);
+      await removePickerInboxCopy(link.path);
+      await removePickerInboxCopy(external.path);
+      expect(await external.exists(), isTrue);
+      expect(await link.exists(), isTrue);
+    }, getSystemTempDirectory: () => Directory('${scratch.path}/app/tmp')),
+  );
 
   test(
     'failed imports leave no partial model and reject unrelated formats',
@@ -119,5 +122,5 @@ class _Paths extends PathProviderPlatform {
   @override
   Future<String?> getApplicationDocumentsPath() async => '$root/Documents';
   @override
-  Future<String?> getTemporaryPath() async => '$root/tmp';
+  Future<String?> getTemporaryPath() async => '$root/Library/Caches';
 }

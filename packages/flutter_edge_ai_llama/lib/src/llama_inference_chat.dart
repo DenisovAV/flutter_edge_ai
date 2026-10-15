@@ -47,9 +47,27 @@ class LlamaInferenceChat extends edge.InferenceChat {
     bool prefix = false,
   ]) => _llamaSession.addQueryChunk(message);
 
+  bool _reportedHiddenThinking = false;
+
   @override
-  Stream<edge.ModelResponse> generateChatResponseAsync() =>
-      _llamaSession.getResponses(tokenBuffer: tokenBuffer);
+  Stream<edge.ModelResponse> generateChatResponseAsync() async* {
+    try {
+      yield* _llamaSession.getResponses(tokenBuffer: tokenBuffer);
+    } finally {
+      final hidden = _llamaSession.hiddenThinkingCharacters;
+      if (!enableThinking && hidden > 0 && !_reportedHiddenThinking) {
+        _reportedHiddenThinking = true;
+        // A release build also needs this one-time notice, as core does.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai] NOTE: the model reasoned although thinking is off; '
+          '$hidden characters of reasoning were hidden. Not every model can '
+          'switch reasoning off, and hidden reasoning still costs time and '
+          'output tokens. Shown once per chat.',
+        );
+      }
+    }
+  }
 
   @override
   Future<edge.ModelResponse> generateChatResponse() async {

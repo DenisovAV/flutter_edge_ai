@@ -5,7 +5,8 @@ The runner also accepts the workspace SDK declared in the root `.fvmrc`. Other v
 rejected to keep formatting checks reproducible. The package minimum follows core: Flutter 3.44 / Dart 3.12. The root workspace
 SDK and shared workflow settings remain upstream-owned.
 
-From the package directory:
+From a repository checkout at the package directory (development tools are
+excluded from the published archive):
 
 ```sh
 python3 tool/verify.py contracts
@@ -60,4 +61,4 @@ Web artifact validation uses Node.js to check that the copied helper exposes
 callable functions and the bootstrap actually selects the local pinned assets.
 The iOS CI lane streams the JSON report, bounds each attempt to ten minutes,
 and reboots/retries only a pre-test startup failure once. Both attempts retain
-failure output; the passing attempt must execute the required model test.
+failure output, and a recovered launch emits a CI warning; the passing attempt must execute the required model test.

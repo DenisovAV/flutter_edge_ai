@@ -77,23 +77,39 @@ const data = JSON.parse(fs.readFileSync(0, 'utf8'));
     if (typeof helper.window[name] !== 'function') throw Error('Storage helper is missing ' + name);
   }
   const imported = [];
-  const window = {crossOriginIsolated: true};
-  const context = {window, URL, navigator:{hardwareConcurrency:4}, console:{error(){},log(){}},
-    document:{baseURI:'https://app.invalid/',createElement(){return {};},body:{appendChild(){}}},
-    async loadModule(address) {
-      imported.push(address);
-      if (address !== 'https://app.invalid/webgpu_bridge/llama_webgpu_bridge.js') {
-        throw Error('Bootstrap must load the local pinned bridge');
-      }
-      return {LlamaWebGpuBridge:function(){}};
+  const violations = [];
+  const context = vm.createContext({URL, navigator:{hardwareConcurrency:4},
+    crossOriginIsolated:true,console:{error(){},log(){}},
+    document:{baseURI:'https://app.invalid/',createElement(){return {};},body:{appendChild(){}}}
+  }, {codeGeneration:{strings:false,wasm:false}});
+  context.window = context;
+  async function loadModule(address, referencingModule) {
+    const resolved = new URL(address, referencingModule.identifier).href;
+    imported.push(resolved);
+    if (resolved !== 'https://app.invalid/webgpu_bridge/llama_webgpu_bridge.js') {
+      violations.push(resolved);
+      throw Error('Bootstrap must load the local pinned bridge: ' + resolved);
     }
-  };
-  for (const source of data.modules) {
-    // The module's dynamic import is intercepted; no network or runtime bytes execute.
-    const script = source.replace(/\bimport\s*\(/g, 'loadModule(');
-    await vm.runInNewContext('(async () => {' + script + '})()', context,
-      {timeout:1000,contextCodeGeneration:{strings:false,wasm:false}});
+    const module = new vm.SyntheticModule(['LlamaWebGpuBridge'], function() {
+      this.setExport('LlamaWebGpuBridge', function(){});
+    }, {context,identifier:resolved});
+    await module.link(() => {});
+    await module.evaluate();
+    return module;
   }
+  for (const source of data.modules) {
+    // Node links static and dynamic imports through the same local-only loader.
+    // No network access or runtime artifact code executes, even on CDN fallback.
+    const module = new vm.SourceTextModule(source, {
+      context, identifier:'https://app.invalid/index.html',
+      initializeImportMeta(meta){meta.url='https://app.invalid/index.html';},
+      importModuleDynamically:loadModule
+    });
+    await module.link(loadModule);
+    await module.evaluate({timeout:1000});
+  }
+  if (violations.length) throw Error('Bootstrap must use local pinned assets; attempted nonlocal runtime imports: ' + violations.join(', '));
+  const window = context;
   const bindings = {
     __llamadartBridgeModuleUrl:'llama_webgpu_bridge.js',
     __llamadartBridgeCoreModuleUrl:'llama_webgpu_core.js',
@@ -122,7 +138,7 @@ def validate_javascript(directory):
         raise RuntimeError("Bootstrap must use an app-relative base for local pinned assets")
     if "cache_api.js" not in scripts.sources:
         raise RuntimeError("Bootstrap must load its local cache_api.js helper")
-    result = subprocess.run(["node", "-e", JS_CHECK], input=json.dumps({
+    result = subprocess.run(["node", "--experimental-vm-modules", "-e", JS_CHECK], input=json.dumps({
         "helper": (directory / "cache_api.js").read_text(),
         "modules": [source for source in scripts.modules if "LlamaWebGpuBridge" in source or "__llamadartBridge" in source],
     }), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
@@ -131,9 +147,10 @@ def validate_javascript(directory):
 
 
 def validate_headers(source):
-    required = {"cross-origin-opener-policy": "same-origin",
-                "cross-origin-embedder-policy": "require-corp"}
-    wildcard = {}
+    policies = {"cross-origin-opener-policy": {"same-origin"},
+                "cross-origin-embedder-policy": {"require-corp", "credentialless"}}
+    wildcard = set()
+    seen = set()
     scope = None
     for line in source.splitlines():
         if not line.strip() or line.lstrip().startswith("#"):
@@ -142,16 +159,21 @@ def validate_headers(source):
             scope = line.strip()
             continue
         stripped = line.strip()
-        if stripped.startswith("!") and stripped[1:].strip().lower() in required:
+        if stripped.startswith("!") and stripped[1:].strip().lower() in policies:
             raise RuntimeError("Conflicting isolation header removal")
         name, separator, value = stripped.partition(":")
-        name, value = name.lower(), value.strip().lower()
-        if separator and name in required:
-            if value != required[name]:
+        name = name.lower()
+        if separator and name in policies:
+            # Cloudflare joins matching rules, even identical header values.
+            if name in seen:
+                raise RuntimeError(f"Repeated isolation header: {name}")
+            seen.add(name)
+            policy = value.split(";", 1)[0].strip().lower()
+            if policy not in policies[name]:
                 raise RuntimeError(f"Conflicting isolation header: {name}")
-            if scope == "/*": wildcard[name] = value
-    if wildcard != required:
-        raise RuntimeError("_headers must apply COOP same-origin and COEP require-corp to /*")
+            if scope == "/*": wildcard.add(name)
+    if wildcard != policies.keys():
+        raise RuntimeError("_headers must apply COOP same-origin and COEP require-corp/credentialless to /*")
 
 
 def main():

@@ -81,6 +81,28 @@ jobs:
           trap 'kill "$fixture_pid"' EXIT
           python tool/verify.py web --model-url http://127.0.0.1:8098/chat.gguf --storage-helper-url http://127.0.0.1:8098/cache_api.js
 
+  minimum-sdk:
+    name: Resolve Flutter 3.44 floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-flutter-llama
+        with:
+          flutter-version: '3.44.0'
+      - name: Resolve a standalone hosted consumer at the declared minimum
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import os, pathlib, shutil, subprocess
+          source = pathlib.Path('packages/flutter_edge_ai_llama')
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'llama-minimum-sdk'
+          shutil.copytree(source, target)
+          pubspec = target / 'pubspec.yaml'
+          pubspec.write_text(pubspec.read_text().replace('resolution: workspace\n', ''))
+          subprocess.run(['flutter', 'pub', 'get'], cwd=target, check=True)
+          PYTHON
+
   release-build:
     needs: changes
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'

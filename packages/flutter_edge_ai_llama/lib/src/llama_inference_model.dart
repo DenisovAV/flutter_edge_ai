@@ -36,7 +36,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
           close().then<void>(
             (_) {},
             onError: (Object error, StackTrace stack) {
-              debugPrint('GGUF runtime disposal failed: $error\n$stack');
+              edgeAiLog('GGUF runtime disposal failed: $error\n$stack');
             },
           ),
         );
@@ -109,8 +109,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
     String? systemInstruction,
     int? maxOutputTokens,
   }) async {
-    final effectiveTools =
-        supportsFunctionCalls == false || toolChoice == edge.ToolChoice.none
+    final effectiveTools = supportsFunctionCalls == false
         ? const <edge.Tool>[]
         : List<edge.Tool>.of(tools);
     if (toolChoice == edge.ToolChoice.required && effectiveTools.isEmpty) {
@@ -173,8 +172,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
     String? systemInstruction,
     int? maxOutputTokens,
   }) async {
-    final effectiveTools =
-        supportsFunctionCalls == false || toolChoice == edge.ToolChoice.none
+    final effectiveTools = supportsFunctionCalls == false
         ? const <edge.Tool>[]
         : List<edge.Tool>.of(tools);
     if (toolChoice == edge.ToolChoice.required && effectiveTools.isEmpty) {
@@ -323,12 +321,6 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
           'maxConcurrentSessions ($maxConcurrentSessions) reached; close a detached session first.',
         );
       }
-      if (tools.isNotEmpty &&
-          !(await engine.capabilities).supportsToolCalling) {
-        throw UnsupportedError(
-          'The active runtime does not support tool calling.',
-        );
-      }
       late final LlamaInferenceSession next;
       next = LlamaInferenceSession(
         engine: engine,
@@ -356,6 +348,15 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
           if (identical(_session, next)) _session = null;
         },
       );
+      await _queue.run(() async {
+        if (tools.isNotEmpty &&
+            !(await engine.capabilities).supportsToolCalling) {
+          throw UnsupportedError(
+            'The active runtime does not support tool calling.',
+          );
+        }
+        await next.validateTools();
+      });
       // Validate the replacement before closing a usable legacy session.
       if (!detached) await _session?.close();
       if (_closed) {

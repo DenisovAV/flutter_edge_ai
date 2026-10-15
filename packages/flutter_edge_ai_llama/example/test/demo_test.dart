@@ -11,6 +11,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test('model URL validation refuses names before model replacement', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     for (final value in [
       'chat.gguf',
       '/models/chat.gguf',
@@ -19,6 +21,7 @@ void main() {
       'http://remote.example/chat.gguf',
       'https://models.example',
       'https://models.example/',
+      'https://models.example/models/',
     ]) {
       expect(() => demo.validateModelUrl(value), throwsArgumentError);
     }
@@ -27,6 +30,21 @@ void main() {
       'http://127.0.0.1:8098/chat.gguf',
     ]) {
       expect(() => demo.validateModelUrl(value), returnsNormally);
+    }
+  });
+  test('Android rejects cleartext before closing the current model', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      expect(
+        () => demo.validateModelUrl('http://127.0.0.1:8098/chat.gguf'),
+        throwsArgumentError,
+      );
+      expect(
+        () => demo.validateModelUrl('https://models.example/chat.gguf'),
+        returnsNormally,
+      );
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
     }
   });
   test('restart cache paths never become Android replacement URLs', () {

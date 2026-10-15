@@ -87,7 +87,7 @@ Future<bool> _isPickerInboxCopy(String path) async {
   }
   // file_selector_ios uses UIDocumentPickerModeImport, which produces
   // tmp/<bundle-id>-Inbox/<file>. Only a direct child of our own tmp is owned.
-  final temporary = await getTemporaryDirectory();
+  final temporary = Directory.systemTemp;
   final directory = source.parent;
   return directory.uri.pathSegments
           .where((p) => p.isNotEmpty)

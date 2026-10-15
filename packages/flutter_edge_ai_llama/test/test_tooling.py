@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 import unittest
@@ -407,6 +408,35 @@ class ToolingTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "local pinned"):
                     validate_web_build.validate_javascript(root)
 
+    def test_round4_static_relative_imports_and_global_this_are_valid(self):
+        web = validate_web_build.PACKAGE / "example/web"
+        html = (web / "index.html").read_text()
+        variants = [html.replace('<script type="module">', '<script type="module">import * as module from "./webgpu_bridge/llama_webgpu_bridge.js";').replace("const module = await import(root + 'llama_webgpu_bridge.js');", ""),
+                    html.replace("import(root + 'llama_webgpu_bridge.js')", "import('./webgpu_bridge/llama_webgpu_bridge.js')").replace("window.crossOriginIsolated", "globalThis.crossOriginIsolated")]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "cache_api.js").write_bytes((web / "cache_api.js").read_bytes())
+            for variant in variants:
+                (root / "index.html").write_text(variant)
+                validate_web_build.validate_javascript(root)
+            fallback = html.replace("const module = await import(root + 'llama_webgpu_bridge.js');", "const module = await import('https://cdn.invalid/llama_webgpu_bridge.js').catch(() => import(root + 'llama_webgpu_bridge.js'));")
+            (root / "index.html").write_text(fallback)
+            with self.assertRaisesRegex(RuntimeError, "nonlocal"):
+                validate_web_build.validate_javascript(root)
+
+    def test_round4_isolation_headers_accept_parameters_but_not_duplicates(self):
+        headers = "/*\n  Cross-Origin-Opener-Policy: same-origin; report-to=reports\n  Cross-Origin-Embedder-Policy: credentialless; report-to=reports\n"
+        validate_web_build.validate_headers(headers)
+        with self.assertRaisesRegex(RuntimeError, "Repeated"):
+            validate_web_build.validate_headers(headers + "/assets/*\n  Cross-Origin-Opener-Policy: same-origin\n")
+
+    def test_round4_storage_helper_matches_owned_core_copy(self):
+        package = validate_web_build.PACKAGE
+        helper = (package / "example/web/cache_api.js").read_bytes()
+        self.assertEqual(hashlib.sha256(helper).hexdigest(), "884625188bc599336a6fd74a6f32610cf9d95c370ff1f4bc2241ed93df17edcd")
+        core = package.parent / "flutter_edge_ai/web/cache_api.js"
+        if core.is_file(): self.assertEqual(helper, core.read_bytes())
+
     def test_smoke_streams_before_exit_and_requires_completed_execution(self):
         report = [
             {"type":"testStart","test":{"id":1,"name":"required model"}},
@@ -445,6 +475,8 @@ class ToolingTests(unittest.TestCase):
         self.assertEqual([call.kwargs["timeout"] for call in smoke.call_args_list], [600, 600])
         controls = [call.args[0][2] for call in run.call_args_list if call.args[0][:2] == ["xcrun", "simctl"]]
         self.assertEqual(controls, ["shutdown", "boot", "bootstatus"])
+        shutdown = next(call for call in run.call_args_list if call.args[0][:3] == ["xcrun", "simctl", "shutdown"])
+        self.assertFalse(shutdown.kwargs["check"])
         failures = [subprocess.CalledProcessError(1, ["flutter"], output="assertion failed"),
                     subprocess.TimeoutExpired(["flutter"], 600, output='{"type":"testStart","test":{"name":"packaged native runtime installs"}}'),
                     subprocess.TimeoutExpired(["flutter"], 600, output='{"type":"testStart","test":{"name":"iOS picker import"}}')]
@@ -463,20 +495,37 @@ class ToolingTests(unittest.TestCase):
              patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, stdout="Validating package...")):
             package_verify.main()
 
-    def test_default_android_apk_rejects_32_bit_slice_or_missing_gguf_runtime(self):
+    def test_android_archive_checks_cpu_dependencies_and_alignment(self):
+        def elf(dependency=None, alignment=16384):
+            data = bytearray(1024)
+            data[:6] = b'\x7fELF\x02\x01'
+            struct.pack_into('<Q', data, 32, 64)
+            struct.pack_into('<HH', data, 54, 56, 2 if dependency else 1)
+            struct.pack_into('<IIQQQQQQ', data, 64, 1, 5, 0, 0, 0, 1024, 1024, alignment)
+            if dependency:
+                table = dependency.encode() + b'\0'
+                struct.pack_into('<IIQQQQQQ', data, 120, 2, 4, 512, 512, 512, 64, 64, 8)
+                for index, pair in enumerate([(5, 768), (10, len(table)), (1, 0), (0, 0)]):
+                    struct.pack_into('<QQ', data, 512 + 16 * index, *pair)
+                data[768:768 + len(table)] = table
+            return bytes(data)
         with tempfile.TemporaryDirectory() as directory:
-            apk = Path(directory) / "app-release.apk"
-            good = [f"lib/{abi}/libllamadart.so" for abi in ["arm64-v8a", "x86_64"]]
-            for files, accepted in [(good, True),
-                                    (good + ["lib/armeabi-v7a/libflutter.so"], False),
-                                    ([good[0], "lib/x86_64/libflutter.so"], False)]:
-                with zipfile.ZipFile(apk, "w") as archive:
-                    for name in files: archive.writestr(name, b"fixture")
-                if accepted:
-                    package_verify.validate_android_apk(apk)
-                else:
-                    with self.assertRaisesRegex(RuntimeError, "ABIs|runtime"):
-                        package_verify.validate_android_apk(apk)
+            apk = Path(directory) / 'app-release.apk'
+            good = {f'lib/{abi}/{name}': elf() for abi in ['arm64-v8a', 'x86_64'] for name in ['libllamadart.so', 'libggml-cpu.so']}
+            cases = [(good, None),
+                     ({**good, 'lib/armeabi-v7a/libflutter.so': elf()}, 'ABIs'),
+                     ({k:v for k,v in good.items() if k!='lib/x86_64/libggml-cpu.so'}, 'runtime'),
+                     ({**good, 'lib/arm64-v8a/libllamadart.so': elf('libmissing.so')}, 'DT_NEEDED'),
+                     ({**good, 'lib/arm64-v8a/libllamadart.so': elf(alignment=4096)}, '16 KB')]
+            for files, error in cases:
+                with zipfile.ZipFile(apk, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                    for name, data in files.items(): archive.writestr(name, data)
+                if error:
+                    with self.assertRaisesRegex(RuntimeError, error): package_verify.validate_android_apk(apk)
+                else: package_verify.validate_android_apk(apk)
+            with zipfile.ZipFile(apk, 'w') as archive:
+                for name, data in good.items(): archive.writestr(name, data)
+            with self.assertRaisesRegex(RuntimeError, 'ZIP alignment'): package_verify.validate_android_apk(apk)
 
     def test_release_build_rejects_missing_or_corrupt_runtime(self):
         with tempfile.TemporaryDirectory() as directory:

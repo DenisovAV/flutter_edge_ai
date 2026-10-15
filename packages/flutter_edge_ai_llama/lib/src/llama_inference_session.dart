@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
@@ -87,7 +87,11 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   final llama.ToolChoice toolChoice;
 
   final EngineQueue _queue;
-  final List<llama.ToolDefinition> _tools;
+  final List<SchemaToolDefinition> _tools;
+  final Map<String, String> _replayAliases = {};
+
+  /// Number of hidden reasoning characters in the current or last turn.
+  int hiddenThinkingCharacters = 0;
   final List<llama.LlamaChatMessage> _history = [];
   final List<llama.LlamaChatMessage> _pending = [];
   final List<edge.Message> _transcript = [];
@@ -108,17 +112,46 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   List<edge.Message> get messages =>
       List.unmodifiable([..._transcript, ..._pendingTranscript]);
 
-  /// Native termination; `length` means the output budget was exhausted.
-  String? _lastFinishReason;
+  /// Preflight the active template before replacing a usable legacy session.
+  Future<void> validateTools() async {
+    if (_tools.isEmpty) return;
+    final rendered = await engine.chatTemplate(
+      [
+        ..._history,
+        llama.LlamaChatMessage.fromText(
+          role: llama.LlamaChatRole.user,
+          text: 'Hello',
+        ),
+      ],
+      tools: _tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: true,
+      enableThinking: enableThinking,
+      includeTokenCount: false,
+    );
+    final parameterFormats = {
+      llama.ChatFormat.glm45.index,
+      llama.ChatFormat.laguna.index,
+      llama.ChatFormat.hunyuanV3.index,
+    };
+    if (parameterFormats.contains(rendered.format) &&
+        _tools.any((tool) => tool.requiresFullSchema)) {
+      throw UnsupportedError(
+        'This model grammar cannot preserve the supplied JSON Schema constraints with llamadart 0.12.2. Use simple typed properties or another model format.',
+      );
+    }
+  }
 
-  /// Termination reason of the last completed turn.
-  String? get lastFinishReason => _lastFinishReason;
-
-  /// True only when the most recent turn completed and committed.
-  bool _lastTurnCommitted = false;
-
-  /// Whether the last turn committed its history.
-  bool get lastTurnCommitted => _lastTurnCommitted;
+  String _nextCallId(Set<String> reserved) {
+    String id;
+    do {
+      id = (_callSequence++).toRadixString(36).padLeft(9, '0');
+      if (id.length > 9) {
+        throw StateError('Tool-call identifier space exhausted.');
+      }
+    } while (reserved.contains(id));
+    return id;
+  }
 
   void _ensureOpen() {
     _queue.ensureValid();
@@ -155,7 +188,8 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         : llama.LlamaChatRole.assistant;
     if (message.type == edge.MessageType.toolResponse) {
       final calls = _unansweredCalls();
-      final explicitId = _resultId(message);
+      final suppliedId = _resultId(message);
+      final explicitId = _replayAliases[suppliedId] ?? suppliedId;
       final matching = calls.values.where((c) => c.name == message.toolName);
       final call = explicitId != null
           ? calls[explicitId]
@@ -176,6 +210,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           result: result,
         ),
       );
+      _replayAliases.removeWhere((_, id) => id == call.id);
       role = llama.LlamaChatRole.tool;
     } else if (message.type == edge.MessageType.toolCall) {
       final usedIds = _usedCallIds();
@@ -191,10 +226,19 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         // Reserve every caller-provided ID before generating any missing ID,
         // including IDs on later calls in the same parallel batch.
         final reservedIds = {...usedIds};
+        final suppliedIds = <String>{};
+        final outstanding = _unansweredCalls();
+        final aliases = <String, String>{};
         for (final item in calls) {
           final id = (item as Map<String, dynamic>)['id'] as String?;
-          if (id != null && (id.isEmpty || !reservedIds.add(id))) {
-            throw const FormatException();
+          if (id != null) {
+            if (id.isEmpty ||
+                !suppliedIds.add(id) ||
+                outstanding.containsKey(id) ||
+                _replayAliases.containsKey(id)) {
+              throw const FormatException();
+            }
+            reservedIds.add(id);
           }
         }
         for (final item in calls) {
@@ -209,19 +253,16 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                       ? jsonDecode(raw)
                       : raw)
                   as Map<String, dynamic>;
-          var id = call['id'] as String?;
-          if (id == null) {
-            do {
-              id = 'replay_${_callSequence++}';
-            } while (reservedIds.contains(id));
+          final supplied = call['id'] as String?;
+          var id = supplied;
+          if (id == null || usedIds.contains(id)) {
+            id = _nextCallId(reservedIds);
             reservedIds.add(id);
           }
-          if (toolChoice == llama.ToolChoice.none ||
-              !_tools.any((tool) => tool.name == name) ||
-              id.isEmpty ||
-              !usedIds.add(id)) {
+          if (!_tools.any((tool) => tool.name == name) || !usedIds.add(id)) {
             throw const FormatException();
           }
+          if (supplied != null) aliases[supplied] = id;
           parts.add(
             llama.LlamaToolCallContent(
               id: id,
@@ -231,6 +272,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             ),
           );
         }
+        _replayAliases.addAll(aliases);
       } on FormatException {
         throw ArgumentError(
           'Replayed tool calls need declared names, unique IDs and JSON object arguments.',
@@ -365,9 +407,9 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         _abort = Completer<void>();
         _stopped = false;
         _userStopped = false;
-        _lastTurnCommitted = false;
+        hiddenThinkingCharacters = 0;
         _metrics = edge.SessionMetrics();
-        _lastFinishReason = null;
+
         unawaited(_generate(controller, tokenBuffer));
       },
       onCancel: () async {
@@ -406,6 +448,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
       _pendingTranscript.length - trailingMessages,
     );
     _orderTranscriptResults();
+    _orderRuntimeResults(_history);
   }
 
   // Only drop complete turns before the latest user input. A tool round trip
@@ -464,7 +507,38 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     }
   }
 
+  void _orderRuntimeResults(List<llama.LlamaChatMessage> messages) {
+    final order = <String?, int>{};
+    for (final message in _history.followedBy(_pending)) {
+      for (final call
+          in message.parts.whereType<llama.LlamaToolCallContent>()) {
+        order[call.id] = order.length;
+      }
+    }
+    for (var index = 0; index < messages.length; index++) {
+      if (messages[index].role != llama.LlamaChatRole.tool) continue;
+      var end = index + 1;
+      while (end < messages.length &&
+          messages[end].role == llama.LlamaChatRole.tool) {
+        end++;
+      }
+      final results = messages.sublist(index, end)
+        ..sort(
+          (
+            a,
+            b,
+          ) => (order[(a.parts.single as llama.LlamaToolResultContent).id] ?? 0)
+              .compareTo(
+                order[(b.parts.single as llama.LlamaToolResultContent).id] ?? 0,
+              ),
+        );
+      messages.setRange(index, end, results);
+      index = end - 1;
+    }
+  }
+
   void _commitAnsweredResults() {
+    _orderRuntimeResults(_pending);
     // Only results answering committed calls survive a generation rollback.
     // Replayed calls/results remain staged together until the replay commits.
     final committedIds = {
@@ -498,7 +572,10 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         recorded = true;
       }
     }
-    if (recorded) _orderTranscriptResults();
+    if (recorded) {
+      _orderTranscriptResults();
+      _orderRuntimeResults(_history);
+    }
   }
 
   Future<void> _generate(
@@ -506,6 +583,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     int? tokenBuffer,
   ) async {
     final done = _done!;
+    var reportedError = false;
     try {
       await _queue.run<void>(() async {
         if (_stopped || _closed) return;
@@ -588,6 +666,9 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                   firstTokenMs ??= stopwatch.elapsedMicroseconds / 1000;
                   controller.add(edge.TextResponse(content));
                 }
+                if (!enableThinking && thinking != null) {
+                  hiddenThinkingCharacters += thinking.length;
+                }
                 if (enableThinking && thinking != null && thinking.isNotEmpty) {
                   firstTokenMs ??= stopwatch.elapsedMicroseconds / 1000;
                   controller.add(edge.ThinkingResponse(thinking));
@@ -604,7 +685,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           }
           if (completion.text.trim().isEmpty && completion.toolCalls.isEmpty) {
             throw StateError(
-              'The model completed without a visible answer or tool call; retry with a larger output budget or disable thinking.',
+              'The model completed without a visible answer or tool call; retry with a larger output budget${enableThinking ? " or disable thinking" : ""}.',
             );
           }
           final calls = <llama.LlamaToolCallContent>[];
@@ -640,7 +721,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             var id = call.id;
             if (id == null || id.isEmpty || usedIds.contains(id)) {
               do {
-                id = 'llama_${_callSequence++}';
+                id = _nextCallId(usedIds);
               } while (usedIds.contains(id));
             }
             usedIds.add(id);
@@ -704,7 +785,6 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           if (calls.isNotEmpty) {
             _transcript.add(edge.Message.toolCall(text: _toolCallJson(calls)));
           }
-          _lastFinishReason = completion.finishReason?.wireValue;
           final usage = completion.usage;
           final duration = usage?.duration;
           _metrics = edge.SessionMetrics(
@@ -718,7 +798,6 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                 ? null
                 : usage!.completionTokens * 1000000 / duration.inMicroseconds,
           );
-          _lastTurnCommitted = true;
           final responses = <edge.FunctionCallResponse>[
             for (final call in calls)
               LlamaFunctionCallResponse(
@@ -733,14 +812,10 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           }
         } catch (error, stack) {
           primaryError = error;
-          // SDK 0.12.0 exposes native exception poisoning through these errors.
-          // Ordinary inference/adapter rejection errors remain recoverable.
-          if (error is llama.LlamaStateException &&
-                  error.message.contains(
-                    'unusable after a llama.cpp exception',
-                  ) ||
-              error is llama.LlamaException &&
-                  error.message.startsWith('llama.cpp raised an exception')) {
+          // State exceptions are classified centrally by EngineQueue. The SDK
+          // also reports native exception poisoning through other subclasses.
+          if (error is llama.LlamaException &&
+              error.message.startsWith('llama.cpp raised an exception')) {
             _queue.invalidate(error, stack);
           }
           rethrow;
@@ -769,7 +844,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           }
           if (cleanupError != null) {
             if (primaryError != null) {
-              debugPrint(
+              edgeAiLog(
                 'GGUF runtime cleanup failed after $primaryError: $cleanupError',
               );
             } else {
@@ -785,17 +860,28 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
       }
     } catch (error, stack) {
       if (_queue.isInvalid || !_userStopped) {
+        reportedError = true;
         controller.addError(error, stack);
       }
     } finally {
       // A waiter can be stopped before acquiring the runtime queue.
-      _commitAnsweredResults();
-      _pending.clear();
-      _pendingTranscript.clear();
-      _done = null;
-      _abort = null;
-      done.complete();
-      unawaited(controller.close());
+      try {
+        _commitAnsweredResults();
+      } catch (error, stack) {
+        if (!reportedError) {
+          controller.addError(error, stack);
+        } else {
+          edgeAiLog('GGUF history cleanup failed: $error\n$stack');
+        }
+      } finally {
+        _pending.clear();
+        _pendingTranscript.clear();
+        _replayAliases.clear();
+        _done = null;
+        _abort = null;
+        done.complete();
+        unawaited(controller.close());
+      }
     }
   }
 
@@ -835,11 +921,16 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   }
 
   Future<void> _close() async {
-    await stopGeneration();
-    _pending.clear();
-    _history.clear();
-    _pendingTranscript.clear();
-    onClose();
+    try {
+      await stopGeneration();
+      _commitAnsweredResults();
+    } finally {
+      _pending.clear();
+      _history.clear();
+      _pendingTranscript.clear();
+      _replayAliases.clear();
+      onClose();
+    }
   }
 }
 

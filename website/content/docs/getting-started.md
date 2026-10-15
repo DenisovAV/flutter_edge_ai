@@ -45,8 +45,8 @@ only the engines, stores and features your app uses — see
 ## What's new in 2.3
 
 - **2.3.2:** the active model keeps its LoRA across an app restart, and
-  `ModelFileType.gguf` is reserved for `.gguf` files — their llama.cpp engine,
-  `flutter_edge_ai_llama`, is coming soon.
+  `ModelFileType.gguf` selects the optional [llama.cpp engine](llama.md),
+  `flutter_edge_ai_llama`, available from its contribution source until publication.
 - **EmbeddingGemma 2 on an Intel NPU** (`flutter_edge_ai_litertlm` 1.13.2): the
   Panther Lake bundles run on Windows x64 with
   `preferredBackend: PreferredBackend.npu`. See

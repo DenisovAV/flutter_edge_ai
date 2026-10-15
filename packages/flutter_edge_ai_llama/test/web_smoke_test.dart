@@ -21,6 +21,7 @@ import 'package:flutter_edge_ai/src/web/flutter_edge_ai_web.dart';
 import 'package:flutter_edge_ai_llama/src/llama_engine_provider.dart'
     show createLlamaProviderForTest;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_edge_ai_llama/src/runtime_error.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web/web.dart' as web;
@@ -61,7 +62,13 @@ void main() {
             ),
           ),
           type == edge.ModelFileType.gguf
-              ? throwsA(same(sentinel))
+              ? throwsA(
+                  isA<RuntimeStateError>().having(
+                    (e) => e.cause,
+                    'SDK cause',
+                    same(sentinel),
+                  ),
+                )
               : throwsA(isA<UnsupportedError>()),
         );
       }

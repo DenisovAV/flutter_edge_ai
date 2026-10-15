@@ -5,6 +5,7 @@ import 'package:llamadart/llamadart.dart' as llama;
 
 import 'backend_config.dart';
 import 'llama_inference_model.dart';
+import 'runtime_error.dart';
 import 'model_location.dart'
     if (dart.library.js_interop) 'model_location_web.dart';
 
@@ -136,11 +137,8 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
     final llama.LlamaEngine engine;
     try {
       engine = await (_loader ?? _loadGgufEngine)(location, params);
-    } on llama.LlamaUnsupportedException catch (error) {
-      if (kIsWeb && config.preferredBackend == edge.PreferredBackend.gpu) {
-        throw UnsupportedError(error.message);
-      }
-      rethrow;
+    } catch (error, stack) {
+      Error.throwWithStackTrace(runtimeError(error), stack);
     }
     try {
       if (engine.runtime != llama.LlamaRuntime.llamaCpp) {
@@ -166,9 +164,7 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
                 : 'Return an installed local projector path.',
           );
         }
-        final source = kIsWeb
-            ? llama.ModelSource.url(Uri.parse(projector))
-            : llama.ModelSource.path(projector);
+        final source = llama.ModelSource.path(projector);
         await engine.loadMultimodalProjectorSource(source);
         final capabilities = await engine.capabilities;
         if (config.supportImage && !capabilities.supportsVision ||
@@ -184,10 +180,16 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
       if (kIsWeb && backendName.toLowerCase().contains('webgpu')) {
         backendName = await engine.isGpuSupported() ? 'WebGPU' : 'WASM';
       }
+      final contextSize = await engine.getContextSize();
+      if (contextSize < config.maxTokens) {
+        throw StateError(
+          'Requested ${config.maxTokens} context tokens, but the runtime loaded $contextSize. Request a smaller context explicitly.',
+        );
+      }
       return LlamaInferenceModel(
         engine: engine,
         modelType: spec.modelType,
-        maxTokens: await engine.getContextSize(),
+        maxTokens: contextSize,
         activeBackend: resolveBackend(backendName, config.preferredBackend),
         supportImage: config.supportImage,
         supportAudio: config.supportAudio,
@@ -195,9 +197,15 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
         maxConcurrentSessions: config.maxConcurrentSessions,
         defaultLoraPath: defaultLoraPath,
       );
-    } catch (_) {
-      await engine.dispose();
-      rethrow;
+    } catch (error, stack) {
+      try {
+        await engine.dispose();
+      } catch (cleanup, cleanupStack) {
+        edgeAiLog(
+          'GGUF load cleanup failed after $error: $cleanup\n$cleanupStack',
+        );
+      }
+      Error.throwWithStackTrace(runtimeError(error), stack);
     }
   }
 }

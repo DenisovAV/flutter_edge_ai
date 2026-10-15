@@ -205,13 +205,13 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           _backend = _model!.activeBackend?.name.toUpperCase() ?? 'UNKNOWN';
-          _status = 'Ready · 2,048 context tokens · 128 output tokens';
+          _status =
+              'Ready · ${_model!.maxTokens} context tokens · 128 output tokens';
         });
       }
       final active =
           edge.FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel;
-      if (!kIsWeb &&
-          defaultTargetPlatform == TargetPlatform.android &&
+      if ((kIsWeb || defaultTargetPlatform == TargetPlatform.android) &&
           shouldUninstallPreviousModel(previous, active)) {
         try {
           await edge.FlutterEdgeAi.uninstallModel(
@@ -565,9 +565,13 @@ void validateModelUrl(String value) {
           uri.scheme == 'http' &&
               ['localhost', '127.0.0.1', '::1'].contains(uri.host)) ||
       uri.host.isEmpty ||
-      uri.pathSegments.where((part) => part.isNotEmpty).isEmpty) {
+      uri.pathSegments.isEmpty ||
+      uri.pathSegments.last.isEmpty ||
+      !kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          uri.scheme != 'https') {
     throw ArgumentError(
-      'Enter a complete HTTPS GGUF model URL (HTTP is allowed only for local testing).',
+      'Enter a complete HTTPS GGUF model URL (HTTP is allowed only for local testing outside Android).',
     );
   }
 }

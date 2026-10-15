@@ -84,7 +84,7 @@ The package is not on pub.dev yet. Use the example or a path dependency on
 external apps resolve it from pub.dev without a development override.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
-`llamadart_llama_cpp_flutter: 0.0.22` SwiftPM companion.
+`llamadart_llama_cpp_flutter: 0.0.23` SwiftPM companion.
 
 ## Select llama.cpp only
 
@@ -97,11 +97,11 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Dependency settings do not propagate. llamadart 0.12.0 chooses llama.cpp only
+Dependency settings do not propagate. llamadart 0.12.2 chooses llama.cpp only
 when this connector or Flutter Edge AI LiteRT-LM is in the app graph. Keep the
 explicit selection as defence in depth; selecting both LiteRT-LM owners is rejected. The monorepo configures llama.cpp for its own workspace tests; that
 does not suppress another engine package's independently owned runtime.
-Apple Flutter apps add `llamadart_llama_cpp_flutter 0.0.22` directly and enable
+Apple Flutter apps add `llamadart_llama_cpp_flutter 0.0.23` directly and enable
 SwiftPM, as in this package's example. To keep an app llama.cpp only, omit the
 separate LiteRT-LM engine and companion dependencies.
 
@@ -117,14 +117,14 @@ Projector installation and
 pairing remain application-owned. NPU and Web LoRA are unsupported.
 
 CI covers CPU chat/lifecycle on desktop, Android/iOS simulators and Web worker/Wasm.
-Physical Android ARM64, hardware WebGPU, oldest supported OS versions and advanced
-features still need qualification. App Store submission and Apple workspace
+Physical Android ARM64 and iOS devices, hardware WebGPU, native GPUs, oldest
+supported OS versions and advanced model/media/LoRA combinations still need qualification. App Store submission and Apple workspace
 member packaging are unvalidated. Web installation buffers a byte array; use
 models below about 2 GB and avoid streaming OPFS mode. See the
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
 for setup, capability limits and publication gates.
 
-With llamadart 0.12.0, adding `flutter_edge_ai_litertlm` keeps the SDK on
+With llamadart 0.12.2, adding `flutter_edge_ai_litertlm` keeps the SDK on
 llama.cpp automatically. Retain the root `[llama_cpp]` selection as defence in
 depth; explicitly selecting both LiteRT-LM owners fails with an actionable error.
 On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is required too. The LiteRT-LM macOS CocoaPods

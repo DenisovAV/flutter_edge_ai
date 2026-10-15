@@ -11,7 +11,6 @@ import 'package:flutter_edge_ai_llama/src/llama_engine_provider.dart'
     show createLlamaProviderForTest;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter_edge_ai_llama_demo/model_import_native.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 
@@ -39,7 +38,7 @@ void main() {
     testWidgets(
       'iOS picker import moves the owned tmp copy into durable storage',
       (tester) async {
-        final temporary = await getTemporaryDirectory();
+        final temporary = Directory.systemTemp;
         final inbox = Directory('${temporary.path}/dev.llamadart-Inbox');
         await inbox.create(recursive: true);
         final source = File(

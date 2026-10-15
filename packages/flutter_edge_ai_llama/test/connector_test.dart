@@ -8,10 +8,16 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_edge_ai_llama/src/llama_inference_model.dart';
+import 'package:flutter_edge_ai_llama/src/runtime_error.dart';
 import 'package:flutter_edge_ai_llama/src/llama_engine_provider.dart'
     show createLlamaProviderForTest;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart' as llama;
+
+import 'package:flutter_edge_ai_llama/src/llama_tool.dart'
+    show SchemaToolDefinition;
+// ignore: implementation_imports — verifies the pinned SDK grammar used in production.
+import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 
 import 'lora_fixture_stub.dart' if (dart.library.io) 'lora_fixture_native.dart';
 
@@ -662,7 +668,13 @@ void main() {
     );
     await expectLater(
       session.getResponse(),
-      throwsA(isA<llama.LlamaInferenceException>()),
+      throwsA(
+        isA<RuntimeStateError>().having(
+          (e) => e.cause,
+          'SDK cause',
+          isA<llama.LlamaInferenceException>(),
+        ),
+      ),
     );
     engine.failAfterFirstToken = false;
     await session.addQueryChunk(edge.Message.text(text: 'retry', isUser: true));
@@ -827,7 +839,13 @@ void main() {
           engine.failAfterFirstToken = true;
           await expectLater(
             chat.generateChatResponseAsync().toList(),
-            throwsA(isA<llama.LlamaInferenceException>()),
+            throwsA(
+              isA<RuntimeStateError>().having(
+                (e) => e.cause,
+                'SDK cause',
+                isA<llama.LlamaInferenceException>(),
+              ),
+            ),
           );
           engine.failAfterFirstToken = false;
         }
@@ -877,7 +895,11 @@ void main() {
           chat.generateChatResponse(),
           throwsA(
             failure == 'runtime'
-                ? isA<llama.LlamaInferenceException>()
+                ? isA<RuntimeStateError>().having(
+                    (e) => e.cause,
+                    'SDK cause',
+                    isA<llama.LlamaInferenceException>(),
+                  )
                 : isA<StateError>(),
           ),
         );
@@ -1009,7 +1031,13 @@ void main() {
     await chat.addQuery(edge.Message.text(text: 'latest', isUser: true));
     await expectLater(
       chat.generateChatResponse(),
-      throwsA(isA<llama.LlamaInferenceException>()),
+      throwsA(
+        isA<RuntimeStateError>().having(
+          (e) => e.cause,
+          'SDK cause',
+          isA<llama.LlamaInferenceException>(),
+        ),
+      ),
     );
     expect(chat.fullHistory.map((m) => m.text), ['old', 'answer']);
   });
@@ -1253,7 +1281,7 @@ void main() {
         engine.requests.last
             .where((m) => m.role == llama.LlamaChatRole.tool)
             .map((m) => (m.parts.single as llama.LlamaToolResultContent).id),
-        ['b', 'a'],
+        ['a', 'b'],
       );
     },
   );
@@ -1282,16 +1310,19 @@ void main() {
     },
   );
 
-  test('none tool choice does not forward declarations', () async {
-    final chat = await model.createChat(
-      tools: [tool],
-      toolChoice: edge.ToolChoice.none,
-    );
-    await chat.addQuery(edge.Message.text(text: 'hello', isUser: true));
-    await chat.generateChatResponse();
-    expect(engine.lastTools, isEmpty);
-    expect(engine.lastToolChoice, llama.ToolChoice.none);
-  });
+  test(
+    'none tool choice keeps declarations for replay and forbids calls',
+    () async {
+      final chat = await model.createChat(
+        tools: [tool],
+        toolChoice: edge.ToolChoice.none,
+      );
+      await chat.addQuery(edge.Message.text(text: 'hello', isUser: true));
+      await chat.generateChatResponse();
+      expect(engine.lastTools.single.name, 'search');
+      expect(engine.lastToolChoice, llama.ToolChoice.none);
+    },
+  );
 
   test('malformed, undeclared and missing required calls roll back', () async {
     for (final script in [
@@ -1600,7 +1631,13 @@ void main() {
       await chat.addQuery(edge.Message.text(text: 'failed', isUser: true));
       await expectLater(
         chat.generateChatResponse(),
-        throwsA(isA<llama.LlamaInferenceException>()),
+        throwsA(
+          isA<RuntimeStateError>().having(
+            (e) => e.cause,
+            'SDK cause',
+            isA<llama.LlamaInferenceException>(),
+          ),
+        ),
       );
       expect(chat.fullHistory, isEmpty);
       engine.failAfterFirstToken = false;
@@ -1747,7 +1784,13 @@ void main() {
     await a.addQueryChunk(edge.Message.text(text: 'fail', isUser: true));
     await expectLater(
       a.getResponse(),
-      throwsA(isA<llama.LlamaInferenceException>()),
+      throwsA(
+        isA<RuntimeStateError>().having(
+          (e) => e.cause,
+          'SDK cause',
+          isA<llama.LlamaInferenceException>(),
+        ),
+      ),
     );
     expect(engine.activeAdapter, isNull);
   }, skip: kIsWeb);
@@ -1771,7 +1814,13 @@ void main() {
       );
       await expectLater(
         adapted.getResponse(),
-        throwsA(isA<llama.LlamaInferenceException>()),
+        throwsA(
+          isA<RuntimeStateError>().having(
+            (e) => e.cause,
+            'SDK cause',
+            isA<llama.LlamaInferenceException>(),
+          ),
+        ),
       );
       expect(model.isClosed, isFalse);
       expect(engine.activeAdapter, 'installed.gguf');
@@ -1795,7 +1844,13 @@ void main() {
       );
       await expectLater(
         adapted.getResponse(),
-        throwsA(isA<llama.LlamaInferenceException>()),
+        throwsA(
+          isA<RuntimeStateError>().having(
+            (e) => e.cause,
+            'SDK cause',
+            isA<llama.LlamaInferenceException>(),
+          ),
+        ),
       );
       expect(model.isClosed, isFalse);
       expect(engine.activeAdapter, isNull);
@@ -1850,7 +1905,13 @@ void main() {
       await adapted.addQuery(edge.Message.text(text: 'adapted', isUser: true));
       await expectLater(
         adapted.generateChatResponse(),
-        throwsA(isA<llama.LlamaInferenceException>()),
+        throwsA(
+          isA<RuntimeStateError>().having(
+            (e) => e.cause,
+            'SDK cause',
+            isA<llama.LlamaInferenceException>(),
+          ),
+        ),
       );
       expect(model.isClosed, isTrue);
       await expectLater(
@@ -2007,7 +2068,13 @@ void main() {
         } else {
           await expectLater(
             chat.generateChatResponse(),
-            throwsA(isA<llama.LlamaInferenceException>()),
+            throwsA(
+              isA<RuntimeStateError>().having(
+                (e) => e.cause,
+                'SDK cause',
+                isA<llama.LlamaInferenceException>(),
+              ),
+            ),
           );
         }
         expect(chat.fullHistory.map((m) => m.text), ['committed', 'answer']);
@@ -2245,7 +2312,13 @@ void main() {
       await chat.addQuery(edge.Message.text(text: 'failure', isUser: true));
       await expectLater(
         chat.generateChatResponse(),
-        throwsA(same(engine.generationError)),
+        throwsA(
+          isA<RuntimeStateError>().having(
+            (e) => e.cause,
+            'cause',
+            same(engine.generationError),
+          ),
+        ),
       );
       expect(model.isClosed, isTrue);
       await model.close();
@@ -2311,11 +2384,17 @@ void main() {
       await expectLater(
         chat.generateChatResponse(),
         throwsA(
-          isA<llama.LlamaInferenceException>().having(
-            (e) => e.message,
-            'original',
-            'test failure',
-          ),
+          isA<RuntimeStateError>()
+              .having(
+                (e) => e.cause,
+                'SDK cause',
+                isA<llama.LlamaInferenceException>(),
+              )
+              .having(
+                (e) => (e.cause as llama.LlamaException).message,
+                'original',
+                'test failure',
+              ),
         ),
       );
       await model.close();
@@ -2345,7 +2424,13 @@ void main() {
       await chat.addQuery(edge.Message.text(text: 'fail', isUser: true));
       await expectLater(
         chat.generateChatResponse(),
-        throwsA(same(failedEngine.generationError)),
+        throwsA(
+          isA<RuntimeStateError>().having(
+            (e) => e.cause,
+            'cause',
+            same(failedEngine.generationError),
+          ),
+        ),
       );
       await expectLater(failedModel.close(), throwsA(isA<StateError>()));
       await Future<void>.delayed(Duration.zero);
@@ -2376,6 +2461,422 @@ void main() {
     },
     skip: !kIsWeb,
   );
+  test('round4 idle close preserves staged answers for replay', () async {
+    final chat = await model.openChat(tools: [tool]);
+    engine.script = [_toolChunk(0, 'search', '{}', id: 'call00001')];
+    await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
+    final call = await chat.generateChatResponse() as LlamaFunctionCallResponse;
+    await chat.addQuery(
+      LlamaToolResponseMessage(
+        callId: call.id,
+        toolName: 'search',
+        response: {'found': true},
+      ),
+    );
+    await model.close();
+    expect(chat.fullHistory.map((m) => m.type), [
+      edge.MessageType.text,
+      edge.MessageType.toolCall,
+      edge.MessageType.toolResponse,
+    ]);
+    final replacement = LlamaInferenceModel(
+      engine: _FakeEngine(),
+      maxTokens: 2048,
+      activeBackend: edge.PreferredBackend.cpu,
+    );
+    addTearDown(replacement.close);
+    final restored = await replacement.openChat(tools: [tool]);
+    await restored.clearHistory(replayHistory: chat.fullHistory);
+    await restored.addQuery(edge.Message.text(text: 'continue', isUser: true));
+    await restored.generateChatResponse();
+  });
+
+  test(
+    'round4 none permits historical tools while disabling generated calls',
+    () async {
+      final chat = await model.openChat(
+        tools: [tool],
+        toolChoice: edge.ToolChoice.none,
+      );
+      await chat.clearHistory(
+        replayHistory: [
+          edge.Message.text(text: 'old', isUser: true),
+          edge.Message.toolCall(text: '{"name":"search","parameters":null}'),
+          edge.Message.toolResponse(
+            toolName: 'search',
+            response: {'found': true},
+          ),
+          edge.Message.text(text: 'continue', isUser: true),
+        ],
+      );
+      await chat.generateChatResponse();
+      expect(engine.lastToolChoice, llama.ToolChoice.none);
+      engine.script = [_toolChunk(0, 'search', '{}', id: 'call00002')];
+      await chat.addQuery(edge.Message.text(text: 'disabled', isUser: true));
+      await expectLater(chat.generateChatResponse(), throwsStateError);
+    },
+  );
+
+  test('round4 live results match saved and restored call order', () async {
+    final chat = await model.openChat(tools: [tool]);
+    engine.script = [
+      _toolChunk(0, 'search', '{}', id: 'call00001'),
+      _toolChunk(1, 'search', '{}', id: 'call00002'),
+    ];
+    await chat.addQuery(edge.Message.text(text: 'parallel', isUser: true));
+    await chat.generateChatResponse();
+    for (final id in ['call00002', 'call00001']) {
+      await chat.addQuery(
+        LlamaToolResponseMessage(
+          callId: id,
+          toolName: 'search',
+          response: {'id': id},
+        ),
+      );
+    }
+    engine.script = null;
+    await chat.generateChatResponse();
+    expect(
+      engine.requests.last
+          .where((m) => m.role == llama.LlamaChatRole.tool)
+          .map((m) => (m.parts.single as llama.LlamaToolResultContent).id),
+      ['call00001', 'call00002'],
+    );
+  });
+
+  test('round4 generated and replay IDs satisfy Mistral length', () async {
+    final chat = await model.openChat(tools: [tool]);
+    await chat.clearHistory(
+      replayHistory: [
+        edge.Message.text(text: 'old', isUser: true),
+        edge.Message.toolCall(text: '{"name":"search","parameters":{}}'),
+      ],
+    );
+    var calls =
+        (jsonDecode(chat.fullHistory.last.text) as Map)['tool_calls'] as List;
+    expect(calls.single['id'], matches(RegExp(r'^[a-zA-Z0-9]{9}$')));
+    await chat.addQuery(
+      edge.Message.toolResponse(toolName: 'search', response: {}),
+    );
+    engine.script = [_toolChunk(0, 'search', '{}')];
+    final call = await chat.generateChatResponse() as LlamaFunctionCallResponse;
+    expect(call.id, matches(RegExp(r'^[a-zA-Z0-9]{9}$')));
+    expect(call.id, isNot(calls.single['id']));
+  });
+
+  test('round4 replay permits reused IDs only across answered turns', () async {
+    final chat = await model.openChat(tools: [tool]);
+    final history = <edge.Message>[];
+    for (var i = 0; i < 2; i++) {
+      history.addAll([
+        edge.Message.text(text: 'turn $i', isUser: true),
+        edge.Message.toolCall(
+          text: '{"id":"call_0","name":"search","arguments":{}}',
+        ),
+        LlamaToolResponseMessage(
+          callId: 'call_0',
+          toolName: 'search',
+          response: {'turn': i},
+        ),
+        edge.Message.text(text: 'answer $i'),
+      ]);
+    }
+    await chat.clearHistory(replayHistory: history);
+    await chat.addQuery(edge.Message.text(text: 'next', isUser: true));
+    await chat.generateChatResponse();
+    final ids = engine.requests.last
+        .expand((m) => m.parts.whereType<llama.LlamaToolCallContent>())
+        .map((c) => c.id)
+        .toList();
+    expect(ids, hasLength(2));
+    expect(ids.toSet(), hasLength(2));
+  });
+
+  test('round4 schema-backed GLM grammar contains required arguments', () {
+    final definition = SchemaToolDefinition(
+      edge.Tool(
+        name: 'get_weather',
+        description: 'Weather',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string'},
+            'days': {'type': 'integer'},
+          },
+          'required': ['city'],
+        },
+      ),
+    );
+    final grammar = Glm45Handler().buildGrammar([definition])!;
+    expect(grammar, contains('city'));
+    expect(grammar, contains('days'));
+    expect(definition.parameters.first.required, isTrue);
+  });
+
+  for (final operation in ['generation', 'tokenization', 'capabilities']) {
+    test('round4 worker failure in $operation evicts the model', () async {
+      final chat = await model.openChat();
+      final error = llama.LlamaStateException(
+        'The llama.cpp worker exited unexpectedly.',
+      );
+      if (operation == 'generation') {
+        engine.generationError = error;
+        await chat.addQuery(edge.Message.text(text: 'fail', isUser: true));
+        await expectLater(
+          chat.generateChatResponse(),
+          throwsA(isA<StateError>()),
+        );
+      } else if (operation == 'tokenization') {
+        engine.tokenError = error;
+        await expectLater(
+          chat.session.sizeInTokens('fail'),
+          throwsA(isA<StateError>()),
+        );
+      } else {
+        engine.capabilityError = error;
+        await expectLater(
+          model.openChat(tools: [tool]),
+          throwsA(isA<StateError>()),
+        );
+      }
+      expect(model.isClosed, isTrue);
+      await model.close();
+    });
+  }
+
+  test(
+    'round4 closed during generation reports failure and releases waiters',
+    () async {
+      engine.blockGeneration = true;
+      final chat = await model.openChat();
+      await chat.addQuery(edge.Message.text(text: 'close', isUser: true));
+      final first = Completer<void>();
+      final errors = <Object>[];
+      final done = Completer<void>();
+      chat.generateChatResponseAsync().listen(
+        (_) {
+          if (!first.isCompleted) first.complete();
+        },
+        onError: errors.add,
+        onDone: done.complete,
+      );
+      await first.future;
+      await model.close().timeout(const Duration(seconds: 2));
+      await done.future.timeout(const Duration(seconds: 2));
+      expect(errors.single, isA<StateError>());
+      expect(chat.fullHistory, isEmpty);
+    },
+  );
+
+  test('round4 load errors survive failing disposal', () async {
+    engine.disposalError = StateError('secondary dispose');
+    final provider = createLlamaProviderForTest(
+      loader: (_, _) async => engine,
+      projectorResolver: (_, _) async =>
+          throw ArgumentError('primary projector'),
+    );
+    await expectLater(
+      provider.createModel(
+        _spec('test.gguf'),
+        const RuntimeConfig(
+          modelPath: '/models/test.gguf',
+          maxTokens: 2048,
+          supportImage: true,
+        ),
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => e.message,
+          'primary',
+          contains('primary projector'),
+        ),
+      ),
+    );
+    engine.disposalError = null;
+  });
+
+  test(
+    'round4 context downgrade fails instead of changing the contract',
+    () async {
+      engine.contextSize = 512;
+      final provider = createLlamaProviderForTest(
+        loader: (_, _) async => engine,
+      );
+      await expectLater(
+        provider.createModel(
+          _spec('test.gguf'),
+          const RuntimeConfig(modelPath: '/models/test.gguf', maxTokens: 2048),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(engine.disposals, 1);
+    },
+  );
+
+  test(
+    'round4 unsupported SDK loads map consistently on every platform',
+    () async {
+      final provider = createLlamaProviderForTest(
+        loader: (_, _) async =>
+            throw llama.LlamaUnsupportedException('GPU missing'),
+      );
+      await expectLater(
+        provider.createModel(
+          _spec('test.gguf'),
+          const RuntimeConfig(
+            modelPath: '/models/test.gguf',
+            maxTokens: 2048,
+            preferredBackend: edge.PreferredBackend.gpu,
+          ),
+        ),
+        throwsA(isA<UnsupportedError>()),
+      );
+    },
+  );
+
+  test('round4 corrupt format becomes invalid argument with cause', () async {
+    final cause = llama.LlamaModelFormatException(
+      detected: llama.ModelFormat.liteRtLm,
+      declared: llama.ModelFormat.gguf,
+    );
+    final provider = createLlamaProviderForTest(
+      loader: (_, _) async => throw cause,
+    );
+    await expectLater(
+      provider.createModel(
+        _spec('test.gguf'),
+        const RuntimeConfig(modelPath: '/models/test.gguf', maxTokens: 2048),
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+  });
+
+  test('round4 template preflight preserves the usable legacy chat', () async {
+    final previous = await model.createChat();
+    engine.templateError = llama.LlamaUnsupportedException(
+      'Tool name cannot be expressed',
+    );
+    await expectLater(
+      model.createChat(tools: [tool]),
+      throwsA(isA<UnsupportedError>()),
+    );
+    engine.templateError = null;
+    await previous.addQuery(
+      edge.Message.text(text: 'still works', isUser: true),
+    );
+    expect(await previous.generateChatResponse(), isA<edge.TextResponse>());
+  });
+
+  test('round4 tool response equality and copying retain call identity', () {
+    final a = LlamaToolResponseMessage(
+      callId: 'a',
+      toolName: 'search',
+      response: {'ok': true},
+    );
+    final b = LlamaToolResponseMessage(
+      callId: 'b',
+      toolName: 'search',
+      response: {'ok': true},
+    );
+    expect(a, isNot(b));
+    expect(
+      a.copyWith(text: '{"ok":false}'),
+      isA<LlamaToolResponseMessage>().having((m) => m.callId, 'callId', 'a'),
+    );
+  });
+  test(
+    'round4 rich specialized schemas fail preflight before replacing chat',
+    () async {
+      final previous = await model.createChat();
+      engine.templateFormat = llama.ChatFormat.glm45.index;
+      final rich = edge.Tool(
+        name: 'search',
+        description: 'Search',
+        parameters: {
+          'type': 'object',
+          'properties': {
+            'q': {'type': 'string', 'minLength': 1},
+          },
+        },
+      );
+      await expectLater(
+        model.createChat(tools: [rich]),
+        throwsUnsupportedError,
+      );
+      engine.templateFormat = 0;
+      await previous.addQuery(
+        edge.Message.text(text: 'still usable', isUser: true),
+      );
+      await previous.generateChatResponse();
+      expect(engine.requests.single.single.content, 'still usable');
+    },
+  );
+
+  test(
+    'round4 hidden reasoning has one notice per chat without leaking text',
+    () async {
+      final logs = <String>[];
+      await runZoned(
+        () async {
+          final chat = await model.openChat(enableThinking: false);
+          for (var turn = 0; turn < 2; turn++) {
+            engine.script = [_thinking('HIDDEN SECRET'), _chunk('visible')];
+            await chat.addQuery(
+              edge.Message.text(text: 'turn $turn', isUser: true),
+            );
+            final response =
+                await chat.generateChatResponse() as edge.TextResponse;
+            expect(response.token, 'visible');
+            expect(
+              chat.fullHistory.any((m) => m.text.contains('HIDDEN SECRET')),
+              isFalse,
+            );
+          }
+          engine.script = [_thinking('HIDDEN SECRET')];
+          await chat.addQuery(
+            edge.Message.text(text: 'no answer', isUser: true),
+          );
+          await expectLater(
+            chat.generateChatResponse(),
+            throwsA(
+              isA<StateError>().having(
+                (e) => e.message,
+                'budget advice',
+                isNot(contains('disable thinking')),
+              ),
+            ),
+          );
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, String line) => logs.add(line),
+        ),
+      );
+      expect(
+        logs.where(
+          (line) => line.contains('model reasoned although thinking is off'),
+        ),
+        hasLength(1),
+      );
+      expect(logs.any((line) => line.contains('HIDDEN SECRET')), isFalse);
+    },
+  );
+
+  test('round4 Web blob projector loads through a path source', () async {
+    final provider = createLlamaProviderForTest(
+      loader: (_, _) async => engine,
+      projectorResolver: (_, _) async => 'blob:https://app.invalid/projector',
+    );
+    final loaded = await provider.createModel(
+      _spec('model.gguf'),
+      const RuntimeConfig(
+        modelPath: 'https://app.invalid/model.gguf',
+        maxTokens: 2048,
+        supportImage: true,
+      ),
+    );
+    expect(engine.projector, 'blob:https://app.invalid/projector');
+    await loaded.close();
+  }, skip: !kIsWeb);
 }
 
 edge.InferenceModelSpec _spec(
@@ -2419,6 +2920,11 @@ class _FakeEngine extends llama.LlamaEngine {
   bool blockGeneration = false;
   bool failAfterFirstToken = false;
   Object? generationError;
+  Object? tokenError;
+  Object? capabilityError;
+  Object? templateError;
+  int contextSize = 2048;
+  int templateFormat = 0;
   Object? disposalError;
   List<llama.LlamaCompletionChunk>? script;
   List<List<llama.LlamaCompletionChunk>> scripts = [];
@@ -2437,13 +2943,16 @@ class _FakeEngine extends llama.LlamaEngine {
   int maxActive = 0;
 
   @override
-  Future<llama.LlamaEngineCapabilities> get capabilities async =>
-      llama.LlamaEngineCapabilities(
-        isSupported: true,
-        supportsToolCalling: toolSupport,
-        supportsVision: visionSupport,
-        supportsAudio: true,
-      );
+  Future<llama.LlamaEngineCapabilities> get capabilities async {
+    if (capabilityError != null) throw capabilityError!;
+    return llama.LlamaEngineCapabilities(
+      isSupported: true,
+      supportsToolCalling: toolSupport,
+      supportsVision: visionSupport,
+      supportsAudio: true,
+    );
+  }
+
   @override
   Future<void> loadMultimodalProjectorSource(
     llama.ModelSource source, {
@@ -2491,10 +3000,13 @@ class _FakeEngine extends llama.LlamaEngine {
   Future<int?> getResolvedGpuLayers() async => gpuLayers;
 
   @override
-  Future<int> getContextSize() async => 2048;
+  Future<int> getContextSize() async => contextSize;
 
   @override
-  Future<int> getTokenCount(String text) async => text.length;
+  Future<int> getTokenCount(String text) async {
+    if (tokenError != null) throw tokenError!;
+    return text.length;
+  }
 
   @override
   Future<llama.LlamaChatTemplateResult> chatTemplate(
@@ -2513,9 +3025,11 @@ class _FakeEngine extends llama.LlamaEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async {
+    if (templateError != null) throw templateError!;
     lastTemplateTools = tools ?? [];
     return llama.LlamaChatTemplateResult(
       prompt: 'rendered',
+      format: templateFormat,
       tokenCount: promptCounter?.call(messages) ?? promptTokens,
     );
   }

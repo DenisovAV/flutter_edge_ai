@@ -19,6 +19,7 @@
       }
       const module = await import(root + 'llama_webgpu_bridge.js');
       window.LlamaWebGpuBridge = module.LlamaWebGpuBridge;
+      window.__llamadartBridgeAdaptiveSafariGpu = true;
       window.__llamadartBridgeModuleUrl = root + 'llama_webgpu_bridge.js';
       window.__llamadartBridgeCoreModuleUrl = root + 'llama_webgpu_core.js';
       window.__llamadartBridgeWasmUrl = root + 'llama_webgpu_core.wasm';

@@ -216,7 +216,10 @@ final eg2Index = await rag.open(
   queries find web-embedded images, top-1 10/10 on the example's ten scenes.
   Natively it keeps a weight cache of about 71 MB, on top of the 165 MB
   bundle, in the app's cache directory: never backed up, and rebuilt at the
-  next load if the OS clears it. Web keeps no weight cache.
+  next load if the OS clears it. A load that cannot write it (a full disk, a
+  path past Windows MAX_PATH) still runs, slower and larger, with a printed
+  warning; `LiteRtEmbeddingBackend(requireWeightCache: true)` refuses it with
+  `EmbeddingLoadException` instead. Web keeps no weight cache.
 - EmbeddingGemma 1, 2 and Gecko all produce 768-d vectors but are different
   spaces: give each its own location and profile ID — the dimension check alone
   cannot tell them apart. `FlutterEdgeAiActiveEmbedder.forActiveModel` already

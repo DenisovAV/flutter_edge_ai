@@ -98,6 +98,35 @@ void main() {
       expect(response.message!.content.first.toolRequest!.name, 'search');
     });
 
+    test('blocking: a single call keeps its id as the ref', () async {
+      fakeChat.blockingResponse = const gemma.FunctionCallResponse(
+        name: 'get_weather',
+        args: {'city': 'Moscow'},
+        id: 'call_abc',
+      );
+
+      final response = await buildModel()(simpleRequest());
+
+      expect(response.message!.content.single.toolRequest!.ref, 'call_abc');
+    });
+
+    test('streaming: a single call keeps its id in the chunk and the final '
+        'response', () async {
+      fakeChat.streamingResponses = [
+        const gemma.FunctionCallResponse(
+          name: 'search',
+          args: {'q': 'dart'},
+          id: 'call_abc',
+        ),
+      ];
+      final chunks = <ModelResponseChunk>[];
+
+      final response = await buildModel()(simpleRequest(), onChunk: chunks.add);
+
+      expect(chunks.single.content.single.toolRequest!.ref, 'call_abc');
+      expect(response.message!.content.single.toolRequest!.ref, 'call_abc');
+    });
+
     test(
       'asks flutter_edge_ai for the model on every call, which reuses it',
       () async {

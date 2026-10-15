@@ -210,6 +210,17 @@ void main() {
     expect(parse('<|python_tag|>[search(q="a")]'), [search], reason: 'Llama');
   });
 
+  test('arguments under args, as the JSON format reads them', () {
+    const weather = FunctionCallResponse(
+      name: 'get_weather',
+      args: {'city': 'Paris'},
+    );
+    expect(parse('{"name":"get_weather","args":{"city":"Paris"}}'), [weather]);
+    expect(parse('[{"name":"get_weather","args":{"city":"Paris"}}]'), [
+      weather,
+    ]);
+  });
+
   test('a malformed tool_calls value parses to none instead of throwing', () {
     expect(parse('{"tool_calls":{"name":"x"}}'), isEmpty);
     expect(parse('{"tool_calls":"x"}'), isEmpty);

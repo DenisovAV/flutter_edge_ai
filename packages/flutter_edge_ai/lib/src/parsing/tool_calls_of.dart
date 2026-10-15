@@ -21,12 +21,12 @@ import 'sdk_response_parser.dart';
 ///   JSON, Qwen, DeepSeek, Phi or Llama function-call block.
 ///
 /// Each call may be OpenAI-style (`{"function": {"name", "arguments"}}`) or
-/// flat, with its arguments under `arguments` or `parameters`, as an object or
-/// a JSON string; missing or blank arguments are `{}`. An `id` is kept. A turn
-/// is read whole: when one of its calls cannot be read (arguments that are not
-/// an object) and another can, none is returned, so a replay never answers
-/// part of a turn. Returns an empty list for any other message type or when
-/// nothing parses.
+/// flat, with its arguments under `arguments`, `parameters` or `args`, as an
+/// object or a JSON string; missing or blank arguments are `{}`. An `id` is
+/// kept. A turn is read whole: when one of its calls cannot be read (arguments
+/// that are not an object) and another can, none is returned, so a replay
+/// never answers part of a turn. Returns an empty list for any other message
+/// type or when nothing parses.
 List<FunctionCallResponse> toolCallsOf(Message message) {
   if (message.type != MessageType.toolCall) return const [];
   if (message.toolCalls.isNotEmpty) return message.toolCalls;
@@ -97,7 +97,9 @@ FunctionCallResponse? _call(Object? raw) {
   final function = raw['function'] is Map ? raw['function'] as Map : raw;
   final name = function['name'];
   if (name is! String || name.isEmpty) return null;
-  final args = _arguments(function['arguments'] ?? function['parameters']);
+  final args = _arguments(
+    function['arguments'] ?? function['parameters'] ?? function['args'],
+  );
   if (args == null) return null;
   final id = raw['id'] ?? function['id'];
   return FunctionCallResponse(

@@ -3,7 +3,7 @@ import 'package:yaml/yaml.dart';
 import 'skill.dart';
 
 /// Thrown by [parseSkillMd] when the SKILL.md is structurally invalid
-/// (no frontmatter, or missing `name`/`description`).
+/// (no frontmatter, or a missing or non-string `name`/`description`).
 class SkillMdParseException implements Exception {
   SkillMdParseException(this.errors);
 
@@ -25,20 +25,23 @@ class SkillMdParseException implements Exception {
 ///   homepage: https://optional
 ///   require-secret: true
 ///   require-secret-description: how to obtain the key
+///   my-app-key: any YAML value
 /// ---
 /// # Title
 /// ## Instructions
 /// Call the `run_js` tool …
 /// ```
 ///
-/// - `name` and `description` are required; everything in `metadata:` is
-///   optional and tolerated-when-missing.
+/// - `name` and `description` are required strings; everything in
+///   `metadata:` is optional and tolerated-when-missing. Keys other than the
+///   ones above are kept in [SkillMetadata.extra].
 /// - The body (everything after the second `---`) becomes [Skill.instructions].
-/// - [SkillType] is inferred from the body's tool mention: `run_js` → js,
-///   `run_intent` → intent, `run_mcp` → mcp, otherwise textOnly.
+/// - [SkillType] is inferred from the body's tool mention ([inferSkillType]):
+///   `run_js` / `runSkill` → js, `run_intent` / `runIntent` → intent,
+///   `run_mcp` / `runMcp` → mcp, otherwise textOnly.
 ///
 /// Throws [SkillMdParseException] if there is no frontmatter or `name` /
-/// `description` is missing.
+/// `description` is missing, empty or not a string.
 Skill parseSkillMd(String content) {
   final errors = <String>[];
 
@@ -57,15 +60,9 @@ Skill parseSkillMd(String content) {
 
   final fields = _parseFrontmatter(frontmatter, errors);
 
-  final name = (fields['name'] as String?)?.trim();
-  final description = (fields['description'] as String?)?.trim();
-  if (name == null || name.isEmpty) {
-    errors.add("Missing or empty 'name' in the frontmatter.");
-  }
-  if (description == null || description.isEmpty) {
-    errors.add("Missing or empty 'description' in the frontmatter.");
-  }
-  if (errors.isNotEmpty) {
+  final name = _requiredString(fields, 'name', errors);
+  final description = _requiredString(fields, 'description', errors);
+  if (name == null || description == null || errors.isNotEmpty) {
     throw SkillMdParseException(errors);
   }
 
@@ -74,8 +71,8 @@ Skill parseSkillMd(String content) {
   final scriptName = _inferScriptName(body);
 
   return Skill(
-    name: name!,
-    description: description!,
+    name: name,
+    description: description,
     instructions: body,
     type: type,
     metadata: metadata,
@@ -83,15 +80,43 @@ Skill parseSkillMd(String content) {
   );
 }
 
+/// The trimmed string at [key], or null after adding the reason to [errors]
+/// when it is missing, empty or not a string (a YAML list or map, a number).
+String? _requiredString(
+  Map<String, dynamic> fields,
+  String key,
+  List<String> errors,
+) {
+  final value = fields[key];
+  if (value is String && value.trim().isNotEmpty) return value.trim();
+  errors.add(
+    value == null || value is String
+        ? "Missing or empty '$key' in the frontmatter."
+        : "'$key' in the frontmatter must be a string, got: $value",
+  );
+  return null;
+}
+
 /// Infers the [SkillType] from a SKILL.md instructions body by looking for the
-/// tool it tells the model to call. Order matters only in that a body could in
-/// theory mention several; the first match in (js, intent, mcp) wins, falling
-/// back to [SkillType.textOnly] when no tool is mentioned.
+/// tool it tells the model to call, case-insensitively: Gallery's snake_case
+/// names (`run_js`, `run_intent`, `run_mcp`) and the names the tools are
+/// declared under (`runSkill`, `runIntent`, `runMcp`, plus `runJs`). Order
+/// matters only in that a body could in theory mention several; the first
+/// match in (js, intent, mcp) wins, falling back to [SkillType.textOnly] when
+/// no tool is mentioned.
 SkillType inferSkillType(String body) {
   final lower = body.toLowerCase();
-  if (lower.contains('run_js')) return SkillType.js;
-  if (lower.contains('run_intent')) return SkillType.intent;
-  if (lower.contains('run_mcp')) return SkillType.mcp;
+  if (lower.contains('run_js') ||
+      lower.contains('runskill') ||
+      lower.contains('runjs')) {
+    return SkillType.js;
+  }
+  if (lower.contains('run_intent') || lower.contains('runintent')) {
+    return SkillType.intent;
+  }
+  if (lower.contains('run_mcp') || lower.contains('runmcp')) {
+    return SkillType.mcp;
+  }
   return SkillType.textOnly;
 }
 
@@ -116,7 +141,8 @@ Map<String, dynamic> _parseFrontmatter(
 
 /// Tolerant line-based frontmatter parser (mirrors Gallery's Kotlin parser):
 /// top-level `name:` / `description:`, then a nested `metadata:` block of
-/// `homepage` / `require-secret` / `require-secret-description`.
+/// `homepage` / `require-secret` / `require-secret-description` and whatever
+/// other keys follow it, every value a string.
 Map<String, dynamic> _parseFrontmatterLines(String frontmatter) {
   final out = <String, dynamic>{};
   final metadata = <String, dynamic>{};
@@ -142,6 +168,29 @@ Map<String, dynamic> _parseFrontmatterLines(String frontmatter) {
   if (metadata.isNotEmpty) out['metadata'] = metadata;
   return out;
 }
+
+/// Every spelling of the metadata keys [SkillMetadata] has fields for. The
+/// rest of the block goes to [SkillMetadata.extra].
+const _knownMetadataKeys = {
+  'homepage',
+  'require-secret',
+  'require_secret',
+  'requireSecret',
+  'require-secret-description',
+  'require_secret_description',
+  'requireSecretDescription',
+};
+
+/// [value] with every YAML map and list (and any other map or list) turned
+/// into a plain unmodifiable Dart `Map<String, Object?>` / `List<Object?>`;
+/// scalars as they are.
+Object? _plainValue(Object? value) => switch (value) {
+  Map() => Map<String, Object?>.unmodifiable({
+    for (final e in value.entries) e.key.toString(): _plainValue(e.value),
+  }),
+  List() => List<Object?>.unmodifiable(value.map(_plainValue)),
+  _ => value,
+};
 
 /// Builds [SkillMetadata] from the (possibly-null) parsed `metadata:` node.
 /// Accepts both YAML kebab-case keys (`require-secret`) and the snake/camel
@@ -176,6 +225,10 @@ SkillMetadata _parseMetadata(dynamic node) {
       'require_secret_description',
       'requireSecretDescription',
     ]),
+    extra: Map<String, Object?>.unmodifiable({
+      for (final e in map.entries)
+        if (!_knownMetadataKeys.contains(e.key)) e.key: _plainValue(e.value),
+    }),
   );
 }
 

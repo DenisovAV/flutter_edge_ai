@@ -73,6 +73,9 @@ class TextChunkEvent extends AgentEvent {
 
 /// The loop finished: the model produced a plain text answer (no more tool
 /// calls). [text] is the full accumulated final answer.
+///
+/// An [EmptyAnswerEvent] is a [DoneEvent] too: match it first to tell an
+/// answer the model never gave apart from a short one.
 class DoneEvent extends AgentEvent {
   const DoneEvent(this.text);
 
@@ -81,6 +84,51 @@ class DoneEvent extends AgentEvent {
 
   @override
   String toString() => 'DoneEvent("$text")';
+}
+
+/// The generation that ended the turn produced no text right after a
+/// successful `loadSkill`, so the loop asks again: it adds [nudge] to the chat
+/// as a user message and generates once more. Emitted before the nudge is
+/// sent, at most [AgentLoop.emptyAfterSkillRetries] times per turn.
+///
+/// The nudge stays in the chat's history like any user message; an app that
+/// keeps its own copy of the history should add it there too.
+class EmptyAnswerRetryEvent extends AgentEvent {
+  const EmptyAnswerRetryEvent({
+    required this.skillName,
+    required this.nudge,
+    required this.attempt,
+  });
+
+  /// The skill whose `loadSkill` call came right before the empty generation.
+  final String skillName;
+
+  /// The user message the loop adds to the chat.
+  final String nudge;
+
+  /// 1 for the turn's first retry, 2 for its second, and so on.
+  final int attempt;
+
+  @override
+  String toString() =>
+      'EmptyAnswerRetryEvent($skillName, attempt: $attempt, nudge: "$nudge")';
+}
+
+/// The turn ended with no text right after a successful `loadSkill`, and no
+/// retry was left: the turn used [AgentLoop.emptyAfterSkillRetries] (or it is
+/// 0), or [AgentLoop.maxIterations] left no generation for one.
+///
+/// A [DoneEvent] with an empty [text], so code written for [DoneEvent] keeps
+/// working; a `switch` that wants to say "the model gave no answer" puts this
+/// case before `DoneEvent`.
+class EmptyAnswerEvent extends DoneEvent {
+  const EmptyAnswerEvent(this.skillName) : super('');
+
+  /// The skill whose `loadSkill` call came right before the empty generation.
+  final String skillName;
+
+  @override
+  String toString() => 'EmptyAnswerEvent($skillName)';
 }
 
 /// The loop hit its [AgentLoop.maxIterations] guard without the model settling

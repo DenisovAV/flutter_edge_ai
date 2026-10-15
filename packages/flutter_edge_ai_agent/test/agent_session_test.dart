@@ -1,5 +1,9 @@
 import 'package:flutter_edge_ai/engine.dart'
-    show InferenceChat, SkillExecutorProvider, SkillExecutorRegistry;
+    show
+        InferenceChat,
+        InferenceModel,
+        SkillExecutorProvider,
+        SkillExecutorRegistry;
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -44,6 +48,13 @@ class _BareProvider implements SkillExecutorProvider {
 
   @override
   bool canExecute(String skillType) => true;
+}
+
+/// An [InferenceModel] with nothing behind it: creating a chat on it fails
+/// with a [NoSuchMethodError], so a test can tell whether a call got that far.
+class _NoModel extends InferenceModel {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 void main() {
@@ -102,6 +113,54 @@ void main() {
           ),
         ),
       );
+    });
+  });
+
+  group('AgentSession.fromModel', () {
+    test('a negative retry count is refused before a chat is created', () {
+      expect(
+        AgentSession.fromModel(
+          _NoModel(),
+          registry: SkillRegistry(),
+          executors: [_FakeExecutor(SkillType.textOnly)],
+          emptyAfterSkillRetries: -1,
+        ),
+        throwsArgumentError,
+      );
+    });
+  });
+
+  group('AgentSession.buildSystemPrompt', () {
+    final registry = SkillRegistry()
+      ..add(
+        const Skill(
+          name: 'packing-list',
+          description: 'Suggest what to pack for a trip.',
+          instructions: 'List what to pack.',
+          type: SkillType.textOnly,
+        ),
+        selected: true,
+      );
+
+    test('the on-demand prompt takes the skill list like the default', () {
+      final prompt = AgentSession.buildSystemPrompt(
+        registry,
+        systemPromptTemplate: onDemandAgentSystemPrompt,
+      );
+
+      expect(prompt, contains('- packing-list: Suggest what to pack'));
+      expect(prompt, isNot(contains('__SKILLS__')));
+      expect(prompt, contains('Only when a request needs one of these skills'));
+      expect(prompt, contains('call loadSkill'));
+      expect(prompt, contains('no tool call'));
+    });
+
+    test('the default prompt is still the one used without a template', () {
+      final prompt = AgentSession.buildSystemPrompt(registry);
+
+      expect(prompt, contains('For EVERY new task or request or question'));
+      expect(prompt, contains('- packing-list: Suggest what to pack'));
+      expect(prompt, isNot(contains('Only when a request needs')));
     });
   });
 }

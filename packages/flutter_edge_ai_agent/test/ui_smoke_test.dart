@@ -1,7 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart' show InferenceChat;
+import 'package:flutter_edge_ai/flutter_edge_ai.dart'
+    show FunctionCallResponse, InferenceChat, Message, ModelResponse;
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -15,6 +16,26 @@ class _FakeChat extends InferenceChat {
 
   @override
   Future<void> close() async {}
+}
+
+/// A [_FakeChat] whose generations follow a script, one list of responses per
+/// generation, so [AgentChatView] can be driven through a whole turn.
+class _ScriptedChat extends _FakeChat {
+  _ScriptedChat(this._generations);
+
+  final List<List<ModelResponse>> _generations;
+  int _next = 0;
+
+  @override
+  Future<void> addQueryChunk(
+    Message message, [
+    bool noTool = false,
+    bool prefix = false,
+  ]) async {}
+
+  @override
+  Stream<ModelResponse> generateChatResponseAsync() =>
+      Stream.fromIterable(_generations[_next++]);
 }
 
 /// A `SkillExecutor` handling one [SkillType] so the session resolves an
@@ -282,6 +303,40 @@ void main() {
       expect(find.text('nothing yet'), findsOneWidget);
       expect(find.text('ask me'), findsOneWidget);
       expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('shows the retry and the empty answer after a skill load', (
+      tester,
+    ) async {
+      final s = AgentSession(
+        chat: _ScriptedChat([
+          [
+            const FunctionCallResponse(
+              name: 'loadSkill',
+              args: {'skillName': 'alpha'},
+            ),
+          ],
+          [], // empty answer → one retry
+          [], // still empty → EmptyAnswerEvent
+        ]),
+        registry: SkillRegistry()..add(_skill('alpha'), selected: true),
+        executors: [_FakeExecutor()],
+      );
+      addTearDown(s.close);
+      await _pump(tester, AgentChatView(session: s));
+
+      await tester.enterText(find.byType(TextField), 'what should I pack?');
+      await tester.tap(find.byIcon(Icons.send));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('No answer after loading "alpha", asking again'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('The model gave no answer after loading "alpha"'),
+        findsOneWidget,
+      );
     });
   });
 }

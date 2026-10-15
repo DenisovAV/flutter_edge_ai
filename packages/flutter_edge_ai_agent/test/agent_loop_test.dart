@@ -101,6 +101,11 @@ class _FakeAgentChat extends InferenceChat {
   /// The tool-response messages fed back (excludes the initial user message).
   List<Message> get toolResponses =>
       received.where((m) => m.type == MessageType.toolResponse).toList();
+
+  /// The plain user messages: the turn's own and any nudge the loop added.
+  /// (A tool response is a user-side message too, so `isUser` cannot tell.)
+  List<Message> get userMessages =>
+      received.where((m) => m.type == MessageType.text).toList();
 }
 
 /// A fake executor that handles a single [SkillType] and returns a preset
@@ -153,6 +158,24 @@ FunctionCallResponse _runSkill(String name, {String data = '{}'}) =>
       name: 'runSkill',
       args: {'skillName': name, 'scriptName': 'index.html', 'data': data},
     );
+
+Skill _textSkill(String name) => Skill(
+  name: name,
+  description: 'Suggest what to pack for a trip.',
+  instructions: 'List what to pack. Answer the user directly.',
+  type: SkillType.textOnly,
+);
+
+Skill _intentSkill(String name, {bool requireSecret = false}) => Skill(
+  name: name,
+  description: 'Report the current local date and time.',
+  instructions: 'Call the `run_intent` tool with get_current_date_and_time.',
+  type: SkillType.intent,
+  metadata: SkillMetadata(requireSecret: requireSecret),
+);
+
+FunctionCallResponse _runIntent(Map<String, dynamic> args) =>
+    FunctionCallResponse(name: 'runIntent', args: args);
 
 void main() {
   group('AgentLoop — happy path', () {
@@ -660,6 +683,504 @@ void main() {
     );
   });
 
+  group('AgentLoop — empty answer after loadSkill', () {
+    test(
+      'one nudge after an empty answer, then the text ends the turn',
+      () async {
+        final registry = SkillRegistry()
+          ..add(_textSkill('packing-list'), selected: true);
+        final chat = _FakeAgentChat.turns([
+          [_loadSkill('packing-list')],
+          [const TextResponse(' \n')], // only whitespace: empty after trimming
+          [const TextResponse('Pack a towel.')],
+        ]);
+        final loop = AgentLoop(registry: registry, executors: const []);
+
+        final events = await loop.run(chat, 'what should I pack?').toList();
+
+        final retry = events.whereType<EmptyAnswerRetryEvent>().single;
+        expect(retry.skillName, 'packing-list');
+        expect(retry.attempt, 1);
+        expect(retry.nudge, defaultEmptyAfterSkillNudge);
+        // The retry is announced before the answer that follows it.
+        expect(
+          events.indexOf(retry),
+          lessThan(events.indexWhere((e) => e is DoneEvent)),
+        );
+        final done = events.whereType<DoneEvent>().single;
+        expect(done, isNot(isA<EmptyAnswerEvent>()));
+        // Only the retried generation's text: the whitespace is not part of it.
+        expect(done.text, 'Pack a towel.');
+        expect(events.last, same(done));
+        expect(chat.generateCallCount, 3);
+        // The nudge went to the same chat as a user message, after the
+        // loadSkill result and before the third generation.
+        expect(chat.received, hasLength(3));
+        expect(chat.received[1].toolName, 'loadSkill');
+        expect(chat.received[2].isUser, isTrue);
+        expect(chat.received[2].text, defaultEmptyAfterSkillNudge);
+      },
+    );
+
+    test('still empty after the retries → EmptyAnswerEvent', () async {
+      final registry = SkillRegistry()
+        ..add(_textSkill('packing-list'), selected: true);
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('packing-list')],
+        <ModelResponse>[],
+        <ModelResponse>[],
+      ]);
+      final loop = AgentLoop(registry: registry, executors: const []);
+
+      final events = await loop.run(chat, 'what should I pack?').toList();
+
+      expect(events.whereType<EmptyAnswerRetryEvent>(), hasLength(1));
+      final done = events.whereType<DoneEvent>().single;
+      expect(done, isA<EmptyAnswerEvent>());
+      expect((done as EmptyAnswerEvent).skillName, 'packing-list');
+      expect(done.text, '');
+      expect(events.last, same(done));
+      expect(chat.generateCallCount, 3);
+    });
+
+    test('takes the retry count and the nudge text from the caller', () async {
+      final registry = SkillRegistry()
+        ..add(_textSkill('packing-list'), selected: true);
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('packing-list')],
+        <ModelResponse>[],
+        <ModelResponse>[],
+        [const TextResponse('Pack a towel.')],
+      ]);
+      final loop = AgentLoop(
+        registry: registry,
+        executors: const [],
+        emptyAfterSkillRetries: 2,
+        emptyAfterSkillNudge: 'Go on.',
+      );
+
+      final events = await loop.run(chat, 'what should I pack?').toList();
+
+      final retries = events.whereType<EmptyAnswerRetryEvent>().toList();
+      expect(retries.map((e) => e.attempt), [1, 2]);
+      expect(retries.map((e) => e.nudge), ['Go on.', 'Go on.']);
+      expect(chat.userMessages.map((m) => m.text), [
+        'what should I pack?',
+        'Go on.',
+        'Go on.',
+      ]);
+      expect((events.last as DoneEvent).text, 'Pack a towel.');
+      expect(chat.generateCallCount, 4);
+    });
+
+    test('an empty answer after an intent result is not retried', () async {
+      final registry = SkillRegistry()
+        ..add(_intentSkill('get-current-time'), selected: true);
+      final executor = _FakeExecutor(
+        SkillType.intent,
+        result: const TextResult('2026-10-15T09:00:00 Thursday'),
+      );
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('get-current-time')],
+        [
+          _runIntent({
+            'intent': 'get_current_date_and_time',
+            'parameters': '{}',
+          }),
+        ],
+        <ModelResponse>[],
+      ]);
+      final loop = AgentLoop(registry: registry, executors: [executor]);
+
+      final events = await loop.run(chat, 'what time is it?').toList();
+
+      expect(events.whereType<EmptyAnswerRetryEvent>(), isEmpty);
+      final done = events.whereType<DoneEvent>().single;
+      expect(done.runtimeType, DoneEvent);
+      expect(done.text, '');
+      expect(chat.generateCallCount, 3);
+      expect(chat.userMessages, hasLength(1), reason: 'no nudge was sent');
+    });
+
+    test('a loadSkill that found nothing is not retried either', () async {
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('nope')],
+        <ModelResponse>[],
+      ]);
+      final loop = AgentLoop(registry: SkillRegistry(), executors: const []);
+
+      final events = await loop.run(chat, 'load nope').toList();
+
+      expect(events.whereType<EmptyAnswerRetryEvent>(), isEmpty);
+      expect(events.last.runtimeType, DoneEvent);
+      expect(chat.generateCallCount, 2);
+    });
+
+    test(
+      '0 retries: no nudge, the turn ends with an empty DoneEvent',
+      () async {
+        final registry = SkillRegistry()
+          ..add(_textSkill('packing-list'), selected: true);
+        final chat = _FakeAgentChat.turns([
+          [_loadSkill('packing-list')],
+          <ModelResponse>[],
+          [const TextResponse('never reached')],
+        ]);
+        final loop = AgentLoop(
+          registry: registry,
+          executors: const [],
+          emptyAfterSkillRetries: 0,
+        );
+
+        final events = await loop.run(chat, 'what should I pack?').toList();
+
+        expect(events.whereType<EmptyAnswerRetryEvent>(), isEmpty);
+        // Still a DoneEvent with empty text, as before; its subclass names the
+        // skill.
+        expect(events.last, isA<DoneEvent>());
+        expect((events.last as DoneEvent).text, '');
+        expect(events.last, isA<EmptyAnswerEvent>());
+        expect(chat.generateCallCount, 2);
+        expect(chat.received, hasLength(2));
+      },
+    );
+
+    test('no retry when maxIterations has no generation left', () async {
+      final registry = SkillRegistry()
+        ..add(_textSkill('packing-list'), selected: true);
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('packing-list')],
+        <ModelResponse>[],
+        [const TextResponse('never reached')],
+      ]);
+      final loop = AgentLoop(
+        registry: registry,
+        executors: const [],
+        maxIterations: 2,
+      );
+
+      final events = await loop.run(chat, 'what should I pack?').toList();
+
+      expect(events.whereType<EmptyAnswerRetryEvent>(), isEmpty);
+      expect(events.last, isA<EmptyAnswerEvent>());
+      expect(chat.generateCallCount, 2);
+      expect(chat.received, hasLength(2));
+    });
+
+    test('the retry runs within what is left of maxIterations', () async {
+      final registry = SkillRegistry()
+        ..add(_textSkill('packing-list'), selected: true);
+      // Generation 3 (the retry) calls a tool again; a 4th would exceed the
+      // cap of 3.
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('packing-list')],
+        <ModelResponse>[],
+        [_loadSkill('packing-list')],
+        [const TextResponse('never reached')],
+      ]);
+      final loop = AgentLoop(
+        registry: registry,
+        executors: const [],
+        maxIterations: 3,
+      );
+
+      final events = await loop.run(chat, 'what should I pack?').toList();
+
+      expect(events.whereType<EmptyAnswerRetryEvent>(), hasLength(1));
+      expect(events.last, isA<MaxIterationsEvent>());
+      expect((events.last as MaxIterationsEvent).iterations, 3);
+      expect(events.whereType<DoneEvent>(), isEmpty);
+      expect(chat.generateCallCount, 3);
+    });
+
+    test('a cancel before the retry ends the turn with no nudge', () async {
+      final registry = SkillRegistry()
+        ..add(_textSkill('packing-list'), selected: true);
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('packing-list')],
+        <ModelResponse>[],
+        [const TextResponse('never reached')],
+      ]);
+      final loop = AgentLoop(registry: registry, executors: const []);
+
+      // False through both generations' own checks, true once the empty one
+      // has run: the first poll after it is the loop's check before a retry.
+      final events = await loop
+          .run(
+            chat,
+            'what should I pack?',
+            isCancelled: () => chat.generateCallCount >= 2,
+          )
+          .toList();
+
+      expect(events.whereType<EmptyAnswerRetryEvent>(), isEmpty);
+      expect(events.whereType<DoneEvent>(), isEmpty);
+      expect(events.whereType<MaxIterationsEvent>(), isEmpty);
+      expect(chat.received, hasLength(2), reason: 'no nudge was sent');
+      expect(chat.generateCallCount, 2);
+    });
+
+    test('a negative retry count is refused', () {
+      expect(
+        () => AgentLoop(
+          registry: SkillRegistry(),
+          executors: const [],
+          emptyAfterSkillRetries: -1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => AgentSession(
+          chat: _FakeAgentChat(const []),
+          registry: SkillRegistry(),
+          executors: const [],
+          emptyAfterSkillRetries: -1,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('AgentSession passes the retry settings to its loop', () async {
+      final registry = SkillRegistry()
+        ..add(_textSkill('packing-list'), selected: true);
+      final chat = _FakeAgentChat.turns([
+        [_loadSkill('packing-list')],
+        <ModelResponse>[],
+        <ModelResponse>[],
+        [const TextResponse('Pack a towel.')],
+      ]);
+      final session = AgentSession(
+        chat: chat,
+        registry: registry,
+        executors: const [],
+        emptyAfterSkillRetries: 2,
+        emptyAfterSkillNudge: 'Go on.',
+      );
+
+      final events = await session.ask('what should I pack?').toList();
+
+      expect(events.whereType<EmptyAnswerRetryEvent>().map((e) => e.nudge), [
+        'Go on.',
+        'Go on.',
+      ]);
+      expect((events.last as DoneEvent).text, 'Pack a towel.');
+    });
+  });
+
+  group('AgentLoop — runIntent with a skillName', () {
+    test('runs the intent the call names, not the skill', () async {
+      // Small models add the loaded skill's name to the intent call.
+      final registry = SkillRegistry()
+        ..add(_intentSkill('get-current-time'), selected: true);
+      final chat = _FakeAgentChat([
+        _runIntent({
+          'skillName': 'get-current-time',
+          'intent': 'get_current_date_and_time',
+          'parameters': '{}',
+        }),
+        const TextResponse('It is morning.'),
+      ]);
+      final loop = AgentLoop(
+        registry: registry,
+        executors: [NativeIntentExecutor()],
+      );
+
+      final events = await loop.run(chat, 'what time is it?').toList();
+
+      final result = events.whereType<ToolResultEvent>().single.result;
+      expect(result, isA<TextResult>());
+      expect(
+        (result as TextResult).text,
+        matches(RegExp(r'^\d{4}-\d{2}-\d{2}T')),
+      );
+      expect(events.whereType<AgentErrorEvent>(), isEmpty);
+    });
+
+    test('keeps the registered skill for the event and the secret', () async {
+      final registry = SkillRegistry()
+        ..add(
+          _intentSkill('get-current-time', requireSecret: true),
+          selected: true,
+        );
+      final executor = _FakeExecutor(SkillType.intent);
+      final secrets = SecretStore()..set('get-current-time', 'sk-1');
+      final chat = _FakeAgentChat([
+        _runIntent({
+          'skillName': 'get-current-time',
+          'intent': 'get_current_date_and_time',
+          'parameters': '{}',
+        }),
+        const TextResponse('ok'),
+      ]);
+      final loop = AgentLoop(
+        registry: registry,
+        executors: [executor],
+        secretStore: secrets,
+      );
+
+      final events = await loop.run(chat, 'what time is it?').toList();
+
+      expect(executor.calls.single.skill.name, 'get_current_date_and_time');
+      expect(executor.calls.single.skill.type, SkillType.intent);
+      expect(executor.calls.single.secret, 'sk-1');
+      expect(
+        events.whereType<ToolCallEvent>().single.skill?.name,
+        'get-current-time',
+      );
+    });
+
+    test('without an intent the registered skill runs, as before', () async {
+      final registry = SkillRegistry()
+        ..add(_intentSkill('get-current-time'), selected: true);
+      final executor = _FakeExecutor(SkillType.intent);
+      final chat = _FakeAgentChat([
+        _runIntent({'skillName': 'get-current-time', 'parameters': '{}'}),
+        const TextResponse('ok'),
+      ]);
+      final loop = AgentLoop(registry: registry, executors: [executor]);
+
+      await loop.run(chat, 'what time is it?').toList();
+
+      expect(executor.calls.single.skill.name, 'get-current-time');
+    });
+  });
+
+  group('AgentLoop — runIntent after a text-only skill', () {
+    // Gemma 4 E2B calls runIntent with an invented intent after loading an
+    // instruction-only skill. The result must tell it the skill calls no tool.
+    Future<(List<AgentEvent>, _FakeAgentChat)> runAfterLoading(
+      Skill loaded,
+      Map<String, dynamic> intentArgs, {
+      List<SkillExecutor>? executors,
+    }) async {
+      final registry = SkillRegistry()..add(loaded, selected: true);
+      final chat = _FakeAgentChat([
+        _loadSkill(loaded.name),
+        _runIntent(intentArgs),
+        const TextResponse('Pack a towel.'),
+      ]);
+      final loop = AgentLoop(
+        registry: registry,
+        executors: executors ?? [TextSkillExecutor(), NativeIntentExecutor()],
+      );
+      final events = await loop.run(chat, 'what should I pack?').toList();
+      return (events, chat);
+    }
+
+    test(
+      'an unknown intent is answered with "the skill calls no tool"',
+      () async {
+        final (events, chat) = await runAfterLoading(
+          _textSkill('packing-list'),
+          {'intent': 'packing-list.suggest', 'parameters': '{}'},
+        );
+
+        final fed = chat.toolResponses.last;
+        expect(fed.toolName, 'runIntent');
+        expect(fed.text, contains(r'skill \"packing-list\" calls no tool'));
+        expect(fed.text, contains('Answer the user directly'));
+        expect(fed.text, isNot(contains('Unknown intent')));
+        expect(
+          events.whereType<AgentErrorEvent>().single.message,
+          contains('calls no tool'),
+        );
+        expect((events.last as DoneEvent).text, 'Pack a towel.');
+      },
+    );
+
+    test('also when no executor can run intents at all', () async {
+      final (_, chat) = await runAfterLoading(
+        _textSkill('packing-list'),
+        {'intent': 'packing-list', 'parameters': '{}'},
+        executors: [TextSkillExecutor()],
+      );
+
+      expect(chat.toolResponses.last.text, contains('calls no tool'));
+      expect(
+        chat.toolResponses.last.text,
+        isNot(contains('No executor available')),
+      );
+    });
+
+    test(
+      'after a skill that is not text-only it stays "Unknown intent"',
+      () async {
+        final (_, chat) = await runAfterLoading(
+          _intentSkill('get-current-time'),
+          {'intent': 'packing-list.suggest', 'parameters': '{}'},
+        );
+
+        expect(chat.toolResponses.last.text, contains('Unknown intent'));
+        expect(chat.toolResponses.last.text, isNot(contains('calls no tool')));
+      },
+    );
+
+    test('an intent the app runs still runs', () async {
+      final (events, _) = await runAfterLoading(_textSkill('packing-list'), {
+        'intent': 'get_current_date_and_time',
+        'parameters': '{}',
+      });
+
+      expect(
+        events.whereType<ToolResultEvent>().single.result,
+        isA<TextResult>(),
+      );
+    });
+
+    test('a known intent keeps its own error', () async {
+      final (_, chat) = await runAfterLoading(_textSkill('packing-list'), {
+        'intent': 'send_email',
+        'parameters': '{"extra_email": "not-an-address"}',
+      });
+
+      expect(chat.toolResponses.last.text, contains('invalid email'));
+      expect(chat.toolResponses.last.text, isNot(contains('calls no tool')));
+    });
+
+    test('a known intent inside the parameters keeps its own error', () async {
+      final (_, chat) = await runAfterLoading(_textSkill('packing-list'), {
+        'intent': 'packing-list',
+        'parameters':
+            '{"intent": "send_email", '
+            '"parameters": {"extra_email": "not-an-address"}}',
+      });
+
+      expect(chat.toolResponses.last.text, contains('Invalid parameters'));
+      expect(chat.toolResponses.last.text, isNot(contains('calls no tool')));
+    });
+  });
+
+  group('AgentLoop — object arguments', () {
+    test(
+      'a Map or List where the tool asks for a JSON string is JSON',
+      () async {
+        final registry = SkillRegistry()..add(_jsSkill(), selected: true);
+        final intents = _FakeExecutor(SkillType.intent, name: 'intents');
+        final js = _FakeExecutor(SkillType.js, name: 'js');
+        final chat = _FakeAgentChat([
+          _runIntent({
+            'intent': 'start_timer',
+            'parameters': {'seconds': 10, 'label': 'tea'},
+          }),
+          const FunctionCallResponse(
+            name: 'runSkill',
+            args: {
+              'skillName': 'calculate-hash',
+              'data': ['a', 1],
+            },
+          ),
+          const TextResponse('ok'),
+        ]);
+        final loop = AgentLoop(registry: registry, executors: [intents, js]);
+
+        await loop.run(chat, 'go').toList();
+
+        expect(intents.calls.single.dataJson, '{"seconds":10,"label":"tea"}');
+        expect(js.calls.single.dataJson, '["a",1]');
+      },
+    );
+  });
+
   group('AgentSession facade', () {
     test('ask() drives the loop via the wrapped chat', () async {
       final registry = SkillRegistry()..add(_jsSkill(), selected: true);
@@ -757,11 +1278,9 @@ void main() {
 
       final events = await loop.run(chat, 'x').toList();
 
-      expect(
-        events.whereType<TextChunkEvent>().map((e) => e.text).toList(),
-        ['hi'],
-        reason: 'empty tokens dropped, no blank TextChunkEvent',
-      );
+      expect(events.whereType<TextChunkEvent>().map((e) => e.text).toList(), [
+        'hi',
+      ], reason: 'empty tokens dropped, no blank TextChunkEvent');
       expect((events.last as DoneEvent).text, 'hi');
     });
 

@@ -272,7 +272,7 @@ packages:
       path: "../../flutter_edge_ai_agent"
       relative: true
     source: path
-    version: "0.2.10"
+    version: "0.3.0"
   flutter_edge_ai_builtin_ai:
     dependency: "direct main"
     description:

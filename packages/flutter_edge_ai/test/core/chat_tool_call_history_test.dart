@@ -100,6 +100,14 @@ void main() {
     expect(_recorded(chat).toolCalls, [_call]);
   });
 
+  test('a model answering in the canonical text a history replays', () async {
+    final canonical = Message.toolCall(calls: const [_call]).text;
+    final chat = await _chat(ModelType.general, [canonical]);
+
+    expect(await chat.generateChatResponse(), _call);
+    expect(_recorded(chat).toolCalls, [_call]);
+  });
+
   test('text call, generateChatResponse', () async {
     final chat = await _chat(ModelType.general, const [json]);
 

@@ -1,3 +1,6 @@
+## 0.10.0
+- Tool `ref`s travel as call ids both ways and never repeat in a turn; require `flutter_edge_ai` ^2.4.0.
+
 ## 0.9.2
 - README: any engine's models; Quick Start installs Gemma 4 E2B .litertlm.
 

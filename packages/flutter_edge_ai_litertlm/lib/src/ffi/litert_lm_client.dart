@@ -133,10 +133,17 @@ abstract class ConversationHandle {
 /// Lifetime contract: the caller must call [close] when done. The owning
 /// client closes any remaining handles on [LiteRtLmFfiClient.shutdown].
 class LiteRtLmConversationHandle implements ConversationHandle {
-  LiteRtLmConversationHandle._(this._client, this._conversation);
+  LiteRtLmConversationHandle._(
+    this._client,
+    this._conversation,
+    this._multimodalOrder,
+  );
 
   final LiteRtLmFfiClient _client;
   Pointer<LiteRtLmConversation>? _conversation;
+
+  /// Where [chat] and [chatRaw] put a message's media around its text.
+  final MultimodalOrder _multimodalOrder;
 
   bool get isClosed => _conversation == null;
 
@@ -164,6 +171,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
       text,
       imageBytes: imageBytes,
       audioBytes: audioBytes,
+      order: _multimodalOrder,
       enableThinking: enableThinking,
     );
   }
@@ -181,6 +189,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
       text,
       imageBytes: imageBytes,
       audioBytes: audioBytes,
+      order: _multimodalOrder,
       enableThinking: enableThinking,
     );
   }
@@ -956,7 +965,11 @@ class LiteRtLmFfiClient {
         throw Exception(
           'Failed to create engine. Model may be invalid: $modelPath'
           '${float32OnGpu ? ' (float32 activations need more GPU memory than '
-                    'the default — try without activationDataType)' : ''}',
+                    'the default. If you set activationDataType, try without '
+                    'it; if you did not, the engine chose float32 for a '
+                    'FunctionGemma bundle that declares no '
+                    'prefer_activation_type, and ActivationDataType.float16 '
+                    'asks for the default instead)' : ''}',
         );
       }
 
@@ -1043,6 +1056,9 @@ class LiteRtLmFfiClient {
   ///
   /// [sampling] is already resolved by the model layer, which knows the
   /// model's family; [samplingExplicit] says whether the caller set any of it.
+  ///
+  /// [multimodalOrder] is where the handle's messages put their media around
+  /// the text — the model's own, resolved by the model layer too.
   Future<LiteRtLmConversationHandle> createConversationHandle({
     String? systemMessage,
     String? toolsJson,
@@ -1050,6 +1066,7 @@ class LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
+    required MultimodalOrder multimodalOrder,
   }) {
     // The handle must be registered before the guard lifts: otherwise shutdown()
     // can clear _handles between the create and the add, leaving a live
@@ -1074,7 +1091,7 @@ class LiteRtLmFfiClient {
         ),
       );
       edgeAiLog('[LiteRtLmFfi] Conversation created');
-      final handle = LiteRtLmConversationHandle._(this, conv);
+      final handle = LiteRtLmConversationHandle._(this, conv, multimodalOrder);
       _handles.add(handle);
       return handle;
     });
@@ -1290,6 +1307,7 @@ class LiteRtLmFfiClient {
       toolsJson: toolsJson,
       sampling: sampling,
       samplingExplicit: true,
+      multimodalOrder: MultimodalOrder.imagesAudioText,
     );
     // A shutdown that landed while we were suspended already closed this handle
     // (it was registered in _handles inside the guard). Publishing it would
@@ -1303,23 +1321,38 @@ class LiteRtLmFfiClient {
   /// Build the JSON message for the Conversation API.
   ///
   /// Format: `{"role": "user", "content": [{"type": "text", "text": "..."}]}`
-  /// Supports multiple images via `imagesBytes` list.
+  /// Supports multiple images via `imagesBytes` list, kept in their order.
+  /// [order] puts the images and the audio before or after the text; on the
+  /// same side the images come first. The text part is always sent, empty or
+  /// not.
   static String buildMessageJson(
     String text, {
     List<Uint8List>? imagesBytes,
     Uint8List? audioBytes,
+    MultimodalOrder order = MultimodalOrder.imagesAudioText,
   }) {
-    final content = <Map<String, dynamic>>[];
-    if (imagesBytes != null) {
-      for (final imageBytes in imagesBytes) {
-        content.add({'type': 'image', 'blob': base64Encode(imageBytes)});
-      }
+    final before = <Map<String, dynamic>>[];
+    final after = <Map<String, dynamic>>[];
+    List<Map<String, dynamic>> side(MediaPosition position) =>
+        position == MediaPosition.beforeText ? before : after;
+    for (final imageBytes in imagesBytes ?? const <Uint8List>[]) {
+      side(
+        order.images,
+      ).add({'type': 'image', 'blob': base64Encode(imageBytes)});
     }
     if (audioBytes != null) {
-      content.add({'type': 'audio', 'blob': base64Encode(audioBytes)});
+      side(
+        order.audio,
+      ).add({'type': 'audio', 'blob': base64Encode(audioBytes)});
     }
-    content.add({'type': 'text', 'text': text});
-    return jsonEncode({'role': 'user', 'content': content});
+    return jsonEncode({
+      'role': 'user',
+      'content': [
+        ...before,
+        {'type': 'text', 'text': text},
+        ...after,
+      ],
+    });
   }
 
   /// Serialize a message history into the `messages_json` array the
@@ -1348,12 +1381,14 @@ class LiteRtLmFfiClient {
     String text, {
     List<Uint8List>? imageBytes,
     Uint8List? audioBytes,
+    required MultimodalOrder order,
     bool enableThinking = false,
   }) {
     final messageJson = buildMessageJson(
       text,
       imagesBytes: imageBytes,
       audioBytes: audioBytes,
+      order: order,
     );
     final extraContext = thinkingExtraContext(enableThinking);
     return _sendMessageStreamRawOn(
@@ -1371,12 +1406,14 @@ class LiteRtLmFfiClient {
     String text, {
     List<Uint8List>? imageBytes,
     Uint8List? audioBytes,
+    required MultimodalOrder order,
     bool enableThinking = false,
   }) {
     final messageJson = buildMessageJson(
       text,
       imagesBytes: imageBytes,
       audioBytes: audioBytes,
+      order: order,
     );
     final extraContext = thinkingExtraContext(enableThinking);
     return _sendMessageStreamRawOn(

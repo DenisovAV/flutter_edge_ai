@@ -19,7 +19,7 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Embeddings — register a `FlutterEdgeAiEmbedderConfig`, reference it with `flutterEdgeAi.embedder(...)`
 - Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (at most 20 MiB each, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
-- Parallel tool calls — several calls in one response, each with a `ref`, and every tool response goes back to the model
+- Parallel tool calls — several calls in one response, each with a `ref` that no other call of the turn has, so Genkit pairs every tool response with its request; the refs stay in the history as call ids
 - Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
 - Thinking mode on models that support it
@@ -54,8 +54,8 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 # pubspec.yaml (your app)
 dependencies:
   genkit: ^1.0.0
-  genkit_flutter_edge_ai: ^0.9.1
-  flutter_edge_ai: ^2.3.0
+  genkit_flutter_edge_ai: ^0.10.0
+  flutter_edge_ai: ^2.4.0
   flutter_edge_ai_litertlm: ^1.13.0  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.3.0  # the tokenizers an embedding backend needs
   flutter_edge_ai_mediapipe: ^1.2.2

@@ -34,3 +34,18 @@ pass tells a bundle with an audio encoder (R5 D23).
 ```bash
 head -c 2176 embeddinggemma-2-740m.litertlm > embeddinggemma2_740m_header.litertlm
 ```
+
+## Activation-type headers
+
+The container header only (preamble and header flatbuffer, no section data) of
+two real bundles, to read whether any `TFLiteModel` section declares
+`prefer_activation_type`. `litertlm_bundle_activation_test.dart` reads them.
+
+| File | Source | Header end | `prefer_activation_type` |
+|---|---|---|---|
+| `functiongemma_270m_header.litertlm` | `sasha-denisov/function-gemma-270M-it`, `functiongemma-270M-it.litertlm` (sha256 `680fead1…`) | 368 | none |
+| `gemma4_e2b_header.litertlm` | `litert-community/gemma-4-E2B-it-litert-lm`, `gemma-4-E2B-it.litertlm` (2026-10-13) | 1872 | on `tf_lite_prefill_decode` and the vision encoder |
+
+```bash
+head -c 368 functiongemma-270M-it.litertlm > functiongemma_270m_header.litertlm
+```

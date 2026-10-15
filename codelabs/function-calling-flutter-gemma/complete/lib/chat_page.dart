@@ -96,11 +96,12 @@ class _ChatPageState extends State<ChatPage> {
       // changes when you declare a function.
       //
       // Both arguments come from the model, not from this page: FunctionGemma's
-      // download needs 1024 and the CPU, exactly as in Steps 1–3, while Gemma 4
+      // download needs 1024 and FP32, exactly as in Steps 1–3, while Gemma 4
       // and a model you converted yourself get 4096 and the engine's default.
       final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: widget.model.maxTokens,
         preferredBackend: widget.model.preferredBackend,
+        activationDataType: widget.model.activationDataType,
       );
       // Hold the runtime before opening a chat on it: `createChat` can throw,
       // and a model this page never stored is a model `dispose` can never

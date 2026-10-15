@@ -257,7 +257,9 @@ await chat.addQueryChunk(
 );
 ```
 
-`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop; on the `.litertlm` web engine an audio message throws `UnsupportedError`.
+`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS); on the `.litertlm` web engine an audio message throws `UnsupportedError`.
+
+The `.litertlm` engine sends a Gemma 4 message as images, text, then audio, as the Gemma 4 model card asks, and every other model type as images, audio, then text (core 2.4.0). A model whose chat template expects another order takes `getActiveModel(multimodalOrder: MultimodalOrder.imagesAudioText)` or `MultimodalOrder.imagesTextAudio`.
 
 ## The model is a singleton
 
@@ -292,7 +294,7 @@ final model = await FlutterEdgeAi.getActiveModel(
 );
 ```
 
-Prefill gets slower (about 3× on a Snapdragon 8 Elite and an iPhone 11, under 1.5× on an Apple M3 Max); decode speed barely changes. Left unset, the model file decides. It applies to the text decoder of `.litertlm` models on Android, iOS and desktop — not to the vision or audio encoders, which keep what the model file asks for; MediaPipe, ONNX, built-in AI and the web engines ignore it entirely.
+Prefill gets slower (about 3× on a Snapdragon 8 Elite and an iPhone 11, under 1.5× on an Apple M3 Max); decode speed barely changes. Left unset, the model file decides, with one exception: a FunctionGemma bundle that declares no `prefer_activation_type` gets `float32` on its GPU attempt, because at `float16` it answers with nothing. A value you pass always wins. It applies to the text decoder of `.litertlm` models on Android, iOS and desktop — not to the vision or audio encoders, which keep what the model file asks for; MediaPipe, ONNX, built-in AI and the web engines ignore it entirely.
 
 `float32` needs more GPU memory than the default, and a GPU engine that cannot be created falls back to CPU without an error — right digits, a much slower run. After loading, check `model.activeBackend == PreferredBackend.gpu` before concluding the setting did anything. On Android the GPU shares system memory, so on a 4–6 GB phone running out of it at `float32` can end the app rather than fall back to CPU. Both precisions share one compiled GPU program cache per model, so switching recompiles the GPU programs (about 600 MB for Gemma 4 E2B): pick one precision per install rather than per request. Every `flutter_edge_ai_litertlm` release supports the setting; the legacy `flutter_gemma_litertlm` package needs 1.8.3 or later.
 

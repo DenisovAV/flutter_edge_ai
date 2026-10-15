@@ -8,13 +8,18 @@ import 'package:flutter_edge_ai/src/message.dart';
 import 'package:flutter_edge_ai/src/model.dart';
 import 'package:flutter_edge_ai/src/sampling.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
+import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
+import 'package:meta/meta.dart' show experimental;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 // Conditional default instance: the mobile/desktop default pulls dart:io;
 // the web variant is a throwing stub (FlutterEdgeAiWeb registers itself at
 // runtime). This keeps dart:io off the web/wasm import graph.
 import 'default.dart' if (dart.library.js_interop) 'default_web.dart';
+import 'decision/decider.dart' show Decider;
+import 'decision/decider_exceptions.dart' show DeciderUnsupportedException;
+import 'decision/decider_option.dart' show DeciderOption;
 import 'embedding/embedding_model.dart';
 
 // Embedding types that used to be declared here; re-exported so the rest of
@@ -75,13 +80,17 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// [maxNumImages] — maximum number of images (for multimodal models).
   /// [supportImage] — whether the model supports images.
   /// [supportAudio] — whether the model supports audio (Gemma 3n E4B only).
+  /// [multimodalOrder] — the order of a user message's images, audio and
+  /// text; null = [MultimodalOrder.forModelType] of the active model's type.
+  /// Honored by the native LiteRT-LM engine.
   /// [enableSpeculativeDecoding] — Multi-Token Prediction toggle for Gemma 4
   /// E2B/E4B (LiteRT-LM v0.11.0+). `null` honors the model's default;
   /// `true`/`false` forces on/off. Older `.litertlm` files without an MTP
   /// drafter ignore this flag at the SDK level.
   /// [activationDataType] — activation type for the text decoder of native
-  /// `.litertlm` models (Android, iOS, desktop). `null` honors the model file;
-  /// when set, it overrides LiteRT-LM's activation type selection (float16 on
+  /// `.litertlm` models (Android, iOS, desktop). `null` honors the model file
+  /// (except a `ModelType.functionGemma` bundle that declares no
+  /// `prefer_activation_type`, which gets float32 on its GPU attempt); when set, it overrides LiteRT-LM's activation type selection (float16 on
   /// GPU by default). [ActivationDataType.float32] fixes GPUs that write wrong
   /// digits (LiteRT-LM#2814, #3012) at more GPU memory, and a GPU engine that
   /// cannot be created falls back to CPU without an error. The vision and
@@ -103,6 +112,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
     int? maxNumImages, // Add image support
     bool supportImage = false, // Add image support flag
     bool supportAudio = false, // Add audio support flag (Gemma 3n E4B)
+    MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,
@@ -462,6 +472,23 @@ abstract class InferenceModel {
   /// that does not answer behaves as before. `implements` does not inherit the
   /// default body, so such an implementation has to declare it.
   bool get isClosed => false;
+
+  /// A decider that picks one of [options] by scoring each with this model.
+  ///
+  /// No engine scores options yet, so this default fails with
+  /// `DeciderUnsupportedException` (as a failed future). Engines that can
+  /// will override it; until then use `EmbeddingModel.createDecider`, which
+  /// every embedding backend supports. `implements` does not inherit this
+  /// default body, so such an implementation has to declare it.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @experimental
+  Future<Decider> createDecider({required List<DeciderOption> options}) async {
+    throw DeciderUnsupportedException(
+      '$runtimeType does not score options. Create the decider from an '
+      'EmbeddingModel instead: EmbeddingModel.createDecider().',
+    );
+  }
 
   Future<void> close();
 }

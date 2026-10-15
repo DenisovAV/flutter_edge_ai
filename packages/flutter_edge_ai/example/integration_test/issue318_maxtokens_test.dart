@@ -12,8 +12,9 @@
 ///   - `getActiveModel(maxTokens: 100)` is auto-clamped to 1024 and answers.
 ///   - `createSession(maxOutputTokens: 100)` caps generation without crashing.
 ///
-/// Run (FTL Pixel 8a / clean Android, 8 GB; .litertlm pushed via --other-files):
+/// Run (a clean 8 GB Android, .litertlm staged on the phone):
 ///   flutter test integration_test/issue318_maxtokens_test.dart -d <device>
+/// On a DDP phone (e.g. akita-35) use the ddp-device-test skill instead.
 library;
 
 import 'dart:io';

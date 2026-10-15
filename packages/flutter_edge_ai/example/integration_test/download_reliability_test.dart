@@ -386,7 +386,7 @@ void main() {
       tester,
     ) async {
       const token = String.fromEnvironment('HUGGINGFACE_TOKEN');
-      // A small, resumable model (~135MB) so the test is fast on FTL.
+      // A small, resumable model (~135MB) so the test is fast on a remote phone.
       const url =
           'https://huggingface.co/litert-community/SmolLM-135M-Instruct/resolve/main/SmolLM-135M-Instruct_multi-prefill-seq_q8_ekv1280.task';
       final dir = (await getTemporaryDirectory()).path;

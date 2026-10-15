@@ -72,6 +72,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     int? maxNumImages,
     bool supportImage = false, // Enabling image support
     bool supportAudio = false, // Enabling audio support (Gemma 3n E4B)
+    MultimodalOrder? multimodalOrder, // Compared, but no web engine reads it.
     bool? enableSpeculativeDecoding, // Ignored on web (MediaPipe path).
     ActivationDataType? activationDataType, // Not read by the web engines.
     int? maxConcurrentSessions,
@@ -126,6 +127,8 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
         supportImage: supportImage,
         supportAudio: supportAudio,
         maxNumImages: maxNumImages,
+        multimodalOrder:
+            multimodalOrder ?? MultimodalOrder.forModelType(modelType),
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         activationDataType: activationDataType,
         maxConcurrentSessions: maxConcurrentSessions,
@@ -192,6 +195,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
         preferredBackend: preferredBackend,
         supportImage: supportImage,
         supportAudio: supportAudio,
+        entryPoint: createEmbeddingModel,
       ),
     );
   }

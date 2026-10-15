@@ -27,8 +27,8 @@
 //
 // Model: EmbeddingGemma 300M seq256 (the files the litertlm_ffi_test #299
 // group uses). The Hugging Face repo is gated, so the files are staged:
-//   Android: /data/local/tmp/flutter_gemma_test/ (adb push, or FTL
-//            --other-files).
+//   Android: /data/local/tmp/flutter_gemma_test/ (adb push, or on a DDP
+//            phone the ddp-device-test skill).
 //   iOS:     copy both files into example/assets/test/ (gitignored); the
 //            test reads them in place from the app bundle.
 //

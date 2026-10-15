@@ -157,6 +157,7 @@ void main() {
                     SidebarLink(text: 'Agent Skills', href: '/docs/agent'),
                     SidebarLink(text: 'Speech', href: '/docs/speech'),
                     SidebarLink(text: 'Embeddings & RAG', href: '/docs/embeddings-and-rag'),
+                    SidebarLink(text: 'Decisions', href: '/docs/decisions'),
                     SidebarLink(text: 'Memory Diagnostics', href: '/docs/diagnostics'),
                     SidebarLink(text: 'Package Skills', href: '/docs/package-skills'),
                   ],

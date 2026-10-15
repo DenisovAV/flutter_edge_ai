@@ -15,7 +15,7 @@
 //   macOS    flutter test integration_test/hf_fileless_install_device_test.dart -d macos
 //   Linux    xvfb-run -a flutter test integration_test/hf_fileless_install_device_test.dart -d linux
 //   Windows  flutter test integration_test/hf_fileless_install_device_test.dart -d windows
-//   Android  physical device by id, or FTL (see tool/ftl notes) — NOT an emulator,
+//   Android  physical device by id, or a DDP phone (ddp-device-test skill) — NOT an emulator,
 //            an emulator answers a different question than the one being asked.
 //
 // The test PRINTS the line the issue asked for:

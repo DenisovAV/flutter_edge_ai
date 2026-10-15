@@ -435,10 +435,10 @@ Future<ModelResponse> _generateBlocking(
   switch (response) {
     case gemma.TextResponse(:final token):
       return convertFinalResponse(token, latencyMs: latencyMs);
-    case gemma.FunctionCallResponse(:final name, :final args):
+    case final gemma.FunctionCallResponse call:
       return convertFinalResponse(
         '',
-        functionCalls: [gemma.FunctionCallResponse(name: name, args: args)],
+        functionCalls: [call],
         latencyMs: latencyMs,
       );
     case gemma.ParallelFunctionCallResponse(:final calls):
@@ -476,9 +476,7 @@ Future<ModelResponse> _generateStreaming(
   await for (final chunk in chat.generateChatResponseAsync()) {
     if (cancel?.isCancelled ?? false) break;
     try {
-      sendChunk(
-        convertStreamChunk(chunk, firstToolCallIndex: functionCalls.length),
-      );
+      sendChunk(convertStreamChunk(chunk, earlierCalls: functionCalls));
     } catch (_) {
       onSendChunkFailure();
       rethrow;
@@ -487,8 +485,8 @@ Future<ModelResponse> _generateStreaming(
     switch (chunk) {
       case gemma.TextResponse(:final token):
         fullText.write(token);
-      case gemma.FunctionCallResponse(:final name, :final args):
-        functionCalls.add(gemma.FunctionCallResponse(name: name, args: args));
+      case final gemma.FunctionCallResponse call:
+        functionCalls.add(call);
       case gemma.ParallelFunctionCallResponse(:final calls):
         functionCalls.addAll(calls);
       case gemma.ThinkingResponse(:final content):

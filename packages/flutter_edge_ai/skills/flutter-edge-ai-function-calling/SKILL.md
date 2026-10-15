@@ -67,24 +67,28 @@ await for (final r in chat.generateChatResponseWithTools(
 }
 ```
 
-`onToolCall` receives a `FunctionCallResponse` with `name` and `args`, and returns the map the model reads back. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall` is reported to the model, then rethrown on the stream.
+`onToolCall` receives a `FunctionCallResponse` with `name` and `args`, and returns the map the model reads back. Its `id` is null on every bundled engine today; ids come from genai `callId`s and Genkit `ref`s. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall` is reported to the model, then rethrown on the stream.
 
 ## Handling calls yourself
 
 ```dart
 final response = await chat.generateChatResponse();
 switch (response) {
-  case FunctionCallResponse(:final name, :final args):
+  case FunctionCallResponse(:final name, :final args, :final id):
     final result = await runTool(name, args);
     await chat.addQueryChunk(
-      Message.toolResponse(toolName: name, response: result),
+      Message.toolResponse(toolName: name, response: result, toolCallId: id),
     );
     final followUp = await chat.generateChatResponse();
   case ParallelFunctionCallResponse(:final calls):
     for (final call in calls) {
       final result = await runTool(call.name, call.args);
       await chat.addQueryChunk(
-        Message.toolResponse(toolName: call.name, response: result),
+        Message.toolResponse(
+          toolName: call.name,
+          response: result,
+          toolCallId: call.id, // kept in history; results pair by name, in order
+        ),
       );
     }
     final afterAll = await chat.generateChatResponse();

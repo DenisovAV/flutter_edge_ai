@@ -42,8 +42,8 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.3.2`,
-`flutter_edge_ai_litertlm: ^1.13.2`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.4.0`,
+`flutter_edge_ai_litertlm: ^1.14.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
@@ -86,6 +86,64 @@ and reply — not the reply length. On CPU and GPU a value below 1024 is raised
 to 1024, because the published bundles fail to allocate below it; on the NPU it
 is passed through, so use the context size the bundle was compiled for. Cap the
 reply with `createSession(maxOutputTokens:)`.
+
+## Multimodal order
+
+A user message with an image or audio reaches the model as parts, and the
+model's chat template renders them in the order they arrive. Since 1.14.0 (core
+2.4.0) that order is chosen by the model type:
+
+| Model type | Order | Why |
+|---|---|---|
+| `ModelType.gemma4` (E2B, E4B, and the NPU bundles, which share the template) | images, text, audio | [Gemma 4 model card](https://huggingface.co/google/gemma-4-E2B-it), section 4 "Modality order": images before the text, audio after it |
+| every other type | images, audio, text | the order before 1.14.0; [Gemma 3n](https://huggingface.co/google/gemma-3n-E2B-it) answered the same either way, and [VibeVoice-ASR](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) needs its audio first |
+
+Pass another order with `getActiveModel(multimodalOrder:)` when your model's
+template expects one:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true,
+  multimodalOrder: MultimodalOrder.imagesAudioText,
+);
+```
+
+`MultimodalOrder(images:, audio:)` places each medium before or after the text
+(`MediaPosition.beforeText` / `afterText`). Media on the same side keep images
+before audio, several images keep their order, and a message without text still
+sends its empty text part, so an audio-only message is the same in every order.
+Changing the order rebuilds the model. The web engine sends no media to an LLM,
+so it has nothing to order.
+
+Measured on Developer Device Platform phones on 2026-10-14 and 2026-10-15.
+Every spoken request ran in both orders, with a fresh chat per turn,
+`temperature: 0.6`, `topK: 40`, and clips spoken by four macOS voices. A turn
+counts as answered when the model did what was asked, with the right tool when
+the chat had tools:
+
+| Model, phone, backend | Turns | Audio before the text | Audio after the text |
+|---|---|---|---|
+| Gemma 4 E2B, Galaxy S24, GPU, chat with two tools | 56 | 44 | 50 |
+| Gemma 4 E2B, Galaxy S24, GPU, plain chat | 32 | 29 | 29 |
+| Gemma 4 E2B, Galaxy S24, NPU (SM8650), plain chat | 32 | 29 | 32 |
+| Gemma 4 E4B, Galaxy S25 Ultra, GPU, chat with two tools | 56 | 45 | 53 |
+| Gemma 4 E4B, Galaxy S25 Ultra, GPU, plain chat | 32 | 29 | 32 |
+| Gemma 3n E2B, Galaxy S24, GPU, plain chat | 32 | 32 | 32 |
+
+- Over the 244 spoken Gemma 4 turns (the rows above and 36 questions about a
+  photo), paired clip by clip, 22 were answered only with the audio after the
+  text and 2 only with it before (McNemar, p < 0.001). On plain spoken requests
+  Gemma 4 failed 23 times in 160 with the audio first and 8 times with it last.
+  The failures were refusals ("I don't have any audio input") and questions
+  sent to the wrong tool.
+- Transcription, photo questions and time to first token did not get worse
+  with the audio last. Typed questions, the same message in both orders,
+  differed by one turn in twelve: that much is sampling noise.
+- VibeVoice-ASR transcribing 80 clips: word error rate 0.19 with the audio
+  before its prompt and 2.55 after it (20 empty and 13 runaway transcripts).
+  That is why the order follows the model rather than changing for every
+  model.
 
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)
 
@@ -805,6 +863,32 @@ What works today: MediaPipe has no desktop engine and the ONNX engine is
 Windows x64 only (ARM64 is not released), so the option is to build the app for
 x64, which runs under Windows x64 emulation. See
 [#326](https://github.com/DenisovAV/flutter_edge_ai/issues/326).
+
+### FunctionGemma answers with nothing, or only `<pad>`, on the GPU
+
+Symptom: a FunctionGemma `.litertlm` on `PreferredBackend.gpu` loads, reports
+`gpu`, and then every prompt returns no text and no call (or `<pad>` to the
+token limit), with no exception and no warning. On the CPU the same file works.
+
+Cause: the bundle was converted before litetune 0.1.4 and declares no
+`prefer_activation_type`, so the GPU runs at FP16, which these weights cannot
+survive. It is the file, not the platform: Android (Adreno and Mali) and macOS
+Metal are reported, and an Adreno 616 reproduced it. A bundle that declares the
+key, such as Gemma 4, is not affected.
+
+Fix: nothing, for `ModelType.functionGemma` on native platforms (the web build
+has no activation setting). The engine reads the bundle's header and, when it
+declares no `prefer_activation_type`, builds the GPU attempt at
+`ActivationDataType.float32`; the log line saying so is printed in debug builds
+only. The CPU is left alone, and so is a value you pass:
+`activationDataType: ActivationDataType.float16` keeps the default.
+
+Other models are not changed, and some need the argument. A plain
+`gemma3-270m-it` floods `<pad>` on the GPU too (every Gemma 3 270M bundle does,
+on macOS and Android: LiteRT-LM#3280) and needs
+`activationDataType: ActivationDataType.float32` passed explicitly, as the
+function-calling codelab does for its pinned file. The larger Gemma bundles
+(Gemma 3 1B, Gemma 4) are not affected.
 
 ### Wrong digits from a long prompt on GPU
 

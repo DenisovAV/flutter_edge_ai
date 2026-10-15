@@ -56,6 +56,7 @@ final class EmbeddingPassInfo {
     this.imageFormats = const {},
     this.audioFormats = const {},
     this.combinedInputs = false,
+    this.visionTokensPerImage,
   });
 
   /// Length of every vector [EmbeddingPass.embed] returns. Must be > 0.
@@ -80,11 +81,20 @@ final class EmbeddingPassInfo {
   /// an image, …) or several images.
   final bool combinedInputs;
 
+  /// How many tokens the engine encodes each image into, when that is a
+  /// setting of the engine (EmbeddingGemma 2: 140 or 70). The same image gives
+  /// another vector under another budget, so whatever stores image vectors
+  /// keys them by it. Null when the engine has no such setting or serves no
+  /// images; when set, positive and only with [EmbeddingModality.image] in
+  /// [modalities].
+  final int? visionTokensPerImage;
+
   @override
   String toString() =>
       'EmbeddingPassInfo(dimension: $dimension, modalities: $modalities, '
       'maxInputTokens: $maxInputTokens, imageFormats: $imageFormats, '
-      'audioFormats: $audioFormats, combinedInputs: $combinedInputs)';
+      'audioFormats: $audioFormats, combinedInputs: $combinedInputs, '
+      'visionTokensPerImage: $visionTokensPerImage)';
 }
 
 /// Everything core needs to build an engine's [EmbeddingPass], with the

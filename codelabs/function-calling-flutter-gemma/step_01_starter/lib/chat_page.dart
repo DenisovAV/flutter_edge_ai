@@ -45,19 +45,20 @@ class _ChatPageState extends State<ChatPage> {
       // maxTokens 1024 is what this checkpoint is built for; the example app
       // uses the same, and it is the value this was measured at.
       //
-      // This checkpoint is asked to run on the CPU, and the reason is the
+      // This checkpoint is asked for FP32 activations, and the reason is the
       // FILE, not the platform and not the model. The published artifact was
-      // converted before litetune 0.1.4 began setting `prefer_activation_type=fp32`,
-      // and without that key the GPU path answers every prompt with `<pad>` to
-      // the token limit — measured on Android and on macOS Metal alike, with no
-      // exception and no warning, a chat that looks alive and returns filler.
+      // converted before litetune 0.1.4 began setting `prefer_activation_type`,
+      // and without that key the GPU runs at FP16 and answers every prompt with
+      // `<pad>` or nothing at all — measured on Android and on macOS Metal
+      // alike, with no exception and no warning, a chat that looks alive and
+      // returns filler. Asking for float32 fixes it.
       //
       // Re-converted with a current litetune — which Step 4 does — the same
-      // weights score identically on GPU and run about 1.5x faster. So this is
-      // a workaround for one downloadable file, not a property of FunctionGemma.
+      // weights carry the key and need no argument. So this is a workaround for
+      // one downloadable file, not a property of FunctionGemma.
       final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 1024,
-        preferredBackend: PreferredBackend.cpu,
+        activationDataType: ActivationDataType.float32,
       );
       // Hold the runtime before opening a chat on it: `createChat` can throw,
       // and a model this page never stored is a model `dispose` can never

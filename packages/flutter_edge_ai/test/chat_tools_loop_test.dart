@@ -86,6 +86,46 @@ void main() {
     },
   );
 
+  test('each tool response names the call it answers', () async {
+    final chat = _ScriptChat([
+      const [
+        ParallelFunctionCallResponse(
+          calls: [
+            FunctionCallResponse(name: 'search', args: {'q': 'a'}, id: 'a'),
+            FunctionCallResponse(name: 'search', args: {'q': 'b'}, id: 'b'),
+            FunctionCallResponse(name: 'clock', args: {}),
+          ],
+        ),
+      ],
+      const [
+        FunctionCallResponse(name: 'search', args: {'q': 'c'}, id: 'c'),
+        FunctionCallResponse(name: 'search', args: {'q': 'd'}, id: 'd'),
+      ],
+    ]);
+    var runs = 0;
+
+    await expectLater(
+      chat
+          .generateChatResponseWithTools(
+            onToolCall: (c) {
+              // The second turn's first tool fails; its sibling is not run.
+              if (++runs == 4) throw StateError('tool failed');
+              return {'q': c.args['q']};
+            },
+          )
+          .toList(),
+      throwsStateError,
+    );
+
+    expect(
+      [
+        for (final m in chat.fedBack)
+          if (m.type == MessageType.toolResponse) m.toolCallId,
+      ],
+      ['a', 'b', null, 'c', 'd'],
+    );
+  });
+
   test('parallel calls each get a tool response, in order', () async {
     final chat = _ScriptChat([
       const [

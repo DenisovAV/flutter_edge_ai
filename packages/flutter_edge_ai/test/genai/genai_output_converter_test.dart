@@ -41,6 +41,28 @@ void main() {
     expect(calls.every((t) => t.kind == ToolPartKind.call), isTrue);
   });
 
+  test('a call id becomes the callId; without one it is the tool name', () {
+    const withId = FunctionCallResponse(name: 'f', args: {}, id: 'c1');
+    const withoutId = FunctionCallResponse(name: 'g', args: {});
+
+    expect(
+      chatMessageFromChunk(withId).parts.whereType<ToolPart>().single.callId,
+      'c1',
+    );
+    expect(
+      chatMessageFromChunk(
+        const ParallelFunctionCallResponse(calls: [withId, withoutId]),
+      ).parts.whereType<ToolPart>().map((t) => t.callId),
+      ['c1', 'g'],
+    );
+    expect(
+      chatMessageFromParts(
+        calls: const [withId, withoutId],
+      ).parts.whereType<ToolPart>().map((t) => t.callId),
+      ['c1', 'g'],
+    );
+  });
+
   test('coalesced: thinking + text order', () {
     final m = chatMessageFromParts(text: 'answer', thinking: 'think');
     expect(m.parts.first, isA<ThinkingPart>());

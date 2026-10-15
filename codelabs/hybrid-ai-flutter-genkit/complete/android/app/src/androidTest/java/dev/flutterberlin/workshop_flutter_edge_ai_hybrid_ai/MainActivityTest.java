@@ -6,7 +6,7 @@ import org.junit.Rule;
 import org.junit.runner.RunWith;
 
 // Runs the Dart integration_test suite on-device via the Flutter engine.
-// Required scaffolding for `flutter test integration_test` on a real device / FTL.
+// Required scaffolding for `flutter test integration_test` on a real device, or am instrument on a remote one.
 @RunWith(FlutterTestRunner.class)
 public class MainActivityTest {
     @Rule

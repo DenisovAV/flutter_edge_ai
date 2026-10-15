@@ -270,7 +270,10 @@ class InferenceChat {
           // Keeping raw lets the SDK echo those tokens back into the next
           // prompt and the model reproduces them in later tool_calls (#248).
           final cleanRaw = SdkResponseParser.cleanRawForHistory(raw);
-          final toolCallMessage = Message.toolCall(text: cleanRaw);
+          final toolCallMessage = Message.toolCall(
+            text: cleanRaw,
+            calls: allCalls,
+          );
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
           if (allCalls.length == 1) return allCalls.first;
@@ -303,7 +306,10 @@ class InferenceChat {
         edgeAiLog(
           'InferenceChat: Detected ${allCalls.length} function call(s) in sync response',
         );
-        final toolCallMessage = Message.toolCall(text: cleanedResponse);
+        final toolCallMessage = Message.toolCall(
+          text: cleanedResponse,
+          calls: allCalls,
+        );
         _fullHistory.add(toolCallMessage);
         _modelHistory.add(toolCallMessage);
         edgeAiLog(
@@ -517,7 +523,10 @@ class InferenceChat {
                 emittedFunctionCall = true;
                 // Add function call to history IMMEDIATELY (before yielding)
                 // so tool response from caller comes AFTER in history order
-                final toolCallMessage = Message.toolCall(text: funcBuffer);
+                final toolCallMessage = Message.toolCall(
+                  text: funcBuffer,
+                  calls: allCalls,
+                );
                 _fullHistory.add(toolCallMessage);
                 _modelHistory.add(toolCallMessage);
                 edgeAiLog(
@@ -643,7 +652,10 @@ class InferenceChat {
           // corrupts the replayed history when the Gemma 4 session rotates.
           // Strip the Gemma 4 escape tokens first, same as the sync path (#248).
           final cleanRaw = SdkResponseParser.cleanRawForHistory(raw);
-          final toolCallMessage = Message.toolCall(text: cleanRaw);
+          final toolCallMessage = Message.toolCall(
+            text: cleanRaw,
+            calls: allCalls,
+          );
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
           if (allCalls.length == 1) {
@@ -716,7 +728,10 @@ class InferenceChat {
             );
             emittedFunctionCall = true;
             // Add function call to history IMMEDIATELY (before yielding)
-            final toolCallMessage = Message.toolCall(text: contentToCheck);
+            final toolCallMessage = Message.toolCall(
+              text: contentToCheck,
+              calls: allCalls,
+            );
             _fullHistory.add(toolCallMessage);
             _modelHistory.add(toolCallMessage);
             edgeAiLog(
@@ -930,6 +945,7 @@ class InferenceChat {
             Message.toolResponse(
               toolName: call.name,
               response: {'error': '$e'},
+              toolCallId: call.id,
             ),
           );
           await _answerToolCalls(pending.sublist(i + 1), const {
@@ -938,7 +954,11 @@ class InferenceChat {
           rethrow;
         }
         await addQueryChunk(
-          Message.toolResponse(toolName: call.name, response: response),
+          Message.toolResponse(
+            toolName: call.name,
+            response: response,
+            toolCallId: call.id,
+          ),
         );
       }
     }
@@ -965,7 +985,11 @@ class InferenceChat {
   ) async {
     for (final call in calls) {
       await addQueryChunk(
-        Message.toolResponse(toolName: call.name, response: response),
+        Message.toolResponse(
+          toolName: call.name,
+          response: response,
+          toolCallId: call.id,
+        ),
       );
     }
   }

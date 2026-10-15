@@ -74,8 +74,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.3.2
-  flutter_edge_ai_litertlm: ^1.13.2   # or any other engine from the table
+  flutter_edge_ai: ^2.4.0
+  flutter_edge_ai_litertlm: ^1.14.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -308,6 +308,39 @@ else `topK: 40`. Pass `topK: 1` for greedy decoding. What each engine reads,
 and why `.litertlm` keeps the first session's values:
 [Sampling](https://flutteredge.ai/docs/getting-started#sampling).
 
+### Decide (experimental)
+
+Pick one of N options — an intent, an action, a screen, a tool — for an input,
+or abstain when none fits. Every embedding model can do it:
+
+```dart
+// ignore_for_file: experimental_member_use
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final decider = await embedder.createDecider(options: [
+  DeciderOption('set_timer', examples: [
+    EmbeddingInput.text('set a timer for ten minutes'),
+    EmbeddingInput.text('wake me in half an hour'),
+  ]),
+  DeciderOption('call_contact', examples: [
+    EmbeddingInput.text('call mum'),
+    EmbeddingInput.text('ring Alex on his mobile'),
+  ]),
+]);
+final answer = await decider.choose(
+  DeciderInput(EmbeddingInput.text('remind me in 20 minutes')),
+);
+print(answer.choice ?? 'none of these (${answer.abstainReason})');
+```
+
+Options and inputs are embedded with `TaskType.sentenceSimilarity`; an option
+is the centroid of its examples (and description). The decider abstains when the
+input's best cosine is below a threshold cross-fitted on the options' own
+examples. Store a fitted decider with `toArtifact()` and restore it with
+`loadDecider` — pinned to its embedding space, so a CPU-fitted decider is never
+loaded onto an NPU bundle. Measured with EmbeddingGemma 2 on CLINC150 and
+HWU64, the numbers and their limits:
+[Decisions](https://flutteredge.ai/docs/decisions).
+
 ## Three things that fail quietly
 
 - **`maxTokens` is the context window**, not the reply length: prompt, history
@@ -339,7 +372,7 @@ per platform, embedding and speech models:
 - [Getting started](https://flutteredge.ai/docs/getting-started) — sessions, system instructions, removing models
 - [Models](https://flutteredge.ai/docs/models) — model sources, Hugging Face installs
 - [Function calling](https://flutteredge.ai/docs/function-calling) · [Multimodal](https://flutteredge.ai/docs/multimodal) · [Thinking mode](https://flutteredge.ai/docs/thinking-mode)
-- [Embeddings & RAG](https://flutteredge.ai/docs/embeddings-and-rag) · [Speech](https://flutteredge.ai/docs/speech) · [Agent skills](https://flutteredge.ai/docs/agent)
+- [Embeddings & RAG](https://flutteredge.ai/docs/embeddings-and-rag) · [Decisions](https://flutteredge.ai/docs/decisions) · [Speech](https://flutteredge.ai/docs/speech) · [Agent skills](https://flutteredge.ai/docs/agent)
 - [Built-in AI](https://flutteredge.ai/docs/builtin-ai) · [ONNX Runtime](https://flutteredge.ai/docs/onnx) · [Genkit](https://flutteredge.ai/docs/genkit) · [Memory diagnostics](https://flutteredge.ai/docs/diagnostics)
 - [Desktop](https://flutteredge.ai/docs/desktop) · [Troubleshooting](https://flutteredge.ai/docs/troubleshooting)
 - Fine-tune a small model and convert it to `.litertlm` with [litetune](https://litetune.dev) (alpha).

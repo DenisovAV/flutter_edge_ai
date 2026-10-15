@@ -86,7 +86,7 @@ const w1Strings = <(String, String)>[
   ('latin diacritics', 'naïve résumé coöperate'),
   ('devanagari', 'नमस्ते दुनिया'),
   ('arabic', 'مرحبا بالعالم'),
-  ('cyrillic and greek', 'Привет, мир! Γειά σου Κόσμε'),
+  ('greek', 'Γειά σου Κόσμε! Καλημέρα σας'),
   ('python code', 'def add(a, b):\n    return a + b'),
   ('c code', 'for (int i = 0; i < n; i++) { sum += xs[i]; }'),
   ('dart code', 'final x = await FlutterEdgeAi.getActiveEmbedder();'),

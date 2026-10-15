@@ -24,6 +24,8 @@ import 'embedding_exceptions.dart';
 import 'embedding_modality.dart';
 import 'embedding_model.dart';
 import 'embedding_pass.dart' show EmbeddingPassDescriptor;
+import 'installed_file_size.dart'
+    if (dart.library.js_interop) 'installed_file_size_web.dart';
 
 /// Returns the embedder for [manager]'s active embedding spec — the cached one
 /// when it serves the request, else a new one built through the registered
@@ -35,6 +37,12 @@ import 'embedding_pass.dart' show EmbeddingPassDescriptor;
 ///
 /// [verifyInstalled] re-checks that the active spec's files are still
 /// installed before building (the mobile shell's long-standing check).
+///
+/// [entryPoint] is the shell's own `createEmbeddingModel`. A model built here
+/// keeps a call to it, with this call's backend and the build's media, as
+/// its `replacement`: a decider created from the model takes the embedder
+/// core serves in its place when the model is closed, under the cache's
+/// reuse rule like any other caller.
 ///
 /// Throws [StateError] when no embedding spec is active or its files cannot be
 /// resolved, or when no registered backend can run it;
@@ -50,6 +58,12 @@ Future<EmbeddingModel> loadActiveEmbedder({
   required PreferredBackend? preferredBackend,
   required bool supportImage,
   required bool supportAudio,
+  required Future<EmbeddingModel> Function({
+    PreferredBackend? preferredBackend,
+    bool supportImage,
+    bool supportAudio,
+  })
+  entryPoint,
   bool verifyInstalled = false,
 }) async {
   final active = manager.activeEmbeddingModel;
@@ -140,6 +154,21 @@ Future<EmbeddingModel> loadActiveEmbedder({
       descriptor,
       declaredMedia: build.media,
       label: modelPath,
+      installedFiles: [
+        for (final file in active.files)
+          (
+            name: file.filename,
+            bytes: switch (paths[file.prefsKey]) {
+              final path? => await installedFileSize(path),
+              null => null,
+            },
+          ),
+      ],
+      replacement: () => entryPoint(
+        preferredBackend: preferredBackend,
+        supportImage: build.media.contains(EmbeddingModality.image),
+        supportAudio: build.media.contains(EmbeddingModality.audio),
+      ),
       onFailedLoadCleanup: (cleanup) =>
           cache.trackFailedLoadCleanup(cleanup, build),
     );

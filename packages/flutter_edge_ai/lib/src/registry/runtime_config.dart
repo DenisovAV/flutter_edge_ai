@@ -1,4 +1,6 @@
 import 'package:meta/meta.dart' show immutable;
+import 'package:flutter_edge_ai/src/domain/multimodal_order.dart'
+    show MultimodalOrder;
 import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show ActivationDataType, PreferredBackend;
 import 'package:flutter_edge_ai/src/embedding/embedding_modality.dart';
@@ -17,6 +19,7 @@ class RuntimeConfig {
     this.supportImage = false,
     this.supportAudio = false,
     this.maxNumImages,
+    this.multimodalOrder,
     this.enableSpeculativeDecoding,
     this.activationDataType,
     this.maxConcurrentSessions,
@@ -80,10 +83,19 @@ class RuntimeConfig {
   /// [supportImage], for audio.
   final bool supportAudio;
   final int? maxNumImages;
+
+  /// The order of a user message's images, audio and text. Core always sets
+  /// it: `getActiveModel` resolves an omitted one with
+  /// [MultimodalOrder.forModelType], and a null in a config built by hand
+  /// means the same. Honored by the native LiteRT-LM engine; the other
+  /// engines ignore it (MediaPipe sends images, audio, then text).
+  final MultimodalOrder? multimodalOrder;
   final bool? enableSpeculativeDecoding;
 
   /// Activation type for the native LiteRT-LM engine's text decoder. Null
-  /// leaves it to the model file; when set, it overrides LiteRT-LM's own
+  /// leaves it to the model file (except a `ModelType.functionGemma` bundle
+  /// that declares no `prefer_activation_type`, which gets float32 on its GPU
+  /// attempt); when set, it overrides LiteRT-LM's own
   /// choice (float16 on GPU by default). Set [ActivationDataType.float32]
   /// when a GPU writes wrong digits
   /// (LiteRT-LM#2814, #3012). The vision and audio encoders keep the model's
@@ -144,6 +156,7 @@ class ActiveModelParams {
     this.supportImage = false,
     this.supportAudio = false,
     this.maxNumImages,
+    this.multimodalOrder,
     this.enableSpeculativeDecoding,
     this.activationDataType,
     this.maxConcurrentSessions,
@@ -157,6 +170,11 @@ class ActiveModelParams {
   final bool supportImage;
   final bool supportAudio;
   final int? maxNumImages;
+
+  /// The shells resolve an omitted order with [MultimodalOrder.forModelType]
+  /// before building this, so an omitted order and the model type's own
+  /// order spelled out compare equal.
+  final MultimodalOrder? multimodalOrder;
   final bool? enableSpeculativeDecoding;
   final ActivationDataType? activationDataType;
   final int? maxConcurrentSessions;
@@ -195,6 +213,7 @@ class ActiveModelParams {
     supportImage: supportImage,
     supportAudio: supportAudio,
     maxNumImages: supportImage ? (maxNumImages ?? 1) : null,
+    multimodalOrder: multimodalOrder,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     activationDataType: activationDataType,
     maxConcurrentSessions: maxConcurrentSessions,
@@ -234,6 +253,7 @@ class ActiveModelParams {
     if (supportImage != other.supportImage) return 'supportImage';
     if (supportAudio != other.supportAudio) return 'supportAudio';
     if (maxNumImages != other.maxNumImages) return 'maxNumImages';
+    if (multimodalOrder != other.multimodalOrder) return 'multimodalOrder';
     if (enableSpeculativeDecoding != other.enableSpeculativeDecoding) {
       return 'enableSpeculativeDecoding';
     }

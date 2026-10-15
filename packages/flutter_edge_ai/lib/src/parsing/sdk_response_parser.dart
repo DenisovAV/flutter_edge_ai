@@ -66,7 +66,9 @@ class SdkResponseParser {
   }
 
   /// The text a raw response carries: the `content` string or text items of
-  /// every concatenated fragment, or [jsonStr] itself when none of it is JSON.
+  /// every concatenated fragment, or [jsonStr] itself when no fragment is a
+  /// response. A fragment without `content` is not one: the `{}` of a
+  /// FunctionGemma call with no arguments is valid JSON too.
   static String _responseText(String jsonStr) {
     final text = StringBuffer();
     var parsedAny = false;
@@ -78,6 +80,7 @@ class SdkResponseParser {
         continue;
       }
       if (parsed is! Map<String, dynamic>) continue;
+      if (!parsed.containsKey('content')) continue;
       parsedAny = true;
       final content = parsed['content'];
       if (content is String) text.write(content);
@@ -174,17 +177,26 @@ class SdkResponseParser {
         fn = raw;
       }
       if (fn == null) return;
-      final name = fn['name'] as String?;
-      if (name == null) return;
+      final name = fn['name'];
+      if (name is! String) return;
       final rawArgs = fn['arguments'];
       final args = rawArgs is Map<String, dynamic>
           ? _stripEscapeTokens(rawArgs) as Map<String, dynamic>
           : <String, dynamic>{};
-      out.add(FunctionCallResponse(name: name, args: args));
+      // The call's id, OpenAI-style on the call object or flat beside the
+      // name, read as toolCallsOf reads it.
+      final id = raw['id'] ?? fn['id'];
+      out.add(
+        FunctionCallResponse(
+          name: name,
+          args: args,
+          id: id is String && id.isNotEmpty ? id : null,
+        ),
+      );
     }
 
-    final topLevel = json['tool_calls'] as List<dynamic>?;
-    if (topLevel != null) {
+    final topLevel = json['tool_calls'];
+    if (topLevel is List) {
       for (final call in topLevel) {
         addFromCallObject(call);
       }

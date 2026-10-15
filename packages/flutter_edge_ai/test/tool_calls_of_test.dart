@@ -134,6 +134,35 @@ void main() {
   test('arguments that are not a JSON object drop the call', () {
     expect(parse('{"name":"search","arguments":"not json"}'), isEmpty);
     expect(parse('{"name":"search","arguments":[1]}'), isEmpty);
+    expect(parse('{"name":"search","parameters":"x"}'), isEmpty);
+  });
+
+  test('a turn with one call that cannot be read gives none, not the rest', () {
+    // Genkit keeps a turn as text when one request's input is not an object.
+    // Replaying the calls that do parse would answer a turn the model never
+    // made.
+    expect(
+      parse(
+        '[{"name":"search","parameters":{"q":"a"}},'
+        '{"name":"lookup","parameters":"x"}]',
+      ),
+      isEmpty,
+    );
+    expect(
+      parse(
+        '{"tool_calls":[{"name":"search","arguments":{"q":"a"}},'
+        '{"name":"lookup","arguments":[1]}]}',
+      ),
+      isEmpty,
+    );
+  });
+
+  test('a call that cannot be read is not read with its arguments dropped', () {
+    // The raw-SDK fallback reads `arguments` it cannot use as {}.
+    expect(
+      parse('{"tool_calls":[{"name":"lookup","arguments":"x"}]}'),
+      isEmpty,
+    );
   });
 
   test('raw Gemma 4 tokens the web SDK leaves as text', () {

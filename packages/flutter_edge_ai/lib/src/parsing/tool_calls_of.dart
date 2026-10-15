@@ -22,8 +22,11 @@ import 'sdk_response_parser.dart';
 ///
 /// Each call may be OpenAI-style (`{"function": {"name", "arguments"}}`) or
 /// flat, with its arguments under `arguments` or `parameters`, as an object or
-/// a JSON string; missing or blank arguments are `{}`. An `id` is kept. Returns
-/// an empty list for any other message type or when nothing parses.
+/// a JSON string; missing or blank arguments are `{}`. An `id` is kept. A turn
+/// is read whole: when one of its calls cannot be read (arguments that are not
+/// an object) and another can, none is returned, so a replay never answers
+/// part of a turn. Returns an empty list for any other message type or when
+/// nothing parses.
 List<FunctionCallResponse> toolCallsOf(Message message) {
   if (message.type != MessageType.toolCall) return const [];
   if (message.toolCalls.isNotEmpty) return message.toolCalls;
@@ -33,7 +36,7 @@ List<FunctionCallResponse> toolCallsOf(Message message) {
 List<FunctionCallResponse> _parseToolCallText(String text) {
   if (text.trim().isEmpty) return const [];
   final structured = _structuredCalls(text);
-  if (structured.isNotEmpty) return structured;
+  if (structured != null) return structured;
   // Native tokens the web SDK leaves as text, and FunctionGemma's wire format.
   final sdk = SdkResponseParser.extractToolCalls(text);
   if (sdk.isNotEmpty) return sdk;
@@ -56,21 +59,37 @@ List<FunctionCallResponse> _parseToolCallText(String text) {
 }
 
 /// One JSON document: the canonical object, a list of calls, or one call.
-/// Anything else (several documents, the multimodal `content` shape, text
-/// around the JSON) is left to the fallbacks, which read those too.
-List<FunctionCallResponse> _structuredCalls(String text) {
+/// Null when [text] is none of these, which leaves it to the fallbacks
+/// (several documents, the multimodal `content` shape, text around the JSON).
+/// A document of calls is final, read or not: a fallback would read a call it
+/// cannot represent with its arguments dropped.
+List<FunctionCallResponse>? _structuredCalls(String text) {
   final Object? json;
   try {
     json = jsonDecode(text);
   } on FormatException {
-    return const [];
+    return null;
   }
-  if (json is List) return [for (final item in json) ?_call(item)];
-  if (json is! Map) return const [];
+  if (json is List) return _wholeTurn(json);
+  if (json is! Map) return null;
   final toolCalls = json['tool_calls'];
-  if (toolCalls is List) return [for (final item in toolCalls) ?_call(item)];
-  final single = _call(json);
-  return single == null ? const [] : [single];
+  if (toolCalls is List) return _wholeTurn(toolCalls);
+  return _wholeTurn([json]);
+}
+
+/// Every call of [items], or none when one of them cannot be read. Null when
+/// no item names a function: [items] is then not a list of calls.
+List<FunctionCallResponse>? _wholeTurn(List<Object?> items) {
+  if (!items.any(_namesFunction)) return null;
+  final calls = [for (final item in items) _call(item)];
+  return calls.contains(null) ? const [] : calls.nonNulls.toList();
+}
+
+/// Whether [raw] is a call object: a name, flat or under `function`.
+bool _namesFunction(Object? raw) {
+  if (raw is! Map) return false;
+  final function = raw['function'] is Map ? raw['function'] as Map : raw;
+  return function['name'] is String;
 }
 
 FunctionCallResponse? _call(Object? raw) {

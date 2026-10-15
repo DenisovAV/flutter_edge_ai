@@ -121,6 +121,7 @@ killed for memory while loading even Gemma 3 1B. See
 | **Qwen2-VL 2B** | Vision-language chat (image + text) | ❌ | ❌ | ✅ | Multilingual | 1.8GB |
 | **SmolVLM2 500M** | Compact vision-language model | ❌ | ❌ | ✅ | Multilingual | 0.36GB |
 | **LLaVA-OneVision 0.5B** | Compact vision-language model | ❌ | ❌ | ✅ | Multilingual | 0.83GB |
+| **VibeVoice-ASR 2.2B (BitNet)** | Speech to text: a spoken clip in, its transcript out | ❌ | ❌ | ❌ | en, zh, fr, it, ko, pt, vi | 2.0GB |
 | **Phi-4 Mini** | Advanced reasoning and instruction following | ✅ | ❌ | ❌ | Multilingual | 3.9GB |
 | **Phi-4 Mini Reasoning** | Step-by-step reasoning | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.8GB |
 | **DeepSeek R1** | High-performance reasoning and code generation | ✅ | ✅ | ❌ | Multilingual | 1.7GB |
@@ -212,7 +213,7 @@ When installing models, specify the correct `ModelType`:
 | **Llama** | `ModelType.llama` | Llama 3.2 Instruct (its sampling defaults; not in the tables above) |
 | **Hammer** | `ModelType.hammer` | Hammer 2.1 (its sampling defaults; not in the tables above) |
 | **FunctionGemma** | `ModelType.functionGemma` | FunctionGemma 270M IT |
-| **General** | `ModelType.general` | FastVLM 0.5B, SmolLM 135M, LFM2.5 230M (Liquid AI), SmolLM3 3B, Qwen2-VL 2B, SmolVLM2 500M, LLaVA-OneVision 0.5B, Phi-3.5 Mini (ONNX), the built-in OS models |
+| **General** | `ModelType.general` | FastVLM 0.5B, SmolLM 135M, LFM2.5 230M (Liquid AI), SmolLM3 3B, Qwen2-VL 2B, SmolVLM2 500M, LLaVA-OneVision 0.5B, VibeVoice-ASR, Phi-3.5 Mini (ONNX), the built-in OS models |
 
 <Info>
 
@@ -251,6 +252,7 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 | [Qwen2-VL 2B](https://huggingface.co/litert-community/Qwen2-VL-2B) | 1.8GB | ✅ | ✅ | ❌ | ❌ |
 | [SmolVLM2 500M](https://huggingface.co/litert-community/SmolVLM2-500M) | 0.36GB | ✅ | ✅ | ❌ | ❌ |
 | [LLaVA-OneVision 0.5B](https://huggingface.co/litert-community/LLaVA-OneVision-0.5B) | 0.83GB | ✅ | ✅ | ❌ | ❌ |
+| [VibeVoice-ASR-BitNet](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) ⁴ | 2.0GB | ✅ macOS | ✅ Android | ❌ | ❌ |
 | [Gemma-3 1B](https://huggingface.co/litert-community/Gemma3-1B-IT) | 0.5GB | ✅ | ✅ | ✅ | ✅ |
 | [Gemma 3 270M](https://huggingface.co/litert-community/gemma-3-270m-it) | 0.3GB | ✅ | ✅ | ✅ | ✅ |
 | [FunctionGemma 270M](https://huggingface.co/sasha-denisov/function-gemma-270M-it) | 284MB | ✅ | ✅ | ✅ | ❌ |
@@ -283,6 +285,22 @@ Transformers.js ([`flutter_edge_ai_onnx`](/docs/onnx)). That build is web-only.
 `cpu_and_mobile/cpu-int4-awq-block-128-acc-level-4` — run on macOS arm64,
 Linux x64, Windows x64, Android arm64 and iOS arm64. It peaks at about 3.7 GB
 of RAM, so plan for a 6 GB+ phone. — means not run.
+
+⁴ Speech recognition, not chat: install it as `ModelType.general` (the
+repo's `litertlm_manifest.json` sets `maxTokens: 2048` and audio — pass
+`getActiveModel(defaults: r.runtime)`), send the clip as `audioBytes` with the
+text `This is a X.XX seconds audio, please transcribe it.` (the clip's length),
+and decode greedily (`topK: 1`). Leave `preferredAudioBackend` unset: the audio
+encoder has to run on the CPU, and on a GPU delegate it returns an empty
+transcript; the language model may run on the GPU. `ModelType.general` sends
+the audio before the text, which this model needs
+([multimodal order](/docs/multimodal#order-of-images-audio-and-text)).
+Measured with the language model on the GPU of a Galaxy S24, 80 synthesized
+clips of 0.8–3.9 s: word error rate 0.32 under 1.5 s, 0.18 at 1.5–2.5 s and
+0.07 from 2.5 s, with 9–11 s to the first token whatever the length, because
+the audio encoder always processes a 30 s window on the CPU. On macOS, with
+the language model on Metal, 8 of those clips were transcribed the same way.
+Web cannot send audio to an LLM.
 
 The built-in models download nothing and need no token; availability is
 decided by the device at run time, and Edge runs Phi-4-mini through the same

@@ -267,6 +267,7 @@ class LiteRtLmEngine
       fileType: spec.fileType,
       supportImage: config.supportImage,
       supportAudio: config.supportAudio,
+      multimodalOrder: config.multimodalOrder,
       maxConcurrentSessions: config.maxConcurrentSessions,
       onClose: () {}, // no-op: core resets its own state via addCloseListener
     );

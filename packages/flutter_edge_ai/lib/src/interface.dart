@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/src/message.dart';
 import 'package:flutter_edge_ai/src/model.dart';
 import 'package:flutter_edge_ai/src/sampling.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
+import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -75,6 +76,9 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// [maxNumImages] — maximum number of images (for multimodal models).
   /// [supportImage] — whether the model supports images.
   /// [supportAudio] — whether the model supports audio (Gemma 3n E4B only).
+  /// [multimodalOrder] — the order of a user message's images, audio and
+  /// text; null = [MultimodalOrder.forModelType] of the active model's type.
+  /// Honored by the native LiteRT-LM engine.
   /// [enableSpeculativeDecoding] — Multi-Token Prediction toggle for Gemma 4
   /// E2B/E4B (LiteRT-LM v0.11.0+). `null` honors the model's default;
   /// `true`/`false` forces on/off. Older `.litertlm` files without an MTP
@@ -104,6 +108,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
     int? maxNumImages, // Add image support
     bool supportImage = false, // Add image support flag
     bool supportAudio = false, // Add audio support flag (Gemma 3n E4B)
+    MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,

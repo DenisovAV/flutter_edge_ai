@@ -126,7 +126,7 @@ class AiEngine {
   Future<void> initialize({
     void Function(int progress)? onProgress,
     // Test seam: install the LLM from a pre-staged local file instead of
-    // downloading it — avoids a flaky ~500MB on-device download on CI / FTL.
+    // downloading it — avoids a flaky ~500MB on-device download on CI / remote phones.
     String? localModelPath,
     // Test seam: skip the embedder download when RAG isn't exercised.
     bool downloadEmbedder = true,

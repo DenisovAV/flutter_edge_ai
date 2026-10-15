@@ -95,6 +95,7 @@ void main() {
     Set<EmbeddingModality> declaredMedia = const {},
     int? numThreads,
     int visionTokensPerImage = 140,
+    bool requireWeightCache = false,
     LiteRtLmEmbeddingBindings Function()? openBindings,
     DateTime Function()? clock,
     LiteRtLmNpuTarget? npuTarget,
@@ -106,6 +107,7 @@ void main() {
       declaredMedia: declaredMedia,
       numThreads: numThreads,
       visionTokensPerImage: visionTokensPerImage,
+      requireWeightCache: requireWeightCache,
       npuTarget: npuTarget,
       npuDispatchDir: npuTarget == null ? null : npuDispatchDir,
     ),
@@ -782,24 +784,13 @@ void main() {
 
       test('an empty directory after create is reported, a filled one is '
           'not', () async {
-        Future<List<String>> printsDuring(Future<void> Function() body) async {
-          final lines = <String>[];
-          await runZoned(
-            body,
-            zoneSpecification: ZoneSpecification(
-              print: (_, _, _, line) => lines.add(line),
-            ),
-          );
-          return lines;
-        }
-
-        final filled = await printsDuring(() => pass().load());
+        final filled = await _printsDuring(() => pass().load());
         expect(filled.where((l) => l.contains('weight cache')), isEmpty);
 
         native.dispose();
         native = _FakeLiteRtLm()..writeCacheOnCreate = false;
         Directory(expectedCacheDir()).deleteSync(recursive: true);
-        final empty = await printsDuring(() => pass().load());
+        final empty = await _printsDuring(() => pass().load());
         expect(
           empty,
           contains(
@@ -811,6 +802,115 @@ void main() {
           ),
         );
       });
+
+      test(
+        'requireWeightCache: an empty directory after create is a load '
+        'failure naming the directory, its length and the likely causes; '
+        'the engine is deleted, nothing is printed, no sibling goes',
+        () async {
+          native.writeCacheOnCreate = false;
+          final stale = Directory(
+            '$cacheBase/${liteRtLmCacheDirPrefix(_file)}-1-2',
+          )..createSync(recursive: true);
+          final dir = expectedCacheDir();
+          final p = pass(requireWeightCache: true, clock: anHourLater);
+
+          final lines = await _printsDuring(
+            () => expectLater(
+              p.load(),
+              throwsA(
+                isA<EmbeddingLoadException>()
+                    .having((e) => e.engine, 'engine', 'LiteRT-LM')
+                    .having((e) => e.nativeCode, 'nativeCode', isNull)
+                    .having(
+                      (e) => e.message,
+                      'message',
+                      allOf(
+                        contains(
+                          'wrote no weight cache to $dir (a path of '
+                          '${dir.length} characters) while loading $_file',
+                        ),
+                        contains('requireWeightCache: true'),
+                        contains('a path too long for the platform'),
+                        contains('MAX_PATH'),
+                        contains('a full disk'),
+                      ),
+                    ),
+              ),
+            ),
+          );
+
+          expect(
+            _aboutWeightCache(lines),
+            isEmpty,
+            reason: 'refused, not warned',
+          );
+          expect(native.created('engine'), 1);
+          expect(native.deleted('engine'), 1);
+          expect(native.deleted('options'), 1);
+          expectNothingLeaked();
+          expect(
+            stale.existsSync(),
+            isTrue,
+            reason: 'a failed load deletes none',
+          );
+          await p.close();
+          expectNothingLeaked();
+        },
+      );
+
+      test('requireWeightCache: a written cache loads as it does without the '
+          'flag', () async {
+        final p = pass(requireWeightCache: true);
+        final lines = await _printsDuring(() async {
+          final info = await p.load();
+          expect(info.dimension, 4);
+        });
+        expect(_aboutWeightCache(lines), isEmpty);
+        expect(native.live['engine'], hasLength(1));
+        expect(
+          await p.embed(EmbeddingInput.text('hello'), TaskType.retrievalQuery),
+          hasLength(4),
+        );
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test(
+        'a cache directory gone after create: without the flag the load '
+        'goes on as before, with it the cache is not taken as written',
+        () async {
+          native
+            ..writeCacheOnCreate = false
+            ..deleteCacheDirOnCreate = true;
+          final lenient = pass();
+          final lines = await _printsDuring(() => lenient.load());
+          expect(_aboutWeightCache(lines), isEmpty);
+          await lenient.close();
+          expectNothingLeaked();
+
+          final strict = pass(requireWeightCache: true);
+          await expectLater(
+            strict.load(),
+            throwsA(
+              isA<EmbeddingLoadException>()
+                  .having((e) => e.cause, 'cause', isA<FileSystemException>())
+                  .having(
+                    (e) => e.message,
+                    'message',
+                    contains(
+                      'could not check the weight cache LiteRT-LM was to write '
+                      'to ${expectedCacheDir()}',
+                    ),
+                  ),
+            ),
+          );
+          expect(native.created('engine'), 2);
+          expect(native.deleted('engine'), 2);
+          expectNothingLeaked();
+          await strict.close();
+        },
+      );
 
       test('a path that cannot become a directory is a load failure, before '
           'any settings', () async {
@@ -1487,6 +1587,21 @@ void main() {
       expect(native.towerBackendsNull, isTrue);
     });
 
+    test('requireWeightCache does not apply: what an NPU engine caches is '
+        'not established, so an empty directory is neither refused nor '
+        'reported', () async {
+      native.writeCacheOnCreate = false;
+      final p = pass(npuTarget: _sm8850, requireWeightCache: true);
+      final lines = await _printsDuring(() async {
+        final info = await p.load();
+        expect(info.dimension, 4);
+      });
+      expect(_aboutWeightCache(lines), isEmpty);
+      expect(native.live['engine'], hasLength(1));
+      await p.close();
+      expectNothingLeaked();
+    });
+
     test('settings on "npu", towers NULL, the dispatch directory handed to '
         'every executor, and a probe embedding before load returns', () async {
       native.visionSignatures = const [70, 140];
@@ -1730,6 +1845,22 @@ void main() {
   });
 }
 
+/// What [body] prints, through the zone (the pass's warning is a `print`).
+Future<List<String>> _printsDuring(Future<void> Function() body) async {
+  final lines = <String>[];
+  await runZoned(
+    body,
+    zoneSpecification: ZoneSpecification(
+      print: (_, _, _, line) => lines.add(line),
+    ),
+  );
+  return lines;
+}
+
+/// The lines of [lines] about the weight cache.
+Iterable<String> _aboutWeightCache(List<String> lines) =>
+    lines.where((line) => line.contains('weight cache'));
+
 // ── Fakes ───────────────────────────────────────────────────────────────────
 
 Pointer<T> _noLookup<T extends NativeType>(String symbol) =>
@@ -1769,6 +1900,9 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   bool silentNullCompute = false;
   bool silentNullEngine = false;
   bool writeCacheOnCreate = true;
+
+  /// The cache directory is gone by the time engine_create returns.
+  bool deleteCacheDirOnCreate = false;
   _Failure? errorFromSetter;
   int? responseSize;
 
@@ -2085,6 +2219,9 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     final dir = cacheDir;
     if (writeCacheOnCreate && dir != null) {
       File('$dir/model.text_encoder.xnnpack_cache').writeAsStringSync('w');
+    }
+    if (deleteCacheDirOnCreate && dir != null) {
+      Directory(dir).deleteSync(recursive: true);
     }
     return _create('engine');
   }

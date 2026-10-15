@@ -50,9 +50,25 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// give it its own profile id (`…-vis140` or `…-vis70`). Any other value is
   /// refused with `EmbeddingLoadException` when a model loads. Text vectors
   /// do not depend on it.
-  const LiteRtEmbeddingBackend({this._visionTokensPerImage = 140});
+  ///
+  /// [requireWeightCache] concerns EmbeddingGemma 2 on CPU. Its engine writes
+  /// a weight cache (71 MB for the 270m, 385 MB for the 740m) into the app's
+  /// cache directory when it loads; when it cannot (a path too long for the
+  /// platform, as past Windows' MAX_PATH, or a full disk) it runs anyway,
+  /// slower to load and with about 290 MB more memory. By default that is a
+  /// printed warning. With `true` the load fails instead:
+  /// `getActiveEmbedder()` throws an `EmbeddingLoadException` naming the
+  /// cache directory, its path length and the likely causes, and no engine is
+  /// left running. It checks that the engine wrote a cache file, not that it
+  /// wrote one for every tower. It does not apply on the NPU, where what the
+  /// engine caches is not established, nor to `.tflite` embedders.
+  const LiteRtEmbeddingBackend({
+    this._visionTokensPerImage = 140,
+    this._requireWeightCache = false,
+  });
 
   final int _visionTokensPerImage;
+  final bool _requireWeightCache;
 
   @override
   String get name => 'LiteRT Embedding';
@@ -91,7 +107,12 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
       );
     }
     if (opensBundle) {
-      return _describeBundle(config, file, _visionTokensPerImage);
+      return _describeBundle(
+        config,
+        file,
+        _visionTokensPerImage,
+        requireWeightCache: _requireWeightCache,
+      );
     }
     return _describeTflite(spec, file, config);
   }
@@ -113,8 +134,9 @@ const _liteRtLm = liteRtLmEngineTag;
 Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   RuntimeConfig config,
   String file,
-  int visionTokensPerImage,
-) async {
+  int visionTokensPerImage, {
+  required bool requireWeightCache,
+}) async {
   if (config.supportAudio) requireLiteRtLmAudioEncoder(config.modelPath);
   final LiteRtLmNpuTarget? target;
   try {
@@ -158,6 +180,8 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
         if (config.supportAudio) EmbeddingModality.audio,
       },
       visionTokensPerImage: visionTokensPerImage,
+      // The pass applies it on CPU only (see LiteRtLmEmbeddingConfig).
+      requireWeightCache: requireWeightCache,
       npuTarget: placement.target,
       npuDispatchDir: placement.dispatchDir,
     ),

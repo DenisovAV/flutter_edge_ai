@@ -35,7 +35,9 @@
 //   without one it runs with no weight cache (+290 MB) or writes
 //   `.xnnpack_cache` files next to the model. Our part of the path is kept
 //   short — `flutter_edge_ai/emb/<8-hex hash>-<base36 size>-<base36 mtime>`
-//   (see `liteRtLmCacheDirName`: Windows MAX_PATH), and a load that leaves it empty is reported. Caches of earlier
+//   (see `liteRtLmCacheDirName`: Windows MAX_PATH), and a CPU load that
+//   leaves it empty is reported — or refused, with `requireWeightCache`
+//   (`EmbeddingLoadException`, the engine deleted). Caches of earlier
 //   copies of the same file name are deleted only after the engine exists,
 //   and not while they were touched in the last 10 minutes.
 // - Overflow (§4.8, the P3 gate): options use kTruncate for every request,
@@ -131,6 +133,7 @@ final class LiteRtLmEmbeddingConfig {
     this.declaredMedia = const {},
     this.numThreads,
     this.visionTokensPerImage = liteRtLmDefaultVisionTokensPerImage,
+    this.requireWeightCache = false,
     this.npuTarget,
     this.npuDispatchDir,
   }) : assert(
@@ -159,6 +162,12 @@ final class LiteRtLmEmbeddingConfig {
 
   /// Vision tokens per image (D25): 140 or 70, checked by `describe()`.
   final int visionTokensPerImage;
+
+  /// Whether a CPU load that leaves [cacheBase]'s directory for this bundle
+  /// without a weight cache is refused with [EmbeddingLoadException] instead
+  /// of printing a warning (`LiteRtEmbeddingBackend(requireWeightCache:)`).
+  /// Not applied on the NPU, where what the engine caches is not established.
+  final bool requireWeightCache;
 
   /// The SoC a per-SoC bundle is compiled for, when `describe()` placed it on
   /// the NPU; null runs the bundle on CPU.
@@ -346,14 +355,15 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       if (_config.npuTarget case final target?) {
         _probeNpu(b, info.dimension, target);
       }
+      // Measured on CPU only: what an NPU engine caches (the CPU embedder's
+      // weights, the compiled graph's context) is not established, so an
+      // empty directory there is neither reported nor refused. Inside the
+      // try: a refusal deletes the engine and the options it made.
+      if (!_onNpu) _checkWeightCache(cacheDir);
     } catch (_) {
       _free();
       rethrow;
     }
-    // Measured on CPU only: what an NPU engine caches (the CPU embedder's
-    // weights, the compiled graph's context) is not established, so an empty
-    // directory there is not reported as a fault.
-    if (!_onNpu) _warnIfNoWeightCache(cacheDir);
     // Only now: a load that failed must not have cost another copy its cache.
     _deleteStaleSiblings(cacheDir);
 
@@ -905,15 +915,45 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   /// The engine writes its weight cache at create. When it could not (a
   /// path too long for the platform, a full disk) it runs anyway — slower to
   /// load and about 290 MB larger — and says so only in the native log. Said
-  /// here in release builds too, because that is a cost the app pays silently.
-  void _warnIfNoWeightCache(String cacheDir) {
+  /// here in release builds too, because that is a cost the app pays silently;
+  /// with [LiteRtLmEmbeddingConfig.requireWeightCache] it is a load failure
+  /// instead (the caller deletes the engine).
+  ///
+  /// Checked as "the directory holds no file", not file by file: the engine
+  /// names each cache `<model file name>_<mtime>_<size>.<graph>.xnnpack_cache`,
+  /// one per tower present in the bundle (the vision and audio towers too,
+  /// whatever was declared), and neither the graph names nor the mtime's form
+  /// on every platform come from any API this pass can read. A wrong guess
+  /// would refuse every load, so a partly written set is not detected.
+  void _checkWeightCache(String cacheDir) {
     final bool empty;
     try {
       empty = Directory(cacheDir).listSync().whereType<File>().isEmpty;
-    } on FileSystemException {
-      return; // the directory existed a moment ago; nothing useful to add
+    } on FileSystemException catch (e) {
+      // The directory existed a moment ago; without the flag, nothing useful
+      // to add. With it, an unchecked cache is not a confirmed one.
+      if (!_config.requireWeightCache) return;
+      throw EmbeddingLoadException(
+        'could not check the weight cache LiteRT-LM was to write to '
+        '$cacheDir while loading $_file: ${e.osError?.message ?? e.message}',
+        engine: liteRtLmEngineTag,
+        cause: e,
+      );
     }
     if (!empty) return;
+    if (_config.requireWeightCache) {
+      throw EmbeddingLoadException(
+        'LiteRT-LM wrote no weight cache to $cacheDir (a path of '
+        '${cacheDir.length} characters) while loading $_file, and '
+        'LiteRtEmbeddingBackend(requireWeightCache: true) refuses to run it '
+        'without one (slower to load, about 290 MB more memory). Likely '
+        'causes: a path too long for the platform (on Windows, MAX_PATH is '
+        "260 characters, and the engine's cache file names below this "
+        "directory repeat the model's file name) or a full disk. The native "
+        'log says which.',
+        engine: liteRtLmEngineTag,
+      );
+    }
     // ignore: avoid_print
     print(
       '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no weight cache to '

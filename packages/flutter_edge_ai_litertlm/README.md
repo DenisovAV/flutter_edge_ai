@@ -307,9 +307,17 @@ final vector = await embedder.embed(
   bundle writes 385 MB of caches in total, even for text-only use. The cache
   lives in
   the app's cache directory: it is never backed up, and if the OS clears it the
-  next load writes it again. On the web there is no weight cache: the bundle
+  next load writes it again. When the engine cannot write it (a path too long
+  for the platform, such as past Windows' 260-character `MAX_PATH`, or a full
+  disk) it runs anyway, slower to load and with about 290 MB more memory, and
+  the package only prints a warning. To make that a load failure, register
+  `LiteRtEmbeddingBackend(requireWeightCache: true)`: `getActiveEmbedder()`
+  then throws an `EmbeddingLoadException` naming the cache directory, its
+  path length and the likely causes, and no engine is left running. It checks
+  that a cache file was written, not one per tower, and applies on CPU only
+  (not on the NPU). On the web there is no weight cache: the bundle
   sits in the browser's storage and the engine rebuilds its weights at every
-  load.
+  load, and the flag is accepted and ignored.
 - EmbeddingGemma 1 and 2 both produce 768-dimensional vectors in different
   embedding spaces: never mix them in one vector store.
 

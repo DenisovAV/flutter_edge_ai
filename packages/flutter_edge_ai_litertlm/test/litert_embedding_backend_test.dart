@@ -223,6 +223,26 @@ void main() {
       );
     });
 
+    test('requireWeightCache is off by default and reaches the pass when '
+        'set', () async {
+      final lenient = await backend.describe(
+        _bundle(),
+        _config('$bundles/eg2.litertlm'),
+      );
+      expect(
+        (lenient.config as LiteRtLmEmbeddingConfig).requireWeightCache,
+        isFalse,
+      );
+      final strict = await const LiteRtEmbeddingBackend(
+        requireWeightCache: true,
+      ).describe(_bundle(), _config('$bundles/eg2.litertlm'));
+      expect(
+        (strict.config as LiteRtLmEmbeddingConfig).requireWeightCache,
+        isTrue,
+      );
+      expect(strict.activeBackend, PreferredBackend.cpu);
+    });
+
     test('needs no tokenizer provider at all: an EG2-only app registers '
         'none', () async {
       EmbeddingTokenizerRegistry.instance.reset();

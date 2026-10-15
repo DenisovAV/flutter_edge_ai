@@ -33,7 +33,15 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// image gets: 140 (the default) or 70; any other value is refused with
   /// `EmbeddingLoadException` when a model loads. The same parameter as the
   /// native arm, so one registration compiles everywhere.
-  const LiteRtEmbeddingBackend({this._visionTokensPerImage = 140});
+  ///
+  /// [requireWeightCache] is accepted for the same reason and ignored: the
+  /// web keeps no weight cache to require. The bundle sits in the browser's
+  /// storage and the engine builds its weights at every load, so a load is
+  /// never short of a cache it should have written.
+  const LiteRtEmbeddingBackend({
+    this._visionTokensPerImage = 140,
+    bool requireWeightCache = false,
+  });
 
   final int _visionTokensPerImage;
 

@@ -115,6 +115,20 @@ void main() {
     );
   });
 
+  test('requireWeightCache is accepted, as natively, and changes nothing: the '
+      'web keeps no weight cache', () async {
+    const strict = LiteRtEmbeddingBackend(requireWeightCache: true);
+    final descriptor = await strict.describe(
+      _eg2,
+      _bundleConfig(supportImage: true),
+    );
+    final config = descriptor.config as LiteRtLmWebEmbeddingConfig;
+    expect(descriptor.activeBackend, PreferredBackend.gpu);
+    expect(config.declaredMedia, {EmbeddingModality.image});
+    expect(config.visionTokensPerImage, 140);
+    expect(descriptor.build(), isA<LiteRtLmWebEmbeddingPass>());
+  });
+
   test('describe() hands core the LiteRT.js pass over the raw paths with the '
       'real resolver and bundle, and no backend claimed', () async {
     final descriptor = await backend.describe(_tflite, _config());

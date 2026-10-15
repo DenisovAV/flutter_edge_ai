@@ -19,7 +19,7 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Embeddings — register a `FlutterEdgeAiEmbedderConfig`, reference it with `flutterEdgeAi.embedder(...)`
 - Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (at most 20 MiB each, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
-- Parallel tool calls — several calls in one response, each with a `ref` (the engine's call id when it gives one), and every tool response goes back to the model with its `ref`
+- Parallel tool calls — several calls in one response, each with a `ref` that no other call of the turn has, so Genkit pairs every tool response with its request; the refs stay in the history as call ids
 - Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
 - Thinking mode on models that support it

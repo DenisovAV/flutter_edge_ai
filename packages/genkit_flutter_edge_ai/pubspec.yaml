@@ -21,8 +21,9 @@ dependencies:
   flutter:
     sdk: flutter
   genkit: ^1.0.0
-  # ^2.3.0: the embedder calls `EmbeddingModel.embedAll` with
-  # `EmbeddingInput`, which 2.3.0 adds.
+  # ^2.4.0: tool refs travel as `FunctionCallResponse.id` and
+  # `Message.toolCall(calls:)` / `toolCallId`, which 2.4.0 adds (the
+  # embedder's `embedAll` with `EmbeddingInput` needs 2.3.0).
   flutter_edge_ai: ^2.4.0
   http: ^1.6.0
   schemantic: ^1.0.0

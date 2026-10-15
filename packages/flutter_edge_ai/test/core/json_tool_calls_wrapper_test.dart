@@ -1,5 +1,4 @@
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai/src/function_call_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A text engine replays `Message.toolCall(calls:)` as its canonical JSON, and

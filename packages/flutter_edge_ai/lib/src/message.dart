@@ -33,13 +33,17 @@ class Message {
   final String? toolName;
 
   /// The calls a [MessageType.toolCall] message carries, or empty when it was
-  /// built from [text] alone. An engine reads them through `toolCallsOf`
-  /// (`package:flutter_edge_ai/engine.dart`), which also parses [text] for a
-  /// message saved before these fields existed.
+  /// built from [text] alone; ignored on any other type. An engine reads them
+  /// through `toolCallsOf` (`package:flutter_edge_ai/engine.dart`), which also
+  /// parses [text] for a message saved with text alone. One model turn may be
+  /// several consecutive toolCall messages (genai writes one per call, and a
+  /// streamed text call is recorded as it completes); an engine that replays
+  /// calls merges such a run into one turn.
   final List<FunctionCallResponse> toolCalls;
 
   /// The [FunctionCallResponse.id] a [MessageType.toolResponse] answers, or
-  /// null when the result is paired with its call by [toolName].
+  /// null when its call had none; ignored on any other type. No bundled engine
+  /// reads it yet: a result is paired with its call by [toolName], in order.
   final String? toolCallId;
 
   bool get hasImage => imageBytes != null || images.isNotEmpty;
@@ -142,7 +146,8 @@ class Message {
   }
 
   /// A tool result. [toolCallId] names the call it answers when that call had
-  /// an id; without one, engines pair the result with its call by [toolName].
+  /// an id. No bundled engine reads it yet: the result is paired with its call
+  /// by [toolName], in order.
   factory Message.toolResponse({
     required String toolName,
     required Map<String, dynamic> response,
@@ -160,10 +165,12 @@ class Message {
 
   /// The model's tool call(s) in a history.
   ///
-  /// [calls] are the calls themselves. [text] is what the model wrote, kept
-  /// verbatim for engines that replay the model's own words; when it is null,
-  /// it is `{"tool_calls":[{"id","name","arguments"}]}` built from [calls]
-  /// (an `id` only for a call that has one). Give at least one of the two.
+  /// [calls] are the calls themselves, stored as a frozen copy. [text] is what
+  /// text engines replay: the model's output as the engine returned it, or the
+  /// JSON a converter wrote. When it is null, it is
+  /// `{"tool_calls":[{"id","name","arguments"}]}` built from [calls] (an `id`
+  /// only for a call that has one), which the text formats also read back.
+  /// Give at least one of the two.
   factory Message.toolCall({
     String? text,
     List<FunctionCallResponse> calls = const [],

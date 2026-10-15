@@ -23,10 +23,15 @@ import 'sdk_response_parser.dart';
 /// Each call may be OpenAI-style (`{"function": {"name", "arguments"}}`) or
 /// flat, with its arguments under `arguments`, `parameters` or `args`, as an
 /// object or a JSON string; missing or blank arguments are `{}`. An `id` is
-/// kept. A turn is read whole: when one of its calls cannot be read (arguments
-/// that are not an object) and another can, none is returned, so a replay
-/// never answers part of a turn. Returns an empty list for any other message
-/// type or when nothing parses.
+/// kept. One JSON document of calls is read whole: when one of its calls
+/// cannot be read (arguments that are not an object), none is returned, so a
+/// replay does not answer part of that turn. The model-format fallbacks read
+/// call by call. Returns an empty list for any other message type or when
+/// nothing parses, a toolCall message included: the engine then replays its
+/// [Message.text]. A web Gemma 4 call recorded as text has lost the escape
+/// tokens that mark its string arguments, so from text alone it reads with
+/// none; its [Message.toolCalls] keep the arguments. One model turn may be several
+/// consecutive toolCall messages; an engine that replays calls merges them.
 List<FunctionCallResponse> toolCallsOf(Message message) {
   if (message.type != MessageType.toolCall) return const [];
   if (message.toolCalls.isNotEmpty) return message.toolCalls;

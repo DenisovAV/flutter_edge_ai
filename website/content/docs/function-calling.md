@@ -206,9 +206,10 @@ await chat.addQueryChunk(toolMessage);
 final followUp = await chat.generateChatResponse();
 ```
 
-`call.id` is set by engines that give calls ids. An engine that pairs by id
-reads `toolCallId`; otherwise a result is paired with its call by `toolName`, in
-order.
+No bundled engine gives calls ids or reads `toolCallId` today: a result is
+paired with its call by `toolName`, in order. Ids come from the callers —
+genai `callId`s and Genkit `ref`s — and stay in the history for engines that
+read them.
 
 ### Or drive the whole loop in one call (recommended)
 
@@ -249,10 +250,11 @@ runs function calls inside a spoken turn through it (see
 ### Tool calls in a saved history
 
 `chat.fullHistory` records each call as a `Message.toolCall` whose `toolCalls`
-hold the calls, ids included, and whose `text` is what the model wrote. To
-restore a conversation with `clearHistory(replayHistory:)`, keep both, and
-`toolCallId` on each `Message.toolResponse`. A message you build yourself takes
-the calls alone:
+hold the calls and whose `text` is what text engines replay: the model's output
+as the engine returned it. To restore a conversation with
+`clearHistory(replayHistory:)`, keep both, and `toolCallId` on each
+`Message.toolResponse`. A message you build yourself takes the calls alone, and
+the text formats read its text back if the model answers in that shape:
 
 ```dart
 Message.toolCall(calls: [
@@ -261,7 +263,9 @@ Message.toolCall(calls: [
 // text: {"tool_calls":[{"id":"call_1","name":"change_background_color","arguments":{"color":"blue"}}]}
 ```
 
-A history saved before these fields existed, with `text` alone, still replays.
+A history saved with `text` alone still replays: the calls are read back from
+it. One exception: on the web, a Gemma 4 call's text no longer marks its string
+arguments, so read back from text alone it has none — keep `toolCalls`.
 
 ## Platform support
 

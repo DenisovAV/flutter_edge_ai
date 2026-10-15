@@ -235,6 +235,24 @@ void main() {
       expect(decoded[1]['name'], 'get_time');
     });
 
+    test('an empty ref is no id, on the call and on its result', () async {
+      final result = await convertMessages([
+        Message(role: Role.model, content: [
+          ToolRequestPart(
+            toolRequest: ToolRequest(ref: '', name: 'ping', input: {}),
+          ),
+        ]),
+        Message(role: Role.tool, content: [
+          ToolResponsePart(
+            toolResponse: ToolResponse(ref: '', name: 'ping', output: 'ok'),
+          ),
+        ]),
+      ]);
+
+      expect(result[0].toolCalls.single.id, isNull);
+      expect(result[1].toolCallId, isNull);
+    });
+
     test('carries refs as call ids and as the ids results answer', () async {
       final messages = [
         Message(role: Role.model, content: [

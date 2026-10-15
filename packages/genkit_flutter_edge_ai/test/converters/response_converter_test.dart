@@ -84,6 +84,20 @@ void main() {
       ]);
     });
 
+    test('a real id an earlier call already took as its ref is numbered', () {
+      const calls = [
+        gemma.FunctionCallResponse(name: 'a', args: {}),
+        gemma.FunctionCallResponse(name: 'b', args: {}, id: 'call_0'),
+      ];
+
+      final result = convertFinalResponse('', functionCalls: calls);
+
+      expect(result.message!.content.map((p) => p.toolRequest!.ref), [
+        'call_0',
+        'call_1',
+      ]);
+    });
+
     test('a streamed chunk numbers its calls past the refs of earlier '
         'chunks, as the final response does', () {
       const first = gemma.FunctionCallResponse(

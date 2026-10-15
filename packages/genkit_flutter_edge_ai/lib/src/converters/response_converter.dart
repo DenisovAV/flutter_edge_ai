@@ -8,17 +8,19 @@ import 'package:genkit/plugin.dart';
 /// in one turn collide.
 String toolCallRef(int index) => 'call_$index';
 
-/// The `ref` of each of a turn's [calls], in order: the call's own id, else
-/// the first [toolCallRef] from its index on that no earlier call of the turn
-/// uses, so a numbered ref never repeats a real id that came before it. Only
-/// earlier calls count, so the refs of a streamed chunk, computed with the
-/// calls before it, are the ones the final response gives them.
+/// The `ref` of each of a turn's [calls], in order: the call's own id, unless
+/// an earlier call of the turn already has that ref, else the first
+/// [toolCallRef] from its index on that no earlier call uses. Refs never
+/// repeat within a turn, which Genkit needs to pair each response with its
+/// request. Only earlier calls count, so the refs of a streamed chunk,
+/// computed with the calls before it, are the ones the final response gives
+/// them.
 List<String> toolCallRefs(List<gemma.FunctionCallResponse> calls) {
   final used = <String>{};
   final refs = <String>[];
   for (final (index, call) in calls.indexed) {
     var ref = call.id;
-    if (ref == null) {
+    if (ref == null || used.contains(ref)) {
       var n = index;
       while (used.contains(toolCallRef(n))) {
         n++;

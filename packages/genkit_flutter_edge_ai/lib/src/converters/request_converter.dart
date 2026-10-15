@@ -140,7 +140,7 @@ Future<List<gemma.Message>> convertMessages(
             gemma.Message.toolResponse(
               toolName: response.name,
               response: _toolResponseBody(response),
-              toolCallId: response.ref,
+              toolCallId: _callId(response.ref),
             ),
           );
         }
@@ -620,7 +620,7 @@ gemma.Message? _toolCallMessage(List<Part> parts) {
       gemma.FunctionCallResponse(
         name: request.name,
         args: input == null ? {} : Map<String, dynamic>.from(input as Map),
-        id: request.ref,
+        id: _callId(request.ref),
       ),
     );
   }
@@ -669,3 +669,7 @@ Map<String, dynamic> _toolResponseBody(ToolResponse response) {
   }
   return body;
 }
+
+/// A Genkit `ref` as a call id: an empty ref is no id, as genai and the
+/// engines' parsers read one.
+String? _callId(String? ref) => ref == null || ref.isEmpty ? null : ref;

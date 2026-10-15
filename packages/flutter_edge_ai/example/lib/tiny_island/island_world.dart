@@ -76,6 +76,7 @@ final class IslandWorld implements IslandStage {
   final List<vm.Vector3> _rainDrops = [];
   late final GradientSkySource _sky;
   late final DirectionalLight _sun;
+  late final Node _surf;
 
   /// Builds the scene. Throws when Flutter GPU is not available (the native
   /// platforms need it turned on) or a model does not load.
@@ -159,16 +160,38 @@ final class IslandWorld implements IslandStage {
   }
 
   void _buildIsland() {
-    // Water, sand and grass: stacked so no two surfaces share a plane.
+    // Sea, shallows, surf, sand and grass: stacked so no two surfaces share
+    // a plane (the canoe's base is at -0.1). Seen from above, one flat blue
+    // read as a backdrop, not as water: the shallows and the surf around
+    // the beach make it a sea.
     scene.root.add(
       Node(
         name: 'water',
         mesh: Mesh(
           DiscGeometry(radius: 60, segments: 64),
-          _matte(0.05, 0.3, 0.55, roughness: 0.55),
+          _matte(0.03, 0.2, 0.42, roughness: 0.35),
         ),
       )..position = vm.Vector3(0, -0.14, 0),
     );
+    scene.root.add(
+      Node(
+        name: 'shallows',
+        mesh: Mesh(
+          RingGeometry(innerRadius: 5.3, outerRadius: 8, segments: 64),
+          _matte(0.15, 0.62, 0.62, roughness: 0.35),
+        ),
+      )..position = vm.Vector3(0, -0.125, 0),
+    );
+    // Its inner edge is under the sand; tick() swells it, so the white band
+    // at the beach widens and narrows like waves lapping.
+    _surf = Node(
+      name: 'surf',
+      mesh: Mesh(
+        RingGeometry(innerRadius: 5.3, outerRadius: 5.75, segments: 64),
+        _matte(0.95, 0.97, 1),
+      ),
+    )..position = vm.Vector3(0, -0.11, 0);
+    scene.root.add(_surf);
     scene.root.add(
       Node(
         name: 'sand',
@@ -684,8 +707,8 @@ final class IslandWorld implements IslandStage {
   String? _fadingFrom;
   double _fade = 1;
 
-  /// Advances the scripts, the pose crossfade, the fire, the rain and the
-  /// camera follow by [dt] seconds. Called from `SceneView.onTick`.
+  /// Advances the scripts, the pose crossfade, the surf, the fire, the rain
+  /// and the camera follow by [dt] seconds. Called from `SceneView.onTick`.
   void tick(double dt) {
     if (!_loaded || _disposed) return;
     _time += dt;
@@ -699,6 +722,8 @@ final class IslandWorld implements IslandStage {
       }
     }
     _tickPose(dt);
+    final swell = 1 + 0.025 * math.sin(_time * 1.6);
+    _surf.scale = vm.Vector3(swell, 1, swell);
     if (_fire.lit) {
       final flicker =
           1 + 0.08 * math.sin(_time * 17) + 0.05 * math.sin(_time * 31);

@@ -9,7 +9,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
 
 import 'tiny_island_view_model.dart';
 
-const _muted = TextStyle(color: Colors.white70, fontSize: 12.5);
+const _muted = TextStyle(color: Colors.white70, fontSize: 11);
 const _panel = Color(0xE01a3a5c);
 
 /// "36 ms", or "0.42 ms" under a millisecond.
@@ -29,13 +29,23 @@ String formatIslandPrepareTime(Duration d) => d.inSeconds >= 10
 
 /// An option's score as what it is: a cosine (or log-probability) with its
 /// kind, plus the probability only when the Decider's probabilities are
-/// calibrated. A raw cosine is never shown as a percentage.
-String formatIslandScore(RankedOption option, ScoreKind kind) {
-  final score = switch (kind) {
-    ScoreKind.cosine => 'cosine ${option.score.toStringAsFixed(3)}',
-    ScoreKind.logprob => 'log p ${option.score.toStringAsFixed(2)}',
-    _ => '${kind.name} ${option.score.toStringAsFixed(3)}',
+/// calibrated. A raw cosine is never shown as a percentage. [withKind]
+/// false drops the kind's name, for the runners-up line under a choice that
+/// already shows it.
+String formatIslandScore(
+  RankedOption option,
+  ScoreKind kind, {
+  bool withKind = true,
+}) {
+  final value = kind == ScoreKind.logprob
+      ? option.score.toStringAsFixed(2)
+      : option.score.toStringAsFixed(3);
+  final name = switch (kind) {
+    ScoreKind.cosine => 'cosine',
+    ScoreKind.logprob => 'log p',
+    _ => kind.name,
   };
+  final score = withKind ? '$name $value' : value;
   final p = option.probability;
   if (p == null) return score;
   final percent = p < 0.001
@@ -104,7 +114,7 @@ class TinyIslandHud extends StatelessWidget {
               ? '"${turn.request}"'
               : 'You said it: ${turn.request}',
           key: const Key('tiny-island-request'),
-          style: const TextStyle(fontStyle: FontStyle.italic),
+          style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 12),
         ),
       );
       if (vm.deciding && answer == null && turn.error == null) {
@@ -120,7 +130,7 @@ class TinyIslandHud extends StatelessWidget {
           Text(
             note,
             key: const Key('tiny-island-note'),
-            style: const TextStyle(color: Colors.amberAccent, fontSize: 12.5),
+            style: const TextStyle(color: Colors.amberAccent, fontSize: 11),
           ),
         );
       }
@@ -138,7 +148,7 @@ class TinyIslandHud extends StatelessWidget {
           SelectableText(
             error,
             key: const Key('tiny-island-turn-error'),
-            style: const TextStyle(color: Colors.redAccent, fontSize: 12.5),
+            style: const TextStyle(color: Colors.redAccent, fontSize: 11),
           ),
         );
       }
@@ -146,7 +156,7 @@ class TinyIslandHud extends StatelessWidget {
     return Container(
       key: const Key('tiny-island-hud'),
       constraints: const BoxConstraints(maxWidth: 420),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: _panel,
         borderRadius: BorderRadius.circular(10),
@@ -178,7 +188,7 @@ class TinyIslandHud extends StatelessWidget {
               key: const Key('tiny-island-choice'),
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
-                fontSize: 16,
+                fontSize: 14,
                 color: Colors.lightGreenAccent,
               ),
             ),
@@ -203,7 +213,7 @@ class TinyIslandHud extends StatelessWidget {
           key: Key('tiny-island-abstain'),
           style: TextStyle(
             fontWeight: FontWeight.bold,
-            fontSize: 16,
+            fontSize: 14,
             color: Colors.amberAccent,
           ),
         ),
@@ -220,21 +230,28 @@ class TinyIslandHud extends StatelessWidget {
         ? answer.ranked.take(3)
         : answer.ranked.skip(1).take(3);
     if (others.isNotEmpty) {
-      children.add(const SizedBox(height: 4));
+      children.add(const SizedBox(height: 2));
+      // One line on a phone: the HUD sits over the scene.
       children.add(
-        Text(answer.choice == null ? 'Closest:' : 'Runners-up:', style: _muted),
+        Wrap(
+          spacing: 8,
+          children: [
+            Text(
+              answer.choice == null ? 'Closest:' : 'Runners-up:',
+              style: _muted,
+            ),
+            for (final (i, option) in others.indexed)
+              Text(
+                '${option.id} '
+                '${formatIslandScore(option, answer.scoreKind, withKind: false)}',
+                key: Key('tiny-island-alternative-$i'),
+                style: const TextStyle(fontSize: 11),
+              ),
+          ],
+        ),
       );
-      for (final (i, option) in others.indexed) {
-        children.add(
-          Text(
-            '${option.id}  ${formatIslandScore(option, answer.scoreKind)}',
-            key: Key('tiny-island-alternative-$i'),
-            style: const TextStyle(fontSize: 12.5),
-          ),
-        );
-      }
     }
-    children.add(const SizedBox(height: 4));
+    children.add(const SizedBox(height: 2));
     children.add(
       Text(
         describeIslandTiming(answer, optionCount),

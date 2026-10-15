@@ -229,7 +229,8 @@ enum EmbeddingModel implements EmbeddingModelInterface {
 
   // The 740M for SM8850 carries the 440M SM8850's text and vision towers
   // (the same bytes: text aaae57a31475, vision 231495aaa9a3) and the generic
-  // bundle's audio encoder, so it shares their ids. Not yet run on an SM8850.
+  // bundle's audio encoder, so it shares their ids. Run on a Galaxy S26+
+  // (SM8850, DDP): text and images on the NPU, audio on the CPU.
   embeddingGemma2TextVisionAudio740mSm8850(
     url:
         'https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/resolve/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m_Qualcomm_SM8850.litertlm',

@@ -931,6 +931,8 @@ void main() {
       for (var i = 0; i < 3; i++) {
         final alt = text(tester, 'tiny-island-alternative-$i');
         expect(alt, isNot(contains('%')));
+        // The runners-up line leaves the kind to the choice above it.
+        expect(alt, matches(RegExp(r'^\S+ -?\d\.\d{3}$')));
       }
       expect(
         text(tester, 'tiny-island-timing'),

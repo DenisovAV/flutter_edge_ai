@@ -25,8 +25,7 @@ typedef OpenModelList = Future<void> Function(MultimodalRagModelList list);
 
 /// Text queries the Search tab suggests. On the sample set each finds its
 /// item first (knowledge_retrieval_test.dart): a voice memo, a photo, a memo,
-/// a chart, a memo, a note (its chart second), a memo — and a Russian query
-/// that finds the English receipt.
+/// a chart, a memo, a note (its chart second), a memo.
 const kMultimodalRagSuggestions = [
   'my flight is delayed',
   'the airport taxi receipt',
@@ -35,7 +34,6 @@ const kMultimodalRagSuggestions = [
   'fresh basil',
   'revenue by quarter',
   'a cooking class',
-  'чек за такси',
 ];
 
 /// Questions the Ask tab suggests.

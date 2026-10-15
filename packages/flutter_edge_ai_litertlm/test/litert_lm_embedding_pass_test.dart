@@ -364,6 +364,7 @@ void main() {
         expect(info.audioFormats, isEmpty);
         expect(info.combinedInputs, isTrue);
         expect(native.visionTokensPerImage, 140);
+        expect(info.visionTokensPerImage, 140, reason: 'reported to core');
         expect(
           native.order,
           containsAllInOrder([
@@ -378,11 +379,12 @@ void main() {
 
       test('70 is the opt-in budget', () async {
         native.visionSignatures = const [70, 140];
-        await pass(
+        final info = await pass(
           declaredMedia: {EmbeddingModality.image},
           visionTokensPerImage: 70,
         ).load();
         expect(native.visionTokensPerImage, 70);
+        expect(info.visionTokensPerImage, 70);
       });
 
       test('a budget the bundle has no vision signature for is refused from '
@@ -489,6 +491,7 @@ void main() {
           native.order,
           isNot(contains('settings_set_vision_tokens_per_image')),
         );
+        expect(info.visionTokensPerImage, isNull, reason: 'none was set');
       });
 
       test('a text-only bundle reports text, and no formats', () async {
@@ -846,11 +849,11 @@ void main() {
         'TaskType', () async {
       for (final taskType in TaskType.values) {
         final vector = await p.embed(
-          EmbeddingInput.text('Привет, мир 🌍'),
+          EmbeddingInput.text('Grüße, Welt 🌍'),
           taskType,
         );
         expect(vector, native.lastVector);
-        expect(native.lastTexts, ['${taskType.prefix}Привет, мир 🌍']);
+        expect(native.lastTexts, ['${taskType.prefix}Grüße, Welt 🌍']);
         expect(native.lastPartTypes, [
           LiteRtLmInputDataType.kLiteRtLmInputDataTypeText,
         ]);

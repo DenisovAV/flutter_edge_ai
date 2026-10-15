@@ -9,7 +9,7 @@
 // full signature (required / optional / named parameters with their
 // defaults), and the modifiers and annotations an implementer must respect
 // (`abstract`, `static`, `const`, `factory`, `@nonVirtual`, `@protected`,
-// `@Deprecated`). Plus the two SPI functions' signatures.
+// `@Deprecated`, `@experimental`). Plus the two SPI functions' signatures.
 //
 // Chosen over member lines in the five symbol goldens: those would put every
 // exported class's members into review on unrelated changes, while this SPI is
@@ -264,6 +264,7 @@ List<String> _annotations(Element element) {
     if (metadata.hasVisibleForTesting) '@visibleForTesting',
     if (metadata.hasMustCallSuper) '@mustCallSuper',
     if (metadata.hasDeprecated) '@Deprecated',
+    if (metadata.hasExperimental) '@experimental',
   ];
 }
 

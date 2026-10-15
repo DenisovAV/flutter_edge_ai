@@ -30,9 +30,11 @@ import '../registry/stt_registry.dart';
 import '../registry/tts_registry.dart';
 import '../registry/runtime_config.dart';
 import '../model_management/model_specs.dart';
+
 import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
+
 // Re-export the spec value types so existing importers of this library (tests,
 // example, and any external code that imported the mobile lib directly) keep
 // seeing InferenceModelSpec/EmbeddingModelSpec/etc. — they used to be `part`s
@@ -110,6 +112,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     int? maxNumImages,
     bool supportImage = false,
     bool supportAudio = false, // Enabling audio support (Gemma 3n E4B)
+    MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,
@@ -141,6 +144,9 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
         supportImage: supportImage,
         supportAudio: supportAudio,
         maxNumImages: maxNumImages,
+        multimodalOrder:
+            multimodalOrder ??
+            MultimodalOrder.forModelType(requestedSpec.modelType),
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         activationDataType: activationDataType,
         maxConcurrentSessions: maxConcurrentSessions,

@@ -1,6 +1,7 @@
 ## 2.4.0
 - Experimental `Decider` API: pick one of N options or abstain (`EmbeddingModel.createDecider`).
 - **Breaking for `implements InferenceModel`:** add `createDecider`; `extends` inherits the default.
+- `getActiveModel(multimodalOrder:)`: per-model order of images, audio and text.
 
 ## 2.3.3
 - Docs: README and shipped skills checked against the code; models page linked.

@@ -55,12 +55,12 @@ final _hfToken = _hfTokenStandard.isNotEmpty
 
 /// Prefer a device-local staged model file (no network, no token) — the
 /// convention the other integration tests use. Desktop and iOS read it from the
-/// app documents dir as `gemma3-1b-it-int4.litertlm`; Android (Firebase Test
-/// Lab) reads it from `/data/local/tmp/flutter_gemma_test/`.
+/// app documents dir as `gemma3-1b-it-int4.litertlm`; Android reads it from
+/// `/data/local/tmp/flutter_gemma_test/`.
 /// Returns null when no staged file is present (CI → network install).
 Future<String?> _stagedLlmPath() async {
-  // Android (Firebase Test Lab): the model is pushed to the device via
-  // `--other-files /data/local/tmp/flutter_gemma_test/...` — no network/token.
+  // Android: the model is staged in /data/local/tmp/flutter_gemma_test/
+  // (adb push, or the ddp-device-test skill on a DDP phone) — no network/token.
   if (Platform.isAndroid) {
     const p = '/data/local/tmp/flutter_gemma_test/gemma3-1b-it-int4.litertlm';
     return File(p).existsSync() ? p : null;
@@ -109,7 +109,7 @@ void main() {
       // (litertlm_ffi_test.dart / active_model_restore_test.dart). A run
       // without a staged file falls back to the gated network install, which
       // is reported loudly below: a silent fallback would hide a broken
-      // `--other-files` push and burn 0.5 GB per run on a path the test was
+      // staging push and burn 0.5 GB per run on a path the test was
       // written to avoid.
       final llm = FlutterEdgeAi.installModel(
         modelType: ModelType.gemmaIt,
@@ -130,7 +130,7 @@ void main() {
           reason:
               'No device-local staged LLM and no HuggingFace token, so the '
               'gated network fallback cannot authenticate. Stage the model '
-              '(Android: --other-files '
+              '(Android: adb push to '
               '/data/local/tmp/flutter_gemma_test/gemma3-1b-it-int4.litertlm; '
               'desktop/iOS: app documents dir) or pass '
               '--dart-define=HUGGINGFACE_TOKEN=...',

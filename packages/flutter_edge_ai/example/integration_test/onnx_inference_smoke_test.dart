@@ -1,5 +1,5 @@
 // ONNX ORT-GenAI Android arm64 device-gate smoke test (hardened Android
-// plan, Task 2). Firebase Test Lab only — not meant to run on a desktop CI
+// plan, Task 2). Android phones only (DDP) — not meant to run on a desktop CI
 // host (guarded by `skip: !Platform.isAndroid` below).
 //
 // Deliberately drives `GenAiFfiClient` DIRECTLY, bypassing
@@ -23,23 +23,20 @@
 // the tok/s numbers stay comparable) into
 // `getApplicationDocumentsDirectory()`. The repo is public/ungated — no HF
 // token needed (verified: a plain HEAD/GET redirects straight to the CDN,
-// no 401/403). Deliberately NOT pushed via FTL `--other-files`: that lands
-// files under `/sdcard` or `/data/local/tmp`, which scoped storage / SELinux
-// make unreadable to the app's own process without extra permissions this
-// app doesn't request — in-test download into the app's own documents dir
-// is what this repo's Gemma FTL runs already rely on.
+// no 401/403). Deliberately downloaded into the app's own documents dir
+// rather than staged under `/data/local/tmp`: the bundle is a whole
+// directory, and a download needs no staging step on the phone.
 //
 // GO/NO-GO BAR this test's printed numbers are judged against (see the
 // Android plan's Task 4 — NOT asserted here; a hard throughput assertion
-// would make this test brittle across the FTL device fleet):
+// would make this test brittle across device models):
 //   go:    sustained decode tok/s median >= 5 across turns, TTFT <= 2s
 //   no-go: sustained decode tok/s < 4 under thermal load
 //   memory: no SIGKILL / lowmemorykiller; printed VmHWM = the reported
 //           Android RAM number.
 //
-// Run via Firebase Test Lab — see
-// `../scripts/run_onnx_integration_android_ftl.sh` for the exact
-// build + gcloud invocation.
+// Run on a DDP phone with `.claude/skills/ddp-device-test/run_instrumented.sh`
+// (`flutter test` cannot attach through DDP's adb forwarder).
 import 'dart:io';
 
 // ignore: implementation_imports — drives onnx's ORT-GenAI FFI client directly

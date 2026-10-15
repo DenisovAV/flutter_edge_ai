@@ -26,8 +26,8 @@
 // QCS8275>, else the device's own (Android `ro.soc.model`), else the first SoC
 // whose 270m is staged. Bundles are staged under their Hugging Face names (the
 // generic 270m for the refusal too; it is downloaded when absent):
-//   Android  /data/local/tmp/flutter_gemma_test/  (adb push, or FTL
-//            --other-files)
+//   Android  /data/local/tmp/flutter_gemma_test/  (adb push, or on a DDP
+//            phone the ddp-device-test skill)
 //   Linux    ~/models/
 // or under --dart-define=EG2_NPU_DIR=<dir>. Each file's SHA-256 is checked
 // against its pin before anything is compared.
@@ -36,7 +36,7 @@
 // it). No setUp/setUpAll (Rule 6b): every body calls a guarded `_ensure…()`.
 //   Linux arm64:  flutter test integration_test/embeddinggemma2_npu_test.dart
 //                 -d linux
-//   Android:      gradle instrumentation (QDC, FTL); trust the I/flutter lines
+//   Android:      gradle instrumentation (QDC, DDP); trust the I/flutter lines
 
 import 'dart:convert';
 import 'dart:io';

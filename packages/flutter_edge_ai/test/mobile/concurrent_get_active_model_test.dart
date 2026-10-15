@@ -67,14 +67,16 @@ void main() {
     }
   });
 
-  Future<_GatedEngine> installWithGatedEngine() async {
+  Future<_GatedEngine> installWithGatedEngine({
+    ModelType modelType = ModelType.gemmaIt,
+  }) async {
     await ServiceRegistry.initialize(
       downloadService: _FixtureDownloadService(_fakeBundleBytes),
     );
     final engine = _GatedEngine();
     EngineRegistry.instance.registerAll([engine]);
     await FlutterEdgeAi.installModel(
-      modelType: ModelType.gemmaIt,
+      modelType: modelType,
     ).fromNetwork('https://example.com/model.bin').install();
     return engine;
   }
@@ -83,14 +85,41 @@ void main() {
     ('mobile', FlutterEdgeAiMobile.new),
     ('desktop', () => FlutterEdgeAiDesktop.instance),
   ]) {
-    Future<_GatedEngine> useShell() async {
+    Future<_GatedEngine> useShell({
+      ModelType modelType = ModelType.gemmaIt,
+    }) async {
       final previous = FlutterEdgeAiPlugin.instance;
       FlutterEdgeAiPlugin.instance = shell();
       addTearDown(() => FlutterEdgeAiPlugin.instance = previous);
-      final engine = await installWithGatedEngine();
+      final engine = await installWithGatedEngine(modelType: modelType);
       engine.release();
       return engine;
     }
+
+    test(
+      '$label: an omitted multimodalOrder is the model type\'s own',
+      () async {
+        // The engine gets the order already resolved: Gemma 4 sends its audio
+        // after the text, every other type keeps images, audio, text.
+        final engine = await useShell(modelType: ModelType.gemma4);
+        final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+        expect(
+          engine.configs.single.multimodalOrder,
+          MultimodalOrder.imagesTextAudio,
+        );
+        await model.close();
+
+        await FlutterEdgeAi.installModel(
+          modelType: ModelType.gemmaIt,
+        ).fromNetwork('https://example.com/other.bin').install();
+        final other = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+        expect(
+          engine.configs.last.multimodalOrder,
+          MultimodalOrder.imagesAudioText,
+        );
+        await other.close();
+      },
+    );
 
     test('$label: a call while the cached model is closing waits for the '
         'close, then builds a new one', () async {
@@ -239,6 +268,33 @@ void main() {
     expect(identical(c, b), isTrue);
 
     await b.close();
+  });
+
+  test('the model type\'s own order spelled out reuses the model, another '
+      'order builds a new one', () async {
+    // The shells resolve an omitted order before comparing, so spelling out
+    // the default is not a reload of the weights.
+    final engine = await installWithGatedEngine(modelType: ModelType.gemma4);
+    engine.release();
+
+    final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+    final again = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 1024,
+      multimodalOrder: MultimodalOrder.imagesTextAudio,
+    );
+    expect(engine.createModelCallCount, 1);
+    expect(identical(again, first), isTrue);
+
+    final other = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 1024,
+      multimodalOrder: MultimodalOrder.imagesAudioText,
+    );
+    expect(engine.createModelCallCount, 2);
+    expect(
+      engine.configs.last.multimodalOrder,
+      MultimodalOrder.imagesAudioText,
+    );
+    await other.close();
   });
 
   test(

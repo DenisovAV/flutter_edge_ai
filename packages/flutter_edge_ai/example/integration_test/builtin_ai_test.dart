@@ -11,7 +11,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   // When true, a `downloadable` model triggers an on-device feature download and
-  // waits. Default OFF so CI / Firebase Test Lab (fresh devices where the AICore
+  // waits. Default OFF so CI / a DDP phone (fresh devices where the AICore
   // model is never pre-downloaded and the download queue may never grant a slot)
   // skips cleanly instead of hanging until a timeout. Run on a device that has
   // Gemini Nano / Apple Intelligence already downloaded, or pass

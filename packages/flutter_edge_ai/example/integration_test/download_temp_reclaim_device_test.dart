@@ -6,8 +6,9 @@
 /// large-file temps, that the sweep enumerates + deletes there, and that a real
 /// download's temp actually lands in that directory.
 ///
-/// Run (Android device / FTL):
+/// Run (a local Android device):
 ///   flutter test integration_test/download_temp_reclaim_device_test.dart -d <android>
+/// On a DDP phone `flutter test` cannot attach: use the ddp-device-test skill.
 library;
 
 import 'dart:async';

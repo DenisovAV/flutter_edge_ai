@@ -11,6 +11,7 @@ import 'package:path/path.dart' as path;
 
 import '../interface.dart';
 import '../model_file_manager_interface.dart';
+import '../domain/multimodal_order.dart';
 import '../domain/platform_types.dart';
 
 import '../model.dart';
@@ -28,6 +29,7 @@ import '../model_management/model_specs.dart'
 import '../mobile/flutter_edge_ai_mobile.dart' show MobileModelManager;
 
 import '../model_management/constants/preferences_keys.dart';
+
 import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
@@ -119,6 +121,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     int? maxNumImages,
     bool supportImage = false,
     bool supportAudio = false,
+    MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,
@@ -147,6 +150,9 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
         supportImage: supportImage,
         supportAudio: supportAudio,
         maxNumImages: maxNumImages,
+        multimodalOrder:
+            multimodalOrder ??
+            MultimodalOrder.forModelType(requestedSpec.modelType),
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         activationDataType: activationDataType,
         maxConcurrentSessions: maxConcurrentSessions,

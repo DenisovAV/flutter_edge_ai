@@ -17,9 +17,11 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
     this.fileType = ModelFileType.litertlm,
     this.supportImage = false,
     this.supportAudio = false,
+    MultimodalOrder? multimodalOrder,
     this.maxConcurrentSessions,
     required this.onClose,
-  });
+  }) : multimodalOrder =
+           multimodalOrder ?? MultimodalOrder.forModelType(modelType);
 
   final LiteRtLmFfiClient ffiClient;
   final ModelType modelType;
@@ -31,6 +33,10 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
   final PreferredBackend? activeBackend;
   final bool supportImage;
   final bool supportAudio;
+
+  /// Where a message's images and audio go around its text. Concurrent
+  /// [openSession] sessions take no media, so only [createSession] reads it.
+  final MultimodalOrder multimodalOrder;
 
   /// Cap on concurrent [openSession] sessions; null = unlimited.
   final int? maxConcurrentSessions;
@@ -143,6 +149,7 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
             sampling: sampling,
             samplingExplicit: !explicit.isEmpty,
             maxOutputTokens: maxOutputTokens,
+            multimodalOrder: multimodalOrder,
           );
       final handle = RecoveringConversationHandle(
         await open(),

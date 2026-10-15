@@ -69,7 +69,8 @@ silently do the other thing.
         #9 NPU result written into its table (device, date, pass count), #10
         matrix (LLM + embeddings + speech, CPU AND GPU) pasted into the PR body,
         one row per device with codename + GPU.
-        Android GPU = at least one Adreno AND one Mali (FTL akita / a34x).
+        Android GPU = at least one Adreno AND one Mali, on DDP (skill
+        ddp-device-test): e1q-34 Adreno + akita-35 or a34x-36 Mali.
 [ ] 1b-ter an upstream pin moved → read upstream's open issues filed since that
         tag (`gh issue list --repo google-ai-edge/LiteRT-LM --search "created:>=<tag-date>"`)
         and list in the PR body the ones that touch us by number, or

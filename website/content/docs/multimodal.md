@@ -89,7 +89,8 @@ GPU — see below).
 ## Audio (voice input)
 
 Audio input works with `.litertlm` models that include the audio encoder — e.g.
-**Gemma 4 E2B/E4B** and **Gemma 3n** `.litertlm` (see [Models](/docs/models)).
+**Gemma 4 E2B/E4B** and **Gemma 3n** `.litertlm`, and **VibeVoice-ASR** for
+transcription (see [Models](/docs/models)).
 
 | Platform | Audio support |
 |---|---|

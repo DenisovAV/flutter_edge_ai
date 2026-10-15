@@ -176,7 +176,16 @@ class Message {
       text: text ?? _toolCallsJson(calls),
       type: MessageType.toolCall,
       isUser: false,
-      toolCalls: List.unmodifiable(calls),
+      toolCalls: List.unmodifiable([
+        for (final call in calls)
+          FunctionCallResponse(
+            name: call.name,
+            args: Map<String, dynamic>.unmodifiable({
+              for (final e in call.args.entries) e.key: _frozen(e.value),
+            }),
+            id: call.id,
+          ),
+      ]),
     );
   }
 
@@ -236,6 +245,16 @@ class Message {
     return true;
   }
 }
+
+/// A deep copy that cannot be changed: a history keeps the arguments the call
+/// had, whatever the app later does to the map it received.
+Object? _frozen(Object? value) => switch (value) {
+  Map() => Map<Object?, Object?>.unmodifiable({
+    for (final e in value.entries) e.key: _frozen(e.value),
+  }),
+  List() => List<Object?>.unmodifiable([for (final v in value) _frozen(v)]),
+  _ => value,
+};
 
 String _toolCallsJson(List<FunctionCallResponse> calls) => jsonEncode({
   'tool_calls': [

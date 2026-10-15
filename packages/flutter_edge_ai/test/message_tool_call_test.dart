@@ -67,6 +67,40 @@ void main() {
     });
   });
 
+  test('a stored call keeps its arguments when the app changes its map', () {
+    final args = <String, dynamic>{
+      'q': 'a',
+      'filters': {
+        'tags': ['x'],
+      },
+    };
+    final message = Message.toolCall(
+      calls: [FunctionCallResponse(name: 'search', args: args)],
+    );
+    final hash = message.hashCode;
+
+    args['q'] = 'b';
+    ((args['filters'] as Map)['tags'] as List).add('y');
+
+    final stored = message.toolCalls.single.args;
+    expect(stored, {
+      'q': 'a',
+      'filters': {
+        'tags': ['x'],
+      },
+    });
+    expect(message.hashCode, hash);
+    expect(() => stored['q'] = 'c', throwsUnsupportedError);
+    expect(
+      () => (stored['filters'] as Map)['tags'] = <String>[],
+      throwsUnsupportedError,
+    );
+    expect(
+      () => ((stored['filters'] as Map)['tags'] as List).add('z'),
+      throwsUnsupportedError,
+    );
+  });
+
   test('Message.toolResponse carries the id of the call it answers', () {
     final answered = Message.toolResponse(
       toolName: 'search',

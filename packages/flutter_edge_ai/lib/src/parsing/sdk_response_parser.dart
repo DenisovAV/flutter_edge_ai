@@ -66,7 +66,9 @@ class SdkResponseParser {
   }
 
   /// The text a raw response carries: the `content` string or text items of
-  /// every concatenated fragment, or [jsonStr] itself when none of it is JSON.
+  /// every concatenated fragment, or [jsonStr] itself when no fragment is a
+  /// response. A fragment without `content` is not one: the `{}` of a
+  /// FunctionGemma call with no arguments is valid JSON too.
   static String _responseText(String jsonStr) {
     final text = StringBuffer();
     var parsedAny = false;
@@ -78,6 +80,7 @@ class SdkResponseParser {
         continue;
       }
       if (parsed is! Map<String, dynamic>) continue;
+      if (!parsed.containsKey('content')) continue;
       parsedAny = true;
       final content = parsed['content'];
       if (content is String) text.write(content);

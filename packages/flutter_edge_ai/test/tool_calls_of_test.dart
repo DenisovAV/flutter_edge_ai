@@ -210,6 +210,13 @@ void main() {
     expect(parse('<|python_tag|>[search(q="a")]'), [search], reason: 'Llama');
   });
 
+  test('a FunctionGemma call with no arguments', () {
+    expect(
+      parse('<start_function_call>call:get_time{}<end_function_call>'),
+      const [FunctionCallResponse(name: 'get_time', args: {})],
+    );
+  });
+
   test('arguments under args, as the JSON format reads them', () {
     const weather = FunctionCallResponse(
       name: 'get_weather',

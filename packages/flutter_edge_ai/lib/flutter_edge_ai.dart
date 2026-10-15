@@ -51,6 +51,7 @@ export 'src/registry/hugging_face_resolver.dart'
 
 export 'src/domain/platform_types.dart'
     show ActivationDataType, PreferredBackend;
+export 'src/domain/multimodal_order.dart' show MediaPosition, MultimodalOrder;
 export 'src/domain/no_active_model_error.dart' show NoActiveModelError;
 
 // Embedding inputs, task types and failures.

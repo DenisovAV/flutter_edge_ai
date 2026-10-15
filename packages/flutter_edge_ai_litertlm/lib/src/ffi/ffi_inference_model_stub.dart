@@ -19,6 +19,7 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
     PreferredBackend? activeBackend,
     bool supportImage = false,
     bool supportAudio = false,
+    MultimodalOrder? multimodalOrder,
     int? maxConcurrentSessions,
     required VoidCallback onClose,
   }) {

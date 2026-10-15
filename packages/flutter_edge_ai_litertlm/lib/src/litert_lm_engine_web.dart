@@ -35,6 +35,9 @@ class LiteRtLmEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
+    // config.multimodalOrder is not read: the web session sends text only and
+    // throws on an image or audio message (LiteRtLmWebSession.addQueryChunk).
+    // A web path that sends media must put them where the order says.
     return LiteRtLmWebInferenceModel(
       sourceResolver: WebModelSourceResolver.forActiveModel(),
       maxTokens: config.maxTokens,

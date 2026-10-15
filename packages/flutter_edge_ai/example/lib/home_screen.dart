@@ -160,7 +160,8 @@ class _HomeScreenState extends State<HomeScreen> {
               subtitle:
                   tinyIslandUnsupportedReason() ??
                   'Control a 3D scene with words; EmbeddingGemma 2 decides '
-                      '(choose Text 270M under Embedding Models)',
+                      '(choose Text 270M under Embedding Models, or '
+                      'Text + Vision + Audio 740M to speak to it)',
               icon: Icons.landscape,
               color: Colors.cyan,
               onTap: tinyIslandUnsupportedReason() == null

@@ -180,7 +180,16 @@ class SdkResponseParser {
       final args = rawArgs is Map<String, dynamic>
           ? _stripEscapeTokens(rawArgs) as Map<String, dynamic>
           : <String, dynamic>{};
-      out.add(FunctionCallResponse(name: name, args: args));
+      // The call's id, OpenAI-style on the call object or flat beside the
+      // name, read as toolCallsOf reads it.
+      final id = raw['id'] ?? fn['id'];
+      out.add(
+        FunctionCallResponse(
+          name: name,
+          args: args,
+          id: id is String && id.isNotEmpty ? id : null,
+        ),
+      );
     }
 
     final topLevel = json['tool_calls'] as List<dynamic>?;

@@ -66,6 +66,24 @@ void main() {
       '{"name":"runIntent","arguments":{"intent":"x"}}}]}';
   const json = '{"name":"runIntent","parameters":{"intent":"x"}}';
 
+  test(
+    'an SDK call with an id keeps it, in the response and the history',
+    () async {
+      const withId =
+          '{"role":"assistant","tool_calls":[{"id":"c1","type":"function",'
+          '"function":{"name":"runIntent","arguments":{"intent":"x"}}}]}';
+      const expected = FunctionCallResponse(
+        name: 'runIntent',
+        args: {'intent': 'x'},
+        id: 'c1',
+      );
+      final chat = await _chat(ModelType.gemma4, const [withId], raw: withId);
+
+      expect(await chat.generateChatResponse(), expected);
+      expect(_recorded(chat).toolCalls, [expected]);
+    },
+  );
+
   test('SDK response, generateChatResponse', () async {
     final chat = await _chat(ModelType.gemma4, const [raw], raw: raw);
 

@@ -31,6 +31,24 @@ void main() {
       );
     });
 
+    test('a tool-call chunk carries no text', () {
+      // Gemma 4 writes a sentence, then calls a tool in the same generation:
+      // the call is its own chunk. It is read from the whole raw response.
+      const raw =
+          '{"role":"assistant","tool_calls":[{"type":"function",'
+          '"function":{"name":"runIntent","arguments":{"intent":"x"}}}]}';
+
+      expect(SdkTextExtractor.extractTextFromResponse(raw), isEmpty);
+    });
+
+    test('text next to tool calls in one chunk is still text', () {
+      const raw =
+          '{"role":"assistant","content":[{"type":"text","text":"Sure."}],'
+          '"tool_calls":[{"type":"function","function":{"name":"x"}}]}';
+
+      expect(SdkTextExtractor.extractTextFromResponse(raw), 'Sure.');
+    });
+
     test('passes through malformed or missing content chunks', () {
       expect(SdkTextExtractor.extractTextFromResponse('partial'), 'partial');
       expect(SdkTextExtractor.extractTextFromResponse('{}'), '{}');

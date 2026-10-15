@@ -2,6 +2,7 @@ import 'package:flutter_edge_ai/src/chat.dart';
 import 'package:flutter_edge_ai/src/message.dart';
 import 'package:flutter_edge_ai/src/model.dart';
 import 'package:flutter_edge_ai/src/model_response.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/src/tool.dart';
 import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -285,6 +286,94 @@ void main() {
       );
     },
   );
+
+  group('prose and then a call in one Gemma 4 generation', () {
+    // What LiteRT-LM streams when Gemma 4 writes a sentence and then calls a
+    // tool: one JSON object per chunk, the call a chunk of its own with no
+    // content. The chat sees each chunk through SdkTextExtractor, as the FFI
+    // and web sessions hand it over; lastRawResponse is the chunks joined.
+    String textChunk(String text) =>
+        '{"role":"assistant","content":[{"type":"text","text":"$text"}]}';
+    String callChunk(String intent) =>
+        '{"role":"assistant","tool_calls":[{"type":"function","function":'
+        '{"name":"runIntent","arguments":{"intent":"<|\\"|>$intent<|\\"|>"}}}]}';
+    final prose = [
+      textChunk('I need to call the device_info skill '),
+      textChunk('to find out what accelerator I am running on.'),
+    ];
+
+    Future<(InferenceChat, List<ModelResponse>)> run(
+      List<String> chunks,
+    ) async {
+      final chat = _gemma4Chat(
+        chunks.map(SdkTextExtractor.extractTextFromResponse).toList(),
+        raw: chunks.join(),
+      );
+      await chat.initSession();
+      await chat.addQuery(const Message(text: 'hi', isUser: true));
+      return (chat, await chat.generateChatResponseAsync().toList());
+    }
+
+    test('streams the prose, never the JSON, then the call', () async {
+      final (_, responses) = await run([...prose, callChunk('accelerator')]);
+
+      final text = responses.whereType<TextResponse>().map((t) => t.token);
+      expect(
+        text.join(),
+        'I need to call the device_info skill '
+        'to find out what accelerator I am running on.',
+      );
+      expect(text.any((t) => t.isEmpty), isFalse);
+      final call = responses.whereType<FunctionCallResponse>().single;
+      expect(call.name, 'runIntent');
+      expect(call.args['intent'], 'accelerator');
+      expect(
+        responses.last,
+        same(call),
+        reason: 'the call comes after the prose',
+      );
+    });
+
+    test('two calls after the prose surface together', () async {
+      final (_, responses) = await run([
+        ...prose,
+        callChunk('accelerator'),
+        callChunk('memory'),
+      ]);
+
+      expect(
+        responses.whereType<TextResponse>().map((t) => t.token).join(),
+        isNot(contains('{')),
+      );
+      final parallel = responses.whereType<ParallelFunctionCallResponse>();
+      expect(parallel.single.calls.map((c) => c.args['intent']), [
+        'accelerator',
+        'memory',
+      ]);
+    });
+
+    test('history records the call without the prose chunks', () async {
+      final (chat, _) = await run([...prose, callChunk('accelerator')]);
+
+      final call = chat.fullHistory.singleWhere(
+        (m) => m.type == MessageType.toolCall,
+      );
+      expect(
+        call.text,
+        '{"role":"assistant","tool_calls":[{"type":"function","function":'
+        '{"name":"runIntent","arguments":{"intent":"accelerator"}}}]}',
+        reason: 'the call object alone, escape tokens stripped (#248)',
+      );
+      expect(call.toolCalls.single.args['intent'], 'accelerator');
+      expect(
+        chat.fullHistory.where(
+          (m) => !m.isUser && m.type != MessageType.toolCall,
+        ),
+        isEmpty,
+        reason: 'the prose is not recorded as an assistant text turn',
+      );
+    });
+  });
 
   group('FunctionGemma on .litertlm takes the same passthrough path', () {
     // What LiteRT-LM's FunctionGemma data processor returns for a call.

@@ -269,7 +269,9 @@ class InferenceChat {
           // Strip Gemma 4 escape tokens (`<|"|>`) before persisting to history.
           // Keeping raw lets the SDK echo those tokens back into the next
           // prompt and the model reproduces them in later tool_calls (#248).
-          final cleanRaw = SdkResponseParser.cleanRawForHistory(raw);
+          // Only the call objects: text written before the call is not part
+          // of the call (see toolCallsRawForHistory).
+          final cleanRaw = toolCallsRawForHistory(raw);
           final toolCallMessage = Message.toolCall(
             text: cleanRaw,
             calls: allCalls,
@@ -389,9 +391,12 @@ class InferenceChat {
     // anything else is plain text and streams normally. Other formats are
     // excluded by the guard below, so this first-char probe only ever runs for
     // the passthrough format — it never misfires on a text-stream format's
-    // JSON-ish output. Invariant assumed: a passthrough turn is EITHER all
-    // tool-call JSON OR all text, never prose-then-JSON — Gemma 4's SDK emits a
-    // pure tool_calls object for a call, so the first-char classification holds.
+    // JSON-ish output. A turn may also be prose and then a call: Gemma 4 often
+    // writes a sentence before it calls a tool. The call arrives as a chunk of
+    // its own, a `tool_calls` object with no content, which SdkTextExtractor
+    // turns into an empty token, so it never reaches the text channel wherever
+    // it comes; the prose streams, and the call is surfaced at end-of-stream
+    // like any other.
     final bool sdkPassthrough =
         FunctionCallParser.usesSdkPassthrough(modelType, fileType: fileType) &&
         tools.isNotEmpty &&
@@ -437,6 +442,8 @@ class InferenceChat {
         // Runs before the generic funcBuffer scanning, which is a no-op for the
         // passthrough format anyway (it never detects a call in the text stream).
         if (sdkPassthrough) {
+          // A tool-call chunk (see SdkTextExtractor): no text to stream.
+          if (token.isEmpty) continue;
           if (sdkSwallow) {
             // Inside a tool-call JSON stream — swallow every token.
             sdkSwallowed.write(token);
@@ -650,8 +657,10 @@ class InferenceChat {
           // SDK path at ~L193 and the JSON paths) — otherwise the caller's
           // tool-response has no matching call and is left orphaned, which
           // corrupts the replayed history when the Gemma 4 session rotates.
-          // Strip the Gemma 4 escape tokens first, same as the sync path (#248).
-          final cleanRaw = SdkResponseParser.cleanRawForHistory(raw);
+          // Strip the Gemma 4 escape tokens first, same as the sync path (#248),
+          // and keep only the call objects: prose streamed before the call is
+          // not part of it (see toolCallsRawForHistory).
+          final cleanRaw = toolCallsRawForHistory(raw);
           final toolCallMessage = Message.toolCall(
             text: cleanRaw,
             calls: allCalls,

@@ -203,4 +203,43 @@ void main() {
       expect(args['ratio'], equals(0.5));
     });
   });
+
+  group('toolCallsRawForHistory', () {
+    const call =
+        '{"role":"assistant","tool_calls":[{"type":"function","function":'
+        '{"name":"runIntent","arguments":{"intent":"<|\\"|>x<|\\"|>"}}}]}';
+    const cleanCall =
+        '{"role":"assistant","tool_calls":[{"type":"function","function":'
+        '{"name":"runIntent","arguments":{"intent":"x"}}}]}';
+
+    test('one call is cleaned exactly as cleanRawForHistory cleans it', () {
+      expect(
+        toolCallsRawForHistory(call),
+        SdkResponseParser.cleanRawForHistory(call),
+      );
+      expect(toolCallsRawForHistory(call), cleanCall);
+    });
+
+    test('text chunks streamed before the call are left out', () {
+      const raw =
+          '{"role":"assistant","content":[{"type":"text","text":"I {will} "}]}'
+          '{"role":"assistant","content":[{"type":"text","text":"call it."}]}'
+          '$call';
+
+      expect(toolCallsRawForHistory(raw), cleanCall);
+    });
+
+    test('two calls are both kept, each cleaned', () {
+      expect(toolCallsRawForHistory('$call$call'), '$cleanCall$cleanCall');
+    });
+
+    test('a response with no tool_calls object is cleaned whole', () {
+      const web =
+          '{"role":"assistant","content":"<|tool_call>call:x{}<tool_call|>"}';
+      expect(
+        toolCallsRawForHistory(web),
+        SdkResponseParser.cleanRawForHistory(web),
+      );
+    });
+  });
 }

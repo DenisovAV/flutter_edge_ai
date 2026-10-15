@@ -8,12 +8,16 @@ import 'dart:convert';
 /// Completions chunk JSON shape produced by `liblitert_lm` and
 /// `@litert-lm/core` respectively.
 ///
-/// Handles two response formats:
+/// Handles three response formats:
 /// - Text: `{"role":"assistant","content":[{"type":"text","text":"hello"}]}`
 ///   → returns `"hello"`
 /// - Thinking: `{"role":"assistant","channels":{"thought":"reasoning..."}}`
 ///   → returns `<|channel>thought\nreasoning...<channel|>`
 ///   (compatible with `ThinkingFilter` in `core/extensions.dart`)
+/// - Tool call: `{"role":"assistant","tool_calls":[...]}` with no content
+///   → returns `""`. A call is not text: the chat reads it from the whole raw
+///   response (`RawSdkResponseSession.lastRawResponse`) at the end of the
+///   stream, wherever in the generation it came.
 class SdkTextExtractor {
   /// Extract text from a LiteRT-LM JSON response chunk.
   ///
@@ -44,6 +48,11 @@ class SdkTextExtractor {
     switch (json['content']) {
       case final String text:
         return text;
+      case null when json['tool_calls'] is List:
+        // Gemma 4 can write a sentence and then call a tool in the same
+        // generation; the call arrives as a chunk of its own. Returned as
+        // JSON, it reached the caller as text after the sentence.
+        return '';
       case null:
         return jsonStr;
       case final List<Object?> parts:

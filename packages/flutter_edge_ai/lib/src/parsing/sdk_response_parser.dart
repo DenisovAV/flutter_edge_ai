@@ -303,3 +303,36 @@ class SdkResponseParser {
     }
   }
 }
+
+/// The text `InferenceChat` records for a turn's tool calls: the raw
+/// response's `tool_calls` objects, each cleaned as by
+/// [SdkResponseParser.cleanRawForHistory], without the text chunks streamed
+/// before them.
+///
+/// A Gemma 4 turn can be a sentence and then a call; its raw response is then
+/// one JSON object per streamed chunk, and recorded whole it put every text
+/// chunk into the call's history entry. The sentence itself is not kept: the
+/// Gemma 4 template renders an assistant turn's `tool_calls` before its
+/// content and closes the turn after content, so a replay would show the
+/// model a turn it never wrote. A raw response with no `tool_calls` object
+/// (calls inside `content`, or raw call tokens on the web) is cleaned whole,
+/// as before.
+///
+/// Internal to core: `engine.dart` exports only [SdkResponseParser].
+String toolCallsRawForHistory(String raw) {
+  final calls = StringBuffer();
+  for (final fragment in SdkResponseParser._splitConcatenatedJson(raw)) {
+    final Object? parsed;
+    try {
+      parsed = jsonDecode(fragment);
+    } on FormatException {
+      continue;
+    }
+    if (parsed is Map<String, dynamic> && parsed['tool_calls'] is List) {
+      calls.write(jsonEncode(SdkResponseParser._stripEscapeTokens(parsed)));
+    }
+  }
+  return calls.isEmpty
+      ? SdkResponseParser.cleanRawForHistory(raw)
+      : calls.toString();
+}

@@ -3,6 +3,7 @@
 - **Breaking for `implements InferenceModel`:** add `createDecider`; `extends` inherits the default.
 - `getActiveModel(multimodalOrder:)`: per-model order of images, audio and text.
 - Structured tool calls: `Message.toolCall(calls:)`, `toolCallId`, `FunctionCallResponse.id`, `toolCallsOf`.
+- Gemma 4: a sentence before a tool call no longer streams the call's JSON as text.
 
 ## 2.3.3
 - Docs: README and shipped skills checked against the code; models page linked.

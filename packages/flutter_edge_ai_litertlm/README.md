@@ -87,6 +87,64 @@ to 1024, because the published bundles fail to allocate below it; on the NPU it
 is passed through, so use the context size the bundle was compiled for. Cap the
 reply with `createSession(maxOutputTokens:)`.
 
+## Multimodal order
+
+A user message with an image or audio reaches the model as parts, and the
+model's chat template renders them in the order they arrive. Since 1.14.0 (core
+2.4.0) that order is chosen by the model type:
+
+| Model type | Order | Why |
+|---|---|---|
+| `ModelType.gemma4` (E2B, E4B, and the NPU bundles, which share the template) | images, text, audio | [Gemma 4 model card](https://huggingface.co/google/gemma-4-E2B-it), section 4 "Modality order": images before the text, audio after it |
+| every other type | images, audio, text | the order before 1.14.0; [Gemma 3n](https://huggingface.co/google/gemma-3n-E2B-it) answered the same either way, and [VibeVoice-ASR](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) needs its audio first |
+
+Pass another order with `getActiveModel(multimodalOrder:)` when your model's
+template expects one:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true,
+  multimodalOrder: MultimodalOrder.imagesAudioText,
+);
+```
+
+`MultimodalOrder(images:, audio:)` places each medium before or after the text
+(`MediaPosition.beforeText` / `afterText`). Media on the same side keep images
+before audio, several images keep their order, and a message without text still
+sends its empty text part, so an audio-only message is the same in every order.
+Changing the order rebuilds the model. The web engine sends no media to an LLM,
+so it has nothing to order.
+
+Measured on Developer Device Platform phones on 2026-10-14 and 2026-10-15.
+Every spoken request ran in both orders, with a fresh chat per turn,
+`temperature: 0.6`, `topK: 40`, and clips spoken by four macOS voices. A turn
+counts as answered when the model did what was asked, with the right tool when
+the chat had tools:
+
+| Model, phone, backend | Turns | Audio before the text | Audio after the text |
+|---|---|---|---|
+| Gemma 4 E2B, Galaxy S24, GPU, chat with two tools | 56 | 44 | 50 |
+| Gemma 4 E2B, Galaxy S24, GPU, plain chat | 32 | 29 | 29 |
+| Gemma 4 E2B, Galaxy S24, NPU (SM8650), plain chat | 32 | 29 | 32 |
+| Gemma 4 E4B, Galaxy S25 Ultra, GPU, chat with two tools | 56 | 45 | 53 |
+| Gemma 4 E4B, Galaxy S25 Ultra, GPU, plain chat | 32 | 29 | 32 |
+| Gemma 3n E2B, Galaxy S24, GPU, plain chat | 32 | 32 | 32 |
+
+- Over the 244 spoken Gemma 4 turns (the rows above and 36 questions about a
+  photo), paired clip by clip, 22 were answered only with the audio after the
+  text and 2 only with it before (McNemar, p < 0.001). On plain spoken requests
+  Gemma 4 failed 23 times in 160 with the audio first and 8 times with it last.
+  The failures were refusals ("I don't have any audio input") and questions
+  sent to the wrong tool.
+- Transcription, photo questions and time to first token did not get worse
+  with the audio last. Typed questions, the same message in both orders,
+  differed by one turn in twelve: that much is sampling noise.
+- VibeVoice-ASR transcribing 80 clips: word error rate 0.19 with the audio
+  before its prompt and 2.55 after it (20 empty and 13 runaway transcripts).
+  That is why the order follows the model rather than changing for every
+  model.
+
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)
 
 Repos that ship a

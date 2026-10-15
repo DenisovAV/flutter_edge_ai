@@ -1,3 +1,4 @@
+import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -95,6 +96,13 @@ void _activeModelParamsTests() {
             maxNumImages: 4,
           ),
         ),
+        'multimodalOrder': (
+          base,
+          const ActiveModelParams(
+            maxTokens: 1024,
+            multimodalOrder: MultimodalOrder.imagesTextAudio,
+          ),
+        ),
         'enableSpeculativeDecoding': (
           base,
           const ActiveModelParams(
@@ -147,6 +155,7 @@ void _activeModelParamsTests() {
         supportImage: true,
         supportAudio: true,
         maxNumImages: 7,
+        multimodalOrder: MultimodalOrder.imagesTextAudio,
         enableSpeculativeDecoding: true,
         activationDataType: ActivationDataType.float32,
         maxConcurrentSessions: 3,
@@ -237,6 +246,7 @@ ActiveModelParams _repair(
     'supportImage',
     'supportAudio',
     'maxNumImages',
+    'multimodalOrder',
     'enableSpeculativeDecoding',
     'activationDataType',
     'maxConcurrentSessions',
@@ -269,6 +279,9 @@ ActiveModelParams _repair(
     maxNumImages: is_('maxNumImages')
         ? target.maxNumImages
         : probe.maxNumImages,
+    multimodalOrder: is_('multimodalOrder')
+        ? target.multimodalOrder
+        : probe.multimodalOrder,
     enableSpeculativeDecoding: is_('enableSpeculativeDecoding')
         ? target.enableSpeculativeDecoding
         : probe.enableSpeculativeDecoding,

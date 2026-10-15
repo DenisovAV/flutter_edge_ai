@@ -136,6 +136,31 @@ decoder.
 
 </Warning>
 
+### Order of images, audio and text
+
+The chat template renders a message's parts in the order they arrive, so the
+order is chosen by the model type (`flutter_edge_ai` 2.4.0,
+`flutter_edge_ai_litertlm` 1.14.0):
+
+- `ModelType.gemma4`: images, then the text, then the audio, as the
+  [Gemma 4 model card](https://huggingface.co/google/gemma-4-E2B-it) asks.
+  On Galaxy S24 and S25 Ultra phones this order cut failed spoken requests
+  ("I don't have any audio input") from 23 to 8 in 160.
+- Every other type: images, then the audio, then the text, as before.
+
+A model whose template expects another order takes `multimodalOrder`:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true,
+  multimodalOrder: MultimodalOrder.imagesAudioText, // audio before the text
+);
+```
+
+Only the native `.litertlm` engine reads it. The measurements are in the
+[`flutter_edge_ai_litertlm` README](https://pub.dev/packages/flutter_edge_ai_litertlm#multimodal-order).
+
 ## Web limitations
 
 The web `.litertlm` path (`@litert-lm/core`, early preview) does **not** support

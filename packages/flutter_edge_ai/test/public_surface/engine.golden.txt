@@ -69,6 +69,7 @@ InferenceInstallationBuilder class
 InferenceModel class abstract
 InferenceModelSession class abstract
 InferenceModelSpec class
+MediaPosition enum
 Message class
 MessageExtension extension
 MessageType enum
@@ -86,6 +87,7 @@ ModelThinkingFilter class
 ModelType enum
 MultimodalImageHandler class
 MultimodalImageResult class
+MultimodalOrder class final
 NetworkError class final
 NetworkSource class final
 NoActiveModelError class

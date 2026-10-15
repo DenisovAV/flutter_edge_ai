@@ -5,5 +5,3 @@ library;
 
 export 'src/llama_engine_provider.dart'
     show LlamaEngineProvider, LlamaProjectorResolver;
-export 'src/llama_tool.dart'
-    show LlamaFunctionCallResponse, LlamaToolResponseMessage;

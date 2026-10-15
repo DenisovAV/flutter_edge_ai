@@ -1,7 +1,7 @@
 # Platform support
 
 The connector provides GGUF inference through llamadart on Android, iOS, macOS,
-Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.3.2+.
+Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.4.0+.
 A passing build does not qualify every device, model or accelerator.
 
 | Feature | Native | Web |
@@ -20,8 +20,9 @@ Core restores the paired native adapter after restart. A missing adapter prevent
 restoration of the entire pair. Unsupported connector configurations throw
 `UnsupportedError`; invalid arguments throw `ArgumentError`; invalid lifecycle
 operations throw `StateError`. SDK unsupported and invalid-model/argument failures
-map to `UnsupportedError` and `ArgumentError`; other SDK failures map to
-`StateError`. Internal wrappers retain the original SDK cause and stack.
+map to `UnsupportedError` and `ArgumentError`. Load-time `LlamaModelException` is
+preserved because the SDK cannot distinguish corrupt weights from insufficient
+memory. Other SDK failures map to `StateError`; wrappers retain the cause and stack.
 
 ## Consumer setup
 
@@ -35,15 +36,15 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Keep this explicit selection as defence in depth. llamadart 0.12.2 automatically
+Keep this explicit selection as defence in depth. llamadart 0.13.0 automatically
 omits its LiteRT-LM when this connector or `flutter_edge_ai_litertlm` is present;
 explicitly selecting both LiteRT-LM owners fails the native build. Core itself includes no inference
-runtime. With llamadart 0.12.2, Vulkan is included by default on supported Android,
+runtime. With llamadart 0.13.0, Vulkan is included by default on supported Android,
 Linux and Windows targets. Android auto selection uses CPU; Linux/Windows use
 Vulkan where available. The demo explicitly selects CPU-only bundles on those
 platforms; apps choose backend packaging in their own hook settings.
 
-Apple applications add `llamadart_llama_cpp_flutter: 0.0.23` directly and enable
+Apple applications add `llamadart_llama_cpp_flutter: 0.13.0` directly and enable
 Flutter SwiftPM. Use iOS 16.4+ and macOS 14+. iOS applications enable the
 extended-virtual-addressing and increased-memory-limit entitlements; the example
 includes both. Do not apply those kernel entitlements on macOS. The published
@@ -51,11 +52,13 @@ LiteRT-LM macOS CocoaPods setup disables SwiftPM, so combining that setup with t
 SwiftPM companion is not qualified; use separate apps until a shared recipe is
 validated. Windows needs the matching Visual C++ runtime. Android's example uses
 API 28+ and includes arm64-v8a / x86_64 only; 32-bit armeabi-v7a is unsupported.
-The current emulator lane runs x86_64; an ARM64 phone run remains a publication gate.
+The emulator lane runs x86_64. A maintainer-run Galaxy S24 ARM64 CPU smoke passed
+on the earlier 0.12.2/0.0.23 pair (see the dated PR record). This is not a recurring
+CI lane or qualification of the new SDK pair on phones.
 Oldest-device compatibility still requires device testing.
 
 The Apple metadata fix in [native #110](https://github.com/leehack/llamadart-native/issues/110)
-is included in companion 0.0.23 (native v0.6.0-3). App Store submission remains
+is included in companion 0.13.0 (native v0.6.0-3). App Store submission remains
 unvalidated. Apple workspace-member apps are also unqualified: the companion is
 always missed when it is declared only in a member and the hook runs from the
 root, so fallback frameworks can be embedded alongside it. Use a standalone
@@ -92,9 +95,9 @@ the support matrix. Dated devices, models, commands and results are recorded in 
 | Web | Wasm build and real worker/Wasm generation | Hardware WebGPU, advanced model/browser combinations |
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
-package minimum. Runtime pins are llamadart 0.12.2, native artifacts v0.6.0-3,
-Apple companion 0.0.23 and connector-pinned Web assets v0.1.59. Upgrade the SDK
-constraint and companion together. Web assets are checksum-verified. llamadart 0.12.2 verifies llama.cpp archive SHA-256 digests before extraction
+package minimum. Runtime pins are llamadart 0.13.0, native artifacts v0.6.0-3,
+Apple companion 0.13.0 and connector-pinned Web assets v0.1.59. Upgrade the SDK
+constraint and companion together. Web assets are checksum-verified. llamadart 0.13.0 verifies llama.cpp archive SHA-256 digests before extraction
 ([#1039](https://github.com/leehack/llamadart/pull/1039)); SwiftPM verifies its
 companion archives. Existing extracted native caches and explicit local runtime
 paths retain the SDK's documented trust policy.

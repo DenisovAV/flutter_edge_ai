@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
+import 'package:flutter_edge_ai/engine.dart' show edgeAiLog, toolCallsOf;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
@@ -33,7 +33,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     this.toolChoice = llama.ToolChoice.auto,
     List<edge.Tool> tools = const [],
   }) : _queue = queue ?? EngineQueue(),
-       _tools = tools.map(SchemaToolDefinition.new).toList() {
+       _tools = SchemaToolDefinition.fromTools(tools) {
     if (systemInstruction != null && systemInstruction.isNotEmpty) {
       _history.add(
         llama.LlamaChatMessage.fromText(
@@ -137,7 +137,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     if (parameterFormats.contains(rendered.format) &&
         _tools.any((tool) => tool.requiresFullSchema)) {
       throw UnsupportedError(
-        'This model grammar cannot preserve the supplied JSON Schema constraints with llamadart 0.12.2. Use simple typed properties or another model format.',
+        'This model grammar cannot preserve the supplied JSON Schema constraints with the pinned llamadart version. Use simple typed properties or another model format.',
       );
     }
   }
@@ -188,7 +188,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         : llama.LlamaChatRole.assistant;
     if (message.type == edge.MessageType.toolResponse) {
       final calls = _unansweredCalls();
-      final suppliedId = _resultId(message);
+      final suppliedId = message.toolCallId;
       final explicitId = _replayAliases[suppliedId] ?? suppliedId;
       final matching = calls.values.where((c) => c.name == message.toolName);
       final call = explicitId != null
@@ -215,13 +215,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     } else if (message.type == edge.MessageType.toolCall) {
       final usedIds = _usedCallIds();
       try {
-        final decoded = jsonDecode(message.text);
-        final List<dynamic> calls = switch (decoded) {
-          {'tool_calls': final List<dynamic> calls} => calls,
-          final List<dynamic> calls => calls,
-          final Map<String, dynamic> call => [call],
-          _ => throw const FormatException(),
-        };
+        final calls = toolCallsOf(message);
         if (calls.isEmpty) throw const FormatException();
         // Reserve every caller-provided ID before generating any missing ID,
         // including IDs on later calls in the same parallel batch.
@@ -230,10 +224,9 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         final outstanding = _unansweredCalls();
         final aliases = <String, String>{};
         for (final item in calls) {
-          final id = (item as Map<String, dynamic>)['id'] as String?;
+          final id = item.id;
           if (id != null) {
-            if (id.isEmpty ||
-                !suppliedIds.add(id) ||
+            if (!suppliedIds.add(id) ||
                 outstanding.containsKey(id) ||
                 _replayAliases.containsKey(id)) {
               throw const FormatException();
@@ -242,20 +235,13 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           }
         }
         for (final item in calls) {
-          final call = item as Map<String, dynamic>;
-          final function = (call['function'] ?? call) as Map<String, dynamic>;
-          final name = function['name'] as String;
-          final raw = function['arguments'] ?? function['parameters'];
+          final name = item.name;
+          // Core freezes recorded arguments recursively. Own a mutable copy.
           final args =
-              (raw == null || raw is String && raw.trim().isEmpty
-                      ? <String, dynamic>{}
-                      : raw is String
-                      ? jsonDecode(raw)
-                      : raw)
-                  as Map<String, dynamic>;
-          final supplied = call['id'] as String?;
+              jsonDecode(jsonEncode(item.args)) as Map<String, dynamic>;
+          final supplied = item.id;
           var id = supplied;
-          if (id == null || usedIds.contains(id)) {
+          if (id == null || !_validCallId(id) || usedIds.contains(id)) {
             id = _nextCallId(reservedIds);
             reservedIds.add(id);
           }
@@ -276,6 +262,10 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
       } on FormatException {
         throw ArgumentError(
           'Replayed tool calls need declared names, unique IDs and JSON object arguments.',
+        );
+      } on JsonUnsupportedObjectError {
+        throw ArgumentError(
+          'Replayed tool arguments must contain JSON values.',
         );
       } on TypeError {
         throw ArgumentError(
@@ -343,20 +333,16 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     edge.Message recorded = message;
     if (message.type == edge.MessageType.toolResponse) {
       final result = parts.single as llama.LlamaToolResultContent;
-      recorded = result.result is Map<String, dynamic>
-          ? LlamaToolResponseMessage(
-              callId: result.id!,
-              toolName: message.toolName!,
-              response: result.result as Map<String, dynamic>,
-            )
-          : _RecordedToolResult(
-              callId: result.id!,
-              toolName: message.toolName!,
-              text: message.text,
-            );
+      recorded = edge.Message(
+        text: message.text,
+        toolName: message.toolName,
+        type: edge.MessageType.toolResponse,
+        isUser: true,
+        toolCallId: result.id,
+      );
     } else if (message.type == edge.MessageType.toolCall) {
-      recorded = edge.Message.toolCall(
-        text: _toolCallJson(parts.whereType<llama.LlamaToolCallContent>()),
+      recorded = _toolCallMessage(
+        parts.whereType<llama.LlamaToolCallContent>(),
       );
     }
     _pendingTranscript.add(recorded);
@@ -482,11 +468,8 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     for (var index = 0; index < _transcript.length; index++) {
       final message = _transcript[index];
       if (message.type == edge.MessageType.toolCall) {
-        final calls =
-            (jsonDecode(message.text) as Map<String, dynamic>)['tool_calls']
-                as List;
-        for (final call in calls) {
-          order[call['id'] as String] = order.length;
+        for (final call in toolCallsOf(message)) {
+          order[call.id!] = order.length;
         }
       } else if (message.isUser && message.type == edge.MessageType.text) {
         order = {};
@@ -499,7 +482,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         final results = _transcript.sublist(index, end);
         results.sort(
           (a, b) =>
-              (order[_resultId(a)] ?? 0).compareTo(order[_resultId(b)] ?? 0),
+              (order[a.toolCallId] ?? 0).compareTo(order[b.toolCallId] ?? 0),
         );
         _transcript.setRange(index, end, results);
         index = end - 1;
@@ -563,7 +546,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         (m) =>
             m.type == edge.MessageType.toolResponse &&
             m.toolName == result.name &&
-            (_resultId(m) == null || _resultId(m) == result.id),
+            (m.toolCallId == null || m.toolCallId == result.id),
       );
       _history.add(message);
       _pending.remove(message);
@@ -719,7 +702,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
               );
             }
             var id = call.id;
-            if (id == null || id.isEmpty || usedIds.contains(id)) {
+            if (id == null || !_validCallId(id) || usedIds.contains(id)) {
               do {
                 id = _nextCallId(usedIds);
               } while (usedIds.contains(id));
@@ -783,7 +766,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             _transcript.add(edge.Message.text(text: completion.text));
           }
           if (calls.isNotEmpty) {
-            _transcript.add(edge.Message.toolCall(text: _toolCallJson(calls)));
+            _transcript.add(_toolCallMessage(calls));
           }
           final usage = completion.usage;
           final duration = usage?.duration;
@@ -800,7 +783,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           );
           final responses = <edge.FunctionCallResponse>[
             for (final call in calls)
-              LlamaFunctionCallResponse(
+              edge.FunctionCallResponse(
                 id: call.id!,
                 name: call.name,
                 args: call.arguments,
@@ -934,30 +917,17 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   }
 }
 
-String? _resultId(edge.Message message) => switch (message) {
-  LlamaToolResponseMessage(:final callId) => callId,
-  _RecordedToolResult(:final callId) => callId,
-  _ => null,
-};
+final _callIdPattern = RegExp(r'^[a-zA-Z0-9]{9}$');
+bool _validCallId(String id) => _callIdPattern.hasMatch(id);
 
-// An internal recorded result also accepts the JSON scalar/list forms supported
-// by low-level session messages; the public result helper remains Map-based.
-final class _RecordedToolResult extends edge.Message {
-  const _RecordedToolResult({
-    required this.callId,
-    required String toolName,
-    required super.text,
-  }) : super(
-         toolName: toolName,
-         type: edge.MessageType.toolResponse,
-         isUser: true,
-       );
-  final String callId;
-}
-
-String _toolCallJson(Iterable<llama.LlamaToolCallContent> calls) => jsonEncode({
-  'tool_calls': [
-    for (final call in calls)
-      {'id': call.id, 'name': call.name, 'arguments': call.arguments},
-  ],
-});
+edge.Message _toolCallMessage(Iterable<llama.LlamaToolCallContent> calls) =>
+    edge.Message.toolCall(
+      calls: [
+        for (final call in calls)
+          edge.FunctionCallResponse(
+            id: call.id,
+            name: call.name,
+            args: call.arguments,
+          ),
+      ],
+    );

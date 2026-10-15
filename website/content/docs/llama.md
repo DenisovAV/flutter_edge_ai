@@ -13,7 +13,7 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the development package
 
-The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.3.2+**. Connector CI uses Flutter 3.47.1 for reproducible checks. From the repository root:
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.4.0+**. Connector CI uses Flutter 3.47.1 for reproducible checks. From the repository root:
 
 ```
 cd packages/flutter_edge_ai_llama/example
@@ -80,11 +80,12 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 ## Add the development package
 
 The package is not on pub.dev yet. Use the example or a path dependency on
-`packages/flutter_edge_ai_llama` in your clone. Core 2.3.2 includes the dedicated GGUF type and paired-adapter restoration;
-external apps resolve it from pub.dev without a development override.
+`packages/flutter_edge_ai_llama` in your clone. Core 2.4.0 supplies the typed tool
+history used by this connector. External apps need that version on pub.dev; until publication, use the repository workspace
+example. Hosted qualification never substitutes a core override.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
-`llamadart_llama_cpp_flutter: 0.0.23` SwiftPM companion.
+`llamadart_llama_cpp_flutter: 0.13.0` SwiftPM companion.
 
 ## Select llama.cpp only
 
@@ -97,11 +98,11 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Dependency settings do not propagate. llamadart 0.12.2 chooses llama.cpp only
+Dependency settings do not propagate. llamadart 0.13.0 chooses llama.cpp only
 when this connector or Flutter Edge AI LiteRT-LM is in the app graph. Keep the
 explicit selection as defence in depth; selecting both LiteRT-LM owners is rejected. The monorepo configures llama.cpp for its own workspace tests; that
 does not suppress another engine package's independently owned runtime.
-Apple Flutter apps add `llamadart_llama_cpp_flutter 0.0.23` directly and enable
+Apple Flutter apps add `llamadart_llama_cpp_flutter 0.13.0` directly and enable
 SwiftPM, as in this package's example. To keep an app llama.cpp only, omit the
 separate LiteRT-LM engine and companion dependencies.
 
@@ -124,7 +125,7 @@ models below about 2 GB and avoid streaming OPFS mode. See the
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
 for setup, capability limits and publication gates.
 
-With llamadart 0.12.2, adding `flutter_edge_ai_litertlm` keeps the SDK on
+With llamadart 0.13.0, adding `flutter_edge_ai_litertlm` keeps the SDK on
 llama.cpp automatically. Retain the root `[llama_cpp]` selection as defence in
 depth; explicitly selecting both LiteRT-LM owners fails with an actionable error.
 On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is required too. The LiteRT-LM macOS CocoaPods

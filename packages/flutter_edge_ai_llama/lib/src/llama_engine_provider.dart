@@ -138,7 +138,14 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
     try {
       engine = await (_loader ?? _loadGgufEngine)(location, params);
     } catch (error, stack) {
-      Error.throwWithStackTrace(runtimeError(error), stack);
+      // The SDK uses the same load exception for corrupt weights and OOM.
+      // Preserve it so Genkit can classify a resource failure for fallback.
+      final mapped =
+          error is llama.LlamaModelException &&
+              error is! llama.LlamaModelFormatException
+          ? error
+          : runtimeError(error);
+      Error.throwWithStackTrace(mapped, stack);
     }
     try {
       if (engine.runtime != llama.LlamaRuntime.llamaCpp) {

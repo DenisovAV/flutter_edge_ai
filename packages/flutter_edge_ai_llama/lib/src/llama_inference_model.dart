@@ -8,6 +8,7 @@ import 'package:llamadart/llamadart.dart' as llama;
 import 'engine_queue.dart';
 import 'llama_inference_chat.dart';
 import 'llama_inference_session.dart';
+import 'runtime_error.dart';
 
 /// Loaded GGUF weights shared by independently owned logical dialogues.
 ///
@@ -348,15 +349,15 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
           if (identical(_session, next)) _session = null;
         },
       );
-      await _queue.run(() async {
-        if (tools.isNotEmpty &&
-            !(await engine.capabilities).supportsToolCalling) {
-          throw UnsupportedError(
-            'The active runtime does not support tool calling.',
-          );
-        }
+      // Rendering without token counting reads cached metadata, not runtime
+      // context. Do not wait behind the turn this replacement must cancel.
+      try {
         await next.validateTools();
-      });
+        _queue.ensureValid();
+      } catch (error, stack) {
+        if (error is llama.LlamaStateException) _queue.invalidate(error, stack);
+        Error.throwWithStackTrace(runtimeError(error), stack);
+      }
       // Validate the replacement before closing a usable legacy session.
       if (!detached) await _session?.close();
       if (_closed) {

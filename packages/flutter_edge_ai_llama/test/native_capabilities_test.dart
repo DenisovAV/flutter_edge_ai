@@ -75,12 +75,12 @@ void main() {
         edge.Message.text(text: 'Use get_weather for Montreal.', isUser: true),
       );
       final call =
-          await chat.generateChatResponse() as LlamaFunctionCallResponse;
+          await chat.generateChatResponse() as edge.FunctionCallResponse;
       expect(call.name, 'get_weather');
       expect(call.args['city'], isA<String>());
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: call.id,
+        edge.Message.toolResponse(
+          toolCallId: call.id,
           toolName: call.name,
           response: {'temperature': 18},
         ),

@@ -11,8 +11,8 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 
 **Unreleased:** this package is being prepared for upstream contribution.
 Use the checked-in example today; a pub.dev install command will follow release.
-The minimum is Flutter **3.44 / Dart 3.12**, with core **2.3.2+**,
-llamadart **0.12.2** and Apple companion **0.0.23**. Connector CI uses Flutter
+The minimum is Flutter **3.44 / Dart 3.12**, with core **2.4.0+**,
+llamadart **0.13.0** and Apple companion **0.13.0**. Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. GGUF embeddings are deferred.
 
 ## Try a chat in a few minutes
@@ -83,18 +83,19 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-While the package is unreleased, use a path dependency on your clone. Replace
-the path below with the package directory relative to your app's pubspec:
+External apps need core 2.4.0 on pub.dev; until it is published, use the
+repository workspace example. Once available, use a path dependency on this
+unreleased package. Replace the path below relative to your app's pubspec:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.3.2
+  flutter_edge_ai: ^2.4.0
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
   # Add directly for iOS/macOS SwiftPM linkage:
-  llamadart_llama_cpp_flutter: 0.0.23
+  llamadart_llama_cpp_flutter: 0.13.0
 
 hooks:
   user_defines:
@@ -103,13 +104,13 @@ hooks:
 ```
 
 Merge the hook settings into your **application's** pubspec, or its workspace
-root. Dependency settings do not propagate. llamadart 0.12.2 selects llama.cpp
+root. Dependency settings do not propagate. llamadart 0.13.0 selects llama.cpp
 only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph.
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-The connector constrains llamadart to the tested 0.12.2 patch; update that
-constraint and Apple companion 0.0.23 together after validating the new pair.
+The connector constrains llamadart to the tested 0.13.0 patch; update that
+constraint and Apple companion 0.13.0 together after validating the new pair.
 Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
 For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting
 those two ABIs. With `--split-per-abi`, let Flutter own the filters and pass
@@ -128,11 +129,12 @@ On iOS enable `com.apple.developer.kernel.extended-virtual-addressing` and
 `com.apple.developer.kernel.increased-memory-limit`; see the example entitlements.
 The LiteRT-LM macOS CocoaPods recipe disables SwiftPM and conflicts with this
 companion recipe; that combined setup is not qualified.
-App Store submission is **unvalidated** while the native framework slice metadata
-is tracked in [llamadart-native #110](https://github.com/leehack/llamadart-native/issues/110).
-Apple workspace member apps are also unqualified: root hook settings can select
-fallback frameworks alongside the SwiftPM companion. Use a standalone Apple app
-until companion discovery and deployment metadata are validated.
+Companion 0.13.0 includes the framework metadata fix from
+[llamadart-native #110](https://github.com/leehack/llamadart-native/issues/110);
+App Store submission remains **unvalidated**. Apple workspace member apps are also
+unqualified: the companion is always missed when declared only in a member and
+the hook runs from the root, so fallback frameworks can be embedded alongside it.
+Use a standalone Apple app until that packaging path is validated.
 Windows users need the Microsoft Visual C++ runtime for the app architecture.
 See [platform setup](doc/platforms.md#consumer-setup) for backend selection.
 
@@ -200,7 +202,7 @@ This contribution provides inference only. GGUF embeddings are deferred to a
 The connector uses core 2.3's public `engine.dart` / `engine_web.dart` APIs.
 Dedicated GGUF identity removes the routing conflict with MediaPipe. Core restores
 paired LoRA adapters after restart and refuses restoration if an adapter is missing.
-They ship in core 2.3.2, the minimum version required by this connector.
+They shipped in core 2.3.2; this connector requires core 2.4.0 for typed tool history.
 
 ## Troubleshooting
 

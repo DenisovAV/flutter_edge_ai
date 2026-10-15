@@ -18,7 +18,7 @@ python3 tool/verify.py device --device <device-id> --model-url <model-url>
 ```
 
 The package gate copies the standalone package, removes workspace resolution,
-and validates hosted core 2.3.2+ without a development override. It does not publish.
+and validates hosted core 2.4.0+ without a development override. It does not publish.
 Required native, packaged-device and Web model lanes inspect Flutter's JSON test
 report and require their real-model test to complete successfully, without skipping.
 

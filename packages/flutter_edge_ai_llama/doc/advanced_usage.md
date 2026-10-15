@@ -53,8 +53,8 @@ await for (final response in chat.generateChatResponseWithTools(
 ```
 
 The bounded Edge AI tool loop is inherited. For manual execution, calls are
-`LlamaFunctionCallResponse` instances retaining the call ID. Answer with
-`LlamaToolResponseMessage(callId: call.id, toolName: call.name, response: result)`.
+core `FunctionCallResponse` instances retaining the call ID. Answer with
+`Message.toolResponse(toolCallId: call.id, toolName: call.name, response: result)`.
 Ordinary `Message.toolResponse` remains compatible, matching unanswered calls
 by name in emission order. Use explicit IDs for out-of-order results when
 several calls have the same name. Reused runtime call IDs are remapped to keep IDs unique across turns.
@@ -102,7 +102,8 @@ This connector does not wire Web LoRA, even when the bridge supports it.
 Installed and per-session Web adapters are rejected explicitly.
 Core restores the model and its paired LoRA after restart. If the adapter is
 missing, it restores neither rather than silently loading the base model.
-GGUF adapter filenames use `model__adapter.gguf`. This requires core 2.3.2+.
+GGUF adapter filenames use `model__adapter.gguf`; the connector requires core
+2.4.0 for typed tool history.
 
 ## Compatibility boundaries
 
@@ -139,19 +140,20 @@ Invalid configuration or replay payloads throw `ArgumentError`; unsupported
 features throw `UnsupportedError`. Closed/invalid runtime state, empty answers,
 malformed generated tools and incomplete tool turns throw `StateError`.
 SDK unsupported/model-format/argument failures map to standard `UnsupportedError`
-or `ArgumentError`; other SDK failures map to `StateError`, retaining the original
-cause and stack. A failed shared-runtime recovery
+or `ArgumentError`; load-time `LlamaModelException` is preserved so callers can attempt resource-related
+fallback (the SDK cannot distinguish corrupt weights from out-of-memory loads).
+Other SDK failures map to `StateError`, retaining the original cause and stack. A failed shared-runtime recovery
 closes the model so core can reload it; the original failure remains in diagnostics.
 
 `fullHistory` retains committed visible turns across context trimming and close,
 so it can be persisted or replayed into a replacement model. Only runtime history
 is trimmed. `clearHistory(replayHistory: ...)` commits validated completed turns;
-a trailing user input remains staged and rolls back on stop/error. Replayed tool calls
-accept core's `{"name": "search", "parameters": {"q": "value"}}`, a JSON list of
+a trailing user input remains staged and rolls back on stop/error. Replayed tool calls read core's typed `Message.toolCalls` through `toolCallsOf`,
+with owned argument copies. Text-only histories also accept core's `{"name": "search", "parameters": {"q": "value"}}`, a JSON list of
 those objects, and the OpenAI `tool_calls` wrapper. Missing IDs are assigned by the
 session; ordinary results pair unanswered calls by name in order. Use
-`LlamaToolResponseMessage` when repeated names need results delivered out of order;
-retain its `callId` when serializing an incompletely answered group. Completed
+`Message.toolResponse(toolCallId: ...)` when repeated names need results delivered
+out of order; retain `toolCallId` when serializing an incompletely answered group. Completed
 parallel results are recorded in call order so ordinary core Message fields replay
 without losing their association.
 
@@ -162,15 +164,21 @@ caps must be positive and are reduced to the actual remaining rendered context.
 
 Historical tool turns remain replayable under `ToolChoice.none`; that choice
 forbids newly generated calls. Results are rendered and persisted in call order.
-Missing or reused historical IDs receive unique nine-character alphanumeric
-IDs, with explicit result references remapped together. An unanswered ID cannot
-be reused. Tool-result copies retain `callId` and typed equality includes it.
+Missing, reused or non-nine-character-alphanumeric historical IDs receive unique
+nine-character alphanumeric IDs, with explicit result references remapped together. An unanswered ID cannot
+be reused. Core tool-result copies and equality retain `toolCallId`.
 
-Tool declarations are preflighted against the loaded template before replacing
-an existing chat. GLM-4.5, Laguna and Hunyuan-V3 accept the SDK's typed parameter
+Tool declarations are preflighted against cached template metadata before replacing
+an existing chat, without waiting for its running generation. A successful
+replacement cancels that turn; an invalid tool declaration leaves it usable. GLM-4.5, Laguna and Hunyuan-V3 accept the SDK's typed parameter
 subset; schemas requiring richer constraints fail explicitly for those grammars.
-Other formats retain the full schema. Rich SDK schema support is tracked in
-[llamadart #1007](https://github.com/leehack/llamadart/issues/1007).
+Other formats retain the full schema. If any tool cannot be represented as typed
+parameters, the entire set omits that typed view so shared XML grammars do not
+lose argument names. The adapter keeps its schema bridge: llamadart 0.13.0's
+`ToolDefinition.fromJsonSchema` supports a narrower set of formats and would reject
+XML tools. XML nullable-string decoding is a separate SDK limitation; nullable
+string arguments can come back as text instead of calls. Use scalar string
+properties for those models until the SDK parser is fixed.
 
 The connector rejects a loaded context smaller than requested; request a smaller
 `maxTokens` explicitly rather than relying on a silent Web fallback. A fatal SDK

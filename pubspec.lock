@@ -636,10 +636,10 @@ packages:
     dependency: transitive
     description:
       name: llamadart
-      sha256: a54fdc539176f699018969e9e96ca2cab1b4ed435d229edee117ba25ae8b70c6
+      sha256: "44f828c06520938365138664a4b20c27df5ef3d094896dbbe1566f4e9b849bff"
       url: "https://pub.dev"
     source: hosted
-    version: "0.12.2"
+    version: "0.13.0"
   logging:
     dependency: transitive
     description:

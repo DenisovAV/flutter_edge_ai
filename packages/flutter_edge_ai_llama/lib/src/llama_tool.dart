@@ -1,80 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
-
-/// A tool call retaining llamadart's identifier across the Edge AI boundary.
-final class LlamaFunctionCallResponse extends edge.FunctionCallResponse {
-  /// Creates a typed call with an identifier usable in [LlamaToolResponseMessage].
-  const LlamaFunctionCallResponse({
-    required this.id,
-    required super.name,
-    required super.args,
-  });
-
-  /// Call identifier, unique within the originating session.
-  final String id;
-}
-
-/// A tool result explicitly associated with one call, including repeated names.
-final class LlamaToolResponseMessage extends edge.Message {
-  /// Encodes [response] as the result of [callId] and [toolName].
-  LlamaToolResponseMessage({
-    required this.callId,
-    required String toolName,
-    required Map<String, dynamic> response,
-  }) : super(
-         text: jsonEncode(response),
-         toolName: toolName,
-         type: edge.MessageType.toolResponse,
-         isUser: true,
-       );
-
-  /// The identifier on [LlamaFunctionCallResponse].
-  final String callId;
-
-  LlamaToolResponseMessage._({
-    required this.callId,
-    required super.text,
-    required super.isUser,
-    super.imageBytes,
-    super.images,
-    super.audioBytes,
-    required super.type,
-    required super.toolName,
-  });
-
-  @override
-  LlamaToolResponseMessage copyWith({
-    String? text,
-    bool? isUser,
-    Uint8List? imageBytes,
-    List<Uint8List>? images,
-    Uint8List? audioBytes,
-    edge.MessageType? type,
-    String? toolName,
-  }) => LlamaToolResponseMessage._(
-    callId: callId,
-    text: text ?? this.text,
-    isUser: isUser ?? this.isUser,
-    imageBytes: imageBytes ?? this.imageBytes,
-    images: images ?? this.images,
-    audioBytes: audioBytes ?? this.audioBytes,
-    type: type ?? this.type,
-    toolName: toolName ?? this.toolName,
-  );
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is LlamaToolResponseMessage &&
-          callId == other.callId &&
-          super == other;
-
-  @override
-  int get hashCode => Object.hash(super.hashCode, callId);
-}
 
 /// Keeps the complete JSON Schema instead of reducing it to scalar ToolParams.
 class SchemaToolDefinition extends llama.ToolDefinition {
@@ -90,22 +17,32 @@ class SchemaToolDefinition extends llama.ToolDefinition {
         'Tool names must be nonempty and parameters must be an object JSON Schema.',
       );
     }
-    return SchemaToolDefinition._(
-      tool,
-      schema,
-      _properties(schema) ?? const [],
-    );
+    return SchemaToolDefinition._(tool, schema, _properties(schema));
   }
 
   SchemaToolDefinition._(
     edge.Tool tool,
     this.schema,
-    List<llama.ToolParam> parameters,
-  ) : super(
+    List<llama.ToolParam>? parameters,
+  ) : _typable = parameters != null,
+      super(
         name: tool.name,
         description: tool.description,
-        parameters: parameters,
+        parameters: parameters ?? const [],
       );
+
+  final bool _typable;
+
+  /// XML grammars derive one parameter-name union for the whole tool set.
+  /// Partial typed views would forbid names from the untypable tools.
+  static List<SchemaToolDefinition> fromTools(List<edge.Tool> tools) {
+    final definitions = tools.map(SchemaToolDefinition.new).toList();
+    if (definitions.every((tool) => tool._typable)) return definitions;
+    return [
+      for (var i = 0; i < definitions.length; i++)
+        SchemaToolDefinition._(tools[i], definitions[i].schema, null),
+    ];
+  }
 
   /// Specialized SDK grammars must not silently discard constraints missing
   /// from their typed-parameter view. Other handlers use the complete schema.
@@ -122,20 +59,28 @@ class SchemaToolDefinition extends llama.ToolDefinition {
 }
 
 List<llama.ToolParam>? _properties(Map<String, dynamic> schema) {
-  final raw = schema['properties'] ?? <String, dynamic>{};
+  final raw = schema.containsKey('properties')
+      ? schema['properties']
+      : <String, dynamic>{};
   if (raw is! Map<String, dynamic>) {
     throw ArgumentError('Schema properties must be an object.');
   }
-  final required = schema['required'] ?? const <String>[];
-  if (required is! List ||
-      required.any((name) => name is! String || !raw.containsKey(name))) {
-    throw ArgumentError('Schema required must name declared properties.');
+  final required = schema.containsKey('required')
+      ? schema['required']
+      : const <String>[];
+  if (required is! List || required.any((name) => name is! String)) {
+    throw ArgumentError('Schema required must be a list of strings.');
   }
+  var typable = required.every(raw.containsKey);
   final parameters = <llama.ToolParam>[];
   for (final entry in raw.entries) {
-    if (entry.key.isEmpty || entry.value is! Map<String, dynamic>) {
+    if (entry.value is bool) {
+      typable = false;
+      continue;
+    }
+    if (entry.value is! Map<String, dynamic>) {
       throw ArgumentError(
-        'Schema properties need nonempty names and object schemas.',
+        'Schema properties must be object or boolean schemas.',
       );
     }
     final parameter = _parameter(
@@ -143,10 +88,13 @@ List<llama.ToolParam>? _properties(Map<String, dynamic> schema) {
       entry.value as Map<String, dynamic>,
       required.contains(entry.key),
     );
-    if (parameter == null) return null;
-    parameters.add(parameter);
+    if (parameter == null || entry.key.isEmpty) {
+      typable = false;
+    } else {
+      parameters.add(parameter);
+    }
   }
-  return parameters;
+  return typable ? parameters : null;
 }
 
 llama.ToolParam? _parameter(

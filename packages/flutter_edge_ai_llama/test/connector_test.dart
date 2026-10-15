@@ -18,6 +18,8 @@ import 'package:flutter_edge_ai_llama/src/llama_tool.dart'
     show SchemaToolDefinition;
 // ignore: implementation_imports — verifies the pinned SDK grammar used in production.
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
+// ignore: implementation_imports — verifies the pinned shared XML grammar.
+import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
 
 import 'lora_fixture_stub.dart' if (dart.library.io) 'lora_fixture_native.dart';
 
@@ -816,10 +818,10 @@ void main() {
         final chat = await model.openChat(tools: [tool]);
         await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
         final call =
-            await chat.generateChatResponse() as LlamaFunctionCallResponse;
+            await chat.generateChatResponse() as edge.FunctionCallResponse;
         await chat.addQuery(
-          LlamaToolResponseMessage(
-            callId: call.id,
+          edge.Message.toolResponse(
+            toolCallId: call.id,
             toolName: call.name,
             response: {'ok': true},
           ),
@@ -1046,10 +1048,10 @@ void main() {
     engine.script = [_toolChunk(0, 'search', '{"q":"a"}', id: 'a')];
     final chat = await model.openChat(tools: [tool]);
     await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
-    final call = await chat.generateChatResponse() as LlamaFunctionCallResponse;
+    final call = await chat.generateChatResponse() as edge.FunctionCallResponse;
     await chat.addQuery(
-      LlamaToolResponseMessage(
-        callId: call.id,
+      edge.Message.toolResponse(
+        toolCallId: call.id,
         toolName: call.name,
         response: {'ok': true},
       ),
@@ -1136,10 +1138,10 @@ void main() {
       final chat = await model.openChat(tools: [tool], enableThinking: true);
       await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
       final call =
-          await chat.generateChatResponse() as LlamaFunctionCallResponse;
+          await chat.generateChatResponse() as edge.FunctionCallResponse;
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: call.id,
+        edge.Message.toolResponse(
+          toolCallId: call.id,
           toolName: call.name,
           response: {'ok': true},
         ),
@@ -1214,7 +1216,7 @@ void main() {
     'fragmented tool calls preserve schemas and call IDs through results',
     () async {
       engine.script = [
-        _toolChunk(0, 'search', '{"q":', id: 'call_1'),
+        _toolChunk(0, 'search', '{"q":', id: 'call00001'),
         _toolChunk(0, null, '"flower"}'),
       ];
       final chat = await model.createChat(
@@ -1223,8 +1225,8 @@ void main() {
       );
       await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
       final response = await chat.generateChatResponse();
-      final call = response as LlamaFunctionCallResponse;
-      expect(call.id, 'call_1');
+      final call = response as edge.FunctionCallResponse;
+      expect(call.id, 'call00001');
       expect(call.args, {'q': 'flower'});
       expect(engine.lastTools.single.toJsonSchema(), tool.parameters);
       expect(engine.lastTemplateTools.single.toJsonSchema(), tool.parameters);
@@ -1234,8 +1236,8 @@ void main() {
         throwsA(isA<StateError>()),
       );
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: call.id,
+        edge.Message.toolResponse(
+          toolCallId: call.id,
           toolName: call.name,
           response: {'found': true},
         ),
@@ -1253,21 +1255,18 @@ void main() {
     'parallel calls with same name accept explicit IDs out of order',
     () async {
       engine.script = [
-        _toolChunk(0, 'search', '{"q":"a"}', id: 'a'),
-        _toolChunk(1, 'search', '{"q":"b"}', id: 'b'),
+        _toolChunk(0, 'search', '{"q":"a"}', id: 'call00001'),
+        _toolChunk(1, 'search', '{"q":"b"}', id: 'call00002'),
       ];
       final chat = await model.createChat(tools: [tool]);
       await chat.addQuery(edge.Message.text(text: 'both', isUser: true));
       final response =
           await chat.generateChatResponse()
               as edge.ParallelFunctionCallResponse;
-      expect(response.calls.map((c) => (c as LlamaFunctionCallResponse).id), [
-        'a',
-        'b',
-      ]);
+      expect(response.calls.map((c) => c.id), ['call00001', 'call00002']);
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: 'b',
+        edge.Message.toolResponse(
+          toolCallId: 'call00002',
           toolName: 'search',
           response: {'b': true},
         ),
@@ -1281,7 +1280,7 @@ void main() {
         engine.requests.last
             .where((m) => m.role == llama.LlamaChatRole.tool)
             .map((m) => (m.parts.single as llama.LlamaToolResultContent).id),
-        ['a', 'b'],
+        ['call00001', 'call00002'],
       );
     },
   );
@@ -1407,7 +1406,7 @@ void main() {
       );
       await chat.addQuery(edge.Message.text(text: 'ping', isUser: true));
       final call =
-          await chat.generateChatResponse() as LlamaFunctionCallResponse;
+          await chat.generateChatResponse() as edge.FunctionCallResponse;
       expect(call.args, isEmpty);
     },
   );
@@ -1450,7 +1449,7 @@ void main() {
       final chat = await model.openChat(tools: [tool]);
       await chat.addQuery(edge.Message.text(text: 'find', isUser: true));
       final first =
-          await chat.generateChatResponse() as LlamaFunctionCallResponse;
+          await chat.generateChatResponse() as edge.FunctionCallResponse;
       await expectLater(
         chat.addQuery(
           edge.Message(
@@ -1462,18 +1461,18 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: first.id,
+        edge.Message.toolResponse(
+          toolCallId: first.id,
           toolName: first.name,
           response: {'ok': true},
         ),
       );
       final second =
-          await chat.generateChatResponse() as LlamaFunctionCallResponse;
+          await chat.generateChatResponse() as edge.FunctionCallResponse;
       expect(second.id, isNot(first.id));
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: second.id,
+        edge.Message.toolResponse(
+          toolCallId: second.id,
           toolName: second.name,
           response: {'ok': true},
         ),
@@ -1544,14 +1543,15 @@ void main() {
     },
   );
 
-  test('tool support is capability probed', () async {
-    engine.toolSupport = false;
-    await expectLater(
-      model.createChat(tools: [tool]),
-      throwsA(isA<UnsupportedError>()),
-    );
-    expect(engine.requests, isEmpty);
-  });
+  test(
+    'llama.cpp tools preflight without a runtime capability probe',
+    () async {
+      engine.capabilityError = StateError('Must not probe capabilities');
+      final chat = await model.createChat(tools: [tool]);
+      expect(chat, isNotNull);
+      expect(engine.lastTemplateTools.single.name, tool.name);
+    },
+  );
 
   test(
     'independent chats retain histories while generation is serialized',
@@ -1938,11 +1938,11 @@ void main() {
       final chat = await model.openChat(tools: [tool]);
       await chat.addQuery(edge.Message.text(text: 'call', isUser: true));
       final call =
-          await chat.generateChatResponse() as LlamaFunctionCallResponse;
+          await chat.generateChatResponse() as edge.FunctionCallResponse;
       expect(call.args, isEmpty);
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: call.id,
+        edge.Message.toolResponse(
+          toolCallId: call.id,
           toolName: call.name,
           response: {'ok': true},
         ),
@@ -2021,7 +2021,7 @@ void main() {
       () async {
         engine.script = [
           _thinking('PRIVATE'),
-          _toolChunk(0, 'search', '{}', id: 'a'),
+          _toolChunk(0, 'search', '{}', id: 'call00001'),
         ];
         final chat = await model.openChat(
           tools: [tool],
@@ -2034,7 +2034,7 @@ void main() {
             .text;
         expect(jsonDecode(saved), {
           'tool_calls': [
-            {'id': 'a', 'name': 'search', 'arguments': {}},
+            {'id': 'call00001', 'name': 'search', 'arguments': {}},
           ],
         });
         expect(saved, isNot(contains('PRIVATE')));
@@ -2092,8 +2092,8 @@ void main() {
 
   test('out-of-order repeated tool results retain IDs after replay', () async {
     engine.script = [
-      _toolChunk(0, 'search', '{"q":"first"}', id: 'a'),
-      _toolChunk(1, 'search', '{"q":"second"}', id: 'b'),
+      _toolChunk(0, 'search', '{"q":"first"}', id: 'call00001'),
+      _toolChunk(1, 'search', '{"q":"second"}', id: 'call00002'),
     ];
     final chat = await model.openChat(tools: [tool]);
     await chat.addQuery(edge.Message.text(text: 'parallel', isUser: true));
@@ -2103,10 +2103,10 @@ void main() {
     response.calls.add(
       const edge.FunctionCallResponse(name: 'extra', args: {}),
     );
-    for (final id in ['b', 'a']) {
+    for (final id in ['call00002', 'call00001']) {
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: id,
+        edge.Message.toolResponse(
+          toolCallId: id,
           toolName: 'search',
           response: {'for': id},
         ),
@@ -2132,12 +2132,12 @@ void main() {
         .whereType<llama.LlamaToolResultContent>();
     expect(results.map((r) => [r.id, r.result]), [
       [
-        'a',
-        {'for': 'a'},
+        'call00001',
+        {'for': 'call00001'},
       ],
       [
-        'b',
-        {'for': 'b'},
+        'call00002',
+        {'for': 'call00002'},
       ],
     ]);
   });
@@ -2155,13 +2155,13 @@ void main() {
           edge.Message.toolCall(
             text: '{"id":"b","name":"search","parameters":{"q":"second"}}',
           ),
-          LlamaToolResponseMessage(
-            callId: 'b',
+          edge.Message.toolResponse(
+            toolCallId: 'b',
             toolName: 'search',
             response: {'for': 'b'},
           ),
-          LlamaToolResponseMessage(
-            callId: 'a',
+          edge.Message.toolResponse(
+            toolCallId: 'a',
             toolName: 'search',
             response: {'for': 'a'},
           ),
@@ -2185,11 +2185,11 @@ void main() {
           .whereType<llama.LlamaToolResultContent>();
       expect(results.map((r) => [r.id, r.result]), [
         [
-          'a',
+          '000000000',
           {'for': 'a'},
         ],
         [
-          'b',
+          '000000001',
           {'for': 'b'},
         ],
       ]);
@@ -2206,13 +2206,13 @@ void main() {
           text:
               '[{"id":"a","name":"search","parameters":{}},{"id":"b","name":"search","parameters":{}}]',
         ),
-        LlamaToolResponseMessage(
-          callId: 'b',
+        edge.Message.toolResponse(
+          toolCallId: 'b',
           toolName: 'search',
           response: {'for': 'b'},
         ),
-        LlamaToolResponseMessage(
-          callId: 'a',
+        edge.Message.toolResponse(
+          toolCallId: 'a',
           toolName: 'search',
           response: {'for': 'a'},
         ),
@@ -2237,11 +2237,11 @@ void main() {
           .whereType<llama.LlamaToolResultContent>();
       expect(results.map((r) => [r.id, r.result]), [
         [
-          'a',
+          '000000000',
           {'for': 'a'},
         ],
         [
-          'b',
+          '000000001',
           {'for': 'b'},
         ],
       ]);
@@ -2262,10 +2262,10 @@ void main() {
           edge.Message.text(text: 'turn $turn', isUser: true),
         );
         final call =
-            await chat.generateChatResponse() as LlamaFunctionCallResponse;
+            await chat.generateChatResponse() as edge.FunctionCallResponse;
         await chat.addQuery(
-          LlamaToolResponseMessage(
-            callId: call.id,
+          edge.Message.toolResponse(
+            toolCallId: call.id,
             toolName: 'search',
             response: {'turn': turn},
           ),
@@ -2465,10 +2465,10 @@ void main() {
     final chat = await model.openChat(tools: [tool]);
     engine.script = [_toolChunk(0, 'search', '{}', id: 'call00001')];
     await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
-    final call = await chat.generateChatResponse() as LlamaFunctionCallResponse;
+    final call = await chat.generateChatResponse() as edge.FunctionCallResponse;
     await chat.addQuery(
-      LlamaToolResponseMessage(
-        callId: call.id,
+      edge.Message.toolResponse(
+        toolCallId: call.id,
         toolName: 'search',
         response: {'found': true},
       ),
@@ -2527,8 +2527,8 @@ void main() {
     await chat.generateChatResponse();
     for (final id in ['call00002', 'call00001']) {
       await chat.addQuery(
-        LlamaToolResponseMessage(
-          callId: id,
+        edge.Message.toolResponse(
+          toolCallId: id,
           toolName: 'search',
           response: {'id': id},
         ),
@@ -2559,7 +2559,7 @@ void main() {
       edge.Message.toolResponse(toolName: 'search', response: {}),
     );
     engine.script = [_toolChunk(0, 'search', '{}')];
-    final call = await chat.generateChatResponse() as LlamaFunctionCallResponse;
+    final call = await chat.generateChatResponse() as edge.FunctionCallResponse;
     expect(call.id, matches(RegExp(r'^[a-zA-Z0-9]{9}$')));
     expect(call.id, isNot(calls.single['id']));
   });
@@ -2573,8 +2573,8 @@ void main() {
         edge.Message.toolCall(
           text: '{"id":"call_0","name":"search","arguments":{}}',
         ),
-        LlamaToolResponseMessage(
-          callId: 'call_0',
+        edge.Message.toolResponse(
+          toolCallId: 'call_0',
           toolName: 'search',
           response: {'turn': i},
         ),
@@ -2613,7 +2613,7 @@ void main() {
     expect(definition.parameters.first.required, isTrue);
   });
 
-  for (final operation in ['generation', 'tokenization', 'capabilities']) {
+  for (final operation in ['generation', 'tokenization', 'preflight']) {
     test('round4 worker failure in $operation evicts the model', () async {
       final chat = await model.openChat();
       final error = llama.LlamaStateException(
@@ -2633,7 +2633,7 @@ void main() {
           throwsA(isA<StateError>()),
         );
       } else {
-        engine.capabilityError = error;
+        engine.templateError = error;
         await expectLater(
           model.openChat(tools: [tool]),
           throwsA(isA<StateError>()),
@@ -2768,20 +2768,20 @@ void main() {
   });
 
   test('round4 tool response equality and copying retain call identity', () {
-    final a = LlamaToolResponseMessage(
-      callId: 'a',
+    final a = edge.Message.toolResponse(
+      toolCallId: 'a',
       toolName: 'search',
       response: {'ok': true},
     );
-    final b = LlamaToolResponseMessage(
-      callId: 'b',
+    final b = edge.Message.toolResponse(
+      toolCallId: 'b',
       toolName: 'search',
       response: {'ok': true},
     );
     expect(a, isNot(b));
     expect(
       a.copyWith(text: '{"ok":false}'),
-      isA<LlamaToolResponseMessage>().having((m) => m.callId, 'callId', 'a'),
+      isA<edge.Message>().having((m) => m.toolCallId, 'callId', 'a'),
     );
   });
   test(
@@ -2877,6 +2877,276 @@ void main() {
     expect(engine.projector, 'blob:https://app.invalid/projector');
     await loaded.close();
   }, skip: !kIsWeb);
+  for (final toolsPresent in [false, true]) {
+    test(
+      'round5 replacement cancels an active turn (tools: $toolsPresent)',
+      () async {
+        engine.blockGeneration = true;
+        final previous = await model.createChat();
+        await previous.addQuery(
+          edge.Message.text(text: 'running', isUser: true),
+        );
+        final first = Completer<void>();
+        final done = Completer<void>();
+        final errors = <Object>[];
+        previous.generateChatResponseAsync().listen(
+          (_) {
+            if (!first.isCompleted) first.complete();
+          },
+          onError: errors.add,
+          onDone: done.complete,
+        );
+        await first.future;
+        final next = await model
+            .createChat(tools: toolsPresent ? [tool] : [])
+            .timeout(const Duration(seconds: 2));
+        await done.future.timeout(const Duration(seconds: 2));
+        expect(engine.cancels, greaterThan(0));
+        expect(errors.single, isA<StateError>());
+        expect(previous.fullHistory, isEmpty);
+        engine.blockGeneration = false;
+        await next.addQuery(edge.Message.text(text: 'new', isUser: true));
+        expect(await next.generateChatResponse(), isA<edge.TextResponse>());
+      },
+    );
+  }
+
+  test('round5 close completes while a replacement is pending', () async {
+    engine.blockGeneration = true;
+    final previous = await model.createChat();
+    await previous.addQuery(edge.Message.text(text: 'running', isUser: true));
+    final first = Completer<void>();
+    final done = Completer<void>();
+    previous.generateChatResponseAsync().listen(
+      (_) {
+        if (!first.isCompleted) first.complete();
+      },
+      onError: (Object _) {},
+      onDone: done.complete,
+    );
+    await first.future;
+    final replacement = model.createChat(tools: [tool]);
+    final checked = expectLater(replacement, throwsStateError);
+    await model.close().timeout(const Duration(seconds: 2));
+    await checked;
+    await done.future.timeout(const Duration(seconds: 2));
+    expect(engine.disposals, 1);
+  });
+
+  test('round5 rejected replacement leaves the running turn intact', () async {
+    engine.blockGeneration = true;
+    final previous = await model.createChat();
+    await previous.addQuery(edge.Message.text(text: 'running', isUser: true));
+    final first = Completer<void>();
+    final done = Completer<void>();
+    previous.generateChatResponseAsync().listen((_) {
+      if (!first.isCompleted) first.complete();
+    }, onDone: done.complete);
+    await first.future;
+    engine.templateError = llama.LlamaUnsupportedException(
+      'Invalid tool template',
+    );
+    final cancels = engine.cancels;
+    await expectLater(
+      model.createChat(tools: [tool]).timeout(const Duration(seconds: 2)),
+      throwsUnsupportedError,
+    );
+    expect(engine.cancels, cancels);
+    expect(engine.active, 1);
+    engine.templateError = null;
+    await previous.stopGeneration();
+    await done.future;
+  });
+
+  test(
+    'round5 load-time model failures preserve the SDK exception and stack',
+    () async {
+      final cause = llama.LlamaModelException(
+        'Failed to load model from test.gguf',
+      );
+      final stack = StackTrace.fromString('load-failure-origin');
+      final provider = createLlamaProviderForTest(
+        loader: (_, _) async => Error.throwWithStackTrace(cause, stack),
+      );
+      try {
+        await provider.createModel(
+          _spec('test.gguf'),
+          const RuntimeConfig(modelPath: '/models/test.gguf', maxTokens: 2048),
+        );
+        fail('Expected load failure');
+      } catch (error, caughtStack) {
+        expect(error, same(cause));
+        expect(error, isNot(isA<StateError>()));
+        expect(caughtStack.toString(), contains('load-failure-origin'));
+      }
+    },
+  );
+
+  test('round5 mixed XML tools retain untyped parameter names', () async {
+    final nullableTool = edge.Tool(
+      name: 'book_table',
+      description: 'Book',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'date': {
+            'type': ['string', 'null'],
+          },
+        },
+        'required': ['date'],
+      },
+    );
+    await model.openChat(tools: [tool, nullableTool]);
+    final definitions = engine.lastTemplateTools;
+    expect(definitions.every((t) => t.parameters.isEmpty), isTrue);
+    final grammar = Qwen3CoderXmlHandler().buildGrammar(definitions)!;
+    expect(grammar, contains('param-name ::= identifier'));
+    expect(definitions.last.toJsonSchema(), nullableTool.parameters);
+    // A fully typed set still retains its optimized argument names.
+    await model.openChat(tools: [tool]);
+    expect(engine.lastTemplateTools.single.parameters, isNotEmpty);
+    engine.templateFormat = llama.ChatFormat.glm45.index;
+    await expectLater(
+      model.openChat(tools: [tool, nullableTool]),
+      throwsUnsupportedError,
+    );
+  });
+
+  for (final schema in <Map<String, dynamic>>[
+    {
+      'type': 'object',
+      'properties': {'x': true},
+    },
+    {
+      'type': 'object',
+      'properties': {'x': false},
+    },
+    {
+      'type': 'object',
+      'required': ['x'],
+    },
+  ]) {
+    test(
+      'round5 valid untypable schema reaches the template: $schema',
+      () async {
+        final special = edge.Tool(
+          name: 'special',
+          description: 'Special',
+          parameters: schema,
+        );
+        await model.openChat(tools: [special]);
+        expect(engine.lastTemplateTools.single.toJsonSchema(), schema);
+        expect(engine.lastTemplateTools.single.parameters, isEmpty);
+        engine.templateFormat = llama.ChatFormat.hunyuanV3.index;
+        await expectLater(
+          model.openChat(tools: [special]),
+          throwsUnsupportedError,
+        );
+      },
+    );
+  }
+  for (final schema in <Map<String, dynamic>>[
+    {'type': 'object', 'properties': []},
+    {'type': 'object', 'properties': null},
+    {'type': 'object', 'required': null},
+    {'type': 'object', 'required': 'x'},
+    {
+      'type': 'object',
+      'required': [1],
+    },
+    {
+      'type': 'object',
+      'properties': {'x': 7},
+    },
+    {
+      'type': 'object',
+      'properties': {
+        'nullable': {'anyOf': []},
+        'invalid': 7,
+      },
+    },
+  ]) {
+    test('round5 structurally invalid schemas still fail: $schema', () async {
+      await expectLater(
+        model.openChat(
+          tools: [
+            edge.Tool(name: 'bad', description: 'Bad', parameters: schema),
+          ],
+        ),
+        throwsArgumentError,
+      );
+    });
+  }
+
+  test(
+    'round5 typed cloud tool history aliases IDs and owns frozen arguments',
+    () async {
+      final chat = await model.openChat(tools: [tool]);
+      final source = {
+        'q': 'cloud',
+        'nested': {
+          'list': [1, 2],
+        },
+      };
+      final supplied = ['call_cloud_123', 'toolu_cloud_456', '', 'abcDEF123'];
+      final calls = edge.Message.toolCall(
+        text: 'Opaque display text; typed calls are authoritative.',
+        calls: [
+          for (final id in supplied)
+            edge.FunctionCallResponse(id: id, name: 'search', args: source),
+        ],
+      );
+      source['q'] = 'mutated';
+      await chat.clearHistory(
+        replayHistory: [
+          edge.Message.text(text: 'search', isUser: true),
+          calls,
+        ],
+      );
+      final recorded = toolCallsOf(chat.fullHistory.last);
+      final ids = recorded.map((c) => c.id!).toList();
+      expect(ids.toSet(), hasLength(supplied.length));
+      for (final id in ids) {
+        expect(id, matches(RegExp(r'^[a-zA-Z0-9]{9}$')));
+      }
+      expect(ids.last, 'abcDEF123');
+      expect(recorded.first.args['q'], 'cloud');
+      for (final id in supplied.reversed) {
+        await chat.addQuery(
+          edge.Message.toolResponse(
+            toolCallId: id,
+            toolName: 'search',
+            response: {'source': id},
+          ),
+        );
+      }
+      await chat.generateChatResponse();
+      final request = engine.requests.last;
+      final runtimeCalls = request
+          .expand((m) => m.parts.whereType<llama.LlamaToolCallContent>())
+          .toList();
+      final results = request
+          .expand((m) => m.parts.whereType<llama.LlamaToolResultContent>())
+          .toList();
+      expect(runtimeCalls.map((c) => c.id), ids);
+      expect(results.map((r) => r.id), ids);
+      expect(results.map((r) => (r.result as Map)['source']), supplied);
+      runtimeCalls.first.arguments['q'] = 'runtime-mutated';
+      (runtimeCalls.first.arguments['nested'] as Map)['list'] = [3];
+      expect(toolCallsOf(chat.fullHistory[1]).first.args['q'], 'cloud');
+      expect(
+        ((toolCallsOf(chat.fullHistory[1]).first.args['nested']
+            as Map)['list']),
+        [1, 2],
+      );
+      final restored = await model.openChat(tools: [tool]);
+      await restored.clearHistory(replayHistory: chat.fullHistory);
+      await restored.addQuery(
+        edge.Message.text(text: 'continue', isUser: true),
+      );
+      await restored.generateChatResponse();
+    },
+  );
 }
 
 edge.InferenceModelSpec _spec(

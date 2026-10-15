@@ -97,7 +97,7 @@ jobs:
           import os, pathlib, shutil, subprocess
           source = pathlib.Path('packages/flutter_edge_ai_llama')
           target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'llama-minimum-sdk'
-          shutil.copytree(source, target)
+          shutil.copytree(source, target, ignore=shutil.ignore_patterns('pubspec_overrides.yaml'))
           pubspec = target / 'pubspec.yaml'
           pubspec.write_text(pubspec.read_text().replace('resolution: workspace\n', ''))
           subprocess.run(['flutter', 'pub', 'get'], cwd=target, check=True)

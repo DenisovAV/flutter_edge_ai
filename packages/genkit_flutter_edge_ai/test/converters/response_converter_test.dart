@@ -63,11 +63,44 @@ void main() {
         const gemma.ParallelFunctionCallResponse(calls: calls),
       );
 
-      expect(
-        result.message!.content.map((p) => p.toolRequest!.ref),
-        ['x1', 'call_1'],
-      );
+      expect(result.message!.content.map((p) => p.toolRequest!.ref), [
+        'x1',
+        'call_1',
+      ]);
       expect(chunk.content.map((p) => p.toolRequest!.ref), ['x1', 'call_1']);
+    });
+
+    test('a numbered ref never repeats an earlier call\'s id', () {
+      const calls = [
+        gemma.FunctionCallResponse(name: 'a', args: {}, id: 'call_1'),
+        gemma.FunctionCallResponse(name: 'b', args: {}),
+      ];
+
+      final result = convertFinalResponse('', functionCalls: calls);
+
+      expect(result.message!.content.map((p) => p.toolRequest!.ref), [
+        'call_1',
+        'call_2',
+      ]);
+    });
+
+    test('a streamed chunk numbers its calls past the refs of earlier '
+        'chunks, as the final response does', () {
+      const first = gemma.FunctionCallResponse(
+        name: 'a',
+        args: {},
+        id: 'call_1',
+      );
+      const second = gemma.FunctionCallResponse(name: 'b', args: {});
+
+      final chunk = convertStreamChunk(second, earlierCalls: const [first]);
+      final result = convertFinalResponse(
+        '',
+        functionCalls: const [first, second],
+      );
+
+      expect(chunk.content.single.toolRequest!.ref, 'call_2');
+      expect(result.message!.content.last.toolRequest!.ref, 'call_2');
     });
 
     test('includes finishReason stop', () {

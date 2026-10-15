@@ -476,9 +476,7 @@ Future<ModelResponse> _generateStreaming(
   await for (final chunk in chat.generateChatResponseAsync()) {
     if (cancel?.isCancelled ?? false) break;
     try {
-      sendChunk(
-        convertStreamChunk(chunk, firstToolCallIndex: functionCalls.length),
-      );
+      sendChunk(convertStreamChunk(chunk, earlierCalls: functionCalls));
     } catch (_) {
       onSendChunkFailure();
       rethrow;

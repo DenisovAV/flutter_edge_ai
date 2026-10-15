@@ -127,6 +127,26 @@ void main() {
       expect(response.message!.content.single.toolRequest!.ref, 'call_abc');
     });
 
+    test('streaming: calls in separate chunks get the refs the final response '
+        'gives them', () async {
+      fakeChat.streamingResponses = [
+        const gemma.FunctionCallResponse(name: 'a', args: {}),
+        const gemma.FunctionCallResponse(name: 'b', args: {}),
+      ];
+      final chunks = <ModelResponseChunk>[];
+
+      final response = await buildModel()(simpleRequest(), onChunk: chunks.add);
+
+      expect(
+        [for (final c in chunks) c.content.single.toolRequest!.ref],
+        ['call_0', 'call_1'],
+      );
+      expect(response.message!.content.map((p) => p.toolRequest!.ref), [
+        'call_0',
+        'call_1',
+      ]);
+    });
+
     test(
       'asks flutter_edge_ai for the model on every call, which reuses it',
       () async {

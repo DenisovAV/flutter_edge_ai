@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai/engine_web.dart' show resolveWebModelUrl;
 
 import 'litert_lm_embedding_common.dart';
 import 'vision_budget.dart';
+import 'weight_cache_notice.dart';
 import 'web/litert_js_embedding_pass.dart';
 import 'web/litert_lm_web_embedding_pass.dart';
 import 'web/litert_lm_web_embedding_runtime.dart';
@@ -34,16 +35,20 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// `EmbeddingLoadException` when a model loads. The same parameter as the
   /// native arm, so one registration compiles everywhere.
   ///
-  /// [requireWeightCache] is accepted for the same reason and ignored: the
-  /// web keeps no weight cache to require. The bundle sits in the browser's
-  /// storage and the engine builds its weights at every load, so a load is
-  /// never short of a cache it should have written.
+  /// [requireWeightCache] (flutter_edge_ai_litertlm 1.14.0) is accepted for
+  /// the same reason and does not apply: the web keeps no weight cache to
+  /// require. The bundle sits in the browser's storage and the engine builds
+  /// its weights at every load, so a load is never short of a cache it should
+  /// have written. A debug build says so once.
   const LiteRtEmbeddingBackend({
     this._visionTokensPerImage = 140,
-    bool requireWeightCache = false,
+    this._requireWeightCache = false,
   });
 
   final int _visionTokensPerImage;
+
+  /// Kept only to say, once, that it does not apply here.
+  final bool _requireWeightCache;
 
   @override
   String get name => 'LiteRT Embedding';
@@ -79,6 +84,9 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
         'tokenizer. Install the embedder again.',
         engine: bundle ? liteRtLmEngineTag : liteRtJsEngine,
       );
+    }
+    if (_requireWeightCache) {
+      noticeRequireWeightCacheNotApplied('the web keeps no weight cache');
     }
     if (bundle) {
       return _describeBundle(config, fileName, _visionTokensPerImage);

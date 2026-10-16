@@ -32,14 +32,24 @@
 //   setting — the limit the engine enforces.
 // - The engine always gets an existing, writable cache directory that this
 //   pass owns (D22), under the platform cache directory (never backed up):
-//   without one it runs with no weight cache (+290 MB) or writes
-//   `.xnnpack_cache` files next to the model. Our part of the path is kept
-//   short — `flutter_edge_ai/emb/<8-hex hash>-<base36 size>-<base36 mtime>`
-//   (see `liteRtLmCacheDirName`: Windows MAX_PATH), and a CPU load that
-//   leaves it empty is reported — or refused, with `requireWeightCache`
-//   (`EmbeddingLoadException`, the engine deleted). Caches of earlier
-//   copies of the same file name are deleted only after the engine exists,
-//   and not while they were touched in the last 10 minutes.
+//   without one it runs with no weight cache (measured on the 270m: +290 MB)
+//   or writes `.xnnpack_cache` files next to the model. Our part of the path
+//   is kept short — `flutter_edge_ai/emb/<8-hex hash>-<base36 size>-<base36
+//   mtime>` (see `liteRtLmCacheDirName`: Windows MAX_PATH). XNNPack opens
+//   each tower's cache file at create and writes its header at once: a file
+//   it cannot create (MAX_PATH, a directory this process cannot write to,
+//   possibly no free space at all) leaves that tower uncached, while a disk
+//   that fills as the cache is built aborts the process inside XNNPack
+//   (`weight_cache.cc`, `XNNPACK_ABORT_CHECK`), which nothing here can catch.
+//   After create the pass looks for the caches (`_checkWeightCache`): on CPU,
+//   and on the NPU only for declared audio, whose tower runs on CPU (the NPU
+//   text and vision towers write none). No real cache file at all is a
+//   printed warning, or with `requireWeightCache` an `EmbeddingLoadException`
+//   (the engine deleted); one expected tower's file missing is a printed
+//   warning either way. Caches of earlier copies of the same file name are
+//   deleted only once the engine exists — after a successful load, or right
+//   before the no-cache refusal, since an older copy's cache may be what left
+//   no free space — and not while they were touched in the last 10 minutes.
 // - Overflow (§4.8, the P3 gate): options use kTruncate for every request,
 //   and the response reports how many tokens the input had and how many the
 //   engine kept (`litert_lm_embedding_response_get_input_length` /
@@ -163,10 +173,12 @@ final class LiteRtLmEmbeddingConfig {
   /// Vision tokens per image (D25): 140 or 70, checked by `describe()`.
   final int visionTokensPerImage;
 
-  /// Whether a CPU load that leaves [cacheBase]'s directory for this bundle
-  /// without a weight cache is refused with [EmbeddingLoadException] instead
-  /// of printing a warning (`LiteRtEmbeddingBackend(requireWeightCache:)`).
-  /// Not applied on the NPU, where what the engine caches is not established.
+  /// Whether a load that leaves [cacheBase]'s directory for this bundle
+  /// without a real weight cache file is refused with [EmbeddingLoadException]
+  /// instead of printing a warning (`LiteRtEmbeddingBackend(requireWeightCache:)`).
+  /// Checked on CPU, and on the NPU only when audio is declared: there the
+  /// text and vision towers write no cache, while the audio tower, pinned to
+  /// CPU, writes one.
   final bool requireWeightCache;
 
   /// The SoC a per-SoC bundle is compiled for, when `describe()` placed it on
@@ -339,7 +351,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     // Checked by _checkModelInfo against the container: the bundle has an
     // audio encoder whenever audio was declared.
     final audio = _config.declaredMedia.contains(EmbeddingModality.audio);
-    final cacheDir = _createCacheDir();
+    final (:cacheDir, :modelSize) = _createCacheDir();
 
     try {
       _engine = _createEngine(
@@ -355,16 +367,26 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       if (_config.npuTarget case final target?) {
         _probeNpu(b, info.dimension, target);
       }
-      // Measured on CPU only: what an NPU engine caches (the CPU embedder's
-      // weights, the compiled graph's context) is not established, so an
-      // empty directory there is neither reported nor refused. Inside the
-      // try: a refusal deletes the engine and the options it made.
-      if (!_onNpu) _checkWeightCache(cacheDir);
+      // Every tower on CPU writes a weight cache. On the NPU the text and
+      // vision towers write none (upstream gives an NPU graph no XNNPack
+      // cache), but declared audio runs on CPU (see _createEngine) and writes
+      // one. Inside the try: a refusal deletes the engine and the options it
+      // made.
+      if (!_onNpu || audio) {
+        _checkWeightCache(
+          cacheDir,
+          modelSize: modelSize,
+          text: !_onNpu,
+          vision: !_onNpu && _hasVision(info),
+          audio: audio,
+        );
+      }
     } catch (_) {
       _free();
       rethrow;
     }
-    // Only now: a load that failed must not have cost another copy its cache.
+    // Only now: a load that failed must not have cost another copy its cache
+    // (the no-cache refusal, which collects them first, is the exception).
     _deleteStaleSiblings(cacheDir);
 
     _dimension = info.dimension;
@@ -830,9 +852,10 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   // ── Cache directory (D22) ──────────────────────────────────────────────
 
   /// Creates `<cacheBase>/<liteRtLmCacheDirName>/` for this copy of the
-  /// bundle and returns its path. Nothing else is touched until the engine
+  /// bundle and returns its path, with the bundle's size (which the engine's
+  /// cache file names repeat). Nothing else is touched until the engine
   /// exists ([_deleteStaleSiblings]).
-  String _createCacheDir() {
+  ({String cacheDir, int modelSize}) _createCacheDir() {
     try {
       final stat = File(_config.modelPath).statSync();
       if (stat.type == FileSystemEntityType.notFound) {
@@ -846,7 +869,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       final dir = Directory(
         '${_config.cacheBase}${Platform.pathSeparator}$name',
       )..createSync(recursive: true);
-      return dir.path;
+      return (cacheDir: dir.path, modelSize: stat.size);
     } on FileSystemException catch (e) {
       throw EmbeddingLoadException(
         'could not create the embedding cache directory for $_file under '
@@ -859,7 +882,8 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
 
   /// Deletes the caches earlier copies of this file name left (a re-download
   /// or a new revision under the same name changes size or mtime). Runs only
-  /// after this pass's engine exists, and spares any sibling touched within
+  /// after this pass's engine exists — after a successful load, or right
+  /// before the no-cache refusal — and spares any sibling touched within
   /// [_siblingGrace] — directory or newest entry — because another process
   /// (an app extension sharing the container, the app mid-replacement) may be
   /// creating its engine from it right now; it is collected by a later load.
@@ -912,26 +936,35 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   /// How recently a sibling cache may have been touched and still be spared.
   static const _siblingGrace = Duration(minutes: 10);
 
-  /// The engine writes its weight cache at create. When it could not (a
-  /// path too long for the platform, a full disk) it runs anyway — slower to
-  /// load and about 290 MB larger — and says so only in the native log. Said
-  /// here in release builds too, because that is a cost the app pays silently;
-  /// with [LiteRtLmEmbeddingConfig.requireWeightCache] it is a load failure
-  /// instead (the caller deletes the engine).
+  /// The engine writes its weight cache at create: one file per tower that
+  /// runs on CPU (the text and vision towers of every bundle that has them,
+  /// whatever was declared, and the 740m's audio tower), each opened and given
+  /// its header at once. A tower whose file could not be created (a path too
+  /// long for the platform, a directory this process cannot write to,
+  /// possibly no free space at all) runs without one — slower to load and,
+  /// measured on the 270m, about 290 MB larger — and says so only in the
+  /// native log, which this pass does not capture. Said here in release
+  /// builds too, because that is a cost the app pays silently; with
+  /// [LiteRtLmEmbeddingConfig.requireWeightCache], no cache at all is a load
+  /// failure instead (the caller deletes the engine). A disk that fills while
+  /// the cache is built never gets here: XNNPack aborts the process.
   ///
-  /// Checked as "the directory holds no file with bytes in it", not file by
-  /// file (an empty file, left by an interrupted load, is no cache): the engine
-  /// names each cache `<model file name>_<mtime>_<size>.<graph>.xnnpack_cache`,
-  /// one per tower present in the bundle (the vision and audio towers too,
-  /// whatever was declared), and neither the graph names nor the mtime's form
-  /// on every platform come from any API this pass can read. A wrong guess
-  /// would refuse every load, so a partly written set is not detected.
-  void _checkWeightCache(String cacheDir) {
-    final bool empty;
+  /// A real cache is what [liteRtLmWrittenWeightCaches] finds: a 0-byte or
+  /// header-only file is what a failed or partial header write left, not a
+  /// cache. The refusal looks at the directory as a whole. The towers whose
+  /// file is expected ([text], [vision], [audio]) are matched by the tower's
+  /// name in the file name (upstream constants) and only warned about: a wrong
+  /// guess must never refuse a load that works.
+  void _checkWeightCache(
+    String cacheDir, {
+    required int modelSize,
+    required bool text,
+    required bool vision,
+    required bool audio,
+  }) {
+    final List<String> written;
     try {
-      empty = !Directory(
-        cacheDir,
-      ).listSync().whereType<File>().any((file) => file.lengthSync() > 0);
+      written = liteRtLmWrittenWeightCaches(Directory(cacheDir).listSync());
     } on FileSystemException catch (e) {
       // The directory existed a moment ago; without the flag, nothing useful
       // to add. With it, an unchecked cache is not a confirmed one.
@@ -943,25 +976,69 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         cause: e,
       );
     }
-    if (!empty) return;
-    if (_config.requireWeightCache) {
-      throw EmbeddingLoadException(
-        'LiteRT-LM wrote no weight cache to $cacheDir (a path of '
-        '${cacheDir.length} characters) while loading $_file, and '
-        'LiteRtEmbeddingBackend(requireWeightCache: true) refuses to run it '
-        'without one (slower to load, about 290 MB more memory). Likely '
-        'causes: a path too long for the platform (on Windows, MAX_PATH is '
-        "260 characters, and the engine's cache file names below this "
-        "directory repeat the model's file name) or a full disk. The native "
-        'log says which.',
-        engine: liteRtLmEngineTag,
+    // How long [tower]'s cache file path is (what MAX_PATH applies to), and
+    // what likely kept the engine from creating it.
+    String pathAndCauses(String tower) {
+      final length = liteRtLmCacheFilePathLength(
+        cacheDir,
+        _file,
+        modelSize,
+        tower: tower,
       );
+      final causes = liteRtLmNoWeightCacheCauses(
+        cachePathLength: length,
+        windows: Platform.isWindows,
+      );
+      return 'The cache file path is about $length characters long. $causes';
     }
+
+    if (written.isEmpty) {
+      // The tower whose file was surely expected: the text tower on CPU, the
+      // audio tower on the NPU.
+      final why = pathAndCauses(text ? _textTower : _audioTower);
+      if (_config.requireWeightCache) {
+        // Collected first, as after a successful create (the engine exists):
+        // an older copy's cache may be what left no free space, and keeping
+        // it would refuse every later load too.
+        _deleteStaleSiblings(cacheDir);
+        throw EmbeddingLoadException(
+          'LiteRT-LM wrote no weight cache to $cacheDir while loading $_file, '
+          'and LiteRtEmbeddingBackend(requireWeightCache: true) refuses to run '
+          'it without one (slower to load; about 290 MB more memory for the '
+          '270m). $why',
+          engine: liteRtLmEngineTag,
+        );
+      }
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no weight cache '
+        'to $cacheDir while loading $_file, so this embedder runs without one '
+        '(slower to load; about 290 MB more memory for the 270m). $why '
+        'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+        'failure.',
+      );
+      return;
+    }
+    bool has(String tower) => written.any((name) => name.contains(tower));
+    final missing = [
+      if (text && !has('$_textTower.')) _textTower,
+      if (vision && !has('$_visionTower.')) _visionTower,
+      if (audio && !has('audio_encoder.')) _audioTower,
+    ];
+    if (missing.isEmpty) return;
+    String towerName(String tower) => switch (tower) {
+      _textTower => 'the text tower',
+      _visionTower => 'the vision tower',
+      _ => 'the audio tower',
+    };
+    // The path reported is the last tower's, the longest name of them (text,
+    // then vision, then audio).
     // ignore: avoid_print
     print(
-      '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no weight cache to '
-      '$cacheDir while loading $_file, so this embedder runs without one '
-      '(slower to load, about 290 MB more memory). The native log says why.',
+      '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no weight cache for '
+      '${missing.map(towerName).join(' and ')} of $_file to $cacheDir, so '
+      '${missing.length == 1 ? 'it runs' : 'they run'} without one (slower to '
+      'load, more memory). ${pathAndCauses(missing.last)}',
     );
   }
 
@@ -1169,6 +1246,90 @@ String liteRtLmCacheDirName(
 /// size or time are stale copies of the same file.
 String liteRtLmCacheDirPrefix(String modelFileName) =>
     sha256.convert(utf8.encode(modelFileName)).toString().substring(0, 8);
+
+/// The tower names LiteRT-LM puts in its weight cache file names
+/// (`embedding_executor_settings.h`, `vision_executor_settings.h`,
+/// `audio_executor_settings.h`). The vision tower's adapter
+/// (`.vision_adapter`) is as long as its encoder; the audio tower's is
+/// `.static_audio_encoder` or this, the longer.
+const _textTower = '.text_encoder';
+const _visionTower = '.vision_encoder';
+const _audioTower = '.streaming_audio_encoder';
+
+/// `ExecutorSettingsBase::kXnnpackCacheSuffix`.
+const _xnnpackCacheSuffix = '.xnnpack_cache';
+
+/// Windows' MAX_PATH: a path of this many characters or more cannot be
+/// created there.
+const _windowsMaxPath = 260;
+
+/// The smallest file that counts as a weight cache. XNNPack writes a header
+/// of about 100 bytes when it opens the file, then the packed weights (71 MB
+/// for the 270m's text tower); anything below this is what a failed or
+/// partial header write left. The threshold
+/// `example/integration_test/embeddinggemma2_test.dart` holds a device run to.
+@visibleForTesting
+const liteRtLmMinWeightCacheBytes = 1 << 20;
+
+/// The names of the real weight cache files among [entries], a cache
+/// directory's listing: `*.xnnpack_cache` files of at least
+/// [liteRtLmMinWeightCacheBytes]. Each is stat'ed on its own, so a file that
+/// vanished or cannot be stat'ed is skipped instead of ending the scan.
+@visibleForTesting
+List<String> liteRtLmWrittenWeightCaches(Iterable<FileSystemEntity> entries) =>
+    [
+      for (final entry in entries)
+        if (entry is File &&
+            entry.path.endsWith(_xnnpackCacheSuffix) &&
+            _sizeOf(entry) >= liteRtLmMinWeightCacheBytes)
+          _fileName(entry.path),
+    ];
+
+/// [file]'s size, or -1 when it is gone or cannot be stat'ed: `statSync`
+/// reports that as `notFound` rather than throwing.
+int _sizeOf(File file) {
+  final stat = file.statSync();
+  return stat.type == FileSystemEntityType.file ? stat.size : -1;
+}
+
+/// The length of the path LiteRT-LM gives [tower]'s weight cache in
+/// [cacheDir]: `<cacheDir>/<model file name>_<mtime s>_<size><tower>.xnnpack_cache`
+/// (`executor_settings_base.cc` `GetWeightCacheFile`, `file_util.cc`
+/// `GetFileCacheIdentifier`), with the mtime's seconds taken as 10 digits
+/// (every date from 2001 to 2286). The text tower's by default — the vision
+/// tower's is 2 characters longer, the audio tower's 8 or 11 — so this is what
+/// Windows' MAX_PATH applies to, not the directory's length.
+@visibleForTesting
+int liteRtLmCacheFilePathLength(
+  String cacheDir,
+  String modelFileName,
+  int modelSize, {
+  String tower = _textTower,
+}) =>
+    cacheDir.length +
+    1 +
+    modelFileName.length +
+    '_0000000000_$modelSize'.length +
+    tower.length +
+    _xnnpackCacheSuffix.length;
+
+/// Why the engine wrote no weight cache, for the refusal and the warnings,
+/// given the length of the cache file path ([liteRtLmCacheFilePathLength]).
+/// On Windows from 260 characters MAX_PATH is the likely cause; otherwise
+/// every cause that leaves a tower uncached is listed. A disk that fills while
+/// the cache is built is not one of them: XNNPack aborts the process then.
+@visibleForTesting
+String liteRtLmNoWeightCacheCauses({
+  required int cachePathLength,
+  required bool windows,
+}) => windows && cachePathLength >= _windowsMaxPath
+    ? "That is past Windows' 260-character MAX_PATH, the likely cause (a "
+          'shorter model file name or app cache path avoids it); the others '
+          'are a directory this process cannot write to and no free space at '
+          'all.'
+    : 'Likely causes: a path too long for the platform (on Windows, MAX_PATH '
+          'is 260 characters), a directory this process cannot write to, or no '
+          'free space at all.';
 
 typedef _ModelInfo = ({
   LiteRtLmModelType? type,

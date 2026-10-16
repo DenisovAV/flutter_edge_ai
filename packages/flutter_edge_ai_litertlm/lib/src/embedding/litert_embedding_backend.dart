@@ -25,6 +25,7 @@ import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
 import 'litertlm_npu_target.dart';
 import 'vision_budget.dart';
+import 'weight_cache_notice.dart';
 
 /// LiteRT embedding backend: `.tflite` embedders (EmbeddingGemma 1, Gecko)
 /// over the LiteRT C API, and `.litertlm` embedding bundles (EmbeddingGemma 2:
@@ -51,17 +52,29 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// refused with `EmbeddingLoadException` when a model loads. Text vectors
   /// do not depend on it.
   ///
-  /// [requireWeightCache] concerns EmbeddingGemma 2 on CPU. Its engine writes
-  /// a weight cache (71 MB for the 270m, 385 MB for the 740m) into the app's
-  /// cache directory when it loads; when it cannot (a path too long for the
-  /// platform, as past Windows' MAX_PATH, or a full disk) it runs anyway,
-  /// slower to load and with about 290 MB more memory. By default that is a
-  /// printed warning. With `true` the load fails instead:
-  /// `getActiveEmbedder()` throws an `EmbeddingLoadException` naming the
-  /// cache directory, its path length and the likely causes, and no engine is
-  /// left running. It checks that the engine wrote a cache file, not that it
-  /// wrote one for every tower. It does not apply on the NPU, where what the
-  /// engine caches is not established, nor to `.tflite` embedders.
+  /// [requireWeightCache] (flutter_edge_ai_litertlm 1.14.0) concerns
+  /// EmbeddingGemma 2. Its engine writes a weight cache into the app's cache
+  /// directory when it loads, one file per tower on CPU (71 MB for the 270m,
+  /// 385 MB for the 740m). A tower whose file the engine cannot create — a
+  /// path too long for the platform (Windows' 260-character MAX_PATH), a
+  /// directory this process cannot write to, or possibly no free space at
+  /// all — runs anyway, slower to load and, measured on the 270m, with about
+  /// 290 MB more memory. By default no cache at all is a printed warning.
+  /// With `true` the load fails instead: `getActiveEmbedder()` throws an
+  /// `EmbeddingLoadException` naming the cache directory, the length of the
+  /// cache file path and the likely causes, and no engine is left running.
+  /// A disk that fills while the cache is being built is not covered: the
+  /// engine (XNNPack) then aborts the process in native code, and no flag can
+  /// catch that.
+  ///
+  /// The refusal needs no real cache file at all; one tower's file missing
+  /// beside the others is a printed warning either way. It applies on CPU,
+  /// and on the NPU only to a load with declared audio, whose tower runs on
+  /// CPU (the NPU's text and vision towers write no cache). It does not apply
+  /// to `.tflite` embedders nor on the web, which keeps no weight cache; a
+  /// debug build says once when it does not apply. It takes effect when an
+  /// embedder is loaded: one already loaded is kept as it is (for example
+  /// after `FlutterEdgeAi.reset()` and `initialize` with the other value).
   const LiteRtEmbeddingBackend({
     this._visionTokensPerImage = 140,
     this._requireWeightCache = false,
@@ -114,7 +127,13 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
         requireWeightCache: _requireWeightCache,
       );
     }
-    return _describeTflite(spec, file, config);
+    final descriptor = _describeTflite(spec, file, config);
+    if (_requireWeightCache) {
+      noticeRequireWeightCacheNotApplied(
+        '$file is a .tflite embedder, which runs without a weight cache file',
+      );
+    }
+    return descriptor;
   }
 }
 
@@ -160,6 +179,12 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
     target: target,
     requested: config.preferredBackend,
   );
+  if (requireWeightCache && placement.target != null && !config.supportAudio) {
+    noticeRequireWeightCacheNotApplied(
+      '$file runs on the ${placement.target} NPU, whose text and vision '
+      'towers write no weight cache, and no audio was declared',
+    );
+  }
   // The platform CACHE directory, not application support: iOS backs that up
   // to iCloud and Android Auto Backup includes it under a 25 MB per-app quota,
   // which a 71-385 MB weight cache would break. If the OS purges the cache,
@@ -180,7 +205,8 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
         if (config.supportAudio) EmbeddingModality.audio,
       },
       visionTokensPerImage: visionTokensPerImage,
-      // The pass applies it on CPU only (see LiteRtLmEmbeddingConfig).
+      // The pass checks the cache on CPU, and on the NPU for declared audio
+      // only (see LiteRtLmEmbeddingConfig).
       requireWeightCache: requireWeightCache,
       npuTarget: placement.target,
       npuDispatchDir: placement.dispatchDir,

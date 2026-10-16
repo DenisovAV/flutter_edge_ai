@@ -307,17 +307,34 @@ final vector = await embedder.embed(
   bundle writes 385 MB of caches in total, even for text-only use. The cache
   lives in
   the app's cache directory: it is never backed up, and if the OS clears it the
-  next load writes it again. When the engine cannot write it (a path too long
-  for the platform, such as past Windows' 260-character `MAX_PATH`, or a full
-  disk) it runs anyway, slower to load and with about 290 MB more memory, and
-  the package only prints a warning. To make that a load failure, register
+  next load writes it again. The engine opens one cache file per tower when it
+  loads. When it cannot create that file (a path too long for the platform,
+  such as past Windows' 260-character `MAX_PATH`, a directory the app cannot
+  write to, or possibly no free space at all), that tower runs anyway, slower
+  to load and, measured on the 270m, with about 290 MB more memory, and the
+  package only prints a warning. A disk that fills while the cache is being
+  written is different: the engine (XNNPack) aborts the process in native
+  code, and no flag can catch that. On the web there is no weight cache: the
+  bundle sits in the browser's storage and the engine rebuilds its weights at
+  every load.
+- **`requireWeightCache` (flutter_edge_ai_litertlm 1.14.0).** To make a load
+  that wrote no weight cache a failure, register
   `LiteRtEmbeddingBackend(requireWeightCache: true)`: `getActiveEmbedder()`
-  then throws an `EmbeddingLoadException` naming the cache directory, its
-  path length and the likely causes, and no engine is left running. It checks
-  that a cache file was written, not one per tower, and applies on CPU only
-  (not on the NPU). On the web there is no weight cache: the bundle
-  sits in the browser's storage and the engine rebuilds its weights at every
-  load, and the flag is accepted and ignored.
+  then throws an `EmbeddingLoadException` naming the cache directory, the
+  length of the cache file path and the likely causes, and no engine is left
+  running. One tower's cache missing beside the others stays a printed
+  warning. It applies on CPU, and on the NPU only to a load with declared
+  audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
+  is accepted and ignored, which a debug build says once. It takes effect
+  when an embedder is loaded: one already loaded is kept.
+  - **The warning is invisible on Windows release builds.** It is a `print`,
+    and a Windows release build started from Explorer has no console. Windows
+    desktop apps that care should pass `requireWeightCache: true`.
+  - **What a refusal costs.** It comes from the load, after core has closed
+    the embedder it held, so the embedder that was working is gone too. With
+    the RAG `FlutterEdgeAiActiveEmbedder`, every operation re-resolves the
+    model, so each call repeats the engine create (and its attempt at the
+    cache) before it refuses.
 - EmbeddingGemma 1 and 2 both produce 768-dimensional vectors in different
   embedding spaces: never mix them in one vector store.
 

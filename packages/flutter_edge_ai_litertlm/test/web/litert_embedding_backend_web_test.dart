@@ -18,11 +18,13 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart' show resolveWebModelUrl;
+import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_backend_web.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_js_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_web_embeddings.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'eg2_header_fixtures.dart';
@@ -116,17 +118,36 @@ void main() {
   });
 
   test('requireWeightCache is accepted, as natively, and changes nothing: the '
-      'web keeps no weight cache', () async {
+      'web keeps no weight cache, which a debug build says once', () async {
+    resetRequireWeightCacheNotice();
+    final logged = <String>[];
+    final DebugPrintCallback original = debugPrint;
+    debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+    addTearDown(() {
+      debugPrint = original;
+      resetRequireWeightCacheNotice();
+    });
+
+    await backend.describe(_eg2, _bundleConfig());
+    expect(logged.where((l) => l.contains('requireWeightCache')), isEmpty);
+
     const strict = LiteRtEmbeddingBackend(requireWeightCache: true);
     final descriptor = await strict.describe(
       _eg2,
       _bundleConfig(supportImage: true),
     );
+    await strict.describe(_eg2, _bundleConfig());
     final config = descriptor.config as LiteRtLmWebEmbeddingConfig;
     expect(descriptor.activeBackend, PreferredBackend.gpu);
     expect(config.declaredMedia, {EmbeddingModality.image});
     expect(config.visionTokensPerImage, 140);
     expect(descriptor.build(), isA<LiteRtLmWebEmbeddingPass>());
+    expect(logged.where((l) => l.contains('requireWeightCache')), [
+      allOf(
+        contains('does not apply to this load'),
+        contains('the web keeps no weight cache'),
+      ),
+    ]);
   });
 
   test('describe() hands core the LiteRT.js pass over the raw paths with the '

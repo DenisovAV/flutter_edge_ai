@@ -229,12 +229,10 @@ gone from its context.
 ## When the model answers nothing
 
 Right after `loadSkill` a small model sometimes ends the turn without a word:
-the first token it samples is a stop token. One app measured it on Gemma 4 E2B
-in 33 of 138 turns whose question carried knowledge-base excerpts. The loop
-then asks once more: it emits an `EmptyAnswerRetryEvent`, adds a user message
-to the same chat and generates again with the same tools. If the answer is
-still empty, the turn ends with an `EmptyAnswerEvent` instead of a plain
-`DoneEvent`.
+the generation that should answer has no text. The loop then asks once more:
+it emits an `EmptyAnswerRetryEvent`, adds a user message to the same chat and
+generates again with the same tools. If the answer is still empty, the turn
+ends with an `EmptyAnswerEvent` instead of a plain `DoneEvent`.
 
 ```dart
 final session = await AgentSession.fromModel(
@@ -269,6 +267,12 @@ await for (final event in session.ask(question)) {
   retried. One after an intent, JS or MCP result ends with a plain
   `DoneEvent('')`, as before. With 0 retries such a turn still ends with an
   `EmptyAnswerEvent`.
+- To stop a turn, flip `ask`'s `isCancelled` or cancel the subscription
+  before `chat.stopGeneration()`; a stopped empty generation is otherwise
+  retried.
+- FunctionGemma apps should pass `emptyAfterSkillRetries: 0`: core clears a
+  FunctionGemma chat's history after every text reply, so the nudge reaches a
+  blank session and is answered without the question.
 
 ## Choosing the system prompt
 
@@ -293,13 +297,8 @@ final session = await AgentSession.fromModel(
 );
 ```
 
-The on-demand wording is one app's: on Gemma 4 E2B (6 rounds, a fresh chat per
-turn, together with shorter tool descriptions of its own) it cut spurious tool
-calls on plain and photo questions from 7 of 18 to 3 of 18 compared with the
-app's earlier template, and every skill request still called its skill (12 of
-12). That was one app's probe, not a comparison with
-`defaultAgentSystemPrompt`. Any template of your own works as long as it keeps
-`__SKILLS__`.
+Neither template is benchmarked here: try both on your model and your
+requests. Any template of your own works as long as it keeps `__SKILLS__`.
 
 ## SKILL.md format
 
@@ -334,7 +333,9 @@ parser instead, which yields strings only.
 A text-only skill calls no tool. When the model loads one and then calls
 `runIntent` with an intent the app cannot run, the tool result says the skill
 calls no tool and asks for the answer from its instructions, rather than
-listing the intents it could try next.
+listing the intents it could try next. This works only with
+`NativeIntentExecutor` (or with no intent executor at all): an intent executor
+of your own has its errors reach the model unchanged.
 
 JS skills additionally ship `scripts/index.html` exposing
 `window.ai_edge_gallery_get_result(data, secret)` returning a JSON string
@@ -377,14 +378,18 @@ final intents = NativeIntentExecutor(
 - An added intent without a validator is not checked: its handler gets the
   decoded parameters as the model sent them.
 - A built-in intent keeps its own checks (`validateIntentParams`), also when
-  you replace its handler; a validator you give for it replaces them.
+  you replace its handler; a validator you give for it runs after them, and
+  both must pass.
 - A validator for an intent with no handler throws `ArgumentError`.
 
 The skill that uses the intent names it in its body, e.g. ``Call the
 `runIntent` tool with intent: start_timer and parameters: {"seconds": 60}``.
 When the model also passes the loaded skill's `skillName` to `runIntent`
 (small models often do), the intent it names still runs, and the skill is the
-one whose secret the executor gets.
+one whose secret the executor gets. With `intent` present the executor always
+gets a stand-in `Skill(name: intent)` with no instructions or metadata, even
+when `skillName` names a registered skill (`runMcp` does the same with
+`toolName`).
 
 ## Skills or a knowledge base?
 

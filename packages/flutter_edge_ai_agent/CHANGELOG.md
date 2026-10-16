@@ -1,7 +1,7 @@
 ## 0.3.0
 - **Breaking** for exhaustive switches: `EmptyAnswerRetryEvent`; an empty answer after `loadSkill` is retried once.
 - `NativeIntentExecutor(validators:)`: intents added through `handlers:` no longer fail validation.
-- `runIntent` with a `skillName` runs the `intent` it names.
+- **Behaviour change**: `runIntent` with a `skillName` runs the `intent` it names.
 - SKILL.md type inference also reads `runSkill`, `runJs`, `runIntent` and `runMcp`.
 - `SkillMetadata.extra` keeps the frontmatter metadata keys the package does not read.
 - `onDemandAgentSystemPrompt`: call a skill only when the request needs one.

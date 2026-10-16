@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
@@ -13,6 +14,8 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
         ThinkingResponse;
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 /// A scriptable fake [InferenceChat]: yields the next queued turn's token/call
 /// stream per [generateChatResponseAsync] call and records every
@@ -176,6 +179,44 @@ Skill _intentSkill(String name, {bool requireSecret = false}) => Skill(
 
 FunctionCallResponse _runIntent(Map<String, dynamic> args) =>
     FunctionCallResponse(name: 'runIntent', args: args);
+
+/// A real [McpSkillExecutor] over one connected server that exports
+/// [toolName] (pre-allowed, so no permission hook). Its `tools/call` answers
+/// `<tool>:<arguments JSON>`, so a test sees which tool ran with what.
+McpSkillExecutor _echoMcpExecutor(String toolName) {
+  final server = MockClient((request) async {
+    final body = jsonDecode(request.body) as Map<String, dynamic>;
+    final params = body['params'] as Map<String, dynamic>;
+    return http.Response(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': body['id'],
+        'result': {
+          'content': [
+            {
+              'type': 'text',
+              'text': '${params['name']}:${jsonEncode(params['arguments'])}',
+            },
+          ],
+          'isError': false,
+        },
+      }),
+      200,
+      headers: {'content-type': 'application/json'},
+    );
+  });
+  return McpSkillExecutor(
+    clients: [
+      McpClient(
+        config: McpServerConfig(
+          url: 'https://example.com/mcp',
+          tools: [McpTool(name: toolName, alwaysAllow: true)],
+        ),
+        httpClient: server,
+      ),
+    ],
+  );
+}
 
 void main() {
   group('AgentLoop — happy path', () {
@@ -573,6 +614,60 @@ void main() {
         isEmpty,
       );
     });
+
+    // Gallery's own names for the JS and MCP tools, which a SKILL.md written
+    // for Gallery tells the model to call.
+    test('runJs is dispatched to the JS executor', () async {
+      final registry = SkillRegistry()..add(_jsSkill(), selected: true);
+      final executor = _FakeExecutor(
+        SkillType.js,
+        result: const TextResult('hash=abc123'),
+      );
+      final chat = _FakeAgentChat([
+        _loadSkill('calculate-hash'),
+        const FunctionCallResponse(
+          name: 'runJs',
+          args: {'skillName': 'calculate-hash', 'data': '{"text":"hi"}'},
+        ),
+        const TextResponse('The hash is abc123.'),
+      ]);
+
+      final loop = AgentLoop(registry: registry, executors: [executor]);
+      final events = await loop.run(chat, 'hash of hi').toList();
+
+      expect(executor.calls.single.skill.name, 'calculate-hash');
+      expect(executor.calls.single.dataJson, '{"text":"hi"}');
+      expect(events.whereType<AgentErrorEvent>(), isEmpty);
+      expect(
+        chat.toolResponses.where((m) => m.toolName == 'runJs'),
+        hasLength(1),
+      );
+      expect((events.last as DoneEvent).text, 'The hash is abc123.');
+    });
+
+    test('runMcpTool is dispatched to the MCP executor', () async {
+      final chat = _FakeAgentChat([
+        const FunctionCallResponse(
+          name: 'runMcpTool',
+          args: {'toolName': 'get_forecast', 'input': '{"city":"Paris"}'},
+        ),
+        const TextResponse('Sunny.'),
+      ]);
+
+      final loop = AgentLoop(
+        registry: SkillRegistry(),
+        executors: [_echoMcpExecutor('get_forecast')],
+      );
+      final events = await loop.run(chat, 'weather in Paris?').toList();
+
+      final result = events.whereType<ToolResultEvent>().single.result;
+      expect((result as TextResult).text, 'get_forecast:{"city":"Paris"}');
+      expect(events.whereType<AgentErrorEvent>(), isEmpty);
+      expect(
+        chat.toolResponses.where((m) => m.toolName == 'runMcpTool'),
+        hasLength(1),
+      );
+    });
   });
 
   group('AgentLoop — run_js without skillName is guided, not guessed', () {
@@ -920,6 +1015,66 @@ void main() {
       expect(chat.generateCallCount, 2);
     });
 
+    test(
+      'a cancel during the retry ends the turn with no EmptyAnswerEvent',
+      () async {
+        final registry = SkillRegistry()
+          ..add(_textSkill('packing-list'), selected: true);
+        final chat = _FakeAgentChat.turns([
+          [_loadSkill('packing-list')],
+          <ModelResponse>[],
+          <ModelResponse>[], // the retry, stopped before its first token
+        ]);
+        final loop = AgentLoop(registry: registry, executors: const []);
+
+        // True once the retried generation has run: core polls nothing after
+        // a call-free generation, so the loop's own check is the only one.
+        final events = await loop
+            .run(
+              chat,
+              'what should I pack?',
+              isCancelled: () => chat.generateCallCount >= 3,
+            )
+            .toList();
+
+        expect(events.map((e) => e.runtimeType), [
+          SkillLoadEvent,
+          EmptyAnswerRetryEvent,
+        ]);
+        expect(events.whereType<DoneEvent>(), isEmpty);
+        expect(chat.generateCallCount, 3);
+      },
+    );
+
+    test(
+      '0 retries: a cancel during the empty answer ends with no DoneEvent',
+      () async {
+        final registry = SkillRegistry()
+          ..add(_textSkill('packing-list'), selected: true);
+        final chat = _FakeAgentChat.turns([
+          [_loadSkill('packing-list')],
+          <ModelResponse>[],
+        ]);
+        final loop = AgentLoop(
+          registry: registry,
+          executors: const [],
+          emptyAfterSkillRetries: 0,
+        );
+
+        final events = await loop
+            .run(
+              chat,
+              'what should I pack?',
+              isCancelled: () => chat.generateCallCount >= 2,
+            )
+            .toList();
+
+        expect(events.map((e) => e.runtimeType), [SkillLoadEvent]);
+        expect(events.whereType<DoneEvent>(), isEmpty);
+        expect(chat.generateCallCount, 2);
+      },
+    );
+
     test('a negative retry count is refused', () {
       expect(
         () => AgentLoop(
@@ -1042,6 +1197,88 @@ void main() {
       await loop.run(chat, 'what time is it?').toList();
 
       expect(executor.calls.single.skill.name, 'get-current-time');
+    });
+  });
+
+  group('AgentLoop — runMcp with a skillName', () {
+    Skill mcpSkill({bool requireSecret = false}) => Skill(
+      name: 'weather',
+      description: 'Look up the weather forecast.',
+      instructions: 'Call the `runMcp` tool with toolName: get_forecast.',
+      type: SkillType.mcp,
+      metadata: SkillMetadata(requireSecret: requireSecret),
+    );
+
+    test('runs the tool the call names, not the skill', () async {
+      final registry = SkillRegistry()..add(mcpSkill(), selected: true);
+      final chat = _FakeAgentChat([
+        const FunctionCallResponse(
+          name: 'runMcp',
+          args: {
+            'skillName': 'weather',
+            'toolName': 'get_forecast',
+            'input': '{"city":"Paris"}',
+          },
+        ),
+        const TextResponse('Sunny.'),
+      ]);
+      final loop = AgentLoop(
+        registry: registry,
+        executors: [_echoMcpExecutor('get_forecast')],
+      );
+
+      final events = await loop.run(chat, 'weather in Paris?').toList();
+
+      final result = events.whereType<ToolResultEvent>().single.result;
+      expect((result as TextResult).text, 'get_forecast:{"city":"Paris"}');
+      expect(events.whereType<AgentErrorEvent>(), isEmpty);
+    });
+
+    test('keeps the registered skill for the event and the secret', () async {
+      final registry = SkillRegistry()
+        ..add(mcpSkill(requireSecret: true), selected: true);
+      final executor = _FakeExecutor(SkillType.mcp);
+      final secrets = SecretStore()..set('weather', 'sk-1');
+      final chat = _FakeAgentChat([
+        const FunctionCallResponse(
+          name: 'runMcp',
+          args: {
+            'skillName': 'weather',
+            'toolName': 'get_forecast',
+            'input': '{}',
+          },
+        ),
+        const TextResponse('ok'),
+      ]);
+      final loop = AgentLoop(
+        registry: registry,
+        executors: [executor],
+        secretStore: secrets,
+      );
+
+      final events = await loop.run(chat, 'weather?').toList();
+
+      expect(executor.calls.single.skill.name, 'get_forecast');
+      expect(executor.calls.single.skill.type, SkillType.mcp);
+      expect(executor.calls.single.secret, 'sk-1');
+      expect(events.whereType<ToolCallEvent>().single.skill?.name, 'weather');
+    });
+
+    test('without a toolName the registered skill runs, as before', () async {
+      final registry = SkillRegistry()..add(mcpSkill(), selected: true);
+      final executor = _FakeExecutor(SkillType.mcp);
+      final chat = _FakeAgentChat([
+        const FunctionCallResponse(
+          name: 'runMcp',
+          args: {'skillName': 'weather', 'input': '{}'},
+        ),
+        const TextResponse('ok'),
+      ]);
+      final loop = AgentLoop(registry: registry, executors: [executor]);
+
+      await loop.run(chat, 'weather?').toList();
+
+      expect(executor.calls.single.skill.name, 'weather');
     });
   });
 

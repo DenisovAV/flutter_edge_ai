@@ -73,9 +73,8 @@ __SKILLS__
 ///
 /// For small models that, under the default prompt, call a tool on plain or
 /// photo questions too (Gemma 4 E2B invented intents such as
-/// `get_country_capital`). Its wording is the one an app measured on Gemma 4
-/// E2B: fewer spurious calls on plain and photo questions, every skill
-/// request still handled. That was one app's probe, not a benchmark.
+/// `get_country_capital`). Neither template is benchmarked here: try both on
+/// your model and your requests.
 const String onDemandAgentSystemPrompt = '''
 You are a helpful assistant.
 Skills:

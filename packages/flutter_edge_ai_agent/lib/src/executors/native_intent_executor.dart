@@ -19,9 +19,9 @@ import 'native_intent_calendar_stub.dart'
 
 /// Runs a single whitelisted native intent given its already-decoded
 /// [params] (the model-supplied `parameters` JSON). [NativeIntentExecutor]
-/// validates them before a handler is invoked when the intent has a validator:
-/// one the app gave ([IntentValidator]) or, for a built-in intent,
-/// [validateIntentParams].
+/// validates them before a handler is invoked: a built-in intent with
+/// [validateIntentParams], then with the app's [IntentValidator] if it gave
+/// one; an intent the app added only with the validator it gave.
 typedef IntentHandler =
     Future<SkillResult> Function(Map<String, dynamic> params);
 
@@ -45,9 +45,10 @@ typedef IntentValidator = String? Function(Map<String, dynamic> params);
 ///    (presence, type, email/phone/ISO-8601 shape, time-component ranges) by
 ///    [validateIntentParams] BEFORE its handler runs — a malformed call
 ///    returns an [ErrorResult], not a half-built action. A validator the app
-///    passes in [validators] replaces that check for its intent. An intent the
-///    app adds is validated only by the validator it gives; without one, its
-///    handler gets the decoded parameters unchecked.
+///    passes in [validators] for a built-in intent runs after that check, and
+///    both must pass. An intent the app adds is validated only by the
+///    validator it gives; without one, its handler gets the decoded parameters
+///    unchecked.
 /// 3. **OS / user confirmation.** Outbound / destructive actions go through the
 ///    OS compose / confirm surface (`url_launcher` opens the system mail / SMS
 ///    composer; `add_2_calendar` opens the calendar's event editor). The model
@@ -65,9 +66,10 @@ class NativeIntentExecutor extends SkillExecutor {
   /// the seam tests use to inject fakes and apps use to extend.
   ///
   /// [validators] check an intent's parameters before its handler runs (see
-  /// [IntentValidator]). One for a built-in intent replaces
-  /// [validateIntentParams] for it. Throws [ArgumentError] when a validator
-  /// names an intent that has no handler, built-in or added.
+  /// [IntentValidator]). One for a built-in intent runs after
+  /// [validateIntentParams], whether or not its handler is replaced; both must
+  /// pass. Throws [ArgumentError] when a validator names an intent that has no
+  /// handler, built-in or added.
   NativeIntentExecutor({
     Map<String, IntentHandler>? handlers,
     Map<String, IntentValidator>? validators,
@@ -183,19 +185,22 @@ class NativeIntentExecutor extends SkillExecutor {
       );
     }
 
-    // The app's validator for this intent, else the built-in check for a
-    // built-in intent; an intent the app added without a validator has none.
-    final validator =
-        _validators[intent] ??
-        (_defaultHandlers.containsKey(intent)
-            ? (Map<String, dynamic> p) => validateIntentParams(intent, p)
-            : null);
-    final validationError = validator?.call(params);
-    if (validationError != null) {
-      return ErrorResult('Invalid parameters for "$intent": $validationError');
-    }
-
+    // A built-in intent's own check first, whether or not its handler was
+    // replaced (the default handlers read the fields it guarantees), then the
+    // app's validator; both must pass. An intent the app added without a
+    // validator has none. A validator that throws fails the call like a
+    // handler that throws.
     try {
+      final validationError =
+          (_defaultHandlers.containsKey(intent)
+              ? validateIntentParams(intent, params)
+              : null) ??
+          _validators[intent]?.call(params);
+      if (validationError != null) {
+        return ErrorResult(
+          'Invalid parameters for "$intent": $validationError',
+        );
+      }
       return await handler(params);
     } catch (e) {
       return ErrorResult('Intent "$intent" failed: $e');

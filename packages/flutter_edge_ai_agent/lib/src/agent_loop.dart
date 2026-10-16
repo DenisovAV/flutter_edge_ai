@@ -88,8 +88,7 @@ class AgentLoop {
 
   /// How many times one turn asks the model again when the generation that
   /// would end the turn has no text (after trimming) right after a successful
-  /// `loadSkill` — the model sampled a stop token straight after reading the
-  /// skill's instructions. A retry emits an [EmptyAnswerRetryEvent], adds
+  /// `loadSkill`. A retry emits an [EmptyAnswerRetryEvent], adds
   /// [emptyAfterSkillNudge] to the chat as a user message and generates again
   /// with the same tools, within what is left of [maxIterations] (no retry
   /// when nothing is left).
@@ -100,6 +99,10 @@ class AgentLoop {
   /// [EmptyAnswerEvent]. An empty answer after any other tool result (an
   /// intent, a JS skill, an MCP tool) ends with a plain [DoneEvent], as
   /// before.
+  ///
+  /// FunctionGemma apps should pass 0: core clears a FunctionGemma chat's
+  /// history after every text reply, so the nudge reaches a blank session and
+  /// is answered without the question.
   final int emptyAfterSkillRetries;
 
   /// The user message a retry sends ([emptyAfterSkillRetries]). It names no
@@ -130,14 +133,19 @@ class AgentLoop {
   /// and the skill discovery injected into its system prompt.
   ///
   /// [isCancelled], when provided, is polled between iterations — before the
-  /// next generation and between dispatched calls — for barge-in: once it
-  /// returns true the stream ends promptly (no [DoneEvent], no
-  /// [MaxIterationsEvent]). A tool already executing still completes; only
-  /// the *next* step is skipped. Tool calls the model already committed to
-  /// [chat]'s history but that were not executed are answered with a
-  /// synthetic `status: cancelled` tool-response, so the persistent chat is
-  /// never left with a dangling half-answered call. `null` (the default)
-  /// preserves prior behavior exactly.
+  /// next generation, between dispatched calls and after an empty answer —
+  /// for barge-in: once it returns true the stream ends promptly (no
+  /// [DoneEvent], no [MaxIterationsEvent]). A tool already executing still
+  /// completes; only the *next* step is skipped. Tool calls the model already
+  /// committed to [chat]'s history but that were not executed are answered
+  /// with a synthetic `status: cancelled` tool-response, so the persistent
+  /// chat is never left with a dangling half-answered call. `null` (the
+  /// default) preserves prior behavior exactly.
+  ///
+  /// To stop a turn, flip [isCancelled] or cancel the subscription BEFORE
+  /// `chat.stopGeneration()`: a stopped empty generation right after a
+  /// `loadSkill` is otherwise taken for an empty answer and retried
+  /// ([emptyAfterSkillRetries]).
   ///
   /// Pass [imageBytes] to attach a photo to the turn — the model then sees the
   /// image alongside [userMessage] and can call skills based on what it saw.
@@ -319,14 +327,16 @@ class AgentLoop {
         // becomes the model's turn). The budget counts every dispatched call
         // as a generation of its own (parallel calls share one), so it can
         // only overestimate what was used: the turn never makes more than
-        // maxIterations generations.
+        // maxIterations generations. A cancel ends the turn here with no
+        // event: a stopped generation is empty too, and EmptyAnswerEvent is a
+        // DoneEvent, which a cancelled turn never emits.
         emptyAnswers++;
         budget = maxIterations - turn.dispatched - emptyAnswers;
+        if (cancelled()) return;
         if (retries >= emptyAfterSkillRetries || budget < 1) {
           emit(EmptyAnswerEvent(skillName));
           return;
         }
-        if (cancelled()) return;
         retries++;
         emit(
           EmptyAnswerRetryEvent(
@@ -364,11 +374,14 @@ class AgentLoop {
   /// named [AgentToolNames.runSkill] / `runIntent` / `runMcp`. Native decoders
   /// take the name from the structured declaration; the web decoder follows the
   /// SKILL.md text literally and calls `run_js`. Accept the SKILL.md spelling as
-  /// an alias so both paths dispatch to the same executor.
+  /// an alias so both paths dispatch to the same executor. Gallery's own tool
+  /// names, `runJs` and `runMcpTool`, are accepted the same way.
   static const _toolNameAliases = <String, String>{
     'run_js': AgentToolNames.runSkill,
+    'runJs': AgentToolNames.runSkill,
     'run_intent': AgentToolNames.runIntent,
     'run_mcp': AgentToolNames.runMcp,
+    'runMcpTool': AgentToolNames.runMcp,
     'load_skill': AgentToolNames.loadSkill,
   };
 
@@ -485,14 +498,17 @@ class AgentLoop {
     );
 
     // Map the tool call to the (data) payload + skill the executor expects.
-    // `runIntent` names its action in `intent`. Small models often add the
-    // loaded skill's `skillName` to the call too; the action still comes from
-    // `intent`, while the registered skill stays the call's skill for the
-    // event above and for the secret below.
-    final intent = call.name == AgentToolNames.runIntent
-        ? _stringArg(call.args, 'intent').trim()
-        : '';
-    final probe = skill == null || intent.isNotEmpty
+    // `runIntent` names its action in `intent`, `runMcp` its tool in
+    // `toolName`. Small models often add the loaded skill's `skillName` to the
+    // call too; the action still comes from `intent` / `toolName`, while the
+    // registered skill stays the call's skill for the event above and for the
+    // secret below.
+    final action = switch (call.name) {
+      AgentToolNames.runIntent => _stringArg(call.args, 'intent').trim(),
+      AgentToolNames.runMcp => _stringArg(call.args, 'toolName').trim(),
+      _ => '',
+    };
+    final probe = skill == null || action.isNotEmpty
         ? _syntheticSkillFor(call)
         : skill;
     final executor = _pickExecutor(probe);
@@ -581,8 +597,9 @@ class AgentLoop {
     return null;
   }
 
-  /// Build a stand-in [Skill] for an intent / MCP call that does not target a
-  /// registered skill, so executors can still probe by [SkillType]. The
+  /// Build a stand-in [Skill] for an intent / MCP call that names its action,
+  /// or that does not target a registered skill, so executors can still probe
+  /// by [SkillType]. It carries no instructions and no metadata. The
   /// synthetic skill's name carries the concrete action — the `intent` arg for
   /// `runIntent`, the `toolName` arg for `runMcp` — so the executor can resolve
   /// which whitelisted action to run from [Skill.name].

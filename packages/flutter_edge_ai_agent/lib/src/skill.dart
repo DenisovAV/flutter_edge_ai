@@ -55,6 +55,8 @@ extension SkillTypeId on SkillType {
 /// instance with [homepage] null, [requireSecret] false, [secretDescription]
 /// null and [extra] empty.
 class SkillMetadata {
+  /// The `extra:` map is not copied: [extra] is an unmodifiable view of the
+  /// map passed here, so a later change to that map shows through it.
   const SkillMetadata({
     this.homepage,
     this.requireSecret = false,
@@ -83,7 +85,7 @@ class SkillMetadata {
   /// and nested maps and lists as plain unmodifiable Dart `Map`s and `List`s.
   /// A frontmatter that is not valid YAML goes through the tolerant line
   /// parser instead, which yields strings only (and flattens nested keys).
-  /// Unmodifiable.
+  /// Unmodifiable, but not a copy of the map given to the constructor.
   Map<String, Object?> get extra => UnmodifiableMapView(_extra);
 
   /// True when this metadata carries no information (the default/empty case).

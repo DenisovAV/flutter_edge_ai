@@ -116,7 +116,7 @@ which provides `LiteRtLmEngine`:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_agent: ^0.3.0
+  flutter_edge_ai_agent: ^0.4.0
   flutter_edge_ai_litertlm: ^1.14.0
 ```
 
@@ -355,7 +355,8 @@ filename, and honouring one would let it name any file under `scripts/`.
 
 `NativeIntentExecutor` runs six built-in intents (`send_email`, `send_text`,
 `create_calendar_event`, `read_calendar_events`, `schedule_notification`,
-`get_current_date_and_time`). An app adds its own through `handlers:`; the
+`get_current_date_and_time`); `schedule_notification` runs only once the app
+turns it on (see [Setup](#setup)). An app adds its own through `handlers:`; the
 built-ins keep running next to them. `validators:` checks an intent's
 parameters before its handler runs: return null when they are valid,
 otherwise the reason, which goes back to the model.
@@ -488,20 +489,50 @@ need declarations in the app:
   <key>NSContactsUsageDescription</key>
   <string>Suggest locations for calendar events.</string>
   ```
-- **Notifications** — `schedule_notification` schedules through
-  `flutter_local_notifications` but does not set the plugin up; the app does:
-  - Call `FlutterLocalNotificationsPlugin().initialize(...)` once at startup,
-    with an Android default icon, a drawable resource
-    (`AndroidInitializationSettings('app_icon')`): the intent's notification
-    names no icon of its own. On iOS and macOS,
-    `DarwinInitializationSettings()` asks for permission there; on Android 13
-    and newer, ask with `requestNotificationsPermission()`.
-  - On Android the intent schedules an exact alarm (`exactAllowWhileIdle`).
-    Without `SCHEDULE_EXACT_ALARM` granted (call `requestExactAlarmsPermission()`)
-    or `USE_EXACT_ALARM` declared, Android 12 and newer refuse it and the intent
-    returns an error. The plugin's receivers and `RECEIVE_BOOT_COMPLETED` go in
-    the manifest as well: see
+- **Notifications** — since 0.4.0 `schedule_notification` is off until the
+  app turns it on. The app sets up `flutter_local_notifications` itself and
+  passes `NotificationIntentSettings`; without them the intent returns an error
+  that says so and makes no plugin call. The agent never calls `initialize`: a
+  second call would replace the app's notification callbacks, default icon and
+  presentation options. It never asks for a permission either.
+  ```dart
+  // Once at startup, with the app's own callbacks and default icon.
+  await FlutterLocalNotificationsPlugin().initialize(
+    settings: const InitializationSettings(
+      android: AndroidInitializationSettings('app_icon'),
+      iOS: DarwinInitializationSettings(),
+      macOS: DarwinInitializationSettings(),
+    ),
+  );
+
+  final intents = NativeIntentExecutor(
+    notifications: const NotificationIntentSettings(
+      androidSmallIcon: 'ic_reminder', // optional; null = initialize's icon
+    ),
+  );
+  ```
+  - Before it schedules, the intent checks the permissions and refuses, with a
+    reason the model can pass on, when notifications are off for the app
+    (Android `areNotificationsEnabled()`; iOS and macOS `checkPermissions()`
+    with neither full nor provisional permission) or, on Android 12 and newer,
+    when the app may not schedule exact alarms. Asking is the app's job:
+    `requestNotificationsPermission()` on Android 13 and newer,
+    `DarwinInitializationSettings()` or `requestPermissions()` on iOS and macOS.
+  - On Android the intent schedules an exact alarm (`exactAllowWhileIdle`),
+    which needs `SCHEDULE_EXACT_ALARM` granted (`requestExactAlarmsPermission()`)
+    or `USE_EXACT_ALARM` declared. With
+    `NotificationIntentSettings(androidExactAlarm: false)` it schedules
+    `inexactAllowWhileIdle` instead, which needs neither and may fire minutes
+    late; the intent never switches on its own. The plugin's receivers and
+    `RECEIVE_BOOT_COMPLETED` go in the manifest as well: see
     [flutter_local_notifications' Android setup](https://pub.dev/packages/flutter_local_notifications#androidmanifestxml-setup).
+  - The intent refuses on the web and on Linux, where the plugin cannot
+    schedule a notification, and also a time that has already passed. On
+    Windows it has no permission to check and relies on the app's `initialize`.
+  - It schedules the instant in UTC and leaves the time zone database and
+    `tz.local` to the app.
+  - `notifications:` together with a `schedule_notification` entry in
+    `handlers:` throws `ArgumentError`.
 - **Android** — `flutter_local_notifications` requires core-library desugaring in
   `android/app/build.gradle(.kts)`, whether or not the app uses the intent:
   ```kotlin

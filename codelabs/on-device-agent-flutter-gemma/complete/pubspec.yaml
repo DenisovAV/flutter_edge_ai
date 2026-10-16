@@ -42,7 +42,7 @@ dependencies:
   flutter_edge_ai_litertlm: ^1.14.0
   # The agent: SKILL.md skills, the tool loop that runs them, and the
   # executors for each kind of skill.
-  flutter_edge_ai_agent: ^0.3.0
+  flutter_edge_ai_agent: ^0.4.0
 
 dev_dependencies:
   flutter_test:

@@ -1,5 +1,29 @@
 # Migration guide
 
+## `flutter_edge_ai_agent` 0.4.0: `schedule_notification` is opt-in
+
+```yaml
+dependencies:
+  flutter_edge_ai_agent: ^0.4.0
+```
+
+`NativeIntentExecutor()` no longer schedules notifications: the intent returns
+an error until the app passes `NotificationIntentSettings`. Before, it
+scheduled through a `flutter_local_notifications` that nobody had initialized,
+which leaves the notification without a small icon on Android and without the
+presentation settings the plugin reads on macOS — `initialize` writes both. An
+app that uses the intent:
+
+1. calls `FlutterLocalNotificationsPlugin().initialize(...)` once at startup,
+   with its own callbacks and default icon — the agent never does;
+2. passes `NativeIntentExecutor(notifications: const NotificationIntentSettings())`.
+
+The intent checks the permissions and refuses instead of asking for them; on
+Android it needs exact alarms unless `androidExactAlarm: false`. A
+`schedule_notification` entry in `handlers:` still replaces the built-in
+intent, but not together with `notifications:`. The other intents are
+unchanged. See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
+
 ## flutter_edge_ai 2.4.0 / flutter_edge_ai_litertlm 1.14.0: backends follow the model file
 
 > Upgrade these together: `flutter_edge_ai` 2.4.0, `flutter_edge_ai_litertlm`

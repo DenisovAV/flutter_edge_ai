@@ -1,4 +1,5 @@
-## 0.3.1
+## 0.4.0
+- **Breaking**: `schedule_notification` needs `NativeIntentExecutor(notifications:)`; the agent never initializes the plugin.
 - Email and SMS intents write spaces as `%20`, not `+`; README lists each intent's platform declarations.
 
 ## 0.3.0

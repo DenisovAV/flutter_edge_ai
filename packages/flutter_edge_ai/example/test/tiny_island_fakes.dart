@@ -277,7 +277,15 @@ final class ScriptedDecider extends Decider {
         scoreKind: ScoreKind.cosine,
         margin: 0,
         abstainReason: AbstainReason.noCandidates,
-        provenance: answer.provenance,
+        // No candidate, so nothing was measured: no abstain signal.
+        provenance: DeciderProvenance(
+          method: answer.provenance.method,
+          calibration: answer.provenance.calibration,
+          spaceId: answer.provenance.spaceId,
+          encodeTime: answer.provenance.encodeTime,
+          scoreTime: answer.provenance.scoreTime,
+          threshold: answer.provenance.threshold,
+        ),
       );
     }
     if (answerWith case final id?) {

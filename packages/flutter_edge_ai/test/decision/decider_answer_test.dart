@@ -115,6 +115,14 @@ void main() {
       ),
       'noCandidates with candidates ranked': () =>
           _answer(choice: null, abstainReason: AbstainReason.noCandidates),
+      'noCandidates with an abstain signal': () => _answer(
+        choice: null,
+        ranked: const [],
+        confidence: null,
+        probabilities: null,
+        abstainReason: AbstainReason.noCandidates,
+        provenance: _signal(0.3, 0.5),
+      ),
     };
     for (final MapEntry(key: name, value: build) in cases.entries) {
       test(name, () => expect(build, throwsArgumentError));
@@ -207,6 +215,26 @@ void main() {
       ),
     );
     expect(noneWon.toJevJson()['choice'], isNull);
+    // The none option is checked before the probability threshold: it wins
+    // with its probability below the threshold too.
+    final noneWonBelow = DeciderAnswer(
+      choice: null,
+      ranked: const [
+        RankedOption(id: 'none', score: -0.9, probability: 0.4),
+        RankedOption(id: 'joy', score: -1.0, probability: 0.35),
+      ],
+      scoreKind: ScoreKind.logprob,
+      margin: 0.1,
+      abstainReason: AbstainReason.noneOption,
+      probabilities: const {'none': 0.4, 'joy': 0.35, 'sadness': 0.25},
+      provenance: _signal(
+        0.4,
+        0.6,
+        kind: AbstainSignalKind.topProbability,
+        method: DeciderMethod.optionScoring,
+      ),
+    );
+    expect(noneWonBelow.abstainReason, AbstainReason.noneOption);
   });
 
   test('confidence of a uniform distribution is 0, never below', () {

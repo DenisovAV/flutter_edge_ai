@@ -202,12 +202,14 @@ final class InferenceDeciderCalibration {
 
   /// A probability in (0, 1): the decider abstains
   /// (`AbstainReason.belowThreshold`, signal `AbstainSignalKind.topProbability`)
-  /// when the top probability is below it. Needs [temperature].
+  /// when the top probability is below it — unless [noneOption] ranked first,
+  /// which is checked before it. Needs [temperature].
   final double? abstainBelow;
 
   /// The id of the option the model was trained to give for "none of these";
   /// it must be one of the options. When it ranks first the decider abstains
-  /// with `AbstainReason.noneOption`.
+  /// with `AbstainReason.noneOption`, whatever [abstainBelow] says: the model
+  /// answered "none of these", which is the more specific reason.
   final String? noneOption;
 
   /// The lower-case hex SHA-256 of the prompt the model was trained on,

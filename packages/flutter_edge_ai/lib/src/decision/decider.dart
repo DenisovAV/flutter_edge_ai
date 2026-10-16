@@ -345,11 +345,12 @@ final class DeciderAnswer {
   /// highest first; [confidence] is in [0, 1] and only given with
   /// [probabilities]; a [RankedOption.probability] equals that option's
   /// entry in [probabilities] when both are given; the provenance's abstain
-  /// signal and its kind are both set or both null; an answer abstains with
-  /// [AbstainReason.belowThreshold] exactly when the signal is below the
-  /// threshold (both set) — a choice with both set has the signal at or
-  /// above it; [AbstainReason.noneOption] comes with candidates in [ranked],
-  /// [AbstainReason.noCandidates] with none.
+  /// signal and its kind are both set or both null; an answer that abstains
+  /// with [AbstainReason.belowThreshold] has its signal below the threshold
+  /// (both set), and one that chooses with both set has it at or above;
+  /// [AbstainReason.noneOption] comes with candidates in [ranked] and may
+  /// have its signal on either side (the none option wins first);
+  /// [AbstainReason.noCandidates] comes with nothing ranked and no signal.
   DeciderAnswer({
     required this.choice,
     required List<RankedOption> ranked,
@@ -451,12 +452,21 @@ final class DeciderAnswer {
         'an answer that abstains noneOption ranks the options it scored',
       );
     }
-    if (identical(reason, AbstainReason.noCandidates) && ranked.isNotEmpty) {
-      throw ArgumentError.value(
-        ranked,
-        'ranked',
-        'an answer that abstains noCandidates had no candidate to rank',
-      );
+    if (identical(reason, AbstainReason.noCandidates)) {
+      if (ranked.isNotEmpty) {
+        throw ArgumentError.value(
+          ranked,
+          'ranked',
+          'an answer that abstains noCandidates had no candidate to rank',
+        );
+      }
+      if (signal != null) {
+        throw ArgumentError.value(
+          signal,
+          'provenance.abstainSignal',
+          'an answer that abstains noCandidates had no candidate to measure',
+        );
+      }
     }
   }
 

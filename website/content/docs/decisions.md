@@ -121,8 +121,10 @@ classes with constant values, not enums, so a value added in a later release
 does not break your `switch` — give it a default branch. A `DeciderAnswer`
 checks itself: exactly one of `choice` and `abstainReason`, `choice` first in
 `ranked`, `ranked` highest first, `confidence` in [0, 1] and only with
-`probabilities`, `belowThreshold` exactly when the abstain signal is below the
-threshold.
+`probabilities`, a choice only with the abstain signal at or above the
+threshold and `belowThreshold` only below it. A language-model decider whose
+"none of these" option ranks first abstains with `noneOption` whatever its
+signal.
 
 ### A raw score is not a probability
 

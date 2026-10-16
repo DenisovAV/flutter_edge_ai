@@ -124,8 +124,29 @@ final vector = await embedder.embed(
   its first load (the 440m bundle adds 218 MB for vision, the 740m bundle
   writes 385 MB in total, even for text-only use). The cache lives in the app's
   cache directory: never backed up, and rebuilt at the next load if the OS
-  clears it. The Web keeps no weight cache: the bundle sits in the browser's
+  clears it. The engine opens one cache file per tower when it loads; when it
+  cannot create one (a path too long for the platform, such as past Windows'
+  260-character MAX_PATH, a directory the app cannot write to, or possibly no
+  free space at all) that tower runs anyway, slower to load and, measured on
+  the 270m, with about 290 MB more memory, and the package only prints a
+  warning. A disk that fills while the cache is being written ends the
+  process instead: the engine (XNNPack) aborts in native code, and no flag can
+  catch that. The Web keeps no weight cache: the bundle sits in the browser's
   storage.
+- **requireWeightCache (flutter_edge_ai_litertlm 1.14.0).** Register
+  **LiteRtEmbeddingBackend(requireWeightCache: true)** to make a load that
+  wrote no weight cache a failure: **getActiveEmbedder()** throws
+  **EmbeddingLoadException** naming the cache directory, the length of the
+  cache file path and the likely causes, and no engine is left running. One
+  tower's cache missing beside the others stays a printed warning. It applies
+  on CPU, and on the NPU only with declared audio, whose tower runs on CPU;
+  on the Web it is accepted and ignored. The warning is a **print**, which a
+  Windows release build started from Explorer shows nowhere (it has no
+  console): Windows desktop apps that care should pass
+  **requireWeightCache: true**. A refusal comes after core has closed the
+  embedder it held, and the RAG **FlutterEdgeAiActiveEmbedder** re-resolves
+  the model for every operation, so each call repeats the engine create
+  before it refuses.
 - EmbeddingGemma 1 and 2 are different embedding spaces with the same
   dimension: give each its own vector-store location and profile.
 

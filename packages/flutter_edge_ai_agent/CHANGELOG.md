@@ -1,3 +1,6 @@
+## 0.3.1
+- Email and SMS intents write spaces as `%20`, not `+`; README lists each intent's platform declarations.
+
 ## 0.3.0
 - **Breaking** for exhaustive switches: `EmptyAnswerRetryEvent`; an empty answer after `loadSkill` is retried (`emptyAfterSkillRetries`).
 - `NativeIntentExecutor(validators:)`: intents added through `handlers:` no longer fail validation.

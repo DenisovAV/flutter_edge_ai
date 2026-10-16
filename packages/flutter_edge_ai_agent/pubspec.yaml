@@ -1,6 +1,6 @@
 name: flutter_edge_ai_agent
 description: "On-device agentic skills (SKILL.md + tool-calling loop) for flutter_edge_ai. Opt-in package adding text/JS/native-intent/MCP skill executors."
-version: 0.3.0
+version: 0.3.1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_agent
 topics: [agent, skills, llm, tool-calling, on-device]
@@ -60,6 +60,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Tests stand in for the OS launcher to read the mail and SMS URIs.
+  plugin_platform_interface: ^2.1.8
+  url_launcher_platform_interface: ^2.3.2
   # The L2 webview integration test needs a host runner, so it lives in the
   # example app (packages/flutter_edge_ai/example/integration_test/
   # js_skill_real_webview_test.dart), run on a device per AGENTS.md Rule 6 —

@@ -388,17 +388,62 @@ final session = await AgentSession.fromModel(model, registry: registry);
 
 ## Setup
 
-Most skills need no platform setup. For the platform-specific bits:
+Most skills need no platform setup. The intents open OS surfaces, and those
+need declarations in the app:
 
-- **Windows** — JS skills require the
-  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
-  (pre-installed on Windows 11; bundle the bootstrapper for Windows 10).
-- **iOS** — the `create-calendar-event` intent needs a usage description in
-  `ios/Runner/Info.plist`:
+- **Android 11 and newer** — `send_email` and `send_text` ask url_launcher
+  whether an app can open the link, and `create_calendar_event` asks
+  `add_2_calendar` whether a calendar can insert the event. Both answers are
+  "no", and the intent reports that no app is available, unless the app declares
+  them in `android/app/src/main/AndroidManifest.xml`, as a child of `<manifest>`:
   ```
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="mailto" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="sms" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.INSERT" />
+      <data android:mimeType="vnd.android.cursor.dir/event" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.INSERT" />
+      <data android:mimeType="vnd.android.cursor.item/event" />
+    </intent>
+  </queries>
+  ```
+- **iOS** — the same check for mail and SMS, plus `add_2_calendar`'s usage
+  descriptions (it recommends the contacts one: Apple's event editor offers
+  location autocomplete), in `ios/Runner/Info.plist`:
+  ```
+  <key>LSApplicationQueriesSchemes</key>
+  <array>
+    <string>mailto</string>
+    <string>sms</string>
+  </array>
   <key>NSCalendarsUsageDescription</key>
   <string>Create calendar events from the agent.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>Suggest locations for calendar events.</string>
   ```
+- **Notifications** — `schedule_notification` schedules through
+  `flutter_local_notifications` but does not set the plugin up; the app does:
+  - Call `FlutterLocalNotificationsPlugin().initialize(...)` once at startup,
+    with an Android default icon, a drawable resource
+    (`AndroidInitializationSettings('app_icon')`): the intent's notification
+    names no icon of its own. On iOS and macOS,
+    `DarwinInitializationSettings()` asks for permission there; on Android 13
+    and newer, ask with `requestNotificationsPermission()`.
+  - On Android the intent schedules an exact alarm (`exactAllowWhileIdle`).
+    Without `SCHEDULE_EXACT_ALARM` granted (call `requestExactAlarmsPermission()`)
+    or `USE_EXACT_ALARM` declared, Android 12 and newer refuse it and the intent
+    returns an error. The plugin's receivers and `RECEIVE_BOOT_COMPLETED` go in
+    the manifest as well: see
+    [flutter_local_notifications' Android setup](https://pub.dev/packages/flutter_local_notifications#androidmanifestxml-setup).
 - **Android** — `flutter_edge_ai_agent` depends on `flutter_local_notifications`,
   which requires core-library desugaring in `android/app/build.gradle(.kts)`.
   This is unconditional: an app that never uses the `schedule_notification`
@@ -417,6 +462,12 @@ Most skills need no platform setup. For the platform-specific bits:
   android.r8.proguardAndroidTxt.disallowed=false
   ```
   AGP deprecates this opt-out and plans to remove it in AGP 10.
+- **Windows** — JS skills require the
+  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+  (pre-installed on Windows 11; bundle the bootstrapper for Windows 10). The
+  webview plugin fetches its native dependencies with the
+  [NuGet CLI](https://learn.microsoft.com/nuget/install-nuget-client-tools)
+  while the app builds, so `nuget` has to be on the `PATH`.
 
 <Warning>
 

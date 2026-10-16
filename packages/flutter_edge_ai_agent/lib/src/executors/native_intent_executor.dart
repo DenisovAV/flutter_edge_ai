@@ -407,13 +407,18 @@ class NativeIntentExecutor extends SkillExecutor {
 
   /// `key=value&key=value` query with each value percent-encoded. Empty values
   /// are dropped so e.g. an empty SMS body produces a bare `sms:` URI.
+  ///
+  /// `encodeComponent`, not `encodeQueryComponent`: a `mailto:` or `sms:`
+  /// URI is not a form, so a `+` stays a plus sign (RFC 6068) and a space
+  /// has to be `%20` — what url_launcher's README prescribes for these
+  /// schemes.
   static String _encodeQuery(Map<String, String> params) {
     return params.entries
         .where((e) => e.value.isNotEmpty)
         .map(
           (e) =>
-              '${Uri.encodeQueryComponent(e.key)}='
-              '${Uri.encodeQueryComponent(e.value)}',
+              '${Uri.encodeComponent(e.key)}='
+              '${Uri.encodeComponent(e.value)}',
         )
         .join('&');
   }

@@ -409,7 +409,7 @@ final route = await embedder.createDecider(
     DeciderOption('docs', description: 'Questions the app documentation answers'),
   ],
   // Descriptions alone cannot calibrate an abstain threshold.
-  calibration: const DeciderCalibration.none(),
+  calibration: const EmbeddingDeciderCalibration.none(),
 );
 
 final answer = await route.choose(DeciderInput(EmbeddingInput.text(question)));

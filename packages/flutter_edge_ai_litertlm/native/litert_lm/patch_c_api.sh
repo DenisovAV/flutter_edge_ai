@@ -63,6 +63,11 @@ LDSEOF
   # The EmbeddingEngine C API leaves the DLL through LITERT_LM_C_API_EXPORT;
   # the two response getters section 14 adds are also named here, so a tree
   # that lost section 14 fails the Windows link instead of shipping without.
+  # The three stream-chunk accessors are named for the same reason: the Dart
+  # client resolves them with GetProcAddress on this DLL and hands them to
+  # stream_proxy_create2, which refuses to build a proxy without all three, so a
+  # tree that stopped exporting them should fail the link, not ship a client that
+  # throws on the first send.
   cat > "$DIR/c/windows_exports.def" << 'DEFEOF'
 LIBRARY "LiteRtLm"
 EXPORTS
@@ -133,6 +138,9 @@ EXPORTS
   litert_lm_session_generate_content_stream
   litert_lm_session_get_benchmark_info
   litert_lm_set_min_log_level
+  litert_lm_stream_chunk_get_error
+  litert_lm_stream_chunk_get_text
+  litert_lm_stream_chunk_is_final
 DEFEOF
 
   cat >> "$DIR/c/BUILD" << 'BUILDEOF'

@@ -50,6 +50,20 @@ typedef _ProxyCreateDart =
       Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
     );
 
+/// stream_proxy_create2: the same proxy, with the three stream-chunk accessors
+/// passed in by the caller (resolved on the libLiteRtLm it drives) instead of
+/// probed by the shim. Returns null, with the out-param null, when one is missing.
+typedef _ProxyCreate2Native =
+    Pointer<Void> Function(
+      Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
+      Pointer<Void> dartData,
+      Pointer<Void> getText,
+      Pointer<Void> getError,
+      Pointer<Void> isFinal,
+      Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
+    );
+typedef _ProxyCreate2Dart = _ProxyCreate2Native;
+
 /// Free a strdup'd string from the proxy callback.
 typedef _ProxyFreeStringNative = Void Function(Pointer<Char> str);
 typedef _ProxyFreeStringDart = void Function(Pointer<Char> str);
@@ -328,6 +342,14 @@ class LiteRtLmFfiClient {
   // ignore: unused_field
   DynamicLibrary? _proxyLib;
   _ProxyCreateDart? _proxyCreate;
+
+  /// Set when the loaded StreamProxy exports `stream_proxy_create2`; then the
+  /// accessors below are what every stream is created with.
+  _ProxyCreate2Dart? _proxyCreate2;
+  Pointer<Void> _chunkGetText = nullptr;
+  Pointer<Void> _chunkGetError = nullptr;
+  Pointer<Void> _chunkIsFinal = nullptr;
+  List<String> _missingChunkAccessors = const [];
   _ProxyFreeStringDart? _proxyFreeString;
   Pointer<LiteRtLmEngine>? _engine;
   bool _isInitialized = false;
@@ -507,6 +529,31 @@ class LiteRtLmFfiClient {
   /// where redirection isn't wired (currently it works on macOS + iOS).
   String? get nativeLogPath => _nativeLogPath;
 
+  /// Resolves the three stream-chunk accessors on [lib], the libLiteRtLm this
+  /// client drives, for `stream_proxy_create2`. A StreamProxy without that export
+  /// probes for them itself and needs nothing here. A name the library does not
+  /// export is kept, so the first send can say which one (#453).
+  void _resolveChunkAccessors(DynamicLibrary proxyLib, DynamicLibrary lib) {
+    if (!proxyLib.providesSymbol('stream_proxy_create2')) return;
+    Pointer<Void> find(String name, List<String> missing) {
+      if (!lib.providesSymbol(name)) {
+        missing.add(name);
+        return nullptr;
+      }
+      return lib.lookup<Void>(name);
+    }
+
+    final missing = <String>[];
+    _chunkGetText = find('litert_lm_stream_chunk_get_text', missing);
+    _chunkGetError = find('litert_lm_stream_chunk_get_error', missing);
+    _chunkIsFinal = find('litert_lm_stream_chunk_is_final', missing);
+    _missingChunkAccessors = missing;
+    _proxyCreate2 = proxyLib
+        .lookupFunction<_ProxyCreate2Native, _ProxyCreate2Dart>(
+          'stream_proxy_create2',
+        );
+  }
+
   /// Load the native library and create bindings.
   void _ensureBindings() {
     if (_bindings != null) return;
@@ -624,10 +671,11 @@ class LiteRtLmFfiClient {
         );
       }
       proxyLib = DynamicLibrary.open('libStreamProxy.so');
-      // Load LiteRtLm into the default search scope so stream_proxy's ABI
-      // probe can resolve the v0.15 chunk accessors through
+      // Load LiteRtLm into the default search scope so the shipped (native
+      // -v0.18.0-e and earlier) stream_proxy's ABI probe can resolve the v0.15 chunk accessors through
       // dlsym(RTLD_DEFAULT); Dart's DynamicLibrary.open uses RTLD_LOCAL, which
-      // hides them. That probe is the ONLY verified consumer of ambient
+      // hides them. A shim with `stream_proxy_create2` is handed the accessors
+      // instead and does not look. That probe is the ONLY verified consumer of ambient
       // visibility here: measured on the shipped android_arm64 bundle, the GPU
       // and OpenCL accelerators have zero undefined LiteRt* symbols, and the
       // TopK samplers resolve theirs through DT_NEEDED, not RTLD_DEFAULT.
@@ -645,6 +693,7 @@ class LiteRtLmFfiClient {
 
     _bindings = LiteRtLmBindings(lib);
     _proxyLib = proxyLib;
+    _resolveChunkAccessors(proxyLib, lib);
     _proxyCreate = proxyLib
         .lookupFunction<_ProxyCreateNative, _ProxyCreateDart>(
           'stream_proxy_create',
@@ -1764,14 +1813,45 @@ class LiteRtLmFfiClient {
     });
 
     // Create proxy that strdup's strings before forwarding to Dart callback
+    final create2 = _proxyCreate2;
+    if (create2 != null && _missingChunkAccessors.isNotEmpty) {
+      callable.close();
+      calloc.free(messagePtr);
+      if (extraPtr != nullptr) calloc.free(extraPtr);
+      throw StateError(
+        'libLiteRtLm does not export ${_missingChunkAccessors.join(', ')}, so '
+        'no generation was started: without the stream-chunk accessors the '
+        'callback cannot read a chunk (a bundle older than LiteRT-LM v0.15, or '
+        'a broken export table). See #447 and #453.',
+      );
+    }
     final outProxyFn = calloc<Pointer<NativeFunction<_StreamCallbackNative>>>();
-    final proxyData = _proxyCreate!(
-      callable.nativeFunction,
-      nullptr,
-      outProxyFn,
-    );
+    final proxyData = create2 != null
+        ? create2(
+            callable.nativeFunction,
+            nullptr,
+            _chunkGetText,
+            _chunkGetError,
+            _chunkIsFinal,
+            outProxyFn,
+          )
+        : _proxyCreate!(callable.nativeFunction, nullptr, outProxyFn);
     final proxyFn = outProxyFn.value;
     calloc.free(outProxyFn);
+
+    // NULL is the shim refusing to build a proxy: registering anything would
+    // hand LiteRT-LM a callback whose arguments it does not pass. The shipped
+    // StreamProxy never returns NULL, so this fires only with `stream_proxy_create2`
+    // (an allocation failure, or an argument the checks above already rule out).
+    if (proxyData == nullptr || proxyFn == nullptr) {
+      callable.close();
+      calloc.free(messagePtr);
+      if (extraPtr != nullptr) calloc.free(extraPtr);
+      throw StateError(
+        'stream_proxy_create2 returned null, so no generation was started '
+        '(an allocation failure in StreamProxy). See #453.',
+      );
+    }
 
     // v0.12.0 send_message_stream takes a LiteRtLmConversationOptionalArgs*
     // that must be a real allocation (passing null sigsegvs inside

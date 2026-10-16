@@ -345,9 +345,10 @@ CHECKLIST
    v0.16.0 while every CI assertion passed.
 4. Bazel `--define` names rot silently: Bazel accepts an unknown define and
    builds the default. Grep the tree being built before trusting one.
-5. stream_proxy.c probes the callback ABI at runtime via dlsym/GetProcAddress
-   because v0.15.0 changed the shape with no version symbol. Do not replace that
-   with a compile-time branch.
+5. v0.15.0 changed the stream callback shape with no version symbol. The shipped
+   stream_proxy.c probes it at runtime via dlsym/GetProcAddress; the source on
+   main also has stream_proxy_create2, where Dart passes the accessors it resolved
+   on the library it drives. Do not replace either with a compile-time branch.
 6. `stage()` in the hook is Apple-only on purpose (an Xcode directoryTreeSignature
    cycle); staging on Windows splits companion DLLs and hangs cancel/close.
 7. Any claim that a native check "passed" must name the artifact it inspected —

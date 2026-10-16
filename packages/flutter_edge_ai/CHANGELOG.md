@@ -1,3 +1,7 @@
+## 2.4.1
+- Tool calls: raw Gemma 4 calls keep typed and nested arguments; a one-chunk tagged call is a call.
+- `generateChatResponseWithTools`: a failed feed no longer masks the tool's error; non-JSON results fail the call.
+
 ## 2.4.0
 - Experimental `Decider` API: pick one of N options or abstain (`EmbeddingModel.createDecider`).
 - Classes that `implements InferenceModel` add `createDecider` and two getters; `extends` is unaffected.

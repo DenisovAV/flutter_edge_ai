@@ -81,4 +81,116 @@ void main() {
       expect(calls, isEmpty);
     });
   });
+
+  // Gemma 4's `format_argument` writes only strings between `<|"|>`: numbers,
+  // booleans and null are bare, objects and lists nest.
+  group('raw <|tool_call> arguments keep their types', () {
+    test('a bare integer', () {
+      const raw = '<|tool_call>call:set_volume{level:5}<tool_call|>';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.single.name, 'set_volume');
+      expect(calls.single.args, {'level': 5});
+    });
+
+    test('booleans, a negative float and null', () {
+      const raw =
+          '<|tool_call>call:tune{gain:-0.5,muted:false,note:null,on:true}'
+          '<tool_call|>';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.single.args, {
+        'gain': -0.5,
+        'muted': false,
+        'note': null,
+        'on': true,
+      });
+    });
+
+    test('a nested object and a list', () {
+      const raw =
+          '<|tool_call>call:schedule{at:{hour:9,minute:30},'
+          'days:[<|"|>mon<|"|>,<|"|>tue<|"|>]}<tool_call|>';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.single.args, {
+        'at': {'hour': 9, 'minute': 30},
+        'days': ['mon', 'tue'],
+      });
+    });
+
+    test('a string holding a brace and a comma', () {
+      const raw = '<|tool_call>call:say{text:<|"|>a}, b<|"|>}<tool_call|>';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.single.args, {'text': 'a}, b'});
+    });
+
+    test('two calls in one response', () {
+      const raw =
+          '<|tool_call>call:set_volume{level:5}<tool_call|>'
+          '<|tool_call>call:change_color{color:<|"|>red<|"|>}<tool_call|>';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.map((c) => c.name), ['set_volume', 'change_color']);
+      expect(calls.map((c) => c.args), [
+        {'level': 5},
+        {'color': 'red'},
+      ]);
+    });
+
+    test('a string with JSON escapes, inside a stringified message', () {
+      const raw =
+          r'{"role":"assistant","content":"<|tool_call>call:note'
+          r'{n:2,text:<|\"|>say \"hi\"\nbye<|\"|>}<tool_call|>"}';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.single.args, {'n': 2, 'text': 'say "hi"\nbye'});
+    });
+
+    test('a call split across streamed message chunks', () {
+      const raw =
+          '{"role":"assistant","content":[{"type":"text",'
+          '"text":"<|tool_call>call:set_vol"}]}'
+          '{"role":"assistant","content":[{"type":"text",'
+          '"text":"ume{level:5}<tool_call|>"}]}';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.single.name, 'set_volume');
+      expect(calls.single.args, {'level': 5});
+    });
+
+    test('a body that does not parse in full is refused, not truncated', () {
+      // A string that never closes: a partial call would fire the tool with
+      // the arguments read so far.
+      const raw =
+          '<|tool_call>call:send{to:<|"|>a@b.c<|"|>,body:<|"|>hi}<tool_call|>';
+
+      expect(SdkResponseParser.extractToolCalls(raw), isEmpty);
+    });
+
+    test('one malformed call refuses the response, not just that call', () {
+      // Balanced braces, so the call is found, but its list never closes.
+      const raw =
+          '<|tool_call>call:set_volume{level:5}<tool_call|>'
+          '<|tool_call>call:pick{ids:[1,2}<tool_call|>';
+
+      expect(SdkResponseParser.extractToolCalls(raw), isEmpty);
+    });
+
+    test('a call that never closes refuses the response', () {
+      const raw =
+          '<|tool_call>call:set_volume{level:5}<tool_call|>'
+          '<|tool_call>call:say{text:<|"|>never closed}<tool_call|>';
+
+      expect(SdkResponseParser.extractToolCalls(raw), isEmpty);
+    });
+  });
 }

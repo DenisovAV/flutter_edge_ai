@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_edge_ai/src/model_response.dart';
 import 'package:flutter_edge_ai/src/tool.dart';
 
+import 'escaped_call_syntax.dart';
 import 'function_gemma_format.dart';
 import 'function_gemma_wire.dart';
 
@@ -53,7 +54,7 @@ class SdkResponseParser {
     // web). Native (C++ liblitert_lm) does convert, so this only fires when the
     // structured pass found nothing but raw tokens are present.
     if (result.isEmpty && jsonStr.contains(_rawToolCallOpen)) {
-      _harvestRawTokenCalls(jsonStr, result);
+      result.addAll(_rawTokenCalls(_responseText(jsonStr)));
     }
     // FunctionGemma, same reason: when its call comes back as text rather than
     // `tool_calls` — the web SDK, or a `.litertlm` exported without the
@@ -96,35 +97,35 @@ class SdkResponseParser {
   }
 
   static const _rawToolCallOpen = '<|tool_call>';
+  static const _gemma4Escape = '<|"|>';
 
-  /// Parse the raw Gemma 4 tool-call token stream the web SDK leaves untouched:
-  /// `<|tool_call>call:NAME{key:<|"|>value<|"|>,...}<tool_call|>`. The closing
-  /// `<tool_call|>` may be cut off by the stop token, so it's optional. Values
-  /// are wrapped in `<|"|>...<|"|>` escape tokens (stripped here).
-  static void _harvestRawTokenCalls(
-    String text,
-    List<FunctionCallResponse> out,
-  ) {
-    final callRegex = RegExp(
-      r'<\|tool_call>call:([\w-]+)\{(.*?)\}(?:<tool_call\|>|$)',
-      dotAll: true,
-    );
-    // The `<|"|>` escape may arrive raw or JSON-escaped as `<|\"|>` (web
-    // stringifies the Message object, so the quote inside the content string
-    // gets a backslash). Accept an optional backslash before the quote.
-    final paramRegex = RegExp(
-      r'([\w-]+):<\|\\?"\|>(.*?)<\|\\?"\|>',
-      dotAll: true,
-    );
-    for (final match in callRegex.allMatches(text)) {
-      final name = match.group(1)!;
-      final paramsStr = match.group(2)!;
-      final args = <String, dynamic>{};
-      for (final p in paramRegex.allMatches(paramsStr)) {
-        args[p.group(1)!] = p.group(2)!;
-      }
-      out.add(FunctionCallResponse(name: name, args: args));
+  /// Parse the raw Gemma 4 tool-call tokens the web SDK leaves untouched:
+  /// `<|tool_call>call:NAME{key:value,...}<tool_call|>`, written by Gemma 4's
+  /// `format_argument` — strings between `<|"|>`, numbers, booleans and null
+  /// bare, objects and lists nested (see `escaped_call_syntax.dart`). The
+  /// closing `<tool_call|>` may be cut off by the stop token.
+  ///
+  /// [text] is the decoded response text, so a string value carries its quotes
+  /// and newlines, not their JSON escapes. All or nothing: a call that does not
+  /// parse in full returns no calls, and the chat then surfaces the raw text
+  /// instead of running the other calls of that turn.
+  static List<FunctionCallResponse> _rawTokenCalls(String text) {
+    final calls = <FunctionCallResponse>[];
+    var from = text.indexOf(_rawToolCallOpen);
+    while (from != -1) {
+      final call = findEscapedCall(
+        text,
+        start: _rawToolCallOpen,
+        escape: _gemma4Escape,
+        from: from,
+      );
+      if (call == null) return const [];
+      final args = parseEscapedCallArguments(call.body, escape: _gemma4Escape);
+      if (args == null) return const [];
+      calls.add(FunctionCallResponse(name: call.name, args: args));
+      from = text.indexOf(_rawToolCallOpen, call.end);
     }
+    return calls;
   }
 
   /// Split a string that may be one JSON object or a concatenation of multiple

@@ -515,27 +515,18 @@ class InferenceChat {
               modelType: modelType,
             )) {
               // First try to extract message from any JSON with message field
-              try {
-                final jsonData = jsonDecode(funcBuffer);
-                if (jsonData is Map<String, dynamic> &&
-                    jsonData.containsKey('message')) {
-                  // Found JSON with message field - extract and display the message
-                  final message = jsonData['message'] as String;
-                  if (kDebugMode) {
-                    edgeAiLog(
-                      'InferenceChat: Extracted message from JSON: "$message"',
-                      level: EdgeAiLogLevel.verbose,
-                    );
-                  }
-                  yield TextResponse(message);
-                  funcBuffer = '';
-                  shouldAddToBuffer = false; // Don't add JSON tokens to buffer
-                  continue;
+              final message = _jsonMessageField(funcBuffer);
+              if (message != null) {
+                if (kDebugMode) {
+                  edgeAiLog(
+                    'InferenceChat: Extracted message from JSON: "$message"',
+                    level: EdgeAiLogLevel.verbose,
+                  );
                 }
-              } catch (e) {
-                edgeAiLog(
-                  'InferenceChat: Failed to parse JSON for message extraction: $e',
-                );
+                yield TextResponse(message);
+                funcBuffer = '';
+                shouldAddToBuffer = false; // Don't add JSON tokens to buffer
+                continue;
               }
 
               // If no message field found, try parsing as function call(s)
@@ -732,23 +723,20 @@ class InferenceChat {
         contentToCheck,
         modelType: modelType,
       )) {
+        // For JSON parsing, use funcBuffer (the actual JSON part)
+        // For FunctionGemma parsing, use contentToCheck (full function call)
+        final message = modelType == ModelType.functionGemma
+            ? null
+            : _jsonMessageField(funcBuffer);
+        if (message != null) {
+          edgeAiLog(
+            'InferenceChat: Extracted message from end-of-stream JSON: "$message"',
+            level: EdgeAiLogLevel.verbose,
+          );
+          yield TextResponse(message);
+          return;
+        }
         try {
-          // For JSON parsing, use funcBuffer (the actual JSON part)
-          // For FunctionGemma parsing, use contentToCheck (full function call)
-          if (modelType != ModelType.functionGemma) {
-            final jsonData = jsonDecode(funcBuffer);
-            if (jsonData is Map<String, dynamic> &&
-                jsonData.containsKey('message')) {
-              final message = jsonData['message'] as String;
-              edgeAiLog(
-                'InferenceChat: Extracted message from end-of-stream JSON: "$message"',
-                level: EdgeAiLogLevel.verbose,
-              );
-              yield TextResponse(message);
-              return;
-            }
-          }
-
           // Try to parse as function call(s)
           final allCalls = FunctionCallParser.parseAll(
             contentToCheck,
@@ -966,32 +954,37 @@ class InferenceChat {
           return;
         }
         final call = pending[i];
-        final Map<String, dynamic> response;
+        final Message reply;
         try {
-          response = await onToolCall(call);
+          // Built inside the try: a result jsonEncode cannot write (a
+          // DateTime, say) fails the call like a throwing tool, instead of
+          // leaving it committed with no response.
+          reply = Message.toolResponse(
+            toolName: call.name,
+            response: await onToolCall(call),
+            toolCallId: call.id,
+          );
         } catch (e) {
           // The app's tool threw. Answer the failed call (and any siblings in
           // this turn not yet run) so the committed call isn't left dangling,
           // then rethrow so the caller sees the failure.
-          await addQueryChunk(
-            Message.toolResponse(
-              toolName: call.name,
-              response: {'error': '$e'},
-              toolCallId: call.id,
-            ),
-          );
-          await _answerToolCalls(pending.sublist(i + 1), const {
-            'status': 'not run — an earlier tool call in this turn failed',
-          });
+          try {
+            await _answerToolCalls([call], {'error': '$e'});
+          } catch (balanceError) {
+            _logUnbalanced(balanceError);
+          }
+          try {
+            await _answerToolCalls(pending.sublist(i + 1), const {
+              'status': 'not run — an earlier tool call in this turn failed',
+            });
+          } catch (balanceError) {
+            _logUnbalanced(balanceError);
+          }
+          // The tool's error, not a balancing one: that is what the caller
+          // has to act on.
           rethrow;
         }
-        await addQueryChunk(
-          Message.toolResponse(
-            toolName: call.name,
-            response: response,
-            toolCallId: call.id,
-          ),
-        );
+        await addQueryChunk(reply);
       }
     }
     // Exhausted maxToolTurns with calls still pending: each turn's calls WERE
@@ -1024,6 +1017,33 @@ class InferenceChat {
         ),
       );
     }
+  }
+
+  /// Logged, not thrown: a failed balancing feed must not replace the error
+  /// that made the loop balance in the first place.
+  void _logUnbalanced(Object balanceError) {
+    edgeAiLog(
+      'InferenceChat.generateChatResponseWithTools: could not answer a '
+      'committed tool call after a tool failed ($balanceError); the '
+      'persistent chat history may be left unbalanced — recover by recreating '
+      'the session.',
+    );
+  }
+
+  /// The `message` of a `{"message": "..."}` reply, which is text rather than
+  /// a call, or `null` when [buffer] is not one. A decode error says only that
+  /// [buffer] is not bare JSON: a tagged or fenced call is not, and it must
+  /// still reach the call parser.
+  static String? _jsonMessageField(String buffer) {
+    final Object? json;
+    try {
+      json = jsonDecode(buffer);
+    } on FormatException {
+      return null;
+    }
+    if (json is! Map<String, dynamic>) return null;
+    final message = json['message'];
+    return message is String ? message : null;
   }
 
   Future<void> _recreateSessionWithReducedChunks() async {

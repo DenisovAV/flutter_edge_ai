@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -217,6 +219,68 @@ void main() {
       hasLength(1),
       reason: 'failed call must be answered to balance history',
     );
+  });
+
+  test('a throwing tool keeps its own error when the session rejects the '
+      'balancing feed too', () async {
+    final chat = _ScriptChat([
+      const [
+        ParallelFunctionCallResponse(
+          calls: [
+            FunctionCallResponse(name: 'boom', args: {}),
+            FunctionCallResponse(name: 'sibling', args: {}),
+          ],
+        ),
+      ],
+    ])..failToolResponseFeed = true;
+
+    await expectLater(
+      chat
+          .generateChatResponseWithTools(
+            onToolCall: (c) => throw ArgumentError('tool failed'),
+          )
+          .toList(),
+      throwsA(
+        isA<ArgumentError>().having((e) => e.message, 'message', 'tool failed'),
+      ),
+      reason: 'the feed error must not mask the tool error',
+    );
+    expect(
+      chat.toolResponseFeedAttempts,
+      2,
+      reason: 'the sibling is still answered after the first feed fails',
+    );
+  });
+
+  test('a tool result that is not JSON answers the call with an error and '
+      'rethrows', () async {
+    final chat = _ScriptChat([
+      const [
+        ParallelFunctionCallResponse(
+          calls: [
+            FunctionCallResponse(name: 'clock', args: {}),
+            FunctionCallResponse(name: 'sibling', args: {}),
+          ],
+        ),
+      ],
+    ]);
+    final ran = <String>[];
+
+    await expectLater(
+      chat
+          .generateChatResponseWithTools(
+            onToolCall: (c) {
+              ran.add(c.name);
+              return {'now': DateTime(2026, 10, 16)};
+            },
+          )
+          .toList(),
+      throwsA(isA<JsonUnsupportedObjectError>()),
+    );
+    expect(ran, ['clock'], reason: 'the sibling does not run after a failure');
+    final answers = {for (final m in chat.fedBack) m.toolName: m.text};
+    expect(answers.keys, ['clock', 'sibling']);
+    expect(answers['clock'], contains('error'));
   });
 
   test(

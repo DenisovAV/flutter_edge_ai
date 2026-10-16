@@ -151,6 +151,7 @@ Anything at or near the current macOS release means the flag was dropped. Rebuil
 4c. GPU smooth-UI knobs — `gpu_context_low_priority` + `kernel_batch_size` (#364)
 10b. **App Store ITMS-90432 fix** — rewrite `gpu_registry.cc` dlopen to `@executable_path/...framework/<X>` on Apple. **iOS-critical.** Plus `patches/litert_gpu_registry_apple.patch` (since native-v0.18.0-b), added to the `litert` archive as `patches=`: on Apple our framework is the ONLY GPU accelerator tried, and the `RTLD_DEFAULT` fallback is off — see "coexisting LiteRT runtimes" below.
 11. minizip/zlib mirrored off the flaky zlib.net
+15. **Windows Intel NPU** — `patches/windows_no_fd_model_loading.patch`: `.litertlm` sections load buffer-backed, never through a C runtime descriptor (LiteRT-LM #4023). Without it every AOT NPU bundle ends `engine_create` in `libLiteRt.dll` (regression #20 below). The section also fails when a new `CreateFromFd` caller appears in `runtime/` or `c/`.
 
 §10a (sampler_factory.cc) is **deliberately NOT patched** — `libLiteRtTopKMetalSampler.dylib` has 3-of-7 broken exports on Apple (#2073). Patching it surfaces a NULL-vtable crash. Leave the basename dlopen so `sampler_factory.cc` falls back to CPU sampler. Revisit when Google fixes #2073.
 
@@ -718,19 +719,19 @@ is OpenCL only — the same as Google's `litertlm-android` AAR (one
 
 Nothing in checks 1–8 touches NPU. Both dispatch libraries load only when `PreferredBackend.npu` is requested on matching hardware, so they need real devices:
 
-- **Intel NPU** — LunarLake/PantherLake. Our access is the Intel Tiber box `pdx88-k0687` (see the `project_intel_npu_vm` memory): ssh over ngrok with the mandatory `-i ~/.ssh/flutter_gemma_win_v14`, `cmd.exe` shell, commands in the **foreground** (a detached task dies with the ssh session). The console entry is the reservation's **Connect** button (Guacamole). The model is not on HF — it lives on the box at `%USERPROFILE%\dev-gemma4-2b-lnl\gemma4_2b_lnl.litertlm`. Put the bundle under test in the checkout's `prebuilt/windows_x86_64/` (the hook reads it before the cache), then run the litertlm smoke suite with `--plain-name "NPU"` **on its own**: inside the full file the NPU group runs after GPU, and async WebGPU teardown blows the per-test timer on the first NPU `engine_create`. Reference numbers (0.15.2): `engine_create` ~1 s, ~54 chunks/s, greedy run1 == run2.
+- **Intel NPU** — LunarLake/PantherLake. Our access is Intel's Lunar Lake instance `litertlmtest` (Core Ultra 7 258V), `ssh lnl` through Intel's SSH bastion (host entries and lease date in the `project_intel_npu_vm` memory; an expired lease wipes the disk). `cmd.exe` shell. Timings come only from console session 1 (`PsExec64 -i 1 -d`, then poll a log file): the ssh session is session 0, where GUI apps do not draw and runs are slower. The test model is not on HF — it lives on the box at `%USERPROFILE%\dev-gemma4-2b-lnl\gemma4_2b_lnl.litertlm`. Put the bundle under test in the checkout's `prebuilt/windows_x86_64/` (the hook reads it before the cache), then run the litertlm smoke suite with `--plain-name "NPU"` **on its own**: inside the full file the NPU group runs after GPU, and async WebGPU teardown blows the per-test timer on the first NPU `engine_create`. Reference numbers (0.15.2): `engine_create` ~1 s, ~54 chunks/s, greedy run1 == run2.
 - **Qualcomm NPU** — Snapdragon 8 Gen 3 / 8 Elite. Ours is Qualcomm Device Cloud (QDC); the exact sequence is below.
 
 The NPU group **skips** (and counts as passed) when its model file is absent, so a green run means nothing until the log shows `engine_create` on the NPU. Grep for it; a `[Gemma4 NPU] SKIP` line means the check did not run.
 
 **Record the outcome here, every release** — device, date, pass count. The method was written down long before any result was, and a finished check kept reading as pending:
 
-| Native | Qualcomm (QDC) | Intel (Tiber) |
+| Native | Qualcomm (QDC) | Intel (Lunar Lake box) |
 |---|---|---|
 | v0.15.2 | — | ✅ 18/18, Lunar Lake 258V, 2026-05-15 |
-| v0.16.0 | ✅ 23/23, Snapdragon 8 Elite, 2026-08-15 | ⚠️ not recorded |
-| v0.17.0 | ⏳ pending | ⏳ pending — Tiber gateway unreachable since 2026-09-18 |
-| v0.18.0 | ✅ 24/24, Snapdragon 8 Elite Gen 5 (SM8850, HTP V81, QDC), 2026-10-08 — AAB split install, QNN 2.50.0 from Maven via `qualcomm_npu`, `engine_create` 429 ms, greedy run1 == run2 | ⏳ pending — Tiber gateway unreachable |
+| v0.16.0 | ✅ 23/23, Snapdragon 8 Elite, 2026-08-15 | ⚠️ not recorded (Intel's demo app on native-v0.16.0: NPU works, ~61 tok/s, 2026-10-16) |
+| v0.17.0 | ⏳ pending | ❌ `engine_create`: `Failed to load model from fd` — regression #20, Lunar Lake 258V, 2026-10-16 |
+| v0.18.0 | ✅ 24/24, Snapdragon 8 Elite Gen 5 (SM8850, HTP V81, QDC), 2026-10-08 — AAB split install, QNN 2.50.0 from Maven via `qualcomm_npu`, `engine_create` 429 ms, greedy run1 == run2 | ❌ native-v0.18.0-e: `0xC0000409` at the first NPU `engine_create` (regression #20). ✅ with §15, CI run 38917181364: NPU 3 passed + 2 skipped (vision, audio), rest 22/22, Lunar Lake 258V, 2026-10-16 — `engine_create` 0.9–1.1 s, 58.4 tok/s, greedy run1 == run2 |
 
 Both are slow, awkward, and easy to skip. Skipping them is what shipped the two frozen dispatch libraries described above.
 
@@ -808,7 +809,7 @@ Where and how, with the traps that cost time in the v0.17.0 cycle:
 - **iOS device** — USB only (`ioreg -p IOUSB` must show `iPhone@…`; `transportType: localNetwork` ⇒ "Cannot start app on wirelessly tethered iOS device"). On Xcode 26+ `enable-lldb-debugging` must be `true`, otherwise flutter never sees the VM Service URL and hangs at "not discovered" (memory `project_ios_device_xcode26_lldb`). The simulator is CPU-only by design.
 - **Android** — GPU/OpenCL needs real devices, and **at least one Adreno and one Mali**: Adreno and Mali take different paths through the same accelerator (#545 crashed only on Mali). On DDP (the `ddp-device-test` skill, not Firebase Test Lab): `e1q-34` (Galaxy S24, Adreno 750), `akita-35` (Pixel 8a, Mali-G715), `a34x-36` (Galaxy A34, Mali-G68 — the #545 device). Write the DDP id + GPU per row in the PR body; "Galaxy S24" alone does not say which GPU ran. The `gemma_api36_arm64` emulator is enough for CPU speech.
 - **Linux** — GCE `flutter-gemma-linux` (T4) and `flutter-gemma-linux-gpu` (L4, often stocked out in `us-central1-b`). The T4 box boots a mainline 6.16 kernel without the NVIDIA module (Vulkan falls back to `llvmpipe`); for GPU runs `kexec` once into `6.8.0-*-gcp`. Prove the GPU was used from throughput (T4: ~42 chunks/s GPU vs ~2.4 CPU), not from test names.
-- **Windows** — Tiber for NPU + Arc; GCE `flutter-gemma-gpu` (T4) covers CPU, discrete-GPU WebGPU, embeddings and speech when Tiber is down. On GCE: Scheduled Task (`S4U`) + log polling, `powershell -EncodedCommand` for anything with `$`.
+- **Windows** — the Intel Lunar Lake box (`ssh lnl`) for NPU, Arc, CPU, embeddings and speech; GCE `flutter-gemma-gpu` (T4) only for discrete-GPU WebGPU. On GCE: Scheduled Task (`S4U`) + log polling, `powershell -EncodedCommand` for anything with `$`.
 
 Put a worktree of the branch on each VM instead of switching its checkout, drop the CI artifact into `prebuilt/<platform>/`, and **prove provenance per run**: sha256 (Linux/Windows) or LC_UUID (Apple) of the libraries inside the built app against the artifact. Record the matrix in the PR body.
 
@@ -837,6 +838,7 @@ Put a worktree of the branch on each VM instead of switching its checkout, drop 
 | 17 | Upstream companion imports a symbol its NEEDED cannot reach: sampler without `libLiteRtLm.so` (#270, silent CPU fallback); v0.17.0 accelerators without `libandroid.so` (#545, SIGSEGV on Mali only) | Check #9c (`check_android_needed.py`); Android GPU on Adreno **and** Mali | #270: 0.14.x; **#545: native-v0.17.0 → v0.17.1**, upstream #3575 open six days before our first release |
 | 18 | Three Android companions NEED `libwebgpu_dawn.so`, which the bundle never carried — `dlopen` fails, `gpu_registry` silently moves on to OpenCL, ~18 MB of unloadable code in every APK | Check #9c (now also asserts every NEEDED is loadable); compare against what Google's own AARs ship | **native-v0.14.0 → v0.17.x**, found by a Codex review at the v0.18.0 bump; fixed by dropping the three, not by adding Dawn |
 | 19 | Apple `gpu_registry` tried the generic `libLiteRtGpuAccelerator` first and, on the failed `dlopen`, `dlsym(RTLD_DEFAULT)` bound flutter_litert's accelerator (another LiteRT) — crash in `LiteRtCreateCompiledModel` | Check #5 (generic names absent) + the app with flutter_litert on a real iPhone | **litertlm 1.10.0 / native-v0.18.0-a**, reported from an app on the day of release; fixed in native-v0.18.0-b |
+| 20 | LiteRT-LM `9589b6b4` loads an AOT NPU bundle's sections through `litert::Model::CreateFromFd`; on Windows the fd is a C runtime descriptor and `libLiteRt.dll` links its own CRT — `Failed to load model from fd` (v0.17.0), `0xC0000409` in `libLiteRt.dll` (v0.18.0-e) | Check #10 on the Intel NPU — the only check that loads an AOT bundle | **native-v0.17.0 → v0.18.0-e**, upstream #4023; fixed by `patch_c_api.sh` §15. No Intel result was recorded after v0.15.2 |
 
 Every one of those would have been caught by checks 1-10 before commit. **Run them all every time.**
 

@@ -33,7 +33,7 @@ void main() {
         ),
         DeciderOption('b', examples: [_t('b1'), _t('b2')]),
       ],
-      calibration: DeciderCalibration.fromLabelled([
+      calibration: EmbeddingDeciderCalibration.fromLabelled([
         (input: _t('about a'), optionId: 'a'),
         (input: _t('about b'), optionId: 'b'),
         (input: _t('a or b'), optionId: 'b'),

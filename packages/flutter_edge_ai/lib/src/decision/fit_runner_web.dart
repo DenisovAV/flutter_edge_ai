@@ -8,11 +8,10 @@
 // dart:io/ffi/isolate. The VM picks the zero-timer yield, so this runner can
 // be tested there too.
 
-import '../embedding/embedding_exceptions.dart'
-    show EmbeddingCancelledException;
 import '../embedding/event_loop_yield.dart'
     if (dart.library.js_interop) '../embedding/event_loop_yield_web.dart';
 import '../model_management/cancel_token.dart' show CancelToken;
+import 'decider_exceptions.dart' show DeciderCancelledException;
 import 'decider_fit.dart';
 import 'fit_pacer.dart';
 
@@ -23,13 +22,13 @@ const fitSlice = Duration(milliseconds: 4);
 
 /// Runs [fitDecider] on this thread, yielding to the event loop every
 /// [fitSlice] of work. [cancelToken] fails the call with
-/// `EmbeddingCancelledException` at the next yield.
+/// `DeciderCancelledException` at the next yield.
 Future<DeciderFit> runDeciderFit(
   DeciderFitRequest request, {
   CancelToken? cancelToken,
 }) {
   if (cancelToken?.isCancelled ?? false) {
-    return Future.error(const EmbeddingCancelledException(_cancelled));
+    return Future.error(const DeciderCancelledException(_cancelled));
   }
   return fitDecider(request, pacer: CooperativeFitPacer(cancelToken));
 }
@@ -54,7 +53,7 @@ final class CooperativeFitPacer implements FitPacer {
     turns++;
     await yieldToEventLoop();
     if (_cancelToken?.isCancelled ?? false) {
-      throw const EmbeddingCancelledException(_cancelled);
+      throw const DeciderCancelledException(_cancelled);
     }
     _since.reset();
   }

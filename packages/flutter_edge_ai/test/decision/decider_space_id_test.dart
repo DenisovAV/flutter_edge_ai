@@ -205,7 +205,7 @@ void main() {
       );
       final decider = await model.createDecider(
         options: _options(),
-        calibration: DeciderCalibration.fromLabelled([
+        calibration: EmbeddingDeciderCalibration.fromLabelled([
           (input: EmbeddingInput.text('about a'), optionId: 'a'),
           (input: EmbeddingInput.text('about b'), optionId: 'b'),
           // A wrong row keeps the temperature off the grid's end.
@@ -259,7 +259,7 @@ void main() {
         final first = await plugin.createEmbeddingModel();
         final decider = await first.createDecider(
           options: _options(),
-          calibration: const DeciderCalibration.none(),
+          calibration: const EmbeddingDeciderCalibration.none(),
         );
         final artifact = decider.toArtifact();
         expect(artifact['spaceId'], contains('m.tflite@${1024 * 1024 + 16}'));
@@ -288,11 +288,11 @@ void main() {
         final at140 = await plugin.createEmbeddingModel(supportImage: true);
         final imageArtifact = (await at140.createDecider(
           options: _imageOptions(),
-          calibration: const DeciderCalibration.none(),
+          calibration: const EmbeddingDeciderCalibration.none(),
         )).toArtifact();
         final textArtifact = (await at140.createDecider(
           options: _options(),
-          calibration: const DeciderCalibration.none(),
+          calibration: const EmbeddingDeciderCalibration.none(),
         )).toArtifact();
         expect(imageArtifact['spaceId'], contains(';vision=140;'));
         expect(imageArtifact['imageInputs'], isTrue);
@@ -337,11 +337,11 @@ void main() {
         final at140 = await plugin.createEmbeddingModel(supportImage: true);
         final imageDecider = await at140.createDecider(
           options: _imageOptions(),
-          calibration: const DeciderCalibration.none(),
+          calibration: const EmbeddingDeciderCalibration.none(),
         );
         final textDecider = await at140.createDecider(
           options: _options(),
-          calibration: const DeciderCalibration.none(),
+          calibration: const EmbeddingDeciderCalibration.none(),
         );
 
         // The app closes the embedder; the next choose re-resolves through

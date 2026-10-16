@@ -144,7 +144,7 @@ void main() {
       await expectLater(
         embedder.createDecider(
           options: options,
-          calibration: DeciderCalibration.fromLabelled([
+          calibration: EmbeddingDeciderCalibration.fromLabelled([
             (input: EmbeddingInput.text(row), optionId: 'a'),
           ]),
           embedderId: 'fake',

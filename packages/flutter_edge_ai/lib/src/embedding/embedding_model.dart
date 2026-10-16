@@ -155,25 +155,26 @@ abstract base class EmbeddingModel {
   ///
   /// [cancelToken] stops the embedding of the options and the fit (natively
   /// the fit's isolate is killed; on web the fit stops at its next yield);
-  /// the call then fails with `EmbeddingCancelledException` and returns no
+  /// the call then fails with `DeciderCancelledException` and returns no
   /// decider.
   ///
   /// [onProgress] counts the inputs this call embeds — each option's
   /// description and examples, then the rows of
-  /// [DeciderCalibration.fromLabelled] — as `(done, total)`: `(0, total)`
-  /// first, then once per input as its vector comes back, ending at
-  /// `(total, total)`. It does not cover the fit that follows: a
+  /// [EmbeddingDeciderCalibration.fromLabelled] — as `(done, total)`:
+  /// `(0, total)` first, then once per input as its vector comes back, ending
+  /// at `(total, total)`. It does not cover the fit that follows: a
   /// [DeciderMethod.linear] fit at 150 options takes seconds after the last
   /// call. A throw from it fails the call.
   ///
   /// Errors arrive as a FAILED FUTURE: [ArgumentError] for options it cannot
   /// use (none, duplicate ids, an option with nothing to embed, a calibration
-  /// these options or labelled rows cannot support), [StateError] for a
-  /// vector that is not finite or not [dimension] long and for a fit that
-  /// is not finite (an option whose inputs cancel out), and this model's own
-  /// failures — an over-long input is `EmbeddingInputTooLongException`, never
-  /// truncated; an input's failure names its option and input, with its type
-  /// and fields kept.
+  /// these options or labelled rows cannot support) and for
+  /// [DeciderMethod.optionScoring], an `InferenceModel` method; [StateError]
+  /// for a vector that is not finite or not [dimension] long and for a fit
+  /// that is not finite (an option whose inputs cancel out); and this model's
+  /// own failures — an over-long input is `EmbeddingInputTooLongException`,
+  /// never truncated; an input's failure names its option and input, with its
+  /// type and fields kept.
   ///
   /// Experimental: may change in a minor release while the API settles.
   @experimental
@@ -181,7 +182,8 @@ abstract base class EmbeddingModel {
   Future<Decider> createDecider({
     required List<DeciderOption> options,
     DeciderMethod method = DeciderMethod.centroid,
-    DeciderCalibration calibration = const DeciderCalibration.crossFit(),
+    EmbeddingDeciderCalibration calibration =
+        const EmbeddingDeciderCalibration.crossFit(),
     String? embedderId,
     CancelToken? cancelToken,
     void Function(int done, int total)? onProgress,

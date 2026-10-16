@@ -859,6 +859,28 @@ void main() {
         },
       );
 
+      test('requireWeightCache: an empty file left in the directory is no '
+          'cache', () async {
+        native.writeCacheOnCreate = false;
+        final dir = Directory(expectedCacheDir())..createSync(recursive: true);
+        File('${dir.path}/left.xnnpack_cache').createSync();
+        final p = pass(requireWeightCache: true);
+
+        await expectLater(
+          p.load(),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              contains('wrote no weight cache to ${dir.path}'),
+            ),
+          ),
+        );
+        expect(native.deleted('engine'), 1);
+        await p.close();
+        expectNothingLeaked();
+      });
+
       test('requireWeightCache: a written cache loads as it does without the '
           'flag', () async {
         final p = pass(requireWeightCache: true);

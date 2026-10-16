@@ -919,7 +919,8 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   /// with [LiteRtLmEmbeddingConfig.requireWeightCache] it is a load failure
   /// instead (the caller deletes the engine).
   ///
-  /// Checked as "the directory holds no file", not file by file: the engine
+  /// Checked as "the directory holds no file with bytes in it", not file by
+  /// file (an empty file, left by an interrupted load, is no cache): the engine
   /// names each cache `<model file name>_<mtime>_<size>.<graph>.xnnpack_cache`,
   /// one per tower present in the bundle (the vision and audio towers too,
   /// whatever was declared), and neither the graph names nor the mtime's form
@@ -928,7 +929,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   void _checkWeightCache(String cacheDir) {
     final bool empty;
     try {
-      empty = Directory(cacheDir).listSync().whereType<File>().isEmpty;
+      empty = !Directory(
+        cacheDir,
+      ).listSync().whereType<File>().any((file) => file.lengthSync() > 0);
     } on FileSystemException catch (e) {
       // The directory existed a moment ago; without the flag, nothing useful
       // to add. With it, an unchecked cache is not a confirmed one.

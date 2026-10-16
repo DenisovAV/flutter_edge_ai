@@ -185,7 +185,7 @@ Future<DeciderFit> fitDecider(
       threshold = errorBudgetThreshold(signal, ok, request.maxError!);
       if (threshold > 1) {
         throw ArgumentError(
-          'DeciderCalibration.fromLabelled: no threshold keeps the error on '
+          'EmbeddingDeciderCalibration.fromLabelled: no threshold keeps the error on '
           'the labelled rows within maxError ${request.maxError} — the '
           'decider answers them too poorly. Add examples per option, use the '
           'linear method, or raise maxError.',
@@ -455,14 +455,14 @@ Future<double> fitTemperature(
   }
   if (bestStep == 0 || bestStep == steps - 1) {
     throw ArgumentError(
-      'DeciderCalibration.fromLabelled: the labelled rows cannot calibrate '
+      'EmbeddingDeciderCalibration.fromLabelled: the labelled rows cannot calibrate '
       'probabilities — the best softmax temperature is the end of the grid '
       '(${bestStep == 0 ? '1e-3: every row is answered right with room to '
                 'spare, so a near-tie would be reported as certain' : '10: the '
                 'rows are answered so poorly that a flat distribution fits '
                 'best'}). Use more held-out requests, including ones the '
       'decider gets wrong or nearly wrong, or calibrate the threshold alone '
-      'with DeciderCalibration.crossFit() or minSimilarity().',
+      'with EmbeddingDeciderCalibration.crossFit() or minSimilarity().',
     );
   }
   return bestTemp;

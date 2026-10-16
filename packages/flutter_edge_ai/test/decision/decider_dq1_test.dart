@@ -177,7 +177,7 @@ void main() {
       final best = _argmax(cosines[i]);
       expect(answer.ranked.first.id, 'o$best');
       final signal = cosines[i][best];
-      expect(answer.provenance.similarity, closeTo(signal, 1e-6));
+      expect(answer.provenance.abstainSignal, closeTo(signal, 1e-6));
       expect(answer.provenance.threshold, closeTo(threshold, 1e-12));
       expect(answer.choice, signal >= threshold ? 'o$best' : isNull);
       if (answer.choice == null) {
@@ -225,7 +225,7 @@ void main() {
     final decider = await _embedder().createDecider(
       options: _options(),
       method: DeciderMethod.linear,
-      calibration: const DeciderCalibration.none(),
+      calibration: const EmbeddingDeciderCalibration.none(),
       embedderId: 'dq1-fixture',
     );
     final logits = _matrix(_expected['linear_logits']);
@@ -249,7 +249,7 @@ void main() {
       final decider = await _embedder().createDecider(
         options: _options(),
         method: method,
-        calibration: DeciderCalibration.fromLabelled([
+        calibration: EmbeddingDeciderCalibration.fromLabelled([
           for (var i = 0; i < _calLabels.length; i++)
             (
               input: EmbeddingInput.text(_calKey(i)),

@@ -21,14 +21,25 @@ final class IslandDeciderRecipe {
     required this.calibration,
     List<IslandHeldOutRequest> calibrationRows = const [],
   }) : options = List.unmodifiable(options),
-       calibrationRows = List.unmodifiable(calibrationRows);
+       calibrationRows = List.unmodifiable(calibrationRows) {
+    // The fingerprint names the labelled rows through [calibrationRows]: a
+    // labelled recipe without them would share the name of every other.
+    if (calibration.kind == 'labelled' && this.calibrationRows.isEmpty) {
+      throw ArgumentError.value(
+        calibrationRows,
+        'calibrationRows',
+        'a fromLabelled calibration needs its rows here too',
+      );
+    }
+  }
 
   final List<DeciderOption> options;
   final DeciderMethod method;
-  final DeciderCalibration calibration;
+  final EmbeddingDeciderCalibration calibration;
 
-  /// The labelled rows behind [calibration] (a `DeciderCalibration` does not
-  /// expose them), so the [fingerprint] changes when they do.
+  /// The labelled rows behind [calibration] (an
+  /// `EmbeddingDeciderCalibration` does not expose them), so the [fingerprint]
+  /// changes when they do.
   final List<IslandHeldOutRequest> calibrationRows;
 
   /// What the status line says about the calibration.
@@ -44,9 +55,15 @@ final class IslandDeciderRecipe {
   /// hand back a decider for other actions.
   late final String fingerprint = _fnv1a(
     jsonEncode({
-      'v': 1,
+      'v': 2,
       'method': method.name,
-      'calibration': calibration.toString(),
+      // Its fields, not its toString: a renamed class must not refit.
+      'calibration': [
+        calibration.kind,
+        calibration.keep,
+        calibration.threshold,
+        calibration.maxError,
+      ],
       'rows': [
         for (final row in calibrationRows) [row.text, row.actionId],
       ],
@@ -136,7 +153,7 @@ IslandDeciderRecipe islandDeciderRecipe(List<IslandAction> catalog) =>
     IslandDeciderRecipe(
       options: islandDeciderOptions(catalog),
       method: DeciderMethod.centroid,
-      calibration: DeciderCalibration.fromLabelled([
+      calibration: EmbeddingDeciderCalibration.fromLabelled([
         for (final row in islandHeldOutRequests)
           (input: EmbeddingInput.text(row.text), optionId: row.actionId),
       ]),

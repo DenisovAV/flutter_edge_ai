@@ -51,7 +51,7 @@ IslandDeciderRecipe islandVoiceDeciderRecipe(
 }) => IslandDeciderRecipe(
   options: islandDeciderOptions(catalog),
   method: DeciderMethod.centroid,
-  calibration: DeciderCalibration.minSimilarity(threshold),
+  calibration: EmbeddingDeciderCalibration.minSimilarity(threshold),
 );
 
 /// How long the WAV recording [wav] plays.

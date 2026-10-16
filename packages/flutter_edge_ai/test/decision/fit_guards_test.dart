@@ -33,7 +33,7 @@ void main() {
           examples: [EmbeddingInput.text('b1'), EmbeddingInput.text('b2')],
         ),
       ],
-      calibration: const DeciderCalibration.none(),
+      calibration: const EmbeddingDeciderCalibration.none(),
       embedderId: 'fake',
     );
     await expectLater(

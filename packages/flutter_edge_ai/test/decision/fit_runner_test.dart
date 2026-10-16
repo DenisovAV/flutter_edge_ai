@@ -95,7 +95,7 @@ void main() {
       token.cancel();
       await expectLater(
         fit.timeout(const Duration(seconds: 2)),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
       await _until(
         () => io.debugLiveDeciderFits() == 0,
@@ -104,14 +104,14 @@ void main() {
       expect(watch.elapsed, lessThan(const Duration(seconds: 4)));
     }, timeout: const Timeout(Duration(seconds: 60)));
 
-    test('a token cancelled before the fit fails it without a fit', () async {
-      await expectLater(
-        io.runDeciderFit(
-          _request(4, 3, 8),
-          cancelToken: CancelToken()..cancel(),
-        ),
-        throwsA(isA<EmbeddingCancelledException>()),
-      );
+    test('a token cancelled before the fit fails it without a fit, on both '
+        'runners', () async {
+      for (final run in [io.runDeciderFit, web.runDeciderFit]) {
+        await expectLater(
+          run(_request(4, 3, 8), cancelToken: CancelToken()..cancel()),
+          throwsA(isA<DeciderCancelledException>()),
+        );
+      }
     });
 
     test('the fit\'s own failure arrives as itself, with its stack', () async {
@@ -176,13 +176,13 @@ void main() {
       Timer(const Duration(milliseconds: 50), token.cancel);
       await expectLater(
         fit.timeout(const Duration(seconds: 2)),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
     });
   });
 
   group('createDecider', () {
-    test('a cancel during the fit fails it with EmbeddingCancelledException, '
+    test('a cancel during the fit fails it with DeciderCancelledException, '
         'never a decider', () async {
       final table = <String, List<double>>{};
       final random = math.Random(9);
@@ -214,7 +214,7 @@ void main() {
       token.cancel();
       await expectLater(
         created.timeout(const Duration(seconds: 2)),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
     }, timeout: const Timeout(Duration(seconds: 60)));
 
@@ -256,7 +256,7 @@ void main() {
           embedderId: 'fake',
           cancelToken: _CancelAtRead(dry.reads),
         ),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
     });
 

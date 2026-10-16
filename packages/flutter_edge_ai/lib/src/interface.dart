@@ -10,7 +10,7 @@ import 'package:flutter_edge_ai/src/sampling.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
-import 'package:meta/meta.dart' show experimental;
+import 'package:meta/meta.dart' show experimental, nonVirtual;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 // Conditional default instance: the mobile/desktop default pulls dart:io;
@@ -19,7 +19,10 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'default.dart' if (dart.library.js_interop) 'default_web.dart';
 import 'decision/decider.dart' show Decider;
 import 'decision/decider_exceptions.dart' show DeciderUnsupportedException;
+import 'decision/decider_method.dart' show InferenceDeciderCalibration;
+import 'decision/inference_decider.dart' show checkInferenceDeciderArguments;
 import 'decision/decider_option.dart' show DeciderOption;
+import 'model_management/cancel_token.dart' show CancelToken;
 import 'embedding/embedding_model.dart';
 
 // Embedding types that used to be declared here; re-exported so the rest of
@@ -473,20 +476,56 @@ abstract class InferenceModel {
   /// default body, so such an implementation has to declare it.
   bool get isClosed => false;
 
-  /// A decider that picks one of [options] by scoring each with this model.
+  /// A decider that answers [question] by scoring each of [options] as this
+  /// model's reply (`DeciderMethod.optionScoring`). It is meant for a model
+  /// TRAINED on exactly this question and these options, in this order;
+  /// [calibration] carries the values fitted with that training (a softmax
+  /// temperature, an abstain threshold, the "none of these" option). Its
+  /// answers have the shape of an embedding decider's, so an app reads them
+  /// the same way: `ScoreKind.logprob` scores,
+  /// `AbstainSignalKind.topProbability` as the abstain signal.
   ///
-  /// No engine scores options yet, so this default fails with
-  /// `DeciderUnsupportedException` (as a failed future). Engines that can
-  /// will override it; until then use `EmbeddingModel.createDecider`, which
+  /// Fails with [ArgumentError] (a failed future), before anything else, for
+  /// a blank [question], no [options], two options with one id, an option
+  /// with examples (it is listed by id and description; examples are refused
+  /// rather than ignored), a temperature that is not positive and finite, an
+  /// `abstainBelow` outside (0, 1) or without a temperature, and a
+  /// `noneOption` that is not an option. These checks need no engine, so an
+  /// argument refused today is refused the same way once an engine scores
+  /// options.
+  ///
+  /// [cancelToken] stops the creation (the prompt's checks and its prefill)
+  /// and fails the call with `DeciderCancelledException`, as it does for
+  /// `EmbeddingModel.createDecider`; no decider is returned.
+  ///
+  /// Core implements this once for every engine that extends this class
+  /// (`@nonVirtual`): an engine will supply the scoring through an interface
+  /// of its own, not by overriding this. In this release no engine scores
+  /// options, so after the checks above it fails with
+  /// `DeciderUnsupportedException`; use `EmbeddingModel.createDecider`, which
   /// every embedding backend supports. `implements` does not inherit this
-  /// default body, so such an implementation has to declare it.
+  /// body: such a class has to declare the method, and should fail it with
+  /// `DeciderUnsupportedException`.
   ///
   /// Experimental: may change in a minor release while the API settles.
   @experimental
-  Future<Decider> createDecider({required List<DeciderOption> options}) async {
+  @nonVirtual
+  Future<Decider> createDecider({
+    required String question,
+    required List<DeciderOption> options,
+    required InferenceDeciderCalibration calibration,
+    CancelToken? cancelToken,
+  }) async {
+    checkInferenceDeciderArguments(
+      question: question,
+      options: options,
+      calibration: calibration,
+      cancelToken: cancelToken,
+    );
     throw DeciderUnsupportedException(
-      '$runtimeType does not score options. Create the decider from an '
-      'EmbeddingModel instead: EmbeddingModel.createDecider().',
+      '$runtimeType does not score options: no engine in this release does. '
+      'Create the decider from an EmbeddingModel instead: '
+      'EmbeddingModel.createDecider().',
     );
   }
 

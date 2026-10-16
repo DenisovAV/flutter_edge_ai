@@ -754,8 +754,9 @@ which the first model load fails with
 
 `PreferredBackend.npu` is attempted only on Windows, on Android devices with
 Qualcomm FastRPC (`libcdsprpc.so`) and on Qualcomm Linux arm64 boards, the last
-two when the app opted in (below); elsewhere it falls back to GPU, then CPU, and
-prints why. On Windows the check is per OS, so
+two when the app opted in (below); elsewhere a generic bundle falls back to GPU,
+then CPU, and prints why, and a bundle compiled for an NPU is refused
+([Where a model runs](#where-a-model-runs)). On Windows the check is per OS, so
 a PC without an Intel NPU can report `activeBackend == npu` while the model runs
 elsewhere.
 
@@ -769,6 +770,87 @@ EmbeddingGemma 2 image went from 0.35 s to 2–7 s). An app that embeds or
 generates while in the background should hold an activity for the duration —
 `ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: …)` in
 Swift, ended with `endActivity` when the work is done.
+
+### Where a model runs
+
+Before it creates an engine, the native engine reads the bundle's header and
+the compiler stamp of each compiled section (a few hundred bytes each, tens of
+milliseconds for a 3 GB file) and decides from them:
+
+| The file | No `preferredBackend` | `preferredBackend` given |
+|---|---|---|
+| A generic bundle | GPU, then CPU | that backend, then the next (npu → gpu → cpu) |
+| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares are tried |
+| A bundle compiled for an NPU (a `tf_lite_aux` section or a `LiteRtStamp`, e.g. `…_qualcomm_sm8750.litertlm`) | the NPU | `npu`: the NPU; `gpu`/`cpu`: refused, they cannot run it |
+| A file shorter than its sections | refused: the download is incomplete | refused |
+
+An encoder you leave unset (`preferredVisionBackend`, `preferredAudioBackend`)
+runs where the file says: its declared `backend_constraint` (the CPU when that
+allows it), the NPU when its section is compiled for one, else the CPU. So the
+official `…_qualcomm_sm8750` and `…_qualcomm_qcs8275` bundles, whose encoders
+are not compiled for the NPU, run them on the CPU, and a bundle with compiled
+encoders runs them on the NPU, without the app choosing. Asking for the NPU on
+an encoder that is not compiled for it, or for another backend on one that is,
+is refused. `InferenceModel.activeVisionBackend` and `activeAudioBackend`
+report what was chosen.
+
+A refusal is a `LiteRtLmBundleException` with a `problem`
+(`incomplete`, `wrongBackend`, `unsupportedNpu` for a bundle compiled for an
+NPU this package has no dispatch for here — Google Tensor, MediaTek, or a
+Qualcomm bundle on Windows) and a message that says what to do; no engine is
+created. An NPU bundle on a device whose NPU cannot be reached fails the same
+way as a strict load (below), at once, and is never tried on the GPU. The SoC
+of the device is not read before the load; a bundle for another Qualcomm SoC
+fails at engine create, and the error names the SoC it was compiled for. A
+file the header reader does not understand (a `.task` bundle, a newer
+container) loads as before.
+
+**Strict backend.** By default a load that fails on its backend tries the next
+one. `LiteRtLmEngine(backendFallback: false)` makes exactly one attempt — on
+`preferredBackend`, or the GPU when none is given — and throws a
+`BackendInitException` whose one attempt names that backend and carries
+LiteRT-LM's own reason (`LiteRtLmEngineCreateException.nativeMessage`, read
+from its C API on every platform, release builds included). An NPU the device
+cannot reach is refused before any engine exists:
+
+```dart
+await FlutterEdgeAi.initialize(
+  inferenceEngines: [const LiteRtLmEngine(backendFallback: false)],
+);
+try {
+  await FlutterEdgeAi.getActiveModel(preferredBackend: PreferredBackend.gpu);
+} on BackendInitException catch (e) {
+  final error = e.lastAttempt.error;
+  print('did not load on ${e.lastAttempt.backend.name}: '
+      '${error is LiteRtLmEngineCreateException ? error.nativeMessage : error}');
+}
+```
+
+Use it when another backend would be wrong rather than slow: a benchmark, an
+NPU demo, or an app that would rather say so than load gigabytes again on the
+CPU. `activeBackend` names what ran either way. The encoders never fall back.
+
+### Inspecting a model file
+
+`readLiteRtLmBundleInfo(path)` returns what the planner reads (native only; it
+throws `UnsupportedError` on the web):
+
+```dart
+final info = await readLiteRtLmBundleInfo(path);
+info.isComplete;               // false for a download that stopped early
+info.isCompiledForNpu;         // runs on the NPU only
+info.npuTarget;                // e.g. Qualcomm SM8750, or null
+info.visionEncoder?.npuTarget; // null: the encoder is not compiled
+info.audioEncoder?.backendConstraint; // e.g. ['cpu']
+info.hasMtpDrafter;            // can decode speculatively
+for (final section in info.sections) {
+  print('${section.dataType} ${section.modelType} ${section.items}');
+}
+```
+
+It reads the header and a few hundred bytes per compiled section, never the
+weights. A file that is not a `.litertlm` container, of another container
+version, or with an unreadable header throws `LiteRtLmBundleException`.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 

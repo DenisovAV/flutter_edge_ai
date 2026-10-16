@@ -230,8 +230,34 @@ const sectionSpTokenizer = 4;
 const sectionTfliteWeights = 7;
 const sectionEmbeddingMetadata = 8;
 
-/// A `.litertlm` container holding [sections], in order.
-Uint8List litertlmContainer(List<Section> sections) {
+/// A header key-value item: a `StringValue`, a `Bool` or a `UInt32`.
+FbTable _keyValue(String key, Object value) => switch (value) {
+  final String v => FbTable({
+    0: FbString(key),
+    1: FbU8(9), // VData.StringValue
+    2: FbTable({0: FbString(v)}),
+  }),
+  final bool v => FbTable({
+    0: FbString(key),
+    1: FbU8(8), // VData.Bool
+    2: FbTable({0: FbU8(v ? 1 : 0)}),
+  }),
+  final int v => FbTable({
+    0: FbString(key),
+    1: FbU8(5), // VData.UInt32
+    2: FbTable({0: FbU32(v)}),
+  }),
+  _ => throw ArgumentError.value(value, key),
+};
+
+/// A `.litertlm` container holding [sections], in order. [items] adds
+/// key-value items to the section at each index, after its `model_type`;
+/// [system] replaces the system metadata (`author: test`).
+Uint8List litertlmContainer(
+  List<Section> sections, {
+  Map<int, Map<String, Object>> items = const {},
+  Map<String, Object> system = const {'author': 'test'},
+}) {
   // The header's size depends on the section offsets only through their
   // values, not their encoding, so build it once with placeholders to learn
   // its length, then again with the real offsets.
@@ -239,11 +265,8 @@ Uint8List litertlmContainer(List<Section> sections) {
     FbTable({
       0: FbTable({
         0: FbTables([
-          FbTable({
-            0: FbString('author'),
-            1: FbU8(9),
-            2: FbTable({0: FbString('test')}),
-          }),
+          for (final MapEntry(:key, :value) in system.entries)
+            _keyValue(key, value),
         ]),
       }),
       1: FbTable({
@@ -252,11 +275,10 @@ Uint8List litertlmContainer(List<Section> sections) {
             FbTable({
               0: FbTables([
                 if (sections[i].modelType case final modelType?)
-                  FbTable({
-                    0: FbString('model_type'),
-                    1: FbU8(9), // VData.StringValue
-                    2: FbTable({0: FbString(modelType)}),
-                  }),
+                  _keyValue('model_type', modelType),
+                for (final MapEntry(:key, :value)
+                    in (items[i] ?? const <String, Object>{}).entries)
+                  _keyValue(key, value),
               ]),
               1: FbU64(ranges[i].$1),
               2: FbU64(ranges[i].$2),

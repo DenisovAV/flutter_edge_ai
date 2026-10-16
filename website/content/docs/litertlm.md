@@ -195,8 +195,9 @@ Both are tracked upstream in
 Because the safe context is a property of the compiled bundle, `maxTokens` is
 **not** clamped up to 1024 on the NPU attempt (it is on CPU and GPU — see below),
 so pass the `cache_length` the bundle was compiled for. Note that requesting
-`PreferredBackend.npu` does not guarantee the NPU runs: if it fails to
-initialize, the engine falls back to GPU and then CPU, and the floor applies
+`PreferredBackend.npu` for a generic bundle does not guarantee the NPU runs: if
+it fails to initialize, the engine falls back to GPU and then CPU (a bundle
+compiled for an NPU is never tried there — see below), and the floor applies
 again to those attempts — so a value chosen for an NPU bundle is raised to 1024
 on the fallback rather than crashing it. The NPU candidate is attempted only on
 Windows, on Android phones with Qualcomm FastRPC, and on Qualcomm Linux arm64
@@ -209,6 +210,70 @@ the check is per OS, so a PC without an Intel NPU still attempts it, and
 `activeBackend` can then report `npu` while the model runs elsewhere.
 
 </Warning>
+
+### Where a model runs
+
+Before it creates an engine, the native engine reads the bundle's header and
+the compiler stamp of each compiled section — a few hundred bytes each, tens of
+milliseconds for a 3 GB file — and decides from them:
+
+| The file | No `preferredBackend` | `preferredBackend` given |
+|---|---|---|
+| A generic bundle | GPU, then CPU | that backend, then the next (npu → gpu → cpu) |
+| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares |
+| A bundle compiled for an NPU (`…_qualcomm_sm8750.litertlm`, …) | the NPU | `npu`: the NPU; `gpu` / `cpu`: refused |
+| A file shorter than its sections | refused: the download is incomplete | refused |
+
+An encoder left unset (`preferredVisionBackend`, `preferredAudioBackend`) runs
+where the file says: its declared `backend_constraint` (CPU when that allows
+it), the NPU when its section is compiled for one, else CPU. The official
+`…_qualcomm_sm8750` and `…_qualcomm_qcs8275` bundles, whose encoders are not
+compiled for the NPU, run them on the CPU; a bundle with compiled encoders runs
+them on the NPU. `model.activeVisionBackend` and `model.activeAudioBackend`
+report the choice. A refusal is a `LiteRtLmBundleException` whose `problem`
+says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a Google Tensor or
+MediaTek bundle, or a Qualcomm one on Windows), thrown before any engine
+exists. The device's SoC is not read up front: a bundle built for another
+Qualcomm SoC fails at engine create, and the error names the SoC it was built
+for.
+
+### One attempt, with the reason
+
+By default a load that fails on its backend tries the next one.
+`LiteRtLmEngine(backendFallback: false)` makes one attempt — on
+`preferredBackend`, or the GPU when none is given — and throws a
+`BackendInitException` whose one attempt carries LiteRT-LM's own reason, read
+from its C API on every platform and in release builds:
+
+```dart
+await FlutterEdgeAi.initialize(
+  inferenceEngines: [const LiteRtLmEngine(backendFallback: false)],
+);
+try {
+  await FlutterEdgeAi.getActiveModel(preferredBackend: PreferredBackend.gpu);
+} on BackendInitException catch (e) {
+  final error = e.lastAttempt.error;
+  print('did not load on ${e.lastAttempt.backend.name}: '
+      '${error is LiteRtLmEngineCreateException ? error.nativeMessage : error}');
+}
+```
+
+An NPU the device cannot reach is refused before any engine exists, and so is a
+bundle compiled for an NPU there, with or without the flag.
+
+### Inspecting a model file
+
+`readLiteRtLmBundleInfo(path)` (native only) returns what the engine reads:
+
+```dart
+final info = await readLiteRtLmBundleInfo(path);
+info.isComplete;               // false for a download that stopped early
+info.isCompiledForNpu;         // runs on the NPU only
+info.npuTarget;                // e.g. Qualcomm SM8750, or null
+info.visionEncoder?.npuTarget; // null: the encoder is not compiled
+info.audioEncoder?.backendConstraint; // e.g. ['cpu']
+info.hasMtpDrafter;            // can decode speculatively
+```
 
 ## `maxTokens` is the CONTEXT window, not the reply length
 

@@ -38,13 +38,15 @@ final model = await FlutterEdgeAi.getActiveModel(
 );
 ```
 
-`preferredBackend` selects the text decoder's backend. The vision encoder runs on
-CPU by default regardless (the Metal/WebGPU delegates can't prepare its
+`preferredBackend` selects the text decoder's backend. Left unset, the vision
+encoder runs where the bundle says — on the NPU when its section is compiled
+for one ([where a model runs](/docs/litertlm#where-a-model-runs)) — and
+otherwise on CPU (the Metal/WebGPU delegates can't prepare its
 `STABLEHLO_COMPOSITE` ops — routing it to GPU used to hard-fail at model load;
 `flutter_gemma_litertlm` 1.4.2 fixes this by defaulting the vision encoder to
 CPU). To force GPU vision — only for a model whose vision section is built to
 allow it — pass `preferredVisionBackend: PreferredBackend.gpu` to
-`getActiveModel(...)`.
+`getActiveModel(...)`; `model.activeVisionBackend` says where it runs.
 
 ### Sending an image
 

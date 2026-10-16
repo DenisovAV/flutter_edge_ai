@@ -14,6 +14,22 @@ library flutter_edge_ai_litertlm;
 export 'src/litert_lm_engine_web.dart'
     if (dart.library.ffi) 'src/litert_lm_engine.dart';
 
+// What a `.litertlm` file says about itself — its sections, their declared
+// backends and the NPU each compiled section targets — read natively before
+// any engine exists (`readLiteRtLmBundleInfo`), and why a native load failed.
+// The types are plain Dart on every platform; the reader throws on the web.
+export 'src/bundle/litertlm_bundle_info.dart'
+    show
+        LiteRtLmBundleException,
+        LiteRtLmBundleInfo,
+        LiteRtLmBundleProblem,
+        LiteRtLmNpuTarget,
+        LiteRtLmSection;
+export 'src/bundle/litertlm_bundle_reader_stub.dart'
+    if (dart.library.ffi) 'src/bundle/litertlm_bundle_reader.dart'
+    show readLiteRtLmBundleInfo;
+export 'src/litert_lm_load_errors.dart';
+
 // LiteRt interpreter FFI (arbitrary `.tflite` models) — used by
 // flutter_edge_ai_speech. `dart.library.ffi`-only;
 // the web stub exports no symbols (web leaves use their own JS arm).

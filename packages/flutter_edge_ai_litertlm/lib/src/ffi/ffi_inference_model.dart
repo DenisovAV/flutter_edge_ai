@@ -14,6 +14,8 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
     required this.maxTokens,
     required this.modelType,
     required this.activeBackend,
+    this.activeVisionBackend,
+    this.activeAudioBackend,
     this.fileType = ModelFileType.litertlm,
     this.supportImage = false,
     this.supportAudio = false,
@@ -31,6 +33,10 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
   final int maxTokens;
   @override
   final PreferredBackend? activeBackend;
+  @override
+  final PreferredBackend? activeVisionBackend;
+  @override
+  final PreferredBackend? activeAudioBackend;
   final bool supportImage;
   final bool supportAudio;
 

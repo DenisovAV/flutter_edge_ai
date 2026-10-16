@@ -12,7 +12,6 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_test/flutter_test.dart';
 

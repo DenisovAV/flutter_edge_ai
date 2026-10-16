@@ -6,6 +6,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
+import '../litert_lm_load_errors.dart';
+
+export '../litert_lm_load_errors.dart'
+    show BackendInitAttemptFailure, BackendInitException;
+
 /// Whether this host ships an NPU dispatch stack at all.
 ///
 /// Three can: Android and Linux arm64 carry the Qualcomm QNN stack and Windows
@@ -243,55 +248,6 @@ int? activationDataTypeWireValue(ActivationDataType? type) => switch (type) {
   ActivationDataType.float16 => 1,
 };
 
-/// Failure details for a single FFI backend initialization attempt.
-class BackendInitAttemptFailure {
-  const BackendInitAttemptFailure({
-    required this.backend,
-    required this.error,
-    required this.stackTrace,
-  });
-
-  /// Backend used for this initialization attempt.
-  final PreferredBackend backend;
-
-  /// Error reported while initializing [backend].
-  final Object error;
-
-  /// Stack trace captured with [error].
-  final StackTrace stackTrace;
-
-  @override
-  String toString() => '${ffiBackendWireName(backend)}: $error';
-}
-
-/// Exception thrown after every FFI backend fallback attempt fails.
-class BackendInitException implements Exception {
-  BackendInitException({required Iterable<BackendInitAttemptFailure> attempts})
-    : attempts = List.unmodifiable(attempts) {
-    if (this.attempts.isEmpty) {
-      throw ArgumentError.value(
-        attempts,
-        'attempts',
-        'must contain at least one failed backend attempt',
-      );
-    }
-  }
-
-  /// Failed backend attempts in the order they were tried.
-  final List<BackendInitAttemptFailure> attempts;
-
-  /// Last backend attempt, usually the most actionable failure.
-  BackendInitAttemptFailure get lastAttempt => attempts.last;
-
-  @override
-  String toString() {
-    final failures = attempts.map((attempt) => attempt.toString()).join('; ');
-    return 'BackendInitException: all FFI backends failed. '
-        'Last attempted ${ffiBackendWireName(lastAttempt.backend)}. '
-        'Attempts: $failures';
-  }
-}
-
 Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   required PreferredBackend? preferredBackend,
   required String logTag,
@@ -307,9 +263,12 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // Why npu is off when the caller decided so from something this file cannot
   // see — on Android, the build not bundling the opt-in Qualcomm stack.
   String? npuUnavailableBecause,
+  // The backends to try, when the caller decided them (the LLM engine does,
+  // from the bundle: `planLiteRtLmLoad`); otherwise [ffiBackendFallbackOrder].
+  List<PreferredBackend>? backends,
 }) async {
   final attempts = <BackendInitAttemptFailure>[];
-  final backends = ffiBackendFallbackOrder(
+  backends ??= ffiBackendFallbackOrder(
     preferredBackend,
     npuDispatchAvailable: npuDispatchAvailable,
   );

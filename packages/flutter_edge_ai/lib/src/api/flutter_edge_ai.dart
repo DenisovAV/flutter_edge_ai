@@ -359,9 +359,13 @@ class FlutterEdgeAi {
   /// Runtime parameters:
   /// - [maxTokens]: Maximum context size (default: 1024)
   /// - [preferredBackend]: CPU or GPU preference (optional)
-  /// - [preferredVisionBackend]: vision-encoder backend override; null
-  /// defaults to CPU (optional)
-  /// - [preferredAudioBackend]: audio-encoder backend override; null defaults to CPU (optional)
+  /// - [preferredVisionBackend]: vision-encoder backend override; null lets
+  /// the engine choose (the native `.litertlm` engine reads the model file:
+  /// the encoder's declared `backend_constraint`, the NPU when the encoder is
+  /// compiled for one, else CPU; `InferenceModel.activeVisionBackend` says
+  /// what it chose) (optional)
+  /// - [preferredAudioBackend]: audio-encoder backend override; null as for
+  /// [preferredVisionBackend] (optional)
   /// - [supportImage]: Enable multimodal image support (default: false)
   /// - [supportAudio]: Enable audio input support for Gemma 3n E4B (default: false)
   /// - [maxNumImages]: Maximum number of images if supportImage is true

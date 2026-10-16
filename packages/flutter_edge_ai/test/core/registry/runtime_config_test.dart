@@ -66,17 +66,20 @@ void _activeModelParamsTests() {
             preferredBackend: PreferredBackend.gpu,
           ),
         ),
+        // An encoder backend means something only while its encoder is on.
         'preferredVisionBackend': (
-          base,
+          const ActiveModelParams(maxTokens: 1024, supportImage: true),
           const ActiveModelParams(
             maxTokens: 1024,
+            supportImage: true,
             preferredVisionBackend: PreferredBackend.gpu,
           ),
         ),
         'preferredAudioBackend': (
-          base,
+          const ActiveModelParams(maxTokens: 1024, supportAudio: true),
           const ActiveModelParams(
             maxTokens: 1024,
+            supportAudio: true,
             preferredAudioBackend: PreferredBackend.gpu,
           ),
         ),
@@ -181,11 +184,43 @@ void _activeModelParamsTests() {
       );
     });
 
+    test('a null encoder backend is the engine\'s choice, not CPU', () {
+      // The native LiteRT-LM engine reads the model file for an unset encoder
+      // backend and may put it on the NPU, so an explicit CPU is another
+      // request once the encoder is on.
+      expect(
+        const ActiveModelParams(
+          maxTokens: 1024,
+          supportImage: true,
+        ).firstDifference(
+          const ActiveModelParams(
+            maxTokens: 1024,
+            supportImage: true,
+            preferredVisionBackend: PreferredBackend.cpu,
+          ),
+        ),
+        'preferredVisionBackend',
+      );
+      expect(
+        const ActiveModelParams(
+          maxTokens: 1024,
+          supportAudio: true,
+        ).firstDifference(
+          const ActiveModelParams(
+            maxTokens: 1024,
+            supportAudio: true,
+            preferredAudioBackend: PreferredBackend.cpu,
+          ),
+        ),
+        'preferredAudioBackend',
+      );
+    });
+
     test('values the engines normalise away do not force a rebuild', () {
       // A rebuild unloads and reloads multi-gigabyte weights, so comparing the
       // RAW request is not enough. Both engines apply `maxNumImages ?? 1` when
-      // vision is on and drop it when vision is off, and a null encoder
-      // backend reaches native as CPU. Two requests that build a
+      // vision is on and drop it when vision is off, and an encoder's backend
+      // reaches nothing while the encoder is off. Two requests that build a
       // bit-identical engine must compare equal, or every caller that spells
       // a default explicitly pays for a reload that changes nothing.
       expect(
@@ -220,7 +255,7 @@ void _activeModelParamsTests() {
           ),
         ),
         isNull,
-        reason: 'a null encoder backend is CPU',
+        reason: 'an encoder backend is not sent while the encoder is off',
       );
     });
   });

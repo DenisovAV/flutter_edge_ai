@@ -75,20 +75,26 @@ export 'src/embedding/embedding_exceptions.dart'
 export 'src/decision/decider.dart'
     show
         AbstainReason,
+        AbstainSignalKind,
         Decider,
         DeciderAnswer,
         DeciderCapabilities,
         DeciderInput,
         DeciderProvenance,
+        DeciderRequest,
         RankedOption,
         ScoreKind;
 export 'src/decision/decider_exceptions.dart'
     show
+        DeciderCancelledException,
         DeciderException,
         DeciderSpaceMismatchException,
         DeciderUnsupportedException;
 export 'src/decision/decider_method.dart'
-    show DeciderCalibration, DeciderMethod;
+    show
+        DeciderMethod,
+        EmbeddingDeciderCalibration,
+        InferenceDeciderCalibration;
 export 'src/decision/decider_option.dart' show DeciderOption;
 export 'src/media/encoded_media_format.dart'
     show EncodedMediaFormat, sniffEncodedMediaFormat;

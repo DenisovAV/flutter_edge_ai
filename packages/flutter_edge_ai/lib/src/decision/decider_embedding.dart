@@ -12,6 +12,7 @@ import '../embedding/embedding_input.dart';
 import '../embedding/embedding_model.dart';
 import '../embedding/task_type.dart';
 import '../model_management/cancel_token.dart' show CancelToken;
+import 'decider_exceptions.dart' show DeciderCancelledException;
 
 /// How many of the decider's requests may be outstanding at once: enough to
 /// keep a worker busy, few enough that a cancel stops almost everything.
@@ -26,7 +27,7 @@ const _window = 2;
 /// long or zero is a [StateError] naming it. Each input's modalities are
 /// checked against `embedder.modalities` before anything is sent.
 ///
-/// [cancelToken] fails the call with `EmbeddingCancelledException` at once;
+/// [cancelToken] fails the call with `DeciderCancelledException` at once;
 /// requests already outstanding finish and are dropped. [onEmbedded] runs
 /// after each input's vector is in.
 Future<Float64List> embedDeciderRows(
@@ -55,7 +56,7 @@ Future<Float64List> embedDeciderRows(
     }
   }
   if (cancelToken?.isCancelled ?? false) {
-    return Future.error(const EmbeddingCancelledException(_cancelled));
+    return Future.error(const DeciderCancelledException(_cancelled));
   }
   final out = Float64List(inputs.length * dimension);
   if (inputs.isEmpty) return Future.value(out);
@@ -77,7 +78,7 @@ Future<Float64List> embedDeciderRows(
         outstanding < _window &&
         next < inputs.length) {
       if (cancelToken?.isCancelled ?? false) {
-        fail(const EmbeddingCancelledException(_cancelled), StackTrace.current);
+        fail(const DeciderCancelledException(_cancelled), StackTrace.current);
         return;
       }
       final index = next++;
@@ -114,7 +115,7 @@ Future<Float64List> embedDeciderRows(
 
   if (cancelToken != null && link != null) {
     link.onCancel = () =>
-        fail(const EmbeddingCancelledException(_cancelled), StackTrace.current);
+        fail(const DeciderCancelledException(_cancelled), StackTrace.current);
     _listenForCancel(cancelToken, link);
   }
   sendMore();

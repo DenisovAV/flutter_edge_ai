@@ -5,7 +5,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
-    show AbstainReason, DeciderAnswer, RankedOption, ScoreKind;
+    show
+        AbstainReason,
+        AbstainSignalKind,
+        DeciderAnswer,
+        DeciderMethod,
+        RankedOption,
+        ScoreKind;
 
 import 'tiny_island_view_model.dart';
 
@@ -56,17 +62,40 @@ String formatIslandScore(
   return '$score · p $percent';
 }
 
-/// Why the Decider abstained, in words.
+/// Why the Decider abstained, in words. Reads only the shared answer, so an
+/// inference decider's answer (a probability signal, a "none of these"
+/// option) reads as well as the embedding decider's.
 String describeIslandAbstain(DeciderAnswer answer) {
   final best = answer.ranked.firstOrNull;
   final reason = answer.abstainReason;
   if (reason == AbstainReason.belowThreshold) {
-    final similarity = answer.provenance.similarity;
+    final signal = answer.provenance.abstainSignal;
     final threshold = answer.provenance.threshold;
-    return 'Nothing on the island fits: the closest action'
-        '${best == null ? '' : ', ${best.id},'} is at cosine '
-        '${similarity?.toStringAsFixed(3) ?? '?'}, under the '
-        '${threshold?.toStringAsFixed(3) ?? '?'} it needs.';
+    final kind = answer.provenance.abstainSignalKind;
+    if (kind == AbstainSignalKind.topProbability) {
+      // The top probability is the best-ranked action's.
+      final likeliest = best == null ? '' : ', ${best.id},';
+      return 'Nothing on the island fits: the likeliest action$likeliest has '
+          'p ${_percent(signal)}, under the ${_percent(threshold)} it needs.';
+    }
+    if (kind == AbstainSignalKind.topCosine) {
+      // The top cosine is the best-ranked action's only for centroid; a
+      // linear decider ranks by its own scores.
+      final closest =
+          best == null || answer.provenance.method != DeciderMethod.centroid
+          ? ''
+          : ', ${best.id},';
+      return 'Nothing on the island fits: the closest action$closest is at '
+          'cosine ${signal?.toStringAsFixed(3) ?? '?'}, under the '
+          '${threshold?.toStringAsFixed(3) ?? '?'} it needs.';
+    }
+    // A signal of a kind this app does not know: say what it is.
+    return 'Nothing on the island fits: its ${kind?.name ?? 'abstain'} signal '
+        '$signal is under the $threshold it needs.';
+  }
+  if (reason == AbstainReason.noneOption) {
+    return 'Nothing on the island fits: the model chose '
+        '"${best?.id ?? 'none of these'}".';
   }
   if (reason == AbstainReason.noCandidates) {
     return 'There were no actions to choose among.';
@@ -74,14 +103,27 @@ String describeIslandAbstain(DeciderAnswer answer) {
   return 'Abstained (${reason?.name ?? 'no reason given'}).';
 }
 
-/// The line under the HUD: how many actions, how long.
+/// A probability with one decimal, without a trailing ".0": 0.598 is
+/// "59.8%" and 0.6 is "60%", so a signal just under its threshold never reads
+/// as equal to it.
+String _percent(double? p) {
+  if (p == null) return '?';
+  final text = (p * 100).toStringAsFixed(1);
+  return '${text.endsWith('.0') ? text.substring(0, text.length - 2) : text}%';
+}
+
+/// The line under the HUD: how many actions, how long. The input's share is
+/// an embedding, or an inference decider's prompt.
 String describeIslandTiming(DeciderAnswer answer, int optionCount) {
   final verb = answer.choice == null ? 'Weighed' : 'Chosen among';
-  final embed = answer.provenance.embedTime;
+  final encode = answer.provenance.encodeTime;
   final score = answer.provenance.scoreTime;
+  final stage = answer.provenance.method == DeciderMethod.optionScoring
+      ? 'prompt'
+      : 'embed';
   return '$verb $optionCount actions in '
-      '${formatIslandDuration(embed + score)} '
-      '(embed ${formatIslandDuration(embed)} + score '
+      '${formatIslandDuration(encode + score)} '
+      '($stage ${formatIslandDuration(encode)} + score '
       '${formatIslandDuration(score)})';
 }
 

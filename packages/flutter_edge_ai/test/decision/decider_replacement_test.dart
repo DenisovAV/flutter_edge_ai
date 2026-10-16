@@ -78,7 +78,7 @@ void main() {
       final textOnly = await plugin.createEmbeddingModel();
       final decider = await textOnly.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       );
 
       // Another part of the app asks for images: the cache closes the
@@ -113,7 +113,7 @@ void main() {
       final withImages = await plugin.createEmbeddingModel(supportImage: true);
       final decider = await withImages.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       );
       // The app closes it (a worker that died leaves the cache the same way).
       await withImages.close();
@@ -131,7 +131,7 @@ void main() {
       final first = await plugin.createEmbeddingModel();
       final artifact = (await first.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       )).toArtifact();
       final loaded = await first.loadDecider(artifact);
       await plugin.createEmbeddingModel(supportImage: true);
@@ -145,7 +145,7 @@ void main() {
       final first = await plugin.createEmbeddingModel();
       final decider = await first.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       );
       await fixture.activate(plugin, model: 'n.tflite', tokenizer: 'n.json');
       await plugin.createEmbeddingModel();
@@ -167,7 +167,7 @@ void main() {
       final first = await plugin.createEmbeddingModel();
       final decider = await first.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       );
       await plugin.createEmbeddingModel(supportImage: true);
       final answer = await decider.choose(_in('about a'), among: const []);
@@ -181,11 +181,11 @@ void main() {
       final first = await plugin.createEmbeddingModel();
       final one = await first.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       );
       final two = await first.createDecider(
         options: _options().reversed.toList(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       );
       await plugin.createEmbeddingModel(supportImage: true);
       final answers = await Decider.chooseAll(_in('about b'), [one, two]);
@@ -204,13 +204,13 @@ void main() {
       // Named by the caller: survives another model under the same id.
       final named = await first.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
         embedderId: 'table-v1',
       );
       // Named by the installed files: another model is another space.
       final byFiles = await first.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       );
       await fixture.activate(plugin, model: 'n.tflite', tokenizer: 'n.json');
       await plugin.createEmbeddingModel();
@@ -227,7 +227,7 @@ void main() {
     final embedder = FakeEmbedder(dimension: 3, table: tableVectors);
     final decider = await embedder.createDecider(
       options: _options(),
-      calibration: const DeciderCalibration.none(),
+      calibration: const EmbeddingDeciderCalibration.none(),
       embedderId: 'fake',
     );
     await embedder.close();

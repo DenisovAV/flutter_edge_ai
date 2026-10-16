@@ -31,6 +31,16 @@ final class DeciderUnsupportedException extends DeciderException {
   const DeciderUnsupportedException(super.message);
 }
 
+/// A `createDecider` or a `choose` was cancelled through its `CancelToken`,
+/// or the decider was closed while a `choose` ran. A cancelled
+/// `createDecider` returns no decider.
+@experimental
+final class DeciderCancelledException extends DeciderException {
+  const DeciderCancelledException([
+    super.message = 'The decision was cancelled.',
+  ]);
+}
+
 /// A decider was fitted in another embedding space than the embedder asked
 /// to load it, or than the one core now serves in place of the decider's
 /// own: another model file, dimension, backend or task prefix.

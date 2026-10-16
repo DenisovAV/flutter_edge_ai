@@ -1,5 +1,5 @@
 // createDecider's cancelToken: a cancel fails the call with
-// EmbeddingCancelledException wherever it lands, and never returns a decider.
+// DeciderCancelledException wherever it lands, and never returns a decider.
 
 import 'dart:async';
 
@@ -39,7 +39,7 @@ void main() {
       token.cancel();
       await expectLater(
         created.timeout(const Duration(seconds: 5)),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
       embedder.hold!.complete();
       await pumpEventQueue();

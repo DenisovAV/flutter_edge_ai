@@ -148,10 +148,11 @@ final class KeywordDecider extends Decider {
 
   @override
   DeciderCapabilities get capabilities => const DeciderCapabilities(
-    maxOptions: null,
-    supportsContext: false,
-    calibratedProbabilities: false,
     modalities: {EmbeddingModality.text},
+    calibratedProbabilities: false,
+    supportsContext: false,
+    supportsAmong: false,
+    storable: false,
   );
 
   @override
@@ -161,11 +162,9 @@ final class KeywordDecider extends Decider {
   Future<void> close() async => _closed = true;
 
   @override
-  Future<DeciderAnswer> choose(
-    DeciderInput input, {
-    Iterable<String>? among,
-    int topK = 5,
-  }) async {
+  Future<DeciderAnswer> decide(DeciderRequest request) async {
+    final input = request.input;
+    final topK = request.topK;
     if (_closed) throw StateError('The decider is closed.');
     final watch = Stopwatch()..start();
     final words = _words(input.input.text!);
@@ -194,10 +193,11 @@ final class KeywordDecider extends Decider {
         method: DeciderMethod.centroid,
         calibration: 'minSimilarity',
         spaceId: 'keyword',
-        embedTime: const Duration(milliseconds: 3),
+        encodeTime: const Duration(milliseconds: 3),
         scoreTime: watch.elapsed,
         threshold: threshold,
-        similarity: best,
+        abstainSignal: best,
+        abstainSignalKind: AbstainSignalKind.topCosine,
       ),
     );
   }
@@ -236,6 +236,10 @@ final class ScriptedDecider extends Decider {
   /// Give calibrated probabilities: the best option gets this one.
   double? probability;
 
+  /// Return this answer as it is, whatever was asked: an answer of another
+  /// kind of decider (an inference decider's), to show the app reads it.
+  DeciderAnswer? answerExactly;
+
   @override
   List<DeciderOption> get options => _inner.options;
 
@@ -251,15 +255,14 @@ final class ScriptedDecider extends Decider {
   Future<void> close() => _inner.close();
 
   @override
-  Future<DeciderAnswer> choose(
-    DeciderInput input, {
-    Iterable<String>? among,
-    int topK = 5,
-  }) async {
+  Future<DeciderAnswer> decide(DeciderRequest request) async {
+    final input = request.input;
+    final topK = request.topK;
     if (failNext case final error?) {
       failNext = null;
       throw error;
     }
+    if (answerExactly case final exactly?) return exactly;
     final answer = await _inner.choose(input, topK: topK);
     if (answerEmpty) {
       return DeciderAnswer(
@@ -268,16 +271,35 @@ final class ScriptedDecider extends Decider {
         scoreKind: ScoreKind.cosine,
         margin: 0,
         abstainReason: AbstainReason.noCandidates,
-        provenance: answer.provenance,
+        // No candidate, so nothing was measured: no abstain signal.
+        provenance: DeciderProvenance(
+          method: answer.provenance.method,
+          calibration: answer.provenance.calibration,
+          spaceId: answer.provenance.spaceId,
+          encodeTime: answer.provenance.encodeTime,
+          scoreTime: answer.provenance.scoreTime,
+          threshold: answer.provenance.threshold,
+        ),
       );
     }
     if (answerWith case final id?) {
+      final p = answer.provenance;
       return DeciderAnswer(
         choice: id,
         ranked: [RankedOption(id: id, score: 1)],
         scoreKind: ScoreKind.cosine,
         margin: double.infinity,
-        provenance: answer.provenance,
+        // Scored 1: the forced choice's signal clears any threshold.
+        provenance: DeciderProvenance(
+          method: p.method,
+          calibration: p.calibration,
+          spaceId: p.spaceId,
+          encodeTime: p.encodeTime,
+          scoreTime: p.scoreTime,
+          threshold: p.threshold,
+          abstainSignal: 1,
+          abstainSignalKind: AbstainSignalKind.topCosine,
+        ),
       );
     }
     if (probability case final p?) {

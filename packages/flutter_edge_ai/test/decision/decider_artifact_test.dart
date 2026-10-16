@@ -81,19 +81,22 @@ FakeEmbedder _mediaEmbedder() => FakeEmbedder(
 );
 
 void main() {
-  final cases = <String, (DeciderMethod, DeciderCalibration)>{
+  final cases = <String, (DeciderMethod, EmbeddingDeciderCalibration)>{
     'centroid, cross-fit': (
       DeciderMethod.centroid,
-      const DeciderCalibration.crossFit(),
+      const EmbeddingDeciderCalibration.crossFit(),
     ),
-    'centroid, none': (DeciderMethod.centroid, const DeciderCalibration.none()),
+    'centroid, none': (
+      DeciderMethod.centroid,
+      const EmbeddingDeciderCalibration.none(),
+    ),
     'linear, minSimilarity': (
       DeciderMethod.linear,
-      const DeciderCalibration.minSimilarity(0.6),
+      const EmbeddingDeciderCalibration.minSimilarity(0.6),
     ),
     'linear, labelled': (
       DeciderMethod.linear,
-      DeciderCalibration.fromLabelled([
+      EmbeddingDeciderCalibration.fromLabelled([
         (input: _t('held a'), optionId: 'a'),
         (input: _t('held b'), optionId: 'b'),
         (input: _t('held c'), optionId: 'c'),

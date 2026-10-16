@@ -5,11 +5,12 @@
 // requests (tiny_island_requests.dart), which should abstain.
 //
 // Configurations, each printed as `[calib]` lines:
-// - centroid + DeciderCalibration.crossFit() (core's default): every
+// - centroid + EmbeddingDeciderCalibration.crossFit() (core's default): every
 //   held-out row is test data;
-// - centroid + DeciderCalibration.fromLabelled(): two folds — calibrated on
-//   one paraphrase of each verb, tested on the other, then swapped — and the
-//   full set (what the app ships), whose own rows are training data;
+// - centroid + EmbeddingDeciderCalibration.fromLabelled(): two folds —
+//   calibrated on one paraphrase of each verb, tested on the other, then
+//   swapped — and the full set (what the app ships), whose own rows are
+//   training data;
 // - with --dart-define=TINY_ISLAND_MEASURE_LINEAR=true, the same for
 //   DeciderMethod.linear, with its fit time.
 //
@@ -130,7 +131,7 @@ Future<_Metrics> _evaluate(
     } else {
       mistakes.add(
         'out of scope "$text" -> ${answer.choice} '
-        '(cos ${answer.provenance.similarity?.toStringAsFixed(3)})',
+        '(cos ${answer.provenance.abstainSignal?.toStringAsFixed(3)})',
       );
     }
   }
@@ -167,10 +168,10 @@ void _report(
   }
 }
 
-DeciderCalibration _labelled(
+EmbeddingDeciderCalibration _labelled(
   List<IslandHeldOutRequest> rows,
   double maxError,
-) => DeciderCalibration.fromLabelled([
+) => EmbeddingDeciderCalibration.fromLabelled([
   for (final row in rows)
     (input: EmbeddingInput.text(row.text), optionId: row.actionId),
 ], maxError: maxError);
@@ -201,7 +202,7 @@ void main() {
 
     Future<(Decider, Duration)> create(
       DeciderMethod method,
-      DeciderCalibration calibration,
+      EmbeddingDeciderCalibration calibration,
     ) async {
       final watch = Stopwatch()..start();
       final decider = await embedder.createDecider(
@@ -221,7 +222,7 @@ void main() {
       // The first create embeds every option text (the only uncached one).
       final (crossFit, crossFitTime) = await create(
         method,
-        const DeciderCalibration.crossFit(),
+        const EmbeddingDeciderCalibration.crossFit(),
       );
       _log('$m: ${embedder.embedded} texts embedded so far');
       final firstChoose = Stopwatch()..start();

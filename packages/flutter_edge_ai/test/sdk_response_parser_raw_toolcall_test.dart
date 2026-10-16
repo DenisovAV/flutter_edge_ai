@@ -1,11 +1,12 @@
 import 'package:flutter_edge_ai/src/parsing/sdk_response_parser.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// On web, `@litert-lm/core` (0.12.1 / 0.14.0) does NOT convert Gemma 4
-/// `<|tool_call>call:NAME{...}<tool_call|>` tokens into structured `tool_calls`
-/// JSON — the tokens stay as raw text in the message content (verified on
-/// hardware with Gemma 4 E4B). Native (C++ liblitert_lm) does the conversion,
-/// so this raw-token fallback is only exercised on the web path.
+/// Gemma 4 `<|tool_call>call:NAME{...}<tool_call|>` tokens that reach Dart as
+/// text. `@litert-lm/core` 0.12.1 and 0.14.0 left every call that way on web
+/// (verified with Gemma 4 E4B). From 0.18.0 the web runtime, like native,
+/// converts a complete call to `tool_calls` itself, so the fallback sees a
+/// block the runtime did not convert (cut off or malformed) and history text
+/// that carries the tokens.
 void main() {
   group('SdkResponseParser raw <|tool_call> fallback', () {
     test('parses the raw web token E4B emits', () {
@@ -122,12 +123,35 @@ void main() {
       });
     });
 
-    test('a string holding a brace and a comma', () {
-      const raw = '<|tool_call>call:say{text:<|"|>a}, b<|"|>}<tool_call|>';
+    test('a string holding a brace and a comma, then a number', () {
+      const raw = '<|tool_call>call:say{text:<|"|>a}, b<|"|>,n:2}<tool_call|>';
 
       final calls = SdkResponseParser.extractToolCalls(raw);
 
-      expect(calls.single.args, {'text': 'a}, b'});
+      expect(calls.single.args, {'text': 'a}, b', 'n': 2});
+    });
+
+    test('trailing commas are read the same at every level', () {
+      // The template never writes one; reading it loses nothing, and the top
+      // level always accepted it.
+      const raw = '<|tool_call>call:f{o:{a:1,},xs:[1,2,],}<tool_call|>';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.single.args, {
+        'o': {'a': 1},
+        'xs': [1, 2],
+      });
+    });
+
+    test('bare None reads as null, as the template writes it', () {
+      // Gemma 4's `format_argument` renders null with `{{ argument }}`, which
+      // is Python's `None`. A bare `null` reads the same.
+      const raw = '<|tool_call>call:f{a:None,b:null}<tool_call|>';
+
+      final calls = SdkResponseParser.extractToolCalls(raw);
+
+      expect(calls.single.args, {'a': null, 'b': null});
     });
 
     test('two calls in one response', () {
@@ -167,9 +191,8 @@ void main() {
       expect(calls.single.args, {'level': 5});
     });
 
-    test('a body that does not parse in full is refused, not truncated', () {
-      // A string that never closes: a partial call would fire the tool with
-      // the arguments read so far.
+    test('a string that never closes refuses the call, not truncated', () {
+      // A partial call would fire the tool with the arguments read so far.
       const raw =
           '<|tool_call>call:send{to:<|"|>a@b.c<|"|>,body:<|"|>hi}<tool_call|>';
 
@@ -189,6 +212,53 @@ void main() {
       const raw =
           '<|tool_call>call:set_volume{level:5}<tool_call|>'
           '<|tool_call>call:say{text:<|"|>never closed}<tool_call|>';
+
+      expect(SdkResponseParser.extractToolCalls(raw), isEmpty);
+    });
+
+    test('an empty bare value is refused, not read as an empty string', () {
+      // An empty string is written `<|"|><|"|>`; nothing renders a bare one.
+      expect(
+        SdkResponseParser.extractToolCalls(
+          '<|tool_call>call:f{a:,b:1}<tool_call|>',
+        ),
+        isEmpty,
+      );
+      expect(
+        SdkResponseParser.extractToolCalls('<|tool_call>call:f{a:}'),
+        isEmpty,
+      );
+      expect(
+        SdkResponseParser.extractToolCalls(
+          '<|tool_call>call:f{xs:[1,,2]}<tool_call|>',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a bare value holding an escape or a control token is refused', () {
+      // A string that lost its opening escape, and a token from the next
+      // turn: neither is a value the template writes.
+      expect(
+        SdkResponseParser.extractToolCalls(
+          '<|tool_call>call:f{a:b<|"|>c<|"|>}<tool_call|>',
+        ),
+        isEmpty,
+      );
+      expect(
+        SdkResponseParser.extractToolCalls(
+          '<|tool_call>call:f{a:ok<|tool_response>}<tool_call|>',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a call inside a thought channel is not run', () {
+      // A response whose fragments carry no content has no text to read: the
+      // raw JSON around the thought is not the answer.
+      const raw =
+          '{"role":"assistant","channels":{"thought":'
+          '"<|tool_call>call:set_volume{level:5}<tool_call|>"}}';
 
       expect(SdkResponseParser.extractToolCalls(raw), isEmpty);
     });

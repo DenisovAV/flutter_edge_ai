@@ -171,6 +171,22 @@ void main() {
     ]);
   });
 
+  test('a web Gemma 4 call whose escapes history stripped', () {
+    // What InferenceChat stored for a web call before toolCalls existed:
+    // cleanRawForHistory removed every `<|"|>`, so strings are bare.
+    String stored(String body) =>
+        '{"role":"assistant","content":'
+        '"<|tool_call>call:search{$body}<tool_call|>"}';
+
+    expect(parse(stored('zip:12345,q:a')), [
+      const FunctionCallResponse(
+        name: 'search',
+        args: {'zip': 12345, 'q': 'a'},
+      ),
+    ]);
+    expect(parse(stored('q:a, b')), isEmpty);
+  });
+
   test('FunctionGemma wire text', () {
     expect(
       parse(

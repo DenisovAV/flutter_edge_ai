@@ -29,9 +29,12 @@ import 'sdk_response_parser.dart';
 /// call by call. Returns an empty list for any other message type or when
 /// nothing parses, a toolCall message included: the engine then replays its
 /// [Message.text]. A web Gemma 4 call recorded as text has lost the escape
-/// tokens that mark its string arguments, so from text alone it reads with
-/// none; its [Message.toolCalls] keep the arguments. One model turn may be several
-/// consecutive toolCall messages; an engine that replays calls merges them.
+/// tokens that mark its string arguments, so from text alone its strings read
+/// as bare values: digits come back as a number, and a string holding a comma
+/// or a bracket refuses the call or comes back cut short. Its
+/// [Message.toolCalls] keep the arguments as the model wrote them. One model
+/// turn may be several consecutive toolCall messages; an engine that replays
+/// calls merges them.
 List<FunctionCallResponse> toolCallsOf(Message message) {
   if (message.type != MessageType.toolCall) return const [];
   if (message.toolCalls.isNotEmpty) return message.toolCalls;

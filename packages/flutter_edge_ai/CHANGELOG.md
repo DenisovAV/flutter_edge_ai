@@ -1,6 +1,6 @@
 ## 2.4.1
-- Tool calls: raw Gemma 4 calls keep typed and nested arguments; a one-chunk tagged call is a call.
-- `generateChatResponseWithTools`: a failed feed no longer masks the tool's error; non-JSON results fail the call.
+- Tool calls: a raw Gemma 4 call runs with typed arguments or not at all; one-chunk tagged calls parse.
+- `generateChatResponseWithTools`: a failed feed no longer masks the tool's error; unencodable results are answered.
 
 ## 2.4.0
 - Experimental `Decider` API: pick one of N options or abstain (`EmbeddingModel.createDecider`).

@@ -48,11 +48,12 @@ class SdkResponseParser {
       }
       _harvestCalls(json, result);
     }
-    // Web fallback: `@litert-lm/core` (0.12.1 / 0.14.0) does NOT convert Gemma 4
-    // `<|tool_call>call:NAME{...}<tool_call|>` tokens into structured
-    // `tool_calls` JSON — they stay as raw text (verified with Gemma 4 E4B on
-    // web). Native (C++ liblitert_lm) does convert, so this only fires when the
-    // structured pass found nothing but raw tokens are present.
+    // Raw Gemma 4 `<|tool_call>call:NAME{...}<tool_call|>` tokens, when the
+    // structured pass found nothing. `@litert-lm/core` 0.12.1 and 0.14.0 left
+    // every web call as text (verified with Gemma 4 E4B); from 0.18.0 the web
+    // runtime, like native, converts a complete call itself, so this reads a
+    // block the runtime did not convert (cut off or malformed) and history
+    // text that carries the tokens.
     if (result.isEmpty && jsonStr.contains(_rawToolCallOpen)) {
       result.addAll(_rawTokenCalls(_responseText(jsonStr)));
     }
@@ -68,8 +69,9 @@ class SdkResponseParser {
 
   /// The text a raw response carries: the `content` string or text items of
   /// every concatenated fragment, or [jsonStr] itself when no fragment is a
-  /// response. A fragment without `content` is not one: the `{}` of a
-  /// FunctionGemma call with no arguments is valid JSON too.
+  /// response. A fragment with neither `content` nor `role` is not one: the
+  /// `{}` of a FunctionGemma call with no arguments is valid JSON too. A
+  /// response without `content` (a thought alone) carries no text.
   static String _responseText(String jsonStr) {
     final text = StringBuffer();
     var parsedAny = false;
@@ -81,7 +83,9 @@ class SdkResponseParser {
         continue;
       }
       if (parsed is! Map<String, dynamic>) continue;
-      if (!parsed.containsKey('content')) continue;
+      if (!parsed.containsKey('content') && !parsed.containsKey('role')) {
+        continue;
+      }
       parsedAny = true;
       final content = parsed['content'];
       if (content is String) text.write(content);
@@ -223,7 +227,7 @@ class SdkResponseParser {
   /// `"<|\"|>red<|\"|>"` instead of `"red"`). Walks Maps and Lists so nested
   /// argument values are also cleaned.
   static dynamic _stripEscapeTokens(dynamic value) {
-    if (value is String) return value.replaceAll('<|"|>', '');
+    if (value is String) return value.replaceAll(_gemma4Escape, '');
     if (value is Map) {
       return value.map((k, v) => MapEntry(k as String, _stripEscapeTokens(v)));
     }

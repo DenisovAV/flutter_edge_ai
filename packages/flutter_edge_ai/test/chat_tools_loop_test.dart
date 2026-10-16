@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter_edge_ai/engine.dart' show edgeAiLogLevel;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -57,6 +59,25 @@ class _ScriptChat extends InferenceChat {
   Future<void> stopGeneration() async {}
   @override
   Future<void> close() async {}
+}
+
+/// Runs [body] with edgeAiLog silenced, as in a release build, and returns
+/// what it printed.
+Future<List<String>> _releasePrints(Future<void> Function() body) async {
+  final printed = <String>[];
+  final level = edgeAiLogLevel;
+  edgeAiLogLevel = EdgeAiLogLevel.none;
+  try {
+    await runZoned(
+      body,
+      zoneSpecification: ZoneSpecification(
+        print: (_, _, _, line) => printed.add(line),
+      ),
+    );
+  } finally {
+    edgeAiLogLevel = level;
+  }
+  return printed;
 }
 
 void main() {
@@ -229,59 +250,78 @@ void main() {
           calls: [
             FunctionCallResponse(name: 'boom', args: {}),
             FunctionCallResponse(name: 'sibling', args: {}),
+            FunctionCallResponse(name: 'sibling2', args: {}),
           ],
         ),
       ],
     ])..failToolResponseFeed = true;
 
-    await expectLater(
-      chat
-          .generateChatResponseWithTools(
-            onToolCall: (c) => throw ArgumentError('tool failed'),
-          )
-          .toList(),
-      throwsA(
-        isA<ArgumentError>().having((e) => e.message, 'message', 'tool failed'),
+    final printed = await _releasePrints(
+      () => expectLater(
+        chat
+            .generateChatResponseWithTools(
+              onToolCall: (c) => throw ArgumentError('tool failed'),
+            )
+            .toList(),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            'tool failed',
+          ),
+        ),
+        reason: 'the feed error must not mask the tool error',
       ),
-      reason: 'the feed error must not mask the tool error',
     );
     expect(
       chat.toolResponseFeedAttempts,
-      2,
-      reason: 'the sibling is still answered after the first feed fails',
+      3,
+      reason: 'every sibling is still answered after a feed fails',
+    );
+    expect(
+      printed,
+      contains(contains('unbalanced')),
+      reason: 'a release build must see the unbalanced history',
     );
   });
 
-  test('a tool result that is not JSON answers the call with an error and '
-      'rethrows', () async {
-    final chat = _ScriptChat([
-      const [
-        ParallelFunctionCallResponse(
-          calls: [
-            FunctionCallResponse(name: 'clock', args: {}),
-            FunctionCallResponse(name: 'sibling', args: {}),
-          ],
-        ),
-      ],
-    ]);
-    final ran = <String>[];
+  test(
+    'a tool result that is not JSON is answered as ran, then rethrown',
+    () async {
+      final chat = _ScriptChat([
+        const [
+          ParallelFunctionCallResponse(
+            calls: [
+              FunctionCallResponse(name: 'clock', args: {}),
+              FunctionCallResponse(name: 'sibling', args: {}),
+            ],
+          ),
+        ],
+      ]);
+      final ran = <String>[];
 
-    await expectLater(
-      chat
-          .generateChatResponseWithTools(
-            onToolCall: (c) {
-              ran.add(c.name);
-              return {'now': DateTime(2026, 10, 16)};
-            },
-          )
-          .toList(),
-      throwsA(isA<JsonUnsupportedObjectError>()),
-    );
-    expect(ran, ['clock'], reason: 'the sibling does not run after a failure');
-    final answers = {for (final m in chat.fedBack) m.toolName: m.text};
-    expect(answers.keys, ['clock', 'sibling']);
-    expect(answers['clock'], contains('error'));
-  });
+      await expectLater(
+        chat
+            .generateChatResponseWithTools(
+              onToolCall: (c) {
+                ran.add(c.name);
+                return {'now': DateTime(2026, 10, 16)};
+              },
+            )
+            .toList(),
+        throwsA(isA<JsonUnsupportedObjectError>()),
+      );
+      expect(ran, [
+        'clock',
+      ], reason: 'the sibling does not run after a failure');
+      expect(chat.fedBack.map((m) => m.toolName), ['clock', 'sibling']);
+      expect(
+        jsonDecode(chat.fedBack.first.text),
+        containsPair('status', 'ran'),
+        reason: 'the tool ran: the model must not be told to run it again',
+      );
+    },
+  );
 
   test(
     'cancel after generation balances the pending call before stopping',
@@ -391,18 +431,21 @@ void main() {
       )..failToolResponseFeed = true;
       // The mid-stream decode error must surface — NOT the balancing failure,
       // which would mask the real cause.
-      await expectLater(
-        chat
-            .generateChatResponseWithTools(onToolCall: (c) => {'result': 'x'})
-            .toList(),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('native decode failed'),
+      final printed = await _releasePrints(
+        () => expectLater(
+          chat
+              .generateChatResponseWithTools(onToolCall: (c) => {'result': 'x'})
+              .toList(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('native decode failed'),
+            ),
           ),
         ),
       );
+      expect(printed, contains(contains('unbalanced')));
       // Prove balancing was actually ATTEMPTED (not a false-green via an empty
       // pending list): the feed was tried once for the committed call.
       expect(chat.toolResponseFeedAttempts, greaterThanOrEqualTo(1));

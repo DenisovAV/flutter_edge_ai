@@ -7,15 +7,17 @@
 ///
 ///   string  -> ESCAPE text ESCAPE
 ///   boolean -> bare `true` / `false`
-///   null    -> bare `None` (FunctionGemma: Python's `str`) or `null` (Gemma 4)
+///   null    -> bare `None` (`{{ argument }}`, Python's `str`; `null` reads too)
 ///   number  -> bare `42`, `-3`, `1.5`, `-0.25`
 ///   list    -> `[item,item]`   (items recurse)
 ///   object  -> `{key:value}`   (bare keys, items recurse)
 ///
 /// A regex cannot read it: an escaped string may itself contain `,`, `}` or
 /// `]`, and objects nest. So the argument list is walked once with a cursor.
-/// Anything that cannot be classified is kept verbatim as a String rather than
-/// silently dropped.
+/// A bare token that cannot be classified is kept verbatim as a String rather
+/// than silently dropped; an empty one, or one holding the escape or a `<|`
+/// control token, refuses the call. A trailing comma is accepted at every
+/// level: the templates never write one, and reading it loses nothing.
 library;
 
 /// A call found by [findEscapedCall]: its [name], the text between its outer
@@ -36,6 +38,7 @@ EscapedCall? findEscapedCall(
   required String escape,
   int from = 0,
 }) {
+  assert(escape.isNotEmpty, 'an empty escape never closes a string');
   const callPrefix = 'call:';
 
   final startIndex = text.indexOf(start, from);
@@ -88,6 +91,7 @@ Map<String, dynamic>? parseEscapedCallArguments(
   String body, {
   required String escape,
 }) {
+  assert(escape.isNotEmpty, 'an empty escape never closes a string');
   final params = <String, dynamic>{};
   var i = 0;
   while (true) {
@@ -148,8 +152,8 @@ final _bareNumber = RegExp(r'^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][-+]?\d+)?$');
 dynamic _classifyBareToken(String token) {
   if (token == 'true') return true;
   if (token == 'false') return false;
-  // FunctionGemma writes Python's `None`, Gemma 4 writes `null`. A real "None"
-  // or "null" string arrives escape-wrapped, so nothing collides.
+  // Both templates write Python's `None`; `null` is read the same. A real
+  // "None" or "null" string arrives escape-wrapped, so nothing collides.
   if (token == 'None' || token == 'null') return null;
   if (!_bareNumber.hasMatch(token)) return token;
   return int.tryParse(token) ?? double.tryParse(token) ?? token;
@@ -159,7 +163,7 @@ dynamic _classifyBareToken(String token) {
 /// `null` when the value is malformed.
 (dynamic, int)? _parseValue(String src, int i, String escape) {
   i = _skipWhitespace(src, i);
-  if (i >= src.length) return ('', i);
+  if (i >= src.length) return null; // a key with no value
 
   // Escaped string: consumes up to its own closing marker, so embedded
   // commas/brackets are preserved.
@@ -173,28 +177,26 @@ dynamic _classifyBareToken(String token) {
   if (src[i] == '[') {
     final list = <dynamic>[];
     i = _skipWhitespace(src, i + 1);
-    if (i < src.length && src[i] == ']') return (list, i + 1);
     while (true) {
+      if (i >= src.length) return null;
+      if (src[i] == ']') return (list, i + 1); // empty, or a trailing comma
       final parsed = _parseValue(src, i, escape);
       if (parsed == null) return null;
       list.add(parsed.$1);
       i = _skipWhitespace(src, parsed.$2);
       if (i >= src.length) return null;
-      if (src[i] == ',') {
-        i++;
-        continue;
-      }
       if (src[i] == ']') return (list, i + 1);
-      return null;
+      if (src[i] != ',') return null;
+      i = _skipWhitespace(src, i + 1);
     }
   }
 
   if (src[i] == '{') {
     final map = <String, dynamic>{};
     i = _skipWhitespace(src, i + 1);
-    if (i < src.length && src[i] == '}') return (map, i + 1);
     while (true) {
-      i = _skipWhitespace(src, i);
+      if (i >= src.length) return null;
+      if (src[i] == '}') return (map, i + 1); // empty, or a trailing comma
       final key = _readKey(src, i);
       if (key == null) return null;
       i = _skipWhitespace(src, key.$2);
@@ -204,12 +206,9 @@ dynamic _classifyBareToken(String token) {
       map[key.$1] = parsed.$1;
       i = _skipWhitespace(src, parsed.$2);
       if (i >= src.length) return null;
-      if (src[i] == ',') {
-        i++;
-        continue;
-      }
       if (src[i] == '}') return (map, i + 1);
-      return null;
+      if (src[i] != ',') return null;
+      i = _skipWhitespace(src, i + 1);
     }
   }
 
@@ -217,5 +216,12 @@ dynamic _classifyBareToken(String token) {
   while (i < src.length && !_isValueEnd(src[i])) {
     i++;
   }
-  return (_classifyBareToken(src.substring(start, i).trim()), i);
+  final token = src.substring(start, i).trim();
+  // Nothing renders an empty bare value (an empty string is two escapes). One
+  // holding the escape is a string that lost its opening escape; one holding
+  // `<|`, a control token. Neither is a value.
+  if (token.isEmpty || token.contains(escape) || token.contains('<|')) {
+    return null;
+  }
+  return (_classifyBareToken(token), i);
 }

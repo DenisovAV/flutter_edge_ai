@@ -9,13 +9,15 @@ const cpu = PreferredBackend.cpu;
 const sm8750 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750');
 
 /// A Gemma 4-shaped bundle: text model, vision and audio encoders, optionally
-/// a `tf_lite_aux` section. [text], [vision] and [audio] are each a
-/// `backend_constraint` and the NPU the section is compiled for.
+/// a `tf_lite_aux` section ([aux], or [auxTarget] for one compiled for that
+/// NPU). [text], [vision] and [audio] are each a `backend_constraint` and the
+/// NPU the section is compiled for.
 LiteRtLmBundleInfo bundle({
   (String?, LiteRtLmNpuTarget?) text = (null, null),
   (String?, LiteRtLmNpuTarget?) vision = (null, null),
   (String?, LiteRtLmNpuTarget?) audio = (null, null),
   bool aux = false,
+  LiteRtLmNpuTarget? auxTarget,
   bool withEncoders = true,
   int? fileLength,
 }) {
@@ -42,7 +44,7 @@ LiteRtLmBundleInfo bundle({
       section('tf_lite_vision_encoder', vision),
       section('tf_lite_audio_encoder_hw', audio),
     ],
-    if (aux) section('tf_lite_aux', (null, null)),
+    if (aux || auxTarget != null) section('tf_lite_aux', (null, auxTarget)),
   ];
   return LiteRtLmBundleInfo(
     majorVersion: 1,
@@ -277,6 +279,20 @@ void main() {
       expect(plan(info: bundle(aux: true)).textBackends, [npu]);
     });
 
+    test("the text model's NPU is its own stamp, else the tf_lite_aux "
+        "section's", () {
+      final auxOnly = bundle(auxTarget: sm8750);
+      expect(plan(info: auxOnly).npuTarget, sm8750);
+      expect(
+        () => plan(info: auxOnly, abi: 'macos_arm64'),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          'model.litertlm is compiled for the Qualcomm SM8750 NPU, which runs '
+          'on android_arm64 and linux_arm64 only, and this is macos_arm64',
+        ),
+      );
+    });
+
     test('the GPU or the CPU is refused before any engine, with or without '
         'a fallback', () {
       for (final fallback in [true, false]) {
@@ -456,6 +472,107 @@ void main() {
           'there, not on cpu',
         ),
       );
+    });
+  });
+
+  group('a generic text model with one encoder compiled for an NPU', () {
+    // A generic text model with one encoder compiled for the SM8750: only that
+    // encoder is NPU-only, so only a load that turns it on needs the NPU.
+    final visionSm8750 = bundle(vision: (null, sm8750));
+    final audioSm8750 = bundle(audio: (null, sm8750));
+
+    test('a text-only load runs as on a generic bundle', () {
+      for (final info in [visionSm8750, audioSm8750]) {
+        expect(info.isCompiledForNpu, isFalse);
+        final p = plan(info: info, abi: 'macos_arm64');
+        expect(p.textBackends, [gpu, cpu]);
+        expect((p.visionBackend, p.audioBackend), (null, null));
+        expect(p.npuTarget, isNull, reason: 'no NPU section is on');
+        expect(
+          plan(info: info, preferred: cpu, abi: 'macos_arm64').textBackends,
+          [cpu],
+        );
+        expect(
+          liteRtLmTextCandidates(
+            path: 'model.litertlm',
+            bundle: info,
+            preferredBackend: null,
+            backendFallback: true,
+            abi: 'macos_arm64',
+          ).backends,
+          [gpu, cpu],
+          reason: 'the engine asks for the text candidates first',
+        );
+      }
+      expect(
+        plan(info: visionSm8750, audio: true, abi: 'macos_arm64').audioBackend,
+        cpu,
+        reason: 'the other, plain encoder is not affected',
+      );
+    });
+
+    test('turning that encoder on is refused, naming its vendor and SoC', () {
+      expect(
+        () => plan(info: visionSm8750, image: true, abi: 'macos_arm64'),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          "model.litertlm's vision encoder is compiled for the Qualcomm SM8750 "
+          'NPU, which runs on android_arm64 and linux_arm64 only, and this is '
+          'macos_arm64; load it without supportImage, or install the generic '
+          'bundle of this model to run it here.',
+        ),
+      );
+      expect(
+        () => plan(info: audioSm8750, audio: true, abi: 'windows_x64'),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          "model.litertlm's audio encoder is compiled for the Qualcomm SM8750 "
+          'NPU, which runs on android_arm64 and linux_arm64 only, and this is '
+          'windows_x64; load it without supportAudio',
+        ),
+      );
+      for (final backend in PreferredBackend.values) {
+        expect(
+          () => plan(
+            info: visionSm8750,
+            image: true,
+            visionBackend: backend,
+            abi: 'macos_arm64',
+          ),
+          refused(LiteRtLmBundleProblem.unsupportedNpu, 'Qualcomm SM8750'),
+          reason: 'the host cannot run it, whatever backend is asked',
+        );
+      }
+      expect(npuAsked, 0);
+    });
+
+    test('a vendor this package has no dispatch for: the same, on every '
+        'host', () {
+      final tensorAudio = bundle(
+        audio: (
+          null,
+          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
+        ),
+      );
+      expect(plan(info: tensorAudio).textBackends, [gpu, cpu]);
+      expect(plan(info: tensorAudio, image: true).visionBackend, cpu);
+      expect(
+        () => plan(info: tensorAudio, audio: true),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          "model.litertlm's audio encoder is compiled for the Google Tensor_G5 "
+          'NPU. flutter_edge_ai_litertlm runs Qualcomm and Intel NPU bundles '
+          'only; load it without supportAudio, or install',
+        ),
+      );
+    });
+
+    test('on a host that has the dispatch it runs on the NPU, and the plan '
+        'names its SoC', () {
+      final p = plan(info: visionSm8750, image: true);
+      expect(p.textBackends, [gpu, cpu]);
+      expect(p.visionBackend, npu);
+      expect(p.npuTarget, sm8750);
     });
   });
 

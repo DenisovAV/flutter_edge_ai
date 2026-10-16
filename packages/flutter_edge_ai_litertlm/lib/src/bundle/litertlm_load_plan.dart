@@ -23,8 +23,10 @@
 //   backend its `backend_constraint` excludes, for the NPU it is not compiled
 //   for, or compiled for the NPU and asked for anything else, is refused; a
 //   bundle without the encoder reports none;
-// - an incomplete file, a backend the bundle cannot run on, and an NPU this
-//   package has no dispatch for are refused before any engine is created.
+// - an incomplete file, a backend the bundle cannot run on, and a text model,
+//   or an encoder that is on, compiled for an NPU this package has no
+//   dispatch for are refused before any engine is created. An encoder that is
+//   off is not checked: a text-only load does not run it.
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 
@@ -45,7 +47,8 @@ typedef LiteRtLmLoadPlan = ({
   /// has no audio encoder.
   PreferredBackend? audioBackend,
 
-  /// The NPU the bundle is compiled for, when it is.
+  /// The NPU the text model is compiled for, else the one an encoder that is
+  /// on is compiled for; null when none of them is.
   LiteRtLmNpuTarget? npuTarget,
 
   /// The backends of the request's fallback order the file rules out, each
@@ -79,7 +82,9 @@ liteRtLmTextCandidates({
       path: path,
     );
   }
-  final target = bundle?.npuTarget;
+  // The text model's NPU only: an encoder compiled for one is checked when
+  // that encoder is on (`_encoderBackend`).
+  final target = _textNpuTarget(bundle);
   if (target != null) _checkNpuVendor(path, target, abi);
 
   final allowed = _textBackendsAllowed(bundle);
@@ -151,7 +156,7 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     backendFallback: backendFallback,
     abi: abi,
   );
-  final target = bundle?.npuTarget;
+  final target = _textNpuTarget(bundle);
   var textBackends = candidates.backends;
 
   if (textBackends.contains(PreferredBackend.npu) && !npuAvailable()) {
@@ -181,27 +186,34 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     textBackends = rest;
   }
 
+  final visionBackend = supportImage
+      ? _encoderBackend(
+          path,
+          'vision',
+          bundle,
+          bundle?.visionEncoder,
+          preferredVisionBackend,
+          abi,
+        )
+      : null;
+  final audioBackend = supportAudio
+      ? _encoderBackend(
+          path,
+          'audio',
+          bundle,
+          bundle?.audioEncoder,
+          preferredAudioBackend,
+          abi,
+        )
+      : null;
   return (
     textBackends: textBackends,
-    visionBackend: supportImage
-        ? _encoderBackend(
-            path,
-            'vision',
-            bundle,
-            bundle?.visionEncoder,
-            preferredVisionBackend,
-          )
-        : null,
-    audioBackend: supportAudio
-        ? _encoderBackend(
-            path,
-            'audio',
-            bundle,
-            bundle?.audioEncoder,
-            preferredAudioBackend,
-          )
-        : null,
-    npuTarget: target,
+    visionBackend: visionBackend,
+    audioBackend: audioBackend,
+    npuTarget:
+        target ??
+        (visionBackend == null ? null : bundle?.visionEncoder?.npuTarget) ??
+        (audioBackend == null ? null : bundle?.audioEncoder?.npuTarget),
     dropped: candidates.dropped,
   );
 }
@@ -230,6 +242,13 @@ Set<PreferredBackend> _textBackendsAllowed(LiteRtLmBundleInfo? bundle) {
   return declared.isEmpty ? PreferredBackend.values.toSet() : declared;
 }
 
+/// The NPU the text model is compiled for: its own stamp, else the
+/// `tf_lite_aux` section's — the two sections that make it NPU-only
+/// ([LiteRtLmBundleInfo.isCompiledForNpu]). An encoder's stamp is not the
+/// text model's: a text-only load does not run that encoder.
+LiteRtLmNpuTarget? _textNpuTarget(LiteRtLmBundleInfo? bundle) =>
+    bundle?.textModel?.npuTarget ?? bundle?.sectionOf('tf_lite_aux')?.npuTarget;
+
 /// The backends a `backend_constraint` names that this package knows.
 Set<PreferredBackend> _backends(List<String>? constraint) => {
   for (final name in constraint ?? const <String>[])
@@ -256,7 +275,7 @@ String _wrongTextBackend(
 /// NPU, or it declares the backends it runs on.
 String _textRulesOut(String path, LiteRtLmBundleInfo bundle) {
   if (bundle.isCompiledForNpu) {
-    final target = bundle.npuTarget;
+    final target = _textNpuTarget(bundle);
     return '$path is compiled for the ${target == null ? 'NPU' : '$target NPU'} '
         'and runs only there';
   }
@@ -269,17 +288,24 @@ String _textRulesOut(String path, LiteRtLmBundleInfo bundle) {
 /// [bundle] is [encoder], for a [requested] backend. Null for a bundle that
 /// was read and has no such encoder: nothing runs it. A file that could not
 /// be read keeps the rules that need no file: the request, else the CPU.
+///
+/// Called only for an encoder that is on, so only then is an encoder compiled
+/// for an NPU checked against [abi].
 PreferredBackend? _encoderBackend(
   String path,
   String kind,
   LiteRtLmBundleInfo? bundle,
   LiteRtLmSection? encoder,
   PreferredBackend? requested,
+  String abi,
 ) {
   if (encoder == null) {
     return bundle != null ? null : requested ?? PreferredBackend.cpu;
   }
   final compiledFor = encoder.npuTarget;
+  if (compiledFor != null) {
+    _checkNpuVendor(path, compiledFor, abi, encoder: kind);
+  }
   if (requested != null) {
     // LiteRT-LM checks the requested backend against the section's
     // `backend_constraint` at engine_create ("Audio backend constraint
@@ -336,9 +362,16 @@ PreferredBackend _encoderDefault(LiteRtLmSection encoder) {
   return PreferredBackend.cpu;
 }
 
-/// Refuses a bundle compiled for an NPU this package has no dispatch for on
-/// [abi]: Qualcomm runs on Android and Linux arm64, Intel on Windows x64.
-void _checkNpuVendor(String path, LiteRtLmNpuTarget target, String abi) {
+/// Refuses a [target] NPU this package has no dispatch for on [abi]: Qualcomm
+/// runs on Android and Linux arm64, Intel on Windows x64. [encoder] is the
+/// kind (vision, audio) of the encoder compiled for it, null for the text
+/// model.
+void _checkNpuVendor(
+  String path,
+  LiteRtLmNpuTarget target,
+  String abi, {
+  String? encoder,
+}) {
   final vendor = target.isQualcomm
       ? 'Qualcomm'
       : target.isIntel
@@ -353,14 +386,21 @@ void _checkNpuVendor(String path, LiteRtLmNpuTarget target, String abi) {
               in liteRtLmNpuEmbeddingAbis.entries)
             if (v == vendor) hostAbi,
         ];
+  final what = encoder == null ? path : "$path's $encoder encoder";
+  // An encoder that is off is not run: the load works without it.
+  final instead = switch (encoder) {
+    null => 'install',
+    'vision' => 'load it without supportImage, or install',
+    _ => 'load it without supportAudio, or install',
+  };
   throw LiteRtLmBundleException(
     LiteRtLmBundleProblem.unsupportedNpu,
     vendor == null
-        ? '$path is compiled for the $target NPU. flutter_edge_ai_litertlm '
-              'runs Qualcomm and Intel NPU bundles only; install the generic '
+        ? '$what is compiled for the $target NPU. flutter_edge_ai_litertlm '
+              'runs Qualcomm and Intel NPU bundles only; $instead the generic '
               'bundle of this model to run it on the GPU or the CPU.'
-        : '$path is compiled for the $target NPU, which runs on '
-              '${hosts!.join(' and ')} only, and this is $abi. Install the '
+        : '$what is compiled for the $target NPU, which runs on '
+              '${hosts!.join(' and ')} only, and this is $abi; $instead the '
               'generic bundle of this model to run it here.',
     path: path,
   );

@@ -223,9 +223,10 @@ enum LiteRtLmBundleProblem {
   /// it is not compiled for.
   wrongBackend,
 
-  /// The bundle is compiled for an NPU this package has no dispatch for on
-  /// this platform (a Google Tensor or MediaTek bundle, a Qualcomm bundle on
-  /// Windows).
+  /// The text model, or an encoder the load turns on, is compiled for an NPU
+  /// this package has no dispatch for on this platform (a Google Tensor or
+  /// MediaTek bundle, a Qualcomm bundle on Windows). An encoder that is off is
+  /// not checked.
   unsupportedNpu,
 }
 

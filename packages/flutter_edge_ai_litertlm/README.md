@@ -797,15 +797,15 @@ compiled for one, or for another backend when it is, is refused.
 chosen, and are null for a bundle without that encoder.
 
 A refusal is a `LiteRtLmBundleException` with a `problem`
-(`incomplete`, `wrongBackend`, `unsupportedNpu` for a bundle compiled for an
-NPU this package has no dispatch for here — Google Tensor, MediaTek, or a
-Qualcomm bundle on Windows) and a message that says what to do; no engine is
-created. An NPU bundle on a device whose NPU cannot be reached fails the same
-way as a strict load (below), at once, and is never tried on the GPU. The SoC
-of the device is not read before the load; a bundle for another Qualcomm SoC
-fails at engine create, and the error names the SoC it was compiled for. A
-file the header reader does not understand (a `.task` bundle, a newer
-container) loads as before.
+(`incomplete`, `wrongBackend`, `unsupportedNpu` for a text model, or an encoder
+the load turns on, compiled for an NPU this package has no dispatch for here —
+Google Tensor, MediaTek, or a Qualcomm bundle on Windows) and a message that
+says what to do; no engine is created. An NPU bundle on a device whose NPU
+cannot be reached fails the same way as a strict load (below), at once, and is
+never tried on the GPU. The SoC of the device is not read before the load; a
+bundle for another Qualcomm SoC fails at engine create, and the error names the
+SoC it was compiled for. A file the header reader does not understand (a
+`.task` bundle, a newer container) loads as before.
 
 **Strict backend.** By default a load that fails on its backend tries the next
 one. `LiteRtLmEngine(backendFallback: false)` makes exactly one attempt — on

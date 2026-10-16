@@ -2,7 +2,7 @@
 - **Behaviour change:** Gemma 4 gets its audio after the text, as its model card asks.
 - EmbeddingGemma 2 reports its image token budget, so image-fitted deciders are bound to it.
 - FunctionGemma bundles that declare no `prefer_activation_type` run on the GPU at float32 (#552).
-- **Behaviour change:** loads follow `readLiteRtLmBundleInfo`: NPU bundles to the NPU, encoders per file, bad loads throw `LiteRtLmBundleException`; `backendFallback: false`.
+- **Behaviour change:** loads follow `readLiteRtLmBundleInfo`: NPU bundles to the NPU, encoders per file, incomplete or wrong-backend loads throw `LiteRtLmBundleException`; `backendFallback: false`.
 
 ## 1.13.3
 - README: Qwen3 0.6B bundle that loads (#659); NPU mask formula corrected.

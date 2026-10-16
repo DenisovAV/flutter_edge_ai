@@ -96,11 +96,13 @@ class _FakeHost extends LiteRtLmEngineHost {
 }
 
 /// A Gemma 4-shaped container: the text model, optionally the two encoders
-/// and a `tf_lite_aux` section, each with the `backend_constraint` given.
+/// and a `tf_lite_aux` section, each with the `backend_constraint` given; the
+/// text model and the vision encoder stamped for an NPU when asked.
 Uint8List _bundle({
   String? text,
   (String, String)? textStamp,
   String? vision,
+  (String, String)? visionStamp,
   String? audio,
   bool encoders = true,
   bool aux = false,
@@ -118,7 +120,10 @@ Uint8List _bundle({
       (
         type: sectionTfliteModel,
         modelType: 'tf_lite_vision_encoder',
-        bytes: tfliteModel({}),
+        bytes: tfliteModel({
+          if (visionStamp != null)
+            'LiteRtStamp': liteRtStamp(visionStamp.$1, visionStamp.$2),
+        }),
       ),
       (
         type: sectionTfliteModel,
@@ -227,6 +232,41 @@ void main() {
       reason: 'the bundle has no vision encoder to run anywhere',
     );
     await textOnly.close();
+  });
+
+  test('an encoder compiled for an NPU the host has no dispatch for is '
+      'checked only when it is on', () async {
+    final path = write(
+      'vision_npu.litertlm',
+      _bundle(visionStamp: ('Qualcomm', 'SM8750')),
+    );
+    final textOnly = await load(path);
+    expect(host.attempts.map((a) => a.backend), ['gpu']);
+    expect(textOnly.activeVisionBackend, isNull);
+    await textOnly.close();
+
+    host.attempts.clear();
+    await expectLater(
+      load(path, supportImage: true),
+      throwsA(
+        isA<LiteRtLmBundleException>()
+            .having(
+              (e) => e.problem,
+              'problem',
+              LiteRtLmBundleProblem.unsupportedNpu,
+            )
+            .having(
+              (e) => e.message,
+              'message',
+              contains(
+                "vision encoder is compiled for the Qualcomm SM8750 NPU, which "
+                'runs on android_arm64 and linux_arm64 only, and this is '
+                'macos_arm64',
+              ),
+            ),
+      ),
+    );
+    expect(host.attempts, isEmpty, reason: 'refused before any engine');
   });
 
   test('a file that ends inside its header is refused before any '

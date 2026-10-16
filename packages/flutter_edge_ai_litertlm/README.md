@@ -1072,12 +1072,16 @@ answers normally. (The web engine is a separate path and is not covered by this
 entry.)
 
 Cause: a conversation whose generation is cancelled mid-reply stays unusable
-in the native runtime.
+in the native runtime. LiteRT-LM documents it: after `CancelProcess()` the
+session is poisoned, and reusing it is not supported.
 
 Fix: every `flutter_edge_ai_litertlm` release has it. The first turn after a
-stop runs on a fresh conversation that replays the chat's history, including whatever the stopped
-reply had produced. That history is replayed as text: images and audio sent in
-earlier turns are not, so after a stop the model can no longer see them.
+stop runs on a fresh conversation that replays the chat's history, including
+whatever the stopped reply had produced. Since 1.14.1 that history carries each
+turn's images and audio, so the model still knows them after a stop (before, it
+replayed text only and forgot them). They are encoded again, so the first turn
+after a stop starts later: Gemma 4 reads about 25 audio tokens per second of
+recording.
 
 ### Google Play rejects the app over 16 KB page sizes (fixed in `flutter_gemma_litertlm` 1.8.0)
 

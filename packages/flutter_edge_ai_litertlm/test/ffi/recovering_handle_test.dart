@@ -93,6 +93,9 @@ void main() {
     reopenGate = null;
     handle = RecoveringConversationHandle(
       first,
+      // Gemma 4's: media on both sides of the text, so a replay that ignores
+      // the order is visible.
+      multimodalOrder: MultimodalOrder.imagesTextAudio,
       reopen: (messagesJson) async {
         await reopenGate?.future;
         final c = _Conversation(
@@ -106,10 +109,14 @@ void main() {
   });
 
   /// Runs one turn and stops it after its first chunk.
-  Future<String> stopMidTurn(String text, _Conversation live) async {
+  Future<String> stopMidTurn(
+    String text,
+    _Conversation live, {
+    Uint8List? audioBytes,
+  }) async {
     final gate = live.hold = Completer<void>();
     final out = StringBuffer();
-    await for (final chunk in handle.chat(text)) {
+    await for (final chunk in handle.chat(text, audioBytes: audioBytes)) {
       out.write(chunk);
       if (!gate.isCompleted) {
         handle.cancelGeneration();
@@ -240,6 +247,7 @@ void main() {
       'block the next turn forever', () async {
     handle = RecoveringConversationHandle(
       first,
+      multimodalOrder: MultimodalOrder.imagesTextAudio,
       reopen: (messagesJson) async {
         final c = _Conversation('rebuilt', seed: messagesJson);
         reopened.add(c);
@@ -263,6 +271,31 @@ void main() {
     expect(reopened, hasLength(1));
     expect(reopened.single.sent, ['two']);
     await sub.cancel();
+  });
+
+  test('a rebuild replays the images and audio of earlier turns, in the '
+      'order the live conversation sent them', () async {
+    final image = Uint8List.fromList([0xFF, 0xD8, 0xFF, 1]);
+    final clip = Uint8List.fromList([0x52, 0x49, 0x46, 0x46, 2]);
+    final stoppedClip = Uint8List.fromList([0x52, 0x49, 0x46, 0x46, 3]);
+    await handle
+        .chat('the secret word', imageBytes: [image], audioBytes: clip)
+        .join();
+    // The stopped turn reached the model too, so its clip is replayed as well.
+    await stopMidTurn('and this', first, audioBytes: stoppedClip);
+
+    await handle.chat('what was the word?').join();
+
+    final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+    expect((seed[0] as Map)['content'], [
+      {'type': 'image', 'blob': base64Encode(image)},
+      {'type': 'text', 'text': 'the secret word'},
+      {'type': 'audio', 'blob': base64Encode(clip)},
+    ]);
+    expect((seed[2] as Map)['content'], [
+      {'type': 'text', 'text': 'and this'},
+      {'type': 'audio', 'blob': base64Encode(stoppedClip)},
+    ]);
   });
 
   test('closing closes the live conversation, rebuilt or not', () async {

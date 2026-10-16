@@ -300,7 +300,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.14.0"
+    version: "1.14.1"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:
@@ -335,7 +335,7 @@ packages:
       path: "../../flutter_edge_ai_speech"
       relative: true
     source: path
-    version: "0.5.7"
+    version: "0.5.8"
   flutter_edge_ai_sqlite:
     dependency: "direct main"
     description:

@@ -1,3 +1,6 @@
+## 1.14.1
+- A chat rebuilt after a stopped turn keeps the earlier turns' images and audio.
+
 ## 1.14.0
 - **Behaviour change:** Gemma 4 gets its audio after the text; `getActiveModel(multimodalOrder:)` changes it.
 - EmbeddingGemma 2 reports its image token budget, so image-fitted deciders are bound to it.

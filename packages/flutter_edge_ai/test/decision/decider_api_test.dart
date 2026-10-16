@@ -5,6 +5,7 @@
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,6 +63,10 @@ Future<Decider> _decider(
 final class _OtherDecider extends Decider {
   int calls = 0;
   CancelToken? lastCancelToken;
+  DeciderRequest? lastRequest;
+
+  /// Runs inside decide, before it answers; a throw from it fails decide.
+  void Function()? onDecide;
   bool _closed = false;
 
   @override
@@ -80,14 +85,12 @@ final class _OtherDecider extends Decider {
   bool get isClosed => _closed;
 
   @override
-  Future<DeciderAnswer> choose(
-    DeciderInput input, {
-    Iterable<String>? among,
-    int topK = 5,
-    CancelToken? cancelToken,
-  }) async {
+  Future<DeciderAnswer> decide(DeciderRequest request) async {
+    final cancelToken = request.cancelToken;
     calls++;
     lastCancelToken = cancelToken;
+    lastRequest = request;
+    onDecide?.call();
     return DeciderAnswer(
       choice: 'x',
       ranked: const [RankedOption(id: 'x', score: 0)],
@@ -411,6 +414,17 @@ void main() {
       final answer = await decider.choose(_in('half'));
       expect(answer.ranked.map((r) => r.id), ['b', 'a']);
       expect(answer.margin, 0);
+      // among names candidates; their order is the options', not among's.
+      final three = await _decider(
+        _embedder(),
+        options: [
+          DeciderOption('b', examples: [_t('b1')]),
+          DeciderOption('c', examples: [_t('c1')]),
+          DeciderOption('a', examples: [_t('a1')]),
+        ],
+      );
+      final among = await three.choose(_in('half'), among: const ['a', 'b']);
+      expect(among.ranked.map((r) => r.id), ['b', 'a']);
     });
 
     test('among restricts the candidates', () async {
@@ -722,6 +736,117 @@ void main() {
         throwsA(isA<DeciderUnsupportedException>()),
       );
       expect(embedder.calls, isEmpty);
+    });
+  });
+
+  group('choose checks every decider\'s request before decide runs', () {
+    test('among, for a decider without supportsAmong', () async {
+      final other = _OtherDecider();
+      await expectLater(
+        other.choose(_in('about a'), among: const ['x']),
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('supportsAmong'),
+          ),
+        ),
+      );
+      expect(other.calls, 0);
+    });
+
+    test('a modality the decider does not take', () async {
+      final other = _OtherDecider();
+      await expectLater(
+        other.choose(DeciderInput(EmbeddingInput.audio(Uint8List(4)))),
+        throwsA(isA<DeciderUnsupportedException>()),
+      );
+      expect(other.calls, 0);
+    });
+
+    test('a topK below 1, and a token already cancelled', () async {
+      final other = _OtherDecider();
+      await expectLater(other.choose(_in('a'), topK: 0), throwsArgumentError);
+      await expectLater(
+        other.choose(_in('a'), cancelToken: CancelToken()..cancel()),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+      expect(other.calls, 0);
+    });
+
+    test('what it supports reaches decide: context, every candidate, the '
+        'token', () async {
+      final other = _OtherDecider();
+      final token = CancelToken();
+      await other.choose(
+        DeciderInput(
+          EmbeddingInput.text('a'),
+          context: [const Message(text: 'earlier', isUser: true)],
+        ),
+        topK: 2,
+        cancelToken: token,
+      );
+      final request = other.lastRequest!;
+      expect(request.input.context, hasLength(1));
+      expect(request.candidates, ['x']);
+      expect(request.topK, 2);
+      expect(request.cancelToken, same(token));
+    });
+
+    test('among reaches decide as known ids, each once, in option '
+        'order', () async {
+      final embedder = _embedder();
+      final decider = await _decider(embedder);
+      final answer = await decider.choose(
+        _in('about a'),
+        among: const ['c', 'a', 'c'],
+      );
+      expect(answer.ranked.map((r) => r.id).toSet(), {'a', 'c'});
+      expect(answer.ranked, hasLength(2));
+    });
+  });
+
+  group('a cancel during decide', () {
+    test('drops the answer of a decider that ignores the token', () async {
+      final token = CancelToken();
+      final other = _OtherDecider()..onDecide = token.cancel;
+      await expectLater(
+        other.choose(_in('a'), cancelToken: token),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+      expect(other.calls, 1);
+    });
+
+    test('turns an exception that follows it into the cancel', () async {
+      final token = CancelToken();
+      final other = _OtherDecider()
+        ..onDecide = () {
+          token.cancel();
+          throw const FormatException('the model failed after the cancel');
+        };
+      await expectLater(
+        other.choose(_in('a'), cancelToken: token),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+    });
+
+    test('lets an error (a bug) through', () async {
+      final token = CancelToken();
+      final other = _OtherDecider()
+        ..onDecide = () {
+          token.cancel();
+          throw StateError('a bug');
+        };
+      await expectLater(
+        other.choose(_in('a'), cancelToken: token),
+        throwsStateError,
+      );
+    });
+
+    test('an exception without a cancel arrives unchanged', () async {
+      final other = _OtherDecider()
+        ..onDecide = () => throw const FormatException('the model failed');
+      await expectLater(other.choose(_in('a')), throwsFormatException);
     });
   });
 

@@ -1367,12 +1367,8 @@ final class _AudioDecider extends Decider {
   Future<void> close() async => _closed = true;
 
   @override
-  Future<DeciderAnswer> choose(
-    DeciderInput input, {
-    Iterable<String>? among,
-    int topK = 5,
-    CancelToken? cancelToken,
-  }) async {
+  Future<DeciderAnswer> decide(DeciderRequest request) async {
+    final input = request.input;
     if (_closed) throw StateError('The decider is closed.');
     inputs.add(input);
     return DeciderAnswer(

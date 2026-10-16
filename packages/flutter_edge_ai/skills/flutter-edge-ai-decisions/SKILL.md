@@ -259,8 +259,14 @@ backend cannot tell WebGPU from WASM: pass `embedderId:` to both
 `createDecider` and `loadDecider` — an id that names the weights (and the
 backend, when the model reports none). It replaces the installed-file check.
 
-A decider of your own (or a test fake) `extends Decider`; `toArtifact()`
-defaults to throwing `DeciderUnsupportedException`.
+A decider of your own (or a test fake) `extends Decider` and implements
+`decide(DeciderRequest request)` with `capabilities`, `options`, `isClosed`
+and `close()`; `toArtifact()` defaults to throwing
+`DeciderUnsupportedException`. Do not override `choose`: it is core's
+(`@nonVirtual`), checks the request against `capabilities` (`among`, context,
+input modalities, `topK`, the cancel token) and then calls `decide` with the
+candidates as option ids. An input modality the decider does not take is a
+`DeciderUnsupportedException` for every decider.
 
 ## Jev Choice JSON
 

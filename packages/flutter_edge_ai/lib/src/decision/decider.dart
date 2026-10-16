@@ -6,7 +6,8 @@
 // app can swap one for the other; what differs between them is said by
 // [DeciderCapabilities], [DeciderProvenance] and [AbstainSignalKind].
 
-import 'package:meta/meta.dart' show experimental, immutable;
+import 'package:meta/meta.dart'
+    show experimental, immutable, nonVirtual, protected;
 
 import '../embedding/embedding_input.dart';
 import '../embedding/embedding_modality.dart';
@@ -29,7 +30,13 @@ import 'embedding_decider.dart' show chooseAllWithSharedEmbeddings;
 /// release reaches every subclass through this class instead of breaking it.
 /// Extend it for a decider of your own or a test fake — `final class
 /// FakeDecider extends Decider` implementing [capabilities], [options],
-/// [isClosed], [choose] and [close].
+/// [isClosed], [decide] and [close].
+///
+/// [choose] is core's (`@nonVirtual`): it checks the request against
+/// [capabilities] and the cancel token, then calls [decide]. So every decider
+/// refuses what it does not take the same way, and an option added to
+/// [choose] later reaches [decide] as a new field of [DeciderRequest] instead
+/// of breaking every subclass.
 ///
 /// Experimental: the members may change in a minor release while the API
 /// settles.
@@ -38,7 +45,8 @@ abstract base class Decider {
   /// For subclasses.
   const Decider();
 
-  /// What this decider can do.
+  /// What this decider can do. [choose] refuses a request that asks for
+  /// more, before [decide] runs.
   DeciderCapabilities get capabilities;
 
   /// The options, in the order they were given. Unmodifiable.
@@ -53,38 +61,76 @@ abstract base class Decider {
   /// [AbstainReason.noCandidates]. [topK] (≥ 1) caps [DeciderAnswer.ranked];
   /// the margin and probabilities still cover every candidate.
   ///
-  /// [cancelToken] fails the call with `DeciderCancelledException` at the
-  /// decider's next check; so does a [close] while the call runs. An embedding
-  /// decider checks before it embeds the input, before core replaces a closed
-  /// embedder, and when the embedding returns: an embedding already sent is
-  /// not interrupted, and its vector is dropped.
+  /// [cancelToken] fails the call with `DeciderCancelledException`: before
+  /// [decide] runs, at the decider's own checks while it runs, and once it
+  /// returns — a decider that does not look at the token still has its answer
+  /// dropped. A [close] while the call runs fails it the same way. An
+  /// embedding decider checks before it embeds the input, before core replaces
+  /// a closed embedder, and when the embedding returns: an embedding already
+  /// sent is not interrupted, and its vector is dropped. A failure of the
+  /// model that arrives after the token was cancelled is reported as the
+  /// cancel.
   ///
   /// Errors arrive as a FAILED FUTURE: `DeciderUnsupportedException` for
-  /// context, [among] or a modality this decider does not take,
-  /// `DeciderSpaceMismatchException` when the embedder core now serves is in
-  /// another embedding space, `DeciderCancelledException`, the model's own
-  /// failures unchanged (`EmbedderClosedException`,
-  /// `EmbeddingInputTooLongException` — an input is never truncated — …),
-  /// [StateError] after [close].
+  /// context, [among] or an input modality not in `capabilities` (checked
+  /// here, for every decider), `DeciderSpaceMismatchException` when the
+  /// embedder core now serves is in another embedding space,
+  /// `DeciderCancelledException`, the model's own failures unchanged
+  /// (`EmbedderClosedException`, `EmbeddingInputTooLongException` — an input
+  /// is never truncated — …), [StateError] after [close].
+  @nonVirtual
   Future<DeciderAnswer> choose(
     DeciderInput input, {
     Iterable<String>? among,
     int topK = 5,
     CancelToken? cancelToken,
-  });
+  }) async {
+    final request = checkedDeciderRequest(
+      this,
+      input,
+      among: among,
+      topK: topK,
+      cancelToken: cancelToken,
+    );
+    final DeciderAnswer answer;
+    try {
+      answer = await decide(request);
+    } on DeciderCancelledException {
+      rethrow;
+    } on Exception {
+      // The caller gave up on this answer: what the model did after that is
+      // not its failure to handle. Errors (bugs) still surface.
+      throwIfDeciderCancelled(cancelToken);
+      rethrow;
+    }
+    throwIfDeciderCancelled(cancelToken);
+    return answer;
+  }
 
-  /// The fitted decider as a JSON-encodable map, to be stored and given to
-  /// `EmbeddingModel.loadDecider` later instead of fitting again. Versioned;
-  /// the format is documented at https://flutteredge.ai/docs/decisions.
-  /// Throws [StateError] when an option's metadata is not JSON-encodable.
+  /// Answers [request], which [choose] has checked against [capabilities]:
+  /// its candidates are known option ids, its input carries only modalities
+  /// this decider takes, and its context and `among` only what it supports.
+  ///
+  /// Implemented by every decider; called by [choose] only. Check
+  /// `request.cancelToken` between long steps and fail with
+  /// `DeciderCancelledException`; [choose] also checks it before and after.
+  /// Errors are thrown or returned as a failed future, never swallowed.
+  @protected
+  Future<DeciderAnswer> decide(DeciderRequest request);
+
+  /// The fitted decider as a JSON-encodable map, to be stored and restored
+  /// later by the kind of model that created it (`EmbeddingModel.loadDecider`
+  /// for an embedding decider) instead of fitting again. Versioned; the format
+  /// is documented at https://flutteredge.ai/docs/decisions. Throws
+  /// [StateError] when an option's metadata is not JSON-encodable.
   ///
   /// `capabilities.storable` says whether this decider has one. This default
   /// throws `DeciderUnsupportedException`: a decider with nothing to store
   /// (one implemented outside core, unless it overrides this) has no
   /// artifact.
   Map<String, Object?> toArtifact() => throw DeciderUnsupportedException(
-    '$runtimeType has no artifact: it stores nothing that '
-    'EmbeddingModel.loadDecider could restore.',
+    '$runtimeType has no artifact: it stores nothing that its model could '
+    'restore.',
   );
 
   /// Whether [choose] can no longer answer: [close] was called, or — for an
@@ -100,11 +146,12 @@ abstract base class Decider {
 
   /// Answers every one of [deciders] for the same [input], in their order.
   ///
-  /// Deciders created from the same `EmbeddingModel` share ONE embedding of
-  /// [input] — that is what this adds over calling [choose] on each: three
-  /// deciders over one request cost one embedding, not three. Other deciders
-  /// are asked one by one. Each answer's `provenance.encodeTime` is the time
-  /// of the embedding it used.
+  /// Every decider checks the request first, as [choose] does, before
+  /// anything runs. Deciders created from the same `EmbeddingModel` share ONE
+  /// embedding of [input] — that is what this adds over calling [choose] on
+  /// each: three deciders over one request cost one embedding, not three.
+  /// Other deciders are asked one by one, through [choose]. Each answer's
+  /// `provenance.encodeTime` is the time of the embedding it used.
   ///
   /// [cancelToken] reaches every decider; the first failure fails the call.
   static Future<List<DeciderAnswer>> chooseAll(
@@ -118,6 +165,106 @@ abstract base class Decider {
     topK: topK,
     cancelToken: cancelToken,
   );
+}
+
+/// A [Decider.choose] call as core checked it, handed to [Decider.decide].
+///
+/// Core builds it. An option added to `choose` in a later release becomes a
+/// new field here, so a decider written today keeps compiling.
+@experimental
+@immutable
+final class DeciderRequest {
+  const DeciderRequest._({
+    required this.input,
+    required this.candidates,
+    required this.topK,
+    required this.cancelToken,
+  });
+
+  /// What to decide on; its modalities are ones the decider takes.
+  final DeciderInput input;
+
+  /// The candidates' ids, in option order: every option, or the ones `among`
+  /// named (each once). Empty when `among` named none: the answer then
+  /// abstains with [AbstainReason.noCandidates]. Unmodifiable.
+  final List<String> candidates;
+
+  /// The most candidates [DeciderAnswer.ranked] may hold; at least 1.
+  final int topK;
+
+  /// The caller's token, or null.
+  final CancelToken? cancelToken;
+}
+
+/// The checks [Decider.choose] runs before [Decider.decide], for
+/// `Decider.chooseAll` to run them too. Not exported.
+DeciderRequest checkedDeciderRequest(
+  Decider decider,
+  DeciderInput input, {
+  Iterable<String>? among,
+  required int topK,
+  CancelToken? cancelToken,
+}) {
+  if (topK < 1) {
+    throw ArgumentError.value(topK, 'topK', 'must be at least 1');
+  }
+  throwIfDeciderCancelled(cancelToken);
+  final capabilities = decider.capabilities;
+  if (input.context.isNotEmpty && !capabilities.supportsContext) {
+    throw DeciderUnsupportedException(
+      '${decider.runtimeType} takes no conversation context: '
+      'DeciderInput.context must be empty (capabilities.supportsContext is '
+      'false). It is refused rather than ignored.',
+    );
+  }
+  if (among != null && !capabilities.supportsAmong) {
+    throw DeciderUnsupportedException(
+      '${decider.runtimeType} cannot restrict its candidates: among must be '
+      'null (capabilities.supportsAmong is false). It is refused rather than '
+      'ignored.',
+    );
+  }
+  final taken = capabilities.modalities;
+  for (final modality in input.input.modalities) {
+    if (!taken.contains(modality)) {
+      throw DeciderUnsupportedException(
+        'The input carries ${modality.name}, which ${decider.runtimeType} '
+        'does not take (it takes ${taken.map((m) => m.name).join(' and ')}).',
+      );
+    }
+  }
+  final ids = [for (final option in decider.options) option.id];
+  final List<String> candidates;
+  if (among == null) {
+    candidates = List.unmodifiable(ids);
+  } else {
+    final named = <String>{};
+    final known = ids.toSet();
+    for (final id in among) {
+      if (!known.contains(id)) {
+        throw ArgumentError.value(
+          id,
+          'among',
+          'is not an option of this decider',
+        );
+      }
+      named.add(id);
+    }
+    candidates = List.unmodifiable(ids.where(named.contains));
+  }
+  return DeciderRequest._(
+    input: input,
+    candidates: candidates,
+    topK: topK,
+    cancelToken: cancelToken,
+  );
+}
+
+/// Fails a decision whose [token] was cancelled. Not exported.
+void throwIfDeciderCancelled(CancelToken? token) {
+  if (token?.isCancelled ?? false) {
+    throw const DeciderCancelledException('The decision was cancelled.');
+  }
 }
 
 /// What a decider is asked about: the [input] and, for deciders that read

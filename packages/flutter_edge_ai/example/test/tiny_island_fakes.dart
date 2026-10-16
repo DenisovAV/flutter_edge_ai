@@ -162,12 +162,9 @@ final class KeywordDecider extends Decider {
   Future<void> close() async => _closed = true;
 
   @override
-  Future<DeciderAnswer> choose(
-    DeciderInput input, {
-    Iterable<String>? among,
-    int topK = 5,
-    CancelToken? cancelToken,
-  }) async {
+  Future<DeciderAnswer> decide(DeciderRequest request) async {
+    final input = request.input;
+    final topK = request.topK;
     if (_closed) throw StateError('The decider is closed.');
     final watch = Stopwatch()..start();
     final words = _words(input.input.text!);
@@ -258,12 +255,9 @@ final class ScriptedDecider extends Decider {
   Future<void> close() => _inner.close();
 
   @override
-  Future<DeciderAnswer> choose(
-    DeciderInput input, {
-    Iterable<String>? among,
-    int topK = 5,
-    CancelToken? cancelToken,
-  }) async {
+  Future<DeciderAnswer> decide(DeciderRequest request) async {
+    final input = request.input;
+    final topK = request.topK;
     if (failNext case final error?) {
       failNext = null;
       throw error;

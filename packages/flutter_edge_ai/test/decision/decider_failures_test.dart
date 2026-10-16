@@ -150,8 +150,32 @@ void main() {
           DeciderInput(EmbeddingInput.image(Uint8List.fromList(const [1]))),
           among: const [],
         ),
-        throwsA(isA<EmbeddingModalityNotLoadedException>()),
+        throwsA(isA<DeciderUnsupportedException>()),
       );
     });
+  });
+
+  test('an input modality the decider does not take is refused before '
+      'anything is embedded, as for every decider', () async {
+    final embedder = FakeEmbedder(dimension: 3, table: _table);
+    final decider = await embedder.createDecider(
+      options: _options(),
+      calibration: const EmbeddingDeciderCalibration.none(),
+      embedderId: 'fake',
+    );
+    embedder.calls.clear();
+    await expectLater(
+      decider.choose(
+        DeciderInput(EmbeddingInput.image(Uint8List.fromList(const [1]))),
+      ),
+      throwsA(
+        isA<DeciderUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          contains('carries image'),
+        ),
+      ),
+    );
+    expect(embedder.calls, isEmpty);
   });
 }

@@ -190,4 +190,33 @@ void main() {
     expect(replacements, 1);
     expect(replacementHost!.calls, 0);
   });
+
+  test('chooseAll, another member of the group closed while the shared '
+      'embedding waited: no replacement is loaded', () async {
+    host.hold = false;
+    final second = await model.createDecider(
+      options: [
+        DeciderOption(
+          'a',
+          examples: [EmbeddingInput.text('a1'), EmbeddingInput.text('a2')],
+        ),
+        DeciderOption(
+          'b',
+          examples: [EmbeddingInput.text('b1'), EmbeddingInput.text('b2')],
+        ),
+      ],
+      calibration: const EmbeddingDeciderCalibration.none(),
+    );
+    host.hold = true;
+    final answers = Decider.chooseAll(_in('about a'), [decider, second]);
+    final failed = expectLater(
+      answers,
+      throwsA(isA<DeciderCancelledException>()),
+    );
+    await pumpEventQueue();
+    await second.close();
+    await model.close();
+    await failed;
+    expect(replacements, 0);
+  });
 }

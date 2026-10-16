@@ -20,6 +20,7 @@ DeciderInput class final experimental
 DeciderMethod class final experimental
 DeciderOption class final experimental
 DeciderProvenance class final experimental
+DeciderRequest class final experimental
 DeciderSpaceMismatchException class final experimental
 DeciderUnsupportedException class final experimental
 DiagnosticReport class

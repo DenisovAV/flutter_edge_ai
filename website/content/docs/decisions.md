@@ -431,12 +431,18 @@ decision never loads the model again), and when the embedding returns: an
 embedding already sent is not interrupted, and its vector is dropped.
 
 A decider of your own, or a test fake, `extends Decider` (an abstract base
-class: members added later reach it with a default). `toArtifact()` defaults
-to throwing `DeciderUnsupportedException`. Say what it can do in
-`capabilities`: `supportsAmong` (whether `among` is honoured; without it a
-non-null `among` fails with `DeciderUnsupportedException`), `storable`
-(whether `toArtifact()` returns an artifact), `supportsContext`,
-`calibratedProbabilities` and `modalities`.
+class) and implements `decide(DeciderRequest request)`, `capabilities`,
+`options`, `isClosed` and `close()`; `toArtifact()` defaults to throwing
+`DeciderUnsupportedException`. `choose` is core's and cannot be overridden:
+it checks every request against `capabilities` — `among` without
+`supportsAmong`, context without `supportsContext`, an input modality not in
+`modalities` (each a `DeciderUnsupportedException`), unknown `among` ids, a
+`topK` below 1, a cancelled token — and only then calls `decide`, with the
+candidates as option ids in option order. It checks the token again when
+`decide` returns, so a decider that ignores it still has its answer dropped. An
+option `choose` gains in a later release reaches `decide` as a new field of
+`DeciderRequest`, so your decider keeps compiling. `storable` says whether
+`toArtifact()` returns an artifact.
 
 ## Deciders from a language model
 
@@ -490,7 +496,7 @@ abstained answer has `"choice": null`.
 | Failure | Thrown |
 |---|---|
 | No options, duplicate ids, an option with nothing to embed, a calibration the options or labelled rows cannot support, an unknown `among` id, a model without installed files or a backend and no `embedderId` | `ArgumentError` |
-| `DeciderInput.context` given to any decider; `among` to a decider without `supportsAmong` | `DeciderUnsupportedException` |
+| `DeciderInput.context` to a decider without `supportsContext` (none in this release); `among` to one without `supportsAmong`; an input modality not in `capabilities.modalities` | `DeciderUnsupportedException` |
 | `InferenceModel.createDecider` (no engine scores options in this release); `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
 | `DeciderMethod.optionScoring` given to `EmbeddingModel.createDecider` | `ArgumentError` |
 | An artifact from another embedding space; core's replacement embedder in another space | `DeciderSpaceMismatchException` |

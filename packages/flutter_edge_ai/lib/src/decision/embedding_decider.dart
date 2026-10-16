@@ -10,10 +10,12 @@ import 'dart:convert'
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart' show protected;
+
 import '../embedding/common_embedding_model.dart'
     show CommonEmbeddingModel, EmbedderReplacement;
 import '../embedding/embedding_exceptions.dart'
-    show EmbedderClosedException, EmbeddingModalityNotLoadedException;
+    show EmbedderClosedException;
 import '../embedding/embedding_input.dart';
 import '../embedding/embedding_model.dart';
 import '../embedding/task_type.dart';
@@ -417,28 +419,47 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
   CancelToken? cancelToken,
 }) async {
   final all = List<Decider>.of(deciders);
+  // Every decider checks the request, as choose does, before anything runs.
+  final requests = [
+    for (final decider in all)
+      checkedDeciderRequest(
+        decider,
+        input,
+        topK: topK,
+        cancelToken: cancelToken,
+      ),
+  ];
   final answers = List<DeciderAnswer?>.filled(all.length, null);
   final groups = LinkedHashMap<EmbeddingModel, List<int>>.identity();
   final others = <int>[];
   for (var i = 0; i < all.length; i++) {
     final decider = all[i];
     if (decider is EmbeddingDecider) {
-      decider._checkUsable(input, topK);
+      decider._checkOpen();
       (groups[decider._embedder] ??= []).add(i);
     } else {
       others.add(i);
     }
   }
-  _checkCancelled(cancelToken);
   for (final MapEntry(key: embedder, value: members) in groups.entries) {
-    final first = all[members.first] as EmbeddingDecider;
-    final (vector, encodeTime, used) = await first._embed(input, cancelToken);
-    _checkCancelled(cancelToken);
+    final group = [for (final i in members) all[i] as EmbeddingDecider];
+    // The whole group is still wanted: no member was closed and the call was
+    // not cancelled. Checked before core replaces a closed embedder too.
+    void stillWanted() {
+      throwIfDeciderCancelled(cancelToken);
+      for (final decider in group) {
+        decider._checkNotClosedDuringChoose();
+      }
+    }
+
+    stillWanted();
+    final (vector, encodeTime, used) = await group.first._embed(
+      input,
+      stillWanted,
+    );
+    stillWanted();
     for (final i in members) {
       final decider = all[i] as EmbeddingDecider;
-      // Checked usable above, before the embedding; closed since then is a
-      // cancel, as for choose.
-      decider._checkNotClosedDuringChoose();
       // The first decider moved to the embedder core serves in place of a
       // closed one; the others of its group follow, each checking its own
       // space id.
@@ -448,7 +469,7 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
       }
       answers[i] = decider._score(
         vector,
-        decider._allCandidates,
+        decider._indicesOf(requests[i].candidates),
         topK,
         encodeTime,
       );
@@ -462,13 +483,6 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
     );
   }
   return [for (final answer in answers) answer!];
-}
-
-/// Fails a decision whose [token] was cancelled.
-void _checkCancelled(CancelToken? token) {
-  if (token?.isCancelled ?? false) {
-    throw const DeciderCancelledException('The decision was cancelled.');
-  }
 }
 
 /// The decider of an `EmbeddingModel`. Holds no native resource: the model is
@@ -578,15 +592,16 @@ final class EmbeddingDecider extends Decider {
       _closed || (_embedder.isClosed && _replacementOf(_embedder) == null);
 
   @override
-  Future<DeciderAnswer> choose(
-    DeciderInput input, {
-    Iterable<String>? among,
-    int topK = 5,
-    CancelToken? cancelToken,
-  }) async {
-    _checkUsable(input, topK);
-    _checkCancelled(cancelToken);
-    final candidates = among == null ? _allCandidates : _candidates(among);
+  @protected
+  Future<DeciderAnswer> decide(DeciderRequest request) async {
+    _checkOpen();
+    final cancelToken = request.cancelToken;
+    void stillWanted() {
+      throwIfDeciderCancelled(cancelToken);
+      _checkNotClosedDuringChoose();
+    }
+
+    final candidates = _indicesOf(request.candidates);
     if (candidates.isEmpty) {
       // Nothing to embed, but the answer must not depend on that: a request
       // that fails with candidates fails without them too.
@@ -595,17 +610,15 @@ final class EmbeddingDecider extends Decider {
         final resolve =
             _replacementOf(model) ?? (throw const EmbedderClosedException());
         model = await _replace(model, resolve);
-        _checkCancelled(cancelToken);
-        _checkNotClosedDuringChoose();
+        stillWanted();
       }
       final loaded = model.modalities;
-      for (final modality in input.input.modalities) {
+      for (final modality in request.input.input.modalities) {
         if (!loaded.contains(modality)) {
-          throw EmbeddingModalityNotLoadedException(
-            'The input carries ${modality.name}, which this model was not '
-            'loaded for (it embeds ${loaded.map((m) => m.name).join(' and ')}).',
-            modality: modality,
-            loaded: loaded,
+          throw DeciderUnsupportedException(
+            'The input carries ${modality.name}, which the embedder core now '
+            'serves was not loaded for (it embeds '
+            '${loaded.map((m) => m.name).join(' and ')}).',
           );
         }
       }
@@ -618,12 +631,11 @@ final class EmbeddingDecider extends Decider {
         provenance: _provenance(Duration.zero, Duration.zero, null),
       );
     }
-    final (vector, encodeTime, _) = await _embed(input, cancelToken);
+    final (vector, encodeTime, _) = await _embed(request.input, stillWanted);
     // The embedding is not interrupted: a cancel or a close that came while
     // it ran drops its result.
-    _checkCancelled(cancelToken);
-    _checkNotClosedDuringChoose();
-    return _score(vector, candidates, topK, encodeTime);
+    stillWanted();
+    return _score(vector, candidates, request.topK, encodeTime);
   }
 
   /// A [close] that came while a decision ran fails it as a cancel.
@@ -635,40 +647,24 @@ final class EmbeddingDecider extends Decider {
     }
   }
 
-  void _checkUsable(DeciderInput input, int topK) {
+  /// A decision asked of a closed decider is a programming error.
+  void _checkOpen() {
     if (_closed) throw StateError('The decider is closed.');
-    if (input.context.isNotEmpty) {
-      throw const DeciderUnsupportedException(
-        'An embedding decider takes no conversation context: '
-        'DeciderInput.context must be empty (capabilities.supportsContext is '
-        'false). It is refused rather than ignored.',
-      );
-    }
-    if (topK < 1) {
-      throw ArgumentError.value(topK, 'topK', 'must be at least 1');
-    }
   }
 
-  List<int> _candidates(Iterable<String> among) {
-    final chosen = <int>{};
-    for (final id in among) {
-      chosen.add(
-        _index[id] ??
-            (throw ArgumentError.value(
-              id,
-              'among',
-              'is not an option of this decider',
-            )),
-      );
-    }
-    return chosen.toList()..sort();
-  }
+  /// The option indices of [ids], which `checkedDeciderRequest` checked and
+  /// put in option order.
+  List<int> _indicesOf(List<String> ids) => ids.length == options.length
+      ? _allCandidates
+      : [for (final id in ids) _index[id]!];
 
   /// [input]'s unit vector, the time its embedding took and the embedder
-  /// that made it.
+  /// that made it. [stillWanted] throws when the decision was cancelled or
+  /// its decider closed; it runs before and after core replaces a closed
+  /// embedder, since the replacement may load the model again.
   Future<(Float64List, Duration, EmbeddingModel)> _embed(
     DeciderInput input,
-    CancelToken? cancelToken,
+    void Function() stillWanted,
   ) async {
     var model = _embedder;
     final watch = Stopwatch()..start();
@@ -676,18 +672,14 @@ final class EmbeddingDecider extends Decider {
     try {
       raw = await model.embed(input.input, taskType: deciderTaskType);
     } on EmbedderClosedException {
-      // A decision cancelled, or whose decider was closed, while it waited
-      // fails here: the replacement below may load the model again.
-      _checkCancelled(cancelToken);
-      _checkNotClosedDuringChoose();
+      stillWanted();
       // The request never ran: the model was closed before it started. On a
       // model core built, take the one core serves in its place and retry
       // there, once; a second EmbedderClosedException arrives unchanged.
       final resolve = _replacementOf(model);
       if (resolve == null) rethrow;
       model = await _replace(model, resolve);
-      _checkCancelled(cancelToken);
-      _checkNotClosedDuringChoose();
+      stillWanted();
       watch.reset();
       raw = await model.embed(input.input, taskType: deciderTaskType);
     }

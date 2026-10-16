@@ -755,6 +755,7 @@ void main() {
           abstainBelow: 0.6,
           noneOption: 'c',
         ),
+        cancelToken: CancelToken(),
       );
       await expectLater(
         created,

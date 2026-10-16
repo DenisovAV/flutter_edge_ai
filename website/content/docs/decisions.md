@@ -446,7 +446,8 @@ them in a prompt and scores each option's id as its reply
 (`DeciderMethod.optionScoring`). Its values come from that training, in an
 `InferenceDeciderCalibration`: a softmax `temperature`, an `abstainBelow`
 probability, the `noneOption` the model was trained to give for "none of
-these", and the `promptSha256` of the prompt it was trained on.
+these", and the `promptSha256` of the prompt it was trained on. A
+`cancelToken:` stops the creation, as for `EmbeddingModel.createDecider`.
 
 <Warning>
 

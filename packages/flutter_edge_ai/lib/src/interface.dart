@@ -21,6 +21,7 @@ import 'decision/decider.dart' show Decider;
 import 'decision/decider_exceptions.dart' show DeciderUnsupportedException;
 import 'decision/decider_method.dart' show InferenceDeciderCalibration;
 import 'decision/decider_option.dart' show DeciderOption;
+import 'model_management/cancel_token.dart' show CancelToken;
 import 'embedding/embedding_model.dart';
 
 // Embedding types that used to be declared here; re-exported so the rest of
@@ -483,6 +484,10 @@ abstract class InferenceModel {
   /// so an app reads them the same way: `ScoreKind.logprob` scores,
   /// `AbstainSignalKind.topProbability` as the abstain signal.
   ///
+  /// [cancelToken] stops the creation (the prompt's checks and its prefill)
+  /// and fails the call with `DeciderCancelledException`, as it does for
+  /// `EmbeddingModel.createDecider`; no decider is returned.
+  ///
   /// Core implements this once for every engine (`@nonVirtual`): an engine
   /// supplies the scoring, not the decider. In this release no engine scores
   /// options, so it fails with `DeciderUnsupportedException` (a failed
@@ -497,6 +502,7 @@ abstract class InferenceModel {
     required String question,
     required List<DeciderOption> options,
     required InferenceDeciderCalibration calibration,
+    CancelToken? cancelToken,
   }) async {
     throw DeciderUnsupportedException(
       '$runtimeType does not score options: no engine in this release does. '

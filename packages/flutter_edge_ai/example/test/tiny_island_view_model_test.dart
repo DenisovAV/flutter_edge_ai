@@ -60,7 +60,7 @@ IslandDeciderRecipe _testRecipe(List<IslandAction> catalog) =>
     IslandDeciderRecipe(
       options: islandDeciderOptions(catalog),
       method: DeciderMethod.centroid,
-      calibration: const DeciderCalibration.minSimilarity(0.5),
+      calibration: const EmbeddingDeciderCalibration.minSimilarity(0.5),
     );
 
 void main() {
@@ -164,7 +164,7 @@ void main() {
       expect(
         _ThrowingEmbedder().createDecider(
           options: recipe.options,
-          calibration: DeciderCalibration.fromLabelled([
+          calibration: EmbeddingDeciderCalibration.fromLabelled([
             (
               input: EmbeddingInput.text(catalog.first.examples.first),
               optionId: catalog.first.id,
@@ -886,6 +886,7 @@ void main() {
       String request, {
       double? probability,
       bool empty = false,
+      DeciderAnswer? exactly,
     }) async {
       final deps = TinyIslandDependencies(
         readSetup: () async => _setup,
@@ -894,6 +895,7 @@ void main() {
         prepare: _scripted(catalog, (d) {
           d.probability = probability;
           d.answerEmpty = empty;
+          d.answerExactly = exactly;
         }),
         embedderId: 'fake',
         lane: IslandEmbedderLane(),
@@ -964,6 +966,146 @@ void main() {
       );
       expect(text(tester, 'tiny-island-timing'), startsWith('Weighed '));
     });
+
+    group(
+      'an inference decider\'s answer renders with no change to the app',
+      () {
+        // What InferenceModel.createDecider answers once an engine scores
+        // options: logprob scores, probabilities from a temperature, a
+        // probability as the abstain signal, a trained "none of these" option.
+        DeciderProvenance optionScoring(double signal) => DeciderProvenance(
+          method: DeciderMethod.optionScoring,
+          calibration: 'supplied',
+          encodeTime: const Duration(milliseconds: 900),
+          scoreTime: const Duration(milliseconds: 1400),
+          threshold: 0.6,
+          abstainSignal: signal,
+          abstainSignalKind: AbstainSignalKind.topProbability,
+        );
+
+        testWidgets('a choice: log p with its probability, prompt time', (
+          tester,
+        ) async {
+          final vm = await tester.runAsync(
+            () => vmAfter(
+              'open the chest',
+              exactly: DeciderAnswer(
+                choice: 'open(chest)',
+                ranked: const [
+                  RankedOption(
+                    id: 'open(chest)',
+                    score: -0.2,
+                    probability: 0.82,
+                  ),
+                  RankedOption(
+                    id: 'none_of_these',
+                    score: -1.9,
+                    probability: 0.18,
+                  ),
+                ],
+                scoreKind: ScoreKind.logprob,
+                margin: 1.7,
+                confidence: 0.64,
+                probabilities: const {
+                  'open(chest)': 0.82,
+                  'none_of_these': 0.18,
+                },
+                provenance: optionScoring(0.82),
+              ),
+            ),
+          );
+          addTearDown(vm!.dispose);
+          await tester.pumpWidget(host(vm));
+          expect(text(tester, 'tiny-island-choice'), 'open(chest)');
+          expect(
+            text(tester, 'tiny-island-choice-score'),
+            allOf(contains('log p -0.20'), contains('p 82%')),
+          );
+          expect(text(tester, 'tiny-island-timing'), contains('(prompt '));
+        });
+
+        testWidgets('below its probability threshold', (tester) async {
+          final vm = await tester.runAsync(
+            () => vmAfter(
+              'tell me a joke',
+              exactly: DeciderAnswer(
+                choice: null,
+                ranked: const [
+                  RankedOption(
+                    id: 'open(chest)',
+                    score: -0.9,
+                    probability: 0.41,
+                  ),
+                  RankedOption(
+                    id: 'light(campfire)',
+                    score: -1.0,
+                    probability: 0.35,
+                  ),
+                  RankedOption(
+                    id: 'none_of_these',
+                    score: -1.4,
+                    probability: 0.24,
+                  ),
+                ],
+                scoreKind: ScoreKind.logprob,
+                margin: 0.1,
+                abstainReason: AbstainReason.belowThreshold,
+                probabilities: const {
+                  'open(chest)': 0.41,
+                  'light(campfire)': 0.35,
+                  'none_of_these': 0.24,
+                },
+                provenance: optionScoring(0.41),
+              ),
+            ),
+          );
+          addTearDown(vm!.dispose);
+          await tester.pumpWidget(host(vm));
+          expect(
+            text(tester, 'tiny-island-abstain-reason'),
+            'Nothing on the island fits: the likeliest action, open(chest), has '
+            'p 41%, under the 60% it needs.',
+          );
+        });
+
+        testWidgets('the model chose "none of these"', (tester) async {
+          final vm = await tester.runAsync(
+            () => vmAfter(
+              'tell me a joke',
+              exactly: DeciderAnswer(
+                choice: null,
+                ranked: const [
+                  RankedOption(
+                    id: 'none_of_these',
+                    score: -0.2,
+                    probability: 0.82,
+                  ),
+                  RankedOption(
+                    id: 'open(chest)',
+                    score: -1.9,
+                    probability: 0.18,
+                  ),
+                ],
+                scoreKind: ScoreKind.logprob,
+                margin: 1.7,
+                abstainReason: AbstainReason.noneOption,
+                probabilities: const {
+                  'none_of_these': 0.82,
+                  'open(chest)': 0.18,
+                },
+                provenance: optionScoring(0.82),
+              ),
+            ),
+          );
+          addTearDown(vm!.dispose);
+          await tester.pumpWidget(host(vm));
+          expect(
+            text(tester, 'tiny-island-abstain-reason'),
+            'Nothing on the island fits: the model chose "none_of_these".',
+          );
+        });
+      },
+    );
 
     testWidgets('an answer with nothing ranked renders', (tester) async {
       final vm = await tester.runAsync(() => vmAfter('jump', empty: true));
@@ -1183,10 +1325,11 @@ final class _AudioDecider extends Decider {
 
   @override
   DeciderCapabilities get capabilities => const DeciderCapabilities(
-    maxOptions: null,
-    supportsContext: false,
-    calibratedProbabilities: false,
     modalities: {EmbeddingModality.text, EmbeddingModality.audio},
+    calibratedProbabilities: false,
+    supportsContext: false,
+    supportsAmong: false,
+    storable: false,
   );
 
   @override
@@ -1200,6 +1343,7 @@ final class _AudioDecider extends Decider {
     DeciderInput input, {
     Iterable<String>? among,
     int topK = 5,
+    CancelToken? cancelToken,
   }) async {
     if (_closed) throw StateError('The decider is closed.');
     inputs.add(input);
@@ -1212,10 +1356,11 @@ final class _AudioDecider extends Decider {
         method: DeciderMethod.centroid,
         calibration: 'minSimilarity',
         spaceId: 'audio',
-        embedTime: Duration(milliseconds: 5),
+        encodeTime: Duration(milliseconds: 5),
         scoreTime: Duration.zero,
         threshold: islandVoiceThreshold,
-        similarity: 0.8,
+        abstainSignal: 0.8,
+        abstainSignalKind: AbstainSignalKind.topCosine,
       ),
     );
   }

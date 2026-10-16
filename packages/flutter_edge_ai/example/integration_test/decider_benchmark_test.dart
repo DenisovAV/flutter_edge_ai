@@ -168,7 +168,7 @@ void main() {
           for (final action in _actions.take(n))
             DeciderOption(action, description: action),
         ],
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
       );
       final created = watch.elapsed;
 
@@ -188,13 +188,13 @@ void main() {
             DeciderInput(EmbeddingInput.text(q)),
           );
           wall.add(watch.elapsed);
-          embed.add(answer.provenance.embedTime);
+          embed.add(answer.provenance.encodeTime);
           score.add(answer.provenance.scoreTime);
           expect(answer.choice, isNotNull);
           expect(answer.ranked, hasLength(5));
           sample ??=
               '"$q" → ${answer.choice} '
-              '(cosine ${answer.provenance.similarity?.toStringAsFixed(3)}, '
+              '(cosine ${answer.provenance.abstainSignal?.toStringAsFixed(3)}, '
               'margin ${answer.margin.toStringAsFixed(3)})';
         }
       }

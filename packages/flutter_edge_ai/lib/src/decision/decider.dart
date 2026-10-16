@@ -1,10 +1,17 @@
 // The decider contract: pick one of N options for an input, or abstain.
+//
+// One contract for two kinds of decider: an EmbeddingModel's (centroids or a
+// linear layer over embeddings) and an InferenceModel's (an LLM trained on the
+// question scores each option as its reply). The answer side is shared so an
+// app can swap one for the other; what differs between them is said by
+// [DeciderCapabilities], [DeciderProvenance] and [AbstainSignalKind].
 
 import 'package:meta/meta.dart' show experimental, immutable;
 
 import '../embedding/embedding_input.dart';
 import '../embedding/embedding_modality.dart';
 import '../message.dart';
+import '../model_management/cancel_token.dart' show CancelToken;
 import 'decider_exceptions.dart';
 import 'decider_method.dart';
 import 'decider_option.dart';
@@ -13,8 +20,9 @@ import 'embedding_decider.dart' show chooseAllWithSharedEmbeddings;
 /// Picks one of its options for an input — or abstains when none fits.
 ///
 /// Get one from a model: `EmbeddingModel.createDecider` (every embedding
-/// backend) or `InferenceModel.createDecider` (engines that score options;
-/// none does yet). A decider BORROWS its model and never closes it.
+/// backend) or `InferenceModel.createDecider` (an engine that scores options;
+/// none does in this release). A decider BORROWS its model and never closes
+/// it.
 ///
 /// `abstract base`: outside core it can be extended (by a `base`, `final` or
 /// `sealed` class) but not implemented, so a member added here in a later
@@ -38,22 +46,29 @@ abstract base class Decider {
 
   /// The option for [input], or an abstention.
   ///
-  /// [among] restricts the candidates to those option ids (unknown ids throw
-  /// [ArgumentError]; an empty set abstains with
-  /// [AbstainReason.noCandidates]). [topK] (≥ 1) caps
-  /// [DeciderAnswer.ranked]; the margin and probabilities still cover every
-  /// candidate.
+  /// [among] restricts the candidates to those option ids, when
+  /// `capabilities.supportsAmong`; a decider without it fails with
+  /// `DeciderUnsupportedException` for any non-null [among]. Unknown ids
+  /// throw [ArgumentError]; an empty set abstains with
+  /// [AbstainReason.noCandidates]. [topK] (≥ 1) caps [DeciderAnswer.ranked];
+  /// the margin and probabilities still cover every candidate.
+  ///
+  /// [cancelToken] fails the call with `DeciderCancelledException`; so does a
+  /// [close] while the call runs. Work already in flight (an embedding)
+  /// finishes and its result is dropped.
   ///
   /// Errors arrive as a FAILED FUTURE: `DeciderUnsupportedException` for
-  /// context this decider does not take, `DeciderSpaceMismatchException` when
-  /// the embedder core now serves is in another embedding space, the model's
-  /// own failures unchanged (`EmbedderClosedException`,
+  /// context, [among] or a modality this decider does not take,
+  /// `DeciderSpaceMismatchException` when the embedder core now serves is in
+  /// another embedding space, `DeciderCancelledException`, the model's own
+  /// failures unchanged (`EmbedderClosedException`,
   /// `EmbeddingInputTooLongException` — an input is never truncated — …),
   /// [StateError] after [close].
   Future<DeciderAnswer> choose(
     DeciderInput input, {
     Iterable<String>? among,
     int topK = 5,
+    CancelToken? cancelToken,
   });
 
   /// The fitted decider as a JSON-encodable map, to be stored and given to
@@ -61,9 +76,10 @@ abstract base class Decider {
   /// the format is documented at https://flutteredge.ai/docs/decisions.
   /// Throws [StateError] when an option's metadata is not JSON-encodable.
   ///
-  /// This default throws `DeciderUnsupportedException`: a decider with
-  /// nothing to store (one implemented outside core, unless it overrides
-  /// this) has no artifact.
+  /// `capabilities.storable` says whether this decider has one. This default
+  /// throws `DeciderUnsupportedException`: a decider with nothing to store
+  /// (one implemented outside core, unless it overrides this) has no
+  /// artifact.
   Map<String, Object?> toArtifact() => throw DeciderUnsupportedException(
     '$runtimeType has no artifact: it stores nothing that '
     'EmbeddingModel.loadDecider could restore.',
@@ -75,7 +91,8 @@ abstract base class Decider {
   /// core replaced is not closed: its next [choose] takes the replacement.
   bool get isClosed;
 
-  /// Marks this decider closed; [choose] fails afterwards. Idempotent. The
+  /// Marks this decider closed; [choose] fails afterwards, and a [choose]
+  /// still running fails with `DeciderCancelledException`. Idempotent. The
   /// model the decider was created from stays open: it is borrowed.
   Future<void> close();
 
@@ -84,15 +101,21 @@ abstract base class Decider {
   /// Deciders created from the same `EmbeddingModel` share ONE embedding of
   /// [input] — that is what this adds over calling [choose] on each: three
   /// deciders over one request cost one embedding, not three. Other deciders
-  /// are asked one by one. Each answer's `provenance.embedTime` is the time
+  /// are asked one by one. Each answer's `provenance.encodeTime` is the time
   /// of the embedding it used.
   ///
-  /// The first failure fails the call.
+  /// [cancelToken] reaches every decider; the first failure fails the call.
   static Future<List<DeciderAnswer>> chooseAll(
     DeciderInput input,
     List<Decider> deciders, {
     int topK = 5,
-  }) => chooseAllWithSharedEmbeddings(input, deciders, topK: topK);
+    CancelToken? cancelToken,
+  }) => chooseAllWithSharedEmbeddings(
+    input,
+    deciders,
+    topK: topK,
+    cancelToken: cancelToken,
+  );
 }
 
 /// What a decider is asked about: the [input] and, for deciders that read
@@ -100,8 +123,8 @@ abstract base class Decider {
 @experimental
 @immutable
 final class DeciderInput {
-  /// [context] is copied. An embedding decider takes none and fails with
-  /// `DeciderUnsupportedException` when it is not empty, rather than
+  /// [context] is copied. No decider in this release reads it: each fails
+  /// with `DeciderUnsupportedException` when it is not empty, rather than
   /// ignoring it.
   DeciderInput(this.input, {List<Message> context = const []})
     : context = List.unmodifiable(context);
@@ -128,8 +151,11 @@ final class ScoreKind {
   /// Cosine similarity in [-1, 1] (the `centroid` method). Not a probability.
   static const cosine = ScoreKind._('cosine');
 
-  /// Natural-log probability under the decider's own model, before any
-  /// calibration (the `linear` method; option scoring by an LLM).
+  /// Natural-log probability of the candidate under the decider's own model,
+  /// normalised over the candidates, before any calibration: the `linear`
+  /// method's log-softmax, and `optionScoring`'s `s − logsumexp(s)` over the
+  /// options, where `s` is the model's log-probability of the option's id as
+  /// its reply.
   static const logprob = ScoreKind._('logprob');
 
   /// Every kind this release knows, in declaration order.
@@ -152,21 +178,55 @@ final class ScoreKind {
 final class AbstainReason {
   const AbstainReason._(this.name);
 
-  /// The request's abstain signal — its highest cosine to a candidate's
-  /// centroid — is below the calibrated threshold: it fits none of them.
+  /// The answer's abstain signal is below the decider's calibrated threshold
+  /// (`provenance.abstainSignal < provenance.threshold`): the request fits
+  /// none of the candidates. What the signal is — a cosine, a probability —
+  /// is `provenance.abstainSignalKind`.
   static const belowThreshold = AbstainReason._('belowThreshold');
 
   /// `among` left no candidate.
   static const noCandidates = AbstainReason._('noCandidates');
 
-  /// Every reason this release knows, in declaration order.
-  static const values = [belowThreshold, noCandidates];
+  /// The option the decider's calibration names as "none of these" ranked
+  /// first (a model trained with one). It stays in `ranked` and
+  /// `probabilities`.
+  static const noneOption = AbstainReason._('noneOption');
 
-  /// Stable name: `belowThreshold`, `noCandidates`.
+  /// Every reason this release knows, in declaration order.
+  static const values = [belowThreshold, noCandidates, noneOption];
+
+  /// Stable name: `belowThreshold`, `noCandidates`, `noneOption`.
   final String name;
 
   @override
   String toString() => 'AbstainReason.$name';
+}
+
+/// What [DeciderProvenance.abstainSignal] is.
+///
+/// A class with constant instances rather than an enum, so a kind added in a
+/// later release does not break an app's exhaustive `switch`.
+@experimental
+@immutable
+final class AbstainSignalKind {
+  const AbstainSignalKind._(this.name);
+
+  /// The input's highest cosine to a candidate's centroid (an embedding
+  /// decider, either method). Not a probability.
+  static const topCosine = AbstainSignalKind._('topCosine');
+
+  /// The highest calibrated probability over the candidates (an inference
+  /// decider calibrated with a temperature).
+  static const topProbability = AbstainSignalKind._('topProbability');
+
+  /// Every kind this release knows, in declaration order.
+  static const values = [topCosine, topProbability];
+
+  /// Stable name: `topCosine`, `topProbability`.
+  final String name;
+
+  @override
+  String toString() => 'AbstainSignalKind.$name';
 }
 
 /// One candidate of an answer.
@@ -198,39 +258,48 @@ final class DeciderProvenance {
   const DeciderProvenance({
     required this.method,
     required this.calibration,
-    required this.spaceId,
-    required this.embedTime,
+    required this.encodeTime,
     required this.scoreTime,
+    this.spaceId,
     this.threshold,
-    this.similarity,
+    this.abstainSignal,
+    this.abstainSignalKind,
   });
 
   /// How the options were scored.
   final DeciderMethod method;
 
-  /// The calibration kind: `none`, `crossFit`, `minSimilarity` or
-  /// `labelled`.
+  /// The calibration kind: `none`, `crossFit`, `minSimilarity` or `labelled`
+  /// for an embedding decider; `none` or `supplied` (values fitted offline,
+  /// for one model and one question) for an inference decider.
   final String calibration;
 
-  /// The embedding space the decider works in: the model's identity, its
-  /// dimension, its backend, the image budget of a decider fitted on images,
-  /// and the task prefix.
-  final String spaceId;
+  /// The embedding space an embedding decider works in: the model's
+  /// identity, its dimension, its backend, the image budget of a decider
+  /// fitted on images, and the task prefix. Null for a decider that compares
+  /// no vectors (an inference decider).
+  final String? spaceId;
 
-  /// Time spent embedding the input (shared by `Decider.chooseAll`'s
-  /// answers over one embedding).
-  final Duration embedTime;
+  /// Time spent on the input once: its embedding (shared by
+  /// `Decider.chooseAll`'s answers over one embedding), or an inference
+  /// decider's prompt prefill.
+  final Duration encodeTime;
 
   /// Time spent scoring the candidates.
   final Duration scoreTime;
 
-  /// The abstain threshold the signal was compared with; null when the
-  /// decider never abstains.
+  /// The abstain threshold [abstainSignal] was compared with; null when the
+  /// decider never abstains on a threshold.
   final double? threshold;
 
-  /// The abstain signal: the input's highest cosine to a candidate's
-  /// centroid. Null when there was no candidate.
-  final double? similarity;
+  /// The value compared with [threshold], of the kind [abstainSignalKind]
+  /// names; reported even when there is no threshold. Null when there was no
+  /// candidate, and when the decider has no such signal (an uncalibrated
+  /// inference decider).
+  final double? abstainSignal;
+
+  /// What [abstainSignal] is; null exactly when it is null.
+  final AbstainSignalKind? abstainSignalKind;
 }
 
 /// What a decider can do.
@@ -238,23 +307,29 @@ final class DeciderProvenance {
 @immutable
 final class DeciderCapabilities {
   const DeciderCapabilities({
-    required this.maxOptions,
-    required this.supportsContext,
-    required this.calibratedProbabilities,
     required this.modalities,
+    required this.calibratedProbabilities,
+    required this.supportsContext,
+    required this.supportsAmong,
+    required this.storable,
   });
 
-  /// The most options it takes, or null for no limit of its own.
-  final int? maxOptions;
-
-  /// Whether `DeciderInput.context` is read.
-  final bool supportsContext;
+  /// What an input may carry.
+  final Set<EmbeddingModality> modalities;
 
   /// Whether answers carry calibrated probabilities and a confidence.
   final bool calibratedProbabilities;
 
-  /// What an input may carry.
-  final Set<EmbeddingModality> modalities;
+  /// Whether `DeciderInput.context` is read.
+  final bool supportsContext;
+
+  /// Whether `choose(among:)` is honoured. Without it a non-null `among`
+  /// fails with `DeciderUnsupportedException`.
+  final bool supportsAmong;
+
+  /// Whether `toArtifact()` returns an artifact that
+  /// `EmbeddingModel.loadDecider` restores.
+  final bool storable;
 }
 
 /// A decider's answer.
@@ -269,7 +344,12 @@ final class DeciderAnswer {
   /// [ranked] when [ranked] is not empty; [ranked] is sorted by score,
   /// highest first; [confidence] is in [0, 1] and only given with
   /// [probabilities]; a [RankedOption.probability] equals that option's
-  /// entry in [probabilities] when both are given.
+  /// entry in [probabilities] when both are given; the provenance's abstain
+  /// signal and its kind are both set or both null; an answer abstains with
+  /// [AbstainReason.belowThreshold] exactly when the signal is below the
+  /// threshold (both set) — a choice with both set has the signal at or
+  /// above it; [AbstainReason.noneOption] comes with candidates in [ranked],
+  /// [AbstainReason.noCandidates] with none.
   DeciderAnswer({
     required this.choice,
     required List<RankedOption> ranked,
@@ -331,6 +411,52 @@ final class DeciderAnswer {
           );
         }
       }
+    }
+    _checkAbstention();
+  }
+
+  void _checkAbstention() {
+    final signal = provenance.abstainSignal;
+    final threshold = provenance.threshold;
+    if ((signal == null) != (provenance.abstainSignalKind == null)) {
+      throw ArgumentError(
+        'provenance.abstainSignal and provenance.abstainSignalKind are both '
+        'set or both null; got $signal and ${provenance.abstainSignalKind}.',
+      );
+    }
+    final reason = abstainReason;
+    if (identical(reason, AbstainReason.belowThreshold)) {
+      if (signal == null || threshold == null || !(signal < threshold)) {
+        throw ArgumentError.value(
+          signal,
+          'provenance.abstainSignal',
+          'an answer abstains belowThreshold only with its signal below the '
+              'threshold ($threshold)',
+        );
+      }
+    } else if (choice != null && signal != null && threshold != null) {
+      if (!(signal >= threshold)) {
+        throw ArgumentError.value(
+          signal,
+          'provenance.abstainSignal',
+          'is below the threshold ($threshold), so the answer abstains '
+              'belowThreshold instead of choosing $choice',
+        );
+      }
+    }
+    if (identical(reason, AbstainReason.noneOption) && ranked.isEmpty) {
+      throw ArgumentError.value(
+        ranked,
+        'ranked',
+        'an answer that abstains noneOption ranks the options it scored',
+      );
+    }
+    if (identical(reason, AbstainReason.noCandidates) && ranked.isNotEmpty) {
+      throw ArgumentError.value(
+        ranked,
+        'ranked',
+        'an answer that abstains noCandidates had no candidate to rank',
+      );
     }
   }
 

@@ -95,7 +95,7 @@ void main() {
       token.cancel();
       await expectLater(
         fit.timeout(const Duration(seconds: 2)),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
       await _until(
         () => io.debugLiveDeciderFits() == 0,
@@ -110,7 +110,7 @@ void main() {
           _request(4, 3, 8),
           cancelToken: CancelToken()..cancel(),
         ),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
     });
 
@@ -176,13 +176,13 @@ void main() {
       Timer(const Duration(milliseconds: 50), token.cancel);
       await expectLater(
         fit.timeout(const Duration(seconds: 2)),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
     });
   });
 
   group('createDecider', () {
-    test('a cancel during the fit fails it with EmbeddingCancelledException, '
+    test('a cancel during the fit fails it with DeciderCancelledException, '
         'never a decider', () async {
       final table = <String, List<double>>{};
       final random = math.Random(9);
@@ -214,7 +214,7 @@ void main() {
       token.cancel();
       await expectLater(
         created.timeout(const Duration(seconds: 2)),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
     }, timeout: const Timeout(Duration(seconds: 60)));
 
@@ -256,7 +256,7 @@ void main() {
           embedderId: 'fake',
           cancelToken: _CancelAtRead(dry.reads),
         ),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
     });
 

@@ -3,7 +3,7 @@
 // description (core refuses a labelled row that repeats one, and a unit test
 // checks it), so the Decider never saw them when it built its centroids.
 //
-// They calibrate the Decider (`DeciderCalibration.fromLabelled`: the abstain
+// They calibrate the Decider (`EmbeddingDeciderCalibration.fromLabelled`: the abstain
 // threshold and the softmax temperature behind the HUD's percentages) and are
 // what integration_test/tiny_island_calibration_test.dart measures with. The
 // suggestion chips and the screen test's requests are different sentences

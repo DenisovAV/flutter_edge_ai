@@ -104,7 +104,10 @@ Future<void> decide() async {
      (`ScoreKind.logprob`).
 4. The **abstain signal** is the input's highest cosine to a candidate's
    centroid — for both methods. Below the calibrated threshold the answer has
-   `choice: null` and `AbstainReason.belowThreshold`.
+   `choice: null` and `AbstainReason.belowThreshold`. The answer reports both:
+   `answer.provenance.abstainSignal` (its kind,
+   `AbstainSignalKind.topCosine`, in `abstainSignalKind`) and
+   `answer.provenance.threshold`.
 
 `answer.ranked` holds the best `topK` candidates (default 5), best first; on a
 tie the option given first ranks first. `answer.margin` is best minus
@@ -113,18 +116,20 @@ option ids: an unknown id throws `ArgumentError`, an empty set abstains with
 `AbstainReason.noCandidates` without embedding anything (a closed embedder or
 an input the model was not loaded for still fails, as with candidates).
 
-`ScoreKind`, `AbstainReason` and `DeciderMethod` are classes with constant
-values, not enums, so a value added in a later release does not break your
-`switch` — give it a default branch. A `DeciderAnswer` checks itself: exactly
-one of `choice` and `abstainReason`, `choice` first in `ranked`, `ranked`
-highest first, `confidence` in [0, 1] and only with `probabilities`.
+`ScoreKind`, `AbstainReason`, `AbstainSignalKind` and `DeciderMethod` are
+classes with constant values, not enums, so a value added in a later release
+does not break your `switch` — give it a default branch. A `DeciderAnswer`
+checks itself: exactly one of `choice` and `abstainReason`, `choice` first in
+`ranked`, `ranked` highest first, `confidence` in [0, 1] and only with
+`probabilities`, `belowThreshold` exactly when the abstain signal is below the
+threshold.
 
 ### A raw score is not a probability
 
 A cosine of 0.83 does not mean 83 %. `RankedOption.probability`,
 `DeciderAnswer.probabilities` and `DeciderAnswer.confidence` are **null**
 unless the decider was calibrated on held-out labelled requests
-(`DeciderCalibration.fromLabelled`), which fits a softmax temperature. One
+(`EmbeddingDeciderCalibration.fromLabelled`), which fits a softmax temperature. One
 formula decodes every method's raw scores: `softmax(score / T)` over the
 candidates. `confidence` is Jev's spread measure, `(N · pmax − 1) / (N − 1)`:
 0 for a uniform distribution, 1 when one option takes everything. It is not an
@@ -134,10 +139,10 @@ accuracy.
 
 | Calibration | Threshold | Needs |
 |---|---|---|
-| `DeciderCalibration.crossFit({keep: 0.95})` — default | The options' own inputs: 5-fold cross-fit (input `i` of each option in fold `i % 5`), each held-out input scored against the other folds' centroids, threshold keeps `keep` of them | Two inputs per option |
-| `DeciderCalibration.minSimilarity(t)` | A fixed cosine `t` | A value measured for your model file and prompt |
-| `DeciderCalibration.fromLabelled(rows, maxError: 0.05)` | The lowest cosine at which labelled rows keep their error within `maxError` (rows of one cosine counted together); plus a temperature → probabilities | Held-out labelled requests — not the examples or descriptions — some of them hard |
-| `DeciderCalibration.none()` | Never abstains | — |
+| `EmbeddingDeciderCalibration.crossFit({keep: 0.95})` — default | The options' own inputs: 5-fold cross-fit (input `i` of each option in fold `i % 5`), each held-out input scored against the other folds' centroids, threshold keeps `keep` of them | Two inputs per option |
+| `EmbeddingDeciderCalibration.minSimilarity(t)` | A fixed cosine `t` | A value measured for your model file and prompt |
+| `EmbeddingDeciderCalibration.fromLabelled(rows, maxError: 0.05)` | The lowest cosine at which labelled rows keep their error within `maxError` (rows of one cosine counted together); plus a temperature → probabilities | Held-out labelled requests — not the examples or descriptions — some of them hard |
+| `EmbeddingDeciderCalibration.none()` | Never abstains | — |
 
 `fromLabelled` refuses (`ArgumentError`) rows it cannot calibrate on: when no
 threshold keeps their error within `maxError`, and when the best temperature
@@ -294,7 +299,7 @@ Future<void> triage(EmbeddingModel embedder) async {
       DeciderOption('calm', description: 'calm, neutral wording'),
       DeciderOption('upset', description: 'angry or upset wording'),
     ],
-    calibration: const DeciderCalibration.none(),
+    calibration: const EmbeddingDeciderCalibration.none(),
   );
   final answers = await Decider.chooseAll(
     DeciderInput(EmbeddingInput.text('the box was crushed, I am furious')),
@@ -325,7 +330,7 @@ Future<InferenceChat> chatWithLikelyTools(
       for (final tool in tools)
         DeciderOption(tool.name, description: tool.description),
     ],
-    calibration: const DeciderCalibration.none(),
+    calibration: const EmbeddingDeciderCalibration.none(),
   );
   final picked = await router.choose(
     DeciderInput(EmbeddingInput.text(request)),
@@ -412,13 +417,58 @@ each option's description and examples, then `fromLabelled`'s rows — from
 `(0, total)` to `(total, total)`. It does not cover the fit after them, which
 for `linear` at 150 options takes seconds. `cancelToken:` stops the embedding
 and the fit (natively the fit's isolate is killed, on web it stops at the next
-yield): `EmbeddingCancelledException`, and no decider. A failed option input
+yield): `DeciderCancelledException`, and no decider. A failed option input
 names its option and input: `Option "returns", example 3: …`, with the
 exception's type and fields kept.
 
+`choose(input, cancelToken:)` and `Decider.chooseAll(input, deciders,
+cancelToken:)` fail with `DeciderCancelledException` too, and so does a
+`choose` still running when its decider is closed. An embedding already sent
+is not interrupted: it finishes and its vector is dropped.
+
 A decider of your own, or a test fake, `extends Decider` (an abstract base
 class: members added later reach it with a default). `toArtifact()` defaults
-to throwing `DeciderUnsupportedException`.
+to throwing `DeciderUnsupportedException`. Say what it can do in
+`capabilities`: `supportsAmong` (whether `among` is honoured; without it a
+non-null `among` fails with `DeciderUnsupportedException`), `storable`
+(whether `toArtifact()` returns an artifact), `supportsContext`,
+`calibratedProbabilities` and `modalities`.
+
+## Deciders from a language model
+
+`InferenceModel.createDecider(question:, options:, calibration:)` is the other
+kind of decider: a small LLM trained on one question and its options lists
+them in a prompt and scores each option's id as its reply
+(`DeciderMethod.optionScoring`). Its values come from that training, in an
+`InferenceDeciderCalibration`: a softmax `temperature`, an `abstainBelow`
+probability, the `noneOption` the model was trained to give for "none of
+these", and the `promptSha256` of the prompt it was trained on.
+
+<Warning>
+
+No engine scores options in `flutter_edge_ai` 2.4.0:
+`InferenceModel.createDecider` fails with `DeciderUnsupportedException` on
+every model. The contract is in place so that code written against `Decider`
+and `DeciderAnswer` reads its answers unchanged when an engine does.
+
+</Warning>
+
+Its answers have the same shape as an embedding decider's, with these values:
+
+| Member | Embedding decider | Language-model decider |
+|---|---|---|
+| `scoreKind` | `cosine` (centroid) or `logprob` (linear) | `logprob`, normalised over the options |
+| `probabilities`, `confidence` | with `fromLabelled` only | with a `temperature` |
+| `provenance.abstainSignalKind` | `topCosine` | `topProbability` |
+| `abstainReason` | `belowThreshold`, `noCandidates` | `belowThreshold`, `noneOption` |
+| `provenance.encodeTime` | the input's embedding | the prompt's prefill |
+| `provenance.spaceId` | the embedding space | null |
+| `capabilities.supportsAmong`, `storable` | true, true | false, false |
+
+The cost differs most: an embedding decider costs one embedding whatever the
+number of options, a language-model decider one scoring pass per option. Use it
+for a few options that are a property of the text (a tone, an emotion, yes or
+no), and an embedding decider for many options by topic.
 
 ## Jev Choice JSON
 
@@ -435,12 +485,13 @@ abstained answer has `"choice": null`.
 | Failure | Thrown |
 |---|---|
 | No options, duplicate ids, an option with nothing to embed, a calibration the options or labelled rows cannot support, an unknown `among` id, a model without installed files or a backend and no `embedderId` | `ArgumentError` |
-| `DeciderInput.context` given to an embedding decider | `DeciderUnsupportedException` |
-| `InferenceModel.createDecider` (no engine scores options yet); `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
+| `DeciderInput.context` given to any decider; `among` to a decider without `supportsAmong` | `DeciderUnsupportedException` |
+| `InferenceModel.createDecider` (no engine scores options in this release); `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
+| `DeciderMethod.optionScoring` given to `EmbeddingModel.createDecider` | `ArgumentError` |
 | An artifact from another embedding space; core's replacement embedder in another space | `DeciderSpaceMismatchException` |
 | A malformed, contradictory or newer artifact | `FormatException` |
 | An input longer than the model's limit — never truncated | `EmbeddingInputTooLongException` |
-| `createDecider` cancelled | `EmbeddingCancelledException` |
+| `createDecider`, `choose` or `chooseAll` cancelled; a `choose` running when its decider is closed | `DeciderCancelledException` |
 | A vector that is not finite or has the wrong length; an option whose inputs cancel out; `choose` after `close` | `StateError` |
 
 Every error arrives as a failed future.

@@ -554,7 +554,7 @@ final class TinyIslandViewModel extends ChangeNotifier {
       '[TinyIsland] "$text" -> '
       '${answer.choice ?? 'abstained (${answer.abstainReason?.name})'} '
       '${best == null ? '-' : '${answer.scoreKind.name} ${best.score.toStringAsFixed(3)}'} '
-      'in ${(answer.provenance.embedTime + answer.provenance.scoreTime).inMicroseconds / 1000} ms',
+      'in ${(answer.provenance.encodeTime + answer.provenance.scoreTime).inMicroseconds / 1000} ms',
     );
     final action = switch (answer.choice) {
       final id? => _byId[id],

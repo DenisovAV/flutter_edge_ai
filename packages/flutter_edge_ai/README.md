@@ -339,6 +339,9 @@ examples. Store a fitted decider with `toArtifact()` and restore it with
 loaded onto an NPU bundle. Measured with EmbeddingGemma 2 on CLINC150 and
 HWU64, the numbers and their limits:
 [Decisions](https://flutteredge.ai/docs/decisions).
+`InferenceModel.createDecider(question:, options:, calibration:)` is the
+language-model kind, with answers of the same shape; no engine scores options
+in this release, so it throws `DeciderUnsupportedException`.
 
 ## Three things that fail quietly
 

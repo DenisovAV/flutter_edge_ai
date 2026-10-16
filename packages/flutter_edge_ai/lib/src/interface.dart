@@ -10,7 +10,7 @@ import 'package:flutter_edge_ai/src/sampling.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
-import 'package:meta/meta.dart' show experimental;
+import 'package:meta/meta.dart' show experimental, nonVirtual;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 // Conditional default instance: the mobile/desktop default pulls dart:io;
@@ -19,6 +19,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'default.dart' if (dart.library.js_interop) 'default_web.dart';
 import 'decision/decider.dart' show Decider;
 import 'decision/decider_exceptions.dart' show DeciderUnsupportedException;
+import 'decision/decider_method.dart' show InferenceDeciderCalibration;
 import 'decision/decider_option.dart' show DeciderOption;
 import 'embedding/embedding_model.dart';
 
@@ -473,20 +474,34 @@ abstract class InferenceModel {
   /// default body, so such an implementation has to declare it.
   bool get isClosed => false;
 
-  /// A decider that picks one of [options] by scoring each with this model.
+  /// A decider that answers [question] by scoring each of [options] as this
+  /// model's reply (`DeciderMethod.optionScoring`). It is meant for a model
+  /// TRAINED on exactly this question and these options, in this order;
+  /// [calibration] carries the values fitted with that training (a softmax
+  /// temperature, an abstain threshold, the "none of these" option, the
+  /// prompt's digest). Its answers have the shape of an embedding decider's,
+  /// so an app reads them the same way: `ScoreKind.logprob` scores,
+  /// `AbstainSignalKind.topProbability` as the abstain signal.
   ///
-  /// No engine scores options yet, so this default fails with
-  /// `DeciderUnsupportedException` (as a failed future). Engines that can
-  /// will override it; until then use `EmbeddingModel.createDecider`, which
+  /// Core implements this once for every engine (`@nonVirtual`): an engine
+  /// supplies the scoring, not the decider. In this release no engine scores
+  /// options, so it fails with `DeciderUnsupportedException` (a failed
+  /// future) whatever it is given; use `EmbeddingModel.createDecider`, which
   /// every embedding backend supports. `implements` does not inherit this
   /// default body, so such an implementation has to declare it.
   ///
   /// Experimental: may change in a minor release while the API settles.
   @experimental
-  Future<Decider> createDecider({required List<DeciderOption> options}) async {
+  @nonVirtual
+  Future<Decider> createDecider({
+    required String question,
+    required List<DeciderOption> options,
+    required InferenceDeciderCalibration calibration,
+  }) async {
     throw DeciderUnsupportedException(
-      '$runtimeType does not score options. Create the decider from an '
-      'EmbeddingModel instead: EmbeddingModel.createDecider().',
+      '$runtimeType does not score options: no engine in this release does. '
+      'Create the decider from an EmbeddingModel instead: '
+      'EmbeddingModel.createDecider().',
     );
   }
 

@@ -13,10 +13,7 @@ import 'dart:typed_data';
 import '../embedding/common_embedding_model.dart'
     show CommonEmbeddingModel, EmbedderReplacement;
 import '../embedding/embedding_exceptions.dart'
-    show
-        EmbedderClosedException,
-        EmbeddingCancelledException,
-        EmbeddingModalityNotLoadedException;
+    show EmbedderClosedException, EmbeddingModalityNotLoadedException;
 import '../embedding/embedding_input.dart';
 import '../embedding/embedding_model.dart';
 import '../embedding/task_type.dart';
@@ -148,7 +145,7 @@ Future<Decider> createEmbeddingDecider(
   EmbeddingModel embedder, {
   required List<DeciderOption> options,
   required DeciderMethod method,
-  required DeciderCalibration calibration,
+  required EmbeddingDeciderCalibration calibration,
   String? embedderId,
   CancelToken? cancelToken,
   void Function(int done, int total)? onProgress,
@@ -285,7 +282,7 @@ Future<Decider> createEmbeddingDecider(
   // A cancel that lands as the fit returns still fails the call: a cancelled
   // createDecider never hands back a decider.
   if (cancelToken?.isCancelled ?? false) {
-    throw const EmbeddingCancelledException('createDecider was cancelled.');
+    throw const DeciderCancelledException('createDecider was cancelled.');
   }
   final decider = EmbeddingDecider(
     embedder: embedder,
@@ -319,9 +316,17 @@ Future<Decider> createEmbeddingDecider(
 void _validateOptions(
   List<DeciderOption> options,
   DeciderMethod method,
-  DeciderCalibration calibration,
+  EmbeddingDeciderCalibration calibration,
   List<({EmbeddingInput input, String optionId})>? labelledRows,
 ) {
+  if (identical(method, DeciderMethod.optionScoring)) {
+    throw ArgumentError.value(
+      method,
+      'method',
+      'optionScoring is an InferenceModel method: it scores options with a '
+          'language model. An EmbeddingModel decides by centroid or linear',
+    );
+  }
   if (options.isEmpty) {
     throw ArgumentError.value(options, 'options', 'must not be empty');
   }
@@ -367,12 +372,12 @@ void _validateOptions(
           throw ArgumentError.value(
             option.id,
             'calibration',
-            'DeciderCalibration.crossFit holds each input out against the '
+            'EmbeddingDeciderCalibration.crossFit holds each input out against the '
                 'others, so every option needs at least two inputs '
                 '(description plus examples); option "${option.id}" has '
                 '$count. Add examples, or calibrate with '
-                'DeciderCalibration.minSimilarity(threshold) or '
-                'DeciderCalibration.none()',
+                'EmbeddingDeciderCalibration.minSimilarity(threshold) or '
+                'EmbeddingDeciderCalibration.none()',
           );
         }
       }
@@ -398,7 +403,7 @@ void _validateOptions(
         throw ArgumentError.value(
           0,
           'calibration',
-          'DeciderCalibration.fromLabelled needs labelled rows',
+          'EmbeddingDeciderCalibration.fromLabelled needs labelled rows',
         );
       }
   }
@@ -409,6 +414,7 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
   DeciderInput input,
   List<Decider> deciders, {
   required int topK,
+  CancelToken? cancelToken,
 }) async {
   final all = List<Decider>.of(deciders);
   final answers = List<DeciderAnswer?>.filled(all.length, null);
@@ -423,12 +429,16 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
       others.add(i);
     }
   }
+  _checkCancelled(cancelToken);
   for (final MapEntry(key: embedder, value: members) in groups.entries) {
     final first = all[members.first] as EmbeddingDecider;
-    final (vector, embedTime, used) = await first._embed(input);
+    final (vector, encodeTime, used) = await first._embed(input);
+    _checkCancelled(cancelToken);
     for (final i in members) {
       final decider = all[i] as EmbeddingDecider;
-      decider._checkUsable(input, topK);
+      // Checked usable above, before the embedding; closed since then is a
+      // cancel, as for choose.
+      decider._checkNotClosedDuringChoose();
       // The first decider moved to the embedder core serves in place of a
       // closed one; the others of its group follow, each checking its own
       // space id.
@@ -440,14 +450,25 @@ Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
         vector,
         decider._allCandidates,
         topK,
-        embedTime,
+        encodeTime,
       );
     }
   }
   for (final i in others) {
-    answers[i] = await all[i].choose(input, topK: topK);
+    answers[i] = await all[i].choose(
+      input,
+      topK: topK,
+      cancelToken: cancelToken,
+    );
   }
   return [for (final answer in answers) answer!];
+}
+
+/// Fails a decision whose [token] was cancelled.
+void _checkCancelled(CancelToken? token) {
+  if (token?.isCancelled ?? false) {
+    throw const DeciderCancelledException('The decision was cancelled.');
+  }
 }
 
 /// The decider of an `EmbeddingModel`. Holds no native resource: the model is
@@ -541,10 +562,11 @@ final class EmbeddingDecider extends Decider {
 
   @override
   DeciderCapabilities get capabilities => DeciderCapabilities(
-    maxOptions: null,
-    supportsContext: false,
-    calibratedProbabilities: temperature != null,
     modalities: _embedder.modalities,
+    calibratedProbabilities: temperature != null,
+    supportsContext: false,
+    supportsAmong: true,
+    storable: true,
   );
 
   /// True after [close], and when the embedder is closed and core cannot
@@ -560,8 +582,10 @@ final class EmbeddingDecider extends Decider {
     DeciderInput input, {
     Iterable<String>? among,
     int topK = 5,
+    CancelToken? cancelToken,
   }) async {
     _checkUsable(input, topK);
+    _checkCancelled(cancelToken);
     final candidates = among == null ? _allCandidates : _candidates(among);
     if (candidates.isEmpty) {
       // Nothing to embed, but the answer must not depend on that: a request
@@ -571,6 +595,8 @@ final class EmbeddingDecider extends Decider {
         final resolve =
             _replacementOf(model) ?? (throw const EmbedderClosedException());
         model = await _replace(model, resolve);
+        _checkCancelled(cancelToken);
+        _checkNotClosedDuringChoose();
       }
       final loaded = model.modalities;
       for (final modality in input.input.modalities) {
@@ -592,8 +618,21 @@ final class EmbeddingDecider extends Decider {
         provenance: _provenance(Duration.zero, Duration.zero, null),
       );
     }
-    final (vector, embedTime, _) = await _embed(input);
-    return _score(vector, candidates, topK, embedTime);
+    final (vector, encodeTime, _) = await _embed(input);
+    // The embedding is not interrupted: a cancel or a close that came while
+    // it ran drops its result.
+    _checkCancelled(cancelToken);
+    _checkNotClosedDuringChoose();
+    return _score(vector, candidates, topK, encodeTime);
+  }
+
+  /// A [close] that came while a decision ran fails it as a cancel.
+  void _checkNotClosedDuringChoose() {
+    if (_closed) {
+      throw const DeciderCancelledException(
+        'The decider was closed while it was deciding.',
+      );
+    }
   }
 
   void _checkUsable(DeciderInput input, int topK) {
@@ -709,7 +748,7 @@ final class EmbeddingDecider extends Decider {
     Float64List v,
     List<int> candidates,
     int topK,
-    Duration embedTime,
+    Duration encodeTime,
   ) {
     final watch = Stopwatch()..start();
     final n = candidates.length;
@@ -806,22 +845,25 @@ final class EmbeddingDecider extends Decider {
               for (var i = 0; i < n; i++)
                 options[candidates[i]].id: probabilities[i],
             },
-      provenance: _provenance(embedTime, scoreTime, similarity),
+      provenance: _provenance(encodeTime, scoreTime, similarity),
     );
   }
 
+  /// The abstain signal is [similarity], the top cosine over the candidates:
+  /// null only when there was no candidate.
   DeciderProvenance _provenance(
-    Duration embedTime,
+    Duration encodeTime,
     Duration scoreTime,
     double? similarity,
   ) => DeciderProvenance(
     method: method,
     calibration: calibration,
     spaceId: spaceId,
-    embedTime: embedTime,
+    encodeTime: encodeTime,
     scoreTime: scoreTime,
     threshold: threshold,
-    similarity: similarity,
+    abstainSignal: similarity,
+    abstainSignalKind: similarity == null ? null : AbstainSignalKind.topCosine,
   );
 
   @override
@@ -970,6 +1012,12 @@ Future<Decider> loadEmbeddingDecider(
   final method =
       deciderMethodByName(methodName) ??
       (throw FormatException('Unknown decider method "$methodName".'));
+  if (identical(method, DeciderMethod.optionScoring)) {
+    throw const FormatException(
+      'An optionScoring decider stores no artifact: an embedding decider '
+      'artifact is centroid or linear.',
+    );
+  }
   final calibration = _field<Map<String, Object?>>(artifact, 'calibration');
   final calibrationKind = _field<String>(calibration, 'kind');
   if (!const {

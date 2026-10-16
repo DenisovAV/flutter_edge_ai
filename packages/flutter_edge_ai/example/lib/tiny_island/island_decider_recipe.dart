@@ -25,9 +25,9 @@ final class IslandDeciderRecipe {
 
   final List<DeciderOption> options;
   final DeciderMethod method;
-  final DeciderCalibration calibration;
+  final EmbeddingDeciderCalibration calibration;
 
-  /// The labelled rows behind [calibration] (a `DeciderCalibration` does not
+  /// The labelled rows behind [calibration] (a `EmbeddingDeciderCalibration` does not
   /// expose them), so the [fingerprint] changes when they do.
   final List<IslandHeldOutRequest> calibrationRows;
 
@@ -136,7 +136,7 @@ IslandDeciderRecipe islandDeciderRecipe(List<IslandAction> catalog) =>
     IslandDeciderRecipe(
       options: islandDeciderOptions(catalog),
       method: DeciderMethod.centroid,
-      calibration: DeciderCalibration.fromLabelled([
+      calibration: EmbeddingDeciderCalibration.fromLabelled([
         for (final row in islandHeldOutRequests)
           (input: EmbeddingInput.text(row.text), optionId: row.actionId),
       ]),

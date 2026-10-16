@@ -127,7 +127,7 @@ void main() {
       final embedder = FakeEmbedder(dimension: 3, table: _table);
       final decider = await embedder.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
         embedderId: 'fake',
       );
       await embedder.close();
@@ -142,7 +142,7 @@ void main() {
       final embedder = FakeEmbedder(dimension: 3, table: _table);
       final decider = await embedder.createDecider(
         options: _options(),
-        calibration: const DeciderCalibration.none(),
+        calibration: const EmbeddingDeciderCalibration.none(),
         embedderId: 'fake',
       );
       await expectLater(

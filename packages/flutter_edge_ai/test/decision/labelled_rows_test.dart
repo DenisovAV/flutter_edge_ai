@@ -1,4 +1,4 @@
-// DeciderCalibration.fromLabelled owns a copy of its rows, and a held-out row
+// EmbeddingDeciderCalibration.fromLabelled owns a copy of its rows, and a held-out row
 // may not repeat any option input — examples or description.
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -31,7 +31,10 @@ void main() {
       (input: _t('about b'), optionId: 'b'),
       (input: _t('a or b'), optionId: 'b'),
     ];
-    final calibration = DeciderCalibration.fromLabelled(rows, maxError: 0.4);
+    final calibration = EmbeddingDeciderCalibration.fromLabelled(
+      rows,
+      maxError: 0.4,
+    );
     // The caller's list changes while the decider embeds the options: before
     // the copy, rows were read before and after that await, so the labels
     // and the vectors no longer lined up.
@@ -62,7 +65,7 @@ void main() {
       await expectLater(
         embedder.createDecider(
           options: _options(),
-          calibration: DeciderCalibration.fromLabelled([
+          calibration: EmbeddingDeciderCalibration.fromLabelled([
             (input: _t('option a'), optionId: 'a'),
             (input: _t('about b'), optionId: 'b'),
           ]),

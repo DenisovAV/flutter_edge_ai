@@ -285,7 +285,7 @@ Future<List<_Row>> _decide(
       clip: clip,
       choice: answer.choice,
       best: answer.ranked.firstOrNull?.id,
-      similarity: answer.provenance.similarity,
+      similarity: answer.provenance.abstainSignal,
       threshold: answer.provenance.threshold,
       scoreTime: answer.provenance.scoreTime,
     ));
@@ -551,7 +551,7 @@ void main() {
       final recipe = islandDeciderRecipe(buildIslandCatalog());
       Future<Decider> create(
         List<DeciderOption> options,
-        DeciderCalibration calibration,
+        EmbeddingDeciderCalibration calibration,
       ) => embedder.createDecider(
         options: options,
         method: recipe.method,
@@ -640,7 +640,7 @@ void main() {
               try {
                 final decider = await create(
                   opts,
-                  DeciderCalibration.fromLabelled([
+                  EmbeddingDeciderCalibration.fromLabelled([
                     for (final c in train)
                       (input: inputOf(c), optionId: c.want),
                   ], maxError: maxError),

@@ -133,11 +133,14 @@ abstract final class Models {
     supportsThinking: false,
     supportsRequiredToolChoice: false,
     // What Steps 1–3 open it with. 1024 is the context this checkpoint was
-    // built and measured at. FP32 is a workaround for this FILE: it was
-    // converted before litetune 0.1.4 began setting `prefer_activation_type`,
-    // and without that key the GPU runs at FP16 and answers every prompt with
-    // `<pad>` or nothing. A model you re-convert in Step 4 carries the key, so
-    // `fromDisk` keeps the defaults.
+    // built and measured at. FP32 is for this FILE: it was converted before
+    // litetune 0.1.4 began setting `prefer_activation_type`, and without that
+    // key the GPU runs at FP16 and answers every prompt with `<pad>` or
+    // nothing. flutter_edge_ai_litertlm 1.14.0 reads the header and picks FP32
+    // for such a FunctionGemma file on its own, so the value is redundant
+    // there; it stays because it still works and older versions need it. A
+    // model you re-convert in Step 4 carries the key, so `fromDisk` keeps the
+    // defaults.
     maxTokens: 1024,
     activationDataType: ActivationDataType.float32,
   );

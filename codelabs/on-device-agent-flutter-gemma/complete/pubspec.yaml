@@ -36,13 +36,13 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # The engine-agnostic core: registry, install/runtime API, chat.
-  flutter_edge_ai: ^2.2.0
+  flutter_edge_ai: ^2.4.0
   # The .litertlm inference engine. Engines are opt-in — core
   # registers none, so this package must be added explicitly.
-  flutter_edge_ai_litertlm: ^1.12.0
+  flutter_edge_ai_litertlm: ^1.14.0
   # The agent: SKILL.md skills, the tool loop that runs them, and the
   # executors for each kind of skill.
-  flutter_edge_ai_agent: ^0.2.8
+  flutter_edge_ai_agent: ^0.3.0
 
 dev_dependencies:
   flutter_test:

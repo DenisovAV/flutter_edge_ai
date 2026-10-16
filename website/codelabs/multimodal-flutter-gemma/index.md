@@ -981,7 +981,10 @@ this device, and what its memory and hardware will stand — and `Capability`
 says out loud that it does not model it.
 
 **Android, a real iPhone, and the three desktops** are the unrestricted case:
-both modalities, GPU accelerated, no caveats.
+both modalities, no caveats. The text decoder runs on the GPU there, while
+Gemma 4's vision and audio encoders run on the CPU, where the model file puts
+them (from `flutter_edge_ai_litertlm` 1.14.0, `activeVisionBackend` and
+`activeAudioBackend` report it).
 
 ### Try it end to end
 

@@ -79,8 +79,11 @@ class _ChatPageState extends State<ChatPage> {
       // returns filler. Asking for float32 fixes it.
       //
       // Re-converted with a current litetune — which Step 4 does — the same
-      // weights carry the key and need no argument. So this is a workaround for
-      // one downloadable file, not a property of FunctionGemma.
+      // weights carry the key and need no argument. So this is about one
+      // downloadable file, not a property of FunctionGemma. From
+      // flutter_edge_ai_litertlm 1.14.0 the engine reads the file's header and
+      // picks float32 for it on its own; the argument stays because it still
+      // works and older versions need it.
       final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 1024,
         activationDataType: ActivationDataType.float32,

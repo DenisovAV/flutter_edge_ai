@@ -338,15 +338,19 @@ you declare a function. Tools belong to the session.
 
 The two arguments it *does* take are worth a moment. `maxTokens: 1024` is what
 this checkpoint is built for. `activationDataType: ActivationDataType.float32` is
-a workaround for **this file**, and the distinction matters more than the
-workaround does.
+about **this file**, and the distinction matters more than the argument does.
+With `flutter_edge_ai_litertlm` 1.14.0 or later the argument is redundant: the
+engine picks float32 for this file on its own. It stays because it still works
+and helps an app on an older version.
 
 The `.litertlm` you just downloaded was converted before litetune began setting
 `prefer_activation_type=fp32`. Without that key the GPU path answers every
 prompt with `<pad>` repeated to the token limit — measured on Android and on
 macOS Metal alike, with no exception, no warning, and a chat that looks alive
 while it returns filler. Asking for float32 activations fixes it: the same
-weights call `multiply` correctly on the GPU.
+weights call `multiply` correctly on the GPU. From litertlm 1.14.0 the engine
+reads the bundle's header and asks for them itself when a
+`ModelType.functionGemma` file declares no activation type.
 
 So this is not "FunctionGemma cannot use a GPU", and it is not a platform bug. It is
 one published artifact carrying a conversion setting that predates the fix. Step
@@ -594,8 +598,9 @@ It takes a Hugging Face checkpoint through LoRA fine-tuning, merges, exports to
 `.litertlm`, and bundles the result with metadata — five commands, because each
 stage fails differently and a single `run` would hide which one you are in.
 
-The commands below are verified against **litetune 0.4.1**, the current PyPI
-release, run end to end on 2026-10-12. It pins LiteRT-LM 0.18.0 for
+The commands below are verified against **litetune 0.4.3**, the current PyPI
+release: run end to end on 2026-10-12 with 0.4.1, and no CLI option they use
+changed in 0.4.2 or 0.4.3. It pins LiteRT-LM 0.18.0 for
 verification and the matching 0.18.0 builder for conversion. The source is
 available on [GitHub](https://github.com/DenisovAV/litetune).
 

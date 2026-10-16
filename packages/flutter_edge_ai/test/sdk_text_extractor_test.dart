@@ -31,14 +31,35 @@ void main() {
       );
     });
 
-    test('a tool-call chunk carries no text', () {
+    test('a tool-call chunk is returned as its JSON', () {
       // Gemma 4 writes a sentence, then calls a tool in the same generation:
-      // the call is its own chunk. It is read from the whole raw response.
+      // the call is its own chunk. InferenceChat leaves it out of the text
+      // only when it handles calls; otherwise the app sees the JSON.
       const raw =
           '{"role":"assistant","tool_calls":[{"type":"function",'
           '"function":{"name":"runIntent","arguments":{"intent":"x"}}}]}';
 
-      expect(SdkTextExtractor.extractTextFromResponse(raw), isEmpty);
+      expect(SdkTextExtractor.extractTextFromResponse(raw), raw);
+      expect(isSdkToolCallChunk(raw), isTrue);
+    });
+
+    test('isSdkToolCallChunk is true only for a call with no text', () {
+      expect(
+        isSdkToolCallChunk(
+          '{"role":"assistant","content":[{"type":"text","text":"Sure."}]}',
+        ),
+        isFalse,
+      );
+      expect(
+        isSdkToolCallChunk(
+          '{"role":"assistant","content":[{"type":"text","text":"Sure."}],'
+          '"tool_calls":[{"type":"function","function":{"name":"x"}}]}',
+        ),
+        isFalse,
+      );
+      expect(isSdkToolCallChunk('{"tool_calls": "x"}'), isFalse);
+      expect(isSdkToolCallChunk('Sure, {not json'), isFalse);
+      expect(isSdkToolCallChunk('{"tool_calls":[]'), isFalse);
     });
 
     test('text next to tool calls in one chunk is still text', () {

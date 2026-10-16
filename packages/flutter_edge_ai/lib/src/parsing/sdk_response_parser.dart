@@ -307,7 +307,7 @@ class SdkResponseParser {
 /// The text `InferenceChat` records for a turn's tool calls: the raw
 /// response's `tool_calls` objects, each cleaned as by
 /// [SdkResponseParser.cleanRawForHistory], without the text chunks streamed
-/// before them.
+/// before them and without any text a call chunk carries itself.
 ///
 /// A Gemma 4 turn can be a sentence and then a call; its raw response is then
 /// one JSON object per streamed chunk, and recorded whole it put every text
@@ -329,7 +329,12 @@ String toolCallsRawForHistory(String raw) {
       continue;
     }
     if (parsed is Map<String, dynamic> && parsed['tool_calls'] is List) {
-      calls.write(jsonEncode(SdkResponseParser._stripEscapeTokens(parsed)));
+      // A chunk can carry text next to its calls; the text is not the call.
+      final callOnly = {
+        for (final entry in parsed.entries)
+          if (entry.key != 'content') entry.key: entry.value,
+      };
+      calls.write(jsonEncode(SdkResponseParser._stripEscapeTokens(callOnly)));
     }
   }
   return calls.isEmpty

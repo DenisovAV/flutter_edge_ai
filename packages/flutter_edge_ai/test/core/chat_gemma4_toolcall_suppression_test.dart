@@ -352,6 +352,35 @@ void main() {
       ]);
     });
 
+    for (final (label, supports, choice) in [
+      ('supportsFunctionCalls is off', false, ToolChoice.auto),
+      ('toolChoice is none', true, ToolChoice.none),
+    ]) {
+      test('when $label the call stays visible as JSON', () async {
+        // The declarations still reach LiteRT-LM, so the model may call;
+        // the chat does not handle the call, so it must not vanish.
+        final chunks = [...prose, callChunk('accelerator')];
+        final chat = InferenceChat(
+          sessionCreator: () async => _SdkSession(
+            chunks.map(SdkTextExtractor.extractTextFromResponse).toList(),
+            chunks.join(),
+          ),
+          maxTokens: 1024,
+          modelType: ModelType.gemma4,
+          supportsFunctionCalls: supports,
+          toolChoice: choice,
+          tools: const [Tool(name: 'runIntent', description: 'run an intent')],
+        );
+        await chat.initSession();
+        await chat.addQuery(const Message(text: 'hi', isUser: true));
+        final responses = await chat.generateChatResponseAsync().toList();
+
+        final text = responses.whereType<TextResponse>().map((t) => t.token);
+        expect(text.join(), contains('"tool_calls"'));
+        expect(responses.whereType<FunctionCallResponse>(), isEmpty);
+      });
+    }
+
     test('history records the call without the prose chunks', () async {
       final (chat, _) = await run([...prose, callChunk('accelerator')]);
 

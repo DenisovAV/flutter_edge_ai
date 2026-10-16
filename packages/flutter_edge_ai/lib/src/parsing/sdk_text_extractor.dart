@@ -8,16 +8,17 @@ import 'dart:convert';
 /// Completions chunk JSON shape produced by `liblitert_lm` and
 /// `@litert-lm/core` respectively.
 ///
-/// Handles three response formats:
+/// Handles these response formats:
 /// - Text: `{"role":"assistant","content":[{"type":"text","text":"hello"}]}`
 ///   → returns `"hello"`
 /// - Thinking: `{"role":"assistant","channels":{"thought":"reasoning..."}}`
 ///   → returns `<|channel>thought\nreasoning...<channel|>`
 ///   (compatible with `ThinkingFilter` in `core/extensions.dart`)
-/// - Tool call: `{"role":"assistant","tool_calls":[...]}` with no content
-///   → returns `""`. A call is not text: the chat reads it from the whole raw
-///   response (`RawSdkResponseSession.lastRawResponse`) at the end of the
-///   stream, wherever in the generation it came.
+/// - Anything else, a tool call (`{"role":"assistant","tool_calls":[...]}`
+///   with no content) included → returns the chunk's JSON. `InferenceChat`
+///   reads calls from the whole raw response at the end of the stream and,
+///   when it handles calls, leaves such a chunk out of the text (see
+///   [isSdkToolCallChunk]). When it does not, the call stays visible as JSON.
 class SdkTextExtractor {
   /// Extract text from a LiteRT-LM JSON response chunk.
   ///
@@ -48,11 +49,6 @@ class SdkTextExtractor {
     switch (json['content']) {
       case final String text:
         return text;
-      case null when json['tool_calls'] is List:
-        // Gemma 4 can write a sentence and then call a tool in the same
-        // generation; the call arrives as a chunk of its own. Returned as
-        // JSON, it reached the caller as text after the sentence.
-        return '';
       case null:
         return jsonStr;
       case final List<Object?> parts:
@@ -70,4 +66,24 @@ class SdkTextExtractor {
         );
     }
   }
+}
+
+/// Whether [token] is one LiteRT-LM chunk that carries tool calls and no text:
+/// what [SdkTextExtractor.extractTextFromResponse] returns for a call. Gemma 4
+/// can write a sentence and then call a tool in the same generation; the call
+/// then arrives as a chunk of its own, after the text.
+///
+/// Internal to core: `engine.dart` exports only [SdkTextExtractor].
+bool isSdkToolCallChunk(String token) {
+  final trimmed = token.trim();
+  if (!trimmed.startsWith('{')) return false;
+  final Object? json;
+  try {
+    json = jsonDecode(trimmed);
+  } on FormatException {
+    return false;
+  }
+  return json is Map<String, dynamic> &&
+      json['tool_calls'] is List &&
+      json['content'] == null;
 }

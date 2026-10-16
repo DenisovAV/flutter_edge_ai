@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/src/function_call_parser.dart';
 import 'package:flutter_edge_ai/src/message.dart';
 import 'package:flutter_edge_ai/src/model_response.dart';
 import 'package:flutter_edge_ai/src/parsing/sdk_response_parser.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/src/tool.dart';
 import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:mutex/mutex.dart';
@@ -392,11 +393,11 @@ class InferenceChat {
     // excluded by the guard below, so this first-char probe only ever runs for
     // the passthrough format — it never misfires on a text-stream format's
     // JSON-ish output. A turn may also be prose and then a call: Gemma 4 often
-    // writes a sentence before it calls a tool. The call arrives as a chunk of
-    // its own, a `tool_calls` object with no content, which SdkTextExtractor
-    // turns into an empty token, so it never reaches the text channel wherever
-    // it comes; the prose streams, and the call is surfaced at end-of-stream
-    // like any other.
+    // writes a sentence before it calls a tool. The call then arrives as a
+    // chunk of its own, a `tool_calls` object with no content
+    // (isSdkToolCallChunk), which is left out of the text; the prose streams,
+    // and the call is surfaced at end-of-stream like any other. Without this
+    // guard (calls not handled) such a chunk stays in the text as JSON.
     final bool sdkPassthrough =
         FunctionCallParser.usesSdkPassthrough(modelType, fileType: fileType) &&
         tools.isNotEmpty &&
@@ -442,8 +443,6 @@ class InferenceChat {
         // Runs before the generic funcBuffer scanning, which is a no-op for the
         // passthrough format anyway (it never detects a call in the text stream).
         if (sdkPassthrough) {
-          // A tool-call chunk (see SdkTextExtractor): no text to stream.
-          if (token.isEmpty) continue;
           if (sdkSwallow) {
             // Inside a tool-call JSON stream — swallow every token.
             sdkSwallowed.write(token);
@@ -465,7 +464,9 @@ class InferenceChat {
             buffer.write(sdkProbe);
             continue;
           }
-          // Already classified as plain text — stream token-by-token.
+          // Already classified as plain text — stream token-by-token. A call
+          // after the prose is not text: it is surfaced at end-of-stream.
+          if (isSdkToolCallChunk(token)) continue;
           yield response;
           buffer.write(token);
           continue;

@@ -229,6 +229,15 @@ void main() {
       expect(toolCallsRawForHistory(raw), cleanCall);
     });
 
+    test('text a call chunk carries itself is left out', () {
+      const combined =
+          '{"role":"assistant","content":[{"type":"text","text":"Sure."}],'
+          '"tool_calls":[{"type":"function","function":'
+          '{"name":"runIntent","arguments":{"intent":"<|\\"|>x<|\\"|>"}}}]}';
+
+      expect(toolCallsRawForHistory(combined), cleanCall);
+    });
+
     test('two calls are both kept, each cleaned', () {
       expect(toolCallsRawForHistory('$call$call'), '$cleanCall$cleanCall');
     });

@@ -272,6 +272,59 @@ void main() {
       },
     );
 
+    test('a requested backend the model file rules out is printed with the '
+        "file's reason, not the host's", () async {
+      // Gemma 3n declares cpu,gpu for its text model: asked for the NPU, the
+      // load plan leaves it out because of the file, on a device that may
+      // well have one.
+      const declared =
+          'model.litertlm declares that its text model runs on cpu, gpu '
+          '(backend_constraint)';
+      final printed = await _printedWithGemmaLogMuted(() async {
+        await initializeFfiRuntime<_FakeClient>(
+          preferredBackend: PreferredBackend.npu,
+          logTag: '[Test]',
+          createClient: _FakeClient.new,
+          initializeClient: (_, _) async {},
+          shutdownClient: (client) => client.shutdown(),
+          backends: const [PreferredBackend.gpu, PreferredBackend.cpu],
+          droppedBecause: const {PreferredBackend.npu: declared},
+        );
+      });
+      expect(printed, [
+        '[flutter_edge_ai] WARNING: [Test] npu was requested, but $declared — '
+            'trying gpu -> cpu instead. InferenceModel.activeBackend names '
+            'what actually ran.',
+      ]);
+    });
+
+    test('a requested GPU the model file rules out is printed, not dropped '
+        'silently', () async {
+      final printed = await _printedWithGemmaLogMuted(() async {
+        await initializeFfiRuntime<_FakeClient>(
+          preferredBackend: PreferredBackend.gpu,
+          logTag: '[Test]',
+          createClient: _FakeClient.new,
+          initializeClient: (_, _) async {},
+          shutdownClient: (client) => client.shutdown(),
+          backends: const [PreferredBackend.cpu],
+          droppedBecause: const {
+            PreferredBackend.gpu:
+                'model.litertlm declares that its text model runs on cpu '
+                '(backend_constraint)',
+          },
+        );
+      });
+      expect(printed, hasLength(1));
+      expect(
+        printed.single,
+        contains(
+          'gpu was requested, but model.litertlm declares that its text model '
+          'runs on cpu (backend_constraint) — trying cpu instead',
+        ),
+      );
+    });
+
     test('a failed backend is printed, and the last one does not promise a '
         'next', () async {
       final printed = await _printedWithGemmaLogMuted(() async {
@@ -325,13 +378,12 @@ void main() {
   });
 
   group('encoderBackendWireName (vision + audio encoders)', () {
-    // The VISION encoder graph carries STABLEHLO_COMPOSITE ops the Metal /
-    // WebGPU LiteRT delegates can't prepare (hard-fails at conversation_create,
-    // no fallback — LiteRT-LM#2461), so CPU is the op-safe default there. AUDIO
-    // runs on either backend; CPU is a conservative default. Both stay
-    // overridable: a vision model whose section bakes a gpu-only
-    // backend_constraint would otherwise hard-fail on CPU, and Gemma 3n audio is
-    // ~2x faster on GPU.
+    // The LLM engine passes the load plan's choice from the bundle; null
+    // reaches here only for a file the plan could not read. The VISION encoder
+    // graph carries STABLEHLO_COMPOSITE ops the Metal / WebGPU LiteRT delegates
+    // can't prepare (hard-fails at conversation_create, no fallback —
+    // LiteRT-LM#2461), so CPU is the op-safe default there, and the published
+    // Gemma 4 and Gemma 3n audio encoders declare cpu.
     test('defaults to cpu when no encoder backend is set (null)', () {
       expect(encoderBackendWireName(null), 'cpu');
     });

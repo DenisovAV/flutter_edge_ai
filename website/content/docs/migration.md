@@ -1,10 +1,86 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai 2.4.0 / flutter_edge_ai_litertlm 1.14.0: backends follow the model file
+
+> Upgrade these together: `flutter_edge_ai` 2.4.0, `flutter_edge_ai_litertlm`
+> 1.14.0, `flutter_edge_ai_agent` 0.3.0 and `genkit_flutter_edge_ai` 0.10.0.
+> litertlm 1.13.x and genkit 0.9.x compile against core 2.4.0 but ignore
+> `multimodalOrder`, `activeVisionBackend` / `activeAudioBackend` and tool call
+> ids. The other packages are unchanged.
+
+```
+dependencies:
+  flutter_edge_ai: ^2.4.0
+  flutter_edge_ai_litertlm: ^1.14.0
+  flutter_edge_ai_agent: ^0.3.0       # if you use it
+  genkit_flutter_edge_ai: ^0.10.0     # if you use it
+```
+
+### `implements InferenceModel`
+
+A class that `implements InferenceModel` declares three new members:
+`createDecider` (fail it with `DeciderUnsupportedException`), and the getters
+`activeVisionBackend` and `activeAudioBackend` (null when the model has no such
+encoder or the engine does not say). A class that `extends InferenceModel`
+inherits all three.
+
+### Where a `.litertlm` runs
+
+Before it creates an engine, litertlm 1.14.0 reads the bundle's header and
+decides from it
+([where a model runs](/docs/litertlm#where-a-model-runs)).
+What can change for an existing app:
+
+- A bundle compiled for an NPU (e.g. `…_qualcomm_sm8750.litertlm`) with no
+  `preferredBackend` now runs on the NPU. With `PreferredBackend.gpu` or `cpu`
+  it is refused with a `LiteRtLmBundleException` (`wrongBackend`); on a device
+  whose NPU cannot be reached it fails with a `BackendInitException` that names
+  the cause. It is never tried on the GPU or the CPU. A generic bundle with
+  `npu` still falls back to GPU, then CPU.
+- An encoder you leave unset runs where its section says, reported in
+  `activeVisionBackend` / `activeAudioBackend`: Gemma 4 vision and audio on the
+  CPU, Gemma 3n vision on the GPU and its audio on the CPU.
+- `preferredAudioBackend: PreferredBackend.gpu` on Gemma 4 or Gemma 3n is
+  refused with a `LiteRtLmBundleException` (`wrongBackend`): their audio
+  encoders declare `backend_constraint` cpu. Remove it.
+- `preferredVisionBackend: PreferredBackend.cpu` on Gemma 3n is refused the
+  same way: its vision encoder declares gpu only. Remove it.
+- An encoder backend left unset and an explicit `PreferredBackend.cpu` are
+  different requests now: switching between them reloads the model.
+- A download that stopped early is refused before any engine
+  (`LiteRtLmBundleException`, `incomplete`): install the file again.
+
+New and optional: `LiteRtLmEngine(backendFallback: false)` makes one attempt
+and fails with LiteRT-LM's own reason, and `readLiteRtLmBundleInfo(path)` shows
+what the engine reads.
+
+### Gemma 4 gets its audio after the text
+
+litertlm 1.14.0 sends a Gemma 4 message's images, then its text, then its audio
+(`MultimodalOrder.imagesTextAudio`, the order of the model card); every other
+model keeps images, audio, text. Pass
+`getActiveModel(multimodalOrder: MultimodalOrder.imagesAudioText)` to keep the
+old order.
+
+### `flutter_edge_ai_agent` 0.3.0
+
+`EmptyAnswerRetryEvent` is a new `AgentEvent`, so an exhaustive `switch` over
+`AgentEvent` needs a case for it: the loop emits it when it asks again after an
+empty answer that followed `loadSkill` (`emptyAfterSkillRetries`, default 1).
+A turn that stays empty ends with `EmptyAnswerEvent`, a `DoneEvent`.
+
+### `genkit_flutter_edge_ai` 0.10.0
+
+Requires `flutter_edge_ai` ^2.4.0. Tool `ref`s travel as call ids both ways: a
+tool request's `ref` is the call's id (`call_0`, `call_1`, … when it has none),
+and a tool response's `ref` becomes the `toolCallId` of the message it is sent
+back as.
 
 ## flutter_edge_ai 2.3.0: the embedding API, EmbeddingGemma 2, RAG 1.1
 
@@ -219,7 +295,10 @@ The build hook downloads `com.qualcomm.qti:qnn-runtime` from Maven Central once
 per machine and caches it; offline builds set `qualcomm_npu_maven_url` to a
 mirror or `qualcomm_npu_aar` to the AAR itself. Setting the flag accepts
 Qualcomm's AI Stack License. It needs `flutter_edge_ai` 2.1.1. Without the flag
-nothing fails: `npu` falls back to GPU, then CPU. See [LiteRT-LM](/docs/litertlm).
+a generic bundle still loads: `npu` falls back to GPU, then CPU. A bundle
+compiled for an NPU cannot run anywhere else, so from litertlm 1.14.0 its load
+fails instead, with a `BackendInitException` whose one attempt says the stack
+is not enabled. See [LiteRT-LM](/docs/litertlm).
 
 **Linux arm64 (`flutter_edge_ai_litertlm` 1.11.0).** The same flag also bundles
 the Qualcomm NPU stack into Linux arm64 builds — Qualcomm Linux boards such as

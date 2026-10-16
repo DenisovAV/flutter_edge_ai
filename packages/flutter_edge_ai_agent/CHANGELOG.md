@@ -1,3 +1,9 @@
+## 0.3.0
+- **Breaking** for exhaustive switches: `EmptyAnswerRetryEvent`; an empty answer after `loadSkill` is retried (`emptyAfterSkillRetries`).
+- `NativeIntentExecutor(validators:)`: intents added through `handlers:` no longer fail validation.
+- **Behaviour change**: `runIntent`/`runMcp` with a `skillName` run the action they name; `runJs`/`runMcpTool` accepted.
+- SKILL.md parsing fixes; object tool arguments reach executors as JSON.
+
 ## 0.2.10
 - `AgentSession.ask` and `AgentLoop.run` take `audioBytes`: ask with a recording.
 

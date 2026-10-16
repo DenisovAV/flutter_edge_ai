@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/src/function_call_parser.dart';
 import 'package:flutter_edge_ai/src/message.dart';
 import 'package:flutter_edge_ai/src/model_response.dart';
 import 'package:flutter_edge_ai/src/parsing/sdk_response_parser.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/src/tool.dart';
 import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:mutex/mutex.dart';
@@ -112,6 +113,10 @@ class InferenceChat {
     systemInstruction, // kept for API compatibility, forwarded to session via sessionCreator
   }) : _runtimeInjectsToolDeclarationsOverride = runtimeInjectsToolDeclarations;
 
+  /// Every message of this chat, in order: the user's, the model's answers,
+  /// its tool calls and their results. A model that writes text before it calls
+  /// a tool (Gemma 4 on `.litertlm` does) streams that text, but its history
+  /// entry is the call alone.
   List<Message> get fullHistory => List.unmodifiable(_fullHistory);
 
   int get currentTokens => _currentTokens;
@@ -239,6 +244,9 @@ class InferenceChat {
     }
   }
 
+  /// Runs one generation and returns its answer: text or the tool call(s).
+  /// When the model writes text before a call, only the call is returned;
+  /// [generateChatResponseAsync] streams the text as well.
   Future<ModelResponse> generateChatResponse() async {
     edgeAiLog('InferenceChat: Getting response from native model...');
     final response = await session.getResponse();
@@ -269,7 +277,9 @@ class InferenceChat {
           // Strip Gemma 4 escape tokens (`<|"|>`) before persisting to history.
           // Keeping raw lets the SDK echo those tokens back into the next
           // prompt and the model reproduces them in later tool_calls (#248).
-          final cleanRaw = SdkResponseParser.cleanRawForHistory(raw);
+          // Only the call objects: text written before the call is not part
+          // of the call (see toolCallsRawForHistory).
+          final cleanRaw = toolCallsRawForHistory(raw);
           final toolCallMessage = Message.toolCall(
             text: cleanRaw,
             calls: allCalls,
@@ -389,9 +399,15 @@ class InferenceChat {
     // anything else is plain text and streams normally. Other formats are
     // excluded by the guard below, so this first-char probe only ever runs for
     // the passthrough format — it never misfires on a text-stream format's
-    // JSON-ish output. Invariant assumed: a passthrough turn is EITHER all
-    // tool-call JSON OR all text, never prose-then-JSON — Gemma 4's SDK emits a
-    // pure tool_calls object for a call, so the first-char classification holds.
+    // JSON-ish output. A turn may also be prose and then a call: Gemma 4 often
+    // writes a sentence before it calls a tool. The call then arrives as a
+    // chunk of its own, a `tool_calls` object with no content
+    // (isSdkToolCallChunk), which is taken out of the stream before the
+    // thinking filter; the prose streams, and the call is surfaced at
+    // end-of-stream like any other. Such a chunk is kept, and surfaced as text
+    // if no call can be read from it. Without this guard (calls not handled)
+    // such a chunk stays in the text as JSON. The prose written before a call
+    // is not recorded in history (see toolCallsRawForHistory).
     final bool sdkPassthrough =
         FunctionCallParser.usesSdkPassthrough(modelType, fileType: fileType) &&
         tools.isNotEmpty &&
@@ -403,10 +419,21 @@ class InferenceChat {
     String sdkProbe = ''; // pre-classification token accumulator
     final sdkSwallowed =
         StringBuffer(); // swallowed JSON (fallback if unparsed)
+    bool sdkCallChunkTaken = false; // a call chunk left out of the text?
 
-    final originalStream = session.getResponseAsync().map(
-      (token) => TextResponse(token),
-    );
+    // A call chunk (isSdkToolCallChunk) is taken out of the text here, on the
+    // session's own chunks: the thinking filter below may hold back the end of
+    // a prose chunk and join it to the next one. It is kept in sdkSwallowed, so
+    // a call that cannot be read at end-of-stream still reaches the caller.
+    final originalStream = session
+        .getResponseAsync()
+        .where((token) {
+          if (!sdkPassthrough || !isSdkToolCallChunk(token)) return true;
+          sdkSwallowed.write(token);
+          sdkCallChunkTaken = true;
+          return false;
+        })
+        .map((token) => TextResponse(token));
 
     // Split reasoning out of the stream for every model: a bundle that
     // declares a thought channel streams its reasoning there whatever the
@@ -650,8 +677,10 @@ class InferenceChat {
           // SDK path at ~L193 and the JSON paths) — otherwise the caller's
           // tool-response has no matching call and is left orphaned, which
           // corrupts the replayed history when the Gemma 4 session rotates.
-          // Strip the Gemma 4 escape tokens first, same as the sync path (#248).
-          final cleanRaw = SdkResponseParser.cleanRawForHistory(raw);
+          // Strip the Gemma 4 escape tokens first, same as the sync path (#248),
+          // and keep only the call objects: prose streamed before the call is
+          // not part of it (see toolCallsRawForHistory).
+          final cleanRaw = toolCallsRawForHistory(raw);
           final toolCallMessage = Message.toolCall(
             text: cleanRaw,
             calls: allCalls,
@@ -667,14 +696,17 @@ class InferenceChat {
       }
     }
 
-    // Safety net: we suppressed a `{`-leading SDK-passthrough stream as a tool
-    // call, but lastRawResponse yielded no parseable call. Don't silently drop
+    // Safety net: we suppressed a `{`-leading SDK-passthrough stream, or took
+    // a call chunk out of the text, as a tool call, but lastRawResponse yielded
+    // no parseable call (or there is none). Don't silently drop
     // the model's output — surface the swallowed text (as it leaked pre-fix). It
     // is deliberately NOT re-recorded to history: this only fires on a degenerate
     // turn (a `{`-leading passthrough turn with no extractable tool_calls), where
     // re-appending the JSON-shaped blob as an assistant turn would pollute the
     // model's next-turn context more than omitting it.
-    if (sdkSwallow && !emittedFunctionCall && sdkSwallowed.isNotEmpty) {
+    if ((sdkSwallow || sdkCallChunkTaken) &&
+        !emittedFunctionCall &&
+        sdkSwallowed.isNotEmpty) {
       edgeAiLog(
         'InferenceChat: SDK tool-call stream suppressed but no call parsed — '
         'surfacing raw text (fallback)',

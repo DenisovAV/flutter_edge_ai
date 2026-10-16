@@ -1,14 +1,16 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:path_provider/path_provider.dart';
 
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:io' show FileSystemException;
 
+import 'bundle/litertlm_bundle_info.dart';
+import 'bundle/litertlm_bundle_reader.dart';
+import 'bundle/litertlm_load_plan.dart';
 import 'ffi/backend_preference.dart';
 import 'ffi/ffi_inference_model.dart';
 import 'ffi/litert_lm_client.dart';
-import 'ffi/npu_stack_manifest.dart';
+import 'litert_lm_engine_host.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 
@@ -85,13 +87,20 @@ encoderInitArgs(
   RuntimeConfig config,
   PreferredBackend activeBackend, {
   ActivationDataType? gpuDefaultActivation,
+  PreferredBackend? visionBackend,
+  PreferredBackend? audioBackend,
 }) => (
   backend: ffiBackendWireName(activeBackend),
   enableVision: config.supportImage,
-  visionBackend: encoderBackendWireName(config.preferredVisionBackend),
+  // The load plan's choice (`planLiteRtLmLoad`), else the request.
+  visionBackend: encoderBackendWireName(
+    visionBackend ?? config.preferredVisionBackend,
+  ),
   maxNumImages: config.supportImage ? (config.maxNumImages ?? 1) : 0,
   enableAudio: config.supportAudio,
-  audioBackend: encoderBackendWireName(config.preferredAudioBackend),
+  audioBackend: encoderBackendWireName(
+    audioBackend ?? config.preferredAudioBackend,
+  ),
   // The caller's value wins on every backend. The engine's own default (see
   // `gpuActivationDefault`) is for a GPU attempt only: only the GPU executor
   // reads the type, and a CPU or NPU attempt is left as the bundle has it.
@@ -106,7 +115,24 @@ encoderInitArgs(
 /// reset via [InferenceModel.addCloseListener] (added in a later task).
 class LiteRtLmEngine
     implements InferenceEngineProvider, HuggingFaceResolverSource {
-  const LiteRtLmEngine();
+  const LiteRtLmEngine({this.backendFallback = true});
+
+  /// Whether a model that fails to load on its backend is tried on the next
+  /// one: npu → gpu → cpu, gpu → cpu (the default).
+  ///
+  /// With false, a load makes exactly one attempt — on `preferredBackend`, or
+  /// on the GPU when none is given — and a failure throws a
+  /// [BackendInitException] whose one attempt names that backend and carries
+  /// LiteRT-LM's own reason ([LiteRtLmEngineCreateException.nativeMessage]).
+  /// An NPU this device cannot reach is refused at once, without creating an
+  /// engine. Use it when a load on another backend would be wrong, not slow:
+  /// a benchmark, an NPU demo, an app that would rather say "did not load on
+  /// the GPU" than load a multi-gigabyte model again on the CPU.
+  ///
+  /// A bundle compiled for an NPU is tried on the NPU only either way: the GPU
+  /// and the CPU cannot run it. The vision and audio encoders never fall back.
+  /// `InferenceModel.activeBackend` names what ran in both modes.
+  final bool backendFallback;
 
   @override
   String get name => 'LiteRT-LM';
@@ -133,7 +159,34 @@ class LiteRtLmEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
-    final cacheDir = (await getApplicationSupportDirectory()).path;
+    final host = liteRtLmEngineHost;
+    final cacheDir = await host.cacheDir();
+
+    // What the file says about itself decides where it can run
+    // (`planLiteRtLmLoad`). A file the reader cannot read keeps the rules that
+    // need no file: LiteRT-LM also opens `.task` bundles, which have no
+    // container header.
+    final bundle = await _readBundle(config.modelPath);
+    // Whether the NPU is one of the backends the load tries, from the same
+    // rules the plan below applies: a request for it, a bundle compiled for
+    // it, a text model that declares it alone, or an encoder that is on and
+    // runs there. The plan asks whether the NPU is reachable only then, so the
+    // app's stack is looked up first.
+    final npuMayRun =
+        liteRtLmTextCandidates(
+          path: config.modelPath,
+          bundle: bundle,
+          preferredBackend: config.preferredBackend,
+          backendFallback: backendFallback,
+          abi: host.abi,
+        ).backends.contains(PreferredBackend.npu) ||
+        liteRtLmEncoderOnNpu(
+          bundle: bundle,
+          supportImage: config.supportImage,
+          supportAudio: config.supportAudio,
+          preferredVisionBackend: config.preferredVisionBackend,
+          preferredAudioBackend: config.preferredAudioBackend,
+        );
 
     // Qualcomm npu (Android, Linux arm64) is opt-in per app. Ask the build
     // before the hardware: an app that did not bundle the stack must not even
@@ -143,9 +196,10 @@ class LiteRtLmEngine
     // preload in LiteRtLmFfiClient on Linux.
     bool? npuAvailable;
     String? npuUnavailableBecause;
-    if (config.preferredBackend == PreferredBackend.npu &&
-        (Platform.isAndroid || Platform.isLinux)) {
-      final stack = await checkQualcommNpuStack();
+    if (npuMayRun &&
+        (host.operatingSystem == 'android' ||
+            host.operatingSystem == 'linux')) {
+      final stack = await host.qualcommNpuStack();
       if (!stack.known) {
         edgeAiLog(
           '[LiteRtLmEngine] ${stack.reason}; trying npu, the platform side '
@@ -200,12 +254,29 @@ class LiteRtLmEngine
       }
     }
 
+    final plan = planLiteRtLmLoad(
+      path: config.modelPath,
+      bundle: bundle,
+      preferredBackend: config.preferredBackend,
+      backendFallback: backendFallback,
+      supportImage: config.supportImage,
+      supportAudio: config.supportAudio,
+      preferredVisionBackend: config.preferredVisionBackend,
+      preferredAudioBackend: config.preferredAudioBackend,
+      npuAvailable: () => npuAvailable ?? host.npuDispatchShips,
+      npuUnavailableReason: () =>
+          npuUnavailableBecause ?? host.npuUnavailableReason,
+      abi: host.abi,
+    );
+
     final ffiRuntime = await initializeFfiRuntime<LiteRtLmFfiClient>(
       preferredBackend: config.preferredBackend,
       logTag: '[LiteRtLmEngine]',
-      createClient: LiteRtLmFfiClient.new,
+      createClient: host.createClient,
       npuDispatchAvailable: npuAvailable,
       npuUnavailableBecause: npuUnavailableBecause,
+      backends: plan.textBackends,
+      droppedBecause: plan.dropped,
       initializeClient: (client, backend) => _oneNpuInitAtATime(
         backend,
         () async {
@@ -213,6 +284,8 @@ class LiteRtLmEngine
             config,
             backend,
             gpuDefaultActivation: gpuDefaultActivation,
+            visionBackend: plan.visionBackend,
+            audioBackend: plan.audioBackend,
           );
           // Per ATTEMPT, not per request: a requested NPU falls back npu -> gpu
           // -> cpu (`ffiBackendFallbackOrder`), and the floor this skips exists
@@ -223,19 +296,38 @@ class LiteRtLmEngine
             config.maxTokens,
             preferredBackend: backend,
           );
-          await client.initialize(
-            modelPath: config.modelPath,
-            backend: args.backend,
-            maxTokens: maxTokens,
-            cacheDir: cacheDir,
-            enableVision: args.enableVision,
-            visionBackend: args.visionBackend,
-            maxNumImages: args.maxNumImages,
-            enableAudio: args.enableAudio,
-            audioBackend: args.audioBackend,
-            enableSpeculativeDecoding: config.enableSpeculativeDecoding,
-            activationDataType: args.activationDataType,
-          );
+          try {
+            await host.initializeClient(
+              client,
+              modelPath: config.modelPath,
+              backend: args.backend,
+              maxTokens: maxTokens,
+              cacheDir: cacheDir,
+              enableVision: args.enableVision,
+              visionBackend: args.visionBackend,
+              maxNumImages: args.maxNumImages,
+              enableAudio: args.enableAudio,
+              audioBackend: args.audioBackend,
+              enableSpeculativeDecoding: config.enableSpeculativeDecoding,
+              activationDataType: args.activationDataType,
+            );
+          } on LiteRtLmEngineCreateException catch (e, stackTrace) {
+            final target = plan.npuTarget;
+            if (backend != PreferredBackend.npu || target == null) rethrow;
+            // The SoC of the device is not read before the load (nothing
+            // reports it reliably on every platform), so a bundle for another
+            // SoC fails here. Other causes fail here too, so the SoC is named
+            // as a possible cause, not the cause.
+            Error.throwWithStackTrace(
+              LiteRtLmEngineCreateException(
+                '${e.message}. The bundle is compiled for the $target NPU; if '
+                'this device is not a $target, that is the cause.',
+                nativeCode: e.nativeCode,
+                nativeMessage: e.nativeMessage,
+              ),
+              stackTrace,
+            );
+          }
         },
       ),
       shutdownClient: (client) => client.shutdown(),
@@ -264,6 +356,8 @@ class LiteRtLmEngine
       ),
       modelType: spec.modelType,
       activeBackend: ffiRuntime.activeBackend,
+      activeVisionBackend: plan.visionBackend,
+      activeAudioBackend: plan.audioBackend,
       fileType: spec.fileType,
       supportImage: config.supportImage,
       supportAudio: config.supportAudio,
@@ -271,6 +365,23 @@ class LiteRtLmEngine
       maxConcurrentSessions: config.maxConcurrentSessions,
       onClose: () {}, // no-op: core resets its own state via addCloseListener
     );
+  }
+
+  /// [path]'s bundle info, or null when the file is not one this package
+  /// reads (a `.task` bundle, a newer container version, a stamp layout it
+  /// does not know): the load then keeps the rules that need no file. A file
+  /// that ends inside its own header is refused here, as an incomplete one.
+  static Future<LiteRtLmBundleInfo?> _readBundle(String path) async {
+    try {
+      return await readLiteRtLmBundleInfo(path);
+    } on LiteRtLmBundleException catch (e) {
+      if (e.problem == LiteRtLmBundleProblem.incomplete) rethrow;
+      edgeAiLog('[LiteRtLmEngine] $e; loading without reading the file');
+      return null;
+    } on FileSystemException catch (e) {
+      edgeAiLog('[LiteRtLmEngine] $e; loading without reading the file');
+      return null;
+    }
   }
 
   static Future<void> _npuInitTail = Future.value();

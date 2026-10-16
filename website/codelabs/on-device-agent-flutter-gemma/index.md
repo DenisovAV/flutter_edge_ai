@@ -196,9 +196,9 @@ bundles it:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.2.0
-  flutter_edge_ai_litertlm: ^1.12.0
-  flutter_edge_ai_agent: ^0.2.8
+  flutter_edge_ai: ^2.4.0
+  flutter_edge_ai_litertlm: ^1.14.0
+  flutter_edge_ai_agent: ^0.3.0
 
 flutter:
   assets:
@@ -332,6 +332,8 @@ void _apply(_Turn reply, AgentEvent event) {
       if (text.trim().isEmpty) {
         reply.steps.add('∅ the model ended the turn without an answer');
       }
+    case EmptyAnswerRetryEvent():
+      reply.steps.add('↻ asked again');
     case MaxIterationsEvent(:final iterations):
       reply.steps.add('⏹ stopped after $iterations steps');
     case AgentErrorEvent(:final message):
@@ -342,7 +344,8 @@ void _apply(_Turn reply, AgentEvent event) {
 
 `AgentEvent` is sealed, so the switch is exhaustive: a new kind of event in a
 later version of the package is a compile error here, not a step that goes
-missing from the screen.
+missing from the screen. `EmptyAnswerRetryEvent` is one, from 0.3.0: the model
+loaded a skill and then said nothing, and the package asks it once more.
 
 Three rules shape it:
 
@@ -796,7 +799,7 @@ declares `require-secret: true` under `metadata`. The app stores the key with
 `SecretStore.set(skillName, key)` (`SecretEditorDialog` asks the user for it)
 and passes the store to `AgentSession.fromModel(secretStore: ...)`; the agent
 hands the key to your function as `secret`. It never goes into the prompt. In
-0.2.8 it does go into the page the loopback server sends to the webview, and
+0.3.0 it does go into the page the loopback server sends to the webview, and
 that server does not check who asks while the skill runs: treat such a key as
 one another app on the same device could read.
 

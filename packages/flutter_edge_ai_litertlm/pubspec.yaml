@@ -25,10 +25,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # ^2.3.1: this version embeds combined EmbeddingGemma 2 inputs (text,
-  # images and audio in one vector) and documents them through the public
-  # `EmbeddingInput(text:, images:, audio:)` constructor, which arrives in
-  # 2.3.1 — with 2.3.0 an app could not build what it accepts. 2.3.0 brought
+  # ^2.4.0: this version fills `InferenceModel.activeVisionBackend` /
+  # `activeAudioBackend`, sends a message's media in the
+  # `RuntimeConfig.multimodalOrder` (`MultimodalOrder`, `MediaPosition`) and
+  # reports `EmbeddingPassInfo.visionTokensPerImage`, all of which arrive in
+  # 2.4.0. 2.3.1 brought the public `EmbeddingInput(text:, images:, audio:)`
+  # constructor for the combined EmbeddingGemma 2 inputs it embeds. 2.3.0 brought
   # what it implements — `package:flutter_edge_ai/
   # engine.dart` and the embedding pass SPI (`EmbeddingBackendProvider
   # .describe`, `EmbeddingPassDescriptor`, `TokenEmbeddingPass`, the

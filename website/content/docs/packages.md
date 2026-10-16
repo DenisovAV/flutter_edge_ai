@@ -19,6 +19,7 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | **`flutter_edge_ai_litertlm`** | `.litertlm` inference via `dart:ffi` (LiteRT-LM C API), plus `LiteRtEmbeddingBackend` for `.tflite` and EmbeddingGemma 2 embeddings. Owns the shared native library. | Mobile + Desktop + Web |
 | **`flutter_edge_ai_mediapipe`** | `.task` / `.bin` inference via MediaPipe. Google's LLM Inference API is maintenance-only — new apps should use `.litertlm`. | Mobile + Web |
 | **`flutter_edge_ai_builtin_ai`** | System OS models — Gemini Nano (Android / AICore), Apple Foundation Models (iOS 26+/macOS 26+), Windows AI Foundry (Phi Silica), and the browser Prompt API (Web — Gemini Nano in Chrome, Phi-4-mini in Edge). No model file to bundle or download. A thin adapter over [`flutter_local_ai`](https://pub.dev/packages/flutter_local_ai), which owns the native layer — not a plugin itself. | Android + iOS + macOS + Windows + Web |
+| **`flutter_edge_ai_llama`** (unreleased) | [GGUF inference](/docs/llama) through llamadart. Native artifacts and the Web bridge remain owned by llamadart. | Android, iOS, macOS, Windows, Linux + Web; see qualification matrix |
 | **`flutter_edge_ai_onnx`** | Text generation (`OnnxEngine`) + embeddings (`OnnxEmbeddingBackend`) — ORT-GenAI/ORT via `dart:ffi` on native, Transformers.js/onnxruntime-web on Web. | macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64 + Web |
 | **`flutter_edge_ai_embeddings`** | Embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via `embeddingTokenizers:`, for `.tflite` and `.onnx` models (an EmbeddingGemma 2 `.litertlm` carries its own). Needs a backend — `LiteRtEmbeddingBackend` (`flutter_edge_ai_litertlm`) or `OnnxEmbeddingBackend` (`flutter_edge_ai_onnx`). | All |
 | **`flutter_edge_ai_rag`** | Instance-scoped RAG orchestration, `RagIndex`, stable embedding profiles, filters, and vector-store provider contracts. | All |
@@ -41,8 +42,8 @@ is on the [Capabilities](/docs/capabilities) page.
 - **Probe-chain registry.** Engines and backends are pure factories that declare
   `canHandle(spec)` + a priority. The registry selects a provider per model by
   declared `ModelFileType` — `task` / `binary` → MediaPipe, `litertlm` → LiteRT-LM,
-  `onnx` → Onnx, `builtIn` → BuiltInAi. `gguf` is reserved for `.gguf` files;
-  their llama.cpp engine, `flutter_edge_ai_llama`, is coming soon.
+  `onnx` → Onnx, `builtIn` → BuiltInAi, `gguf` → the opt-in llama.cpp engine
+  (`flutter_edge_ai_llama`, unreleased; see [setup](/docs/llama)).
 - **One app can run both formats.** Register both `LiteRtLmEngine()` and
   `MediaPipeEngine()`, and the registry routes each model to the engine that
   handles its declared `ModelFileType` — not its file extension.
@@ -59,6 +60,7 @@ is on the [Capabilities](/docs/capabilities) page.
 | Run `.litertlm` models on any platform, desktop included (see [Models](/docs/models)) | `flutter_edge_ai_litertlm` |
 | Run `.task` / `.bin` models on mobile and web (see [Models](/docs/models)); MediaPipe is maintenance-only, so prefer `.litertlm` in new apps | `flutter_edge_ai_mediapipe` |
 | Run the OS system model with no download (Gemini Nano / Apple FM / Windows AI Foundry / the browser Prompt API) | `flutter_edge_ai_builtin_ai` |
+| Run `.gguf` inference models | `flutter_edge_ai_llama` (unreleased; see [setup](/docs/llama)) |
 | Run ONNX models — ORT-GenAI (native) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
 | Generate text embeddings with EmbeddingGemma 2 (`.litertlm`) | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
 | Embed images with EmbeddingGemma 2 (the 440m or 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |

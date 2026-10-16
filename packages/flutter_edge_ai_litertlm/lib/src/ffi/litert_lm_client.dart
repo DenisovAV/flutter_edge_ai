@@ -20,6 +20,10 @@ import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
 import '../thinking_context.dart';
+import '../litert_lm_load_errors.dart';
+
+export '../litert_lm_load_errors.dart'
+    show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
 
 /// The per-turn `extra_context` JSON that sets thinking for this turn; see
 /// [thinkingContext].
@@ -715,9 +719,9 @@ class LiteRtLmFfiClient {
     _backend = backend;
     final bindingsMs = initSw.elapsedMilliseconds;
     edgeAiLog('[LiteRtLmFfi/perf] _ensureBindings: ${bindingsMs}ms');
-    // Log the resolved per-encoder backends: vision/audio default to CPU
-    // independent of the text backend, so this makes the GPU→CPU default (and
-    // any override) visible when diagnosing "why isn't vision using my GPU".
+    // Log the resolved per-encoder backends: vision/audio follow the bundle
+    // (the engine's load plan), independent of the text backend, so this makes
+    // the choice visible when diagnosing "why isn't vision using my GPU".
     if (enableVision || enableAudio) {
       edgeAiLog(
         '[LiteRtLmFfi] encoders: '
@@ -731,12 +735,12 @@ class LiteRtLmFfiClient {
     // Create engine settings
     final modelPathPtr = modelPath.toNativeUtf8();
     final backendPtr = backend.toNativeUtf8();
-    // Vision + audio encoders default to CPU (visionBackend/audioBackend), NOT
-    // the text backend. The VISION encoder's STABLEHLO_COMPOSITE ops fail to
-    // prepare on the Metal/WebGPU delegates (hard-fails at conversation_create,
-    // no fallback — LiteRT-LM#2461), so CPU is mandatory-safe there. AUDIO runs
-    // on either backend; CPU is a conservative default (GPU is often faster —
-    // Gemma 3n audio ~2x). Both stay overridable via the arg.
+    // Vision + audio encoders run on visionBackend/audioBackend, NOT the text
+    // backend: what the engine's load plan chose from the bundle (the
+    // section's backend_constraint, else the NPU it is compiled for, else CPU,
+    // because the VISION encoder's STABLEHLO_COMPOSITE ops fail to prepare on
+    // the Metal/WebGPU delegates — hard-fails at conversation_create, no
+    // fallback, LiteRT-LM#2461).
     final visionBackendPtr = enableVision
         ? visionBackend.toNativeUtf8()
         : nullptr;
@@ -923,6 +927,19 @@ class LiteRtLmFfiClient {
           level: EdgeAiLogLevel.verbose,
         );
         final createStart = isolateSw.elapsedMilliseconds;
+        // LiteRT-LM keeps a failed create's status in a thread-local last
+        // error (`c/engine.cc`), on every platform and in release builds,
+        // unlike its log, which this package captures in debug builds on
+        // three platforms only. Cleared first, because success never resets
+        // it, and read on this thread before any other native call. Every
+        // native-v0.18.0-e library exports it (the release gate checks); a
+        // library without it still loads models, with no reason to report.
+        final lastError = lib.providesSymbol('litert_lm_clear_last_error');
+        if (lastError) {
+          lib.lookupFunction<Void Function(), void Function()>(
+            'litert_lm_clear_last_error',
+          )();
+        }
         int createEngine() => create(Pointer.fromAddress(settingsAddr)).address;
         final ptr = blockSigprof
             ? withSigprofBlocked(createEngine)
@@ -931,9 +948,25 @@ class LiteRtLmFfiClient {
           '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
           level: EdgeAiLogLevel.verbose,
         );
-        return ptr;
+        if (ptr != 0 || !lastError) {
+          return (address: ptr, code: 0, message: null);
+        }
+        final code = lib.lookupFunction<Int32 Function(), int Function()>(
+          'litert_lm_get_last_error_code',
+        )();
+        final message = lib
+            .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+              'litert_lm_get_last_error_message',
+            )();
+        return (
+          address: 0,
+          code: code,
+          message: code == 0 || message == nullptr
+              ? null
+              : message.toDartString(),
+        );
       });
-      _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr);
+      _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr.address);
       sw.stop();
       edgeAiLog(
         '[LiteRtLmFfi/perf] === END litert_lm_engine_create: ${sw.elapsedMilliseconds}ms (includes isolate spawn ~50-200ms) ===',
@@ -948,28 +981,35 @@ class LiteRtLmFfiClient {
         // the log. A GPU-only model (e.g. Gemma 4 12B, whose decoder section
         // declares `section_backend_constraint: gpu`) fails engine_create on the
         // CPU backend with an otherwise opaque null — turn that into an
-        // actionable error instead of the misleading "model may be invalid".
+        // actionable error instead of the generic create failure below.
         final constraint = _backendConstraintFromNativeLog();
         _dumpNativeLog();
+        final nativeCode = engineAddr.code == 0 ? null : engineAddr.code;
+        final nativeMessage = engineAddr.message;
+        final because = nativeMessage == null ? '' : ': $nativeMessage';
         if (constraint != null && constraint != backend) {
-          throw Exception(
+          throw LiteRtLmEngineCreateException(
             'This .litertlm model requires the "$constraint" backend — it '
             'declares section_backend_constraint: $constraint, but the '
             '"$backend" backend was requested. Use PreferredBackend.$constraint '
             '(or omit preferredBackend to try GPU first).',
+            nativeCode: nativeCode,
+            nativeMessage: nativeMessage,
           );
         }
         // Only the GPU executor reads the activation type, so only a float32
         // GPU attempt can have failed because of it.
         final float32OnGpu = activationDataType == 0 && backend == 'gpu';
-        throw Exception(
-          'Failed to create engine. Model may be invalid: $modelPath'
+        throw LiteRtLmEngineCreateException(
+          'Failed to create engine on $backend$because. Model: $modelPath'
           '${float32OnGpu ? ' (float32 activations need more GPU memory than '
                     'the default. If you set activationDataType, try without '
                     'it; if you did not, the engine chose float32 for a '
                     'FunctionGemma bundle that declares no '
                     'prefer_activation_type, and ActivationDataType.float16 '
                     'asks for the default instead)' : ''}',
+          nativeCode: nativeCode,
+          nativeMessage: nativeMessage,
         );
       }
 
@@ -2258,16 +2298,4 @@ String prepareLinuxNpuDispatchDir() {
     }
   }
   return libDir;
-}
-
-/// The Android or Linux NPU attempt cannot start because the dispatch
-/// directory could not be prepared. An [Exception], not an [Error], so `initializeFfiRuntime`
-/// records it and falls back to gpu/cpu with the reason attached.
-class NpuDispatchUnavailableException implements Exception {
-  const NpuDispatchUnavailableException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'NpuDispatchUnavailableException: $message';
 }

@@ -28,37 +28,10 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
 import '../litertlm_bundle_sampler.dart' show litertlmHeaderEnd;
 
-/// The SoC a `.litertlm` bundle's compiled sections target.
-final class LiteRtLmNpuTarget {
-  const LiteRtLmNpuTarget({required this.vendor, required this.soc});
-
-  /// The SoC manufacturer as the compiler stamped it: `Qualcomm`, `Google`,
-  /// `MediaTek`, `IntelOpenVINO`.
-  final String vendor;
-
-  /// The SoC model as the compiler stamped it, e.g. `SM8850`, `QCS8275`,
-  /// `PTL`.
-  final String soc;
-
-  bool get isQualcomm => vendor.toLowerCase() == 'qualcomm';
-
-  /// Compiled by LiteRT's OpenVINO plugin for an Intel NPU: Google's
-  /// `…_Intel_PTL` bundles are stamped `IntelOpenVINO` / `PTL` (read from the
-  /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
-  bool get isIntel => vendor.toLowerCase() == 'intelopenvino';
-
-  @override
-  bool operator ==(Object other) =>
-      other is LiteRtLmNpuTarget && other.vendor == vendor && other.soc == soc;
-
-  @override
-  int get hashCode => Object.hash(vendor, soc);
-
-  @override
-  String toString() => '$vendor $soc';
-}
+export '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
 
 /// The NPU [modelPath] was compiled for, or null for a bundle with no
 /// compiled section (the generic CPU bundles).
@@ -94,6 +67,23 @@ Future<LiteRtLmNpuTarget?> readLiteRtLmNpuTarget(String modelPath) async {
   } finally {
     await file.close();
   }
+}
+
+/// The stamp of each of [sections] (`[begin, end)` of `TFLiteModel`
+/// sections) in the open [file] of [length] bytes, by range: null for a
+/// section that is not compiled for an NPU. A section that ends past the end
+/// of the file is left out. Throws [FormatException] for a stamp this reader
+/// cannot read and [RangeError] for a structure out of range.
+Future<Map<(int, int), LiteRtLmNpuTarget?>> readLiteRtLmSectionStamps(
+  RandomAccessFile file,
+  int length,
+  Iterable<(int, int)> sections,
+) async {
+  final reader = _FileReader(file, length);
+  return {
+    for (final (begin, end) in sections)
+      if (end <= length) (begin, end): await _stampOf(reader, begin, end),
+  };
 }
 
 /// The `[begin, end)` ranges of the `TFLiteModel` sections listed in a

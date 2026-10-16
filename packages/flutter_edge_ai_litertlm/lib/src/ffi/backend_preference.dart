@@ -6,6 +6,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
+import '../litert_lm_load_errors.dart';
+
+export '../litert_lm_load_errors.dart'
+    show BackendInitAttemptFailure, BackendInitException;
+
 /// Whether this host ships an NPU dispatch stack at all.
 ///
 /// Three can: Android and Linux arm64 carry the Qualcomm QNN stack and Windows
@@ -218,17 +223,14 @@ String ffiBackendWireName(PreferredBackend backend) => switch (backend) {
 /// Wire name for an ENCODER backend (vision / audio), defaulting to `cpu` when
 /// unset. Shared by both because their defaulting is identical (`null → cpu`).
 ///
-/// Why CPU differs per encoder:
-/// - VISION: its graph carries `STABLEHLO_COMPOSITE` ops the Metal (iOS/macOS)
-///   and WebGPU (Windows/Linux) LiteRT delegates cannot prepare — it hard-fails
-///   at `conversation_create` with no backend fallback (LiteRT-LM#2461, open
-///   upstream). CPU is the mandatory-safe default (matching the vision
-///   *adapter*, which LiteRT-LM already pins to CPU unconditionally).
-/// - AUDIO: runs fine on either backend (verified on Metal); CPU is a
-///   conservative default, but GPU is often faster (Gemma 3n audio ~2× CPU).
-///
-/// Both stay overridable: pass `PreferredBackend.gpu` for a vision model whose
-/// section bakes a gpu-only `backend_constraint`, or for faster GPU audio.
+/// The LLM engine passes what its load plan chose from the bundle (the
+/// section's `backend_constraint`, else the NPU it is compiled for, else CPU),
+/// so `null` reaches here only for a file the plan could not read. CPU is
+/// the safe value then: the VISION graph carries `STABLEHLO_COMPOSITE` ops the
+/// Metal (iOS/macOS) and WebGPU (Windows/Linux) LiteRT delegates cannot
+/// prepare — it hard-fails at `conversation_create` with no backend fallback
+/// (LiteRT-LM#2461, open upstream) — and the published Gemma 4 and Gemma 3n
+/// AUDIO encoders declare `backend_constraint` cpu.
 String encoderBackendWireName(PreferredBackend? encoderBackend) =>
     encoderBackend == null ? 'cpu' : ffiBackendWireName(encoderBackend);
 
@@ -242,55 +244,6 @@ int? activationDataTypeWireValue(ActivationDataType? type) => switch (type) {
   ActivationDataType.float32 => 0,
   ActivationDataType.float16 => 1,
 };
-
-/// Failure details for a single FFI backend initialization attempt.
-class BackendInitAttemptFailure {
-  const BackendInitAttemptFailure({
-    required this.backend,
-    required this.error,
-    required this.stackTrace,
-  });
-
-  /// Backend used for this initialization attempt.
-  final PreferredBackend backend;
-
-  /// Error reported while initializing [backend].
-  final Object error;
-
-  /// Stack trace captured with [error].
-  final StackTrace stackTrace;
-
-  @override
-  String toString() => '${ffiBackendWireName(backend)}: $error';
-}
-
-/// Exception thrown after every FFI backend fallback attempt fails.
-class BackendInitException implements Exception {
-  BackendInitException({required Iterable<BackendInitAttemptFailure> attempts})
-    : attempts = List.unmodifiable(attempts) {
-    if (this.attempts.isEmpty) {
-      throw ArgumentError.value(
-        attempts,
-        'attempts',
-        'must contain at least one failed backend attempt',
-      );
-    }
-  }
-
-  /// Failed backend attempts in the order they were tried.
-  final List<BackendInitAttemptFailure> attempts;
-
-  /// Last backend attempt, usually the most actionable failure.
-  BackendInitAttemptFailure get lastAttempt => attempts.last;
-
-  @override
-  String toString() {
-    final failures = attempts.map((attempt) => attempt.toString()).join('; ');
-    return 'BackendInitException: all FFI backends failed. '
-        'Last attempted ${ffiBackendWireName(lastAttempt.backend)}. '
-        'Attempts: $failures';
-  }
-}
 
 Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   required PreferredBackend? preferredBackend,
@@ -307,9 +260,16 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // Why npu is off when the caller decided so from something this file cannot
   // see — on Android, the build not bundling the opt-in Qualcomm stack.
   String? npuUnavailableBecause,
+  // The backends to try, when the caller decided them (the LLM engine does,
+  // from the bundle: `planLiteRtLmLoad`); otherwise [ffiBackendFallbackOrder].
+  List<PreferredBackend>? backends,
+  // Why the caller left a backend of the request out of [backends] — the
+  // model file rules it out (`LiteRtLmLoadPlan.dropped`). The notice below
+  // says that instead of a reason about the host.
+  Map<PreferredBackend, String> droppedBecause = const {},
 }) async {
   final attempts = <BackendInitAttemptFailure>[];
-  final backends = ffiBackendFallbackOrder(
+  backends ??= ffiBackendFallbackOrder(
     preferredBackend,
     npuDispatchAvailable: npuDispatchAvailable,
   );
@@ -328,7 +288,18 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // `developer.log` writes to. An explicit request overridden is an abnormal
   // state, so this costs nothing in the normal case — the same reasoning as
   // `_warn` in litert_default_scope.dart.
-  if (preferredBackend == PreferredBackend.npu &&
+  final fileReason = preferredBackend == null
+      ? null
+      : droppedBecause[preferredBackend];
+  if (fileReason != null && !backends.contains(preferredBackend)) {
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai] WARNING: $logTag '
+      '${ffiBackendWireName(preferredBackend!)} was requested, but '
+      '$fileReason — trying ${backends.map(ffiBackendWireName).join(" -> ")} '
+      'instead. InferenceModel.activeBackend names what actually ran.',
+    );
+  } else if (preferredBackend == PreferredBackend.npu &&
       !backends.contains(PreferredBackend.npu)) {
     final reason =
         npuUnavailableBecause ??

@@ -50,7 +50,12 @@ CI that fails on warnings fail.
    the decider was calibrated with `EmbeddingDeciderCalibration.fromLabelled`
    on held-out labelled requests. `fromLabelled` refuses (`ArgumentError`)
    rows it cannot calibrate on — all answered right with room to spare, or a
-   single row — so give it real, partly hard, requests.
+   single row — so give it real, partly hard, requests. It also refuses rows
+   answered too poorly: it sorts them by their highest cosine to an option
+   centroid and looks for a cut that answers the rows above it with at most
+   `maxError` (default 0.05) of them wrong (top option not their label); when
+   no cut does, add examples per option, use the linear method, or raise
+   `maxError`.
 5. A decider borrows its embedder and never closes it. On an embedder
    `FlutterEdgeAi.getActiveEmbedder()` returned, the decider follows core: when
    that embedder is closed (core widened it for images or audio, another

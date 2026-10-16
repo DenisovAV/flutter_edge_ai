@@ -48,7 +48,8 @@ Depend on both packages (`flutter_edge_ai: ^2.4.0`,
 `ModelFileType.task`, which routes the file to MediaPipe.
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1), and 2.3.0 needs every flutter_edge_ai package upgraded together:**
+> 1.13.1, ^2.4.0 since 1.14.0), and 2.3.0 needs every flutter_edge_ai package
+> upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
 > `flutter_edge_ai_speech` 0.5.6 ·
@@ -307,9 +308,34 @@ final vector = await embedder.embed(
   bundle writes 385 MB of caches in total, even for text-only use. The cache
   lives in
   the app's cache directory: it is never backed up, and if the OS clears it the
-  next load writes it again. On the web there is no weight cache: the bundle
-  sits in the browser's storage and the engine rebuilds its weights at every
-  load.
+  next load writes it again. The engine opens one cache file per tower when it
+  loads. When it cannot create that file (a path too long for the platform,
+  such as past Windows' 260-character `MAX_PATH`, a directory the app cannot
+  write to, or possibly no free space at all), that tower runs anyway, slower
+  to load and, measured on the 270m, with about 290 MB more memory, and the
+  package only prints a warning. A disk that fills while the cache is being
+  written is different: the engine (XNNPack) aborts the process in native
+  code, and no flag can catch that. On the web there is no weight cache: the
+  bundle sits in the browser's storage and the engine rebuilds its weights at
+  every load.
+- **`requireWeightCache` (flutter_edge_ai_litertlm 1.14.0).** To make a load
+  that wrote no weight cache a failure, register
+  `LiteRtEmbeddingBackend(requireWeightCache: true)`: `getActiveEmbedder()`
+  then throws an `EmbeddingLoadException` naming the cache directory, the
+  length of the cache file path and the likely causes, and no engine is left
+  running. One tower's cache missing beside the others stays a printed
+  warning. It applies on CPU, and on the NPU only to a load with declared
+  audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
+  is accepted and ignored, which a debug build says once. It takes effect
+  when an embedder is loaded: one already loaded is kept.
+  - **The warning is invisible on Windows release builds.** It is a `print`,
+    and a Windows release build started from Explorer has no console. Windows
+    desktop apps that care should pass `requireWeightCache: true`.
+  - **What a refusal costs.** It comes from the load, after core has closed
+    the embedder it held, so the embedder that was working is gone too. With
+    the RAG `FlutterEdgeAiActiveEmbedder`, every operation re-resolves the
+    model, so each call repeats the engine create (and its attempt at the
+    cache) before it refuses.
 - EmbeddingGemma 1 and 2 both produce 768-dimensional vectors in different
   embedding spaces: never mix them in one vector store.
 
@@ -754,8 +780,9 @@ which the first model load fails with
 
 `PreferredBackend.npu` is attempted only on Windows, on Android devices with
 Qualcomm FastRPC (`libcdsprpc.so`) and on Qualcomm Linux arm64 boards, the last
-two when the app opted in (below); elsewhere it falls back to GPU, then CPU, and
-prints why. On Windows the check is per OS, so
+two when the app opted in (below); elsewhere a generic bundle falls back to GPU,
+then CPU, and prints why, and a bundle compiled for an NPU is refused
+([Where a model runs](#where-a-model-runs)). On Windows the check is per OS, so
 a PC without an Intel NPU can report `activeBackend == npu` while the model runs
 elsewhere.
 
@@ -769,6 +796,100 @@ EmbeddingGemma 2 image went from 0.35 s to 2–7 s). An app that embeds or
 generates while in the background should hold an activity for the duration —
 `ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: …)` in
 Swift, ended with `endActivity` when the work is done.
+
+### Where a model runs
+
+Before it creates an engine, the native engine reads the bundle's header and
+the compiler stamp of each compiled section (a few hundred bytes each, tens of
+milliseconds for a 3 GB file) and decides from them:
+
+| The file | No `preferredBackend` | `preferredBackend` given |
+|---|---|---|
+| A generic bundle | GPU, then CPU | that backend, then the next (npu → gpu → cpu) |
+| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares are tried |
+| A bundle compiled for an NPU (a `tf_lite_aux` section or a text model with a `LiteRtStamp`, e.g. `…_qualcomm_sm8750.litertlm`) | the NPU | `npu`: the NPU; `gpu`/`cpu`: refused, they cannot run it |
+| A file shorter than its sections | refused: the download is incomplete | refused |
+
+An encoder you leave unset (`preferredVisionBackend`, `preferredAudioBackend`)
+runs where the file says: its declared `backend_constraint` (the CPU when that
+allows it), the NPU when its section is compiled for one, else the CPU. So the
+official `…_qualcomm_sm8750` and `…_qualcomm_qcs8275` bundles, whose encoders
+are not compiled for the NPU, run them on the CPU, and a bundle with compiled
+encoders runs them on the NPU, without the app choosing. An encoder runs on the
+NPU only together with a text model on the NPU (a bundle compiled for the NPU
+throughout): turning on an NPU encoder next to a text model tried on the GPU or
+the CPU is refused, and a text-only load of that file runs as on a generic
+bundle. Asking an encoder for a backend its `backend_constraint` excludes (the
+GPU for the published Gemma 4 and Gemma 3n audio encoders, which declare cpu),
+for the NPU when it is not compiled for one, or for another backend when it
+is, is refused. The Gemma 3n vision encoder declares gpu only, so it runs on
+the GPU by default and `preferredVisionBackend: PreferredBackend.cpu` is
+refused for it; the Gemma 4 vision encoder declares nothing and runs on the
+CPU.
+`InferenceModel.activeVisionBackend` and `activeAudioBackend` report what was
+chosen, and are null for a bundle without that encoder.
+
+A refusal is a `LiteRtLmBundleException` with a `problem`
+(`incomplete`, `wrongBackend`, `unsupportedNpu` for a text model, or an encoder
+the load turns on, compiled for an NPU this package has no dispatch for here —
+Google Tensor, MediaTek, or a Qualcomm bundle on Windows — or for an NPU
+encoder next to a text model that is not on the NPU) and a message that says
+what to do; no engine is created. An NPU bundle, or an encoder the load turns
+on that runs on the NPU, on a device whose NPU cannot be reached fails the same
+way as a strict load (below), at once, and is never tried on the GPU. The SoC
+of the device is not read before the load; a bundle for another Qualcomm SoC
+fails at engine create, and the error names the SoC it was compiled for. A file
+the header reader does not understand (a `.task` bundle, a newer container)
+loads as before.
+
+**Strict backend.** By default a load that fails on its backend tries the next
+one. `LiteRtLmEngine(backendFallback: false)` makes exactly one attempt — on
+`preferredBackend`, or, when none is given, on the GPU (the NPU for a bundle
+compiled for one, the first backend a constrained text model allows) — and
+throws a
+`BackendInitException` whose one attempt names that backend and carries
+LiteRT-LM's own reason (`LiteRtLmEngineCreateException.nativeMessage`, read
+from its C API on every platform, release builds included). An NPU the device
+cannot reach is refused before any engine exists:
+
+```dart
+await FlutterEdgeAi.initialize(
+  inferenceEngines: [const LiteRtLmEngine(backendFallback: false)],
+);
+try {
+  await FlutterEdgeAi.getActiveModel(preferredBackend: PreferredBackend.gpu);
+} on BackendInitException catch (e) {
+  final error = e.lastAttempt.error;
+  print('did not load on ${e.lastAttempt.backend.name}: '
+      '${error is LiteRtLmEngineCreateException ? error.nativeMessage : error}');
+}
+```
+
+Use it when another backend would be wrong rather than slow: a benchmark, an
+NPU demo, or an app that would rather say so than load gigabytes again on the
+CPU. `activeBackend` names what ran either way. The encoders never fall back.
+
+### Inspecting a model file
+
+`readLiteRtLmBundleInfo(path)` returns what the planner reads (native only; it
+throws `UnsupportedError` on the web):
+
+```dart
+final info = await readLiteRtLmBundleInfo(path);
+info.isComplete;               // false for a download that stopped early
+info.isCompiledForNpu;         // runs on the NPU only
+info.npuTarget;                // e.g. Qualcomm SM8750, or null
+info.visionEncoder?.npuTarget; // null: the encoder is not compiled
+info.audioEncoder?.backendConstraint; // e.g. ['cpu']
+info.hasMtpDrafter;            // can decode speculatively
+for (final section in info.sections) {
+  print('${section.dataType} ${section.modelType} ${section.items}');
+}
+```
+
+It reads the header and a few hundred bytes per compiled section, never the
+weights. A file that is not a `.litertlm` container, of another container
+version, or with an unreadable header throws `LiteRtLmBundleException`.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 
@@ -812,8 +933,10 @@ hooks:
 
 `qualcomm_npu_aar` is resolved against the pubspec that declares it and must be
 the same file as Maven's (same SHA-256). Without the flag, a request for
-`PreferredBackend.npu` on Android falls back to GPU, then CPU, and the log says
-how to enable it.
+`PreferredBackend.npu` with a generic bundle on Android falls back to GPU, then
+CPU, and the log says how to enable it; a bundle compiled for an NPU is refused
+with a `BackendInitException` whose one attempt says the same
+([Where a model runs](#where-a-model-runs)).
 
 **Linux arm64.** The same flag bundles the stack into Linux arm64 builds, for
 Qualcomm Linux boards with a Hexagon V68–V81 compute DSP (QCS6490, QCS8275,
@@ -835,9 +958,11 @@ hooks:
 On the board, Qualcomm's FastRPC library must be installed (`qcom-fastrpc1` on
 Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
 (`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing,
-`npu` falls back to GPU, then CPU, and the log names what to fix. Use the model
-compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
-x64 build ignores the flag.
+`npu` with a generic bundle falls back to GPU, then CPU, and the log names what
+to fix; a bundle compiled for an NPU is refused with a `BackendInitException`
+that names it. Use the model compiled for your SoC, e.g.
+`gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux x64 build ignores the
+flag.
 
 **Embeddings.** The same flag runs EmbeddingGemma 2 per-SoC bundles on the NPU
 ([EmbeddingGemma 2 on a Qualcomm NPU](#embeddinggemma-2-on-a-qualcomm-npu));
@@ -886,9 +1011,9 @@ only. The CPU is left alone, and so is a value you pass:
 Other models are not changed, and some need the argument. A plain
 `gemma3-270m-it` floods `<pad>` on the GPU too (every Gemma 3 270M bundle does,
 on macOS and Android: LiteRT-LM#3280) and needs
-`activationDataType: ActivationDataType.float32` passed explicitly, as the
-function-calling codelab does for its pinned file. The larger Gemma bundles
-(Gemma 3 1B, Gemma 4) are not affected.
+`activationDataType: ActivationDataType.float32` passed explicitly: it is
+`ModelType.gemmaIt`, which the automatic float32 above does not cover. The
+larger Gemma bundles (Gemma 3 1B, Gemma 4) are not affected.
 
 ### Wrong digits from a long prompt on GPU
 

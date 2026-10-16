@@ -59,13 +59,18 @@ It calls the handler for each tool call, feeds the result back, and continues un
 await chat.addQueryChunk(Message(text: prompt, isUser: true));
 final answer = StringBuffer();
 await for (final r in chat.generateChatResponseWithTools(
-  onToolCall: (FunctionCallResponse call) => runTool(call.name, call.args),
+  onToolCall: (FunctionCallResponse call) {
+    answer.clear(); // text streamed before a call is not the answer
+    return runTool(call.name, call.args);
+  },
   maxToolTurns: 8,
   onMaxToolTurns: () => print('stopped after 8 tool turns'),
 )) {
   if (r is TextResponse) answer.write(r.token);
 }
 ```
+
+Gemma 4 often writes a sentence, then calls a tool. The sentence streams as `TextResponse`, so the snippet clears the buffer when a call arrives, as `flutter_edge_ai_agent` does; the chat's history keeps only the call (its `tool_calls` objects), not the sentence. Without `supportsFunctionCalls: true`, or with `toolChoice: ToolChoice.none`, the call's JSON stays in the text instead.
 
 `onToolCall` receives a `FunctionCallResponse` with `name` and `args`, and returns the map the model reads back. Its `id` is null on every bundled engine today; ids come from genai `callId`s and Genkit `ref`s. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall` is reported to the model, then rethrown on the stream.
 
@@ -98,6 +103,29 @@ switch (response) {
     break;
 }
 ```
+
+## Calls in a history
+
+A chat records each call as `Message.toolCall(calls:)` (`flutter_edge_ai` 2.4.0): `toolCalls` holds the structured `FunctionCallResponse`s with their ids, and `text` is what text engines replay — for a `.litertlm` call, its `tool_calls` objects without the text written before them. To restore a conversation, keep both, and pair each result with its call through `toolCallId`:
+
+```dart
+const call = FunctionCallResponse(
+  name: 'change_color',
+  args: {'color': 'red'},
+  id: 'call_1',
+);
+await chat.clearHistory(replayHistory: [
+  const Message(text: 'Make it red', isUser: true),
+  Message.toolCall(calls: [call]),
+  Message.toolResponse(
+    toolName: call.name,
+    response: {'status': 'success'},
+    toolCallId: call.id,
+  ),
+]);
+```
+
+`Message.toolCall` with `calls` alone writes `text` as `{"tool_calls":[{"id","name","arguments"}]}`. No bundled engine reads `toolCallId` yet: a result is paired with its call by `toolName`, in order.
 
 ## Errors are results
 

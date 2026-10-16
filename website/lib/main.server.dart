@@ -143,6 +143,7 @@ void main() {
                   links: [
                     SidebarLink(text: 'LiteRT-LM', href: '/docs/litertlm'),
                     SidebarLink(text: 'MediaPipe', href: '/docs/mediapipe'),
+                    SidebarLink(text: 'llama.cpp', href: '/docs/llama'),
                     SidebarLink(text: 'ONNX Runtime', href: '/docs/onnx'),
                     SidebarLink(text: 'Built-in AI', href: '/docs/builtin-ai'),
                   ],

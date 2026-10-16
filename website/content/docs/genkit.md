@@ -174,8 +174,9 @@ final response = await ai.generate(
     toolChoice: 'auto',             // tool calling mode: 'auto' / 'required' / 'none'
     // Optional per-component backend ('cpu'/'gpu'/'npu'):
     preferredBackend: 'gpu',        // text decoder
-    preferredAudioBackend: 'gpu',   // audio encoder (~2x on Metal; defaults to CPU)
-    // preferredVisionBackend defaults to CPU (Metal/WebGPU can't run its ops).
+    // preferredVisionBackend / preferredAudioBackend: unset, each encoder
+    // follows the bundle (its backend_constraint, else the NPU it is compiled
+    // for, else CPU); set one only where the section allows it.
   ),
 );
 ```
@@ -222,6 +223,26 @@ branch. An installed model the app cannot run (no engine registered for it) is
 `FAILED_PRECONDITION`, which no router hides.
 
 </Info>
+
+### Tool calls
+
+Pass Genkit tools as usual; the model calls them through the engine's function
+calling (a tool-capable model, see [Function calling](/docs/function-calling)):
+
+```dart
+final response = await ai.generate(
+  model: flutterEdgeAi.model('gemma-4-e2b'),
+  prompt: 'What is the weather in Paris?',
+  tools: [weatherTool],
+);
+```
+
+Tool `ref`s travel as call ids both ways (`genkit_flutter_edge_ai` 0.10.0,
+which requires `flutter_edge_ai` ^2.4.0). A tool request's `ref` is the call's
+`FunctionCallResponse.id`, or `call_0`, `call_1`, … when the engine gives none
+(no bundled engine does yet), and never repeats within a turn. In the history
+the plugin sends back, a request's `ref` becomes its call's id
+(`Message.toolCall(calls:)`) and a tool response's `ref` its `toolCallId`.
 
 ### Structured (JSON) output
 

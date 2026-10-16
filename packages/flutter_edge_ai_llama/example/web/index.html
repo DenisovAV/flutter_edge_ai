@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121817">
+  <title>GGUF Lab</title>
+</head>
+<body>
+  <!-- Storage helper from flutter_edge_ai 2.1.3; see cache_api.LICENSE. -->
+  <script src="cache_api.js"></script>
+  <script type="module">
+    // This is the checksum-verified runtime pin tested by this connector.
+    const root = new URL('webgpu_bridge/', document.baseURI).href;
+    try {
+      if (!window.crossOriginIsolated) {
+        throw new Error('Serve the app with COOP same-origin and COEP require-corp headers.');
+      }
+      const module = await import(root + 'llama_webgpu_bridge.js');
+      window.LlamaWebGpuBridge = module.LlamaWebGpuBridge;
+      window.__llamadartBridgeAdaptiveSafariGpu = true;
+      window.__llamadartBridgeModuleUrl = root + 'llama_webgpu_bridge.js';
+      window.__llamadartBridgeCoreModuleUrl = root + 'llama_webgpu_core.js';
+      window.__llamadartBridgeWasmUrl = root + 'llama_webgpu_core.wasm';
+      window.__llamadartBridgeCoreModuleUrlMem64 = root + 'llama_webgpu_core_mem64.js';
+      window.__llamadartBridgeWasmUrlMem64 = root + 'llama_webgpu_core_mem64.wasm';
+      window.__llamadartBridgeWorkerUrl = root + 'llama_webgpu_bridge_worker.js';
+      window.__llamadartBridgeAssetSource = 'local';
+      window.__llamadartBridgeThreadPoolSize = Math.max(1, Math.min(4, navigator.hardwareConcurrency || 1));
+    } catch (error) {
+      window.__llamadartBridgeLoadError = String(error);
+      console.error('Could not load the GGUF runtime', error);
+    }
+    const bootstrap = document.createElement('script');
+    bootstrap.src = 'flutter_bootstrap.js';
+    bootstrap.async = true;
+    document.body.appendChild(bootstrap);
+  </script>
+</body>
+</html>

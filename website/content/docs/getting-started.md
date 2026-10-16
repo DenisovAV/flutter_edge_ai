@@ -42,11 +42,48 @@ only the engines, stores and features your app uses — see
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+## What's new in 2.4
+
+- **Decider** (experimental, `flutter_edge_ai` 2.4.0):
+  `EmbeddingModel.createDecider` picks one of N options for an input — an
+  intent, an action, a route, a tool — or says "none of these". See
+  [Decisions](/docs/decisions).
+- **Order of images, audio and text** (`flutter_edge_ai_litertlm` 1.14.0):
+  Gemma 4 gets its audio after the text, as its model card asks, and
+  `getActiveModel(multimodalOrder:)` sets another order. See
+  [Multimodal](/docs/multimodal#order-of-images-audio-and-text).
+- **Structured tool calls** (`flutter_edge_ai` 2.4.0): `Message.toolCall(calls:)`
+  keeps the calls with their ids, `Message.toolResponse(toolCallId:)` names the
+  call a result answers, and a sentence Gemma 4 writes before a call no longer
+  streams the call's JSON as text. See
+  [Function Calling](/docs/function-calling#tool-calls-in-a-saved-history).
+- **Backends from the model file** (`flutter_edge_ai_litertlm` 1.14.0): the
+  engine reads a `.litertlm` before it loads it — a bundle compiled for an NPU
+  runs there, each encoder runs where its section says (`activeVisionBackend`,
+  `activeAudioBackend`), and a file that cannot run as asked is refused with
+  the reason. `readLiteRtLmBundleInfo(path)` shows what it reads, and
+  `LiteRtLmEngine(backendFallback: false)` makes one attempt that fails with
+  LiteRT-LM's own reason. See [LiteRT-LM](/docs/litertlm#where-a-model-runs).
+- **requireWeightCache** (`flutter_edge_ai_litertlm` 1.14.0):
+  `LiteRtEmbeddingBackend(requireWeightCache: true)` fails an EmbeddingGemma 2
+  load that wrote no weight cache instead of running it slower and larger. See
+  [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
+- **Agent skills 0.3.0** (`flutter_edge_ai_agent`): an empty answer right after
+  `loadSkill` is asked again (`EmptyAnswerRetryEvent`, an event an exhaustive
+  `switch` must now handle), intents the app adds get `validators:`, and
+  SKILL.md parsing is fixed. See
+  [Agent Skills](/docs/agent#when-the-model-answers-nothing).
+- **Genkit 0.10.0** (`genkit_flutter_edge_ai`): tool `ref`s travel as call ids
+  both ways; it requires `flutter_edge_ai` 2.4.0. See
+  [Genkit](/docs/genkit#tool-calls).
+
+Upgrading from 2.3: see [Migration](/docs/migration).
+
 ## What's new in 2.3
 
 - **2.3.2:** the active model keeps its LoRA across an app restart, and
-  `ModelFileType.gguf` is reserved for `.gguf` files — their llama.cpp engine,
-  `flutter_edge_ai_llama`, is coming soon.
+  `ModelFileType.gguf` selects the optional [llama.cpp engine](llama.md),
+  `flutter_edge_ai_llama`, available from its contribution source until publication.
 - **EmbeddingGemma 2 on an Intel NPU** (`flutter_edge_ai_litertlm` 1.13.2): the
   Panther Lake bundles run on Windows x64 with
   `preferredBackend: PreferredBackend.npu`. See
@@ -57,7 +94,7 @@ only the engines, stores and features your app uses — see
   with a recording. See
   [Speech](/docs/speech#audio-turns-the-model-hears-the-recording) and
   [Agent Skills](/docs/agent#asking-with-a-recording).
-- **Coming soon — `flutter_edge_ai_diagnostics` 0.3.0:** macOS support and
+- **`flutter_edge_ai_diagnostics` 0.3.0:** macOS support and
   `anonymousPeakBytes`, the lifetime footprint peak on iOS and macOS. See
   [Diagnostics](/docs/diagnostics).
 - **EmbeddingGemma 2** (`flutter_edge_ai_litertlm` 1.13.0): text embeddings

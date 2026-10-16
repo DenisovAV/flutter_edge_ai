@@ -230,7 +230,7 @@ cp "$OUTPUT" "$STAGE/libLiteRtDispatch_Qualcomm.so"
 #   dispatch_api.cc:139 Failed to set up QNN manager
 #   dispatch_delegate.cc:131 No usable Dispatch runtime found
 # and engine_create then failed on backend=npu in ~60ms with nothing but an
-# opaque null, which the Dart layer reports as "model may be invalid".
+# opaque null, which the Dart layer then reported as "model may be invalid".
 #
 # The runtime half now comes from Maven through the hook (see below), so the
 # pair is held together by release number: the QAIRT SDK's own sdk.yaml here

@@ -66,7 +66,7 @@ desktop. Any `.litertlm` model works; see [Models](/docs/models). (The
 
 | Platform | Architecture | GPU backend | Vision | Audio | Notes |
 |---|---|---|---|---|---|
-| macOS | arm64 (Apple Silicon) | Metal | ✅ | ✅ | Vision verified on Gemma 4 + Gemma 3n (text decoder on Metal, vision encoder on CPU) |
+| macOS | arm64 (Apple Silicon) | Metal | ✅ | ✅ | Vision verified on Gemma 4 + Gemma 3n (text decoder on Metal; the vision encoder runs where the bundle says: CPU on Gemma 4, GPU on Gemma 3n) |
 | macOS | x86_64 | — | — | — | Not supported (Apple Silicon only) |
 | Windows | x86_64 | DirectX 12 (via Dawn/WebGPU) | ✅ | ✅ | Nothing to install |
 | Windows | arm64 | — | — | — | Not supported |
@@ -102,7 +102,7 @@ see [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2
 - **macOS**: Apple Silicon (arm64)
 - **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed (see below).
 - **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
-- **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available
+- **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
 No Java/JVM/JRE required.
 
@@ -402,10 +402,13 @@ accelerator. Fixed in 1.4.0, before the rename — every
 When `preferredBackend: PreferredBackend.gpu`, the **forward pass** (prefill +
 decode) runs on the GPU accelerator (Metal, DX12, Vulkan). Where the **per-token
 sampler** (top-k / top-p / argmax) runs depends on the platform; on CPU it costs
-roughly 1–5 ms per token, small next to the forward pass. The **vision
-encoder** runs on CPU by default (the GPU delegate can't prepare its ops);
-override per-encoder with `preferredVisionBackend:` / `preferredAudioBackend:`
-on `getActiveModel(...)`.
+roughly 1–5 ms per token, small next to the forward pass. An unset **vision
+or audio encoder** backend follows the bundle — the section's
+`backend_constraint`, else the NPU it is compiled for, else CPU (the GPU
+delegate can't prepare the vision encoder's ops); set
+`preferredVisionBackend:` / `preferredAudioBackend:` on `getActiveModel(...)`
+only where the section allows it
+(`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint`).
 
 - **Windows** — GPU. `flutter_edge_ai_litertlm` preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.18.0` exports its full C ABI (7 of 7 functions).
 - **macOS** — CPU. The bundle does not ship `libLiteRtTopKMetalSampler`: upstream opens it by bare file name, which cannot reach a library inside the app bundle, so the factory uses the CPU chain.

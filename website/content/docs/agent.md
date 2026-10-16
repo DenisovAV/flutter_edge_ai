@@ -48,7 +48,7 @@ used below).
 ```
 dependencies:
   flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_agent: ^0.2.10
+  flutter_edge_ai_agent: ^0.3.0
   flutter_edge_ai_litertlm: ^1.14.0   # an inference engine (LiteRtLmEngine)
 ```
 
@@ -198,6 +198,79 @@ await for (final event in session.ask('', audioBytes: wav)) {
   keeps its replies, but the recordings of earlier turns are gone from its
   context.
 
+## When the model answers nothing
+
+Right after `loadSkill` a small model sometimes ends the turn without a word:
+the generation that should answer has no text. The loop then asks once more:
+it emits an `EmptyAnswerRetryEvent`, adds a user message to the same chat and
+generates again with the same tools. If the answer is still empty, the turn
+ends with an `EmptyAnswerEvent` instead of a plain `DoneEvent`.
+
+```dart
+final session = await AgentSession.fromModel(
+  model,
+  registry: registry,
+  emptyAfterSkillRetries: 1, // the default; 0 turns the retry off
+  emptyAfterSkillNudge: defaultEmptyAfterSkillNudge, // or your own text
+);
+
+await for (final event in session.ask(question)) {
+  switch (event) {
+    case EmptyAnswerRetryEvent(:final nudge):
+      // The nudge is in the chat's history now; mirror it if you keep one.
+      history.add(Message(text: nudge, isUser: true));
+    case EmptyAnswerEvent(:final skillName):
+      showError('No answer after loading $skillName');
+    case DoneEvent(:final text):
+      showAnswer(text);
+    default:
+      break;
+  }
+}
+```
+
+- **Upgrading to 0.3.0.** `EmptyAnswerRetryEvent` is a new `AgentEvent`: an
+  exhaustive `switch` over `AgentEvent` with no `default` needs a case for it.
+  `EmptyAnswerEvent` extends `DoneEvent` with an empty `text`, so a `DoneEvent`
+  case still matches it; put its case first to tell the two apart.
+- **The retry counts against `maxIterations`.** When no generation is left,
+  there is none.
+- **Only after a skill load.** An empty answer right after a `loadSkill` that
+  found its skill is retried; one after an intent, JS or MCP result ends with a
+  plain `DoneEvent('')`, as before. With 0 retries such a turn still ends with
+  an `EmptyAnswerEvent`.
+- **Stopping a turn.** Flip `ask`'s `isCancelled` or cancel the subscription
+  before `chat.stopGeneration()`; a stopped empty generation is otherwise
+  retried.
+- **FunctionGemma.** Pass `emptyAfterSkillRetries: 0`: core clears a
+  FunctionGemma chat's history after every text reply, so the nudge reaches a
+  blank session and is answered without the question.
+
+## Choosing the system prompt
+
+`AgentSession.fromModel` builds the system prompt from `systemPromptTemplate`,
+replacing its `__SKILLS__` placeholder with the selected skills' names and
+descriptions. Two templates ship:
+
+- `defaultAgentSystemPrompt` (the default) — Gallery's prompt: look for a skill
+  on every request, load it, follow it. For an agent whose requests are mostly
+  skill requests.
+- `onDemandAgentSystemPrompt` — call `loadSkill` only when a request needs one
+  of the skills, and answer everything else directly with no tool call. For an
+  assistant that also answers plain questions and questions about a photo, on
+  a small model that otherwise calls tools for them.
+
+```dart
+final session = await AgentSession.fromModel(
+  model,
+  registry: registry,
+  systemPromptTemplate: onDemandAgentSystemPrompt,
+);
+```
+
+Neither template is benchmarked here: try both on your model and your
+requests. Any template of your own works as long as it keeps `__SKILLS__`.
+
 ## Bundled starter skills
 
 Eight starter skills ship as package assets, spanning the JS, native-intent, and
@@ -224,16 +297,79 @@ metadata:
   homepage: https://optional
   require-secret: true
   require-secret-description: how to obtain the key
+  my-app-option: true   # any key of your own, see below
 ---
 # Title
 ## Instructions
-Call the `run_js` tool with: script name: index.html, data: { field: Type }
+Call the `run_js` tool with: skillName: kebab-case-id, data: a JSON string { field: Type }
 ```
+
+The skill's type comes from the tool its body names, in any letter case:
+`run_js`, `runSkill` or `runJs` → JS; `run_intent` or `runIntent` → intent;
+`run_mcp` or `runMcp` → MCP (checked in that order); none → text-only. The loop
+takes those spellings as call names too: a call to `run_js` or Gallery's
+`runJs` runs as `runSkill` (which takes `skillName` and `data`), `run_intent`
+as `runIntent`, and `run_mcp` or Gallery's `runMcpTool` as `runMcp`.
+
+Every other key under `metadata:` is kept in `skill.metadata.extra` with its
+YAML type (strings, numbers, booleans, lists and maps). The package reads none
+of them; your app owns the keys it reads. A frontmatter that is not valid YAML
+is read by a tolerant line parser instead, which yields strings only.
+
+A text-only skill calls no tool. When the model loads one and then calls
+`runIntent` with an intent the app cannot run, the tool result says so and
+asks for the answer from the skill's instructions. This works only with
+`NativeIntentExecutor` (or with no intent executor at all): an intent executor
+of your own has its errors reach the model unchanged.
 
 JS skills additionally ship `scripts/index.html` exposing
 `window.ai_edge_gallery_get_result(data, secret)` returning a JSON string
 (`{ result | image | webview | error }`). Secrets are injected as the JS
 `secret` argument and **never** placed in the model prompt.
+
+## Adding your own intents
+
+`NativeIntentExecutor` runs six built-in intents (`send_email`, `send_text`,
+`create_calendar_event`, `read_calendar_events`, `schedule_notification`,
+`get_current_date_and_time`). Add your own through `handlers:`; the built-ins
+keep running next to them. `validators:` checks an intent's parameters before
+its handler runs: null when they are valid, otherwise the reason, which goes
+back to the model.
+
+```dart
+final intents = NativeIntentExecutor(
+  handlers: {
+    'start_timer': (params) async {
+      final seconds = params['seconds'] as int;
+      await timers.start(Duration(seconds: seconds));
+      return TextResult('Timer set for $seconds seconds.');
+    },
+  },
+  validators: {
+    'start_timer': (params) =>
+        params['seconds'] is int ? null : 'missing integer "seconds".',
+  },
+);
+```
+
+An added intent without a validator is not checked. A built-in intent keeps its
+own checks, also when you replace its handler; a validator you give for it runs
+after them, and both must pass. A validator for an intent with no handler
+throws `ArgumentError`. When the model passes the loaded skill's `skillName` to
+`runIntent` as well, the intent it names still runs. With `intent` present the
+executor always gets a stand-in `Skill(name: intent)` with no instructions or
+metadata, even when `skillName` names a registered skill (`runMcp` does the
+same with `toolName`).
+
+## Skills or a knowledge base?
+
+An app with skills and a knowledge base can decide before `ask()` whether a
+question is for a skill or for the documents, so a device question does not
+arrive with documentation excerpts the model then answers from. The
+experimental [`Decider`](/docs/decisions) (`flutter_edge_ai` 2.4.0,
+`EmbeddingModel.createDecider`) picks one of several options for an input:
+one option per skill (its description, plus a few example requests), one for
+the documents. The agent package does not depend on it.
 
 ## Registering executors
 

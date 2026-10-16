@@ -20,7 +20,7 @@ set of instructions to write it.
 
 By the end you will have:
 
-* the eight skills `flutter_edge_ai` bundles, installed for the assistant you use
+* the nine skills `flutter_edge_ai` bundles, installed for the assistant you use
 * an offline chat on Gemma 4 E2B, written by that assistant
 * the chat extended with a tool the model calls
 * a way to check the assistant's code that does not depend on trusting it
@@ -177,6 +177,7 @@ dart run skills@ get --all --agent antigravity
 
 ```text
   [generic] Installed flutter-edge-ai-builtin-ai
+  [generic] Installed flutter-edge-ai-decisions
   [generic] Installed flutter-edge-ai-diagnostics
   [generic] Installed flutter-edge-ai-speech
   [generic] Installed flutter-edge-ai-function-calling
@@ -184,7 +185,7 @@ dart run skills@ get --all --agent antigravity
   [generic] Installed flutter-edge-ai-onnx
   [generic] Installed flutter-edge-ai-inference
   [generic] Installed flutter-edge-ai-mediapipe
-Installed 8 skill(s) for generic at .agents/skills.
+Installed 9 skill(s) for generic at .agents/skills.
 ```
 
 `antigravity` is an alias. The CLI files it as `generic` — the name it prints —
@@ -208,6 +209,7 @@ dart run skills@ get --all --agent claude
 
 ```text
   [claude] Installed flutter-edge-ai-builtin-ai
+  [claude] Installed flutter-edge-ai-decisions
   [claude] Installed flutter-edge-ai-diagnostics
   [claude] Installed flutter-edge-ai-speech
   [claude] Installed flutter-edge-ai-function-calling
@@ -215,7 +217,7 @@ dart run skills@ get --all --agent claude
   [claude] Installed flutter-edge-ai-onnx
   [claude] Installed flutter-edge-ai-inference
   [claude] Installed flutter-edge-ai-mediapipe
-Installed 8 skill(s) for claude at .claude/skills.
+Installed 9 skill(s) for claude at .claude/skills.
 ```
 
 The CLI adds one line to each skill's header for Claude Code,
@@ -251,6 +253,7 @@ Copilot is the one assistant the CLI never detects, even after its folder exists
 ```text
 .agents/skills/                  (or .claude/skills/, .cursor/skills/ …)
   flutter-edge-ai-builtin-ai/SKILL.md
+  flutter-edge-ai-decisions/SKILL.md
   flutter-edge-ai-diagnostics/SKILL.md
   flutter-edge-ai-function-calling/SKILL.md
   flutter-edge-ai-inference/SKILL.md
@@ -524,6 +527,7 @@ edited by hand:
 Available skills from package:flutter_edge_ai:
   flutter-edge-ai-rag (Local edits)
   flutter-edge-ai-builtin-ai (Update available)
+  flutter-edge-ai-decisions (Update available)
   flutter-edge-ai-diagnostics (Update available)
   flutter-edge-ai-function-calling (Update available)
   flutter-edge-ai-inference (Update available)
@@ -539,7 +543,7 @@ matches what was installed. Look for it before you reach for `--all`, because
 without asking.** Rules of your own are safer in a skill of your own than inside
 an installed one.
 
-The other six say `Update available` although nothing changed: version 1.0.1 of
+The other eight say `Update available` although nothing changed: version 1.0.1 of
 the CLI reports that for every Claude Code skill, even straight after installing
 it. The same untouched install in `.agents/skills/` prints
 `All skills are up to date.`
@@ -560,13 +564,14 @@ version are the ones to have.
 Duration: 2
 
 You have an app your assistant wrote, and a way to check its work without
-reading every line of it. The same eight skills cover the rest of the package,
+reading every line of it. The same nine skills cover the rest of the package,
 and the same habit — ask, see which skill it loads, check against the rules —
 works for each:
 
 * **ground answers in your own documents** — `flutter-edge-ai-rag`
 * **transcribe and speak** — `flutter-edge-ai-speech`
 * **use the model the OS already has** — `flutter-edge-ai-builtin-ai`
+* **pick one of N options, or say "none of these"** — `flutter-edge-ai-decisions`
 * **measure process memory on Android, iOS and macOS** — `flutter-edge-ai-diagnostics`
 * **run `.task` or ONNX models** — `flutter-edge-ai-mediapipe`,
   `flutter-edge-ai-onnx`

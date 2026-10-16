@@ -75,10 +75,12 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// value is clamped up to 1024 to avoid a native tensor-allocation crash
   /// (#318). The default (1024) is safe for every supported model.
   /// [preferredBackend] — backend preference (e.g., CPU, GPU).
-  /// [preferredVisionBackend] — vision-encoder backend override; null
-  /// defaults to CPU (optional).
-  /// [preferredAudioBackend] — audio-encoder backend override; null defaults
-  /// to CPU (optional).
+  /// [preferredVisionBackend] — vision-encoder backend override; null lets
+  /// the engine choose (the native `.litertlm` engine follows the bundle: the
+  /// encoder's declared `backend_constraint`, else the NPU it is compiled for,
+  /// else CPU). Set it only where the encoder's section allows it (optional).
+  /// [preferredAudioBackend] — audio-encoder backend override; null as for
+  /// [preferredVisionBackend] (optional).
   /// [loraRanks] — optional supported LoRA ranks.
   /// [maxNumImages] — maximum number of images (for multimodal models).
   /// [supportImage] — whether the model supports images.
@@ -212,6 +214,18 @@ abstract class InferenceModel {
   /// value when the exact backend matters. It is null when the platform runtime
   /// does not expose a final backend.
   PreferredBackend? get activeBackend;
+
+  /// Backend the vision encoder runs on, or null when the model was created
+  /// without vision, has no vision encoder, or the engine does not say. The
+  /// native LiteRT-LM engine reports it, including what it chose for an unset
+  /// `preferredVisionBackend` (from the model file: a declared
+  /// `backend_constraint`, the NPU for an encoder compiled for one, else the
+  /// CPU).
+  PreferredBackend? get activeVisionBackend => null;
+
+  /// Backend the audio encoder runs on, or null when the model was created
+  /// without audio or the engine does not say; see [activeVisionBackend].
+  PreferredBackend? get activeAudioBackend => null;
 
   /// Creates a new [InferenceModelSession] for generation.
   ///

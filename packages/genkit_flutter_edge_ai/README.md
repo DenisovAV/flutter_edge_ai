@@ -56,7 +56,7 @@ dependencies:
   genkit: ^1.0.0
   genkit_flutter_edge_ai: ^0.10.0
   flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_litertlm: ^1.13.0  # only the engines/backends you actually use
+  flutter_edge_ai_litertlm: ^1.14.0  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.3.0  # the tokenizers an embedding backend needs
   flutter_edge_ai_mediapipe: ^1.2.2
 ```
@@ -168,8 +168,8 @@ final response = await ai.generate(
 | `maxFunctionBufferLength` | `int?` | null | Max token buffer for streaming tool-call arguments (increase for large payloads) |
 | `enableSpeculativeDecoding` | `bool?` | null | MTP speculative decoding for Gemma 4 E2B/E4B (null = model default, true/false = force on/off) |
 | `preferredBackend` | `String?` | null | Text-decoder backend: `'cpu'`, `'gpu'`, `'npu'` (null = engine default) |
-| `preferredVisionBackend` | `String?` | null | Vision-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; ignored by MediaPipe) |
-| `preferredAudioBackend` | `String?` | null | Audio-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; set `'gpu'` for faster audio; ignored by MediaPipe) |
+| `preferredVisionBackend` | `String?` | null | Vision-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null follows the bundle: its `backend_constraint`, else the NPU it is compiled for, else CPU; set one only where the section allows it; ignored by MediaPipe) |
+| `preferredAudioBackend` | `String?` | null | Audio-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null follows the bundle, as for vision; the published Gemma 4 and Gemma 3n audio encoders declare `'cpu'` and refuse `'gpu'`; ignored by MediaPipe) |
 
 Every option is checked before a model loads: a value of the wrong type, a
 fraction for an integer, a `maxTokens`, `maxOutputTokens`, `topK` or
@@ -208,6 +208,13 @@ final response = await ai.generate(
   tools: [weatherTool],
 );
 ```
+
+Tool `ref`s travel as call ids both ways (0.10.0, with `flutter_edge_ai`
+2.4.0): a tool request's `ref` is the call's `FunctionCallResponse.id`, or
+`call_0`, `call_1`, … when the engine gives none (no bundled engine does yet),
+and never repeats within a turn; in the history the plugin sends back, a
+request's `ref` becomes its call's id (`Message.toolCall(calls:)`) and a tool
+response's `ref` its `toolCallId`.
 
 Genkit's top-level `toolChoice:` takes precedence over the `toolChoice` option.
 Write it as `toolChoice: .none`: genkit 1.0 and `flutter_edge_ai` both export a

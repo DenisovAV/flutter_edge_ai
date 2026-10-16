@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
@@ -12,6 +13,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
 
 import 'agent_event.dart';
 import 'agent_tools.dart';
+import 'executors/native_intent_executor.dart' show NativeIntentExecutor;
 import 'skill.dart';
 import 'skill_executor.dart';
 import 'skill_registry.dart';
@@ -43,17 +45,31 @@ import 'secret_store.dart';
 ///    callback cannot yield — are emitted into the stream during dispatch.
 /// 3. Stop on the model's call-free answer ([DoneEvent]) or when [maxIterations]
 ///    is reached ([MaxIterationsEvent], surfaced via core's `onMaxToolTurns`).
+///    An answer with no text right after a successful `loadSkill` is asked
+///    for again first ([emptyAfterSkillRetries]); if it stays empty the turn
+///    ends with an [EmptyAnswerEvent].
 ///
 /// [run] is a `Stream<AgentEvent>` so the UI can show progress + inline
 /// image / webview / widget results as the turn unfolds.
 class AgentLoop {
+  /// Throws [ArgumentError] when [emptyAfterSkillRetries] is negative.
   AgentLoop({
     required this.registry,
     required this.executors,
     SecretStore? secretStore,
     this.maxIterations = 10,
+    this.emptyAfterSkillRetries = 1,
+    this.emptyAfterSkillNudge = defaultEmptyAfterSkillNudge,
   }) : secretStore = secretStore ?? SecretStore(),
-       _executors = _sortedByPriority(executors);
+       _executors = _sortedByPriority(executors) {
+    if (emptyAfterSkillRetries < 0) {
+      throw ArgumentError.value(
+        emptyAfterSkillRetries,
+        'emptyAfterSkillRetries',
+        'must be 0 (no retry) or more',
+      );
+    }
+  }
 
   /// The selected-skills catalog (discovery + `loadSkill` lookup).
   final SkillRegistry registry;
@@ -66,8 +82,32 @@ class AgentLoop {
   final SecretStore secretStore;
 
   /// Hard guard against a runaway tool loop. The loop makes at most this many
-  /// model generations before bailing with a [MaxIterationsEvent].
+  /// model generations before bailing with a [MaxIterationsEvent]. Retries
+  /// after an empty answer ([emptyAfterSkillRetries]) count too.
   final int maxIterations;
+
+  /// How many times one turn asks the model again when the generation that
+  /// would end the turn has no text (after trimming) right after a successful
+  /// `loadSkill`. A retry emits an [EmptyAnswerRetryEvent], adds
+  /// [emptyAfterSkillNudge] to the chat as a user message and generates again
+  /// with the same tools, within what is left of [maxIterations] (no retry
+  /// when nothing is left).
+  ///
+  /// When the answer is still empty and no retry is left, the turn ends with
+  /// an [EmptyAnswerEvent] (a [DoneEvent] with empty text) instead of a plain
+  /// [DoneEvent]. 0 turns the retry off; such a turn still ends with an
+  /// [EmptyAnswerEvent]. An empty answer after any other tool result (an
+  /// intent, a JS skill, an MCP tool) ends with a plain [DoneEvent], as
+  /// before.
+  ///
+  /// FunctionGemma apps should pass 0: core clears a FunctionGemma chat's
+  /// history after every text reply, so the nudge reaches a blank session and
+  /// is answered without the question.
+  final int emptyAfterSkillRetries;
+
+  /// The user message a retry sends ([emptyAfterSkillRetries]). It names no
+  /// skill, so one text serves every skill.
+  final String emptyAfterSkillNudge;
 
   /// [executors] sorted into probe order (descending priority, then registration
   /// order) — the same ordering rule as the engine/embedding registries.
@@ -93,14 +133,19 @@ class AgentLoop {
   /// and the skill discovery injected into its system prompt.
   ///
   /// [isCancelled], when provided, is polled between iterations — before the
-  /// next generation and between dispatched calls — for barge-in: once it
-  /// returns true the stream ends promptly (no [DoneEvent], no
-  /// [MaxIterationsEvent]). A tool already executing still completes; only
-  /// the *next* step is skipped. Tool calls the model already committed to
-  /// [chat]'s history but that were not executed are answered with a
-  /// synthetic `status: cancelled` tool-response, so the persistent chat is
-  /// never left with a dangling half-answered call. `null` (the default)
-  /// preserves prior behavior exactly.
+  /// next generation, between dispatched calls and after an empty answer —
+  /// for barge-in: once it returns true the stream ends promptly (no
+  /// [DoneEvent], no [MaxIterationsEvent]). A tool already executing still
+  /// completes; only the *next* step is skipped. Tool calls the model already
+  /// committed to [chat]'s history but that were not executed are answered
+  /// with a synthetic `status: cancelled` tool-response, so the persistent
+  /// chat is never left with a dangling half-answered call. `null` (the
+  /// default) preserves prior behavior exactly.
+  ///
+  /// To stop a turn, flip [isCancelled] or cancel the subscription BEFORE
+  /// `chat.stopGeneration()`: a stopped empty generation right after a
+  /// `loadSkill` is otherwise taken for an empty answer and retried
+  /// ([emptyAfterSkillRetries]).
   ///
   /// Pass [imageBytes] to attach a photo to the turn — the model then sees the
   /// image alongside [userMessage] and can call skills based on what it saw.
@@ -156,6 +201,7 @@ class AgentLoop {
     // instead of running the whole remaining loop into a dead controller.
     late final StreamController<AgentEvent> controller;
     final buffer = StringBuffer();
+    final turn = _TurnCalls();
     var maxHit = false;
     var stopped = false; // the subscription was cancelled
     var cancelledSeen = false; // core acted on a cancel this run
@@ -225,41 +271,84 @@ class AgentLoop {
           audioBytes: audioBytes,
         ),
       );
-      await for (final r in chat.generateChatResponseWithTools(
-        onToolCall: (call) {
-          // A tool call ends this turn: the text streamed before it was preamble,
-          // not the final answer — drop it so DoneEvent carries only the final
-          // (call-free) turn's text (it was already surfaced as TextChunkEvent).
-          buffer.clear();
-          return _dispatch(call, emit);
-        },
-        maxToolTurns: maxIterations,
-        isCancelled: cancelled,
-        onMaxToolTurns: () {
-          maxHit = true;
-          emit(MaxIterationsEvent(maxIterations));
-        },
-      )) {
-        switch (r) {
-          case TextResponse(:final token):
-            if (token.isEmpty) continue;
-            buffer.write(token);
-            emit(TextChunkEvent(token));
-          case ThinkingResponse(:final content):
-            // Thinking is off for the agent chat, so this never fires today; fold
-            // it into the answer if it ever does (parity with the old switch).
-            if (content.isEmpty) continue;
-            buffer.write(content);
-            emit(TextChunkEvent(content));
-          case FunctionCallResponse() || ParallelFunctionCallResponse():
-            break; // dispatched via onToolCall above
+      // Generations core may still make: all of them at first, then what an
+      // empty-answer retry leaves.
+      var budget = maxIterations;
+      var retries = 0;
+      var emptyAnswers = 0;
+      while (true) {
+        await for (final r in chat.generateChatResponseWithTools(
+          onToolCall: (call) {
+            // A tool call ends this turn: the text streamed before it was
+            // preamble, not the final answer — drop it so DoneEvent carries only
+            // the final (call-free) turn's text (it was already surfaced as
+            // TextChunkEvent).
+            buffer.clear();
+            return _dispatch(call, emit, turn);
+          },
+          maxToolTurns: budget,
+          isCancelled: cancelled,
+          onMaxToolTurns: () {
+            maxHit = true;
+            emit(MaxIterationsEvent(maxIterations));
+          },
+        )) {
+          switch (r) {
+            case TextResponse(:final token):
+              if (token.isEmpty) continue;
+              buffer.write(token);
+              emit(TextChunkEvent(token));
+            case ThinkingResponse(:final content):
+              // Thinking is off for the agent chat, so this never fires today;
+              // fold it into the answer if it ever does (parity with the old
+              // switch).
+              if (content.isEmpty) continue;
+              buffer.write(content);
+              emit(TextChunkEvent(content));
+            case FunctionCallResponse() || ParallelFunctionCallResponse():
+              break; // dispatched via onToolCall above
+          }
         }
-      }
-      // A barge-in (cancel) and maxToolTurns exhaustion (its own
-      // MaxIterationsEvent) both end WITHOUT a DoneEvent — mirrors the
-      // pre-consolidation loop.
-      if (!maxHit && !cancelledSeen) {
-        emit(DoneEvent(buffer.toString()));
+        // A barge-in (cancel) and maxToolTurns exhaustion (its own
+        // MaxIterationsEvent) both end WITHOUT a DoneEvent — mirrors the
+        // pre-consolidation loop.
+        if (maxHit || cancelledSeen) return;
+
+        final text = buffer.toString();
+        final skillName = turn.skillLoadedLast;
+        if (skillName == null || text.trim().isNotEmpty) {
+          emit(DoneEvent(text));
+          return;
+        }
+
+        // The model stopped with no text right after reading a skill's
+        // instructions. The nudge goes in as an ordinary user turn: core
+        // records no reply for an empty generation (a whitespace-only one
+        // becomes the model's turn). The budget counts every dispatched call
+        // as a generation of its own (parallel calls share one), so it can
+        // only overestimate what was used: the turn never makes more than
+        // maxIterations generations. A cancel ends the turn here with no
+        // event: a stopped generation is empty too, and EmptyAnswerEvent is a
+        // DoneEvent, which a cancelled turn never emits.
+        emptyAnswers++;
+        budget = maxIterations - turn.dispatched - emptyAnswers;
+        if (cancelled()) return;
+        if (retries >= emptyAfterSkillRetries || budget < 1) {
+          emit(EmptyAnswerEvent(skillName));
+          return;
+        }
+        retries++;
+        emit(
+          EmptyAnswerRetryEvent(
+            skillName: skillName,
+            nudge: emptyAfterSkillNudge,
+            attempt: retries,
+          ),
+        );
+        await chat.addQueryChunk(
+          Message(text: emptyAfterSkillNudge, isUser: true),
+        );
+        buffer.clear();
       }
     }
 
@@ -285,11 +374,14 @@ class AgentLoop {
   /// named [AgentToolNames.runSkill] / `runIntent` / `runMcp`. Native decoders
   /// take the name from the structured declaration; the web decoder follows the
   /// SKILL.md text literally and calls `run_js`. Accept the SKILL.md spelling as
-  /// an alias so both paths dispatch to the same executor.
+  /// an alias so both paths dispatch to the same executor. Gallery's own tool
+  /// names, `runJs` and `runMcpTool`, are accepted the same way.
   static const _toolNameAliases = <String, String>{
     'run_js': AgentToolNames.runSkill,
+    'runJs': AgentToolNames.runSkill,
     'run_intent': AgentToolNames.runIntent,
     'run_mcp': AgentToolNames.runMcp,
+    'runMcpTool': AgentToolNames.runMcp,
     'load_skill': AgentToolNames.loadSkill,
   };
 
@@ -301,7 +393,10 @@ class AgentLoop {
   Future<Map<String, dynamic>> _dispatch(
     FunctionCallResponse originalCall,
     void Function(AgentEvent) emit,
+    _TurnCalls turn,
   ) async {
+    turn.dispatched++;
+    turn.skillLoadedLast = null;
     // Normalize a SKILL.md tool-name spelling to the canonical declared name
     // (e.g. `run_js` -> `runSkill`). A native call already uses the canonical
     // name, so the alias map leaves it untouched.
@@ -311,11 +406,11 @@ class AgentLoop {
         : FunctionCallResponse(name: canonical, args: originalCall.args);
     switch (call.name) {
       case AgentToolNames.loadSkill:
-        return _loadSkill(call, emit);
+        return _loadSkill(call, emit, turn);
       case AgentToolNames.runSkill:
       case AgentToolNames.runIntent:
       case AgentToolNames.runMcp:
-        return _runExecutor(call, emit);
+        return _runExecutor(call, emit, turn);
       default:
         // Unknown tool. Small models (notably the web decoder) sometimes call
         // a skill by name as if it were a tool — e.g. `calculate-hash{...}` —
@@ -340,6 +435,7 @@ class AgentLoop {
   Future<Map<String, dynamic>> _loadSkill(
     FunctionCallResponse call,
     void Function(AgentEvent) emit,
+    _TurnCalls turn,
   ) async {
     final skillName = _stringArg(call.args, 'skillName').trim();
     final skill = registry.get(skillName);
@@ -356,6 +452,8 @@ class AgentLoop {
       return {'skill_name': skillName, 'error': message, 'status': 'failed'};
     }
 
+    turn.skillLoadedLast = skill.name;
+    turn.loaded = skill;
     return {
       'skill_name': skillName,
       'skill_instructions': _skillContent(skill),
@@ -367,6 +465,7 @@ class AgentLoop {
   Future<Map<String, dynamic>> _runExecutor(
     FunctionCallResponse call,
     void Function(AgentEvent) emit,
+    _TurnCalls turn,
   ) async {
     // Resolve the targeted skill (skill-based calls carry a `skillName`; intent
     // and MCP calls don't, so this may be null).
@@ -399,10 +498,24 @@ class AgentLoop {
     );
 
     // Map the tool call to the (data) payload + skill the executor expects.
-    final probe = skill ?? _syntheticSkillFor(call);
+    // `runIntent` names its action in `intent`, `runMcp` its tool in
+    // `toolName`. Small models often add the loaded skill's `skillName` to the
+    // call too; the action still comes from `intent` / `toolName`, while the
+    // registered skill stays the call's skill for the event above and for the
+    // secret below.
+    final action = switch (call.name) {
+      AgentToolNames.runIntent => _stringArg(call.args, 'intent').trim(),
+      AgentToolNames.runMcp => _stringArg(call.args, 'toolName').trim(),
+      _ => '',
+    };
+    final probe = skill == null || action.isNotEmpty
+        ? _syntheticSkillFor(call)
+        : skill;
     final executor = _pickExecutor(probe);
     if (executor == null) {
-      final message = 'No executor available for "${call.name}".';
+      final message =
+          _textOnlySkillHint(call, probe, turn) ??
+          'No executor available for "${call.name}".';
       emit(AgentErrorEvent(message, toolName: call.name));
       return {'error': message, 'status': 'failed'};
     }
@@ -416,6 +529,10 @@ class AgentLoop {
     } catch (e) {
       result = ErrorResult(e.toString());
     }
+    if (result is ErrorResult && _isUnknownIntent(executor, probe, dataJson)) {
+      final hint = _textOnlySkillHint(call, probe, turn);
+      if (hint != null) result = ErrorResult(hint);
+    }
 
     emit(ToolResultEvent(toolName: call.name, result: result));
     if (result is ErrorResult) {
@@ -423,6 +540,53 @@ class AgentLoop {
     }
 
     return _resultToResponse(result);
+  }
+
+  /// The error fed back for a `runIntent` that names no intent the app can run,
+  /// when the skill the model loaded last in this turn is text-only. Such a
+  /// skill calls no tool, so the model is told to answer from its
+  /// instructions instead of being handed the list of intents to try next.
+  /// Null in every other case.
+  String? _textOnlySkillHint(
+    FunctionCallResponse call,
+    Skill probe,
+    _TurnCalls turn,
+  ) {
+    final loaded = turn.loaded;
+    if (call.name != AgentToolNames.runIntent ||
+        loaded == null ||
+        loaded.type != SkillType.textOnly) {
+      return null;
+    }
+    return 'The loaded skill "${loaded.name}" calls no tool, and '
+        '"${probe.name}" is not an intent this app can run. Answer the user '
+        "directly, following the skill's instructions.";
+  }
+
+  /// Whether [executor] has no intent by the name the call gave: neither
+  /// [probe]'s name nor an `intent` inside the payload, the two places
+  /// [NativeIntentExecutor.execute] looks. Only the package's own intent
+  /// executor can be asked; another executor's errors are its own.
+  static bool _isUnknownIntent(
+    SkillExecutor executor,
+    Skill probe,
+    String dataJson,
+  ) =>
+      executor is NativeIntentExecutor &&
+      !executor.isWhitelisted(probe.name.trim()) &&
+      !executor.isWhitelisted(_payloadIntent(dataJson));
+
+  /// The `intent` a `parameters` payload carries itself, or '' when it has
+  /// none (or is not JSON).
+  static String _payloadIntent(String dataJson) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(dataJson);
+    } on FormatException {
+      return '';
+    }
+    if (decoded case {'intent': final String intent}) return intent.trim();
+    return '';
   }
 
   /// First executor (in probe order) that can run [skill]; null if none can.
@@ -433,8 +597,9 @@ class AgentLoop {
     return null;
   }
 
-  /// Build a stand-in [Skill] for an intent / MCP call that does not target a
-  /// registered skill, so executors can still probe by [SkillType]. The
+  /// Build a stand-in [Skill] for an intent / MCP call that names its action,
+  /// or that does not target a registered skill, so executors can still probe
+  /// by [SkillType]. It carries no instructions and no metadata. The
   /// synthetic skill's name carries the concrete action — the `intent` arg for
   /// `runIntent`, the `toolName` arg for `runMcp` — so the executor can resolve
   /// which whitelisted action to run from [Skill.name].
@@ -491,9 +656,32 @@ class AgentLoop {
       '${skill.instructions}';
 
   /// Read a string tool argument, tolerating a missing key or non-string value.
+  /// A model sometimes passes an object or a list where the tool asks for a
+  /// JSON string (`parameters`, `data`, `input`); it is handed on as JSON, not
+  /// as Dart's `{key: value}` text, which no executor can decode.
   String _stringArg(Map<String, dynamic> args, String key) {
     final value = args[key];
     if (value == null) return '';
-    return value is String ? value : value.toString();
+    if (value is String) return value;
+    if (value is Map || value is List) return jsonEncode(value);
+    return value.toString();
   }
+}
+
+/// The default [AgentLoop.emptyAfterSkillNudge].
+const String defaultEmptyAfterSkillNudge =
+    "Continue with the loaded skill's instructions.";
+
+/// What one [AgentLoop.run] remembers about the tool calls it dispatched.
+class _TurnCalls {
+  /// Calls dispatched so far in the turn, of every kind.
+  int dispatched = 0;
+
+  /// The skill's name when the most recent dispatched call was a `loadSkill`
+  /// that found it; null after any other call.
+  String? skillLoadedLast;
+
+  /// The skill of the turn's most recent successful `loadSkill`, whatever
+  /// was called after it.
+  Skill? loaded;
 }

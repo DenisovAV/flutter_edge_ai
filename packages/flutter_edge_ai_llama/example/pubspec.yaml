@@ -1,0 +1,41 @@
+name: flutter_edge_ai_llama_demo
+description: Cross-platform local GGUF chat demo for the Flutter Edge AI llamadart connector.
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_edge_ai_llama:
+    path: ..
+  flutter_edge_ai: ^2.4.0
+  llamadart: '>=0.13.1 <0.13.2'
+  llamadart_llama_cpp_flutter: 0.13.0
+  file_selector: ^1.0.4
+  path_provider: ^2.1.4
+
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+      llamadart_native_backends:
+        platforms:
+          android: [cpu]
+          linux: [cpu]
+          windows: [cpu]
+
+dev_dependencies:
+  file_selector_platform_interface: ^2.6.0
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  path_provider_platform_interface: ^2.1.2
+  shared_preferences: ^2.5.2
+
+flutter:
+  uses-material-design: true

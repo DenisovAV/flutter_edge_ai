@@ -183,9 +183,11 @@ programs (about 600 MB for Gemma 4 E2B): pick one precision per install rather
 than per request.
 
 `float32` activations also need more GPU memory than `float16`. If the GPU
-engine cannot be created the model falls back to CPU **without an error** — the
-digits are then right and the model is far slower, which is easy to mistake for
-the fix working. Read the backend the model actually got:
+engine cannot be created the model falls back to CPU **without an exception**,
+only a WARNING line in the log — the digits are then right and the model is far
+slower, which is easy to mistake for the fix working. Register
+`LiteRtLmEngine(backendFallback: false)` to get a `BackendInitException` with
+LiteRT-LM's reason instead, or read the backend the model actually got:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(
@@ -213,8 +215,10 @@ were never affected.
 
 `Qwen3-0.6B.litertlm` from
 [litert-community/Qwen3-0.6B](https://huggingface.co/litert-community/Qwen3-0.6B)
-fails at engine creation (`Failed to create engine. Model may be invalid`)
-whatever the `maxTokens` and backend. Since LiteRT-LM v0.17.0
+fails at engine creation (`Failed to create engine on <backend>: <LiteRT-LM's
+reason>. Model: …`; before `flutter_edge_ai_litertlm` 1.14.0,
+`Failed to create engine. Model may be invalid`) whatever the `maxTokens` and
+backend. Since LiteRT-LM v0.17.0
 (`flutter_gemma_litertlm` 1.7.0) the runtime rejects a piece in that bundle's
 SentencePiece tokenizer (`piece must not include null character` — on Android
 only in logcat); upstream
@@ -238,23 +242,28 @@ that model to `PreferredBackend.cpu` / `.gpu`. Upstream:
 
 Note that `maxTokens` is **not** clamped up to 1024 on the NPU attempt the way
 it is on CPU and GPU — the safe context is baked into the compiled bundle, so
-pass the `cache_length` it was built for. If the NPU fails to initialize the
-engine falls back to GPU and then CPU, and the floor applies to those attempts,
-so the fallback is clamped rather than crashed.
+pass the `cache_length` it was built for. If the NPU fails to initialize, a
+generic bundle falls back to GPU and then CPU (a bundle compiled for an NPU is
+never tried there), and the floor applies to those attempts, so the fallback is
+clamped rather than crashed.
 
-**`PreferredBackend.npu` on Android falls back to GPU after an upgrade.** From
-`flutter_edge_ai_litertlm` 1.10.0 the Qualcomm QNN runtime is not part of the
-package; the app opts in with `qualcomm_npu: true` under `hooks: user_defines:
-flutter_edge_ai_litertlm:` in its pubspec — see [LiteRT-LM](/docs/litertlm). The
-log names the reason. If it says the stack is not enabled although the flag is
+**`PreferredBackend.npu` on Android falls back to GPU, or an NPU bundle fails
+to load, after an upgrade.** From `flutter_edge_ai_litertlm` 1.10.0 the
+Qualcomm QNN runtime is not part of the package; the app opts in with
+`qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:` in
+its pubspec — see [LiteRT-LM](/docs/litertlm). Without it a generic bundle
+falls back to GPU, then CPU, and the log names the reason; a bundle compiled
+for an NPU is refused with a `BackendInitException` whose
+`NpuDispatchUnavailableException` names it. If it says the stack is not enabled although the flag is
 set, the flag is in the wrong pubspec: in a pub workspace only the workspace
 root's `user_defines` count. If the build fails fetching `qnn-runtime`, the
 machine cannot reach Maven Central; set `qualcomm_npu_maven_url` to a mirror or
 `qualcomm_npu_aar` to a local copy of the same AAR.
 
-**`PreferredBackend.npu` on a Qualcomm Linux board falls back to GPU.** The
-same `qualcomm_npu: true` covers Linux arm64 builds. The log names which of
-these is missing:
+**`PreferredBackend.npu` on a Qualcomm Linux board falls back to GPU, or an NPU
+bundle fails to load.** The same `qualcomm_npu: true` covers Linux arm64
+builds. The log for a generic bundle, or the `BackendInitException` for a
+bundle compiled for an NPU, names which of these is missing:
 - The build did not bundle the stack — the flag is not set, or not in the
   workspace root's pubspec.
 - `/dev/fastrpc-cdsp` does not exist — the board exposes no compute DSP.
@@ -307,12 +316,16 @@ if you hit it.
 - **Image input crashes at model load on a GPU text backend (older releases).**
   On Metal (iOS/macOS) and WebGPU (Windows/Linux) the vision encoder's ops can't
   be prepared by the GPU delegate. Fixed in **`flutter_gemma_litertlm` 1.4.2 /
-  core 1.5.9** — the vision encoder now defaults to CPU while the text decoder
-  keeps the GPU. Upgrade if you hit it.
-- Use the GPU backend for faster text decoding. Image encoding runs on CPU by
-  default; move audio encoding to GPU with `preferredAudioBackend: PreferredBackend.gpu`.
-  To force GPU vision (only for a model built to allow it), pass
-  `preferredVisionBackend: PreferredBackend.gpu`. See [Multimodal](/docs/multimodal).
+  core 1.5.9** — a vision encoder its bundle says nothing about runs on CPU
+  while the text decoder keeps the GPU. Upgrade if you hit it.
+- Use the GPU backend for faster text decoding. An unset encoder backend
+  follows the bundle: the section's `backend_constraint`, else the NPU it is
+  compiled for, else CPU. Set `preferredVisionBackend`/`preferredAudioBackend`
+  only where the section allows it
+  (`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint`, or
+  `visionEncoder`); the published Gemma 4 and Gemma 3n audio encoders declare
+  cpu, and a backend the section excludes is refused before the model loads.
+  See [Multimodal](/docs/multimodal).
 
 ## Native libraries fetched at build time
 

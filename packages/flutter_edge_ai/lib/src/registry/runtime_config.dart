@@ -59,19 +59,26 @@ class RuntimeConfig {
   final PreferredBackend? preferredBackend;
 
   /// Backend for the VISION encoder, independent of [preferredBackend] (the
-  /// text/decoder backend). Null defaults to CPU in the LiteRT-LM engine,
-  /// because the vision encoder's `STABLEHLO_COMPOSITE` ops fail to prepare on
-  /// the Metal/WebGPU delegates (LiteRT-LM#2461). Set it (e.g. to
-  /// `PreferredBackend.gpu`) only for a model whose vision section bakes a
-  /// gpu-only `backend_constraint`. Ignored by the MediaPipe engine (whole-model
-  /// backend, no per-encoder split).
+  /// text/decoder backend). Null lets the engine choose: the native LiteRT-LM
+  /// engine follows the bundle — the encoder's declared `backend_constraint`
+  /// (the CPU when that allows it), else the NPU it is compiled for, else the
+  /// CPU, because the vision encoder's `STABLEHLO_COMPOSITE` ops fail to
+  /// prepare on the Metal/WebGPU delegates (LiteRT-LM#2461) — and reports its
+  /// choice in `InferenceModel.activeVisionBackend`. Set one only where the
+  /// section allows it (`readLiteRtLmBundleInfo(path).visionEncoder` in
+  /// `flutter_edge_ai_litertlm` shows its `backend_constraint`); a backend it
+  /// excludes is refused before the model loads. Ignored by the MediaPipe
+  /// engine (whole-model backend, no per-encoder split).
   final PreferredBackend? preferredVisionBackend;
 
   /// Backend for the AUDIO encoder, independent of [preferredBackend]. Null
-  /// defaults to CPU in the LiteRT-LM engine as a conservative default — but,
-  /// unlike the vision encoder, the audio encoder runs fine on GPU and is often
-  /// faster there (Gemma 3n audio is ~2× CPU on Metal), so set it to
-  /// `PreferredBackend.gpu` for speed. Ignored by MediaPipe.
+  /// lets the engine choose, as for [preferredVisionBackend], and the native
+  /// LiteRT-LM engine reports it in `InferenceModel.activeAudioBackend`. Set
+  /// one only where the section allows it: the published Gemma 4 and Gemma 3n
+  /// audio encoders declare `backend_constraint` cpu, so
+  /// `PreferredBackend.gpu` is refused for them
+  /// (`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint` shows
+  /// it). Ignored by MediaPipe.
   final PreferredBackend? preferredAudioBackend;
 
   /// Inference: whether the model is created with vision. Embedders: the
@@ -188,15 +195,16 @@ class ActiveModelParams {
   ///
   /// Comparing the RAW arguments caused spurious rebuilds — and a rebuild here
   /// unloads and reloads multi-gigabyte weights, so it is expensive and very
-  /// visible. Three knobs are normalised downstream:
+  /// visible. One knob is normalised downstream:
   ///
   ///   * `maxNumImages` is `maxNumImages ?? 1` when vision is on and discarded
   ///     entirely when it is off, in both engines. So null and 1 are the same
   ///     request, and with `supportImage: false` the value is dead.
-  ///   * `preferredVisionBackend` / `preferredAudioBackend` default to CPU
-  ///     (`encoderBackendWireName(null) == 'cpu'`), which the facade's own doc
-  ///     tells callers — so writing the value explicitly followed the
-  ///     documentation into a reload.
+  ///
+  /// `preferredVisionBackend` / `preferredAudioBackend` are dropped when their
+  /// encoder is off, and otherwise kept as given: null lets the engine choose
+  /// from the model file (the NPU for an encoder compiled for one), so it is
+  /// not the same request as an explicit CPU.
   ///
   /// `maxTokens` is NOT normalised here: the `.litertlm` engine clamps it up to
   /// 1024 but MediaPipe does not, so the effective value depends on which
@@ -208,8 +216,8 @@ class ActiveModelParams {
   ActiveModelParams normalized() => ActiveModelParams(
     maxTokens: maxTokens,
     preferredBackend: preferredBackend,
-    preferredVisionBackend: preferredVisionBackend ?? PreferredBackend.cpu,
-    preferredAudioBackend: preferredAudioBackend ?? PreferredBackend.cpu,
+    preferredVisionBackend: supportImage ? preferredVisionBackend : null,
+    preferredAudioBackend: supportAudio ? preferredAudioBackend : null,
     supportImage: supportImage,
     supportAudio: supportAudio,
     maxNumImages: supportImage ? (maxNumImages ?? 1) : null,
@@ -244,14 +252,16 @@ class ActiveModelParams {
   String? _rawDifference(ActiveModelParams other) {
     if (maxTokens != other.maxTokens) return 'maxTokens';
     if (preferredBackend != other.preferredBackend) return 'preferredBackend';
+    // Before the encoder backends, which mean something only while their
+    // encoder is on (normalized drops them otherwise).
+    if (supportImage != other.supportImage) return 'supportImage';
+    if (supportAudio != other.supportAudio) return 'supportAudio';
     if (preferredVisionBackend != other.preferredVisionBackend) {
       return 'preferredVisionBackend';
     }
     if (preferredAudioBackend != other.preferredAudioBackend) {
       return 'preferredAudioBackend';
     }
-    if (supportImage != other.supportImage) return 'supportImage';
-    if (supportAudio != other.supportAudio) return 'supportAudio';
     if (maxNumImages != other.maxNumImages) return 'maxNumImages';
     if (multimodalOrder != other.multimodalOrder) return 'multimodalOrder';
     if (enableSpeculativeDecoding != other.enableSpeculativeDecoding) {

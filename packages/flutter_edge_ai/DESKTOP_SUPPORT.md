@@ -89,7 +89,7 @@ For mobile platforms see the main [README](README.md).
 - **macOS**: 11+ (Apple Silicon, arm64); 12.0 with `flutter_edge_ai_builtin_ai`
 - **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed since `flutter_gemma_litertlm` 1.7.1 (see below).
 - **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
-- **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available
+- **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
 No Java/JVM/JRE required.
 
@@ -100,8 +100,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^2.3.0            # core
-  flutter_edge_ai_litertlm: ^1.13.0  # .litertlm engine
+  flutter_edge_ai: ^2.4.0            # core
+  flutter_edge_ai_litertlm: ^1.14.0  # .litertlm engine
 ```
 
 ```dart
@@ -427,8 +427,10 @@ release on next run.
 
 ### Windows GPU shaders fail to compile
 
-Symptom: `engine_create` returns null with no Dart-side error, app silently
-falls back to CPU.
+Symptom: `engine_create` returns null and the load falls back to CPU, with
+only a `[flutter_edge_ai] WARNING: … gpu backend failed` line in the log. With
+`LiteRtLmEngine(backendFallback: false)` the load throws a
+`BackendInitException` carrying LiteRT-LM's own reason instead.
 
 Verify `dxcompiler.dll` and `dxil.dll` are next to your `app.exe`. They should
 be — Native Assets bundles them. If they're absent, the WebGPU/DX12 shader

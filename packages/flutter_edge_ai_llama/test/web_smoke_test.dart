@@ -378,6 +378,48 @@ void main() {
           print(
             'WEB_SMOKE: generated a nonempty reply (${response.token.length} characters)',
           );
+          final interruptible = await model.openChat(
+            temperature: 0,
+            maxOutputTokens: 256,
+          );
+          await interruptible.addQuery(
+            edge.Message.text(
+              text: 'Write a very long story about a journey across the ocean.',
+              isUser: true,
+            ),
+          );
+          final firstToken = Completer<void>();
+          final stopped = Completer<void>();
+          final done = Completer<void>();
+          final errors = <Object>[];
+          interruptible.generateChatResponseAsync().listen(
+            (response) {
+              if (response is edge.TextResponse && !firstToken.isCompleted) {
+                firstToken.complete();
+                interruptible.stopGeneration().then(
+                  (_) => stopped.complete(),
+                  onError: stopped.completeError,
+                );
+              }
+            },
+            onError: errors.add,
+            onDone: done.complete,
+          );
+          await firstToken.future.timeout(const Duration(seconds: 30));
+          await stopped.future.timeout(const Duration(seconds: 30));
+          await done.future.timeout(const Duration(seconds: 30));
+          expect(errors, isEmpty);
+          expect(interruptible.fullHistory, isEmpty);
+          await interruptible.addQuery(
+            edge.Message.text(text: 'Say hello again.', isUser: true),
+          );
+          final retried =
+              await interruptible.generateChatResponse() as edge.TextResponse;
+          expect(retried.token.trim(), isNotEmpty);
+          // ignore: avoid_print
+          print(
+            'WEB_SMOKE: cancellation rolled back and immediate retry completed',
+          );
           return true;
         } catch (error, stack) {
           failure = "$error\n$stack";
@@ -387,7 +429,8 @@ void main() {
       expect(
         completed,
         isTrue,
-        reason: 'Model loading and generation must finish. $failure',
+        reason:
+            'Model loading, generation, cancellation and retry must finish. $failure',
       );
     },
     skip: _modelUrl.isEmpty,

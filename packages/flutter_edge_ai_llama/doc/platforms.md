@@ -36,10 +36,10 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Keep this explicit selection as defence in depth. llamadart 0.13.0 automatically
+Keep this explicit selection as defence in depth. llamadart 0.13.1 automatically
 omits its LiteRT-LM when this connector or `flutter_edge_ai_litertlm` is present;
 explicitly selecting both LiteRT-LM owners fails the native build. Core itself includes no inference
-runtime. With llamadart 0.13.0, Vulkan is included by default on supported Android,
+runtime. With llamadart 0.13.1, Vulkan is included by default on supported Android,
 Linux and Windows targets. Android auto selection uses CPU; Linux/Windows use
 Vulkan where available. The demo explicitly selects CPU-only bundles on those
 platforms; apps choose backend packaging in their own hook settings.
@@ -59,15 +59,39 @@ Oldest-device compatibility still requires device testing.
 
 The Apple metadata fix in [native #110](https://github.com/leehack/llamadart-native/issues/110)
 is included in companion 0.13.0 (native v0.6.0-3). App Store submission remains
-unvalidated. Apple workspace-member apps are also unqualified: the companion is
-always missed when it is declared only in a member and the hook runs from the
-root, so fallback frameworks can be embedded alongside it. Use a standalone
-Apple app until that runtime packaging path is validated.
+unvalidated. Apple workspace setup is covered below.
 
 Windows x64's first CPU-only build still downloads the full approximately 737 MB
 archive, including CUDA DLLs (about 675 MB for cuBLASLt). The SDK download has a
 ten-minute total timeout and no resume; allow bandwidth/time for a fresh cache.
 Splitting that download belongs to [llamadart #812](https://github.com/leehack/llamadart/issues/812).
+
+## Apple workspaces
+
+With llamadart 0.13.1, the hook discovers the Flutter app member and validates its
+Apple companion. The old workspace-root discovery problem is fixed; the hook
+uses the SwiftPM runtime rather than embedding another llama.cpp framework.
+
+1. Add `llamadart_llama_cpp_flutter: 0.13.0` directly to the app member's
+   `dependencies`, alongside this connector.
+2. Set `llamadart_native_runtimes: [llama_cpp]` under `hooks.user_defines.llamadart`
+   in the workspace root. Enable Flutter SwiftPM and keep the deployment targets
+   and iOS entitlements described above.
+3. Run `flutter pub get` from the root, then build or run from the app member.
+
+The hook output is shared across the workspace. App members using llamadart
+must declare the same Apple companions. Different companion choices, or a macOS workspace mixing
+Flutter apps and Dart entry points that use llamadart, trigger a warning and
+retain hook-bundled assets. Such mixed setups remain unqualified here; make the
+configuration consistent or split the workspaces.
+
+Qualification uses a workspace containing core, this connector and one app
+member, with root hook settings and a companion declared only in the app.
+The tested SDK/companion pair is **0.13.1 / 0.13.0**. Dated release-build,
+framework-layout and CPU lifecycle results are recorded in the
+[contribution PR](https://github.com/DenisovAV/flutter_edge_ai/pull/628).
+This does not qualify App Store submission, physical iOS devices, oldest OS
+versions or mixed LiteRT-LM/CocoaPods packaging.
 
 ## Example model storage
 
@@ -95,9 +119,9 @@ the support matrix. Dated devices, models, commands and results are recorded in 
 | Web | Wasm build and real worker/Wasm generation | Hardware WebGPU, advanced model/browser combinations |
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
-package minimum. Runtime pins are llamadart 0.13.0, native artifacts v0.6.0-3,
-Apple companion 0.13.0 and connector-pinned Web assets v0.1.59. Upgrade the SDK
-constraint and companion together. Web assets are checksum-verified. llamadart 0.13.0 verifies llama.cpp archive SHA-256 digests before extraction
+package minimum. Runtime pins are llamadart 0.13.1, native artifacts v0.6.0-3,
+Apple companion 0.13.0 and connector-pinned Web assets v0.1.59. Validate SDK
+upgrades with the matching companion; its patch version may differ. Web assets are checksum-verified. llamadart 0.13.1 verifies llama.cpp archive SHA-256 digests before extraction
 ([#1039](https://github.com/leehack/llamadart/pull/1039)); SwiftPM verifies its
 companion archives. Existing extracted native caches and explicit local runtime
 paths retain the SDK's documented trust policy.

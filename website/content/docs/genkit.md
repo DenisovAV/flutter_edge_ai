@@ -174,8 +174,9 @@ final response = await ai.generate(
     toolChoice: 'auto',             // tool calling mode: 'auto' / 'required' / 'none'
     // Optional per-component backend ('cpu'/'gpu'/'npu'):
     preferredBackend: 'gpu',        // text decoder
-    preferredAudioBackend: 'gpu',   // audio encoder (~2x on Metal; defaults to CPU)
-    // preferredVisionBackend defaults to CPU (Metal/WebGPU can't run its ops).
+    // preferredVisionBackend / preferredAudioBackend: unset, each encoder
+    // follows the bundle (its backend_constraint, else the NPU it is compiled
+    // for, else CPU); set one only where the section allows it.
   ),
 );
 ```

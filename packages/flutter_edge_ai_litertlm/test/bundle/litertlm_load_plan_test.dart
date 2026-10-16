@@ -16,6 +16,7 @@ LiteRtLmBundleInfo bundle({
   (String?, LiteRtLmNpuTarget?) vision = (null, null),
   (String?, LiteRtLmNpuTarget?) audio = (null, null),
   bool aux = false,
+  bool withEncoders = true,
   int? fileLength,
 }) {
   var at = 0;
@@ -37,8 +38,10 @@ LiteRtLmBundleInfo bundle({
 
   final sections = [
     section('tf_lite_prefill_decode', text),
-    section('tf_lite_vision_encoder', vision),
-    section('tf_lite_audio_encoder_hw', audio),
+    if (withEncoders) ...[
+      section('tf_lite_vision_encoder', vision),
+      section('tf_lite_audio_encoder_hw', audio),
+    ],
     if (aux) section('tf_lite_aux', (null, null)),
   ];
   return LiteRtLmBundleInfo(
@@ -65,6 +68,17 @@ final allNpu = bundle(
 
 /// The generic GPU/CPU Gemma 4: the audio encoder declares cpu.
 final generic = bundle(audio: ('cpu', null));
+
+/// Gemma 3n: the text model declares cpu,gpu, the vision encoder gpu, the
+/// audio encoder cpu.
+final gemma3n = bundle(
+  text: ('cpu,gpu', null),
+  vision: ('gpu', null),
+  audio: ('cpu', null),
+);
+
+/// A text-only bundle (FunctionGemma): no encoder sections.
+final textOnly = bundle(withEncoders: false);
 
 void main() {
   var npuAsked = 0;
@@ -191,6 +205,64 @@ void main() {
         refused(LiteRtLmBundleProblem.wrongBackend, 'runs on cpu'),
       );
       expect(plan(info: cpuOnly, fallback: false).textBackends, [cpu]);
+    });
+
+    test('a backend the file rules out is reported with the declared '
+        'constraint, for the notice', () {
+      final npuOn3n = plan(info: gemma3n, preferred: npu);
+      expect(npuOn3n.textBackends, [gpu, cpu]);
+      expect(npuOn3n.dropped.keys, [npu]);
+      expect(
+        npuOn3n.dropped[npu],
+        'model.litertlm declares that its text model runs on cpu, gpu '
+        '(backend_constraint)',
+      );
+      expect(
+        npuAsked,
+        0,
+        reason: 'the NPU is not a candidate, not unreachable',
+      );
+
+      final gpuOnCpu = plan(info: cpuOnly, preferred: gpu);
+      expect(gpuOnCpu.textBackends, [cpu]);
+      expect(
+        gpuOnCpu.dropped[gpu],
+        contains('runs on cpu (backend_constraint)'),
+      );
+    });
+
+    test('nothing is reported when nothing the caller asked for is ruled '
+        'out', () {
+      expect(plan(info: generic, preferred: npu).dropped, isEmpty);
+      expect(plan(info: cpuOnly).dropped, isEmpty);
+      expect(
+        plan(info: generic, preferred: npu, npuHere: false).dropped,
+        isEmpty,
+        reason:
+            'an unreachable NPU is the host\'s reason, worded by the caller',
+      );
+    });
+
+    test('a text model that declares only the NPU makes the NPU a candidate, '
+        'so the engine checks the NPU stack first', () {
+      final npuDeclared = bundle(text: ('npu', null));
+      expect(npuDeclared.isCompiledForNpu, isFalse);
+      List<PreferredBackend> candidates(
+        LiteRtLmBundleInfo? info, [
+        PreferredBackend? preferred,
+      ]) => liteRtLmTextCandidates(
+        path: 'model.litertlm',
+        bundle: info,
+        preferredBackend: preferred,
+        backendFallback: true,
+        abi: 'android_arm64',
+      ).backends;
+      expect(candidates(npuDeclared), [npu]);
+      expect(candidates(generic), [gpu, cpu]);
+      expect(candidates(generic, npu), [npu, gpu, cpu]);
+      expect(candidates(null), [gpu, cpu]);
+      expect(plan(info: npuDeclared).textBackends, [npu]);
+      expect(npuAsked, 1);
     });
   });
 
@@ -323,6 +395,56 @@ void main() {
           "vision encoder is not compiled for an NPU",
         ),
       );
+    });
+
+    test("a backend the encoder's backend_constraint excludes is refused: "
+        'audio', () {
+      expect(
+        () => plan(info: generic, audio: true, audioBackend: gpu),
+        refused(
+          LiteRtLmBundleProblem.wrongBackend,
+          "model.litertlm's audio encoder declares that it runs on cpu "
+          '(backend_constraint), not on gpu',
+        ),
+      );
+      expect(npuAsked, 0);
+    });
+
+    test("a backend the encoder's backend_constraint excludes is refused: "
+        'vision', () {
+      expect(
+        () => plan(info: gemma3n, image: true, visionBackend: cpu),
+        refused(
+          LiteRtLmBundleProblem.wrongBackend,
+          "model.litertlm's vision encoder declares that it runs on gpu "
+          '(backend_constraint), not on cpu',
+        ),
+      );
+      expect(
+        plan(
+          info: bundle(vision: ('gpu,cpu', null)),
+          image: true,
+          visionBackend: gpu,
+        ).visionBackend,
+        gpu,
+        reason: 'a backend the constraint names is kept',
+      );
+      expect(
+        plan(info: gemma3n, audio: true, audioBackend: cpu).audioBackend,
+        cpu,
+      );
+    });
+
+    test('a bundle without the encoder reports no encoder backend; an unread '
+        'file keeps the CPU', () {
+      final p = plan(info: textOnly, image: true, audio: true);
+      expect((p.visionBackend, p.audioBackend), (null, null));
+      expect(
+        plan(info: textOnly, image: true, visionBackend: gpu).visionBackend,
+        isNull,
+      );
+      final unread = plan(image: true, audio: true, audioBackend: gpu);
+      expect((unread.visionBackend, unread.audioBackend), (cpu, gpu));
     });
 
     test('another backend for a compiled encoder is refused', () {

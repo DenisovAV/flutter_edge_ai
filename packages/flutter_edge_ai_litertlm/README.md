@@ -781,7 +781,7 @@ milliseconds for a 3 GB file) and decides from them:
 |---|---|---|
 | A generic bundle | GPU, then CPU | that backend, then the next (npu → gpu → cpu) |
 | A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares are tried |
-| A bundle compiled for an NPU (a `tf_lite_aux` section or a `LiteRtStamp`, e.g. `…_qualcomm_sm8750.litertlm`) | the NPU | `npu`: the NPU; `gpu`/`cpu`: refused, they cannot run it |
+| A bundle compiled for an NPU (a `tf_lite_aux` section or a text model with a `LiteRtStamp`, e.g. `…_qualcomm_sm8750.litertlm`) | the NPU | `npu`: the NPU; `gpu`/`cpu`: refused, they cannot run it |
 | A file shorter than its sections | refused: the download is incomplete | refused |
 
 An encoder you leave unset (`preferredVisionBackend`, `preferredAudioBackend`)
@@ -789,10 +789,12 @@ runs where the file says: its declared `backend_constraint` (the CPU when that
 allows it), the NPU when its section is compiled for one, else the CPU. So the
 official `…_qualcomm_sm8750` and `…_qualcomm_qcs8275` bundles, whose encoders
 are not compiled for the NPU, run them on the CPU, and a bundle with compiled
-encoders runs them on the NPU, without the app choosing. Asking for the NPU on
-an encoder that is not compiled for it, or for another backend on one that is,
-is refused. `InferenceModel.activeVisionBackend` and `activeAudioBackend`
-report what was chosen.
+encoders runs them on the NPU, without the app choosing. Asking an encoder for
+a backend its `backend_constraint` excludes (the GPU for the published Gemma 4
+and Gemma 3n audio encoders, which declare cpu), for the NPU when it is not
+compiled for one, or for another backend when it is, is refused.
+`InferenceModel.activeVisionBackend` and `activeAudioBackend` report what was
+chosen, and are null for a bundle without that encoder.
 
 A refusal is a `LiteRtLmBundleException` with a `problem`
 (`incomplete`, `wrongBackend`, `unsupportedNpu` for a bundle compiled for an

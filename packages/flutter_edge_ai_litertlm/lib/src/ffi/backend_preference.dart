@@ -223,17 +223,14 @@ String ffiBackendWireName(PreferredBackend backend) => switch (backend) {
 /// Wire name for an ENCODER backend (vision / audio), defaulting to `cpu` when
 /// unset. Shared by both because their defaulting is identical (`null → cpu`).
 ///
-/// Why CPU differs per encoder:
-/// - VISION: its graph carries `STABLEHLO_COMPOSITE` ops the Metal (iOS/macOS)
-///   and WebGPU (Windows/Linux) LiteRT delegates cannot prepare — it hard-fails
-///   at `conversation_create` with no backend fallback (LiteRT-LM#2461, open
-///   upstream). CPU is the mandatory-safe default (matching the vision
-///   *adapter*, which LiteRT-LM already pins to CPU unconditionally).
-/// - AUDIO: runs fine on either backend (verified on Metal); CPU is a
-///   conservative default, but GPU is often faster (Gemma 3n audio ~2× CPU).
-///
-/// Both stay overridable: pass `PreferredBackend.gpu` for a vision model whose
-/// section bakes a gpu-only `backend_constraint`, or for faster GPU audio.
+/// The LLM engine passes what its load plan chose from the bundle (the
+/// section's `backend_constraint`, else the NPU it is compiled for, else CPU),
+/// so `null` reaches here only for a file the plan could not read. CPU is
+/// the safe value then: the VISION graph carries `STABLEHLO_COMPOSITE` ops the
+/// Metal (iOS/macOS) and WebGPU (Windows/Linux) LiteRT delegates cannot
+/// prepare — it hard-fails at `conversation_create` with no backend fallback
+/// (LiteRT-LM#2461, open upstream) — and the published Gemma 4 and Gemma 3n
+/// AUDIO encoders declare `backend_constraint` cpu.
 String encoderBackendWireName(PreferredBackend? encoderBackend) =>
     encoderBackend == null ? 'cpu' : ffiBackendWireName(encoderBackend);
 
@@ -266,6 +263,10 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // The backends to try, when the caller decided them (the LLM engine does,
   // from the bundle: `planLiteRtLmLoad`); otherwise [ffiBackendFallbackOrder].
   List<PreferredBackend>? backends,
+  // Why the caller left a backend of the request out of [backends] — the
+  // model file rules it out (`LiteRtLmLoadPlan.dropped`). The notice below
+  // says that instead of a reason about the host.
+  Map<PreferredBackend, String> droppedBecause = const {},
 }) async {
   final attempts = <BackendInitAttemptFailure>[];
   backends ??= ffiBackendFallbackOrder(
@@ -287,7 +288,18 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // `developer.log` writes to. An explicit request overridden is an abnormal
   // state, so this costs nothing in the normal case — the same reasoning as
   // `_warn` in litert_default_scope.dart.
-  if (preferredBackend == PreferredBackend.npu &&
+  final fileReason = preferredBackend == null
+      ? null
+      : droppedBecause[preferredBackend];
+  if (fileReason != null && !backends.contains(preferredBackend)) {
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai] WARNING: $logTag '
+      '${ffiBackendWireName(preferredBackend!)} was requested, but '
+      '$fileReason — trying ${backends.map(ffiBackendWireName).join(" -> ")} '
+      'instead. InferenceModel.activeBackend names what actually ran.',
+    );
+  } else if (preferredBackend == PreferredBackend.npu &&
       !backends.contains(PreferredBackend.npu)) {
     final reason =
         npuUnavailableBecause ??

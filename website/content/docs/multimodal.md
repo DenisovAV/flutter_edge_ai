@@ -21,10 +21,10 @@ build, which has no thinking or Gemma 4 function calling); **Gemma3n** vision ru
 iOS, and Desktop only — its web build is `.litertlm`, which is text-only. On the
 `.litertlm` engine the
 text decoder runs on your chosen backend (on GPU: OpenCL on Android, Metal on
-Apple, Vulkan/WebGPU on Linux, DX12/WebGPU on Windows), while
-the **vision encoder always runs on CPU by default** — the Metal/WebGPU delegates
-can't prepare its ops — so image input works on a GPU text backend with no extra
-config.
+Apple, Vulkan/WebGPU on Linux, DX12/WebGPU on Windows), while the **vision
+encoder runs where the bundle says** — its declared `backend_constraint`, else
+the NPU it is compiled for, else CPU (the Metal/WebGPU delegates can't prepare
+its ops) — so image input works on a GPU text backend with no extra config.
 
 ### Enabling vision
 
@@ -39,14 +39,15 @@ final model = await FlutterEdgeAi.getActiveModel(
 ```
 
 `preferredBackend` selects the text decoder's backend. Left unset, the vision
-encoder runs where the bundle says — on the NPU when its section is compiled
-for one ([where a model runs](/docs/litertlm#where-a-model-runs)) — and
-otherwise on CPU (the Metal/WebGPU delegates can't prepare its
-`STABLEHLO_COMPOSITE` ops — routing it to GPU used to hard-fail at model load;
-`flutter_gemma_litertlm` 1.4.2 fixes this by defaulting the vision encoder to
-CPU). To force GPU vision — only for a model whose vision section is built to
-allow it — pass `preferredVisionBackend: PreferredBackend.gpu` to
-`getActiveModel(...)`; `model.activeVisionBackend` says where it runs.
+encoder follows the bundle ([where a model runs](/docs/litertlm#where-a-model-runs)):
+its declared `backend_constraint` (CPU when that allows it; Gemma 3n's vision
+encoder declares GPU), else the NPU its section is compiled for, else CPU (the
+Metal/WebGPU delegates can't prepare its `STABLEHLO_COMPOSITE` ops — routing
+it to GPU used to hard-fail at model load). Set
+`preferredVisionBackend` only where the section allows it —
+`readLiteRtLmBundleInfo(path).visionEncoder?.backendConstraint` shows what it
+declares, and a backend it excludes is refused before the model loads;
+`model.activeVisionBackend` says where it runs.
 
 ### Sending an image
 
@@ -108,8 +109,7 @@ final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 4096,
   preferredBackend: PreferredBackend.gpu,        // text decoder
   supportImage: true,
-  supportAudio: true,
-  preferredAudioBackend: PreferredBackend.gpu,   // move the audio encoder to GPU
+  supportAudio: true,                            // the encoder follows the bundle
 );
 ```
 
@@ -131,11 +131,12 @@ final response = await chat.generateChatResponse();
 
 Audio input needs a model that includes the audio encoder: `.litertlm` on
 Android, iOS and desktop. The Gemma 3n MediaPipe `.task` files carry none
-(`TF_LITE_AUDIO_ENCODER`), and neither web engine takes audio. On macOS,
-Gemma 3n audio runs roughly 2× faster on GPU than on CPU — but the audio
-encoder defaults to CPU, so pass `preferredAudioBackend: PreferredBackend.gpu`
-(as above) to get that speedup; `preferredBackend` alone only moves the text
-decoder.
+(`TF_LITE_AUDIO_ENCODER`), and neither web engine takes audio. Leave
+`preferredAudioBackend` unset: the encoder follows the bundle, and the
+published Gemma 4 and Gemma 3n audio encoders declare `backend_constraint`
+cpu, so `PreferredBackend.gpu` is refused for them
+(`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint` shows it).
+`preferredBackend` only moves the text decoder.
 
 </Warning>
 
@@ -179,11 +180,13 @@ full web `.litertlm` feature matrix.
 - Ensure the model has a vision (or audio) encoder — see [Models](/docs/models).
 - Set `supportImage: true` when creating the model (and `supportAudio: true` for audio).
 - Check device memory — multimodal models require more RAM.
-- Use the GPU backend for faster text decoding. Image encoding runs on CPU by
-  default; move audio encoding to GPU with `preferredAudioBackend: PreferredBackend.gpu`.
-- Image input no longer fails at model load on a GPU backend: the vision encoder
-  defaults to CPU in every `flutter_edge_ai_litertlm` release (the fix shipped in
-  `flutter_gemma_litertlm` 1.4.2).
+- Use the GPU backend for faster text decoding. The vision and audio encoders
+  follow the bundle when unset (its `backend_constraint`, else the NPU it is
+  compiled for, else CPU); set `preferredVisionBackend`/`preferredAudioBackend`
+  only where the section allows it, or the load is refused.
+- Image input no longer fails at model load on a GPU backend: an encoder whose
+  bundle declares nothing runs on CPU in every `flutter_edge_ai_litertlm`
+  release (the fix shipped in `flutter_gemma_litertlm` 1.4.2).
 - After `stopGeneration()` on a `.litertlm` model on Android, iOS or desktop the
   chat keeps working (every `flutter_edge_ai_litertlm` release includes it), but it continues from a text copy of the
   history: images and audio from earlier turns are gone. Send the image again

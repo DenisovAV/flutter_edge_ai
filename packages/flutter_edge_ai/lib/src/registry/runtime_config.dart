@@ -60,20 +60,25 @@ class RuntimeConfig {
 
   /// Backend for the VISION encoder, independent of [preferredBackend] (the
   /// text/decoder backend). Null lets the engine choose: the native LiteRT-LM
-  /// engine reads the model file — the encoder's declared
-  /// `backend_constraint`, the NPU when the encoder is compiled for one, else
-  /// the CPU, because the vision encoder's `STABLEHLO_COMPOSITE` ops fail to
+  /// engine follows the bundle — the encoder's declared `backend_constraint`
+  /// (the CPU when that allows it), else the NPU it is compiled for, else the
+  /// CPU, because the vision encoder's `STABLEHLO_COMPOSITE` ops fail to
   /// prepare on the Metal/WebGPU delegates (LiteRT-LM#2461) — and reports its
-  /// choice in `InferenceModel.activeVisionBackend`. Ignored by the MediaPipe
+  /// choice in `InferenceModel.activeVisionBackend`. Set one only where the
+  /// section allows it (`readLiteRtLmBundleInfo(path).visionEncoder` in
+  /// `flutter_edge_ai_litertlm` shows its `backend_constraint`); a backend it
+  /// excludes is refused before the model loads. Ignored by the MediaPipe
   /// engine (whole-model backend, no per-encoder split).
   final PreferredBackend? preferredVisionBackend;
 
   /// Backend for the AUDIO encoder, independent of [preferredBackend]. Null
-  /// lets the engine choose, as for [preferredVisionBackend]; the CPU is the
-  /// LiteRT-LM engine's choice for an encoder the file says nothing about.
-  /// Unlike the vision encoder, the audio encoder runs fine on GPU and is
-  /// often faster there (Gemma 3n audio is ~2× CPU on Metal), so set it to
-  /// `PreferredBackend.gpu` for speed. Ignored by MediaPipe.
+  /// lets the engine choose, as for [preferredVisionBackend], and the native
+  /// LiteRT-LM engine reports it in `InferenceModel.activeAudioBackend`. Set
+  /// one only where the section allows it: the published Gemma 4 and Gemma 3n
+  /// audio encoders declare `backend_constraint` cpu, so
+  /// `PreferredBackend.gpu` is refused for them
+  /// (`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint` shows
+  /// it). Ignored by MediaPipe.
   final PreferredBackend? preferredAudioBackend;
 
   /// Inference: whether the model is created with vision. Embedders: the

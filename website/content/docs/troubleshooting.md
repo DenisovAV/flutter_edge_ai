@@ -213,8 +213,10 @@ were never affected.
 
 `Qwen3-0.6B.litertlm` from
 [litert-community/Qwen3-0.6B](https://huggingface.co/litert-community/Qwen3-0.6B)
-fails at engine creation (`Failed to create engine. Model may be invalid`)
-whatever the `maxTokens` and backend. Since LiteRT-LM v0.17.0
+fails at engine creation (`Failed to create engine on <backend>: <LiteRT-LM's
+reason>. Model: …`; before `flutter_edge_ai_litertlm` 1.14.0,
+`Failed to create engine. Model may be invalid`) whatever the `maxTokens` and
+backend. Since LiteRT-LM v0.17.0
 (`flutter_gemma_litertlm` 1.7.0) the runtime rejects a piece in that bundle's
 SentencePiece tokenizer (`piece must not include null character` — on Android
 only in logcat); upstream
@@ -307,12 +309,16 @@ if you hit it.
 - **Image input crashes at model load on a GPU text backend (older releases).**
   On Metal (iOS/macOS) and WebGPU (Windows/Linux) the vision encoder's ops can't
   be prepared by the GPU delegate. Fixed in **`flutter_gemma_litertlm` 1.4.2 /
-  core 1.5.9** — the vision encoder now defaults to CPU while the text decoder
-  keeps the GPU. Upgrade if you hit it.
-- Use the GPU backend for faster text decoding. Image encoding runs on CPU by
-  default; move audio encoding to GPU with `preferredAudioBackend: PreferredBackend.gpu`.
-  To force GPU vision (only for a model built to allow it), pass
-  `preferredVisionBackend: PreferredBackend.gpu`. See [Multimodal](/docs/multimodal).
+  core 1.5.9** — a vision encoder its bundle says nothing about runs on CPU
+  while the text decoder keeps the GPU. Upgrade if you hit it.
+- Use the GPU backend for faster text decoding. An unset encoder backend
+  follows the bundle: the section's `backend_constraint`, else the NPU it is
+  compiled for, else CPU. Set `preferredVisionBackend`/`preferredAudioBackend`
+  only where the section allows it
+  (`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint`, or
+  `visionEncoder`); the published Gemma 4 and Gemma 3n audio encoders declare
+  cpu, and a backend the section excludes is refused before the model loads.
+  See [Multimodal](/docs/multimodal).
 
 ## Native libraries fetched at build time
 

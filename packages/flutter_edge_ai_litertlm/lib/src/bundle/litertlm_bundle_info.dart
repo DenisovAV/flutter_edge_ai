@@ -146,11 +146,16 @@ final class LiteRtLmBundleInfo {
   /// that does not say so.
   bool get isComplete => fileLength >= expectedLength;
 
-  /// The first `TFLiteModel` section whose `model_type` is [modelType].
+  /// The first `TFLiteModel` section whose `model_type` is [modelType]. A
+  /// `TFLiteModel` section without a `model_type` is a
+  /// `tf_lite_prefill_decode`, as LiteRT-LM reads it (`litert_lm_loader.cc`);
+  /// a section of another data type (`TFLiteWeights`, a tokenizer) is never
+  /// one, whatever `model_type` it carries.
   LiteRtLmSection? sectionOf(String modelType) {
     final type = modelType.toLowerCase();
     for (final section in sections) {
-      if (section.modelType == type) return section;
+      if (section.dataType != _tfliteModel) continue;
+      if ((section.modelType ?? _prefillDecode) == type) return section;
     }
     return null;
   }
@@ -186,9 +191,10 @@ final class LiteRtLmBundleInfo {
   }
 
   /// Whether the text model runs on an NPU only: the bundle has a
-  /// [hasNpuAux] section or a compiled section. Such a bundle fails to load on
-  /// the GPU and the CPU ("Failed to create engine").
-  bool get isCompiledForNpu => hasNpuAux || npuTarget != null;
+  /// [hasNpuAux] section or its [textModel] is compiled for an NPU. Such a
+  /// bundle fails to load on the GPU and the CPU ("Failed to create engine").
+  /// An encoder compiled for an NPU does not make the text model NPU-only.
+  bool get isCompiledForNpu => hasNpuAux || textModel?.npuTarget != null;
 
   @override
   String toString() =>
@@ -212,8 +218,9 @@ enum LiteRtLmBundleProblem {
   incomplete,
 
   /// The bundle cannot run on the backend that was asked for: an NPU-compiled
-  /// model on the GPU or the CPU, a model whose `backend_constraint` excludes
-  /// the backend, an encoder asked for the NPU it is not compiled for.
+  /// model on the GPU or the CPU, a text model or encoder whose
+  /// `backend_constraint` excludes the backend, an encoder asked for the NPU
+  /// it is not compiled for.
   wrongBackend,
 
   /// The bundle is compiled for an NPU this package has no dispatch for on
@@ -237,6 +244,7 @@ final class LiteRtLmBundleException implements Exception {
   String toString() => 'LiteRtLmBundleException(${problem.name}): $message';
 }
 
+const _tfliteModel = 'TFLiteModel';
 const _prefillDecode = 'tf_lite_prefill_decode';
 const _visionEncoder = 'tf_lite_vision_encoder';
 const _audioEncoder = 'tf_lite_audio_encoder_hw';

@@ -175,14 +175,83 @@ void main() {
       expect(info.sections.last.npuTarget, isNull);
     });
 
-    test('a stamp without a tf_lite_aux section still marks the bundle '
-        'compiled for an NPU', () async {
+    test('a stamped text model without a tf_lite_aux section marks the '
+        'bundle compiled for an NPU', () async {
       final info = await readLiteRtLmBundleInfo(
-        write('c.litertlm', llm(visionStamp: ('Google', 'Tensor_G5'))),
+        write('c.litertlm', llm(textStamp: ('Google', 'Tensor_G5'))),
       );
 
       expect(info.hasNpuAux, isFalse);
       expect(info.isCompiledForNpu, isTrue);
+    });
+
+    test('an encoder compiled for an NPU alone does not make the text model '
+        'NPU-only', () async {
+      final info = await readLiteRtLmBundleInfo(
+        write('c2.litertlm', llm(visionStamp: ('Qualcomm', 'SM8750'))),
+      );
+
+      expect(info.visionEncoder!.npuTarget!.soc, 'SM8750');
+      expect(info.npuTarget!.soc, 'SM8750');
+      expect(info.hasNpuAux, isFalse);
+      expect(info.isCompiledForNpu, isFalse);
+    });
+
+    test('only TFLiteModel sections are models: a TFLiteWeights section '
+        'listed first with the same model_type does not hide the '
+        'encoder', () async {
+      final bundle = litertlmContainer(
+        [
+          (
+            type: sectionTfliteWeights,
+            modelType: 'tf_lite_vision_encoder',
+            bytes: List.filled(32, 9),
+          ),
+          (
+            type: sectionTfliteModel,
+            modelType: 'tf_lite_prefill_decode',
+            bytes: tfliteModel({}),
+          ),
+          (
+            type: sectionTfliteModel,
+            modelType: 'tf_lite_vision_encoder',
+            bytes: tfliteModel({
+              'LiteRtStamp': liteRtStamp('Qualcomm', 'SM8750'),
+            }),
+          ),
+        ],
+        items: {
+          0: {'backend_constraint': 'cpu'},
+          2: {'backend_constraint': 'npu'},
+        },
+      );
+      final info = await readLiteRtLmBundleInfo(write('w.litertlm', bundle));
+
+      expect(info.visionEncoder!.dataType, 'TFLiteModel');
+      expect(info.visionEncoder!.backendConstraint, ['npu']);
+      expect(info.visionEncoder!.npuTarget!.soc, 'SM8750');
+    });
+
+    test('a TFLiteModel section without a model_type is the text model, as '
+        'LiteRT-LM reads it; a tokenizer without one is not', () async {
+      final bundle = litertlmContainer(
+        [
+          (type: sectionSpTokenizer, modelType: null, bytes: [1, 2, 3]),
+          (type: sectionTfliteModel, modelType: null, bytes: tfliteModel({})),
+          (
+            type: sectionTfliteModel,
+            modelType: 'tf_lite_vision_encoder',
+            bytes: tfliteModel({}),
+          ),
+        ],
+        items: {
+          1: {'backend_constraint': 'cpu'},
+        },
+      );
+      final info = await readLiteRtLmBundleInfo(write('t.litertlm', bundle));
+
+      expect(info.textModel, same(info.sections[1]));
+      expect(info.textModel!.backendConstraint, ['cpu']);
     });
 
     test('sections stamped for two SoCs are malformed', () async {

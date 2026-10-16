@@ -168,8 +168,8 @@ final response = await ai.generate(
 | `maxFunctionBufferLength` | `int?` | null | Max token buffer for streaming tool-call arguments (increase for large payloads) |
 | `enableSpeculativeDecoding` | `bool?` | null | MTP speculative decoding for Gemma 4 E2B/E4B (null = model default, true/false = force on/off) |
 | `preferredBackend` | `String?` | null | Text-decoder backend: `'cpu'`, `'gpu'`, `'npu'` (null = engine default) |
-| `preferredVisionBackend` | `String?` | null | Vision-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; ignored by MediaPipe) |
-| `preferredAudioBackend` | `String?` | null | Audio-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; set `'gpu'` for faster audio; ignored by MediaPipe) |
+| `preferredVisionBackend` | `String?` | null | Vision-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null follows the bundle: its `backend_constraint`, else the NPU it is compiled for, else CPU; set one only where the section allows it; ignored by MediaPipe) |
+| `preferredAudioBackend` | `String?` | null | Audio-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null follows the bundle, as for vision; the published Gemma 4 and Gemma 3n audio encoders declare `'cpu'` and refuse `'gpu'`; ignored by MediaPipe) |
 
 Every option is checked before a model loads: a value of the wrong type, a
 fraction for an integer, a `maxTokens`, `maxOutputTokens`, `topK` or

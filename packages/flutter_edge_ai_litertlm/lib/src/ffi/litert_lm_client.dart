@@ -719,9 +719,9 @@ class LiteRtLmFfiClient {
     _backend = backend;
     final bindingsMs = initSw.elapsedMilliseconds;
     edgeAiLog('[LiteRtLmFfi/perf] _ensureBindings: ${bindingsMs}ms');
-    // Log the resolved per-encoder backends: vision/audio default to CPU
-    // independent of the text backend, so this makes the GPU→CPU default (and
-    // any override) visible when diagnosing "why isn't vision using my GPU".
+    // Log the resolved per-encoder backends: vision/audio follow the bundle
+    // (the engine's load plan), independent of the text backend, so this makes
+    // the choice visible when diagnosing "why isn't vision using my GPU".
     if (enableVision || enableAudio) {
       edgeAiLog(
         '[LiteRtLmFfi] encoders: '
@@ -735,12 +735,12 @@ class LiteRtLmFfiClient {
     // Create engine settings
     final modelPathPtr = modelPath.toNativeUtf8();
     final backendPtr = backend.toNativeUtf8();
-    // Vision + audio encoders default to CPU (visionBackend/audioBackend), NOT
-    // the text backend. The VISION encoder's STABLEHLO_COMPOSITE ops fail to
-    // prepare on the Metal/WebGPU delegates (hard-fails at conversation_create,
-    // no fallback — LiteRT-LM#2461), so CPU is mandatory-safe there. AUDIO runs
-    // on either backend; CPU is a conservative default (GPU is often faster —
-    // Gemma 3n audio ~2x). Both stay overridable via the arg.
+    // Vision + audio encoders run on visionBackend/audioBackend, NOT the text
+    // backend: what the engine's load plan chose from the bundle (the
+    // section's backend_constraint, else the NPU it is compiled for, else CPU,
+    // because the VISION encoder's STABLEHLO_COMPOSITE ops fail to prepare on
+    // the Metal/WebGPU delegates — hard-fails at conversation_create, no
+    // fallback, LiteRT-LM#2461).
     final visionBackendPtr = enableVision
         ? visionBackend.toNativeUtf8()
         : nullptr;
@@ -981,7 +981,7 @@ class LiteRtLmFfiClient {
         // the log. A GPU-only model (e.g. Gemma 4 12B, whose decoder section
         // declares `section_backend_constraint: gpu`) fails engine_create on the
         // CPU backend with an otherwise opaque null — turn that into an
-        // actionable error instead of the misleading "model may be invalid".
+        // actionable error instead of the generic create failure below.
         final constraint = _backendConstraintFromNativeLog();
         _dumpNativeLog();
         final nativeCode = engineAddr.code == 0 ? null : engineAddr.code;

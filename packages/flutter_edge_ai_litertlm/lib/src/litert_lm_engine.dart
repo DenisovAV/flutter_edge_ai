@@ -1,10 +1,8 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:path_provider/path_provider.dart';
 
 import 'dart:async';
-import 'dart:ffi' show Abi;
-import 'dart:io' show FileSystemException, Platform;
+import 'dart:io' show FileSystemException;
 
 import 'bundle/litertlm_bundle_info.dart';
 import 'bundle/litertlm_bundle_reader.dart';
@@ -12,7 +10,7 @@ import 'bundle/litertlm_load_plan.dart';
 import 'ffi/backend_preference.dart';
 import 'ffi/ffi_inference_model.dart';
 import 'ffi/litert_lm_client.dart';
-import 'ffi/npu_stack_manifest.dart';
+import 'litert_lm_engine_host.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 
@@ -161,16 +159,25 @@ class LiteRtLmEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
-    final cacheDir = (await getApplicationSupportDirectory()).path;
+    final host = liteRtLmEngineHost;
+    final cacheDir = await host.cacheDir();
 
     // What the file says about itself decides where it can run
     // (`planLiteRtLmLoad`). A file the reader cannot read keeps the rules that
     // need no file: LiteRT-LM also opens `.task` bundles, which have no
     // container header.
     final bundle = await _readBundle(config.modelPath);
-    final npuMayRun =
-        config.preferredBackend == PreferredBackend.npu ||
-        (bundle?.isCompiledForNpu ?? false);
+    // Whether the NPU is one of the backends the load tries, from the same
+    // rules the plan below applies: a request for it, a bundle compiled for
+    // it, or a text model that declares it alone. The plan asks whether the
+    // NPU is reachable only then, so the app's stack is looked up first.
+    final npuMayRun = liteRtLmTextCandidates(
+      path: config.modelPath,
+      bundle: bundle,
+      preferredBackend: config.preferredBackend,
+      backendFallback: backendFallback,
+      abi: host.abi,
+    ).backends.contains(PreferredBackend.npu);
 
     // Qualcomm npu (Android, Linux arm64) is opt-in per app. Ask the build
     // before the hardware: an app that did not bundle the stack must not even
@@ -180,8 +187,10 @@ class LiteRtLmEngine
     // preload in LiteRtLmFfiClient on Linux.
     bool? npuAvailable;
     String? npuUnavailableBecause;
-    if (npuMayRun && (Platform.isAndroid || Platform.isLinux)) {
-      final stack = await checkQualcommNpuStack();
+    if (npuMayRun &&
+        (host.operatingSystem == 'android' ||
+            host.operatingSystem == 'linux')) {
+      final stack = await host.qualcommNpuStack();
       if (!stack.known) {
         edgeAiLog(
           '[LiteRtLmEngine] ${stack.reason}; trying npu, the platform side '
@@ -245,19 +254,20 @@ class LiteRtLmEngine
       supportAudio: config.supportAudio,
       preferredVisionBackend: config.preferredVisionBackend,
       preferredAudioBackend: config.preferredAudioBackend,
-      npuAvailable: () => npuAvailable ?? hostShipsNpuDispatch,
+      npuAvailable: () => npuAvailable ?? host.npuDispatchShips,
       npuUnavailableReason: () =>
-          npuUnavailableBecause ?? hostNpuUnavailableReason,
-      abi: '${Abi.current()}',
+          npuUnavailableBecause ?? host.npuUnavailableReason,
+      abi: host.abi,
     );
 
     final ffiRuntime = await initializeFfiRuntime<LiteRtLmFfiClient>(
       preferredBackend: config.preferredBackend,
       logTag: '[LiteRtLmEngine]',
-      createClient: LiteRtLmFfiClient.new,
+      createClient: host.createClient,
       npuDispatchAvailable: npuAvailable,
       npuUnavailableBecause: npuUnavailableBecause,
       backends: plan.textBackends,
+      droppedBecause: plan.dropped,
       initializeClient: (client, backend) => _oneNpuInitAtATime(
         backend,
         () async {
@@ -278,7 +288,8 @@ class LiteRtLmEngine
             preferredBackend: backend,
           );
           try {
-            await client.initialize(
+            await host.initializeClient(
+              client,
               modelPath: config.modelPath,
               backend: args.backend,
               maxTokens: maxTokens,
@@ -296,11 +307,12 @@ class LiteRtLmEngine
             if (backend != PreferredBackend.npu || target == null) rethrow;
             // The SoC of the device is not read before the load (nothing
             // reports it reliably on every platform), so a bundle for another
-            // SoC fails here: say what it was compiled for.
+            // SoC fails here. Other causes fail here too, so the SoC is named
+            // as a possible cause, not the cause.
             Error.throwWithStackTrace(
               LiteRtLmEngineCreateException(
-                '${e.message}. The bundle is compiled for the $target NPU and '
-                'runs only on that SoC.',
+                '${e.message}. The bundle is compiled for the $target NPU; if '
+                'this device is not a $target, that is the cause.',
                 nativeCode: e.nativeCode,
                 nativeMessage: e.nativeMessage,
               ),

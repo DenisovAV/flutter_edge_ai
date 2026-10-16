@@ -14,8 +14,7 @@ import 'package:meta/meta.dart' show protected;
 
 import '../embedding/common_embedding_model.dart'
     show CommonEmbeddingModel, EmbedderReplacement;
-import '../embedding/embedding_exceptions.dart'
-    show EmbedderClosedException;
+import '../embedding/embedding_exceptions.dart' show EmbedderClosedException;
 import '../embedding/embedding_input.dart';
 import '../embedding/embedding_model.dart';
 import '../embedding/task_type.dart';
@@ -321,12 +320,15 @@ void _validateOptions(
   EmbeddingDeciderCalibration calibration,
   List<({EmbeddingInput input, String optionId})>? labelledRows,
 ) {
-  if (identical(method, DeciderMethod.optionScoring)) {
+  // Only the methods an embedding decider has: a method added later for
+  // another kind of decider must not run here as a centroid.
+  if (!_isEmbeddingMethod(method)) {
     throw ArgumentError.value(
       method,
       'method',
-      'optionScoring is an InferenceModel method: it scores options with a '
-          'language model. An EmbeddingModel decides by centroid or linear',
+      '${method.name} is not an EmbeddingModel method: an EmbeddingModel '
+          'decides by centroid or linear (optionScoring is an InferenceModel '
+          'method; it scores options with a language model)',
     );
   }
   if (options.isEmpty) {
@@ -410,6 +412,11 @@ void _validateOptions(
       }
   }
 }
+
+/// Whether [method] is one an embedding decider runs.
+bool _isEmbeddingMethod(DeciderMethod method) =>
+    identical(method, DeciderMethod.centroid) ||
+    identical(method, DeciderMethod.linear);
 
 /// `Decider.chooseAll`: one embedding per embedder, shared by its deciders.
 Future<List<DeciderAnswer>> chooseAllWithSharedEmbeddings(
@@ -1011,10 +1018,10 @@ Future<Decider> loadEmbeddingDecider(
   final method =
       deciderMethodByName(methodName) ??
       (throw FormatException('Unknown decider method "$methodName".'));
-  if (identical(method, DeciderMethod.optionScoring)) {
-    throw const FormatException(
-      'An optionScoring decider stores no artifact: an embedding decider '
-      'artifact is centroid or linear.',
+  if (!_isEmbeddingMethod(method)) {
+    throw FormatException(
+      'A ${method.name} decider stores no embedding artifact: an embedding '
+      'decider artifact is centroid or linear.',
     );
   }
   final calibration = _field<Map<String, Object?>>(artifact, 'calibration');

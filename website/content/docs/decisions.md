@@ -428,9 +428,10 @@ exception's type and fields kept.
 `choose(input, cancelToken:)` and `Decider.chooseAll(input, deciders,
 cancelToken:)` fail with `DeciderCancelledException` too, and so does a
 `choose` still running when its decider is closed. The decider checks before
-it embeds the input, before core replaces a closed embedder (so a cancelled
-decision never loads the model again), and when the embedding returns: an
-embedding already sent is not interrupted, and its vector is dropped.
+it embeds the input, before core replaces a closed embedder (a decision
+cancelled by then never loads the model again; one cancelled while the model
+loads has its answer dropped), and when the embedding returns: an embedding
+already sent is not interrupted, and its vector is dropped.
 
 A decider of your own, or a test fake, `extends Decider` (an abstract base
 class) and implements `decide(DeciderRequest request)`, `capabilities`,
@@ -472,7 +473,7 @@ Its answers have the same shape as an embedding decider's, with these values:
 
 | Member | Embedding decider | Language-model decider |
 |---|---|---|
-| `scoreKind` | `cosine` (centroid) or `logprob` (linear) | `logprob`, normalised over the options |
+| `scoreKind` | `cosine` (centroid) or `logprob` (linear) | `logprob`, normalised over the candidates |
 | `probabilities`, `confidence` | with `fromLabelled` only | with a `temperature` |
 | `provenance.abstainSignalKind` | `topCosine` | `topProbability` |
 | `abstainReason` | `belowThreshold`, `noCandidates` | `belowThreshold`, `noneOption` |
@@ -480,10 +481,11 @@ Its answers have the same shape as an embedding decider's, with these values:
 | `provenance.spaceId` | the embedding space | null |
 | `capabilities.supportsAmong`, `storable` | true, true | false, false |
 
-The cost differs most: an embedding decider costs one embedding whatever the
-number of options, a language-model decider one scoring pass per option. Use it
-for a few options that are a property of the text (a tone, an emotion, yes or
-no), and an embedding decider for many options by topic.
+The cost is the design's main difference: an embedding decider costs one
+embedding whatever the number of options, a language-model decider one scoring
+pass per option. The intent is a language-model decider for a few options that
+are a property of the text (a tone, an emotion, yes or no), and an embedding
+decider for many options by topic; phone measurements come with the engine.
 
 ## Jev Choice JSON
 

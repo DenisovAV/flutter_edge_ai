@@ -303,8 +303,8 @@ final class ScoreKind {
   /// Natural-log probability of the candidate under the decider's own model,
   /// normalised over the candidates, before any calibration: the `linear`
   /// method's log-softmax, and `optionScoring`'s `s − logsumexp(s)` over the
-  /// options, where `s` is the model's log-probability of the option's id as
-  /// its reply.
+  /// candidates, where `s` is the model's log-probability of the option's id
+  /// as its reply.
   static const logprob = ScoreKind._('logprob');
 
   /// Every kind this release knows, in declaration order.
@@ -352,6 +352,12 @@ final class AbstainReason {
 }
 
 /// What [DeciderProvenance.abstainSignal] is.
+///
+/// For every kind, now and added later, a higher signal means a more
+/// confident answer: a decider abstains with `AbstainReason.belowThreshold`
+/// when its signal is below the threshold, and chooses only at or above it. A
+/// measure where lower is more confident (a distance, an entropy) is reported
+/// negated or as its own kind with that direction.
 ///
 /// A class with constant instances rather than an enum, so a kind added in a
 /// later release does not break an app's exhaustive `switch`.
@@ -455,6 +461,9 @@ final class DeciderProvenance {
 @experimental
 @immutable
 final class DeciderCapabilities {
+  /// A capability added in a later release is an optional parameter with the
+  /// conservative default (the decider does not have it), so a decider
+  /// written today keeps compiling and claims nothing it does not do.
   const DeciderCapabilities({
     required this.modalities,
     required this.calibratedProbabilities,

@@ -224,7 +224,8 @@ final eg2Index = await rag.open(
   instead — on CPU, and on the NPU with declared audio. A disk that fills
   while the cache is being written aborts the process in native code
   (XNNPack); no flag catches that. Web keeps no weight cache and ignores the
-  flag.
+  flag, and so does a `.tflite` embedder (EmbeddingGemma 1, Gecko); each says
+  so once, in a debug-build log line.
 - EmbeddingGemma 1, 2 and Gecko all produce 768-d vectors but are different
   spaces: give each its own location and profile ID — the dimension check alone
   cannot tell them apart. `FlutterEdgeAiActiveEmbedder.forActiveModel` already

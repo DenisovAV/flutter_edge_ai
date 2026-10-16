@@ -50,8 +50,10 @@ hooks:
 
 The build hook then fetches `com.qualcomm.qti:qnn-runtime` from Maven Central
 and bundles it (about 83 MB installed). Without the flag, `npu` falls back to
-GPU, then CPU, and the log names the flag; an NPU-only `.litertlm` bundle then
-fails on every backend, which reads like a broken model file but is not.
+GPU, then CPU, for a generic bundle, and the log names the flag; a bundle
+compiled for an NPU (`…_qualcomm_sm8750.litertlm`) runs on the NPU only and is
+refused with the reason instead: a `BackendInitException` whose one attempt is
+an `NpuDispatchUnavailableException` naming the flag.
 
 ## iOS
 

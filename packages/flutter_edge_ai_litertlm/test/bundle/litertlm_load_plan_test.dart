@@ -365,6 +365,7 @@ void main() {
     test("Google's all-NPU build: compiled encoders run on the NPU", () {
       final p = plan(info: allNpu, image: true, audio: true);
       expect((p.visionBackend, p.audioBackend), (npu, npu));
+      expect(npuAsked, 1, reason: 'the NPU is asked about once per load');
     });
 
     test('the generic Gemma 4: CPU, as before', () {
@@ -567,12 +568,113 @@ void main() {
       );
     });
 
-    test('on a host that has the dispatch it runs on the NPU, and the plan '
+    test('on a host that has the dispatch, turning it on is refused: an '
+        'encoder runs on the NPU only with a text model on the NPU', () {
+      expect(
+        () => plan(info: visionSm8750, image: true),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          "model.litertlm's vision encoder is compiled for the Qualcomm SM8750 "
+          'NPU and runs only there, and its text model would be tried on gpu, '
+          'then cpu, not on the NPU alone. flutter_edge_ai_litertlm runs an '
+          'encoder on the NPU only together with a text model on the NPU (a '
+          'bundle compiled for the NPU throughout). Load it without '
+          'supportImage to run the text model alone, or install the generic '
+          'bundle of this model.',
+        ),
+      );
+      expect(
+        () => plan(info: audioSm8750, audio: true, abi: 'linux_arm64'),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          "model.litertlm's audio encoder is compiled for the Qualcomm SM8750 "
+          'NPU and runs only there, and its text model would be tried on gpu, '
+          'then cpu',
+        ),
+      );
+      expect(
+        () => plan(info: visionSm8750, image: true, preferred: npu),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          'would be tried on npu, then gpu, then cpu, not on the NPU alone',
+        ),
+        reason: 'the GPU and CPU attempts would get no NPU dispatch',
+      );
+      expect(
+        () => plan(info: visionSm8750, image: true, visionBackend: npu),
+        refused(LiteRtLmBundleProblem.unsupportedNpu, 'not on the NPU alone'),
+      );
+      expect(
+        () => plan(info: bundle(vision: ('npu', null)), image: true),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          "model.litertlm's vision encoder runs only on the NPU, and its text "
+          'model would be tried on gpu, then cpu',
+        ),
+        reason: 'an encoder that declares only the NPU, with no stamp',
+      );
+    });
+
+    test('with the text model on the NPU alone it runs there, and the plan '
         'names its SoC', () {
-      final p = plan(info: visionSm8750, image: true);
-      expect(p.textBackends, [gpu, cpu]);
+      final p = plan(
+        info: visionSm8750,
+        image: true,
+        preferred: npu,
+        fallback: false,
+      );
+      expect(p.textBackends, [npu]);
       expect(p.visionBackend, npu);
       expect(p.npuTarget, sm8750);
+    });
+
+    test('an NPU this device cannot reach is refused with its reason, before '
+        'any engine', () {
+      expect(
+        () => plan(info: visionSm8750, image: true, npuHere: false),
+        npuUnreachable(
+          "model.litertlm's vision encoder is compiled for the Qualcomm SM8750 "
+          'NPU and runs only there, and this device has no Qualcomm FastRPC',
+        ),
+      );
+      expect(npuAsked, 1);
+      expect(
+        () => plan(
+          info: visionSm8750,
+          image: true,
+          preferred: npu,
+          npuHere: false,
+        ),
+        npuUnreachable("vision encoder is compiled for the Qualcomm SM8750"),
+        reason: 'the text model falls back from the NPU, the encoder cannot',
+      );
+    });
+
+    test('the engine is told to look for the NPU stack only when an encoder '
+        'that is on runs on the NPU', () {
+      bool onNpu(
+        LiteRtLmBundleInfo? info, {
+        bool image = false,
+        bool audio = false,
+        PreferredBackend? visionBackend,
+      }) => liteRtLmEncoderOnNpu(
+        bundle: info,
+        supportImage: image,
+        supportAudio: audio,
+        preferredVisionBackend: visionBackend,
+      );
+      expect(onNpu(visionSm8750, image: true), isTrue);
+      expect(onNpu(audioSm8750, audio: true), isTrue);
+      expect(onNpu(allNpu, image: true, audio: true), isTrue);
+      expect(onNpu(visionSm8750), isFalse, reason: 'the encoder is off');
+      expect(onNpu(visionSm8750, audio: true), isFalse);
+      expect(onNpu(officialSm8750, image: true, audio: true), isFalse);
+      expect(onNpu(generic, image: true, visionBackend: npu), isTrue);
+      expect(
+        onNpu(null, image: true, visionBackend: npu),
+        isFalse,
+        reason: 'a file that could not be read keeps the old rules',
+      );
     });
   });
 

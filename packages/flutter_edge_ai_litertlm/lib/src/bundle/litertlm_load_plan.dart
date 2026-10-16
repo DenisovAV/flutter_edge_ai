@@ -26,7 +26,13 @@
 // - an incomplete file, a backend the bundle cannot run on, and a text model,
 //   or an encoder that is on, compiled for an NPU this package has no
 //   dispatch for are refused before any engine is created. An encoder that is
-//   off is not checked: a text-only load does not run it.
+//   off is not checked: a text-only load does not run it;
+// - an encoder that is on and runs on the NPU needs an NPU this device
+//   reaches, and a text model tried on the NPU alone: the FFI client prepares
+//   the NPU dispatch for an NPU text attempt only, so a GPU or CPU attempt
+//   would fail at engine create. Both are refused before any engine. No
+//   published bundle compiles an encoder for the NPU next to a generic text
+//   model; an all-NPU build compiles both.
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 
@@ -124,18 +130,43 @@ liteRtLmTextCandidates({
   );
 }
 
+/// Whether an encoder the load turns on runs on the NPU of a [bundle] that
+/// was read, by the rule [planLiteRtLmLoad] applies (the request, else
+/// [_encoderDefault]). The engine asks it with [liteRtLmTextCandidates], so
+/// that it looks for the app's NPU stack also when only an encoder needs the
+/// NPU. A request the plan then refuses may count: the plan throws before the
+/// stack's answer is used. A file that could not be read keeps the old rules.
+bool liteRtLmEncoderOnNpu({
+  required LiteRtLmBundleInfo? bundle,
+  required bool supportImage,
+  required bool supportAudio,
+  PreferredBackend? preferredVisionBackend,
+  PreferredBackend? preferredAudioBackend,
+}) {
+  if (bundle == null) return false;
+  bool onNpu(LiteRtLmSection? encoder, PreferredBackend? requested) =>
+      encoder != null &&
+      (requested ?? _encoderDefault(encoder)) == PreferredBackend.npu;
+  return (supportImage &&
+          onNpu(bundle.visionEncoder, preferredVisionBackend)) ||
+      (supportAudio && onNpu(bundle.audioEncoder, preferredAudioBackend));
+}
+
 /// Decides a load of [path] from what the file says ([bundle]; null when it
 /// could not be read, which keeps the rules that need no file) and what the
 /// caller asked for.
 ///
 /// [npuAvailable] is asked only when the NPU is one of the backends to try,
-/// because on Android it opens a vendor library; [npuUnavailableReason] says
-/// why it is false. [abi] is `Abi.current()` as a string.
+/// or an encoder that is on runs there, because on Android it opens a vendor
+/// library; [npuUnavailableReason] says why it is false. [abi] is
+/// `Abi.current()` as a string.
 ///
-/// Throws [LiteRtLmBundleException] for a file that cannot run as asked, and
-/// [BackendInitException] (one NPU attempt, a
-/// [NpuDispatchUnavailableException]) when the NPU is the only backend to try
-/// and this device cannot reach it — both before any engine exists.
+/// Throws [LiteRtLmBundleException] for a file that cannot run as asked
+/// (among them an encoder that is on and runs on the NPU while the text model
+/// is not tried on the NPU alone), and [BackendInitException] (one NPU
+/// attempt, a [NpuDispatchUnavailableException]) when the NPU is the only
+/// backend to try, or an encoder that is on runs only there, and this device
+/// cannot reach it — both before any engine exists.
 LiteRtLmLoadPlan planLiteRtLmLoad({
   required String path,
   required LiteRtLmBundleInfo? bundle,
@@ -158,8 +189,11 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
   );
   final target = _textNpuTarget(bundle);
   var textBackends = candidates.backends;
+  // Asked once per load: on Android it opens a vendor library.
+  bool? reachable;
+  bool npuReachable() => reachable ??= npuAvailable();
 
-  if (textBackends.contains(PreferredBackend.npu) && !npuAvailable()) {
+  if (textBackends.contains(PreferredBackend.npu) && !npuReachable()) {
     final rest = [
       for (final backend in textBackends)
         if (backend != PreferredBackend.npu) backend,
@@ -206,6 +240,46 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
           abi,
         )
       : null;
+  // An encoder on the NPU gets the NPU dispatch only through an NPU text
+  // attempt (`LiteRtLmFfiClient.initialize`), so it needs a reachable NPU and
+  // a text model tried there alone. A file that could not be read keeps the
+  // old rules.
+  for (final (kind, backend, encoder) in [
+    ('vision', visionBackend, bundle?.visionEncoder),
+    ('audio', audioBackend, bundle?.audioEncoder),
+  ]) {
+    if (backend != PreferredBackend.npu || encoder == null) continue;
+    final runs = encoder.npuTarget == null
+        ? "$path's $kind encoder runs only on the NPU"
+        : "$path's $kind encoder is compiled for the ${encoder.npuTarget} NPU "
+              'and runs only there';
+    if (!npuReachable()) {
+      throw BackendInitException(
+        attempts: [
+          BackendInitAttemptFailure(
+            backend: PreferredBackend.npu,
+            error: NpuDispatchUnavailableException(
+              '$runs, and ${npuUnavailableReason()}',
+            ),
+            stackTrace: StackTrace.current,
+          ),
+        ],
+      );
+    }
+    if (textBackends.any((text) => text != PreferredBackend.npu)) {
+      final flag = kind == 'vision' ? 'supportImage' : 'supportAudio';
+      throw LiteRtLmBundleException(
+        LiteRtLmBundleProblem.unsupportedNpu,
+        '$runs, and its text model would be tried on '
+        '${textBackends.map((text) => text.name).join(', then ')}, not '
+        'on the NPU alone. flutter_edge_ai_litertlm runs an encoder on the NPU '
+        'only together with a text model on the NPU (a bundle compiled for the '
+        'NPU throughout). Load it without $flag to run the text model alone, '
+        'or install the generic bundle of this model.',
+        path: path,
+      );
+    }
+  }
   return (
     textBackends: textBackends,
     visionBackend: visionBackend,

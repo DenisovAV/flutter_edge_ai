@@ -169,15 +169,24 @@ class LiteRtLmEngine
     final bundle = await _readBundle(config.modelPath);
     // Whether the NPU is one of the backends the load tries, from the same
     // rules the plan below applies: a request for it, a bundle compiled for
-    // it, or a text model that declares it alone. The plan asks whether the
-    // NPU is reachable only then, so the app's stack is looked up first.
-    final npuMayRun = liteRtLmTextCandidates(
-      path: config.modelPath,
-      bundle: bundle,
-      preferredBackend: config.preferredBackend,
-      backendFallback: backendFallback,
-      abi: host.abi,
-    ).backends.contains(PreferredBackend.npu);
+    // it, a text model that declares it alone, or an encoder that is on and
+    // runs there. The plan asks whether the NPU is reachable only then, so the
+    // app's stack is looked up first.
+    final npuMayRun =
+        liteRtLmTextCandidates(
+          path: config.modelPath,
+          bundle: bundle,
+          preferredBackend: config.preferredBackend,
+          backendFallback: backendFallback,
+          abi: host.abi,
+        ).backends.contains(PreferredBackend.npu) ||
+        liteRtLmEncoderOnNpu(
+          bundle: bundle,
+          supportImage: config.supportImage,
+          supportAudio: config.supportAudio,
+          preferredVisionBackend: config.preferredVisionBackend,
+          preferredAudioBackend: config.preferredAudioBackend,
+        );
 
     // Qualcomm npu (Android, Linux arm64) is opt-in per app. Ask the build
     // before the hardware: an app that did not bundle the stack must not even

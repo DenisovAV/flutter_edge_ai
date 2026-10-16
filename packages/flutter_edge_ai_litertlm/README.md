@@ -789,23 +789,29 @@ runs where the file says: its declared `backend_constraint` (the CPU when that
 allows it), the NPU when its section is compiled for one, else the CPU. So the
 official `…_qualcomm_sm8750` and `…_qualcomm_qcs8275` bundles, whose encoders
 are not compiled for the NPU, run them on the CPU, and a bundle with compiled
-encoders runs them on the NPU, without the app choosing. Asking an encoder for
-a backend its `backend_constraint` excludes (the GPU for the published Gemma 4
-and Gemma 3n audio encoders, which declare cpu), for the NPU when it is not
-compiled for one, or for another backend when it is, is refused.
+encoders runs them on the NPU, without the app choosing. An encoder runs on the
+NPU only together with a text model on the NPU (a bundle compiled for the NPU
+throughout): turning on an NPU encoder next to a text model tried on the GPU or
+the CPU is refused, and a text-only load of that file runs as on a generic
+bundle. Asking an encoder for a backend its `backend_constraint` excludes (the
+GPU for the published Gemma 4 and Gemma 3n audio encoders, which declare cpu),
+for the NPU when it is not compiled for one, or for another backend when it
+is, is refused.
 `InferenceModel.activeVisionBackend` and `activeAudioBackend` report what was
 chosen, and are null for a bundle without that encoder.
 
 A refusal is a `LiteRtLmBundleException` with a `problem`
 (`incomplete`, `wrongBackend`, `unsupportedNpu` for a text model, or an encoder
 the load turns on, compiled for an NPU this package has no dispatch for here —
-Google Tensor, MediaTek, or a Qualcomm bundle on Windows) and a message that
-says what to do; no engine is created. An NPU bundle on a device whose NPU
-cannot be reached fails the same way as a strict load (below), at once, and is
-never tried on the GPU. The SoC of the device is not read before the load; a
-bundle for another Qualcomm SoC fails at engine create, and the error names the
-SoC it was compiled for. A file the header reader does not understand (a
-`.task` bundle, a newer container) loads as before.
+Google Tensor, MediaTek, or a Qualcomm bundle on Windows — or for an NPU
+encoder next to a text model that is not on the NPU) and a message that says
+what to do; no engine is created. An NPU bundle, or an encoder the load turns
+on that runs on the NPU, on a device whose NPU cannot be reached fails the same
+way as a strict load (below), at once, and is never tried on the GPU. The SoC
+of the device is not read before the load; a bundle for another Qualcomm SoC
+fails at engine create, and the error names the SoC it was compiled for. A file
+the header reader does not understand (a `.task` bundle, a newer container)
+loads as before.
 
 **Strict backend.** By default a load that fails on its backend tries the next
 one. `LiteRtLmEngine(backendFallback: false)` makes exactly one attempt — on

@@ -210,12 +210,16 @@ void main() {
   );
 
   test("the plan's encoder backends reach the client and the model", () async {
+    // An encoder on the NPU runs only with a text model on the NPU.
+    host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
+    debugLiteRtLmEngineHost = host;
     final model = await load(
-      write('enc.litertlm', _bundle(vision: 'gpu', audio: 'npu')),
+      write('enc.litertlm', _bundle(text: 'npu', vision: 'gpu', audio: 'npu')),
       supportImage: true,
       supportAudio: true,
     );
 
+    expect(host.attempts.single.backend, 'npu');
     expect(host.attempts.single.visionBackend, 'gpu');
     expect(host.attempts.single.audioBackend, 'npu');
     expect(model.activeVisionBackend, PreferredBackend.gpu);
@@ -262,6 +266,82 @@ void main() {
                 "vision encoder is compiled for the Qualcomm SM8750 NPU, which "
                 'runs on android_arm64 and linux_arm64 only, and this is '
                 'macos_arm64',
+              ),
+            ),
+      ),
+    );
+    expect(host.attempts, isEmpty, reason: 'refused before any engine');
+  });
+
+  test('an encoder compiled for the NPU next to a generic text model asks for '
+      "the app's NPU stack, and is refused before any engine", () async {
+    host = _FakeHost(
+      os: 'android',
+      abiName: 'android_arm64',
+      stack: const NpuStackCheck.missing(
+        'this build does not bundle the Qualcomm NPU stack',
+      ),
+    );
+    debugLiteRtLmEngineHost = host;
+    final path = write(
+      'vision_sm8750.litertlm',
+      _bundle(visionStamp: ('Qualcomm', 'SM8750')),
+    );
+
+    await expectLater(
+      load(path, supportImage: true),
+      throwsA(
+        isA<BackendInitException>().having(
+          (e) => e.lastAttempt.error,
+          'error',
+          isA<NpuDispatchUnavailableException>().having(
+            (e) => e.message,
+            'message',
+            "$path's vision encoder is compiled for the Qualcomm SM8750 NPU "
+                'and runs only there, and this build does not bundle the '
+                'Qualcomm NPU stack',
+          ),
+        ),
+      ),
+    );
+    expect(host.stackChecks, 1);
+    expect(
+      host.npuProbes,
+      0,
+      reason: 'without the opt-in no vendor library may be opened',
+    );
+    expect(host.attempts, isEmpty, reason: 'refused before any engine');
+
+    // A text-only load of the same file needs no NPU: GPU, no stack lookup.
+    host.stackChecks = 0;
+    final textOnly = await load(path);
+    expect(host.attempts.map((a) => a.backend), ['gpu']);
+    expect(textOnly.activeBackend, PreferredBackend.gpu);
+    expect(textOnly.activeVisionBackend, isNull);
+    expect(host.stackChecks, 0);
+    await textOnly.close();
+
+    // With the stack and an NPU this device reaches, the encoder is still
+    // refused: the text model would run on the GPU, which gets no NPU
+    // dispatch.
+    host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
+    debugLiteRtLmEngineHost = host;
+    await expectLater(
+      load(path, supportImage: true),
+      throwsA(
+        isA<LiteRtLmBundleException>()
+            .having(
+              (e) => e.problem,
+              'problem',
+              LiteRtLmBundleProblem.unsupportedNpu,
+            )
+            .having(
+              (e) => e.message,
+              'message',
+              contains(
+                "$path's vision encoder is compiled for the Qualcomm SM8750 "
+                'NPU and runs only there, and its text model would be tried '
+                'on gpu, then cpu, not on the NPU alone.',
               ),
             ),
       ),

@@ -229,7 +229,9 @@ where the file says: its declared `backend_constraint` (CPU when that allows
 it), the NPU when its section is compiled for one, else CPU. The official
 `…_qualcomm_sm8750` and `…_qualcomm_qcs8275` bundles, whose encoders are not
 compiled for the NPU, run them on the CPU; a bundle with compiled encoders runs
-them on the NPU. Asking an encoder for a backend its `backend_constraint`
+them on the NPU, and only with its text model on the NPU too: an NPU encoder
+next to a text model on the GPU or the CPU is refused when it is on
+(`unsupportedNpu`). Asking an encoder for a backend its `backend_constraint`
 excludes — the GPU for the published Gemma 4 and Gemma 3n audio encoders,
 which declare cpu — is refused. `model.activeVisionBackend` and
 `model.activeAudioBackend` report the choice (null for a bundle without that

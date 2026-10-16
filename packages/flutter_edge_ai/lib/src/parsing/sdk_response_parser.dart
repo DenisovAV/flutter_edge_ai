@@ -344,3 +344,10 @@ String toolCallsRawForHistory(String raw) {
       ? SdkResponseParser.cleanRawForHistory(raw)
       : calls.toString();
 }
+
+/// The JSON documents of [input], one object or several back to back
+/// (`{...}{...}`), as [SdkResponseParser] splits a raw response.
+///
+/// Internal to core: `engine.dart` exports only [SdkResponseParser].
+Iterable<String> splitSdkJsonDocuments(String input) =>
+    SdkResponseParser._splitConcatenatedJson(input);

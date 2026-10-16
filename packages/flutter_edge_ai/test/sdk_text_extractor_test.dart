@@ -63,6 +63,17 @@ void main() {
         isFalse,
       );
       expect(isSdkToolCallChunk('Sure, {not json'), isFalse);
+      const call =
+          '{"role":"assistant","tool_calls":[{"type":"function",'
+          '"function":{"name":"x","arguments":{}}}]}';
+      expect(isSdkToolCallChunk('$call$call'), isTrue);
+      expect(isSdkToolCallChunk('$call text after'), isFalse);
+      expect(
+        isSdkToolCallChunk(
+          '$call{"role":"assistant","content":[{"type":"text","text":"Hi"}]}',
+        ),
+        isFalse,
+      );
       expect(isSdkToolCallChunk('{"tool_calls":[]'), isFalse);
     });
 

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'sdk_response_parser.dart' show splitSdkJsonDocuments;
+
 /// Pure-Dart extractor for LiteRT-LM SDK JSON response chunks.
 ///
 /// Lives in core, not in flutter_edge_ai_litertlm's native `lib/src/ffi/`, so
@@ -75,16 +77,28 @@ class SdkTextExtractor {
 /// can write a sentence and then call a tool in the same generation; the call
 /// then arrives as a chunk of its own, after the text. `InferenceChat` takes
 /// such a chunk out of the text when it handles calls; otherwise the call stays
-/// visible as JSON. Assumes one session token is one LiteRT-LM chunk, as the
-/// FFI and web sessions deliver them. An empty `tool_calls` list is no call.
+/// visible as JSON. Assumes a session token holds whole LiteRT-LM chunks, as
+/// the FFI and web sessions deliver them; several call chunks joined into one
+/// token count when every one is a call. An empty `tool_calls` list is no call.
 ///
 /// Internal to core: `engine.dart` exports only [SdkTextExtractor].
 bool isSdkToolCallChunk(String token) {
   final trimmed = token.trim();
   if (!trimmed.startsWith('{')) return false;
+  final documents = splitSdkJsonDocuments(trimmed).toList();
+  var rest = trimmed;
+  for (final document in documents) {
+    rest = rest.replaceFirst(document, '');
+  }
+  // Text around the objects, or an object that never closes, is not a call.
+  if (documents.isEmpty || rest.trim().isNotEmpty) return false;
+  return documents.every(_isCallDocument);
+}
+
+bool _isCallDocument(String document) {
   final Object? json;
   try {
-    json = jsonDecode(trimmed);
+    json = jsonDecode(document);
   } on FormatException {
     return false;
   }

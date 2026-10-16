@@ -381,6 +381,27 @@ void main() {
       });
     }
 
+    test(
+      'two calls joined in one token after the prose stay out of the text',
+      () async {
+        final (_, responses) = await run([
+          ...prose,
+          callChunk('accelerator') + callChunk('memory'),
+        ]);
+
+        expect(
+          responses.whereType<TextResponse>().map((t) => t.token).join(),
+          isNot(contains('tool_calls')),
+        );
+        expect(
+          responses.whereType<ParallelFunctionCallResponse>().single.calls.map(
+            (c) => c.args['intent'],
+          ),
+          ['accelerator', 'memory'],
+        );
+      },
+    );
+
     test('an empty tool_calls chunk after the prose stays visible', () async {
       const empty = '{"role":"assistant","tool_calls":[]}';
       final chat = _gemma4Chat([

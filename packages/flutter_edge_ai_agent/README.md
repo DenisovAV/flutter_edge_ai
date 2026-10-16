@@ -223,8 +223,9 @@ The text may be empty or add to the recording, and an image can go with it. A
 A session built without `supportAudio: true` fails the stream with an
 `ArgumentError`, as do empty bytes; nothing reaches the chat history. Audio
 input is native-only. After a stopped turn (a cancelled subscription) a
-`.litertlm` chat is rebuilt from text, so the recordings of earlier turns are
-gone from its context.
+`.litertlm` chat is rebuilt with the earlier recordings in its context
+(`flutter_edge_ai_litertlm` 1.14.1; before, they were gone), and encodes them
+again, so the next turn starts later.
 
 ## When the model answers nothing
 

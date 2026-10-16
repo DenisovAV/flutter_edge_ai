@@ -355,12 +355,12 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
   empty `VoiceTurnCompleteEvent` without asking the model, as an empty
   transcript does. The recognizer is still required, and `runTurn` still uses
   it.
-- **Barge-in forgets the recordings.** After an interrupted reply, a
-  `.litertlm` chat rebuilds its conversation from the turns' text, and an
-  audio turn has none: the model keeps its own replies but loses what was said
-  in earlier audio turns. Measured on Gemma 4 E2B: told a secret word in an
-  audio turn, it named it after an uninterrupted second turn, and not after an
-  interrupted one.
+- **Barge-in costs a re-encode.** After an interrupted reply, a `.litertlm`
+  chat rebuilds its conversation with the earlier recordings in it, so the
+  next turn starts later while they are encoded again. Measured on Gemma 4 E2B
+  (macOS, CPU): told a secret word in an audio turn, then interrupted on the
+  next one, it still named the word. Before `flutter_edge_ai_litertlm` 1.14.1
+  the rebuild kept only text, and it answered "Password".
 - **The format.** `runAudioTurn` takes the same 16 kHz mono 16-bit PCM as
   `runTurn`. `runAudioTurn` adds the WAV header, because a `.litertlm` model
   decodes an audio file, not bare samples.

@@ -1,3 +1,6 @@
+## 0.5.8
+- Docs: after a barge-in, a `.litertlm` chat keeps earlier recordings (litertlm 1.14.1).
+
 ## 0.5.7
 - `VoiceSession.runAudioTurn`: the model hears the recording, no speech-to-text.
 

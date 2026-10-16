@@ -160,6 +160,7 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
       final handle = RecoveringConversationHandle(
         await open(),
         reopen: (messagesJson) => open(messagesJson: messagesJson),
+        multimodalOrder: multimodalOrder,
       );
       edgeAiLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
@@ -765,7 +766,15 @@ const _windDownTimeout = Duration(seconds: 5);
 /// same engine answers normally. So this handle records each turn the way the
 /// virtual-session multiplexer does, and the first turn after a stop replaces
 /// the conversation with a new one seeded with that history as a
-/// `messages_json` preface — one prefill, paid only after a stop.
+/// `messages_json` preface — one prefill, paid only after a stop. Upstream
+/// documents the cancelled conversation as poisoned and unsupported
+/// (`Conversation::CancelProcess`, LiteRT-LM v0.18.0), so this is the
+/// supported path, not a workaround waiting on a fix.
+///
+/// The preface carries each turn as it was sent, images and audio included:
+/// LiteRT-LM runs the preface's media through the encoders like a message's
+/// (`conversation.cc` ~637-664 at v0.18.0), so the rebuilt conversation still
+/// knows what the user showed and said, at the cost of encoding it again.
 ///
 /// A cancel that arrives after a turn has finished does not count: Dart
 /// delivers a stream's `done` by cancelling its subscription, which cancels
@@ -777,6 +786,7 @@ class RecoveringConversationHandle implements ConversationHandle {
   RecoveringConversationHandle(
     this._live, {
     required this.reopen,
+    required this.multimodalOrder,
     this.windDownTimeout = _windDownTimeout,
   });
 
@@ -789,8 +799,14 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// [messagesJson] when given.
   final Future<ConversationHandle> Function(String? messagesJson) reopen;
 
-  /// Every turn so far, as the messages a rebuild replays.
-  final List<Map<String, Object?>> _history = [];
+  /// Where the live conversation puts a message's media around its text, so a
+  /// rebuild replays each user turn in the order the model first saw it.
+  final MultimodalOrder multimodalOrder;
+
+  /// Every turn so far, as the messages a rebuild replays. Each is built only
+  /// when a rebuild runs: a user turn holds the caller's image and audio bytes
+  /// by reference, so a session that is never stopped encodes nothing twice.
+  final List<Map<String, Object?> Function()> _history = [];
 
   /// True from the start of a turn — rebuild included — to the end of its
   /// `finally`.
@@ -807,17 +823,17 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// rebuilds before it runs.
   bool _stopped = false;
 
-  /// Images and audio are not replayed — the preface is text — so a rebuild
-  /// after a multimodal turn says so once instead of silently forgetting.
-  bool _historyHasMedia = false;
-
   bool _closed = false;
 
   Future<void> _rebuild() async {
     // One live conversation per engine (upstream #966): delete first.
     _live.close();
     _live = await reopen(
-      _history.isEmpty ? null : LiteRtLmFfiClient.buildHistoryJson(_history),
+      _history.isEmpty
+          ? null
+          : LiteRtLmFfiClient.buildHistoryJson([
+              for (final turn in _history) turn(),
+            ]),
     );
     // Only now: a reopen that throws leaves the old conversation closed and
     // this set, so the next turn tries again instead of using a dead handle.
@@ -830,20 +846,13 @@ class RecoveringConversationHandle implements ConversationHandle {
       '[FfiInferenceModel] rebuilt the conversation after a stopped turn '
       '(${_history.length} messages replayed)',
     );
-    if (_historyHasMedia) {
-      edgeAiLog(
-        '[FfiInferenceModel] images and audio from earlier turns are not '
-        'replayed after a stop — the rebuilt conversation has their text only',
-        level: EdgeAiLogLevel.info,
-      );
-    }
   }
 
   /// Runs one turn on the live conversation, rebuilding it first if the
   /// previous turn was stopped, and records the turn for the next rebuild.
   /// [raw] says whether [send] yields raw SDK JSON or plain text.
   Stream<String> _turn(
-    Map<String, Object?> message,
+    Map<String, Object?> Function() message,
     Stream<String> Function(ConversationHandle live) send, {
     required bool raw,
   }) async* {
@@ -906,32 +915,31 @@ class RecoveringConversationHandle implements ConversationHandle {
         if (_stopRequested || (!finished && !failed)) _stopped = true;
         // The message reached the model either way, so it belongs in the
         // history a rebuild replays — with whatever of the reply was produced.
+        final reply = _VirtualConversationHandle._assistantTurn(
+          text.toString(),
+          rawReply.toString(),
+        );
         _history
           ..add(message)
-          ..add(
-            _VirtualConversationHandle._assistantTurn(
-              text.toString(),
-              rawReply.toString(),
-            ),
-          );
+          ..add(() => reply);
       }
       done.complete();
     }
   }
 
-  /// The user message as a rebuild replays it: its text. Media is noted, not
-  /// kept — see [_historyHasMedia].
-  Map<String, Object?> _textOnly(
+  /// The user message as a rebuild replays it: the parts the live
+  /// conversation was sent, in [multimodalOrder].
+  Map<String, Object?> Function() _userTurn(
     String text,
     List<Uint8List>? imageBytes,
     Uint8List? audioBytes,
-  ) {
-    if ((imageBytes?.isNotEmpty ?? false) || audioBytes != null) {
-      _historyHasMedia = true;
-    }
-    return jsonDecode(LiteRtLmFfiClient.buildMessageJson(text))
-        as Map<String, Object?>;
-  }
+  ) =>
+      () => LiteRtLmFfiClient.buildMessage(
+        text,
+        imagesBytes: imageBytes,
+        audioBytes: audioBytes,
+        order: multimodalOrder,
+      );
 
   @override
   Future<int?> tokenCount(String text) => _live.tokenCount(text);
@@ -943,7 +951,7 @@ class RecoveringConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) => _turn(
-    _textOnly(text, imageBytes, audioBytes),
+    _userTurn(text, imageBytes, audioBytes),
     (live) => live.chat(
       text,
       imageBytes: imageBytes,
@@ -960,7 +968,7 @@ class RecoveringConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) => _turn(
-    _textOnly(text, imageBytes, audioBytes),
+    _userTurn(text, imageBytes, audioBytes),
     (live) => live.chatRaw(
       text,
       imageBytes: imageBytes,
@@ -975,7 +983,7 @@ class RecoveringConversationHandle implements ConversationHandle {
     String messageJson, {
     bool enableThinking = false,
   }) => _turn(
-    jsonDecode(messageJson) as Map<String, Object?>,
+    () => jsonDecode(messageJson) as Map<String, Object?>,
     (live) => live.chatRawMessage(messageJson, enableThinking: enableThinking),
     raw: true,
   );

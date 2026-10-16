@@ -235,10 +235,11 @@ class VoiceSession {
   /// with an empty VoiceTurnCompleteEvent and the model is not asked, as an
   /// empty transcript does in [runTurn].
   ///
-  /// One difference from [runTurn] lies in the engine: after a stopped turn
-  /// (an [interrupt] during the reply), a `.litertlm` chat rebuilds its
-  /// conversation from the turns' text. An audio turn has none, so the model
-  /// loses what was said in earlier audio turns; its own replies stay.
+  /// After a stopped turn (an [interrupt] during the reply), a `.litertlm` chat
+  /// rebuilds its conversation with the earlier recordings in it and encodes
+  /// them again, so the next turn starts later. Before
+  /// `flutter_edge_ai_litertlm` 1.14.1 the rebuild kept only text, and the
+  /// model lost what was said in earlier audio turns.
   ///
   /// Throws [StateError] when the responder has no respondToAudio, or a turn
   /// is in flight.

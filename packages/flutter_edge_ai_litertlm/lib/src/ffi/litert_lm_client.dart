@@ -1370,6 +1370,22 @@ class LiteRtLmFfiClient {
     List<Uint8List>? imagesBytes,
     Uint8List? audioBytes,
     MultimodalOrder order = MultimodalOrder.imagesAudioText,
+  }) => jsonEncode(
+    buildMessage(
+      text,
+      imagesBytes: imagesBytes,
+      audioBytes: audioBytes,
+      order: order,
+    ),
+  );
+
+  /// [buildMessageJson] before encoding, for a history that is serialized
+  /// with the rest of its messages.
+  static Map<String, Object?> buildMessage(
+    String text, {
+    List<Uint8List>? imagesBytes,
+    Uint8List? audioBytes,
+    MultimodalOrder order = MultimodalOrder.imagesAudioText,
   }) {
     final before = <Map<String, dynamic>>[];
     final after = <Map<String, dynamic>>[];
@@ -1385,14 +1401,14 @@ class LiteRtLmFfiClient {
         order.audio,
       ).add({'type': 'audio', 'blob': base64Encode(audioBytes)});
     }
-    return jsonEncode({
+    return {
       'role': 'user',
       'content': [
         ...before,
         {'type': 'text', 'text': text},
         ...after,
       ],
-    });
+    };
   }
 
   /// Serialize a message history into the `messages_json` array the

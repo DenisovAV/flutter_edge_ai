@@ -192,7 +192,6 @@ final class InferenceDeciderCalibration {
     this.temperature,
     this.abstainBelow,
     this.noneOption,
-    this.promptSha256,
   });
 
   /// The softmax temperature `T` (positive, finite): the answer's
@@ -211,13 +210,6 @@ final class InferenceDeciderCalibration {
   /// with `AbstainReason.noneOption`, whatever [abstainBelow] says: the model
   /// answered "none of these", which is the more specific reason.
   final String? noneOption;
-
-  /// The lower-case hex SHA-256 of the prompt the model was trained on,
-  /// without the input: the question and the option list as the decider
-  /// renders them. A decider is never created over a prompt with another
-  /// digest, so an edited question or option list cannot silently meet a
-  /// model trained on another one.
-  final String? promptSha256;
 
   @override
   String toString() =>

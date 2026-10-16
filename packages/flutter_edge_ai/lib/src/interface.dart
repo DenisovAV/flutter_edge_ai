@@ -479,8 +479,8 @@ abstract class InferenceModel {
   /// model's reply (`DeciderMethod.optionScoring`). It is meant for a model
   /// TRAINED on exactly this question and these options, in this order;
   /// [calibration] carries the values fitted with that training (a softmax
-  /// temperature, an abstain threshold, the "none of these" option, the
-  /// prompt's digest). Its answers have the shape of an embedding decider's,
+  /// temperature, an abstain threshold, the "none of these" option). Its
+  /// answers have the shape of an embedding decider's,
   /// so an app reads them the same way: `ScoreKind.logprob` scores,
   /// `AbstainSignalKind.topProbability` as the abstain signal.
   ///

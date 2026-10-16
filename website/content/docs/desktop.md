@@ -66,7 +66,7 @@ desktop. Any `.litertlm` model works; see [Models](/docs/models). (The
 
 | Platform | Architecture | GPU backend | Vision | Audio | Notes |
 |---|---|---|---|---|---|
-| macOS | arm64 (Apple Silicon) | Metal | ✅ | ✅ | Vision verified on Gemma 4 + Gemma 3n (text decoder on Metal, vision encoder on CPU) |
+| macOS | arm64 (Apple Silicon) | Metal | ✅ | ✅ | Vision verified on Gemma 4 + Gemma 3n (text decoder on Metal; the vision encoder runs where the bundle says: CPU on Gemma 4, GPU on Gemma 3n) |
 | macOS | x86_64 | — | — | — | Not supported (Apple Silicon only) |
 | Windows | x86_64 | DirectX 12 (via Dawn/WebGPU) | ✅ | ✅ | Nothing to install |
 | Windows | arm64 | — | — | — | Not supported |
@@ -102,7 +102,7 @@ see [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2
 - **macOS**: Apple Silicon (arm64)
 - **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed (see below).
 - **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
-- **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available
+- **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
 No Java/JVM/JRE required.
 

@@ -84,8 +84,10 @@ if (message.hasImage) {
 
 flutter_edge_ai automatically handles common image formats (JPEG, PNG, etc.) when
 using `Message.withImages()` or `Message.withImage()`. The GPU backend speeds up
-text decoding; image encoding still runs on CPU (audio encoding can be moved to
-GPU — see below).
+text decoding; the encoders run where the bundle says
+(`model.activeVisionBackend`, `model.activeAudioBackend`): on Gemma 4 image and
+audio encoding run on the CPU, on Gemma 3n image encoding runs on the GPU and
+audio encoding on the CPU. Neither audio encoder accepts the GPU (see below).
 
 </Info>
 
@@ -161,6 +163,24 @@ final model = await FlutterEdgeAi.getActiveModel(
   multimodalOrder: MultimodalOrder.imagesAudioText, // audio before the text
 );
 ```
+
+`MultimodalOrder.imagesTextAudio` and `MultimodalOrder.imagesAudioText` are the
+two presets, and `MultimodalOrder.forModelType(type)` returns the one a type
+gets. Any other order is `MultimodalOrder(images:, audio:)`, a `MediaPosition`
+(`beforeText`, the default, or `afterText`) for each:
+
+```dart
+// The text first, then the images, then the audio.
+const textFirst = MultimodalOrder(
+  images: MediaPosition.afterText,
+  audio: MediaPosition.afterText,
+);
+```
+
+Media on the same side of the text keep a fixed order, images before audio,
+and several images keep the order they were given in. A message with no text
+still carries its empty text part, so an audio-only message is the same in
+every order.
 
 Only the native `.litertlm` engine reads it. The measurements are in the
 [`flutter_edge_ai_litertlm` README](https://pub.dev/packages/flutter_edge_ai_litertlm#multimodal-order).

@@ -243,6 +243,14 @@ await for (final response in stream) {
 }
 ```
 
+Gemma 4 often writes a sentence and then calls a tool (`flutter_edge_ai`
+2.4.0). The sentence streams as `TextResponse` — clear what you collected when
+`onToolCall` runs if only the final answer should remain, as
+`flutter_edge_ai_agent` does — but the chat's history keeps only the call
+(`role` and `tool_calls`), not the sentence. Without
+`supportsFunctionCalls: true`, or with `toolChoice: ToolChoice.none`, the call
+is not parsed and its JSON stays in the text.
+
 This is the same driver the voice loop uses: `VoiceSession.fromChat(…, onToolCall:)`
 runs function calls inside a spoken turn through it (see
 [Speech → Tool calling in the voice loop](/docs/speech#tool-calling-in-the-voice-loop)).
@@ -251,7 +259,8 @@ runs function calls inside a spoken turn through it (see
 
 `chat.fullHistory` records each call as a `Message.toolCall` whose `toolCalls`
 hold the calls and whose `text` is what text engines replay: the model's output
-as the engine returned it. To restore a conversation with
+as the engine returned it — for a LiteRT-LM call, its `tool_calls` objects
+without the prose written before them. To restore a conversation with
 `clearHistory(replayHistory:)`, keep both, and `toolCallId` on each
 `Message.toolResponse`. A message you build yourself takes the calls alone, and
 the text formats read its text back if the model answers in that shape:

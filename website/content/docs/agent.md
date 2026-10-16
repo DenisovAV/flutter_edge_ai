@@ -301,12 +301,15 @@ metadata:
 ---
 # Title
 ## Instructions
-Call the `run_js` tool with: script name: index.html, data: { field: Type }
+Call the `run_js` tool with: skillName: kebab-case-id, data: a JSON string { field: Type }
 ```
 
 The skill's type comes from the tool its body names, in any letter case:
 `run_js`, `runSkill` or `runJs` → JS; `run_intent` or `runIntent` → intent;
-`run_mcp` or `runMcp` → MCP (checked in that order); none → text-only.
+`run_mcp` or `runMcp` → MCP (checked in that order); none → text-only. The loop
+takes those spellings as call names too: a call to `run_js` or Gallery's
+`runJs` runs as `runSkill` (which takes `skillName` and `data`), `run_intent`
+as `runIntent`, and `run_mcp` or Gallery's `runMcpTool` as `runMcp`.
 
 Every other key under `metadata:` is kept in `skill.metadata.extra` with its
 YAML type (strings, numbers, booleans, lists and maps). The package reads none

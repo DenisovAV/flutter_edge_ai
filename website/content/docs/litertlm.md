@@ -118,11 +118,14 @@ The GPU runs the model at half precision unless you ask otherwise, and the
 published Gemma 4 files ask for it. From about 2,000 prompt tokens, Gemma 4 then
 copies digits wrongly on some GPUs (seen on Adreno and Metal). `activationDataType: ActivationDataType.float32` on
 `getActiveModel` fixes it at the cost of a slower prefill; left unset, the model
-file decides. It applies to the text decoder of `.litertlm` models on Android,
+file decides, except that a FunctionGemma bundle declaring no
+`prefer_activation_type` gets `float32` on its GPU attempt (litertlm 1.14.0),
+because at half precision it answers with nothing. It applies to the text decoder of `.litertlm` models on Android,
 iOS and desktop — not on web, and not to the vision or audio encoders, which
 keep what the model file asks for. `float32` also needs more GPU memory, and a
-GPU engine that cannot be created falls back to CPU silently, so read
-`model.activeBackend` afterwards. Every `flutter_edge_ai_litertlm` release
+GPU engine that cannot be created falls back to CPU with only a WARNING line in
+the log, so read `model.activeBackend` afterwards, or turn the fallback off with
+`LiteRtLmEngine(backendFallback: false)`. Every `flutter_edge_ai_litertlm` release
 applies it (it arrived in `flutter_gemma_litertlm` 1.8.3; older versions ignore it). See [Troubleshooting → Wrong numbers on
 GPU](/docs/troubleshooting#wrong-numbers-on-gpu).
 
@@ -148,8 +151,10 @@ download and 83 MB more installed, plus a copy of the same size made on the
 first NPU run, because the DSP loads them from files. Setting the flag accepts Qualcomm's AI
 Stack License; the hook prints where its `LICENSE.pdf` is. Offline or behind a
 mirror, add `qualcomm_npu_maven_url: <maven base URL>` or
-`qualcomm_npu_aar: <path to the same AAR>`. Without the flag, `npu` on Android
-falls back to GPU, then CPU, and the log says how to enable it.
+`qualcomm_npu_aar: <path to the same AAR>`. Without the flag, `npu` with a
+generic bundle on Android falls back to GPU, then CPU, and the log says how to
+enable it; a bundle compiled for an NPU is refused with a
+`BackendInitException` that says the same.
 
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino
@@ -162,8 +167,9 @@ download the zip yourself and add `qualcomm_npu_qairt_zip: <path>`. On the
 board, Qualcomm's FastRPC library has to be present (`qcom-fastrpc1` on Ubuntu;
 Qualcomm's images ship it) and the user has to be in group `fastrpc`
 (`sudo usermod -aG fastrpc $USER`, then log in again). Without either, `npu`
-falls back to GPU, then CPU, and the log names what is missing. Use the bundle
-compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
+with a generic bundle falls back to GPU, then CPU, and the log names what is
+missing; a bundle compiled for an NPU is refused with a `BackendInitException`
+that names it. Use the bundle compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
 x64 build ignores the flag.
 
 <Warning>
@@ -246,7 +252,9 @@ for.
 
 By default a load that fails on its backend tries the next one.
 `LiteRtLmEngine(backendFallback: false)` makes one attempt — on
-`preferredBackend`, or the GPU when none is given — and throws a
+`preferredBackend`, or, when none is given, on the GPU (the NPU for a bundle
+compiled for one, the first backend a constrained text model allows) — and
+throws a
 `BackendInitException` whose one attempt carries LiteRT-LM's own reason, read
 from its C API on every platform and in release builds:
 

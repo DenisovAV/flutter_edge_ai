@@ -183,9 +183,11 @@ programs (about 600 MB for Gemma 4 E2B): pick one precision per install rather
 than per request.
 
 `float32` activations also need more GPU memory than `float16`. If the GPU
-engine cannot be created the model falls back to CPU **without an error** — the
-digits are then right and the model is far slower, which is easy to mistake for
-the fix working. Read the backend the model actually got:
+engine cannot be created the model falls back to CPU **without an exception**,
+only a WARNING line in the log — the digits are then right and the model is far
+slower, which is easy to mistake for the fix working. Register
+`LiteRtLmEngine(backendFallback: false)` to get a `BackendInitException` with
+LiteRT-LM's reason instead, or read the backend the model actually got:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(
@@ -240,23 +242,28 @@ that model to `PreferredBackend.cpu` / `.gpu`. Upstream:
 
 Note that `maxTokens` is **not** clamped up to 1024 on the NPU attempt the way
 it is on CPU and GPU — the safe context is baked into the compiled bundle, so
-pass the `cache_length` it was built for. If the NPU fails to initialize the
-engine falls back to GPU and then CPU, and the floor applies to those attempts,
-so the fallback is clamped rather than crashed.
+pass the `cache_length` it was built for. If the NPU fails to initialize, a
+generic bundle falls back to GPU and then CPU (a bundle compiled for an NPU is
+never tried there), and the floor applies to those attempts, so the fallback is
+clamped rather than crashed.
 
-**`PreferredBackend.npu` on Android falls back to GPU after an upgrade.** From
-`flutter_edge_ai_litertlm` 1.10.0 the Qualcomm QNN runtime is not part of the
-package; the app opts in with `qualcomm_npu: true` under `hooks: user_defines:
-flutter_edge_ai_litertlm:` in its pubspec — see [LiteRT-LM](/docs/litertlm). The
-log names the reason. If it says the stack is not enabled although the flag is
+**`PreferredBackend.npu` on Android falls back to GPU, or an NPU bundle fails
+to load, after an upgrade.** From `flutter_edge_ai_litertlm` 1.10.0 the
+Qualcomm QNN runtime is not part of the package; the app opts in with
+`qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:` in
+its pubspec — see [LiteRT-LM](/docs/litertlm). Without it a generic bundle
+falls back to GPU, then CPU, and the log names the reason; a bundle compiled
+for an NPU is refused with a `BackendInitException` whose
+`NpuDispatchUnavailableException` names it. If it says the stack is not enabled although the flag is
 set, the flag is in the wrong pubspec: in a pub workspace only the workspace
 root's `user_defines` count. If the build fails fetching `qnn-runtime`, the
 machine cannot reach Maven Central; set `qualcomm_npu_maven_url` to a mirror or
 `qualcomm_npu_aar` to a local copy of the same AAR.
 
-**`PreferredBackend.npu` on a Qualcomm Linux board falls back to GPU.** The
-same `qualcomm_npu: true` covers Linux arm64 builds. The log names which of
-these is missing:
+**`PreferredBackend.npu` on a Qualcomm Linux board falls back to GPU, or an NPU
+bundle fails to load.** The same `qualcomm_npu: true` covers Linux arm64
+builds. The log for a generic bundle, or the `BackendInitException` for a
+bundle compiled for an NPU, names which of these is missing:
 - The build did not bundle the stack — the flag is not set, or not in the
   workspace root's pubspec.
 - `/dev/fastrpc-cdsp` does not exist — the board exposes no compute DSP.

@@ -59,9 +59,8 @@ dependencies:
   flutter_edge_ai_diagnostics: ^0.3.0
 ```
 
-This page describes 0.3.0 (coming soon to pub.dev), which adds macOS and
-`anonymousPeakBytes`; 0.2.2, the current release, reads Android and iOS without
-the peak.
+This page describes 0.3.0, which adds macOS and `anonymousPeakBytes`; 0.2.2
+read Android and iOS without the peak.
 
 If only `test/` or `integration_test/` uses it, put it under `dev_dependencies`
 instead. Neither section strips anything from a release build: what keeps the

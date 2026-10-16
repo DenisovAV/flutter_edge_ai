@@ -116,4 +116,8 @@ ONNX and Built-in AI, and LiteRT-LM on web, throw `UnsupportedError` for image
 or audio input they cannot take.
 
 After a model loads, `InferenceModel.activeBackend` and
-`EmbeddingModel.activeBackend` report the accelerator it actually runs on.
+`EmbeddingModel.activeBackend` report the accelerator it actually runs on, and
+`InferenceModel.activeVisionBackend` and `activeAudioBackend` where its vision
+and audio encoders run (`flutter_edge_ai` 2.4.0, filled by
+`flutter_edge_ai_litertlm` 1.14.0; null when the model has no such encoder or
+the engine does not say).

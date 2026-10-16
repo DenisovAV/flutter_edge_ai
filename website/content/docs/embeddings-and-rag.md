@@ -140,7 +140,8 @@ final vector = await embedder.embed(
   cache file path and the likely causes, and no engine is left running. One
   tower's cache missing beside the others stays a printed warning. It applies
   on CPU, and on the NPU only with declared audio, whose tower runs on CPU;
-  on the Web it is accepted and ignored. The warning is a **print**, which a
+  the Web and a **.tflite** embedder (EmbeddingGemma 1, Gecko) accept it and
+  ignore it, and a debug build says so once in the log. The warning is a **print**, which a
   Windows release build started from Explorer shows nowhere (it has no
   console): Windows desktop apps that care should pass
   **requireWeightCache: true**. A refusal comes after core has closed the

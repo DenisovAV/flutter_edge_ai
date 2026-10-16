@@ -104,14 +104,14 @@ void main() {
       expect(watch.elapsed, lessThan(const Duration(seconds: 4)));
     }, timeout: const Timeout(Duration(seconds: 60)));
 
-    test('a token cancelled before the fit fails it without a fit', () async {
-      await expectLater(
-        io.runDeciderFit(
-          _request(4, 3, 8),
-          cancelToken: CancelToken()..cancel(),
-        ),
-        throwsA(isA<DeciderCancelledException>()),
-      );
+    test('a token cancelled before the fit fails it without a fit, on both '
+        'runners', () async {
+      for (final run in [io.runDeciderFit, web.runDeciderFit]) {
+        await expectLater(
+          run(_request(4, 3, 8), cancelToken: CancelToken()..cancel()),
+          throwsA(isA<DeciderCancelledException>()),
+        );
+      }
     });
 
     test('the fit\'s own failure arrives as itself, with its stack', () async {

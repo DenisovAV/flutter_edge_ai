@@ -219,4 +219,15 @@ void main() {
     await failed;
     expect(replacements, 0);
   });
+
+  test('an empty among on a closed embedder, decider closed while core '
+      'replaced it: the answer is dropped', () async {
+    onReplace = () => unawaited(decider.close());
+    await model.close();
+    await expectLater(
+      decider.choose(_in('about a'), among: const []),
+      throwsA(isA<DeciderCancelledException>()),
+    );
+    expect(replacements, 1);
+  });
 }

@@ -303,3 +303,51 @@ class SdkResponseParser {
     }
   }
 }
+
+/// The text `InferenceChat` records for a turn's tool calls: the raw
+/// response's `tool_calls` objects (role and calls only), each cleaned as by
+/// [SdkResponseParser.cleanRawForHistory], without the text chunks streamed
+/// before them and without any text a call chunk carries itself.
+///
+/// A Gemma 4 turn can be a sentence and then a call; its raw response is then
+/// one JSON object per streamed chunk, and recorded whole it put every text
+/// chunk into the call's history entry. The sentence is not kept: a call turn
+/// is recorded as its calls only, as the LiteRT-LM virtual session replays one
+/// and as `toolCallsOf` reads one. An empty `tool_calls` list is no call. A raw
+/// response with no `tool_calls` object (calls inside `content`, or raw call
+/// tokens on the web) is kept as [SdkResponseParser.cleanRawForHistory] returns
+/// it, which leaves a response of several chunks unchanged.
+///
+/// Internal to core: `engine.dart` exports only [SdkResponseParser].
+String toolCallsRawForHistory(String raw) {
+  final calls = StringBuffer();
+  for (final fragment in SdkResponseParser._splitConcatenatedJson(raw)) {
+    final Object? parsed;
+    try {
+      parsed = jsonDecode(fragment);
+    } on FormatException {
+      continue;
+    }
+    if (parsed case {
+      'tool_calls': final List toolCalls,
+    } when toolCalls.isNotEmpty) {
+      // Role and calls only: a chunk can carry text or reasoning next to its
+      // calls, and neither is the call.
+      final callOnly = <String, Object?>{
+        if (parsed case {'role': final Object? role}) 'role': role,
+        'tool_calls': toolCalls,
+      };
+      calls.write(jsonEncode(SdkResponseParser._stripEscapeTokens(callOnly)));
+    }
+  }
+  return calls.isEmpty
+      ? SdkResponseParser.cleanRawForHistory(raw)
+      : calls.toString();
+}
+
+/// The JSON documents of [input], one object or several back to back
+/// (`{...}{...}`), as [SdkResponseParser] splits a raw response.
+///
+/// Internal to core: `engine.dart` exports only [SdkResponseParser].
+Iterable<String> splitSdkJsonDocuments(String input) =>
+    SdkResponseParser._splitConcatenatedJson(input);

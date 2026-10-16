@@ -166,8 +166,9 @@ class Message {
   /// The model's tool call(s) in a history.
   ///
   /// [calls] are the calls themselves, stored as a frozen copy. [text] is what
-  /// text engines replay: the model's output as the engine returned it, or the
-  /// JSON a converter wrote. When it is null, it is
+  /// text engines replay: the model's output as the engine returned it (for a
+  /// LiteRT-LM call, its `tool_calls` objects without the text written before
+  /// them), or the JSON a converter wrote. When it is null, it is
   /// `{"tool_calls":[{"id","name","arguments"}]}` built from [calls] (an `id`
   /// only for a call that has one), which the text formats also read back.
   /// Give at least one of the two.

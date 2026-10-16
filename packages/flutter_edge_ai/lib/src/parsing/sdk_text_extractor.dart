@@ -14,11 +14,13 @@ import 'dart:convert';
 /// - Thinking: `{"role":"assistant","channels":{"thought":"reasoning..."}}`
 ///   → returns `<|channel>thought\nreasoning...<channel|>`
 ///   (compatible with `ThinkingFilter` in `core/extensions.dart`)
-/// - Anything else, a tool call (`{"role":"assistant","tool_calls":[...]}`
-///   with no content) included → returns the chunk's JSON. `InferenceChat`
-///   reads calls from the whole raw response at the end of the stream and,
-///   when it handles calls, leaves such a chunk out of the text (see
-///   [isSdkToolCallChunk]). When it does not, the call stays visible as JSON.
+/// - An object without content, a tool call
+///   (`{"role":"assistant","tool_calls":[...]}`) included → returns the
+///   chunk's JSON unchanged.
+/// - A content list keeps only its text parts, so `[]` gives `""`.
+///
+/// Text that is not JSON passes through. JSON that is not an object, or a
+/// content of another type, throws: that is a contract change with LiteRT-LM.
 class SdkTextExtractor {
   /// Extract text from a LiteRT-LM JSON response chunk.
   ///
@@ -71,7 +73,10 @@ class SdkTextExtractor {
 /// Whether [token] is one LiteRT-LM chunk that carries tool calls and no text:
 /// what [SdkTextExtractor.extractTextFromResponse] returns for a call. Gemma 4
 /// can write a sentence and then call a tool in the same generation; the call
-/// then arrives as a chunk of its own, after the text.
+/// then arrives as a chunk of its own, after the text. `InferenceChat` takes
+/// such a chunk out of the text when it handles calls; otherwise the call stays
+/// visible as JSON. Assumes one session token is one LiteRT-LM chunk, as the
+/// FFI and web sessions deliver them. An empty `tool_calls` list is no call.
 ///
 /// Internal to core: `engine.dart` exports only [SdkTextExtractor].
 bool isSdkToolCallChunk(String token) {
@@ -85,5 +90,6 @@ bool isSdkToolCallChunk(String token) {
   }
   return json is Map<String, dynamic> &&
       json['tool_calls'] is List &&
+      (json['tool_calls'] as List).isNotEmpty &&
       json['content'] == null;
 }

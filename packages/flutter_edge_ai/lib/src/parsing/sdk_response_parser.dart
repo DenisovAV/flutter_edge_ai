@@ -305,18 +305,18 @@ class SdkResponseParser {
 }
 
 /// The text `InferenceChat` records for a turn's tool calls: the raw
-/// response's `tool_calls` objects, each cleaned as by
+/// response's `tool_calls` objects (role and calls only), each cleaned as by
 /// [SdkResponseParser.cleanRawForHistory], without the text chunks streamed
 /// before them and without any text a call chunk carries itself.
 ///
 /// A Gemma 4 turn can be a sentence and then a call; its raw response is then
 /// one JSON object per streamed chunk, and recorded whole it put every text
-/// chunk into the call's history entry. The sentence itself is not kept: the
-/// Gemma 4 template renders an assistant turn's `tool_calls` before its
-/// content and closes the turn after content, so a replay would show the
-/// model a turn it never wrote. A raw response with no `tool_calls` object
-/// (calls inside `content`, or raw call tokens on the web) is cleaned whole,
-/// as before.
+/// chunk into the call's history entry. The sentence is not kept: a call turn
+/// is recorded as its calls only, as the LiteRT-LM virtual session replays one
+/// and as `toolCallsOf` reads one. An empty `tool_calls` list is no call. A raw
+/// response with no `tool_calls` object (calls inside `content`, or raw call
+/// tokens on the web) is kept as [SdkResponseParser.cleanRawForHistory] returns
+/// it, which leaves a response of several chunks unchanged.
 ///
 /// Internal to core: `engine.dart` exports only [SdkResponseParser].
 String toolCallsRawForHistory(String raw) {
@@ -328,11 +328,14 @@ String toolCallsRawForHistory(String raw) {
     } on FormatException {
       continue;
     }
-    if (parsed is Map<String, dynamic> && parsed['tool_calls'] is List) {
-      // A chunk can carry text next to its calls; the text is not the call.
-      final callOnly = {
-        for (final entry in parsed.entries)
-          if (entry.key != 'content') entry.key: entry.value,
+    if (parsed case {
+      'tool_calls': final List toolCalls,
+    } when toolCalls.isNotEmpty) {
+      // Role and calls only: a chunk can carry text or reasoning next to its
+      // calls, and neither is the call.
+      final callOnly = <String, Object?>{
+        if (parsed case {'role': final Object? role}) 'role': role,
+        'tool_calls': toolCalls,
       };
       calls.write(jsonEncode(SdkResponseParser._stripEscapeTokens(callOnly)));
     }

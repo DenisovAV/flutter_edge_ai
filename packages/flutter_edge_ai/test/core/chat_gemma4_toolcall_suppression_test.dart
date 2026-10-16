@@ -381,6 +381,114 @@ void main() {
       });
     }
 
+    test('an empty tool_calls chunk after the prose stays visible', () async {
+      const empty = '{"role":"assistant","tool_calls":[]}';
+      final chat = _gemma4Chat([
+        ...prose.map(SdkTextExtractor.extractTextFromResponse),
+        empty,
+      ]);
+      await chat.initSession();
+      await chat.addQuery(const Message(text: 'hi', isUser: true));
+      final responses = await chat.generateChatResponseAsync().toList();
+
+      final text = responses.whereType<TextResponse>().map((t) => t.token);
+      expect(text.join(), contains(empty));
+      expect(responses.whereType<FunctionCallResponse>(), isEmpty);
+    });
+
+    test(
+      'a call chunk no call can be read from is surfaced, not dropped',
+      () async {
+        // Not the `{"type":"function", ...}` shape LiteRT-LM writes, so
+        // extractToolCalls reads no call from it.
+        const unreadable =
+            '{"role":"assistant","tool_calls":[{"function":'
+            '{"name":"runIntent","arguments":{"intent":"x"}}}]}';
+        for (final raw in [
+          null,
+          [...prose, unreadable].join(),
+        ]) {
+          final chat = _gemma4Chat([
+            ...prose.map(SdkTextExtractor.extractTextFromResponse),
+            unreadable,
+          ], raw: raw);
+          await chat.initSession();
+          await chat.addQuery(const Message(text: 'hi', isUser: true));
+          final responses = await chat.generateChatResponseAsync().toList();
+
+          final text = responses.whereType<TextResponse>().map((t) => t.token);
+          expect(text.join(), contains(unreadable), reason: 'raw: $raw');
+          expect(responses.whereType<FunctionCallResponse>(), isEmpty);
+        }
+      },
+    );
+
+    test(
+      'prose that ends like a thought tag does not swallow the call',
+      () async {
+        // The thinking filter holds back a trailing "<" in case it starts
+        // <|channel>; the call chunk is taken out before that filter.
+        final (_, responses) = await run([
+          textChunk('Checking whether 2 <'),
+          callChunk('accelerator'),
+        ]);
+
+        final text = responses.whereType<TextResponse>().map((t) => t.token);
+        expect(text.join(), 'Checking whether 2 <');
+        expect(
+          responses.whereType<FunctionCallResponse>().single.args['intent'],
+          'accelerator',
+        );
+      },
+    );
+
+    test(
+      'a chunk with text and a call streams the text, records the call',
+      () async {
+        const combined =
+            '{"role":"assistant","content":[{"type":"text","text":"Sure. "}],'
+            '"tool_calls":[{"type":"function","function":'
+            '{"name":"runIntent","arguments":{"intent":"<|\\"|>x<|\\"|>"}}}]}';
+        final (chat, responses) = await run([combined]);
+
+        expect(
+          responses.whereType<TextResponse>().map((t) => t.token).join(),
+          'Sure. ',
+        );
+        expect(
+          responses.whereType<FunctionCallResponse>().single.name,
+          'runIntent',
+        );
+        expect(
+          chat.fullHistory
+              .singleWhere((m) => m.type == MessageType.toolCall)
+              .text,
+          '{"role":"assistant","tool_calls":[{"type":"function","function":'
+          '{"name":"runIntent","arguments":{"intent":"x"}}}]}',
+        );
+      },
+    );
+
+    test('generateChatResponse records the call without the prose', () async {
+      final chunks = [...prose, callChunk('accelerator')];
+      final chat = _gemma4Chat(
+        chunks.map(SdkTextExtractor.extractTextFromResponse).toList(),
+        raw: chunks.join(),
+      );
+      await chat.initSession();
+      await chat.addQuery(const Message(text: 'hi', isUser: true));
+      final response = await chat.generateChatResponse();
+
+      expect(response, isA<FunctionCallResponse>());
+      expect(
+        chat.fullHistory
+            .singleWhere((m) => m.type == MessageType.toolCall)
+            .text,
+        '{"role":"assistant","tool_calls":[{"type":"function","function":'
+        '{"name":"runIntent","arguments":{"intent":"accelerator"}}}]}',
+      );
+    });
+
     test('history records the call without the prose chunks', () async {
       final (chat, _) = await run([...prose, callChunk('accelerator')]);
 

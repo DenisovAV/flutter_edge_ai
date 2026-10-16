@@ -238,6 +238,18 @@ void main() {
       expect(toolCallsRawForHistory(combined), cleanCall);
     });
 
+    test('reasoning next to a call and empty call lists are left out', () {
+      const withThought =
+          '{"role":"assistant","channels":{"thought":"hmm"},'
+          '"tool_calls":[{"type":"function","function":'
+          '{"name":"runIntent","arguments":{"intent":"<|\\"|>x<|\\"|>"}}}]}';
+      const emptyCalls =
+          '{"role":"assistant","content":[{"type":"text","text":"Hi"}],'
+          '"tool_calls":[]}';
+
+      expect(toolCallsRawForHistory('$emptyCalls$withThought'), cleanCall);
+    });
+
     test('two calls are both kept, each cleaned', () {
       expect(toolCallsRawForHistory('$call$call'), '$cleanCall$cleanCall');
     });

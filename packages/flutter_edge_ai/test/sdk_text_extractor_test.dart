@@ -58,6 +58,10 @@ void main() {
         isFalse,
       );
       expect(isSdkToolCallChunk('{"tool_calls": "x"}'), isFalse);
+      expect(
+        isSdkToolCallChunk('{"role":"assistant","tool_calls":[]}'),
+        isFalse,
+      );
       expect(isSdkToolCallChunk('Sure, {not json'), isFalse);
       expect(isSdkToolCallChunk('{"tool_calls":[]'), isFalse);
     });

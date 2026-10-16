@@ -56,7 +56,7 @@ dependencies:
   genkit: ^1.0.0
   genkit_flutter_edge_ai: ^0.10.0
   flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_litertlm: ^1.13.0  # only the engines/backends you actually use
+  flutter_edge_ai_litertlm: ^1.14.0  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.3.0  # the tokenizers an embedding backend needs
   flutter_edge_ai_mediapipe: ^1.2.2
 ```
@@ -208,6 +208,13 @@ final response = await ai.generate(
   tools: [weatherTool],
 );
 ```
+
+Tool `ref`s travel as call ids both ways (0.10.0, with `flutter_edge_ai`
+2.4.0): a tool request's `ref` is the call's `FunctionCallResponse.id`, or
+`call_0`, `call_1`, … when the engine gives none (no bundled engine does yet),
+and never repeats within a turn; in the history the plugin sends back, a
+request's `ref` becomes its call's id (`Message.toolCall(calls:)`) and a tool
+response's `ref` its `toolCallId`.
 
 Genkit's top-level `toolChoice:` takes precedence over the `toolChoice` option.
 Write it as `toolChoice: .none`: genkit 1.0 and `flutter_edge_ai` both export a

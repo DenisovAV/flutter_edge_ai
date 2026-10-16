@@ -1,13 +1,8 @@
 ## 0.3.0
-- **Breaking** for exhaustive switches: `EmptyAnswerRetryEvent`; an empty answer after `loadSkill` is retried once.
+- **Breaking** for exhaustive switches: `EmptyAnswerRetryEvent`; an empty answer after `loadSkill` is retried (`emptyAfterSkillRetries`).
 - `NativeIntentExecutor(validators:)`: intents added through `handlers:` no longer fail validation.
-- **Behaviour change**: `runIntent` with a `skillName` runs the `intent` it names.
-- SKILL.md type inference also reads `runSkill`, `runJs`, `runIntent` and `runMcp`.
-- `SkillMetadata.extra` keeps the frontmatter metadata keys the package does not read.
-- `onDemandAgentSystemPrompt`: call a skill only when the request needs one.
-- A `runIntent` after a text-only skill is told the skill calls no tool.
-- Object tool arguments reach executors as JSON, not Dart `toString()` text.
-- A non-string SKILL.md `name` or `description` throws `SkillMdParseException`, not `TypeError`.
+- **Behaviour change**: `runIntent`/`runMcp` with a `skillName` run the action they name; `runJs`/`runMcpTool` accepted.
+- SKILL.md parsing fixes; object tool arguments reach executors as JSON.
 
 ## 0.2.10
 - `AgentSession.ask` and `AgentLoop.run` take `audioBytes`: ask with a recording.

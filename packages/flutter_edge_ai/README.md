@@ -84,7 +84,11 @@ dependencies:
 > `flutter_edge_ai_agent` 0.2.9 · `flutter_edge_ai_rag` 1.1.0 ·
 > `flutter_edge_ai_sqlite` 2.1.0 · `flutter_edge_ai_qdrant` 2.1.0 ·
 > `genkit_flutter_edge_ai` 0.9.1. An older engine or store fails to compile
-> against 2.3.0; see the [migration guide](MIGRATION.md).
+> against 2.3.0; see the [migration guide](MIGRATION.md). With core 2.4.0,
+> `getActiveModel(multimodalOrder:)` and `activeVisionBackend` /
+> `activeAudioBackend` need `flutter_edge_ai_litertlm` 1.14.0, and Genkit tool
+> call ids need `genkit_flutter_edge_ai` 0.10.0; older versions compile against
+> 2.4.0 but ignore them.
 
 Then complete the platform setup below.
 

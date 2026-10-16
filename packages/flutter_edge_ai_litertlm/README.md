@@ -48,7 +48,8 @@ Depend on both packages (`flutter_edge_ai: ^2.4.0`,
 `ModelFileType.task`, which routes the file to MediaPipe.
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1), and 2.3.0 needs every flutter_edge_ai package upgraded together:**
+> 1.13.1, ^2.4.0 since 1.14.0), and 2.3.0 needs every flutter_edge_ai package
+> upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
 > `flutter_edge_ai_speech` 0.5.6 ·
@@ -821,7 +822,10 @@ the CPU is refused, and a text-only load of that file runs as on a generic
 bundle. Asking an encoder for a backend its `backend_constraint` excludes (the
 GPU for the published Gemma 4 and Gemma 3n audio encoders, which declare cpu),
 for the NPU when it is not compiled for one, or for another backend when it
-is, is refused.
+is, is refused. The Gemma 3n vision encoder declares gpu only, so it runs on
+the GPU by default and `preferredVisionBackend: PreferredBackend.cpu` is
+refused for it; the Gemma 4 vision encoder declares nothing and runs on the
+CPU.
 `InferenceModel.activeVisionBackend` and `activeAudioBackend` report what was
 chosen, and are null for a bundle without that encoder.
 
@@ -840,7 +844,9 @@ loads as before.
 
 **Strict backend.** By default a load that fails on its backend tries the next
 one. `LiteRtLmEngine(backendFallback: false)` makes exactly one attempt — on
-`preferredBackend`, or the GPU when none is given — and throws a
+`preferredBackend`, or, when none is given, on the GPU (the NPU for a bundle
+compiled for one, the first backend a constrained text model allows) — and
+throws a
 `BackendInitException` whose one attempt names that backend and carries
 LiteRT-LM's own reason (`LiteRtLmEngineCreateException.nativeMessage`, read
 from its C API on every platform, release builds included). An NPU the device
@@ -927,8 +933,10 @@ hooks:
 
 `qualcomm_npu_aar` is resolved against the pubspec that declares it and must be
 the same file as Maven's (same SHA-256). Without the flag, a request for
-`PreferredBackend.npu` on Android falls back to GPU, then CPU, and the log says
-how to enable it.
+`PreferredBackend.npu` with a generic bundle on Android falls back to GPU, then
+CPU, and the log says how to enable it; a bundle compiled for an NPU is refused
+with a `BackendInitException` whose one attempt says the same
+([Where a model runs](#where-a-model-runs)).
 
 **Linux arm64.** The same flag bundles the stack into Linux arm64 builds, for
 Qualcomm Linux boards with a Hexagon V68–V81 compute DSP (QCS6490, QCS8275,
@@ -950,9 +958,11 @@ hooks:
 On the board, Qualcomm's FastRPC library must be installed (`qcom-fastrpc1` on
 Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
 (`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing,
-`npu` falls back to GPU, then CPU, and the log names what to fix. Use the model
-compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
-x64 build ignores the flag.
+`npu` with a generic bundle falls back to GPU, then CPU, and the log names what
+to fix; a bundle compiled for an NPU is refused with a `BackendInitException`
+that names it. Use the model compiled for your SoC, e.g.
+`gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux x64 build ignores the
+flag.
 
 **Embeddings.** The same flag runs EmbeddingGemma 2 per-SoC bundles on the NPU
 ([EmbeddingGemma 2 on a Qualcomm NPU](#embeddinggemma-2-on-a-qualcomm-npu));
@@ -1001,9 +1011,9 @@ only. The CPU is left alone, and so is a value you pass:
 Other models are not changed, and some need the argument. A plain
 `gemma3-270m-it` floods `<pad>` on the GPU too (every Gemma 3 270M bundle does,
 on macOS and Android: LiteRT-LM#3280) and needs
-`activationDataType: ActivationDataType.float32` passed explicitly, as the
-function-calling codelab does for its pinned file. The larger Gemma bundles
-(Gemma 3 1B, Gemma 4) are not affected.
+`activationDataType: ActivationDataType.float32` passed explicitly: it is
+`ModelType.gemmaIt`, which the automatic float32 above does not cover. The
+larger Gemma bundles (Gemma 3 1B, Gemma 4) are not affected.
 
 ### Wrong digits from a long prompt on GPU
 

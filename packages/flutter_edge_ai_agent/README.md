@@ -115,9 +115,9 @@ which provides `LiteRtLmEngine`:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.3.0
+  flutter_edge_ai: ^2.4.0
   flutter_edge_ai_agent: ^0.3.0
-  flutter_edge_ai_litertlm: ^1.13.0
+  flutter_edge_ai_litertlm: ^1.14.0
 ```
 
 ```dart
@@ -321,7 +321,9 @@ The skill's type comes from the tool its body names, in any letter case:
 `run_js`, `runSkill` or `runJs` → JS; `run_intent` or `runIntent` → intent;
 `run_mcp` or `runMcp` → MCP (checked in that order); none → text-only. A
 `scriptName: other.html` in the body picks a script other than
-`scripts/index.html`.
+`scripts/index.html`. The loop takes those spellings as call names too: a call
+to `run_js` or Gallery's `runJs` runs as `runSkill`, `run_intent` as
+`runIntent`, and `run_mcp` or Gallery's `runMcpTool` as `runMcp`.
 
 Every other key under `metadata:` is kept in `skill.metadata.extra` with its
 YAML type: strings, numbers, booleans, and lists and maps as unmodifiable Dart

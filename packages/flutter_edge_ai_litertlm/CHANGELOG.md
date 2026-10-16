@@ -1,9 +1,11 @@
 ## 1.14.0
-- **Behaviour change:** Gemma 4 gets its audio after the text, as its model card asks.
+- **Behaviour change:** Gemma 4 gets its audio after the text; `getActiveModel(multimodalOrder:)` changes it.
 - EmbeddingGemma 2 reports its image token budget, so image-fitted deciders are bound to it.
 - FunctionGemma bundles that declare no `prefer_activation_type` run on the GPU at float32 (#552).
-- **Behaviour change:** loads follow `readLiteRtLmBundleInfo`: NPU bundles to the NPU, encoders per file, incomplete or wrong-backend loads throw `LiteRtLmBundleException`; `backendFallback: false`.
+- **Behaviour change:** backends follow the file (`readLiteRtLmBundleInfo`); incomplete or wrong-backend loads throw `LiteRtLmBundleException`.
+- `LiteRtLmEngine(backendFallback: false)`: one attempt, failing with LiteRT-LM's own reason.
 - `LiteRtEmbeddingBackend(requireWeightCache: true)` fails an EmbeddingGemma 2 load that wrote no weight cache.
+- Require `flutter_edge_ai` ^2.4.0.
 
 ## 1.13.3
 - README: Qwen3 0.6B bundle that loads (#659); NPU mask formula corrected.

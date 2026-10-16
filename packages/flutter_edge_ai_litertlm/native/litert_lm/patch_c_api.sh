@@ -584,4 +584,37 @@ for field in input_length truncated_length; do
   }
 done
 
+# ── 15. Windows: no C runtime descriptor crosses into libLiteRt.dll ──
+# Since LiteRT-LM 9589b6b4 (first in v0.17.0) a bundle with a non-empty
+# TF_LITE_AUX (every AOT NPU bundle) is loaded file-backed:
+# CreateModelFromFileSection passes litert::Model::CreateFromFd a CRT
+# descriptor. On Windows that is an index into one CRT's table; LiteRtLm.dll
+# and the prebuilt libLiteRt.dll each link their own, so the runtime has no
+# such descriptor. v0.17.0 failed engine_create ("Failed to load model from
+# fd"); v0.18.0 ends the process in libLiteRt.dll with 0xC0000409. Reproduced
+# on upstream's own litert_lm_advanced_main (LiteRT-LM #4023). Windows takes
+# the buffer-backed path, as v0.16.0 did for every bundle. Android, Apple and
+# Linux are unchanged: there a descriptor belongs to the process.
+#
+# A real diff on top of section 13's (same file), plus an anchor: a second
+# caller of CreateFromFd would hand the runtime a descriptor again.
+NOFD_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/windows_no_fd_model_loading.patch"
+if git -C "$DIR" apply --check "$NOFD_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$NOFD_PATCH"
+  echo "  OK: Windows loads .litertlm sections buffer-backed, never by descriptor"
+elif git -C "$DIR" apply --reverse --check "$NOFD_PATCH" 2>/dev/null; then
+  echo "  SKIP: Windows buffer-backed section loading already applied"
+else
+  echo "  ERROR: $NOFD_PATCH does not apply to this LiteRT-LM revision —" >&2
+  echo "         model_resources_litert_lm.cc moved; re-create the patch against it." >&2
+  exit 1
+fi
+nofd_callers="$(grep -rlE 'CreateFromFd\(|LiteRtCreateModelFromFd\(' --include='*.cc' \
+  "$DIR/runtime" "$DIR/c" | grep -v '_test\.cc$' | sed "s|^$DIR/||" | sort | tr '\n' ' ')"
+[ "$nofd_callers" = "runtime/components/model_resources_litert_lm.cc " ] || {
+  echo "  ERROR: section 15: unexpected CreateFromFd callers: $nofd_callers" >&2
+  exit 1
+}
+echo "  OK: section 15 anchors hold"
+
 echo "Patch complete."

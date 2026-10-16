@@ -48,9 +48,9 @@ CI that fails on warnings fail.
 4. A raw score is not a probability. `RankedOption.probability`,
    `DeciderAnswer.probabilities` and `DeciderAnswer.confidence` are null unless
    the decider was calibrated with `EmbeddingDeciderCalibration.fromLabelled`
-   on held-out labelled requests. `fromLabelled` refuses (`ArgumentError`) rows it cannot
-   calibrate on — all answered right with room to spare, or a single row —
-   so give it real, partly hard, requests.
+   on held-out labelled requests. `fromLabelled` refuses (`ArgumentError`)
+   rows it cannot calibrate on — all answered right with room to spare, or a
+   single row — so give it real, partly hard, requests.
 5. A decider borrows its embedder and never closes it. On an embedder
    `FlutterEdgeAi.getActiveEmbedder()` returned, the decider follows core: when
    that embedder is closed (core widened it for images or audio, another

@@ -61,16 +61,30 @@ void main() {
   _HoldingHost? replacementHost;
   late Decider decider;
 
-  CommonEmbeddingModel build(EmbeddingHost h) => CommonEmbeddingModel.withHost(
-    h,
-    activeBackend: PreferredBackend.cpu,
-    installedFiles: const [(name: 'm.tflite', bytes: 1)],
-    replacement: () async {
-      replacements++;
-      onReplace?.call();
-      return build(replacementHost = _HoldingHost());
-    },
-  );
+  /// Every model a test built, the replacements included, closed after it.
+  final built = <CommonEmbeddingModel>[];
+
+  CommonEmbeddingModel build(EmbeddingHost h) {
+    final model = CommonEmbeddingModel.withHost(
+      h,
+      activeBackend: PreferredBackend.cpu,
+      installedFiles: const [(name: 'm.tflite', bytes: 1)],
+      replacement: () async {
+        replacements++;
+        onReplace?.call();
+        return build(replacementHost = _HoldingHost());
+      },
+    );
+    built.add(model);
+    return model;
+  }
+
+  tearDown(() async {
+    for (final model in built) {
+      await model.close();
+    }
+    built.clear();
+  });
 
   setUp(() async {
     replacements = 0;

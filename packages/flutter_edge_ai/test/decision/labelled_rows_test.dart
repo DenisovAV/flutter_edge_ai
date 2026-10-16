@@ -1,5 +1,5 @@
-// EmbeddingDeciderCalibration.fromLabelled owns a copy of its rows, and a held-out row
-// may not repeat any option input — examples or description.
+// EmbeddingDeciderCalibration.fromLabelled owns a copy of its rows, and a
+// held-out row may not repeat any option input — examples or description.
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';

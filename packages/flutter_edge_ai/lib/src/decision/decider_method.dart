@@ -202,8 +202,8 @@ final class InferenceDeciderCalibration {
   final double? temperature;
 
   /// A probability in (0, 1): the decider abstains
-  /// (`AbstainReason.belowThreshold`, signal `AbstainSignalKind.topProbability`)
-  /// when the top probability is below it — unless [noneOption] ranked first,
+  /// (`AbstainReason.belowThreshold`, with the signal
+  /// `AbstainSignalKind.topProbability`) when the top probability is below it — unless [noneOption] ranked first,
   /// which is checked before it. Needs [temperature].
   final double? abstainBelow;
 

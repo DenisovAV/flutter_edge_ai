@@ -7,9 +7,10 @@
 // Configurations, each printed as `[calib]` lines:
 // - centroid + EmbeddingDeciderCalibration.crossFit() (core's default): every
 //   held-out row is test data;
-// - centroid + EmbeddingDeciderCalibration.fromLabelled(): two folds — calibrated on
-//   one paraphrase of each verb, tested on the other, then swapped — and the
-//   full set (what the app ships), whose own rows are training data;
+// - centroid + EmbeddingDeciderCalibration.fromLabelled(): two folds —
+//   calibrated on one paraphrase of each verb, tested on the other, then
+//   swapped — and the full set (what the app ships), whose own rows are
+//   training data;
 // - with --dart-define=TINY_ISLAND_MEASURE_LINEAR=true, the same for
 //   DeciderMethod.linear, with its fit time.
 //

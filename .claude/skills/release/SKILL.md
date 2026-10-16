@@ -824,7 +824,7 @@ Map the change to the skill that covers it:
 | STT, TTS, `VoiceSession` | `flutter-edge-ai-speech` |
 | embeddings, vector stores | `flutter-edge-ai-rag` |
 | `MemorySnapshot`, memory diagnostics | `flutter-edge-ai-diagnostics` |
-| `Decider`, `createDecider`/`loadDecider`, `DeciderOption`, `DeciderCalibration`, Jev Choice JSON | `flutter-edge-ai-decisions` |
+| `Decider`, `createDecider`/`loadDecider`, `DeciderOption`, `EmbeddingDeciderCalibration`, `InferenceDeciderCalibration`, Jev Choice JSON | `flutter-edge-ai-decisions` |
 
 **Do not go looking by hand.** Ask the diff which skills it puts in doubt:
 

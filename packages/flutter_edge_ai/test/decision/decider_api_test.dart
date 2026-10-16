@@ -3,7 +3,9 @@
 // Decider.chooseAll's shared embedding, the InferenceModel default and the
 // Jev JSON helpers.
 
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -47,7 +49,8 @@ Future<Decider> _decider(
   EmbeddingModel embedder, {
   List<DeciderOption>? options,
   DeciderMethod method = DeciderMethod.centroid,
-  DeciderCalibration calibration = const DeciderCalibration.none(),
+  EmbeddingDeciderCalibration calibration =
+      const EmbeddingDeciderCalibration.none(),
 }) => embedder.createDecider(
   options: options ?? _abc(),
   method: method,
@@ -59,14 +62,20 @@ Future<Decider> _decider(
 /// leaves toArtifact to the base class.
 final class _OtherDecider extends Decider {
   int calls = 0;
+  CancelToken? lastCancelToken;
+  DeciderRequest? lastRequest;
+
+  /// Runs inside decide, before it answers; a throw from it fails decide.
+  void Function()? onDecide;
   bool _closed = false;
 
   @override
   DeciderCapabilities get capabilities => const DeciderCapabilities(
-    maxOptions: 1,
-    supportsContext: true,
-    calibratedProbabilities: false,
     modalities: {EmbeddingModality.text},
+    calibratedProbabilities: false,
+    supportsContext: true,
+    supportsAmong: false,
+    storable: false,
   );
 
   @override
@@ -76,12 +85,12 @@ final class _OtherDecider extends Decider {
   bool get isClosed => _closed;
 
   @override
-  Future<DeciderAnswer> choose(
-    DeciderInput input, {
-    Iterable<String>? among,
-    int topK = 5,
-  }) async {
+  Future<DeciderAnswer> decide(DeciderRequest request) async {
+    final cancelToken = request.cancelToken;
     calls++;
+    lastCancelToken = cancelToken;
+    lastRequest = request;
+    onDecide?.call();
     return DeciderAnswer(
       choice: 'x',
       ranked: const [RankedOption(id: 'x', score: 0)],
@@ -91,7 +100,7 @@ final class _OtherDecider extends Decider {
         method: DeciderMethod.centroid,
         calibration: 'none',
         spaceId: 'other',
-        embedTime: Duration.zero,
+        encodeTime: Duration.zero,
         scoreTime: Duration.zero,
       ),
     );
@@ -128,12 +137,17 @@ void main() {
     final cases =
         <
           String,
-          (List<DeciderOption>, DeciderMethod, DeciderCalibration, Pattern)
+          (
+            List<DeciderOption>,
+            DeciderMethod,
+            EmbeddingDeciderCalibration,
+            Pattern,
+          )
         >{
           'no options': (
             [],
             DeciderMethod.centroid,
-            const DeciderCalibration.none(),
+            const EmbeddingDeciderCalibration.none(),
             'must not be empty',
           ),
           'duplicate ids': (
@@ -142,13 +156,13 @@ void main() {
               DeciderOption('a', description: 'y'),
             ],
             DeciderMethod.centroid,
-            const DeciderCalibration.none(),
+            const EmbeddingDeciderCalibration.none(),
             'share the id',
           ),
           'nothing to embed': (
             [DeciderOption('a')],
             DeciderMethod.centroid,
-            const DeciderCalibration.none(),
+            const EmbeddingDeciderCalibration.none(),
             'nothing to embed',
           ),
           'linear with one option': (
@@ -156,7 +170,7 @@ void main() {
               DeciderOption('a', examples: [_t('a1'), _t('a2')]),
             ],
             DeciderMethod.linear,
-            const DeciderCalibration.none(),
+            const EmbeddingDeciderCalibration.none(),
             'at least two options',
           ),
           'cross-fit with one input': (
@@ -165,25 +179,25 @@ void main() {
               DeciderOption('b', examples: [_t('b1'), _t('b2')]),
             ],
             DeciderMethod.centroid,
-            const DeciderCalibration.crossFit(),
-            'DeciderCalibration.minSimilarity',
+            const EmbeddingDeciderCalibration.crossFit(),
+            'EmbeddingDeciderCalibration.minSimilarity',
           ),
           'keep out of range': (
             _abc(),
             DeciderMethod.centroid,
-            const DeciderCalibration.crossFit(keep: 0),
+            const EmbeddingDeciderCalibration.crossFit(keep: 0),
             '(0, 1]',
           ),
           'threshold out of range': (
             _abc(),
             DeciderMethod.centroid,
-            const DeciderCalibration.minSimilarity(1.5),
+            const EmbeddingDeciderCalibration.minSimilarity(1.5),
             '[-1, 1]',
           ),
           'maxError out of range': (
             _abc(),
             DeciderMethod.centroid,
-            DeciderCalibration.fromLabelled([
+            EmbeddingDeciderCalibration.fromLabelled([
               (input: _t('about a'), optionId: 'a'),
             ], maxError: 1),
             '[0, 1)',
@@ -191,13 +205,13 @@ void main() {
           'no labelled rows': (
             _abc(),
             DeciderMethod.centroid,
-            DeciderCalibration.fromLabelled(const []),
+            EmbeddingDeciderCalibration.fromLabelled(const []),
             'needs labelled rows',
           ),
           'a labelled row for an unknown option': (
             _abc(),
             DeciderMethod.centroid,
-            DeciderCalibration.fromLabelled([
+            EmbeddingDeciderCalibration.fromLabelled([
               (input: _t('about a'), optionId: 'z'),
             ]),
             'does not have',
@@ -205,7 +219,9 @@ void main() {
           'a labelled row repeating an example': (
             _abc(),
             DeciderMethod.centroid,
-            DeciderCalibration.fromLabelled([(input: _t('a1'), optionId: 'a')]),
+            EmbeddingDeciderCalibration.fromLabelled([
+              (input: _t('a1'), optionId: 'a'),
+            ]),
             'repeats an option input',
           ),
         };
@@ -240,7 +256,7 @@ void main() {
       await expectLater(
         _decider(
           _embedder(),
-          calibration: DeciderCalibration.fromLabelled([
+          calibration: EmbeddingDeciderCalibration.fromLabelled([
             (input: _t('about a'), optionId: 'b'),
             (input: _t('about b'), optionId: 'a'),
           ]),
@@ -292,7 +308,7 @@ void main() {
           DeciderOption('a', description: 'option a'),
           DeciderOption('b', description: 'option b'),
         ],
-        calibration: const DeciderCalibration.minSimilarity(0.5),
+        calibration: const EmbeddingDeciderCalibration.minSimilarity(0.5),
       );
       expect((await decider.choose(_in('about b'))).choice, 'b');
       expect((await decider.choose(_in('nothing'))).choice, isNull);
@@ -346,7 +362,7 @@ void main() {
           embedderId: 'fake',
           cancelToken: token,
         ),
-        throwsA(isA<EmbeddingCancelledException>()),
+        throwsA(isA<DeciderCancelledException>()),
       );
     });
   });
@@ -368,7 +384,7 @@ void main() {
         expect(answer.probabilities, isNull);
         expect(answer.confidence, isNull);
         expect(answer.ranked.every((r) => r.probability == null), isTrue);
-        expect(answer.provenance.similarity, closeTo(scores[0], 1e-12));
+        expect(answer.provenance.abstainSignal, closeTo(scores[0], 1e-12));
         expect(answer.provenance.threshold, isNull);
         expect(answer.provenance.calibration, 'none');
         expect(answer.provenance.method, DeciderMethod.centroid);
@@ -398,6 +414,17 @@ void main() {
       final answer = await decider.choose(_in('half'));
       expect(answer.ranked.map((r) => r.id), ['b', 'a']);
       expect(answer.margin, 0);
+      // among names candidates; their order is the options', not among's.
+      final three = await _decider(
+        _embedder(),
+        options: [
+          DeciderOption('b', examples: [_t('b1')]),
+          DeciderOption('c', examples: [_t('c1')]),
+          DeciderOption('a', examples: [_t('a1')]),
+        ],
+      );
+      final among = await three.choose(_in('half'), among: const ['a', 'b']);
+      expect(among.ranked.map((r) => r.id), ['b', 'a']);
     });
 
     test('among restricts the candidates', () async {
@@ -428,7 +455,7 @@ void main() {
       expect(answer.abstainReason, AbstainReason.noCandidates);
       expect(answer.ranked, isEmpty);
       expect(answer.margin, 0);
-      expect(answer.provenance.similarity, isNull);
+      expect(answer.provenance.abstainSignal, isNull);
       expect(embedder.calls.length, before);
     });
 
@@ -437,10 +464,12 @@ void main() {
       () async {
         final embedder = _embedder();
         final probe = await _decider(embedder);
-        final atA = (await probe.choose(_in('about a'))).provenance.similarity!;
+        final atA = (await probe.choose(
+          _in('about a'),
+        )).provenance.abstainSignal!;
         final decider = await _decider(
           embedder,
-          calibration: DeciderCalibration.minSimilarity(atA),
+          calibration: EmbeddingDeciderCalibration.minSimilarity(atA),
         );
         final answered = await decider.choose(_in('about a'));
         expect(answered.choice, 'a');
@@ -449,7 +478,7 @@ void main() {
         expect(refused.choice, isNull);
         expect(refused.abstainReason, AbstainReason.belowThreshold);
         expect(refused.ranked, isNotEmpty, reason: 'still ranked');
-        expect(refused.provenance.similarity, lessThan(atA));
+        expect(refused.provenance.abstainSignal, lessThan(atA));
       },
     );
 
@@ -464,7 +493,7 @@ void main() {
             DeciderOption('a', examples: [_t('a1'), _t('a2')]),
             DeciderOption('b', examples: [_t('b1'), _t('b2')]),
           ],
-          calibration: const DeciderCalibration.crossFit(keep: 1),
+          calibration: const EmbeddingDeciderCalibration.crossFit(keep: 1),
         );
         // keep 1: the threshold is the lowest held-out signal. Every input's
         // nearest held-in centroid is its option's other input: a1·unit(a2) =
@@ -493,8 +522,10 @@ void main() {
     test('capabilities', () async {
       final decider = await _decider(_embedder());
       final capabilities = decider.capabilities;
-      expect(capabilities.maxOptions, isNull);
       expect(capabilities.calibratedProbabilities, isFalse);
+      expect(capabilities.supportsContext, isFalse);
+      expect(capabilities.supportsAmong, isTrue);
+      expect(capabilities.storable, isTrue);
       expect(capabilities.modalities, {EmbeddingModality.text});
       expect(decider.options.map((o) => o.id), ['a', 'b', 'c']);
     });
@@ -510,6 +541,64 @@ void main() {
       await expectLater(decider.choose(_in('about a')), throwsStateError);
     });
 
+    test(
+      'a cancelled token fails choose before anything is embedded',
+      () async {
+        final embedder = _embedder();
+        final decider = await _decider(embedder);
+        embedder.calls.clear();
+        await expectLater(
+          decider.choose(_in('about a'), cancelToken: CancelToken()..cancel()),
+          throwsA(isA<DeciderCancelledException>()),
+        );
+        expect(embedder.calls, isEmpty);
+      },
+    );
+
+    test('a cancel while the input is embedded drops the result', () async {
+      final embedder = _embedder();
+      final decider = await _decider(embedder);
+      final token = CancelToken();
+      embedder.hold = Completer<void>();
+      final answer = decider.choose(_in('about a'), cancelToken: token);
+      await pumpEventQueue();
+      expect(embedder.calls.last.$1, 'about a', reason: 'the embedding runs');
+      token.cancel();
+      embedder.hold!.complete();
+      await expectLater(answer, throwsA(isA<DeciderCancelledException>()));
+    });
+
+    test('a close while the input is embedded fails choose as a cancel, and '
+        'leaves the embedder open', () async {
+      final embedder = _embedder();
+      final decider = await _decider(embedder);
+      embedder.hold = Completer<void>();
+      final answer = decider.choose(_in('about a'));
+      await pumpEventQueue();
+      await decider.close();
+      embedder.hold!.complete();
+      await expectLater(answer, throwsA(isA<DeciderCancelledException>()));
+      expect(embedder.isClosed, isFalse);
+    });
+
+    test('the abstain signal is the top cosine, and says so', () async {
+      final decider = await _decider(
+        _embedder(),
+        calibration: const EmbeddingDeciderCalibration.minSimilarity(0.5),
+      );
+      final answer = await decider.choose(_in('about a'));
+      expect(answer.provenance.abstainSignalKind, AbstainSignalKind.topCosine);
+      expect(
+        answer.provenance.abstainSignal,
+        closeTo(answer.ranked.first.score, 1e-12),
+      );
+      expect(answer.provenance.threshold, 0.5);
+      expect(answer.provenance.method, DeciderMethod.centroid);
+      final none = await decider.choose(_in('about a'), among: const []);
+      expect(none.provenance.abstainSignal, isNull);
+      expect(none.provenance.abstainSignalKind, isNull);
+    });
+
     test('linear ranks by log-probability; calibrated probabilities over '
         'among renormalise', () async {
       final decider = await _decider(
@@ -517,7 +606,7 @@ void main() {
         method: DeciderMethod.linear,
         // 'a or b' is nearly a tie, labelled the runner-up: rows answered
         // right with room to spare cannot calibrate a temperature.
-        calibration: DeciderCalibration.fromLabelled([
+        calibration: EmbeddingDeciderCalibration.fromLabelled([
           (input: _t('about a'), optionId: 'a'),
           (input: _t('about b'), optionId: 'b'),
           (input: _t('a or b'), optionId: 'b'),
@@ -573,7 +662,63 @@ void main() {
       expect(shared.calls, [('about a', TaskType.sentenceSimilarity)]);
       expect(apart.calls, hasLength(1));
       expect(other.calls, 1);
-      expect(answers[2].provenance.embedTime, answers[0].provenance.embedTime);
+      expect(
+        answers[2].provenance.encodeTime,
+        answers[0].provenance.encodeTime,
+      );
+    });
+
+    test('a cancelled token fails it before embedding anything', () async {
+      final embedder = _embedder();
+      final decider = await _decider(embedder);
+      embedder.calls.clear();
+      await expectLater(
+        Decider.chooseAll(_in('about a'), [
+          decider,
+        ], cancelToken: CancelToken()..cancel()),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+      expect(embedder.calls, isEmpty);
+    });
+
+    test(
+      'its cancel token reaches a decider implemented outside core',
+      () async {
+        final other = _OtherDecider();
+        final token = CancelToken();
+        await Decider.chooseAll(_in('about a'), [other], cancelToken: token);
+        expect(other.lastCancelToken, same(token));
+      },
+    );
+
+    test('a cancel while the shared embedding runs drops it', () async {
+      final embedder = _embedder();
+      final first = await _decider(embedder);
+      final second = await _decider(embedder);
+      final token = CancelToken();
+      embedder.hold = Completer<void>();
+      final answers = Decider.chooseAll(_in('about a'), [
+        first,
+        second,
+      ], cancelToken: token);
+      await pumpEventQueue();
+      token.cancel();
+      embedder.hold!.complete();
+      await expectLater(answers, throwsA(isA<DeciderCancelledException>()));
+    });
+
+    test('a member closed while the shared embedding runs fails it as a '
+        'cancel', () async {
+      final embedder = _embedder();
+      final first = await _decider(embedder);
+      final second = await _decider(embedder);
+      embedder.hold = Completer<void>();
+      final answers = Decider.chooseAll(_in('about a'), [first, second]);
+      await pumpEventQueue();
+      await second.close();
+      embedder.hold!.complete();
+      await expectLater(answers, throwsA(isA<DeciderCancelledException>()));
+      expect(embedder.isClosed, isFalse);
     });
 
     test('refuses context before embedding anything', () async {
@@ -591,6 +736,117 @@ void main() {
         throwsA(isA<DeciderUnsupportedException>()),
       );
       expect(embedder.calls, isEmpty);
+    });
+  });
+
+  group('choose checks every decider\'s request before decide runs', () {
+    test('among, for a decider without supportsAmong', () async {
+      final other = _OtherDecider();
+      await expectLater(
+        other.choose(_in('about a'), among: const ['x']),
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('supportsAmong'),
+          ),
+        ),
+      );
+      expect(other.calls, 0);
+    });
+
+    test('a modality the decider does not take', () async {
+      final other = _OtherDecider();
+      await expectLater(
+        other.choose(DeciderInput(EmbeddingInput.audio(Uint8List(4)))),
+        throwsA(isA<DeciderUnsupportedException>()),
+      );
+      expect(other.calls, 0);
+    });
+
+    test('a topK below 1, and a token already cancelled', () async {
+      final other = _OtherDecider();
+      await expectLater(other.choose(_in('a'), topK: 0), throwsArgumentError);
+      await expectLater(
+        other.choose(_in('a'), cancelToken: CancelToken()..cancel()),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+      expect(other.calls, 0);
+    });
+
+    test('what it supports reaches decide: context, every candidate, the '
+        'token', () async {
+      final other = _OtherDecider();
+      final token = CancelToken();
+      await other.choose(
+        DeciderInput(
+          EmbeddingInput.text('a'),
+          context: [const Message(text: 'earlier', isUser: true)],
+        ),
+        topK: 2,
+        cancelToken: token,
+      );
+      final request = other.lastRequest!;
+      expect(request.input.context, hasLength(1));
+      expect(request.candidates, ['x']);
+      expect(request.topK, 2);
+      expect(request.cancelToken, same(token));
+    });
+
+    test('among reaches decide as known ids, each once, in option '
+        'order', () async {
+      final embedder = _embedder();
+      final decider = await _decider(embedder);
+      final answer = await decider.choose(
+        _in('about a'),
+        among: const ['c', 'a', 'c'],
+      );
+      expect(answer.ranked.map((r) => r.id).toSet(), {'a', 'c'});
+      expect(answer.ranked, hasLength(2));
+    });
+  });
+
+  group('a cancel during decide', () {
+    test('drops the answer of a decider that ignores the token', () async {
+      final token = CancelToken();
+      final other = _OtherDecider()..onDecide = token.cancel;
+      await expectLater(
+        other.choose(_in('a'), cancelToken: token),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+      expect(other.calls, 1);
+    });
+
+    test('turns an exception that follows it into the cancel', () async {
+      final token = CancelToken();
+      final other = _OtherDecider()
+        ..onDecide = () {
+          token.cancel();
+          throw const FormatException('the model failed after the cancel');
+        };
+      await expectLater(
+        other.choose(_in('a'), cancelToken: token),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+    });
+
+    test('lets an error (a bug) through', () async {
+      final token = CancelToken();
+      final other = _OtherDecider()
+        ..onDecide = () {
+          token.cancel();
+          throw StateError('a bug');
+        };
+      await expectLater(
+        other.choose(_in('a'), cancelToken: token),
+        throwsStateError,
+      );
+    });
+
+    test('an exception without a cancel arrives unchanged', () async {
+      final other = _OtherDecider()
+        ..onDecide = () => throw const FormatException('the model failed');
+      await expectLater(other.choose(_in('a')), throwsFormatException);
     });
   });
 
@@ -615,14 +871,169 @@ void main() {
   });
 
   group('InferenceModel.createDecider', () {
-    test('the default refuses with DeciderUnsupportedException', () async {
+    List<DeciderOption> listed() => [
+      DeciderOption('joy', description: 'happy wording'),
+      DeciderOption('anger'),
+      DeciderOption('none'),
+    ];
+
+    test('no engine scores options: after its checks it refuses, as a failed '
+        'future', () async {
+      for (final calibration in const [
+        InferenceDeciderCalibration(
+          temperature: 1.3,
+          abstainBelow: 0.6,
+          noneOption: 'none',
+        ),
+        InferenceDeciderCalibration(),
+      ]) {
+        await expectLater(
+          _Llm().createDecider(
+            question: 'Which emotion does the text express?',
+            options: listed(),
+            calibration: calibration,
+            cancelToken: CancelToken(),
+          ),
+          throwsA(
+            isA<DeciderUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('EmbeddingModel.createDecider'),
+            ),
+          ),
+        );
+      }
+    });
+
+    final refused =
+        <
+          String,
+          (String, List<DeciderOption>?, InferenceDeciderCalibration, String)
+        >{
+          'a blank question': (
+            '  ',
+            null,
+            const InferenceDeciderCalibration(),
+            'question',
+          ),
+          'no options': (
+            'Q?',
+            const [],
+            const InferenceDeciderCalibration(),
+            'options',
+          ),
+          'two options with one id': (
+            'Q?',
+            [DeciderOption('joy'), DeciderOption('joy')],
+            const InferenceDeciderCalibration(),
+            'share the id',
+          ),
+          'an option with examples': (
+            'Q?',
+            [
+              DeciderOption('joy', examples: [EmbeddingInput.text('yay')]),
+              DeciderOption('anger'),
+            ],
+            const InferenceDeciderCalibration(),
+            'takes no examples',
+          ),
+          'a temperature of 0': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(temperature: 0),
+            'temperature',
+          ),
+          'an infinite temperature': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(temperature: double.infinity),
+            'temperature',
+          ),
+          'abstainBelow without a temperature': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(abstainBelow: 0.5),
+            'needs a temperature',
+          ),
+          'abstainBelow of 1': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(temperature: 1, abstainBelow: 1),
+            '(0, 1)',
+          ),
+          'abstainBelow of 0': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(temperature: 1, abstainBelow: 0),
+            '(0, 1)',
+          ),
+          'a noneOption that is not an option': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(noneOption: 'neutral'),
+            'not one of the options',
+          ),
+        };
+    for (final MapEntry(
+          key: name,
+          value: (question, options, calibration, says),
+        )
+        in refused.entries) {
+      test('refuses $name before it asks for an engine', () async {
+        await expectLater(
+          _Llm().createDecider(
+            question: question,
+            options: options ?? listed(),
+            calibration: calibration,
+          ),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => '${e.name} ${e.message}',
+              'message',
+              contains(says),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('a cancelled token fails it after the checks', () async {
       await expectLater(
-        _Llm().createDecider(options: _abc()),
+        _Llm().createDecider(
+          question: 'Q?',
+          options: listed(),
+          calibration: const InferenceDeciderCalibration(),
+          cancelToken: CancelToken()..cancel(),
+        ),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+    });
+  });
+
+  group('optionScoring is an InferenceModel method', () {
+    test('EmbeddingModel.createDecider refuses it', () async {
+      await expectLater(
+        _decider(_embedder(), method: DeciderMethod.optionScoring),
         throwsA(
-          isA<DeciderUnsupportedException>().having(
+          isA<ArgumentError>().having(
             (e) => e.message,
             'message',
-            contains('EmbeddingModel.createDecider'),
+            contains('InferenceModel'),
+          ),
+        ),
+      );
+    });
+
+    test('an artifact naming it is refused', () async {
+      final artifact = (await _decider(_embedder())).toArtifact()
+        ..['method'] = 'optionScoring';
+      await expectLater(
+        _embedder().loadDecider(artifact, embedderId: 'fake'),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('optionScoring'),
           ),
         ),
       );
@@ -680,7 +1091,7 @@ void main() {
 
       final calibrated = await (await _decider(
         _embedder(),
-        calibration: DeciderCalibration.fromLabelled([
+        calibration: EmbeddingDeciderCalibration.fromLabelled([
           (input: _t('about a'), optionId: 'a'),
           (input: _t('about b'), optionId: 'b'),
           (input: _t('a or b'), optionId: 'b'),
@@ -697,7 +1108,7 @@ void main() {
 
       final abstained = await (await _decider(
         _embedder(),
-        calibration: const DeciderCalibration.minSimilarity(0.99),
+        calibration: const EmbeddingDeciderCalibration.minSimilarity(0.99),
       )).choose(_in('nothing'));
       expect(abstained.toJevJson(), {'type': 'choice', 'choice': null});
     });
@@ -710,7 +1121,7 @@ void main() {
       final decider = await _decider(
         _embedder(),
         options: options,
-        calibration: const DeciderCalibration.minSimilarity(0.5),
+        calibration: const EmbeddingDeciderCalibration.minSimilarity(0.5),
       );
       expect(
         (await decider.choose(_in('about b'))).toJevJson()['choice'],

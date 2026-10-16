@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-decisions
-description: Use when an on-device app must pick one of N options for an input — an intent, an action, a screen, a route, a label, or the few tools out of hundreds to offer a small function-calling model — and say "none of these" instead of guessing, with flutter_edge_ai's experimental Decider API (EmbeddingModel.createDecider, DeciderOption, DeciderCalibration, DeciderAnswer, Decider.chooseAll, toArtifact/loadDecider). Also use for Jev Choice JSON on device, when DeciderSpaceMismatchException or DeciderUnsupportedException is thrown, when choose() always abstains or never does, when createDecider refuses a calibration, and when a decider stops working because the embedder was closed. For semantic search over documents, use flutter-edge-ai-rag.
+description: Use when an on-device app must pick one of N options for an input — an intent, an action, a screen, a route, a label, or the few tools out of hundreds to offer a small function-calling model — and say "none of these" instead of guessing, with flutter_edge_ai's experimental Decider API (EmbeddingModel.createDecider, InferenceModel.createDecider, DeciderOption, EmbeddingDeciderCalibration, DeciderAnswer, Decider.chooseAll, toArtifact/loadDecider). Also use for Jev Choice JSON on device, when DeciderSpaceMismatchException or DeciderUnsupportedException is thrown, when choose() always abstains or never does, when createDecider refuses a calibration, and when a decider stops working because the embedder was closed. For semantic search over documents, use flutter-edge-ai-rag.
 ---
 
 # Deciders: pick one of N options on device
@@ -14,19 +14,28 @@ CI that fails on warnings fail.
 ## Rules
 
 1. A decider comes from a model: `EmbeddingModel.createDecider` works with every
-   embedding backend. `InferenceModel.createDecider` throws
-   `DeciderUnsupportedException` — no engine scores options yet.
+   embedding backend. `InferenceModel.createDecider(question:, options:,
+   calibration:)` — a small LLM trained on the question scores each option —
+   throws `DeciderUnsupportedException` in 2.4.0: no engine scores options
+   yet. Both return a `Decider` whose `DeciderAnswer` reads the same, so code
+   that reads answers (choice, ranked, abstainReason, provenance) needs no
+   change when one replaces the other; check `decider.capabilities`
+   (`supportsAmong`, `storable`, `calibratedProbabilities`, `modalities`)
+   before using what only one kind has.
 2. Options and requests are embedded with `TaskType.sentenceSimilarity`. Give
    each option 5–30 example requests (`examples:`); a `description` alone is
    zero-shot and much weaker (CLINC150, 150 options: 0.75 accuracy from label
    names alone, 0.92–0.94 from 5–10 examples per option, centroid).
 3. Abstaining is the hard part, and a softmax cannot do it: with two options any
    request looks confident. The abstain signal is the request's highest cosine
-   to an option centroid. The default `DeciderCalibration.crossFit()` fits its
-   threshold from the options' own inputs and needs at least two inputs per
-   option. A zero-shot option set (descriptions only) cannot cross-fit: use
-   `DeciderCalibration.none()`, or `DeciderCalibration.minSimilarity(t)` with a
-   `t` you MEASURED for your model file and prompt — never a guessed value.
+   to an option centroid (`answer.provenance.abstainSignal`, of the kind
+   `AbstainSignalKind.topCosine`). The default
+   `EmbeddingDeciderCalibration.crossFit()` fits its threshold from the
+   options' own inputs and needs at least two inputs per option. A zero-shot
+   option set (descriptions only) cannot cross-fit: use
+   `EmbeddingDeciderCalibration.none()`, or
+   `EmbeddingDeciderCalibration.minSimilarity(t)` with a `t` you MEASURED for
+   your model file and prompt — never a guessed value.
    With ~5 examples per option among many options the cross-fit's error on
    answered requests can exceed a 5 % budget (CLINC150, 150 options: 6 %);
    there, calibrate with `fromLabelled` on held-out requests. It sees only
@@ -38,10 +47,10 @@ CI that fails on warnings fail.
    `answer.choice == null`.
 4. A raw score is not a probability. `RankedOption.probability`,
    `DeciderAnswer.probabilities` and `DeciderAnswer.confidence` are null unless
-   the decider was calibrated with `DeciderCalibration.fromLabelled` on held-out
-   labelled requests. `fromLabelled` refuses (`ArgumentError`) rows it cannot
-   calibrate on — all answered right with room to spare, or a single row —
-   so give it real, partly hard, requests.
+   the decider was calibrated with `EmbeddingDeciderCalibration.fromLabelled`
+   on held-out labelled requests. `fromLabelled` refuses (`ArgumentError`)
+   rows it cannot calibrate on — all answered right with room to spare, or a
+   single row — so give it real, partly hard, requests.
 5. A decider borrows its embedder and never closes it. On an embedder
    `FlutterEdgeAi.getActiveEmbedder()` returned, the decider follows core: when
    that embedder is closed (core widened it for images or audio, another
@@ -60,10 +69,13 @@ CI that fails on warnings fail.
    `embedderId:`, which then names the space instead of the files.
 7. Inputs are never truncated: an over-long request fails with
    `EmbeddingInputTooLongException`, naming the option and input when it is an
-   option's. `DeciderInput.context` must be empty for an embedding decider, or
-   `choose` throws `DeciderUnsupportedException`.
-8. `ScoreKind`, `AbstainReason` and `DeciderMethod` are classes with constant
-   values, not enums: a `switch` over them needs a default branch.
+   option's. `DeciderInput.context` must be empty for every decider in this
+   release, or `choose` throws `DeciderUnsupportedException`.
+8. `ScoreKind`, `AbstainReason`, `AbstainSignalKind` and `DeciderMethod` are
+   classes with constant values, not enums: a `switch` over them needs a
+   default branch. Describe an abstention from `abstainSignalKind`, not by
+   assuming a cosine: a language-model decider abstains on a probability
+   (`topProbability`) or with `AbstainReason.noneOption`.
 
 ## Route requests to actions
 
@@ -118,7 +130,7 @@ switch (answer.choice) {
     print('abstained: ${answer.abstainReason}');
   case final id:
     print('$id, margin ${answer.margin}, '
-        'cosine ${answer.provenance.similarity}');
+        'cosine ${answer.provenance.abstainSignal}');
 }
 ```
 
@@ -140,7 +152,7 @@ final toolDecider = await embedder.createDecider(
     for (final tool in myTools)
       DeciderOption(tool.name, description: tool.description),
   ],
-  calibration: const DeciderCalibration.none(),
+  calibration: const EmbeddingDeciderCalibration.none(),
 );
 final picked = await toolDecider.choose(
   DeciderInput(EmbeddingInput.text(prompt)),
@@ -185,7 +197,7 @@ final tone = await embedder.createDecider(
     DeciderOption('calm', description: 'calm, neutral wording'),
     DeciderOption('upset', description: 'angry or upset wording'),
   ],
-  calibration: const DeciderCalibration.none(),
+  calibration: const EmbeddingDeciderCalibration.none(),
 );
 final answers = await Decider.chooseAll(
   DeciderInput(EmbeddingInput.text('the box was crushed, I am furious')),
@@ -209,13 +221,16 @@ print('${answers[0].choice} / ${answers[1].choice}');
   fits (Chrome 155, M4 Pro, release build, 150 × 10 synthetic rows:
   10.2–10.8 s dart2js / 11.4–11.8 s wasm, longest 16 ms-timer gap 20–23 ms).
   Scores are log-probabilities (`ScoreKind.logprob`).
-- `DeciderCalibration.crossFit({keep: 0.95})` (default), `.minSimilarity(t)`,
-  `.none()`, and `.fromLabelled(rows, maxError: 0.05)`, which also fits a
-  softmax temperature, so answers carry `probabilities` and a Jev `confidence`.
+- `EmbeddingDeciderCalibration.crossFit({keep: 0.95})` (default),
+  `.minSimilarity(t)`, `.none()`, and `.fromLabelled(rows, maxError: 0.05)`,
+  which also fits a softmax temperature, so answers carry `probabilities` and
+  a Jev `confidence`.
 - `createDecider(cancelToken:, onProgress:)`: the token stops the embedding and
-  the fit (`EmbeddingCancelledException`, no decider); `onProgress(done,
+  the fit (`DeciderCancelledException`, no decider); `onProgress(done,
   total)` counts the embedded inputs for a progress bar, not the fit after
-  them.
+  them. `choose(cancelToken:)` and `Decider.chooseAll(cancelToken:)` fail with
+  `DeciderCancelledException` too, as does a `choose` running when its
+  decider is closed.
 
 ## Store and restore
 
@@ -244,8 +259,14 @@ backend cannot tell WebGPU from WASM: pass `embedderId:` to both
 `createDecider` and `loadDecider` — an id that names the weights (and the
 backend, when the model reports none). It replaces the installed-file check.
 
-A decider of your own (or a test fake) `extends Decider`; `toArtifact()`
-defaults to throwing `DeciderUnsupportedException`.
+A decider of your own (or a test fake) `extends Decider` and implements
+`decide(DeciderRequest request)` with `capabilities`, `options`, `isClosed`
+and `close()`; `toArtifact()` defaults to throwing
+`DeciderUnsupportedException`. Do not override `choose`: it is core's
+(`@nonVirtual`), checks the request against `capabilities` (`among`, context,
+input modalities, `topK`, the cancel token) and then calls `decide` with the
+candidates as option ids. An input modality the decider does not take is a
+`DeciderUnsupportedException` for every decider.
 
 ## Jev Choice JSON
 
@@ -262,11 +283,11 @@ final jevOptions = DeciderOption.fromJevChoice({
 // PLACEHOLDER — measure the threshold for your model file and prompt; this
 // value is not one (0.875 was measured for EmbeddingGemma 2 int4 text 270m
 // with 5–10 examples per option, not for descriptions alone). Without a
-// measured value, use DeciderCalibration.none() and never abstain.
+// measured value, use EmbeddingDeciderCalibration.none() and never abstain.
 const measuredThreshold = 0.87;
 final jevDecider = await embedder.createDecider(
   options: jevOptions,
-  calibration: DeciderCalibration.minSimilarity(measuredThreshold),
+  calibration: EmbeddingDeciderCalibration.minSimilarity(measuredThreshold),
 );
 final jevAnswer = await jevDecider.choose(
   DeciderInput(EmbeddingInput.text(question)),

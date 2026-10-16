@@ -6,9 +6,8 @@ import 'dart:isolate';
 
 import 'package:meta/meta.dart' show visibleForTesting;
 
-import '../embedding/embedding_exceptions.dart'
-    show EmbeddingCancelledException;
 import '../model_management/cancel_token.dart' show CancelToken;
+import 'decider_exceptions.dart' show DeciderCancelledException;
 import 'decider_fit.dart';
 
 const _cancelled = 'createDecider was cancelled.';
@@ -25,13 +24,13 @@ int debugLiveDeciderFits() => _liveFits;
 /// copy. A failure of the fit arrives as itself, with the isolate's stack.
 ///
 /// [cancelToken] kills the isolate at once (`Isolate.immediate`) and fails
-/// the call with `EmbeddingCancelledException`.
+/// the call with `DeciderCancelledException`.
 Future<DeciderFit> runDeciderFit(
   DeciderFitRequest request, {
   CancelToken? cancelToken,
 }) {
   if (cancelToken?.isCancelled ?? false) {
-    return Future.error(const EmbeddingCancelledException(_cancelled));
+    return Future.error(const DeciderCancelledException(_cancelled));
   }
   final result = Completer<DeciderFit>();
   final port = RawReceivePort();
@@ -64,7 +63,7 @@ Future<DeciderFit> runDeciderFit(
       default:
         // onExit (null) without a result: killed by a cancel, or ended.
         if (cancelled) {
-          result.completeError(const EmbeddingCancelledException(_cancelled));
+          result.completeError(const DeciderCancelledException(_cancelled));
         } else {
           result.completeError(
             RemoteError('The decider fit ended without a result.', ''),
@@ -80,7 +79,7 @@ Future<DeciderFit> runDeciderFit(
       link.onCancel = null;
       isolate?.kill(priority: Isolate.immediate);
       if (!result.isCompleted) {
-        result.completeError(const EmbeddingCancelledException(_cancelled));
+        result.completeError(const DeciderCancelledException(_cancelled));
       }
     };
     _listenForCancel(cancelToken, link);

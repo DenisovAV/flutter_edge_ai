@@ -71,15 +71,27 @@ String describeIslandAbstain(DeciderAnswer answer) {
   if (reason == AbstainReason.belowThreshold) {
     final signal = answer.provenance.abstainSignal;
     final threshold = answer.provenance.threshold;
-    final closest = best == null ? '' : ', ${best.id},';
-    if (answer.provenance.abstainSignalKind ==
-        AbstainSignalKind.topProbability) {
-      return 'Nothing on the island fits: the likeliest action$closest has '
+    final kind = answer.provenance.abstainSignalKind;
+    if (kind == AbstainSignalKind.topProbability) {
+      // The top probability is the best-ranked action's.
+      final likeliest = best == null ? '' : ', ${best.id},';
+      return 'Nothing on the island fits: the likeliest action$likeliest has '
           'p ${_percent(signal)}, under the ${_percent(threshold)} it needs.';
     }
-    return 'Nothing on the island fits: the closest action$closest is at '
-        'cosine ${signal?.toStringAsFixed(3) ?? '?'}, under the '
-        '${threshold?.toStringAsFixed(3) ?? '?'} it needs.';
+    if (kind == AbstainSignalKind.topCosine) {
+      // The top cosine is the best-ranked action's only for centroid; a
+      // linear decider ranks by its own scores.
+      final closest =
+          best == null || answer.provenance.method != DeciderMethod.centroid
+          ? ''
+          : ', ${best.id},';
+      return 'Nothing on the island fits: the closest action$closest is at '
+          'cosine ${signal?.toStringAsFixed(3) ?? '?'}, under the '
+          '${threshold?.toStringAsFixed(3) ?? '?'} it needs.';
+    }
+    // A signal of a kind this app does not know: say what it is.
+    return 'Nothing on the island fits: its ${kind?.name ?? 'abstain'} signal '
+        '$signal is under the $threshold it needs.';
   }
   if (reason == AbstainReason.noneOption) {
     return 'Nothing on the island fits: the model chose '
@@ -91,8 +103,14 @@ String describeIslandAbstain(DeciderAnswer answer) {
   return 'Abstained (${reason?.name ?? 'no reason given'}).';
 }
 
-String _percent(double? p) =>
-    p == null ? '?' : '${(p * 100).toStringAsFixed(0)}%';
+/// A probability with one decimal, without a trailing ".0": 0.598 is
+/// "59.8%" and 0.6 is "60%", so a signal just under its threshold never reads
+/// as equal to it.
+String _percent(double? p) {
+  if (p == null) return '?';
+  final text = (p * 100).toStringAsFixed(1);
+  return '${text.endsWith('.0') ? text.substring(0, text.length - 2) : text}%';
+}
 
 /// The line under the HUD: how many actions, how long. The input's share is
 /// an embedding, or an inference decider's prompt.

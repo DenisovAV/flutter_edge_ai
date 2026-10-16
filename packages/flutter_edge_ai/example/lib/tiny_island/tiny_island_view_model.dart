@@ -524,6 +524,13 @@ final class TinyIslandViewModel extends ChangeNotifier {
     final DeciderAnswer answer;
     try {
       answer = await decider.choose(input);
+    } on DeciderCancelledException catch (e) {
+      // The decider was closed under the request (the screen reopened with
+      // another model, or went away) or the request was cancelled: nobody
+      // waits for this answer, and the Decider is not broken.
+      debugPrint('[TinyIsland] deciding "$text" was dropped: $e');
+      _set(() => _turns.remove(turn));
+      return;
     } catch (e, st) {
       debugPrint('[TinyIsland] deciding "$text" failed: $e\n$st');
       // A closed embedder (core could not serve another), a decider error

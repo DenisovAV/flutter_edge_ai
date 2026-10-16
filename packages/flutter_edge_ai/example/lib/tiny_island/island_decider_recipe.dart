@@ -21,7 +21,17 @@ final class IslandDeciderRecipe {
     required this.calibration,
     List<IslandHeldOutRequest> calibrationRows = const [],
   }) : options = List.unmodifiable(options),
-       calibrationRows = List.unmodifiable(calibrationRows);
+       calibrationRows = List.unmodifiable(calibrationRows) {
+    // The fingerprint names the labelled rows through [calibrationRows]: a
+    // labelled recipe without them would share the name of every other.
+    if (calibration.kind == 'labelled' && this.calibrationRows.isEmpty) {
+      throw ArgumentError.value(
+        calibrationRows,
+        'calibrationRows',
+        'a fromLabelled calibration needs its rows here too',
+      );
+    }
+  }
 
   final List<DeciderOption> options;
   final DeciderMethod method;

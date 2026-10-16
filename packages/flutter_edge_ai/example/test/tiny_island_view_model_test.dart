@@ -63,6 +63,11 @@ IslandDeciderRecipe _testRecipe(List<IslandAction> catalog) =>
       calibration: const EmbeddingDeciderCalibration.minSimilarity(0.5),
     );
 
+/// The fingerprint of the fixed recipe in the recipe tests: the calibration
+/// hashed by its values. Hashing its toString() (which names the class) gave
+/// another value, and every rename would refit every stored decider.
+const _pinnedFingerprint = '4958db1e';
+
 void main() {
   final catalog = buildIslandCatalog();
 
@@ -192,6 +197,33 @@ void main() {
       );
       expect(otherRows.fingerprint, isNot(a.fingerprint));
       expect(a.calibrationLabel, 'calibrated on 144 held-out requests');
+    });
+
+    test('the fingerprint hashes the calibration\'s values, not its class '
+        'name: a fixed recipe keeps one fingerprint', () {
+      final recipe = IslandDeciderRecipe(
+        options: [
+          DeciderOption('a', description: 'first'),
+          DeciderOption('b', examples: [EmbeddingInput.text('second')]),
+        ],
+        method: DeciderMethod.centroid,
+        calibration: const EmbeddingDeciderCalibration.minSimilarity(0.8),
+      );
+      expect(recipe.fingerprint, _pinnedFingerprint);
+    });
+
+    test('a labelled recipe without its rows is refused: it would share '
+        'every other labelled recipe\'s fingerprint', () {
+      expect(
+        () => IslandDeciderRecipe(
+          options: islandDeciderOptions(catalog),
+          method: DeciderMethod.centroid,
+          calibration: EmbeddingDeciderCalibration.fromLabelled([
+            (input: EmbeddingInput.text('jump'), optionId: 'jump'),
+          ]),
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('the fingerprint follows the calibration\'s values', () {
@@ -540,6 +572,26 @@ void main() {
       expect(vm.suggestModelList, isTrue);
       expect(vm.deciding, isFalse);
     });
+
+    test(
+      'a cancelled decision drops its turn; the screen stays ready',
+      () async {
+        late ScriptedDecider scripted;
+        final vm = await openVm(
+          prepare: _scripted(catalog, (d) => scripted = d),
+        );
+        scripted.failNext = const DeciderCancelledException(
+          'The decider was closed while it was deciding.',
+        );
+        await vm.submit('jump');
+        expect(vm.status, TinyIslandStatus.ready);
+        expect(vm.error, isNull);
+        expect(vm.turns, isEmpty);
+        expect(vm.deciding, isFalse);
+        await vm.submit('jump');
+        expect(stage.performed, ['jump']);
+      },
+    );
 
     test(
       'an input error stays on its turn; the Decider keeps working',
@@ -1134,6 +1186,72 @@ void main() {
         });
       },
     );
+
+    group('describeIslandAbstain', () {
+      DeciderAnswer belowThreshold(
+        double signal,
+        double threshold,
+        AbstainSignalKind kind,
+        DeciderMethod method,
+      ) => DeciderAnswer(
+        choice: null,
+        ranked: const [RankedOption(id: 'open(chest)', score: -0.4)],
+        scoreKind: ScoreKind.logprob,
+        margin: double.infinity,
+        abstainReason: AbstainReason.belowThreshold,
+        provenance: DeciderProvenance(
+          method: method,
+          calibration: 'crossFit',
+          encodeTime: Duration.zero,
+          scoreTime: Duration.zero,
+          threshold: threshold,
+          abstainSignal: signal,
+          abstainSignalKind: kind,
+        ),
+      );
+
+      test('a probability just under its threshold never reads as equal', () {
+        expect(
+          describeIslandAbstain(
+            belowThreshold(
+              0.598,
+              0.6,
+              AbstainSignalKind.topProbability,
+              DeciderMethod.optionScoring,
+            ),
+          ),
+          'Nothing on the island fits: the likeliest action, open(chest), '
+          'has p 59.8%, under the 60% it needs.',
+        );
+      });
+
+      test('under linear the best-ranked action is not the closest by '
+          'cosine, so none is named', () {
+        expect(
+          describeIslandAbstain(
+            belowThreshold(
+              0.7,
+              0.8,
+              AbstainSignalKind.topCosine,
+              DeciderMethod.linear,
+            ),
+          ),
+          'Nothing on the island fits: the closest action is at cosine '
+          '0.700, under the 0.800 it needs.',
+        );
+        expect(
+          describeIslandAbstain(
+            belowThreshold(
+              0.7,
+              0.8,
+              AbstainSignalKind.topCosine,
+              DeciderMethod.centroid,
+            ),
+          ),
+          contains('the closest action, open(chest), is at cosine'),
+        );
+      });
+    });
 
     testWidgets('an answer with nothing ranked renders', (tester) async {
       final vm = await tester.runAsync(() => vmAfter('jump', empty: true));

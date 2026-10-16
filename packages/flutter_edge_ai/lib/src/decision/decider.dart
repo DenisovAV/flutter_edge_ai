@@ -490,17 +490,21 @@ final class DeciderAnswer {
   /// copied.
   ///
   /// Throws [ArgumentError] for an answer that contradicts itself: exactly
-  /// one of [choice] and [abstainReason] is set; [choice] is the first of
-  /// [ranked] when [ranked] is not empty; [ranked] is sorted by score,
-  /// highest first; [confidence] is in [0, 1] and only given with
-  /// [probabilities]; a [RankedOption.probability] equals that option's
-  /// entry in [probabilities] when both are given; the provenance's abstain
+  /// one of [choice] and [abstainReason] is set; a [choice] is the first of a
+  /// non-empty [ranked]; [ranked] has each id once, no NaN score, and is
+  /// sorted by score, highest first; [margin] is not NaN and not negative;
+  /// [confidence] is in [0, 1] and only given with [probabilities];
+  /// [probabilities] are each in [0, 1], sum to 1 (within 1e-6) and cover
+  /// every ranked option, whose [RankedOption.probability] is its entry there
+  /// — and every [RankedOption.probability] is null without them; the
+  /// provenance's abstain
   /// signal and its kind are both set or both null; an answer that abstains
   /// with [AbstainReason.belowThreshold] has its signal below the threshold
   /// (both set), and one that chooses with both set has it at or above;
   /// [AbstainReason.noneOption] comes with candidates in [ranked] and may
   /// have its signal on either side (the none option wins first);
-  /// [AbstainReason.noCandidates] comes with nothing ranked and no signal.
+  /// [AbstainReason.noCandidates] comes with nothing ranked, no signal, no
+  /// probabilities and no confidence.
   DeciderAnswer({
     required this.choice,
     required List<RankedOption> ranked,
@@ -551,19 +555,85 @@ final class DeciderAnswer {
         throw ArgumentError.value(c, 'confidence', 'must be in [0, 1]');
       }
     }
-    if (p != null) {
-      for (final r in this.ranked) {
-        if (r.probability case final rp? when rp != p[r.id]) {
+    _checkRanked();
+    _checkProbabilities();
+    _checkAbstention();
+  }
+
+  void _checkRanked() {
+    if (choice != null && ranked.isEmpty) {
+      throw ArgumentError.value(
+        ranked,
+        'ranked',
+        'an answer that chooses $choice ranks it first; ranked is empty',
+      );
+    }
+    final ids = <String>{};
+    for (final r in ranked) {
+      if (!ids.add(r.id)) {
+        throw ArgumentError.value(
+          r.id,
+          'ranked',
+          'holds option "${r.id}" twice',
+        );
+      }
+      if (r.score.isNaN) {
+        throw ArgumentError.value(
+          r.score,
+          'ranked',
+          'option "${r.id}" has a NaN score',
+        );
+      }
+    }
+    if (margin.isNaN || margin < 0) {
+      throw ArgumentError.value(
+        margin,
+        'margin',
+        'is the best score minus the runner-up\'s: not NaN, not negative',
+      );
+    }
+  }
+
+  void _checkProbabilities() {
+    final p = probabilities;
+    if (p == null) {
+      for (final r in ranked) {
+        if (r.probability != null) {
           throw ArgumentError.value(
-            rp,
+            r.probability,
             'ranked',
-            'option "${r.id}" has probability $rp, but probabilities says '
-                '${p[r.id]}',
+            'option "${r.id}" has a probability, but the answer has no '
+                'probabilities',
           );
         }
       }
+      return;
     }
-    _checkAbstention();
+    var sum = 0.0;
+    for (final MapEntry(key: id, value: value) in p.entries) {
+      if (!(value >= 0 && value <= 1)) {
+        throw ArgumentError.value(
+          value,
+          'probabilities',
+          'option "$id" has a probability outside [0, 1]',
+        );
+      }
+      sum += value;
+    }
+    if (!((sum - 1).abs() <= 1e-6)) {
+      throw ArgumentError.value(sum, 'probabilities', 'must sum to 1');
+    }
+    for (final r in ranked) {
+      final entry = p[r.id];
+      if (entry == null || r.probability != entry) {
+        throw ArgumentError.value(
+          r.probability,
+          'ranked',
+          'option "${r.id}" has probability ${r.probability}, but '
+              'probabilities says $entry',
+        );
+      }
+    }
   }
 
   void _checkAbstention() {
@@ -603,6 +673,12 @@ final class DeciderAnswer {
       );
     }
     if (identical(reason, AbstainReason.noCandidates)) {
+      if (probabilities != null || confidence != null) {
+        throw ArgumentError(
+          'An answer that abstains noCandidates had no candidate to give a '
+          'probability or a confidence.',
+        );
+      }
       if (ranked.isNotEmpty) {
         throw ArgumentError.value(
           ranked,

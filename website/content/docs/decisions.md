@@ -119,10 +119,12 @@ an input the model was not loaded for still fails, as with candidates).
 `ScoreKind`, `AbstainReason`, `AbstainSignalKind` and `DeciderMethod` are
 classes with constant values, not enums, so a value added in a later release
 does not break your `switch` — give it a default branch. A `DeciderAnswer`
-checks itself: exactly one of `choice` and `abstainReason`, `choice` first in
-`ranked`, `ranked` highest first, `confidence` in [0, 1] and only with
-`probabilities`, a choice only with the abstain signal at or above the
-threshold and `belowThreshold` only below it. A language-model decider whose
+checks itself: exactly one of `choice` and `abstainReason`; a `choice` first
+in a non-empty `ranked`; `ranked` highest first, each option once, no NaN
+score; `margin` not negative; `confidence` in [0, 1] and only with
+`probabilities`; `probabilities` in [0, 1], summing to 1 and matching every
+ranked option's `probability`; a choice only with the abstain signal at or
+above the threshold and `belowThreshold` only below it. A language-model decider whose
 "none of these" option ranks first abstains with `noneOption` whatever its
 signal.
 

@@ -123,6 +123,70 @@ void main() {
         abstainReason: AbstainReason.noCandidates,
         provenance: _signal(0.3, 0.5),
       ),
+      'a choice with nothing ranked': () =>
+          _answer(ranked: const [], probabilities: null, confidence: null),
+      'an option ranked twice': () => _answer(
+        ranked: const [
+          RankedOption(id: 'a', score: 0.9, probability: 0.7),
+          RankedOption(id: 'a', score: 0.5, probability: 0.7),
+        ],
+      ),
+      'a NaN score, alone': () => _answer(
+        ranked: const [RankedOption(id: 'a', score: double.nan)],
+        probabilities: null,
+        confidence: null,
+      ),
+      'a NaN margin': () => DeciderAnswer(
+        choice: 'a',
+        ranked: const [RankedOption(id: 'a', score: 0.9)],
+        scoreKind: ScoreKind.cosine,
+        margin: double.nan,
+        provenance: _provenance,
+      ),
+      'a negative margin': () => DeciderAnswer(
+        choice: 'a',
+        ranked: const [RankedOption(id: 'a', score: 0.9)],
+        scoreKind: ScoreKind.cosine,
+        margin: -0.1,
+        provenance: _provenance,
+      ),
+      'a probability above 1': () => _answer(
+        ranked: const [RankedOption(id: 'a', score: 0.9, probability: 1.5)],
+        probabilities: const {'a': 1.5, 'b': -0.5},
+        confidence: null,
+      ),
+      'probabilities that do not sum to 1': () => _answer(
+        probabilities: const {'a': 0.7, 'b': 0.2},
+        ranked: const [
+          RankedOption(id: 'a', score: 0.9, probability: 0.7),
+          RankedOption(id: 'b', score: 0.5, probability: 0.2),
+        ],
+      ),
+      'a ranked option missing from probabilities': () => _answer(
+        probabilities: const {'a': 1.0},
+        ranked: const [
+          RankedOption(id: 'a', score: 0.9, probability: 1.0),
+          RankedOption(id: 'b', score: 0.5),
+        ],
+      ),
+      'a ranked option without its probability': () => _answer(
+        ranked: const [
+          RankedOption(id: 'a', score: 0.9, probability: 0.7),
+          RankedOption(id: 'b', score: 0.5),
+        ],
+      ),
+      'a ranked probability without probabilities': () => _answer(
+        probabilities: null,
+        confidence: null,
+        ranked: const [RankedOption(id: 'a', score: 0.9, probability: 0.7)],
+      ),
+      'noCandidates with probabilities': () => _answer(
+        choice: null,
+        ranked: const [],
+        confidence: null,
+        probabilities: const {'a': 1.0},
+        abstainReason: AbstainReason.noCandidates,
+      ),
     };
     for (final MapEntry(key: name, value: build) in cases.entries) {
       test(name, () => expect(build, throwsArgumentError));

@@ -677,6 +677,36 @@ void main() {
       },
     );
 
+    test('a cancel while the shared embedding runs drops it', () async {
+      final embedder = _embedder();
+      final first = await _decider(embedder);
+      final second = await _decider(embedder);
+      final token = CancelToken();
+      embedder.hold = Completer<void>();
+      final answers = Decider.chooseAll(_in('about a'), [
+        first,
+        second,
+      ], cancelToken: token);
+      await pumpEventQueue();
+      token.cancel();
+      embedder.hold!.complete();
+      await expectLater(answers, throwsA(isA<DeciderCancelledException>()));
+    });
+
+    test('a member closed while the shared embedding runs fails it as a '
+        'cancel', () async {
+      final embedder = _embedder();
+      final first = await _decider(embedder);
+      final second = await _decider(embedder);
+      embedder.hold = Completer<void>();
+      final answers = Decider.chooseAll(_in('about a'), [first, second]);
+      await pumpEventQueue();
+      await second.close();
+      embedder.hold!.complete();
+      await expectLater(answers, throwsA(isA<DeciderCancelledException>()));
+      expect(embedder.isClosed, isFalse);
+    });
+
     test('refuses context before embedding anything', () async {
       final embedder = _embedder();
       final decider = await _decider(embedder);

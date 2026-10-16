@@ -27,8 +27,9 @@ final class IslandDeciderRecipe {
   final DeciderMethod method;
   final EmbeddingDeciderCalibration calibration;
 
-  /// The labelled rows behind [calibration] (a `EmbeddingDeciderCalibration` does not
-  /// expose them), so the [fingerprint] changes when they do.
+  /// The labelled rows behind [calibration] (an
+  /// `EmbeddingDeciderCalibration` does not expose them), so the [fingerprint]
+  /// changes when they do.
   final List<IslandHeldOutRequest> calibrationRows;
 
   /// What the status line says about the calibration.
@@ -44,9 +45,15 @@ final class IslandDeciderRecipe {
   /// hand back a decider for other actions.
   late final String fingerprint = _fnv1a(
     jsonEncode({
-      'v': 1,
+      'v': 2,
       'method': method.name,
-      'calibration': calibration.toString(),
+      // Its fields, not its toString: a renamed class must not refit.
+      'calibration': [
+        calibration.kind,
+        calibration.keep,
+        calibration.threshold,
+        calibration.maxError,
+      ],
       'rows': [
         for (final row in calibrationRows) [row.text, row.actionId],
       ],

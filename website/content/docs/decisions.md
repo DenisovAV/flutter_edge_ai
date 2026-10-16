@@ -425,8 +425,10 @@ exception's type and fields kept.
 
 `choose(input, cancelToken:)` and `Decider.chooseAll(input, deciders,
 cancelToken:)` fail with `DeciderCancelledException` too, and so does a
-`choose` still running when its decider is closed. An embedding already sent
-is not interrupted: it finishes and its vector is dropped.
+`choose` still running when its decider is closed. The decider checks before
+it embeds the input, before core replaces a closed embedder (so a cancelled
+decision never loads the model again), and when the embedding returns: an
+embedding already sent is not interrupted, and its vector is dropped.
 
 A decider of your own, or a test fake, `extends Decider` (an abstract base
 class: members added later reach it with a default). `toArtifact()` defaults

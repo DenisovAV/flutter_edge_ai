@@ -193,6 +193,34 @@ void main() {
       expect(otherRows.fingerprint, isNot(a.fingerprint));
       expect(a.calibrationLabel, 'calibrated on 144 held-out requests');
     });
+
+    test('the fingerprint follows the calibration\'s values', () {
+      IslandDeciderRecipe withCalibration(EmbeddingDeciderCalibration c) =>
+          IslandDeciderRecipe(
+            options: islandDeciderOptions(catalog),
+            method: DeciderMethod.centroid,
+            calibration: c,
+          );
+      final at = {
+        for (final c in [
+          const EmbeddingDeciderCalibration.crossFit(),
+          const EmbeddingDeciderCalibration.crossFit(keep: 0.9),
+          const EmbeddingDeciderCalibration.minSimilarity(0.8),
+          const EmbeddingDeciderCalibration.minSimilarity(0.7),
+          const EmbeddingDeciderCalibration.none(),
+        ])
+          withCalibration(c).fingerprint,
+      };
+      expect(at, hasLength(5), reason: 'each calibration its own fingerprint');
+      expect(
+        withCalibration(
+          const EmbeddingDeciderCalibration.minSimilarity(0.8),
+        ).fingerprint,
+        withCalibration(
+          const EmbeddingDeciderCalibration.minSimilarity(0.8),
+        ).fingerprint,
+      );
+    });
   });
 
   group('file store', () {

@@ -42,7 +42,7 @@ final class DeciderMethod {
   /// options. `EmbeddingModel.createDecider` refuses it.
   static const optionScoring = DeciderMethod._('optionScoring');
 
-  /// Stable name, also used in artifacts: `centroid`, `linear`,
+  /// Stable name: `centroid`, `linear` (also an artifact's `method`),
   /// `optionScoring`.
   final String name;
 

@@ -53,9 +53,11 @@ abstract base class Decider {
   /// [AbstainReason.noCandidates]. [topK] (≥ 1) caps [DeciderAnswer.ranked];
   /// the margin and probabilities still cover every candidate.
   ///
-  /// [cancelToken] fails the call with `DeciderCancelledException`; so does a
-  /// [close] while the call runs. Work already in flight (an embedding)
-  /// finishes and its result is dropped.
+  /// [cancelToken] fails the call with `DeciderCancelledException` at the
+  /// decider's next check; so does a [close] while the call runs. An embedding
+  /// decider checks before it embeds the input, before core replaces a closed
+  /// embedder, and when the embedding returns: an embedding already sent is
+  /// not interrupted, and its vector is dropped.
   ///
   /// Errors arrive as a FAILED FUTURE: `DeciderUnsupportedException` for
   /// context, [among] or a modality this decider does not take,
@@ -328,7 +330,8 @@ final class DeciderCapabilities {
   final bool supportsAmong;
 
   /// Whether `toArtifact()` returns an artifact that
-  /// `EmbeddingModel.loadDecider` restores.
+  /// `EmbeddingModel.loadDecider` restores. It still throws [StateError] for
+  /// an option whose metadata is not JSON-encodable.
   final bool storable;
 }
 

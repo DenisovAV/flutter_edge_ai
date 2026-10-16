@@ -453,8 +453,9 @@ need declarations in the app:
 - **Android 11 and newer** — `send_email` and `send_text` ask url_launcher
   whether an app can open the link, and `create_calendar_event` asks
   `add_2_calendar` whether a calendar can insert the event. Both answers are
-  "no", and the intent reports that no app is available, unless the app declares
-  them in `android/app/src/main/AndroidManifest.xml`, as a child of `<manifest>`:
+  "no" unless the app declares them in `android/app/src/main/AndroidManifest.xml`,
+  as a child of `<manifest>`; the mail and SMS intents then report that no app
+  is available, the calendar one that it could not open the event editor:
   ```xml
   <queries>
     <intent>
@@ -497,11 +498,18 @@ need declarations in the app:
   presentation options. It never asks for a permission either.
   ```dart
   // Once at startup, with the app's own callbacks and default icon.
+  // initialize throws ArgumentError on a platform whose settings are missing.
   await FlutterLocalNotificationsPlugin().initialize(
     settings: const InitializationSettings(
       android: AndroidInitializationSettings('app_icon'),
       iOS: DarwinInitializationSettings(),
       macOS: DarwinInitializationSettings(),
+      linux: LinuxInitializationSettings(defaultActionName: 'Open'),
+      windows: WindowsInitializationSettings(
+        appName: 'My App',
+        appUserModelId: 'Com.Example.MyApp',
+        guid: 'a GUID of your own',
+      ),
     ),
   );
 
@@ -511,23 +519,42 @@ need declarations in the app:
     ),
   );
   ```
+  Passing the settings without calling `initialize` crashes the app: on macOS
+  when the intent schedules, on Android when a reminder without
+  `androidSmallIcon` fires. An empty string in the settings throws
+  `ArgumentError` when the executor is built.
   - Before it schedules, the intent checks the permissions and refuses, with a
     reason the model can pass on, when notifications are off for the app
     (Android `areNotificationsEnabled()`; iOS and macOS `checkPermissions()`
-    with neither full nor provisional permission) or, on Android 12 and newer,
-    when the app may not schedule exact alarms. Asking is the app's job:
-    `requestNotificationsPermission()` on Android 13 and newer,
-    `DarwinInitializationSettings()` or `requestPermissions()` on iOS and macOS.
-  - On Android the intent schedules an exact alarm (`exactAllowWhileIdle`),
-    which needs `SCHEDULE_EXACT_ALARM` granted (`requestExactAlarmsPermission()`)
-    or `USE_EXACT_ALARM` declared. With
-    `NotificationIntentSettings(androidExactAlarm: false)` it schedules
-    `inexactAllowWhileIdle` instead, which needs neither and may fire minutes
-    late; the intent never switches on its own. The plugin's receivers and
+    with neither full nor provisional permission), when the user turned off its
+    Android channel, or, on Android 12 and newer, when the app may not schedule
+    exact alarms. Asking is the app's job: `requestNotificationsPermission()`
+    on Android 13 and newer, `DarwinInitializationSettings()` or
+    `requestPermissions()` on iOS and macOS. With provisional permission the
+    reminder arrives quietly, with no banner or sound, and the intent's answer
+    says so.
+  - On Android the intent schedules an exact alarm (`exactAllowWhileIdle`). The
+    app declares `SCHEDULE_EXACT_ALARM` in its manifest, and on Android 14 and
+    newer the user must also grant it: it is off by default there, and the app
+    asks with `requestExactAlarmsPermission()`. `USE_EXACT_ALARM` (Android 13
+    and newer) needs no grant, but Google Play allows it only for alarm and
+    calendar apps. With `NotificationIntentSettings(androidExactAlarm: false)`
+    the intent schedules `inexactAllowWhileIdle` instead, which needs neither
+    and may fire up to an hour late (later under battery saver or Doze); the
+    intent never switches on its own. The plugin's receivers and
     `RECEIVE_BOOT_COMPLETED` go in the manifest as well: see
     [flutter_local_notifications' Android setup](https://pub.dev/packages/flutter_local_notifications#androidmanifestxml-setup).
+    Its icon must survive resource shrinking in a release build: a drawable
+    named only from Dart needs a `keep.xml`.
+  - On iOS the plugin's setup also needs one line in `AppDelegate.swift`, in
+    `didFinishLaunchingWithOptions`; without it iOS shows no reminder while the
+    app is in the foreground:
+    ```swift
+    UNUserNotificationCenter.current().delegate = self as? UNUserNotificationCenterDelegate
+    ```
   - The intent refuses on the web and on Linux, where the plugin cannot
-    schedule a notification, and also a time that has already passed. On
+    schedule a notification, and a date and time that have already passed. A
+    time without a date that has passed today is scheduled for tomorrow. On
     Windows it has no permission to check and relies on the app's `initialize`.
   - It schedules the instant in UTC and leaves the time zone database and
     `tz.local` to the app.

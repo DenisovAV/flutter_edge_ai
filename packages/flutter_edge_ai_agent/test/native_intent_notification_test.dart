@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
+import 'package:flutter_edge_ai_agent/src/executors/next_occurrence.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart'
     as fln;
 import 'package:flutter_test/flutter_test.dart';
@@ -30,6 +31,30 @@ class _RecordingPlatform extends fln.FlutterLocalNotificationsPlatform {
     calls.add('zonedSchedule');
   }
 }
+
+/// 32-bit FNV-1a of [text], masked to 31 bits: the id the intent must give a
+/// reminder, written independently of the executor's arithmetic.
+int _fnv1a31(String text) {
+  var hash = 0x811c9dc5;
+  for (final byte in utf8.encode(text)) {
+    hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+  }
+  return hash & 0x7fffffff;
+}
+
+/// A channel as flutter_local_notifications' Android side reports it.
+Map<String, Object?> _channelMap(String id, String name, int importance) => {
+  'id': id,
+  'name': name,
+  'importance': importance,
+  'showBadge': true,
+  'bypassDnd': false,
+  'playSound': true,
+  'enableLights': false,
+  'enableVibration': true,
+  'ledColor': 0,
+  'audioAttributesUsage': 5,
+};
 
 const _reminder = {
   'title': 'Pills',
@@ -104,6 +129,19 @@ void main() {
       expect(calls, isEmpty);
     });
 
+    test('empty settings strings are refused when the executor is built', () {
+      for (final settings in const [
+        NotificationIntentSettings(androidChannelId: ''),
+        NotificationIntentSettings(androidChannelName: ' '),
+        NotificationIntentSettings(androidSmallIcon: ''),
+      ]) {
+        expect(
+          () => NativeIntentExecutor(notifications: settings),
+          throwsA(isA<ArgumentError>()),
+        );
+      }
+    });
+
     test('notifications: with a schedule_notification handler throws', () {
       expect(
         () => NativeIntentExecutor(
@@ -148,6 +186,7 @@ void main() {
       expect(result, isA<TextResult>());
       expect(methods(), [
         'areNotificationsEnabled',
+        'getNotificationChannels',
         'canScheduleExactNotifications',
         'zonedSchedule',
       ]);
@@ -161,7 +200,7 @@ void main() {
       expect(specifics['channelId'], 'reminders');
       expect(specifics['channelName'], 'Reminders');
       expect(specifics['scheduleMode'], 'exactAllowWhileIdle');
-      expect(args['timeZoneName'], 'UTC');
+      expect(args['timeZoneName'], tz.UTC.name);
       // The UTC instant is the requested local wall-clock time.
       final fireAt = DateTime.parse(
         args['scheduledDateTimeISO8601']! as String,
@@ -207,6 +246,38 @@ void main() {
       expect(methods(), ['areNotificationsEnabled']);
     });
 
+    test('the user blocked the channel: refused, nothing scheduled', () async {
+      onAndroid();
+      replies['getNotificationChannels'] = [
+        _channelMap('other', 'Other', 4),
+        _channelMap('agent_skill_tasks_channel', 'Agent reminders', 0),
+      ];
+
+      final result = await schedule(
+        NativeIntentExecutor(notifications: const NotificationIntentSettings()),
+      );
+
+      expect(result, isA<ErrorResult>());
+      expect(
+        (result as ErrorResult).message,
+        contains('"Agent reminders" notifications'),
+      );
+      expect(methods(), ['areNotificationsEnabled', 'getNotificationChannels']);
+    });
+
+    test('a channel that exists and is on schedules', () async {
+      onAndroid();
+      replies['getNotificationChannels'] = [
+        _channelMap('agent_skill_tasks_channel', 'Agent reminders', 3),
+      ];
+
+      final result = await schedule(
+        NativeIntentExecutor(notifications: const NotificationIntentSettings()),
+      );
+
+      expect(result, isA<TextResult>());
+    });
+
     test('exact alarms not permitted: refused with the three fixes', () async {
       onAndroid();
       replies['canScheduleExactNotifications'] = false;
@@ -226,6 +297,7 @@ void main() {
       );
       expect(methods(), [
         'areNotificationsEnabled',
+        'getNotificationChannels',
         'canScheduleExactNotifications',
       ]);
     });
@@ -244,7 +316,11 @@ void main() {
       );
 
       expect(result, isA<TextResult>());
-      expect(methods(), ['areNotificationsEnabled', 'zonedSchedule']);
+      expect(methods(), [
+        'areNotificationsEnabled',
+        'getNotificationChannels',
+        'zonedSchedule',
+      ]);
       final specifics =
           scheduledArgs()['platformSpecifics']! as Map<Object?, Object?>;
       expect(specifics['scheduleMode'], 'inexactAllowWhileIdle');
@@ -305,9 +381,30 @@ void main() {
       );
 
       expect(result, isA<TextResult>());
+      expect(
+        (result as TextResult).text,
+        contains('quietly'),
+        reason: 'provisional notifications show no banner and play no sound',
+      );
       expect(methods(), ['checkPermissions', 'zonedSchedule']);
-      expect(scheduledArgs()['timeZoneName'], 'UTC');
+      expect(scheduledArgs()['timeZoneName'], tz.UTC.name);
     });
+
+    test(
+      'iOS with full permission says nothing about quiet delivery',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        fln.IOSFlutterLocalNotificationsPlugin.registerWith();
+
+        final result = await schedule(
+          NativeIntentExecutor(
+            notifications: const NotificationIntentSettings(),
+          ),
+        );
+
+        expect((result as TextResult).text, isNot(contains('quietly')));
+      },
+    );
 
     test('macOS without permission: refused, nothing scheduled', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
@@ -425,6 +522,40 @@ void main() {
       expect(water, isNot(pills));
       expect(pillsAgain, pills);
       expect(pills, inInclusiveRange(0, 0x7fffffff));
+      // The reference hash itself: FNV-1a("a") is 0xe40c292c.
+      expect(_fnv1a31('a'), 0x640c292c);
+      final fireAt = DateTime.parse(
+        scheduledArgs()['scheduledDateTimeISO8601']! as String,
+      );
+      expect(
+        pills,
+        _fnv1a31(
+          '${fireAt.millisecondsSinceEpoch ~/ 1000}|Pills|Take your meds',
+        ),
+      );
+    });
+
+    test('tomorrow keeps the wall-clock time across a clock change', () {
+      // Europe/Berlin turns its clocks back in the night to 2026-10-25 and
+      // forward in the night to 2026-03-29: 24 hours after 08:00 is 07:00 or
+      // 09:00 there. Only a zone with daylight saving time tells the two
+      // apart, so run this file under TZ=Europe/Berlin to see a regression.
+      for (final evening in [
+        DateTime(2026, 10, 24, 20),
+        DateTime(2026, 3, 28, 20),
+      ]) {
+        final when = nextOccurrence(hour: 8, minute: 0, now: evening);
+        expect(
+          (when.month, when.day, when.hour, when.minute),
+          (evening.month, evening.day + 1, 8, 0),
+        );
+      }
+      final later = nextOccurrence(
+        hour: 21,
+        minute: 15,
+        now: DateTime(2026, 10, 24, 20),
+      );
+      expect((later.day, later.hour, later.minute), (24, 21, 15));
     });
   });
 }

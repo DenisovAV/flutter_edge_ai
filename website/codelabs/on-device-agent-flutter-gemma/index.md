@@ -459,11 +459,15 @@ throws and says which.
 
 On iOS 15 and 16 the calendar editor asks for calendar access first, and iOS
 stops an app that asks without a usage description. (From iOS 17 the editor
-opens without asking.) Add to `ios/Runner/Info.plist`:
+opens without asking.) Its location field suggests places from the contacts,
+and `add_2_calendar` warns that the app may crash there without a contacts
+usage description. Add both to `ios/Runner/Info.plist`:
 
 ```xml
 <key>NSCalendarsUsageDescription</key>
 <string>The agent opens the calendar's event editor for events you ask it to create.</string>
+<key>NSContactsUsageDescription</key>
+<string>The calendar's event editor suggests locations from your contacts.</string>
 ```
 
 The mail composer opens through a `mailto:` link, and the agent first asks

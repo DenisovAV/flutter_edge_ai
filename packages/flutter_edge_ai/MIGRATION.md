@@ -9,20 +9,29 @@ dependencies:
 
 `NativeIntentExecutor()` no longer schedules notifications: the intent returns
 an error until the app passes `NotificationIntentSettings`. Before, it
-scheduled through a `flutter_local_notifications` that nobody had initialized,
-which leaves the notification without a small icon on Android and without the
-presentation settings the plugin reads on macOS — `initialize` writes both. An
-app that uses the intent:
+scheduled whether or not the app had called `initialize`, and without it the
+app crashed: on macOS when the intent scheduled, on Android when the reminder
+fired with no small icon. An app that uses the intent:
 
 1. calls `FlutterLocalNotificationsPlugin().initialize(...)` once at startup,
-   with its own callbacks and default icon — the agent never does;
-2. passes `NativeIntentExecutor(notifications: const NotificationIntentSettings())`.
+   with its own callbacks, its default icon and settings for every platform it
+   builds for (`initialize` throws without them) — the agent never does;
+2. passes `NativeIntentExecutor(notifications: const NotificationIntentSettings())`;
+3. on Android, declares `SCHEDULE_EXACT_ALARM` and, on Android 14 and newer,
+   asks for it with `requestExactAlarmsPermission()`, or passes
+   `androidExactAlarm: false` for an inexact reminder.
 
-The intent checks the permissions and refuses instead of asking for them; on
-Android it needs exact alarms unless `androidExactAlarm: false`. A
-`schedule_notification` entry in `handlers:` still replaces the built-in
-intent, but not together with `notifications:`. The other intents are
-unchanged. See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
+The intent checks the permissions and refuses instead of asking for them, and
+it no longer loads the time zone database, which reset the app's `tz.local`
+to UTC. A `schedule_notification` entry in `handlers:` still replaces the
+built-in intent, but not together with `notifications:`.
+
+Every `schedule_notification` call, an app's own handler included, is now
+refused before it runs when its date is partial (a `day` without `year` and
+`month`) or does not exist (February 31). Without a date, a time that has
+passed today moves to tomorrow at the same wall-clock time, across a clock
+change too. The mail and SMS intents write a space as `%20` instead of `+`.
+See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
 
 ## flutter_edge_ai 2.4.0 / flutter_edge_ai_litertlm 1.14.0: backends follow the model file
 

@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart' as launcher;
 import '../skill.dart';
 import '../skill_executor.dart';
 import '../skill_result.dart';
+import 'next_occurrence.dart';
 import 'notification_intent_settings.dart';
 // add_2_calendar transitively imports dart:io (web-incompatible), so it is
 // reached only via this conditional-import seam.
@@ -79,7 +80,9 @@ class NativeIntentExecutor extends SkillExecutor {
   /// it that intent returns an [ErrorResult] and makes no plugin call. See
   /// [NotificationIntentSettings] for what the app sets up first. Throws
   /// [ArgumentError] when [handlers] also replaces [scheduleNotification]:
-  /// the settings would configure a handler that never runs.
+  /// the settings would configure a handler that never runs. Throws
+  /// [ArgumentError] too when a string in [notifications] is empty: Android
+  /// would fail only when the reminder fires.
   NativeIntentExecutor({
     Map<String, IntentHandler>? handlers,
     Map<String, IntentValidator>? validators,
@@ -101,12 +104,32 @@ class NativeIntentExecutor extends SkillExecutor {
             'pass one or the other',
       );
     }
+    if (notifications != null) _checkNotificationSettings(notifications);
     for (final intent in _validators.keys) {
       if (!_handlers.containsKey(intent)) {
         throw ArgumentError.value(
           intent,
           'validators',
           'names an intent with no handler; add it to handlers: too',
+        );
+      }
+    }
+  }
+
+  static void _checkNotificationSettings(NotificationIntentSettings settings) {
+    for (final (name, value) in [
+      ('androidChannelId', settings.androidChannelId),
+      ('androidChannelName', settings.androidChannelName),
+      if (settings.androidSmallIcon case final icon?)
+        ('androidSmallIcon', icon),
+    ]) {
+      if (value.trim().isEmpty) {
+        throw ArgumentError.value(
+          value,
+          'notifications.$name',
+          name == 'androidSmallIcon'
+              ? 'is empty; pass null to use the default icon from initialize'
+              : 'is empty',
         );
       }
     }
@@ -381,7 +404,7 @@ class NativeIntentExecutor extends SkillExecutor {
     final minute = (params['minute'] as num).toInt();
 
     // validateIntentParams guarantees year, month and day together or none.
-    final when = _nextOccurrence(
+    final when = nextOccurrence(
       hour: hour,
       minute: minute,
       year: (params['year'] as num?)?.toInt(),
@@ -406,9 +429,10 @@ class NativeIntentExecutor extends SkillExecutor {
     }
 
     final plugin = fln.FlutterLocalNotificationsPlugin();
-    final refusal = switch (defaultTargetPlatform) {
-      TargetPlatform.android => await _androidRefusal(plugin, settings),
-      TargetPlatform.iOS => await _darwinRefusal(
+    // The refusal, or null; and a note for the result.
+    final (refusal, note) = switch (defaultTargetPlatform) {
+      TargetPlatform.android => (await _androidRefusal(plugin, settings), ''),
+      TargetPlatform.iOS => await _darwinCheck(
         plugin
             .resolvePlatformSpecificImplementation<
               fln.IOSFlutterLocalNotificationsPlugin
@@ -416,7 +440,7 @@ class NativeIntentExecutor extends SkillExecutor {
             ?.checkPermissions(),
         'iOS',
       ),
-      TargetPlatform.macOS => await _darwinRefusal(
+      TargetPlatform.macOS => await _darwinCheck(
         plugin
             .resolvePlatformSpecificImplementation<
               fln.MacOSFlutterLocalNotificationsPlugin
@@ -426,9 +450,9 @@ class NativeIntentExecutor extends SkillExecutor {
       ),
       // flutter_local_notifications has no permission query on Windows; the
       // app's initialize is what the plugin needs there.
-      TargetPlatform.windows => null,
-      TargetPlatform.linux => _noScheduledNotificationsOn('Linux'),
-      TargetPlatform.fuchsia => _noScheduledNotificationsOn('Fuchsia'),
+      TargetPlatform.windows => (null, ''),
+      TargetPlatform.linux => (_noScheduledNotificationsOn('Linux'), ''),
+      TargetPlatform.fuchsia => (_noScheduledNotificationsOn('Fuchsia'), ''),
     };
     if (refusal != null) return ErrorResult(refusal);
 
@@ -457,7 +481,7 @@ class NativeIntentExecutor extends SkillExecutor {
           : fln.AndroidScheduleMode.inexactAllowWhileIdle,
     );
     return TextResult(
-      'Scheduled a notification "$title" for ${_wallClock(when)}.',
+      'Scheduled a notification "$title" for ${_wallClock(when)}.$note',
     );
   }
 
@@ -486,6 +510,17 @@ class NativeIntentExecutor extends SkillExecutor {
           'would never show. The user can turn them on in the system '
           'settings; the app can ask with requestNotificationsPermission().';
     }
+    // The app-wide switch above says nothing about one channel. A channel
+    // that does not exist yet is created on first use.
+    final channels = await android.getNotificationChannels() ?? const [];
+    for (final channel in channels) {
+      if (channel.id == settings.androidChannelId &&
+          channel.importance == fln.Importance.none) {
+        return 'The user turned off "${channel.name}" notifications for this '
+            'app, so the reminder would never show. They can turn them back '
+            'on in the system settings.';
+      }
+    }
     if (settings.androidExactAlarm &&
         await android.canScheduleExactNotifications() != true) {
       return 'This app may not schedule exact alarms, so Android would refuse '
@@ -497,29 +532,45 @@ class NativeIntentExecutor extends SkillExecutor {
     return null;
   }
 
-  /// Why iOS or macOS cannot show the notification, or null when it can.
-  /// [check] is the platform implementation's `checkPermissions()`, null when
-  /// none is registered; the permissions must allow notifications, fully or
-  /// provisionally. Reads the state only; the prompts are the app's.
-  static Future<String?> _darwinRefusal(
+  /// Why iOS or macOS cannot show the notification (null when it can), and a
+  /// note for the result. [check] is the platform implementation's
+  /// `checkPermissions()`, null when none is registered; the permissions must
+  /// allow notifications, fully or provisionally. A provisional one is
+  /// delivered quietly, which the note says. Reads the state only; the
+  /// prompts are the app's.
+  static Future<(String?, String)> _darwinCheck(
     Future<fln.NotificationsEnabledOptions?>? check,
     String platform,
   ) async {
     if (check == null) {
-      return 'Scheduling notifications failed: flutter_local_notifications '
-          'has no $platform implementation registered in this app.';
+      return (
+        'Scheduling notifications failed: flutter_local_notifications '
+            'has no $platform implementation registered in this app.',
+        '',
+      );
     }
     final permissions = await check;
     if (permissions == null) {
-      return 'Scheduling notifications failed: flutter_local_notifications '
-          'returned no permission state on $platform.';
+      return (
+        'Scheduling notifications failed: flutter_local_notifications '
+            'returned no permission state on $platform.',
+        '',
+      );
     }
-    if (permissions.isEnabled || permissions.isProvisionalEnabled) {
-      return null;
+    if (permissions.isEnabled) return (null, '');
+    if (permissions.isProvisionalEnabled) {
+      return (
+        null,
+        ' It will arrive quietly in Notification Center, with no banner or '
+            'sound: the app has provisional permission only.',
+      );
     }
-    return 'Notifications are not allowed for this app, so the reminder would '
-        'never show. The user can allow them in the system settings; the app '
-        'can ask with requestPermissions().';
+    return (
+      'Notifications are not allowed for this app, so the reminder would '
+          'never show. The user can allow them in the system settings; the '
+          'app can ask with requestPermissions().',
+      '',
+    );
   }
 
   /// `get_current_date_and_time` → pure Dart. No plugin, no platform branch.
@@ -600,25 +651,6 @@ class NativeIntentExecutor extends SkillExecutor {
       hash = (hash * 403 + ((hash << 24) & 0xffffffff)) & 0xffffffff;
     }
     return hash & 0x7fffffff;
-  }
-
-  /// The next [DateTime] matching the given time-of-day. If an explicit date
-  /// ([year]/[month]/[day]) is supplied it is honoured; otherwise the next
-  /// occurrence today-or-tomorrow is chosen so a past time rolls forward.
-  static DateTime _nextOccurrence({
-    required int hour,
-    required int minute,
-    int? year,
-    int? month,
-    int? day,
-  }) {
-    final now = DateTime.now();
-    if (year != null && month != null && day != null) {
-      return DateTime(year, month, day, hour, minute);
-    }
-    var when = DateTime(now.year, now.month, now.day, hour, minute);
-    if (!when.isAfter(now)) when = when.add(const Duration(days: 1));
-    return when;
   }
 }
 

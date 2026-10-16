@@ -1,3 +1,6 @@
+## Unreleased
+- Android (Adreno): experimental `FlutterEdgeAiDiagnostics.gpuMemory()`, the GPU memory mapped into the process.
+
 ## 0.3.0
 - iOS and macOS: `anonymousPeakBytes`, the lifetime footprint peak; macOS `anonymousBytes` and `memorySnapshot()` supported.
 

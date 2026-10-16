@@ -871,26 +871,141 @@ void main() {
   });
 
   group('InferenceModel.createDecider', () {
-    test('no engine scores options: it refuses, as a failed future', () async {
-      final created = _Llm().createDecider(
-        question: 'Which one?',
-        options: _abc(),
-        calibration: const InferenceDeciderCalibration(
+    List<DeciderOption> listed() => [
+      DeciderOption('joy', description: 'happy wording'),
+      DeciderOption('anger'),
+      DeciderOption('none'),
+    ];
+
+    test('no engine scores options: after its checks it refuses, as a failed '
+        'future', () async {
+      for (final calibration in const [
+        InferenceDeciderCalibration(
           temperature: 1.3,
           abstainBelow: 0.6,
-          noneOption: 'c',
+          noneOption: 'none',
         ),
-        cancelToken: CancelToken(),
-      );
-      await expectLater(
-        created,
-        throwsA(
-          isA<DeciderUnsupportedException>().having(
-            (e) => e.message,
-            'message',
-            contains('EmbeddingModel.createDecider'),
+        InferenceDeciderCalibration(),
+      ]) {
+        await expectLater(
+          _Llm().createDecider(
+            question: 'Which emotion does the text express?',
+            options: listed(),
+            calibration: calibration,
+            cancelToken: CancelToken(),
           ),
+          throwsA(
+            isA<DeciderUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('EmbeddingModel.createDecider'),
+            ),
+          ),
+        );
+      }
+    });
+
+    final refused =
+        <
+          String,
+          (String, List<DeciderOption>?, InferenceDeciderCalibration, String)
+        >{
+          'a blank question': (
+            '  ',
+            null,
+            const InferenceDeciderCalibration(),
+            'question',
+          ),
+          'no options': (
+            'Q?',
+            const [],
+            const InferenceDeciderCalibration(),
+            'options',
+          ),
+          'two options with one id': (
+            'Q?',
+            [DeciderOption('joy'), DeciderOption('joy')],
+            const InferenceDeciderCalibration(),
+            'share the id',
+          ),
+          'an option with examples': (
+            'Q?',
+            [
+              DeciderOption('joy', examples: [EmbeddingInput.text('yay')]),
+              DeciderOption('anger'),
+            ],
+            const InferenceDeciderCalibration(),
+            'takes no examples',
+          ),
+          'a temperature of 0': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(temperature: 0),
+            'temperature',
+          ),
+          'an infinite temperature': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(temperature: double.infinity),
+            'temperature',
+          ),
+          'abstainBelow without a temperature': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(abstainBelow: 0.5),
+            'needs a temperature',
+          ),
+          'abstainBelow of 1': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(temperature: 1, abstainBelow: 1),
+            '(0, 1)',
+          ),
+          'abstainBelow of 0': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(temperature: 1, abstainBelow: 0),
+            '(0, 1)',
+          ),
+          'a noneOption that is not an option': (
+            'Q?',
+            null,
+            const InferenceDeciderCalibration(noneOption: 'neutral'),
+            'not one of the options',
+          ),
+        };
+    for (final MapEntry(
+          key: name,
+          value: (question, options, calibration, says),
+        )
+        in refused.entries) {
+      test('refuses $name before it asks for an engine', () async {
+        await expectLater(
+          _Llm().createDecider(
+            question: question,
+            options: options ?? listed(),
+            calibration: calibration,
+          ),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => '${e.name} ${e.message}',
+              'message',
+              contains(says),
+            ),
+          ),
+        );
+      });
+    }
+
+    test('a cancelled token fails it after the checks', () async {
+      await expectLater(
+        _Llm().createDecider(
+          question: 'Q?',
+          options: listed(),
+          calibration: const InferenceDeciderCalibration(),
+          cancelToken: CancelToken()..cancel(),
         ),
+        throwsA(isA<DeciderCancelledException>()),
       );
     });
   });

@@ -459,8 +459,10 @@ these". A `cancelToken:` stops the creation, as for
 
 No engine scores options in `flutter_edge_ai` 2.4.0:
 `InferenceModel.createDecider` fails with `DeciderUnsupportedException` on
-every model. The contract is in place so that code written against `Decider`
-and `DeciderAnswer` reads its answers unchanged when an engine does.
+every model. It checks its arguments first, as it will once an engine scores
+options, so a wrong argument is an `ArgumentError` today too. The contract is
+in place so that code written against `Decider` and `DeciderAnswer` reads its
+answers unchanged when an engine does.
 
 </Warning>
 
@@ -495,7 +497,7 @@ abstained answer has `"choice": null`.
 
 | Failure | Thrown |
 |---|---|
-| No options, duplicate ids, an option with nothing to embed, a calibration the options or labelled rows cannot support, an unknown `among` id, a model without installed files or a backend and no `embedderId` | `ArgumentError` |
+| `InferenceModel.createDecider`: a blank question, an option with examples, a calibration value out of range or a `noneOption` that is not an option; no options, duplicate ids, an option with nothing to embed, a calibration the options or labelled rows cannot support, an unknown `among` id, a model without installed files or a backend and no `embedderId` | `ArgumentError` |
 | `DeciderInput.context` to a decider without `supportsContext` (none in this release); `among` to one without `supportsAmong`; an input modality not in `capabilities.modalities` | `DeciderUnsupportedException` |
 | `InferenceModel.createDecider` (no engine scores options in this release); `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
 | `DeciderMethod.optionScoring` given to `EmbeddingModel.createDecider` | `ArgumentError` |

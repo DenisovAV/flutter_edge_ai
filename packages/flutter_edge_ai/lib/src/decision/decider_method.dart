@@ -183,8 +183,10 @@ List<({EmbeddingInput input, String optionId})>? labelledRowsOf(
 /// mean nothing for another. Every member is optional: all null is an
 /// uncalibrated decider that never abstains and reports no probabilities.
 ///
-/// In this release no engine scores options: `InferenceModel.createDecider`
-/// fails with `DeciderUnsupportedException` whatever it is given.
+/// `InferenceModel.createDecider` checks these values (and refuses one that is
+/// out of range with [ArgumentError]) before anything else, also in this
+/// release, where no engine scores options and it then fails with
+/// `DeciderUnsupportedException`.
 @experimental
 @immutable
 final class InferenceDeciderCalibration {

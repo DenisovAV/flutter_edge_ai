@@ -90,6 +90,37 @@ String _decodeNativeString(Pointer<Char> ptr, {int maxBytes = 64 * 1024}) {
   return utf8.decode(bytes.asTypedList(length), allowMalformed: true);
 }
 
+/// What [ConversationHandle.rewindStoppedTurn] did.
+enum StoppedTurnRewind {
+  /// The conversation is back before the stopped turn, with that turn put back
+  /// into its context, and answers again.
+  rewound,
+
+  /// The turn had finished before the stop reached native, so nothing was
+  /// cancelled: the conversation answers as it is and holds the whole turn.
+  notCancelled,
+
+  /// This conversation cannot rewind: the loaded libLiteRtLm predates
+  /// `patch_c_api.sh` section 15. Nothing was changed.
+  unsupported,
+}
+
+/// The native rewind of a stopped turn failed. [code] is the absl status code
+/// `litert_lm_conversation_rewind_cancelled_turn` returned: 5 (NOT_FOUND, the
+/// turn was cancelled before its own prefill) and 12 (UNIMPLEMENTED) changed
+/// nothing, any other code left the conversation unusable. Either way the
+/// caller rebuilds it.
+class StoppedTurnRewindException implements Exception {
+  StoppedTurnRewindException(this.code, this.message);
+
+  final int code;
+  final String? message;
+
+  @override
+  String toString() =>
+      'StoppedTurnRewindException(code $code): ${message ?? 'no message'}';
+}
+
 /// Per-conversation operations a session needs from the FFI layer.
 ///
 /// [LiteRtLmConversationHandle] is the real implementation backed by a
@@ -125,6 +156,17 @@ abstract class ConversationHandle {
   Stream<String> chatRawMessage(String messageJson, {bool enableThinking});
 
   void cancelGeneration();
+
+  /// Makes the conversation answer again after [cancelGeneration] stopped its
+  /// last turn: rewinds to before that turn, then puts the turn back — the
+  /// message exactly as it was sent, media included, followed by
+  /// [partialReply] — without generating, so the model keeps the exchange.
+  ///
+  /// [StoppedTurnRewind.unsupported] when this conversation cannot rewind;
+  /// throws [StoppedTurnRewindException] when the native rewind failed.
+  Future<StoppedTurnRewind> rewindStoppedTurn(
+    Map<String, Object?> partialReply,
+  );
 
   SessionMetrics getSessionMetrics();
 
@@ -175,24 +217,35 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     }
   }
 
+  /// The last message sent on this conversation and its `extra_context`,
+  /// exactly as native received them, so [rewindStoppedTurn] can put a stopped
+  /// turn back. Replaced by every send; dropped by a rewind.
+  ({String messageJson, String? extraContext})? _lastSend;
+
+  Stream<String> _send(String messageJson, String? extraContext) {
+    _lastSend = (messageJson: messageJson, extraContext: extraContext);
+    return _client._sendMessageStreamRawOn(
+      _conversation!,
+      messageJson,
+      extraContext: extraContext,
+    );
+  }
+
   @override
   Stream<String> chat(
     String text, {
     List<Uint8List>? imageBytes,
     Uint8List? audioBytes,
     bool enableThinking = false,
-  }) {
-    _assertOpen();
-    return _client._chatOn(
-      _conversation!,
-      text,
-      imageBytes: imageBytes,
-      audioBytes: audioBytes,
-      order: _multimodalOrder,
-      enableThinking: enableThinking,
-    );
-  }
+  }) => chatRaw(
+    text,
+    imageBytes: imageBytes,
+    audioBytes: audioBytes,
+    enableThinking: enableThinking,
+  ).map(LiteRtLmFfiClient.extractTextFromResponse);
 
+  /// Same as [chat] but yields raw SDK JSON chunks, so a caller can read the
+  /// structured `tool_calls` field.
   @override
   Stream<String> chatRaw(
     String text, {
@@ -201,13 +254,14 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     bool enableThinking = false,
   }) {
     _assertOpen();
-    return _client._chatRawOn(
-      _conversation!,
-      text,
-      imageBytes: imageBytes,
-      audioBytes: audioBytes,
-      order: _multimodalOrder,
-      enableThinking: enableThinking,
+    return _send(
+      LiteRtLmFfiClient.buildMessageJson(
+        text,
+        imagesBytes: imageBytes,
+        audioBytes: audioBytes,
+        order: _multimodalOrder,
+      ),
+      thinkingExtraContext(enableThinking),
     );
   }
 
@@ -217,15 +271,12 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     bool enableThinking = false,
   }) {
     _assertOpen();
-    return _client._sendMessageStreamRawOn(
-      _conversation!,
-      messageJson,
-      extraContext: thinkingExtraContext(enableThinking),
-    );
+    return _send(messageJson, thinkingExtraContext(enableThinking));
   }
 
   Future<String> sendMessage(String messageJson, {String? extraContext}) {
     _assertOpen();
+    _lastSend = (messageJson: messageJson, extraContext: extraContext);
     return _client._sendMessageOn(
       _conversation!,
       messageJson,
@@ -238,11 +289,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     String? extraContext,
   }) {
     _assertOpen();
-    return _client._sendMessageStreamRawOn(
-      _conversation!,
-      messageJson,
-      extraContext: extraContext,
-    );
+    return _send(messageJson, extraContext);
   }
 
   @override
@@ -250,6 +297,37 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     if (_conversation == null) return;
     _client._cancelOn(_conversation!);
   }
+
+  @override
+  Future<StoppedTurnRewind> rewindStoppedTurn(
+    Map<String, Object?> partialReply,
+  ) {
+    _assertOpen();
+    final last = _lastSend;
+    if (last == null) {
+      throw StateError('No turn was sent on this conversation to rewind');
+    }
+    _lastSend = null;
+    _rewinding = true;
+    return _client
+        ._rewindStoppedTurnOn(
+          _conversation!,
+          // The sent message is spliced in as text: it can carry megabytes of
+          // base64 media, and decoding it only to encode it again buys nothing.
+          exchangeJson: '[${last.messageJson},${jsonEncode(partialReply)}]',
+          extraContext: last.extraContext,
+        )
+        .whenComplete(() {
+          _rewinding = false;
+          if (_closeAfterRewind) close();
+        });
+  }
+
+  /// A rewind is running on another thread and still uses the conversation.
+  bool _rewinding = false;
+
+  /// [close] was called during a rewind; the rewind closes when it returns.
+  bool _closeAfterRewind = false;
 
   @override
   SessionMetrics getSessionMetrics() {
@@ -260,6 +338,10 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   @override
   void close() {
     if (_conversation == null) return;
+    if (_rewinding) {
+      _closeAfterRewind = true;
+      return;
+    }
     // Cancel any in-flight native decode before deleting: conversation_delete
     // blocks in ~SessionBasic → ThreadPool::WaitUntilDone until the generation
     // drains naturally, which under GPU throttle is tens of seconds and ANRs
@@ -308,6 +390,51 @@ Future<int> _createConversationOffMainIsolate({
   });
 }
 
+/// Calls `litert_lm_conversation_rewind_cancelled_turn` on a spawned isolate,
+/// for the reason given at [_createConversationOffMainIsolate]: it returns only
+/// when the prefill of the stopped exchange is done. Returns null on success,
+/// otherwise the status code and LiteRT-LM's last error, which is thread-local
+/// and so is read on the same isolate.
+Future<({int code, String? message})?> _rewindCancelledTurnOffMainIsolate({
+  required int conversationAddr,
+  required String exchangeJson,
+  String? extraContext,
+}) {
+  final isolateLogLevel = edgeAiLogLevel;
+  return Isolate.run(() {
+    edgeAiLogLevel = isolateLogLevel;
+    // Plain open, as above: only called on a client with a loaded engine.
+    final lib = openLiteRtLmLibrary();
+    final rewind = lib
+        .lookupFunction<
+          Int32 Function(Pointer, Pointer<Utf8>, Pointer<Utf8>),
+          int Function(Pointer, Pointer<Utf8>, Pointer<Utf8>)
+        >('litert_lm_conversation_rewind_cancelled_turn');
+    final exchange = exchangeJson.toNativeUtf8();
+    final extra = extraContext?.toNativeUtf8() ?? nullptr;
+    try {
+      final code = rewind(
+        Pointer.fromAddress(conversationAddr),
+        exchange,
+        extra,
+      );
+      if (code == 0) return null;
+      String? message;
+      if (lib.providesSymbol('litert_lm_get_last_error_message')) {
+        final ptr = lib
+            .lookupFunction<Pointer<Char> Function(), Pointer<Char> Function()>(
+              'litert_lm_get_last_error_message',
+            )();
+        if (ptr != nullptr) message = _decodeNativeString(ptr);
+      }
+      return (code: code, message: message);
+    } finally {
+      malloc.free(exchange);
+      if (extra != nullptr) malloc.free(extra);
+    }
+  });
+}
+
 /// High-level Dart wrapper around the LiteRT-LM C API.
 ///
 /// Provides a clean async interface over the native C functions,
@@ -353,6 +480,11 @@ class LiteRtLmFfiClient {
   Pointer<Void> _chunkGetError = nullptr;
   Pointer<Void> _chunkIsFinal = nullptr;
   List<String> _missingChunkAccessors = const [];
+
+  /// The loaded libLiteRtLm exports
+  /// `litert_lm_conversation_rewind_cancelled_turn` (`patch_c_api.sh` section
+  /// 15); false on one built before it.
+  bool _hasTurnRewind = false;
   _ProxyFreeStringDart? _proxyFreeString;
   Pointer<LiteRtLmEngine>? _engine;
   bool _isInitialized = false;
@@ -363,13 +495,16 @@ class LiteRtLmFfiClient {
   /// params — it must never gate what we send again.
   String? _backend;
 
-  /// Conversation creates currently suspended across an `await`.
+  /// Conversation creates, and rewinds of a stopped turn, currently suspended
+  /// across an `await`.
   ///
-  /// `litert_lm_conversation_create` runs on a spawned isolate, so the calling
-  /// isolate's event loop is free for the duration — long enough for [shutdown]
-  /// to run `litert_lm_engine_delete` while native code is still dereferencing
-  /// the engine pointer. [shutdown] waits for this to reach zero, and creates
-  /// re-check [_isShuttingDown] before publishing anything.
+  /// `litert_lm_conversation_create` and
+  /// `litert_lm_conversation_rewind_cancelled_turn` run on a spawned isolate,
+  /// so the calling isolate's event loop is free for the duration — long
+  /// enough for [shutdown] to delete the conversation or run
+  /// `litert_lm_engine_delete` while native code is still dereferencing them.
+  /// [shutdown] waits for this to reach zero before it closes anything, and
+  /// creates re-check [_isShuttingDown] before publishing anything.
   int _createsInFlight = 0;
   Completer<void>? _createsQuiescent;
   bool _isShuttingDown = false;
@@ -697,6 +832,9 @@ class LiteRtLmFfiClient {
     _bindings = LiteRtLmBindings(lib);
     _proxyLib = proxyLib;
     _resolveChunkAccessors(proxyLib, lib);
+    _hasTurnRewind = lib.providesSymbol(
+      'litert_lm_conversation_rewind_cancelled_turn',
+    );
     _proxyCreate = proxyLib
         .lookupFunction<_ProxyCreateNative, _ProxyCreateDart>(
           'stream_proxy_create',
@@ -1447,55 +1585,6 @@ class LiteRtLmFfiClient {
   static String extractTextFromResponse(String jsonStr) =>
       SdkTextExtractor.extractTextFromResponse(jsonStr);
 
-  /// Send a message and get streaming response as plain text chunks on the
-  /// given conversation. Supports multiple images via `imageBytes` list.
-  Stream<String> _chatOn(
-    Pointer<LiteRtLmConversation> conv,
-    String text, {
-    List<Uint8List>? imageBytes,
-    Uint8List? audioBytes,
-    required MultimodalOrder order,
-    bool enableThinking = false,
-  }) {
-    final messageJson = buildMessageJson(
-      text,
-      imagesBytes: imageBytes,
-      audioBytes: audioBytes,
-      order: order,
-    );
-    final extraContext = thinkingExtraContext(enableThinking);
-    return _sendMessageStreamRawOn(
-      conv,
-      messageJson,
-      extraContext: extraContext,
-    ).map(extractTextFromResponse);
-  }
-
-  /// Same as [_chatOn] but yields raw SDK JSON chunks without
-  /// `extractTextFromResponse` mapping. Required by Gemma 4 path so callers
-  /// can read the structured `tool_calls` field via [extractToolCalls].
-  Stream<String> _chatRawOn(
-    Pointer<LiteRtLmConversation> conv,
-    String text, {
-    List<Uint8List>? imageBytes,
-    Uint8List? audioBytes,
-    required MultimodalOrder order,
-    bool enableThinking = false,
-  }) {
-    final messageJson = buildMessageJson(
-      text,
-      imagesBytes: imageBytes,
-      audioBytes: audioBytes,
-      order: order,
-    );
-    final extraContext = thinkingExtraContext(enableThinking);
-    return _sendMessageStreamRawOn(
-      conv,
-      messageJson,
-      extraContext: extraContext,
-    );
-  }
-
   /// Legacy: streaming chat on the implicit [_legacyHandle] conversation.
   Stream<String> chat(
     String text, {
@@ -2013,6 +2102,39 @@ class LiteRtLmFfiClient {
       _bindings!.litert_lm_conversation_cancel_process(conv);
       edgeAiLog('[LiteRtLmFfi] Generation cancelled');
     }
+  }
+
+  /// Rewinds [conv] after a cancelled send and prefills [exchangeJson], a JSON
+  /// array of messages, in its place (`patch_c_api.sh` section 15). Holds
+  /// [_nativeMutex] like a send, and holds [shutdown] off like a create: the
+  /// native call runs on another thread until the prefill is done.
+  Future<StoppedTurnRewind> _rewindStoppedTurnOn(
+    Pointer<LiteRtLmConversation> conv, {
+    required String exchangeJson,
+    String? extraContext,
+  }) async {
+    if (!_hasTurnRewind) return StoppedTurnRewind.unsupported;
+    return _guardCreate(() async {
+      await _nativeMutex.acquire();
+      try {
+        if (_isShuttingDown || !_liveConvs.contains(conv)) {
+          throw StateError('Conversation was closed before it was rewound');
+        }
+        final failure = await _rewindCancelledTurnOffMainIsolate(
+          conversationAddr: conv.address,
+          exchangeJson: exchangeJson,
+          extraContext: extraContext,
+        );
+        // FAILED_PRECONDITION: the last send was not cancelled.
+        if (failure?.code == 9) return StoppedTurnRewind.notCancelled;
+        if (failure != null) {
+          throw StoppedTurnRewindException(failure.code, failure.message);
+        }
+        return StoppedTurnRewind.rewound;
+      } finally {
+        _nativeMutex.release();
+      }
+    });
   }
 
   /// Legacy: cancel on the implicit [_legacyHandle] conversation.

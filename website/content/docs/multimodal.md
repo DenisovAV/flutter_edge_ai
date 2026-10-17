@@ -208,6 +208,7 @@ full web `.litertlm` feature matrix.
   bundle declares nothing runs on CPU in every `flutter_edge_ai_litertlm`
   release (the fix shipped in `flutter_gemma_litertlm` 1.4.2).
 - After `stopGeneration()` on a `.litertlm` model on Android, iOS or desktop the
-  chat keeps working (every `flutter_edge_ai_litertlm` release includes it), but it continues from a text copy of the
-  history: images and audio from earlier turns are gone. Send the image again
+  chat keeps working, with images and audio from earlier turns still in its
+  context: the conversation is rewound to before the stopped turn. On the NPU
+  it continues from a text copy of the history instead, so send the image again
   if the next question is about it.

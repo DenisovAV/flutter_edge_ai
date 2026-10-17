@@ -1078,9 +1078,12 @@ Cause: a conversation whose generation is cancelled mid-reply stays unusable
 in the native runtime.
 
 Fix: every `flutter_edge_ai_litertlm` release has it. The first turn after a
-stop runs on a fresh conversation that replays the chat's history, including whatever the stopped
-reply had produced. That history is replayed as text: images and audio sent in
-earlier turns are not, so after a stop the model can no longer see them.
+stop rewinds the conversation to before the stopped turn and puts that turn
+back: the message, with its images and audio, and whatever the reply had
+produced. The model keeps the whole chat, media included. On the NPU, whose
+executor cannot rewind, the turn runs instead on a fresh conversation that
+replays the history as text, so images and audio from earlier turns are gone;
+send them again if the next question is about them.
 
 ### Google Play rejects the app over 16 KB page sizes (fixed in `flutter_gemma_litertlm` 1.8.0)
 

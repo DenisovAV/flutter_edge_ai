@@ -71,6 +71,27 @@ class _Conversation implements ConversationHandle {
   @override
   void cancelGeneration() => cancels++;
 
+  /// What [rewindStoppedTurn] answers: a [StoppedTurnRewind], or anything else
+  /// to throw. Unsupported by default, like a libLiteRtLm without the rewind.
+  Object rewindOutcome = StoppedTurnRewind.unsupported;
+
+  /// The partial replies [rewindStoppedTurn] was given.
+  final rewinds = <Map<String, Object?>>[];
+
+  /// When set, a rewind waits on it — a native prefill in flight.
+  Completer<void>? rewindGate;
+
+  @override
+  Future<StoppedTurnRewind> rewindStoppedTurn(
+    Map<String, Object?> partialReply,
+  ) async {
+    rewinds.add(partialReply);
+    await rewindGate?.future;
+    final outcome = rewindOutcome;
+    if (outcome is StoppedTurnRewind) return outcome;
+    throw outcome;
+  }
+
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
@@ -270,5 +291,202 @@ void main() {
     await handle.chat('two').join();
     handle.close();
     expect(reopened.single.closed, isTrue);
+  });
+
+  group('rewind', () {
+    // Debug logging goes through print in tests too; only the warnings meant
+    // for release builds carry the package name.
+    List<String> releaseLines(List<String> printed) => [
+      for (final line in printed)
+        if (line.startsWith('[flutter_edge_ai_litertlm]')) line,
+    ];
+
+    Map<String, Object?> textReply(String text) => {
+      'role': 'assistant',
+      'content': [
+        {'type': 'text', 'text': text},
+      ],
+    };
+
+    test('the turn after a stop rewinds the conversation, with the partial '
+        'reply put back, and runs on it', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      expect(await handle.chat('one').join(), 'Hello there.');
+      await stopMidTurn('two', first);
+
+      expect(await handle.chat('three').join(), 'Hello there.');
+      expect(reopened, isEmpty);
+      expect(first.closed, isFalse);
+      expect(first.sent, ['one', 'two', 'three']);
+      expect(first.rewinds, [textReply('Hello')]);
+      // The conversation is healthy again: no second recovery.
+      await handle.chat('four').join();
+      expect(first.rewinds, hasLength(1));
+    });
+
+    test('a stop that reached native after the turn had finished keeps the '
+        'conversation as it is, quietly', () async {
+      first.rewindOutcome = StoppedTurnRewind.notCancelled;
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          await stopMidTurn('one', first);
+          expect(await handle.chat('two').join(), 'Hello there.');
+          await handle.chat('three').join();
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      expect(first.rewinds, hasLength(1));
+      expect(first.sent, ['one', 'two', 'three']);
+      expect(first.closed, isFalse);
+      expect(reopened, isEmpty);
+      expect(releaseLines(printed), isEmpty);
+    });
+
+    test('a conversation that cannot rewind is rebuilt quietly', () async {
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          await stopMidTurn('one', first);
+          await handle.chat('two').join();
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      expect(first.rewinds, hasLength(1));
+      expect(reopened.single.sent, ['two']);
+      expect(releaseLines(printed), isEmpty);
+    });
+
+    test('a failed rewind rebuilds the conversation and says so in release '
+        'builds', () async {
+      first.rewindOutcome = StoppedTurnRewindException(13, 'prefill failed');
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          await stopMidTurn('one', first);
+          expect(await handle.chat('two').join(), 'Hello there.');
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      expect(first.closed, isTrue);
+      expect(reopened.single.sent, ['two']);
+      final warning = releaseLines(printed).single;
+      expect(warning, contains('could not rewind'));
+      expect(warning, contains('prefill failed'));
+    });
+
+    test('on the NPU a stop rebuilds without trying to rewind', () async {
+      handle = RecoveringConversationHandle(
+        first,
+        reopen: (messagesJson) async {
+          final c = _Conversation('rebuilt', seed: messagesJson);
+          reopened.add(c);
+          return c;
+        },
+        canRewind: false,
+      );
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      await stopMidTurn('one', first);
+      await handle.chat('two').join();
+      expect(first.rewinds, isEmpty);
+      expect(reopened.single.sent, ['two']);
+    });
+
+    test('a stop during the rewind is not sent to native: the rewind '
+        'finishes and the turn returns before reaching the model', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      await stopMidTurn('one', first);
+      final cancelsAfterStop = first.cancels;
+
+      final gate = first.rewindGate = Completer<void>();
+      final pending = handle.chat('two').join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+      expect(
+        first.cancels,
+        cancelsAfterStop,
+        reason: 'a native cancel would abort the rewind\'s prefill',
+      );
+      gate.complete();
+
+      expect(await pending, isEmpty);
+      expect(first.sent, ['one']);
+      // Rewound and nothing generated since: the next turn just runs.
+      first.rewindGate = null;
+      expect(await handle.chat('three').join(), 'Hello there.');
+      expect(first.rewinds, hasLength(1));
+      expect(reopened, isEmpty);
+    });
+
+    test('closing during a rewind closes the conversation once the rewind '
+        'returns, not under it', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      await stopMidTurn('one', first);
+
+      final gate = first.rewindGate = Completer<void>();
+      final pending = handle.chat('two').join();
+      await pumpEventQueue();
+      handle.close();
+      expect(first.closed, isFalse);
+      gate.complete();
+
+      await expectLater(pending, throwsStateError);
+      expect(first.closed, isTrue);
+      expect(reopened, isEmpty);
+    });
+
+    test('a stopped turn that winds down after the next turn started is '
+        'rebuilt, not rewound: its reply is not known in time', () async {
+      handle = RecoveringConversationHandle(
+        first,
+        reopen: (messagesJson) async {
+          final c = _Conversation('rebuilt', seed: messagesJson);
+          reopened.add(c);
+          return c;
+        },
+        windDownTimeout: const Duration(milliseconds: 100),
+      );
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      final sub = handle.chat('one').listen(null)..pause();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+
+      expect(await handle.chat('two').join(), 'Hello there.');
+      expect(first.rewinds, isEmpty);
+      expect(reopened.single.sent, ['two']);
+
+      // When it does wind down, its reply belongs to a turn that is no longer
+      // the conversation's last, so it is not put back.
+      reopened.single.rewindOutcome = StoppedTurnRewind.rewound;
+      await sub.cancel();
+      await handle.chat('three').join();
+      expect(reopened.first.rewinds, isEmpty);
+      expect(reopened, hasLength(2));
+    });
+
+    test('a turn started before the stopped one has wound down rewinds with '
+        'its reply', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      final gate = first.hold = Completer<void>();
+      final stopped = handle.chat('one').join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+
+      final next = handle.chat('two').join();
+      await pumpEventQueue();
+      gate.complete();
+      await stopped;
+      expect(await next, 'Hello there.');
+
+      expect(first.rewinds, [textReply('Hello')]);
+      expect(first.sent, ['one', 'two']);
+      expect(reopened, isEmpty);
+    });
   });
 }

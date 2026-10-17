@@ -429,8 +429,8 @@ void main() {
               contains(
                 Abi.current() == Abi.windowsX64
                     ? 'runs Intel NPU bundles only'
-                    : 'Qualcomm Android and Qualcomm Linux arm64, and on Intel '
-                          'NPUs with Windows x64, only',
+                    : 'Google Tensor or Qualcomm Android, Qualcomm Linux '
+                          'arm64, and Intel Windows x64 only',
               ),
               contains('${Abi.current()}'),
             ),
@@ -726,14 +726,17 @@ final class _QualcommAndroid implements LiteRtLmNpuHost {
   @override
   Future<NpuStackCheck> qualcommStack() async => const NpuStackCheck.bundled();
   @override
+  Future<NpuStackCheck> googleTensorStack() =>
+      throw StateError('a Qualcomm host has no Google Tensor stack');
+  @override
   Future<NpuStackCheck> intelStack() =>
       throw StateError('an Android host has no Intel stack to ask about');
   @override
-  bool get hasNpu => true;
+  bool hasNpu(LiteRtLmNpuTarget target) => true;
   @override
-  String get noNpuReason => '';
+  String noNpuReason(LiteRtLmNpuTarget target) => '';
   @override
-  Future<String> prepareDispatchDir() async {
+  Future<String> prepareDispatchDir(LiteRtLmNpuTarget target) async {
     prepared = true;
     return '/data/app/npu';
   }
@@ -749,11 +752,16 @@ final class _IntelWindows implements LiteRtLmNpuHost {
   Future<NpuStackCheck> qualcommStack() =>
       throw StateError('a Windows host has no Qualcomm stack to ask about');
   @override
+  Future<NpuStackCheck> googleTensorStack() =>
+      throw StateError('a Windows host has no Google Tensor stack');
+  @override
   Future<NpuStackCheck> intelStack() async => const NpuStackCheck.bundled();
   @override
-  bool get hasNpu => throw StateError('Windows has no NPU probe');
+  bool hasNpu(LiteRtLmNpuTarget target) =>
+      throw StateError('Windows has no NPU probe');
   @override
-  String get noNpuReason => '';
+  String noNpuReason(LiteRtLmNpuTarget target) => '';
   @override
-  Future<String> prepareDispatchDir() async => r'C:\Apps\demo';
+  Future<String> prepareDispatchDir(LiteRtLmNpuTarget target) async =>
+      r'C:\Apps\demo';
 }

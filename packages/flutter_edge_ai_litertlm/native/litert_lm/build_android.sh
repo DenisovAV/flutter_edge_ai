@@ -49,6 +49,15 @@ echo "=== Building libLiteRtLm.so for Android arm64 ==="
 echo "ANDROID_NDK_HOME: $ANDROID_NDK_HOME"
 echo "ANDROID_HOME: $ANDROID_HOME"
 
+# Optional Bazel distribution cache for reproducible/offline dependency
+# fetching. Bazel still verifies every archive against the SHA-256 declared by
+# its repository rule.
+BAZEL_DISTDIR_ARGS=()
+if [ -n "${LITERT_LM_BAZEL_DISTDIR:-}" ]; then
+  BAZEL_DISTDIR_ARGS+=("--distdir=$LITERT_LM_BAZEL_DISTDIR")
+  echo "BAZEL_DISTDIR: $LITERT_LM_BAZEL_DISTDIR"
+fi
+
 # 1. Clone or update LiteRT-LM
 if [ -d "$LITERT_LM_DIR" ]; then
   echo "Updating $LITERT_LM_DIR..."
@@ -61,10 +70,10 @@ else
   cd "$LITERT_LM_DIR"
 fi
 
-# 2. Checkout version (-f to discard any patch leftovers)
+# 2. Switch to the requested version (discard any patch leftovers).
 TARGET_REF="${VERSION:-$DEFAULT_REF}"
-echo "Checking out $TARGET_REF..."
-git checkout -f "$TARGET_REF"
+echo "Switching to $TARGET_REF..."
+git switch --detach --discard-changes "$TARGET_REF"
 echo "Building from: $(git log --oneline -1)"
 
 # 3. Ensure cc_binary(linkshared=True) target exists in c/BUILD
@@ -149,17 +158,36 @@ echo "=== Building for Android arm64 ==="
 # the linker pad PT_LOAD segments to 16KB boundaries; the binary is still
 # loadable on 4KB-page kernels, just ~12KB larger per segment.
 bazelisk build \
+  ${BAZEL_DISTDIR_ARGS[@]+"${BAZEL_DISTDIR_ARGS[@]}"} \
   -c opt \
   --strip=always \
   --config=android_arm64 \
   --linkopt=-Wl,-z,max-page-size=16384 \
-  '//c:libLiteRtLm.dylib'
+  '//c:libLiteRtLm.dylib' \
+  '@litert//litert/vendors/google_tensor/dispatch:dispatch_api_so'
 
 # 6. Copy + rename .dylib → .so (bazel target name is hardcoded to .dylib).
 mkdir -p "$PREBUILT_DIR"
 cp bazel-bin/c/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.so"
 chmod +w "$PREBUILT_DIR/libLiteRtLm.so"
 echo "  libLiteRtLm.so → $PREBUILT_DIR/"
+
+# Google Tensor NPU dispatch bridge. The target's sources and BUILD file in the
+# pinned LiteRT tree carry Apache-2.0 headers. It is built from the exact LiteRT
+# commit resolved by this LiteRT-LM ref, then late-binds libedgetpu_litert.so
+# from the Pixel system image at runtime. Neither the proprietary system runtime
+# nor the separately licensed Google Tensor compiler/SDK is built or bundled.
+GOOGLE_TENSOR_DISPATCH="$(find -L bazel-bin -type f \
+  -path '*/litert/vendors/google_tensor/dispatch/libLiteRtDispatch_GoogleTensor.so' \
+  -print -quit)"
+if [ -z "$GOOGLE_TENSOR_DISPATCH" ] || [ ! -f "$GOOGLE_TENSOR_DISPATCH" ]; then
+  echo "ERROR: Google Tensor dispatch output not found" >&2
+  find -L bazel-bin -path '*google_tensor*' -name '*.so' -print >&2 || true
+  exit 1
+fi
+cp "$GOOGLE_TENSOR_DISPATCH" "$PREBUILT_DIR/libLiteRtDispatch_GoogleTensor.so"
+chmod +w "$PREBUILT_DIR/libLiteRtDispatch_GoogleTensor.so"
+echo "  libLiteRtDispatch_GoogleTensor.so → $PREBUILT_DIR/"
 
 # 7. Build StreamProxy for Android (cross-compile via NDK toolchain).
 NDK_TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64"

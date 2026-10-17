@@ -32,6 +32,31 @@ Future<NpuStackCheck> _check(
 );
 
 void main() {
+  group('Google Tensor Android stack', () {
+    test('the always-on dispatch bridge is registered', () async {
+      final result = await checkGoogleTensorNpuStack(
+        read: () async => _manifest({
+          'android_arm64': [..._base, nativeAssetId(googleTensorDispatchLib)],
+        }),
+        abi: 'android_arm64',
+      );
+      expect(result.bundled, isTrue);
+      expect(result.known, isTrue);
+    });
+
+    test('a stale native archive fails with release guidance', () async {
+      final result = await checkGoogleTensorNpuStack(
+        read: () async => _manifest({'android_arm64': _base}),
+        abi: 'android_arm64',
+      );
+      expect(result.bundled, isFalse);
+      expect(result.known, isTrue);
+      expect(result.reason, contains('Google Tensor NPU dispatch bridge'));
+      expect(result.reason, contains('native release'));
+      expect(result.reason, isNot(contains('qualcomm_npu')));
+    });
+  });
+
   test('every library registered: bundled', () async {
     final r = await _check(
       _manifest({
@@ -150,6 +175,11 @@ void main() {
       nativeAssetId(qualcommDispatchLib),
       'package:flutter_edge_ai_litertlm/src/native/LiteRtDispatch_Qualcomm',
     );
+    expect(
+      nativeAssetId(googleTensorDispatchLib),
+      'package:flutter_edge_ai_litertlm/src/native/LiteRtDispatch_GoogleTensor',
+    );
+    expect(googleTensorNpuLibs, [googleTensorDispatchLib]);
     expect(qualcommNpuLibs, hasLength(11));
     expect(androidLibFileName('QnnHtp'), 'libQnnHtp.so');
   });

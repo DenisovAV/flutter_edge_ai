@@ -163,6 +163,9 @@ class _NativeBundle {
       }
     }
     if (os == OS.android) {
+      for (final a in googleTensorNpuLibs) {
+        yield _dylibFileName(os, a);
+      }
       for (final a in androidExtraLibs) {
         yield _dylibFileName(os, a);
       }
@@ -1010,6 +1013,17 @@ Future<void> _processBundle({
     }
   }
 
+  // Android always carries our small Google Tensor dispatch bridge. It
+  // late-binds the Pixel system runtime, so no proprietary runtime is
+  // redistributed and no user opt-in is needed.
+  if (os == OS.android) {
+    _registerGoogleTensorNpu(
+      output: output,
+      prebuiltDir: prebuiltDir,
+      stage: stage,
+    );
+  }
+
   // Android and Linux arm64: the Qualcomm NPU stack, for apps that opted in.
   if (os == OS.android && bundle.androidExtraLibs.isNotEmpty) {
     await _registerQualcommNpu(
@@ -1061,6 +1075,37 @@ Future<void> _processBundle({
   if (localDir.uri != prebuiltDir) {
     output.dependencies.add(_watchableAncestor(localDir).uri);
   }
+}
+
+/// Registers the Android Google Tensor dispatch bridge in every build.
+///
+/// Unlike Qualcomm QNN, this is our Apache-2.0 bridge and the proprietary
+/// runtime comes from the Pixel system image. Missing means the native archive
+/// and Dart package are version-skewed, so fail the build rather than publish a
+/// plugin that advertises a ready-to-use NPU path and silently omits it.
+void _registerGoogleTensorNpu({
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) {
+  final file = prebuiltDir.resolve(
+    _dylibFileName(OS.android, googleTensorDispatchLib),
+  );
+  if (!File.fromUri(file).existsSync()) {
+    throw StateError(
+      '[$_packageName] ${_dylibFileName(OS.android, googleTensorDispatchLib)} '
+      'is missing from the Android native bundle. Use a native release that '
+      'includes Google Tensor support.',
+    );
+  }
+  output.assets.code.add(
+    CodeAsset(
+      package: _packageName,
+      name: 'src/native/$googleTensorDispatchLib',
+      linkMode: DynamicLoadingBundled(),
+      file: stage(file),
+    ),
+  );
 }
 
 // ============================================================================

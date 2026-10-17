@@ -8,6 +8,7 @@
 - Require `flutter_edge_ai` ^2.4.0.
 
 ## 1.13.3
+- Run Google Tensor G5/G6 language models through `PreferredBackend.npu` on Android.
 - README: Qwen3 0.6B bundle that loads (#659); NPU mask formula corrected.
 
 ## 1.13.2

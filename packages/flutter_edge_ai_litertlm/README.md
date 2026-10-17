@@ -764,7 +764,7 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL, NPU on Qualcomm — opt-in, below) |
+| Android  | ✅ FFI (GPU via OpenCL; NPU on Google Tensor G5/G6, or Qualcomm — opt-in) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
@@ -778,13 +778,47 @@ which the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
-`PreferredBackend.npu` is attempted only on Windows, on Android devices with
-Qualcomm FastRPC (`libcdsprpc.so`) and on Qualcomm Linux arm64 boards, the last
-two when the app opted in (below); elsewhere a generic bundle falls back to GPU,
-then CPU, and prints why, and a bundle compiled for an NPU is refused
+The published `native-v0.18.0-e` Android archive does not yet contain the
+Google Tensor dispatch bridge. Until the maintainer publishes an official
+archive containing it and updates this package's verified release metadata, a
+clean install cannot use Google Tensor NPU support. Locally built binaries are
+not a substitute for that release and are not committed to this package.
+
+`PreferredBackend.npu` is attempted on Windows, on Android devices with Google
+Tensor, on Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on
+Qualcomm Linux arm64 boards. Google Tensor needs no build opt-in; the Qualcomm
+paths require the opt-in below. Elsewhere a generic bundle falls back to GPU,
+then CPU and prints why; a bundle compiled for an NPU is refused instead
 ([Where a model runs](#where-a-model-runs)). On Windows the check is per OS, so
 a PC without an Intel NPU can report `activeBackend == npu` while the model runs
 elsewhere.
+
+On a Pixel, `PreferredBackend.npu` selects the Google Tensor dispatch bridge.
+The bundle constraint remains `google_tensor_artisan`, while the native runtime
+uses LiteRT-LM's generic NPU executor. Use a bundle compiled for the phone's
+exact Tensor generation: G5 on Tensor G5 and G6 on Tensor G6. No
+`qualcomm_npu` opt-in is needed. If the required bridge or system runtime is
+unavailable, the load fails without GPU or CPU fallback. The native runtime
+validates the stamped G5/G6 generation; the package does not infer compatibility
+from the Pixel model name. Inspect `model.activeBackend` to see the selected
+LiteRT-LM backend, but do not treat `npu` alone as independent proof of physical
+hardware execution.
+
+```dart
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm,
+).fromNetwork(
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
+  'resolve/main/gemma-4-E2B-it_Google_Tensor_G5.litertlm?download=true',
+).install();
+
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  preferredBackend: PreferredBackend.npu,
+);
+print(model.activeBackend); // npu
+```
 
 Run a Gemma 4 bundle on the NPU: a Gemma 3 bundle drops every prefill chunk
 after the first, with no error, and answers from the start of the prompt alone

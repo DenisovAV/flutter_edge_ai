@@ -286,6 +286,7 @@ engine falls back to WebGPU, and some Mali drivers hard-freeze (#324).
 <uses-native-library android:name="libOpenCL.so" android:required="false"/>
 <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
 <uses-native-library android:name="libOpenCL-pixel.so" android:required="false"/>
+<uses-native-library android:name="libedgetpu_litert.so" android:required="false"/>
 <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
 ```
 

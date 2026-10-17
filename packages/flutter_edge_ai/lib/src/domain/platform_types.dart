@@ -14,22 +14,24 @@ library;
 /// - [cpu]: All platforms
 /// - [gpu]: All platforms (Metal on macOS, DirectX on Windows, Vulkan on Linux,
 ///   OpenCL on Android)
-/// - [npu]: With LiteRT-LM (.litertlm models) — Android (Qualcomm Snapdragon
-///   only: the Android archive ships the Qualcomm QNN dispatch stack and
-///   nothing for MediaTek or Google Tensor) and Windows (Intel
+/// - [npu]: With LiteRT-LM (.litertlm models) — Android (Google Tensor out of
+///   the box, or Qualcomm Snapdragon with the `qualcomm_npu` build opt-in),
+///   Linux arm64 (Qualcomm, with the same opt-in), and Windows (Intel
 ///   LunarLake/PantherLake). Asking for it elsewhere falls back rather than
 ///   throwing; read `InferenceModel.activeBackend` for what actually ran.
 ///   On Windows the check is per OS, not per device: a PC without an Intel
 ///   NPU is still offered npu, and has been measured reporting
 ///   `activeBackend == npu` while running elsewhere. There, npu is a request,
 ///   not a proof.
+///   Google Tensor bundles remain generation-specific: a G5 bundle runs only
+///   on Tensor G5 and a G6 bundle only on Tensor G6.
 ///
 /// [gpu] and [npu] fall back if unavailable — GPU, then CPU. [cpu] does not
 /// fall back: it is the last resort already.
 enum PreferredBackend {
   cpu,
   gpu,
-  npu, // Android (Qualcomm only) + Windows (Intel LunarLake/PantherLake)
+  npu, // Google/Qualcomm Android, Qualcomm Linux, Intel Windows.
 }
 
 /// Numeric type of the model's activations, for native `.litertlm` models

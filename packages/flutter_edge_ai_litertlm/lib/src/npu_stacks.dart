@@ -27,6 +27,16 @@ const qualcommNpuAarUserDefine = 'qualcomm_npu_aar';
 /// ships in the native tarball and is bundled only with [qualcommNpuUserDefine].
 const qualcommDispatchLib = 'LiteRtDispatch_Qualcomm';
 
+/// Our Google Tensor dispatch bridge (built from the LiteRT pin, Apache 2.0).
+///
+/// The bridge late-binds `libedgetpu_litert.so` from the Pixel system image;
+/// that vendor runtime is not redistributed by this package. Unlike Qualcomm,
+/// Google Tensor therefore needs no separately downloaded runtime payload.
+const googleTensorDispatchLib = 'LiteRtDispatch_GoogleTensor';
+
+/// Every library the Android Google Tensor path asks core to stage.
+const googleTensorNpuLibs = [googleTensorDispatchLib];
+
 /// Qualcomm's QNN runtime, taken from `com.qualcomm.qti:qnn-runtime` on Maven
 /// Central at build time — never shipped in this package's own release.
 ///

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -60,14 +61,22 @@ void main() {
       );
     });
 
-    test('the rule: Windows always, Android with FastRPC, Linux with a Qualcomm '
-        'NPU, nowhere else', () {
+    test('the rule: Windows always, Android with Google Tensor or FastRPC, '
+        'Linux with a Qualcomm NPU, nowhere else', () {
       // The predicate rather than `hostShipsNpuDispatch`, because
       // `Platform.operatingSystem` has no override seam — asserting the getter
       // on a macOS runner compares false to false and would pass for an
       // implementation that disabled NPU everywhere.
       expect(npuDispatchShipsFor('windows', androidHasFastRpc: false), isTrue);
       expect(npuDispatchShipsFor('android', androidHasFastRpc: true), isTrue);
+      expect(
+        npuDispatchShipsFor(
+          'android',
+          androidHasFastRpc: false,
+          androidHasGoogleTensor: true,
+        ),
+        isTrue,
+      );
       expect(
         npuDispatchShipsFor('android', androidHasFastRpc: false),
         isFalse,
@@ -175,6 +184,85 @@ void main() {
       expect(ffiBackendWireName(PreferredBackend.npu), 'npu');
       expect(ffiBackendWireName(PreferredBackend.gpu), 'gpu');
       expect(ffiBackendWireName(PreferredBackend.cpu), 'cpu');
+    });
+
+    test('accepts the Google Tensor model constraint on the NPU executor', () {
+      expect(
+        ffiBackendConstraintMatches('google_tensor_artisan', 'npu'),
+        isTrue,
+      );
+      expect(ffiBackendConstraintMatches('npu', 'npu'), isTrue);
+      expect(ffiBackendConstraintMatches('gpu', 'npu'), isFalse);
+    });
+  });
+
+  group('model-driven Android vendor reachability', () {
+    const g5 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
+    const g6 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G6');
+    const qualcomm = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+
+    test('G5 and G6 require the Google runtime, not FastRPC', () {
+      for (final target in [g5, g6]) {
+        expect(
+          npuDispatchShipsFor(
+            'android',
+            androidHasGoogleTensor: true,
+            androidHasFastRpc: false,
+            target: target,
+          ),
+          isTrue,
+        );
+        expect(
+          npuDispatchShipsFor(
+            'android',
+            androidHasGoogleTensor: false,
+            androidHasFastRpc: true,
+            target: target,
+          ),
+          isFalse,
+          reason: '$target must not use Qualcomm as a fallback',
+        );
+      }
+    });
+
+    test('a Qualcomm stamp requires FastRPC, not the Google runtime', () {
+      expect(
+        npuDispatchShipsFor(
+          'android',
+          androidHasGoogleTensor: true,
+          androidHasFastRpc: false,
+          target: qualcomm,
+        ),
+        isFalse,
+      );
+      expect(
+        npuDispatchShipsFor(
+          'android',
+          androidHasGoogleTensor: false,
+          androidHasFastRpc: true,
+          target: qualcomm,
+        ),
+        isTrue,
+      );
+    });
+
+    test('an unstamped generic request may use either reachable runtime', () {
+      expect(
+        npuDispatchShipsFor(
+          'android',
+          androidHasGoogleTensor: true,
+          androidHasFastRpc: false,
+        ),
+        isTrue,
+      );
+      expect(
+        npuDispatchShipsFor(
+          'android',
+          androidHasGoogleTensor: false,
+          androidHasFastRpc: true,
+        ),
+        isTrue,
+      );
     });
   });
 
@@ -366,7 +454,7 @@ void main() {
             preferredBackend: PreferredBackend.cpu,
             logTag: '[Test]',
             createClient: () => client = _FakeClient(),
-            initializeClient: (_, __) async => throw error,
+            initializeClient: (_, _) async => throw error,
             shutdownClient: (client) => client.shutdown(),
           ),
           throwsA(same(error)),

@@ -44,17 +44,20 @@ const int kMinLitertlmContextTokens = 1024;
 /// to 1024 is exactly the setting that breaks them (LiteRT-LM#3508). Garbled
 /// Qwen3 output on the NPU is a different bug (LiteRT-LM#3846). So on NPU the
 /// caller's number is passed through untouched: the safe context is a property
-/// of the bundle, and only the caller knows it.
+/// of the bundle, and only the caller knows it. Google Tensor bundles are also
+/// compiled for a fixed accelerator configuration, so the same rule applies.
 ///
 /// Pass the backend of the ATTEMPT, not the one the caller asked for. A
-/// requested NPU falls back npu -> gpu -> cpu, and the floor still has to apply
-/// to the two that follow.
+/// requested chip accelerator falls back to gpu -> cpu, and the floor still
+/// has to apply to the attempts that follow.
 @visibleForTesting
 int clampLitertlmContextTokens(
   int maxTokens, {
   PreferredBackend? preferredBackend,
 }) {
-  if (preferredBackend == PreferredBackend.npu) return maxTokens;
+  if (preferredBackend == PreferredBackend.npu) {
+    return maxTokens;
+  }
   if (maxTokens >= kMinLitertlmContextTokens) return maxTokens;
   edgeAiLog(
     '[LiteRtLmEngine] maxTokens ($maxTokens) is below the minimum context '
@@ -187,18 +190,30 @@ class LiteRtLmEngine
           preferredVisionBackend: config.preferredVisionBackend,
           preferredAudioBackend: config.preferredAudioBackend,
         );
+    final npuTarget = liteRtLmNpuTargetForLoad(
+      bundle: bundle,
+      supportImage: config.supportImage,
+      supportAudio: config.supportAudio,
+    );
 
-    // Qualcomm npu (Android, Linux arm64) is opt-in per app. Ask the build
-    // before the hardware: an app that did not bundle the stack must not even
-    // dlopen a vendor library. When the manifest cannot say (no binding in a
-    // background isolate), the attempt itself checks the libraries before
-    // anything is loaded — core's prepareNpuDispatchDir on Android, the
-    // preload in LiteRtLmFfiClient on Linux.
+    // Android selects the stack from the system runtime: Google Tensor is
+    // always bundled; Qualcomm remains opt-in. Linux arm64 remains Qualcomm.
+    // Ask the build before extraction so a missing stack becomes a normal
+    // backend fallback with an actionable reason.
     bool? npuAvailable;
     String? npuUnavailableBecause;
-    if (npuMayRun &&
-        (host.operatingSystem == 'android' ||
-            host.operatingSystem == 'linux')) {
+    if (npuMayRun && host.operatingSystem == 'android') {
+      final stack = await host.npuStackFor(npuTarget);
+      if (!stack.known) {
+        edgeAiLog(
+          '[LiteRtLmEngine] ${stack.reason}; trying npu, the platform side '
+          'checks the libraries',
+        );
+      } else if (!stack.bundled) {
+        npuAvailable = false;
+        npuUnavailableBecause = stack.reason;
+      }
+    } else if (npuMayRun && host.operatingSystem == 'linux') {
       final stack = await host.qualcommNpuStack();
       if (!stack.known) {
         edgeAiLog(
@@ -263,9 +278,9 @@ class LiteRtLmEngine
       supportAudio: config.supportAudio,
       preferredVisionBackend: config.preferredVisionBackend,
       preferredAudioBackend: config.preferredAudioBackend,
-      npuAvailable: () => npuAvailable ?? host.npuDispatchShips,
+      npuAvailable: () => npuAvailable ?? host.npuDispatchShipsFor(npuTarget),
       npuUnavailableReason: () =>
-          npuUnavailableBecause ?? host.npuUnavailableReason,
+          npuUnavailableBecause ?? host.npuUnavailableReasonFor(npuTarget),
       abi: host.abi,
     );
 
@@ -310,6 +325,7 @@ class LiteRtLmEngine
               audioBackend: args.audioBackend,
               enableSpeculativeDecoding: config.enableSpeculativeDecoding,
               activationDataType: args.activationDataType,
+              npuTarget: plan.npuTarget,
             );
           } on LiteRtLmEngineCreateException catch (e, stackTrace) {
             final target = plan.npuTarget;
@@ -388,8 +404,9 @@ class LiteRtLmEngine
 
   /// Runs NPU engine creations one at a time. The Qualcomm dispatch sets
   /// `ADSP_LIBRARY_PATH` with a process-wide `setenv` while it initialises, so
-  /// two NPU engines created concurrently race over it. Other backends are not
-  /// serialised.
+  /// two Qualcomm NPU engines created concurrently race over it. Serialize all
+  /// NPU initialization to keep dispatch setup deterministic across vendors.
+  /// Other backends are not serialized.
   static Future<void> _oneNpuInitAtATime(
     PreferredBackend backend,
     Future<void> Function() body,

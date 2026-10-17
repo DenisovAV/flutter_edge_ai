@@ -6,9 +6,8 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../npu_stacks.dart';
 
-/// Whether this build bundles a vendor's NPU stack — the Qualcomm one
-/// (Android, Linux arm64, [checkQualcommNpuStack]) or, for EmbeddingGemma 2,
-/// the Intel one (Windows x64, `checkIntelNpuStack`) — and why not.
+/// Whether this build bundles a vendor's NPU stack — Google Tensor on Android,
+/// Qualcomm on Android/Linux arm64, or Intel on Windows x64 — and why not.
 final class NpuStackCheck {
   const NpuStackCheck.bundled() : bundled = true, known = true, reason = null;
   const NpuStackCheck.missing(String this.reason)
@@ -41,6 +40,7 @@ Future<String> _readFromBundle() =>
     rootBundle.loadString('NativeAssetsManifest.json', cache: false);
 
 NpuStackCheck? _cached;
+NpuStackCheck? _googleTensorCached;
 
 /// Whether this build registered the Qualcomm NPU stack.
 ///
@@ -96,6 +96,54 @@ Future<NpuStackCheck> checkQualcommNpuStack({
     );
   }
   if (read == null) _cached = result;
+  return result;
+}
+
+/// Whether this Android build registered the always-on Google Tensor dispatch
+/// bridge. A missing bridge is a broken/stale native archive, not an app opt-in
+/// choice: the proprietary runtime comes from the Pixel system image.
+Future<NpuStackCheck> checkGoogleTensorNpuStack({
+  NativeAssetsManifestReader? read,
+  String? abi,
+}) async {
+  if (read == null && _googleTensorCached != null) {
+    return _googleTensorCached!;
+  }
+  final String text;
+  try {
+    text = await (read ?? _readFromBundle)();
+  } on Object catch (e) {
+    return NpuStackCheck.unknown(
+      'NativeAssetsManifest.json could not be read ($e), so whether this '
+      'build bundles the Google Tensor NPU dispatch bridge is unknown',
+    );
+  }
+  final NpuStackCheck result;
+  try {
+    final assets =
+        ((jsonDecode(text) as Map)['native-assets'] as Map?)?[abi ??
+                Abi.current().toString()]
+            as Map?;
+    final missing = [
+      for (final name in googleTensorNpuLibs)
+        if (!(assets?.containsKey(nativeAssetId(name)) ?? false))
+          androidLibFileName(name),
+    ];
+    result = missing.isEmpty
+        ? const NpuStackCheck.bundled()
+        : NpuStackCheck.missing(
+            'this build is missing the Google Tensor NPU dispatch bridge '
+            '(${missing.join(', ')}); use a flutter_edge_ai_litertlm native '
+            'release that includes Google Tensor support and rebuild',
+          );
+  } on Object catch (e) {
+    return NpuStackCheck.unknown(
+      'NativeAssetsManifest.json is not in a format this version understands '
+      '($e), so whether this build bundles the Google Tensor NPU dispatch '
+      'bridge is unknown',
+    );
+  }
+  if (read == null) _googleTensorCached = result;
   return result;
 }
 

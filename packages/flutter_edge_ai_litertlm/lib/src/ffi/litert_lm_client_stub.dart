@@ -5,6 +5,8 @@
 // mobile/desktop branch in mobile/flutter_edge_ai_mobile.dart never executes.
 // This stub exists purely so the import graph compiles on web (no dart:ffi).
 
+import '../bundle/litertlm_bundle_info.dart';
+
 class LiteRtLmFfiClient {
   LiteRtLmFfiClient() {
     throw UnsupportedError(
@@ -22,6 +24,7 @@ class LiteRtLmFfiClient {
     bool enableAudio = false,
     bool? enableSpeculativeDecoding,
     int? activationDataType,
+    LiteRtLmNpuTarget? npuTarget,
   }) => throw UnsupportedError('web stub — never instantiated');
 
   // Referenced by the FFI fallback runtime in flutter_edge_ai_mobile.dart

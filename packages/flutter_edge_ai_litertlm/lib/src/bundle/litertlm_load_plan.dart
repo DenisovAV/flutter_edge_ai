@@ -152,6 +152,19 @@ bool liteRtLmEncoderOnNpu({
       (supportAudio && onNpu(bundle.audioEncoder, preferredAudioBackend));
 }
 
+/// The compiled NPU target used by the parts this load turns on. Null means
+/// the load is generic (including an explicit NPU request for an unstamped
+/// bundle). The stamp selects the Android vendor; it never selects by device
+/// name. A mismatched G5/G6 device is left for the native runtime to reject.
+LiteRtLmNpuTarget? liteRtLmNpuTargetForLoad({
+  required LiteRtLmBundleInfo? bundle,
+  required bool supportImage,
+  required bool supportAudio,
+}) =>
+    _textNpuTarget(bundle) ??
+    (supportImage ? bundle?.visionEncoder?.npuTarget : null) ??
+    (supportAudio ? bundle?.audioEncoder?.npuTarget : null);
+
 /// Decides a load of [path] from what the file says ([bundle]; null when it
 /// could not be read, which keeps the rules that need no file) and what the
 /// caller asked for.
@@ -448,17 +461,19 @@ void _checkNpuVendor(
 }) {
   final vendor = target.isQualcomm
       ? 'Qualcomm'
+      : target.isGoogleTensor
+      ? 'Google'
       : target.isIntel
       ? 'Intel'
       : null;
-  final hostVendor = liteRtLmNpuEmbeddingAbis[abi];
-  if (vendor != null && vendor == hostVendor) return;
+  final hostVendors = liteRtLmNpuEmbeddingAbis[abi];
+  if (vendor != null && (hostVendors?.contains(vendor) ?? false)) return;
   final hosts = vendor == null
       ? null
       : [
-          for (final MapEntry(key: hostAbi, value: v)
+          for (final MapEntry(key: hostAbi, value: vendors)
               in liteRtLmNpuEmbeddingAbis.entries)
-            if (v == vendor) hostAbi,
+            if (vendors.contains(vendor)) hostAbi,
         ];
   final what = encoder == null ? path : "$path's $encoder encoder";
   // An encoder that is off is not run: the load works without it.
@@ -471,7 +486,8 @@ void _checkNpuVendor(
     LiteRtLmBundleProblem.unsupportedNpu,
     vendor == null
         ? '$what is compiled for the $target NPU. flutter_edge_ai_litertlm '
-              'runs Qualcomm and Intel NPU bundles only; $instead the generic '
+              'runs Google Tensor, Qualcomm, and Intel NPU bundles only; '
+              '$instead the generic '
               'bundle of this model to run it on the GPU or the CPU.'
         : '$what is compiled for the $target NPU, which runs on '
               '${hosts!.join(' and ')} only, and this is $abi; $instead the '

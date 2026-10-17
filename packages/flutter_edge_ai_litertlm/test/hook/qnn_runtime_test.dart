@@ -295,6 +295,21 @@ void main() {
     },
   );
 
+  test('the hook owns the Google Tensor bridge during cache invalidation', () {
+    final hook = File('hook/build.dart').readAsStringSync();
+    expect(
+      hook,
+      contains(
+        'for (final a in googleTensorNpuLibs) {\n'
+        '        yield _dylibFileName(os, a);\n'
+        '      }',
+      ),
+      reason:
+          'a native bundle version change must remove a stale Google Tensor '
+          'dispatch bridge from the shared flat cache',
+    );
+  });
+
   group('cache', () {
     late Directory root;
     late File aar;

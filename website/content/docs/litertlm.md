@@ -1,6 +1,6 @@
 ---
 title: LiteRT-LM
-description: The primary .litertlm engine — on-device inference over dart:ffi (LiteRT-LM C API) on all five native platforms plus a text-only web preview, with CPU / GPU / NPU acceleration and a LiteRT embedding backend.
+description: The primary .litertlm engine — on-device inference over dart:ffi (LiteRT-LM C API) on all five native platforms plus a text-only web preview, with CPU, GPU, and NPU acceleration on Google Tensor, Qualcomm, and Intel, plus a LiteRT embedding backend.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -27,7 +27,7 @@ EmbeddingGemma 1 / Gecko
 
 | Platform | Support |
 |----------|---------|
-| Android | ✅ FFI (GPU via OpenCL, NPU on Qualcomm — opt-in via `qualcomm_npu`) |
+| Android | ✅ FFI (GPU via OpenCL; NPU on Google Tensor G5/G6, or Qualcomm — opt-in via `qualcomm_npu`) |
 | iOS | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in via `qualcomm_npu`) |
 | Windows | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
@@ -104,7 +104,7 @@ Pick the accelerator with `preferredBackend:` on `getActiveModel`:
 |---------|-------|
 | `cpu` | All native platforms |
 | `gpu` | OpenCL (Android), Metal (Apple), DirectX 12 / WebGPU (Windows), Vulkan / WebGPU (Linux); on web the runtime picks WebGPU or WASM itself and `preferredBackend` is not applied |
-| `npu` | Qualcomm on Android and on Linux arm64 (opt-in, `.litertlm`), and Windows (Intel LunarLake / PantherLake) |
+| `npu` | Google Tensor on Android (ready to use), Qualcomm on Android and Linux arm64 (opt-in, `.litertlm`), and Windows (Intel LunarLake / PantherLake) |
 
 GPU is the right default, but it is not uniformly faster: on Android the win is
 in **prefill**, and decode can be slower than CPU. One measured pair — Galaxy S26,
@@ -132,8 +132,37 @@ GPU](/docs/troubleshooting#wrong-numbers-on-gpu).
 Windows NPU ships the Intel dispatch stack — `LiteRtDispatch.dll` + the OpenVino
 runtime + TBB — inside the Windows native archive.
 
-**Android NPU is opt-in.** Qualcomm licenses its QNN runtime for redistribution
-inside an application only, so the package carries just LiteRT's dispatch
+**Google Tensor needs no build opt-in.** Use `PreferredBackend.npu` with the
+matching G5 or G6 language-model bundle. Its bundle constraint is
+`google_tensor_artisan`; natively, it uses
+LiteRT-LM's NPU executor with the Google Tensor dispatch bridge. The engine
+attempts its normal GPU and CPU fallbacks if initialization fails, but G5/G6
+bundles are NPU-only and reject those attempts rather than running on the wrong
+accelerator. Check `model.activeBackend` after load; a successful Tensor load
+reports `PreferredBackend.npu`.
+
+The currently published `native-v0.18.0-e` Android archive does not contain
+that bridge yet. Google Tensor support therefore remains blocked for clean
+installs until an official native archive is published and its verified
+release metadata is updated in the package.
+
+```dart
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm,
+).fromNetwork(
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
+  'resolve/main/gemma-4-E2B-it_Google_Tensor_G5.litertlm?download=true',
+).install();
+
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  preferredBackend: PreferredBackend.npu,
+);
+```
+
+**Qualcomm Android NPU is opt-in.** Qualcomm licenses its QNN runtime for
+redistribution inside an application only, so the package carries just LiteRT's dispatch
 library and your app asks for the rest in its `pubspec.yaml` (the workspace
 root's, if the app is a pub workspace member):
 
@@ -154,7 +183,8 @@ mirror, add `qualcomm_npu_maven_url: <maven base URL>` or
 `qualcomm_npu_aar: <path to the same AAR>`. Without the flag, `npu` with a
 generic bundle on Android falls back to GPU, then CPU, and the log says how to
 enable it; a bundle compiled for an NPU is refused with a
-`BackendInitException` that says the same.
+`BackendInitException` that says the same. Google Tensor does not use this
+flag.
 
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino
@@ -180,10 +210,10 @@ Linux arm64, with the per-SoC bundles, and never falls back: see
 On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
-**For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
-those work on both vendors. The **Gemma 3** family does not, and it fails
-silently — the model answers from the first prefill chunk alone, fluently,
-with no error and nothing in the log:
+**For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4
+bundles. On Qualcomm and Intel those work, while the **Gemma 3** family does not:
+it fails silently — the model answers from the first prefill chunk alone,
+fluently, with no error and nothing in the log:
 
 - **Qualcomm.** A compiled bundle carries a prefill mask of
   `2 B × (attention heads ÷ KV heads) × prefill × (cache_length + prefill)`. Above
@@ -205,11 +235,11 @@ so pass the `cache_length` the bundle was compiled for. Note that requesting
 it fails to initialize, the engine falls back to GPU and then CPU (a bundle
 compiled for an NPU is never tried there — see below), and the floor applies
 again to those attempts — so a value chosen for an NPU bundle is raised to 1024
-on the fallback rather than crashing it. The NPU candidate is attempted only on
-Windows, on Android phones with Qualcomm FastRPC, and on Qualcomm Linux arm64
-boards that pass the FastRPC checks above — the last two only when the app sets
-`qualcomm_npu`; on other Android phones, macOS, other Linux machines and iOS it
-is skipped, because nothing there can run it — and on
+on the fallback rather than crashing it. The NPU candidate is attempted on
+Google Tensor Pixels, Windows, Android phones with Qualcomm FastRPC, and
+Qualcomm Linux arm64 boards that pass the FastRPC checks above; only the
+Qualcomm paths require `qualcomm_npu: true`. On other Android phones, macOS,
+other Linux machines and iOS it is skipped, because nothing there can run it — and on
 macOS the native runtime was measured accepting `npu` anyway, which made
 `activeBackend` report an NPU that does not exist on the machine. On Windows
 the check is per OS, so a PC without an Intel NPU still attempts it, and
@@ -296,8 +326,8 @@ KV-cache budget), not the response length. CPU/GPU `.litertlm` bundles bake a
 minimum `kv_cache_max_len` (1024 for the supported bundles), so this engine
 **clamps `maxTokens` up to 1024** (with
 a log warning) to avoid a native KV-cache crash — on every backend attempt except
-the NPU one, where the bundle's own compiled `cache_length` governs instead (see
-the NPU warning above).
+the NPU one, where the bundle's own compiled `cache_length` governs instead
+(see the NPU warning above).
 
 To cap **generation length**, use `maxOutputTokens` on the session:
 

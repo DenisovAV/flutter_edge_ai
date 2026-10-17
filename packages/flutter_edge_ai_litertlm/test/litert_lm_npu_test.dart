@@ -17,6 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 const _file = 'embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm';
 const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+const _tensorG5 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
+const _tensorG6 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G6');
 
 /// What Google's `…_Intel_PTL.litertlm` bundles are stamped with.
 const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
@@ -70,8 +72,9 @@ void main() {
               contains('generic EmbeddingGemma 2 bundle'),
               contains('no NPU graph'),
               contains('_Qualcomm_<SoC>.litertlm'),
+              contains('_Google_Tensor_G5'),
               contains('<model>_Intel_PTL.litertlm'),
-              contains('SM8850, SM8650, QCS8275 are verified'),
+              contains('SM8850, SM8650, QCS8275 are device-verified'),
               contains('omit preferredBackend'),
             ),
           ),
@@ -137,8 +140,8 @@ void main() {
             _refusal(
               allOf(
                 contains(
-                  'Qualcomm Android and Qualcomm Linux arm64, and on Intel '
-                  'NPUs with Windows x64, only',
+                  'Google Tensor or Qualcomm Android, Qualcomm Linux arm64, '
+                  'and Intel Windows x64 only',
                 ),
                 contains('this is $os ($abi)'),
                 contains('generic EmbeddingGemma 2 bundle'),
@@ -161,7 +164,6 @@ void main() {
           ..operatingSystem = os
           ..abi = abi;
         for (final target in const [
-          LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
           LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
           // Only LiteRT's OpenVINO stamp is an Intel bundle this runs.
           LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL'),
@@ -171,7 +173,7 @@ void main() {
             _refusal(
               allOf(
                 contains('compiled for a ${target.vendor} NPU (${target.soc})'),
-                contains('Qualcomm and Intel NPUs only'),
+                contains('Google Tensor, Qualcomm, and Intel NPUs only'),
               ),
             ),
             reason: '$abi $target',
@@ -228,8 +230,8 @@ void main() {
       'on a device without the NPU is refused with the probe\'s reason',
       () async {
         host
-          ..hasNpu = false
-          ..noNpuReason = 'this device has no Qualcomm FastRPC';
+          ..npuPresent = false
+          ..unavailableReason = 'this device has no Qualcomm FastRPC';
         await expectLater(
           place(),
           _refusal(
@@ -266,6 +268,52 @@ void main() {
                 ),
           ),
         );
+      },
+    );
+  });
+
+  group('Google Tensor bundles', () {
+    for (final target in const [_tensorG5, _tensorG6]) {
+      test(
+        '${target.soc} runs on Android arm64 with the Google stack',
+        () async {
+          final placement = await place(target: target);
+          expect(placement.backend, PreferredBackend.npu);
+          expect(placement.target, target);
+          expect(placement.dispatchDir, '/data/app/code_cache/npu');
+          expect(host.asked, ['googleStack', 'hasNpu', 'dispatchDir']);
+        },
+      );
+    }
+
+    test('a missing Pixel system runtime is a clear refusal', () async {
+      host
+        ..npuPresent = false
+        ..unavailableReason =
+            'the Google Tensor system runtime libedgetpu_litert.so did not open';
+      await expectLater(
+        place(target: _tensorG5),
+        _refusal(
+          allOf(
+            contains('needs the Google Tensor_G5 NPU'),
+            contains('libedgetpu_litert.so did not open'),
+          ),
+        ),
+      );
+      expect(host.asked, ['googleStack', 'hasNpu']);
+    });
+
+    test(
+      'is refused on unsupported platforms before any runtime probe',
+      () async {
+        host
+          ..operatingSystem = 'linux'
+          ..abi = 'linux_arm64';
+        await expectLater(
+          place(target: _tensorG6),
+          _refusal(contains('Google ones run on android_arm64')),
+        );
+        expect(host.asked, isEmpty);
       },
     );
   });
@@ -316,7 +364,8 @@ void main() {
             allOf(
               contains('compiled for the IntelOpenVINO PTL NPU'),
               contains(
-                'on $os ($abi) flutter_edge_ai_litertlm runs Qualcomm NPU '
+                'on $os ($abi) flutter_edge_ai_litertlm runs '
+                '${os == 'android' ? 'Google and Qualcomm' : 'Qualcomm'} NPU '
                 'bundles only; Intel ones run on windows_x64',
               ),
             ),
@@ -422,29 +471,39 @@ final class _FakeHost implements LiteRtLmNpuHost {
 
   NpuStackCheck intel = const NpuStackCheck.bundled();
 
+  NpuStackCheck google = const NpuStackCheck.bundled();
+
   String dispatchDir = '/data/app/code_cache/npu';
 
   bool _hasNpu = true;
 
-  @override
-  String noNpuReason = 'no NPU';
+  String unavailableReason = 'no NPU';
 
   NpuDispatchUnavailableException? dispatchError;
 
   final asked = <String>[];
 
-  set hasNpu(bool value) => _hasNpu = value;
+  set npuPresent(bool value) => _hasNpu = value;
 
   @override
-  bool get hasNpu {
+  bool hasNpu(LiteRtLmNpuTarget target) {
     asked.add('hasNpu');
     return _hasNpu;
   }
 
   @override
+  String noNpuReason(LiteRtLmNpuTarget target) => unavailableReason;
+
+  @override
   Future<NpuStackCheck> qualcommStack() async {
     asked.add('stack');
     return stack;
+  }
+
+  @override
+  Future<NpuStackCheck> googleTensorStack() async {
+    asked.add('googleStack');
+    return google;
   }
 
   @override
@@ -454,7 +513,7 @@ final class _FakeHost implements LiteRtLmNpuHost {
   }
 
   @override
-  Future<String> prepareDispatchDir() async {
+  Future<String> prepareDispatchDir(LiteRtLmNpuTarget target) async {
     asked.add('dispatchDir');
     final error = dispatchError;
     if (error != null) throw error;

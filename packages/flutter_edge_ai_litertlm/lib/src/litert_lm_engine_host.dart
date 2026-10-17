@@ -10,6 +10,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
+import 'bundle/litertlm_bundle_info.dart';
 import 'ffi/backend_preference.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_stack_manifest.dart';
@@ -32,11 +33,29 @@ class LiteRtLmEngineHost {
   /// ([checkQualcommNpuStack]).
   Future<NpuStackCheck> qualcommNpuStack() => checkQualcommNpuStack();
 
+  /// Whether this build bundles the Google Tensor dispatch bridge.
+  Future<NpuStackCheck> googleTensorNpuStack() => checkGoogleTensorNpuStack();
+
+  /// The build-time stack selected by the bundle target. An unstamped generic
+  /// Android request uses the reachable runtime only as a tie-breaker.
+  Future<NpuStackCheck> npuStackFor(LiteRtLmNpuTarget? target) =>
+      useGoogleTensorNpuDispatch(target)
+      ? googleTensorNpuStack()
+      : qualcommNpuStack();
+
   /// [hostShipsNpuDispatch]. On Android it opens a vendor library.
   bool get npuDispatchShips => hostShipsNpuDispatch;
 
+  /// Whether this host reaches the vendor selected by the bundle stamp.
+  bool npuDispatchShipsFor(LiteRtLmNpuTarget? target) =>
+      hostShipsNpuDispatchFor(target);
+
   /// [hostNpuUnavailableReason]; read after [npuDispatchShips].
   String get npuUnavailableReason => hostNpuUnavailableReason;
+
+  /// Why the vendor selected by the bundle stamp cannot be reached.
+  String npuUnavailableReasonFor(LiteRtLmNpuTarget? target) =>
+      hostNpuUnavailableReasonFor(target);
 
   /// A client for one backend attempt.
   LiteRtLmFfiClient createClient() => LiteRtLmFfiClient();
@@ -55,6 +74,7 @@ class LiteRtLmEngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    LiteRtLmNpuTarget? npuTarget,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
@@ -67,6 +87,7 @@ class LiteRtLmEngineHost {
     audioBackend: audioBackend,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     activationDataType: activationDataType,
+    npuTarget: npuTarget,
   );
 }
 

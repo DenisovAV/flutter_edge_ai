@@ -12,7 +12,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mutex/mutex.dart';
 
+import '../bundle/litertlm_bundle_info.dart';
 import '../npu_stacks.dart';
+import 'backend_preference.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
@@ -762,6 +764,7 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? activationDataType,
+    LiteRtLmNpuTarget? npuTarget,
   }) async {
     final initSw = Stopwatch()..start();
     _ensureBindings();
@@ -783,6 +786,10 @@ class LiteRtLmFfiClient {
 
     // Create engine settings
     final modelPathPtr = modelPath.toNativeUtf8();
+    // Google Tensor AOT bundles declare `google_tensor_artisan`, but LiteRT-LM
+    // maps that model constraint onto its generic NPU executor. The public and
+    // native request is therefore `npu`; Android's dispatch directory selects
+    // Google Tensor or Qualcomm for the current device.
     final backendPtr = backend.toNativeUtf8();
     // Vision + audio encoders run on visionBackend/audioBackend, NOT the text
     // backend: what the engine's load plan chose from the bundle (the
@@ -801,7 +808,7 @@ class LiteRtLmFfiClient {
       final npuDispatchDir = backend != 'npu'
           ? null
           : Platform.isAndroid
-          ? await prepareAndroidNpuDispatchDir()
+          ? await prepareAndroidNpuDispatchDir(npuTarget)
           : Platform.isLinux
           ? prepareLinuxNpuDispatchDir()
           : null;
@@ -1036,11 +1043,16 @@ class LiteRtLmFfiClient {
         final nativeCode = engineAddr.code == 0 ? null : engineAddr.code;
         final nativeMessage = engineAddr.message;
         final because = nativeMessage == null ? '' : ': $nativeMessage';
-        if (constraint != null && constraint != backend) {
+        if (constraint != null &&
+            !ffiBackendConstraintMatches(constraint, backend)) {
+          final preferredBackendName = constraint == 'google_tensor_artisan'
+              ? 'npu'
+              : constraint;
           throw LiteRtLmEngineCreateException(
             'This .litertlm model requires the "$constraint" backend — it '
             'declares section_backend_constraint: $constraint, but the '
-            '"$backend" backend was requested. Use PreferredBackend.$constraint '
+            '"$backend" backend was requested. Use '
+            'PreferredBackend.$preferredBackendName '
             '(or omit preferredBackend to try GPU first).',
             nativeCode: nativeCode,
             nativeMessage: nativeMessage,
@@ -2310,12 +2322,18 @@ String _activationName(int value) => switch (value) {
 /// exactly the stack this build bundled — nativeLibraryDir when the installer
 /// extracted them, else a copy taken from the base APK or its config split (a
 /// Play install). The list comes from here because the build decides it.
-Future<String> prepareAndroidNpuDispatchDir() async {
+Future<String> prepareAndroidNpuDispatchDir([LiteRtLmNpuTarget? target]) async {
+  if (!hostShipsNpuDispatchFor(target)) {
+    throw NpuDispatchUnavailableException(hostNpuUnavailableReasonFor(target));
+  }
+  final googleTensor = useGoogleTensorNpuDispatch(target);
+  final libs = googleTensor ? googleTensorNpuLibs : qualcommNpuLibs;
+  final vendor = googleTensor ? 'Google Tensor' : 'Qualcomm';
   const bundledChannel = MethodChannel('flutter_gemma_bundled');
   final String? dir;
   try {
     dir = await bundledChannel.invokeMethod<String>('prepareNpuDispatchDir', {
-      'libs': [for (final n in qualcommNpuLibs) androidLibFileName(n)],
+      'libs': [for (final n in libs) androidLibFileName(n)],
     });
   } on MissingPluginException {
     throw const NpuDispatchUnavailableException(
@@ -2325,7 +2343,7 @@ Future<String> prepareAndroidNpuDispatchDir() async {
     );
   } on PlatformException catch (e) {
     throw NpuDispatchUnavailableException(
-      'the Qualcomm NPU libraries could not be prepared '
+      'the $vendor NPU dispatch libraries could not be prepared '
       '(${e.code}: ${e.message})',
     );
   }
@@ -2334,6 +2352,7 @@ Future<String> prepareAndroidNpuDispatchDir() async {
       'prepareNpuDispatchDir returned no directory',
     );
   }
+  edgeAiLog('[LiteRtLmFfi] Android NPU: using $vendor dispatch from $dir');
   return dir;
 }
 

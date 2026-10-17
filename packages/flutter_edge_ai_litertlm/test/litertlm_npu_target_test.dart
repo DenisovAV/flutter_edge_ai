@@ -136,6 +136,14 @@ void main() {
         const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
       );
       expect(target!.isQualcomm, isFalse);
+      expect(target.isGoogleTensor, isTrue);
+      expect(
+        const LiteRtLmNpuTarget(
+          vendor: 'GOOGLE',
+          soc: 'Tensor_G6',
+        ).isGoogleTensor,
+        isTrue,
+      );
     },
   );
 

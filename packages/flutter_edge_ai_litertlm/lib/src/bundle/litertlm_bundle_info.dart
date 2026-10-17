@@ -25,6 +25,10 @@ final class LiteRtLmNpuTarget {
 
   bool get isQualcomm => vendor.toLowerCase() == 'qualcomm';
 
+  /// Compiled for a Google Tensor NPU. The [soc] remains authoritative for
+  /// generation compatibility; the native runtime validates G5 versus G6.
+  bool get isGoogleTensor => vendor.toLowerCase() == 'google';
+
   /// Compiled by LiteRT's OpenVINO plugin for an Intel NPU: Google's
   /// `…_Intel_PTL` bundles are stamped `IntelOpenVINO` / `PTL` (read from the
   /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).

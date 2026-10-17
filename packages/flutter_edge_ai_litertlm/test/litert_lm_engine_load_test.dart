@@ -24,6 +24,7 @@ typedef _Attempt = ({
   String backend,
   String visionBackend,
   String audioBackend,
+  LiteRtLmNpuTarget? npuTarget,
 });
 
 class _FakeHost extends LiteRtLmEngineHost {
@@ -63,13 +64,35 @@ class _FakeHost extends LiteRtLmEngineHost {
   }
 
   @override
+  Future<NpuStackCheck> googleTensorNpuStack() async {
+    stackChecks++;
+    return stack;
+  }
+
+  @override
+  Future<NpuStackCheck> npuStackFor(LiteRtLmNpuTarget? target) async {
+    stackChecks++;
+    return stack;
+  }
+
+  @override
   bool get npuDispatchShips {
     npuProbes++;
     return npuShips;
   }
 
   @override
+  bool npuDispatchShipsFor(LiteRtLmNpuTarget? target) {
+    npuProbes++;
+    return npuShips;
+  }
+
+  @override
   String get npuUnavailableReason => 'the fake host has no NPU';
+
+  @override
+  String npuUnavailableReasonFor(LiteRtLmNpuTarget? target) =>
+      'the fake host has no NPU';
 
   @override
   Future<void> initializeClient(
@@ -85,11 +108,13 @@ class _FakeHost extends LiteRtLmEngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    LiteRtLmNpuTarget? npuTarget,
   }) async {
     attempts.add((
       backend: backend,
       visionBackend: visionBackend,
       audioBackend: audioBackend,
+      npuTarget: npuTarget,
     ));
     if (failures[backend] case final error?) throw error;
   }
@@ -442,6 +467,57 @@ void main() {
       ),
     );
     await model.close();
+  });
+
+  test('Tensor G5 and G6 stamps select the Google NPU path and reach native '
+      'unchanged', () async {
+    for (final soc in ['Tensor_G5', 'Tensor_G6']) {
+      host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
+      debugLiteRtLmEngineHost = host;
+      final model = await load(
+        write('$soc.litertlm', _bundle(textStamp: ('Google', soc), aux: true)),
+      );
+      expect(host.stackChecks, 1);
+      expect(host.attempts.single.backend, 'npu');
+      expect(
+        host.attempts.single.npuTarget,
+        LiteRtLmNpuTarget(vendor: 'Google', soc: soc),
+      );
+      expect(model.activeBackend, PreferredBackend.npu);
+      await model.close();
+    }
+  });
+
+  test('a Tensor bundle is refused clearly when the system runtime or bridge '
+      'is unavailable', () async {
+    host = _FakeHost(
+      os: 'android',
+      abiName: 'android_arm64',
+      stack: const NpuStackCheck.missing(
+        'the Google Tensor system runtime or dispatch bridge is unavailable',
+      ),
+    );
+    debugLiteRtLmEngineHost = host;
+    final path = write(
+      'g5.litertlm',
+      _bundle(textStamp: ('Google', 'Tensor_G5'), aux: true),
+    );
+
+    await expectLater(
+      load(path),
+      throwsA(
+        isA<BackendInitException>().having(
+          (e) => e.lastAttempt.error,
+          'error',
+          isA<NpuDispatchUnavailableException>().having(
+            (e) => e.message,
+            'message',
+            contains('Google Tensor system runtime or dispatch bridge'),
+          ),
+        ),
+      ),
+    );
+    expect(host.attempts, isEmpty, reason: 'no GPU or CPU attempt is allowed');
   });
 
   test('a failed NPU create names the SoC the bundle is compiled for, as a '

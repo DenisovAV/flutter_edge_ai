@@ -27,7 +27,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../ffi/backend_preference.dart'
-    show hostNpuUnavailableReason, hostShipsNpuDispatch;
+    show hostNpuUnavailableReasonFor, hostShipsNpuDispatchFor;
 import '../ffi/litert_lm_client.dart'
     show
         NpuDispatchUnavailableException,
@@ -60,21 +60,24 @@ abstract interface class LiteRtLmNpuHost {
   /// (NativeAssetsManifest.json).
   Future<NpuStackCheck> qualcommStack();
 
+  /// Whether this build bundles the always-on Google Tensor dispatch bridge.
+  Future<NpuStackCheck> googleTensorStack();
+
   /// Whether Intel's NPU dispatch is where LiteRT will load it from: beside
   /// the executable on Windows ([checkIntelNpuStack]).
   Future<NpuStackCheck> intelStack();
 
   /// Whether this device can run the bundled Qualcomm stack (Android: FastRPC
   /// opens; Linux: a compute DSP the user may open, and libcdsprpc.so.1).
-  bool get hasNpu;
+  bool hasNpu(LiteRtLmNpuTarget target);
 
   /// Why [hasNpu] is false, worded for the person who has to fix it.
-  String get noNpuReason;
+  String noNpuReason(LiteRtLmNpuTarget target);
 
   /// The `dispatch_lib_dir` for LiteRT: the prepared Qualcomm libraries on
   /// Android and Linux, [windowsNpuDispatchDir] on Windows. Throws
   /// [NpuDispatchUnavailableException] when the stack cannot be prepared.
-  Future<String> prepareDispatchDir();
+  Future<String> prepareDispatchDir(LiteRtLmNpuTarget target);
 }
 
 /// The host this process runs on.
@@ -91,18 +94,22 @@ final class LiteRtLmPlatformNpuHost implements LiteRtLmNpuHost {
   Future<NpuStackCheck> qualcommStack() => checkQualcommNpuStack();
 
   @override
+  Future<NpuStackCheck> googleTensorStack() => checkGoogleTensorNpuStack();
+
+  @override
   Future<NpuStackCheck> intelStack() async =>
       checkIntelNpuStack(windowsNpuDispatchDir);
 
   @override
-  bool get hasNpu => hostShipsNpuDispatch;
+  bool hasNpu(LiteRtLmNpuTarget target) => hostShipsNpuDispatchFor(target);
 
   @override
-  String get noNpuReason => hostNpuUnavailableReason;
+  String noNpuReason(LiteRtLmNpuTarget target) =>
+      hostNpuUnavailableReasonFor(target);
 
   @override
-  Future<String> prepareDispatchDir() =>
-      npuDispatchDirFor(Platform.operatingSystem);
+  Future<String> prepareDispatchDir(LiteRtLmNpuTarget target) =>
+      npuDispatchDirFor(Platform.operatingSystem, target);
 }
 
 /// [LiteRtLmPlatformNpuHost.prepareDispatchDir] for [operatingSystem]
@@ -110,12 +117,14 @@ final class LiteRtLmPlatformNpuHost implements LiteRtLmNpuHost {
 /// no override seam, so the Windows arm is otherwise unreachable from a test
 /// run on another host.
 @visibleForTesting
-Future<String> npuDispatchDirFor(String operatingSystem) async =>
-    switch (operatingSystem) {
-      'android' => await prepareAndroidNpuDispatchDir(),
-      'windows' => windowsNpuDispatchDir,
-      _ => prepareLinuxNpuDispatchDir(),
-    };
+Future<String> npuDispatchDirFor(
+  String operatingSystem, [
+  LiteRtLmNpuTarget? target,
+]) async => switch (operatingSystem) {
+  'android' => await prepareAndroidNpuDispatchDir(target),
+  'windows' => windowsNpuDispatchDir,
+  _ => prepareLinuxNpuDispatchDir(),
+};
 
 /// The directory of the running executable: where Native Assets puts a
 /// Windows app's DLLs, the Intel NPU stack among them, and the
@@ -155,15 +164,16 @@ NpuStackCheck checkIntelNpuStack(String dir) =>
 LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 
 /// The hosts that run EmbeddingGemma 2 on an NPU, and whose bundles each
-/// runs: Qualcomm on Android arm64 and on Linux arm64 (VENTUNO Q / QCS8275),
-/// both verified on device; Intel on Windows x64 (Google's Panther Lake
-/// bundles), not yet run on an Intel NPU.
+/// runs: Google Tensor and Qualcomm on Android arm64, Qualcomm on Linux arm64
+/// (VENTUNO Q / QCS8275), and Intel on Windows x64. A set is required because
+/// Android arm64 supports two vendors; the bundle stamp selects between them.
 const liteRtLmNpuEmbeddingAbis = {
-  'android_arm64': _qualcomm,
-  'linux_arm64': _qualcomm,
-  'windows_x64': _intel,
+  'android_arm64': {_googleTensor, _qualcomm},
+  'linux_arm64': {_qualcomm},
+  'windows_x64': {_intel},
 };
 
+const _googleTensor = 'Google';
 const _qualcomm = 'Qualcomm';
 const _intel = 'Intel';
 
@@ -196,49 +206,54 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   if (requested != PreferredBackend.npu) {
     _refuse(liteRtLmNpuBundleWithoutNpuRefusal(file, target));
   }
-  final hostVendor = liteRtLmNpuEmbeddingAbis[host.abi];
-  if (hostVendor == null) {
+  final hostVendors = liteRtLmNpuEmbeddingAbis[host.abi];
+  if (hostVendors == null) {
     _refuse(
       '$file is compiled for the $target NPU. flutter_edge_ai_litertlm runs '
-      'EmbeddingGemma 2 on the NPU on Qualcomm Android and Qualcomm Linux '
-      'arm64, and on Intel NPUs with Windows x64, only, and this is '
+      'EmbeddingGemma 2 on Google Tensor or Qualcomm Android, Qualcomm Linux '
+      'arm64, and Intel Windows x64 only, and this is '
       '${host.operatingSystem} (${host.abi}). Install the generic '
       'EmbeddingGemma 2 bundle to embed here on CPU.',
     );
   }
   final bundleVendor = target.isQualcomm
       ? _qualcomm
+      : target.isGoogleTensor
+      ? _googleTensor
       : target.isIntel
       ? _intel
       : null;
   if (bundleVendor == null) {
     _refuse(
       '$file is compiled for a ${target.vendor} NPU (${target.soc}). '
-      'flutter_edge_ai_litertlm runs EmbeddingGemma 2 NPU bundles on Qualcomm '
-      'and Intel NPUs only. Install the generic EmbeddingGemma 2 bundle to '
+      'flutter_edge_ai_litertlm runs EmbeddingGemma 2 NPU bundles on Google '
+      'Tensor, Qualcomm, and Intel NPUs only. Install the generic bundle to '
       'embed on CPU.',
     );
   }
-  if (bundleVendor != hostVendor) {
+  if (!hostVendors.contains(bundleVendor)) {
     final hosts = [
-      for (final MapEntry(key: abi, value: vendor)
+      for (final MapEntry(key: abi, value: vendors)
           in liteRtLmNpuEmbeddingAbis.entries)
-        if (vendor == bundleVendor) abi,
+        if (vendors.contains(bundleVendor)) abi,
     ];
     _refuse(
       '$file is compiled for the $target NPU, and on ${host.operatingSystem} '
-      '(${host.abi}) flutter_edge_ai_litertlm runs $hostVendor NPU bundles '
-      'only; $bundleVendor ones run on ${hosts.join(' and ')}. Install the '
+      '(${host.abi}) flutter_edge_ai_litertlm runs '
+      '${hostVendors.join(' and ')} NPU bundles only; $bundleVendor ones run '
+      'on ${hosts.join(' and ')}. Install the '
       'generic EmbeddingGemma 2 bundle to embed here on CPU.',
     );
   }
-  if (target.isQualcomm) {
-    final stack = await host.qualcommStack();
+  if (target.isQualcomm || target.isGoogleTensor) {
+    final stack = target.isGoogleTensor
+        ? await host.googleTensorStack()
+        : await host.qualcommStack();
     if (stack.known && !stack.bundled) {
       _refuse('$file needs the $target NPU, and ${stack.reason}.');
     }
-    if (!host.hasNpu) {
-      _refuse('$file needs the $target NPU, and ${host.noNpuReason}.');
+    if (!host.hasNpu(target)) {
+      _refuse('$file needs the $target NPU, and ${host.noNpuReason(target)}.');
     }
   } else {
     // Intel ships in every Windows x64 build, so the check is that it is where
@@ -252,7 +267,7 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   }
   final String dispatchDir;
   try {
-    dispatchDir = await host.prepareDispatchDir();
+    dispatchDir = await host.prepareDispatchDir(target);
   } on NpuDispatchUnavailableException catch (e) {
     throw EmbeddingLoadException(
       '$file needs the $target NPU, and its $bundleVendor libraries could not '
@@ -273,8 +288,9 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
     '$file is the generic EmbeddingGemma 2 bundle: it has no NPU graph and '
     'runs on CPU only. To embed on the NPU, install the bundle compiled for '
     "this device's SoC (litert-community publishes "
-    '`<model>_Qualcomm_<SoC>.litertlm` and `<model>_Intel_PTL.litertlm` '
-    'beside it; ${liteRtLmVerifiedNpuSocs.join(', ')} are verified) and load '
+    '`<model>_Google_Tensor_G5/G6.litertlm`, '
+    '`<model>_Qualcomm_<SoC>.litertlm`, and `<model>_Intel_PTL.litertlm` '
+    'beside it; ${liteRtLmVerifiedNpuSocs.join(', ')} are device-verified) and load '
     'it with PreferredBackend.npu. To run this bundle, omit preferredBackend.';
 
 /// A per-SoC bundle asked to run anywhere but the NPU.

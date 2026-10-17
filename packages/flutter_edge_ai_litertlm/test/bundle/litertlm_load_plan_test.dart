@@ -7,6 +7,8 @@ const npu = PreferredBackend.npu;
 const gpu = PreferredBackend.gpu;
 const cpu = PreferredBackend.cpu;
 const sm8750 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750');
+const tensorG5 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
+const tensorG6 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G6');
 
 /// A Gemma 4-shaped bundle: text model, vision and audio encoders, optionally
 /// a `tf_lite_aux` section ([aux], or [auxTarget] for one compiled for that
@@ -94,6 +96,7 @@ void main() {
     PreferredBackend? visionBackend,
     PreferredBackend? audioBackend,
     bool npuHere = true,
+    String npuReason = 'this device has no Qualcomm FastRPC',
     String abi = 'android_arm64',
   }) => planLiteRtLmLoad(
     path: 'model.litertlm',
@@ -108,7 +111,7 @@ void main() {
       npuAsked++;
       return npuHere;
     },
-    npuUnavailableReason: () => 'this device has no Qualcomm FastRPC',
+    npuUnavailableReason: () => npuReason,
     abi: abi,
   );
 
@@ -324,17 +327,64 @@ void main() {
       );
     });
 
-    test('an NPU this package has no dispatch for is refused', () {
-      final tensor = bundle(
+    test('Tensor G5 and G6 select the NPU on Android arm64 only', () {
+      for (final target in [tensorG5, tensorG6]) {
+        final tensor = bundle(text: (null, target), auxTarget: target);
+        expect(plan(info: tensor).textBackends, [npu]);
+        expect(plan(info: tensor).npuTarget, target);
+        for (final abi in ['linux_arm64', 'windows_x64', 'macos_arm64']) {
+          expect(
+            () => plan(info: tensor, abi: abi),
+            refused(
+              LiteRtLmBundleProblem.unsupportedNpu,
+              'runs on android_arm64 only, and this is $abi',
+            ),
+          );
+        }
+      }
+    });
+
+    test('a Tensor bundle refuses GPU/CPU and a missing system runtime', () {
+      final tensor = bundle(text: (null, tensorG5), auxTarget: tensorG5);
+      for (final backend in [gpu, cpu]) {
+        expect(
+          () => plan(info: tensor, preferred: backend),
+          refused(
+            LiteRtLmBundleProblem.wrongBackend,
+            'compiled for the Google Tensor_G5 NPU and runs only there, not '
+            'on ${backend.name}',
+          ),
+        );
+      }
+      expect(
+        () => plan(
+          info: tensor,
+          npuHere: false,
+          npuReason:
+              'the Google Tensor system runtime libedgetpu_litert.so did not '
+              'open',
+        ),
+        npuUnreachable(
+          'compiled for the Google Tensor_G5 NPU and runs only there, and the '
+          'Google Tensor system runtime libedgetpu_litert.so did not open',
+        ),
+      );
+    });
+
+    test('another NPU vendor this package has no dispatch for is refused', () {
+      final mediatek = bundle(
         text: (
           null,
-          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
+          const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
         ),
         aux: true,
       );
       expect(
-        () => plan(info: tensor),
-        refused(LiteRtLmBundleProblem.unsupportedNpu, 'Qualcomm and Intel'),
+        () => plan(info: mediatek),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          'Google Tensor, Qualcomm, and Intel',
+        ),
       );
       expect(
         () => plan(info: officialSm8750, abi: 'windows_x64'),
@@ -547,8 +597,8 @@ void main() {
       expect(npuAsked, 0);
     });
 
-    test('a vendor this package has no dispatch for: the same, on every '
-        'host', () {
+    test('a Tensor encoder is accepted as an Android vendor, then subject to '
+        'the same all-NPU bundle rule', () {
       final tensorAudio = bundle(
         audio: (
           null,
@@ -562,8 +612,15 @@ void main() {
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
           "model.litertlm's audio encoder is compiled for the Google Tensor_G5 "
-          'NPU. flutter_edge_ai_litertlm runs Qualcomm and Intel NPU bundles '
-          'only; load it without supportAudio, or install',
+          'NPU and runs only there, and its text model would be tried on gpu, '
+          'then cpu, not on the NPU alone',
+        ),
+      );
+      expect(
+        () => plan(info: tensorAudio, audio: true, abi: 'windows_x64'),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          'runs on android_arm64 only, and this is windows_x64',
         ),
       );
     });

@@ -11,6 +11,7 @@
 - Gemma 4: a sentence before a tool call no longer streams the call's JSON as text.
 
 ## 2.3.3
+- Add Google Tensor support to the LiteRT-LM NPU backend on Android.
 - Docs: README and shipped skills checked against the code; models page linked.
 
 ## 2.3.2

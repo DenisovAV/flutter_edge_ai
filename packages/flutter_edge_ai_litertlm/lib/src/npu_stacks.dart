@@ -7,6 +7,71 @@
 /// plain Dart VM, so nothing here may import Flutter.
 library;
 
+/// A vendor whose NPU this package dispatches to.
+///
+/// A bundle compiled for an NPU names its vendor in the `LiteRtStamp` its
+/// compiler wrote (`LiteRtLmNpuTarget.npuVendor`); a load without one uses the
+/// vendor this device reaches. Every answer that differs per vendor — the
+/// build's stack, the device probe, the dispatch directory, the wording — is a
+/// `switch` over this enum with no default, so a vendor added here is a compile
+/// error at each place that still needs its answer.
+enum NpuVendor {
+  /// Qualcomm Hexagon through QNN, in apps that opt in with
+  /// [qualcommNpuUserDefine].
+  qualcomm(
+    'Qualcomm',
+    stampVendor: 'qualcomm',
+    abis: {'android_arm64', 'linux_arm64'},
+  ),
+
+  /// Intel NPUs (Lunar Lake, Panther Lake) through OpenVINO, in every Windows
+  /// x64 build. Google's `…_Intel_PTL` bundles are stamped `IntelOpenVINO` /
+  /// `PTL` (read from the published 270m, 440m and 740m, revisions 9be6e8b9,
+  /// e301f74d, 24d962e9); a bare `Intel` is not LiteRT's stamp.
+  intel('Intel', stampVendor: 'intelopenvino', abis: {'windows_x64'});
+
+  const NpuVendor(this.label, {required this.stampVendor, required this.abis});
+
+  /// The vendor's name in messages.
+  final String label;
+
+  /// The vendor field of the `LiteRtStamp` LiteRT's compiler writes for this
+  /// vendor, in lower case.
+  final String stampVendor;
+
+  /// The hosts, in `Abi.current()` spelling, where this package runs this
+  /// vendor's NPU bundles.
+  final Set<String> abis;
+
+  /// Whether this vendor's NPU runs on [operatingSystem]
+  /// (`Platform.operatingSystem` spelling) on any of its [abis].
+  bool runsOn(String operatingSystem) =>
+      abis.any((abi) => abi.startsWith('${operatingSystem}_'));
+
+  /// The vendor of a bundle stamped [vendor] (any case), or null when this
+  /// package has no dispatch for it.
+  static NpuVendor? forStamp(String vendor) {
+    final lower = vendor.toLowerCase();
+    for (final candidate in values) {
+      if (candidate.stampVendor == lower) return candidate;
+    }
+    return null;
+  }
+
+  /// The vendors whose NPU bundles run on [abi], in declaration order.
+  static List<NpuVendor> forAbi(String abi) => [
+    for (final vendor in values)
+      if (vendor.abis.contains(abi)) vendor,
+  ];
+}
+
+/// [items] joined for a sentence: `A`, `A and B`, `A, B and C`.
+String npuSentenceList(Iterable<String> items) {
+  final list = items.toList();
+  if (list.length < 2) return list.join();
+  return '${list.sublist(0, list.length - 1).join(', ')} and ${list.last}';
+}
+
 /// `hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu: true` in the
 /// app's pubspec (the workspace root pubspec for a pub-workspace member)
 /// bundles the Qualcomm NPU stack into the app's Android arm64 and Linux arm64

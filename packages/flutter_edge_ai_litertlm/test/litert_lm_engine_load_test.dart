@@ -16,6 +16,7 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show LiteRtLmFfiClient;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuVendor;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
@@ -47,6 +48,9 @@ class _FakeHost extends LiteRtLmEngineHost {
   int stackChecks = 0;
   int npuProbes = 0;
 
+  /// The NPU vendor handed to each attempt, in order.
+  final npuVendors = <NpuVendor?>[];
+
   @override
   Future<String> cacheDir() async => Directory.systemTemp.path;
 
@@ -57,16 +61,19 @@ class _FakeHost extends LiteRtLmEngineHost {
   String get abi => abiName;
 
   @override
-  Future<NpuStackCheck> qualcommNpuStack() async {
+  Future<NpuStackCheck> npuStack(NpuVendor vendor) async {
     stackChecks++;
     return stack;
   }
 
   @override
-  bool get npuDispatchShips {
+  bool reachesNpu(NpuVendor vendor) {
     npuProbes++;
     return npuShips;
   }
+
+  @override
+  String npuUnreachableReason(NpuVendor vendor) => 'the fake host has no NPU';
 
   @override
   String get npuUnavailableReason => 'the fake host has no NPU';
@@ -85,12 +92,14 @@ class _FakeHost extends LiteRtLmEngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    required NpuVendor? npuVendor,
   }) async {
     attempts.add((
       backend: backend,
       visionBackend: visionBackend,
       audioBackend: audioBackend,
     ));
+    npuVendors.add(npuVendor);
     if (failures[backend] case final error?) throw error;
   }
 }
@@ -208,6 +217,42 @@ void main() {
       await model.close();
     },
   );
+
+  test('an NPU attempt is handed the vendor its bundle is stamped for, a '
+      'generic bundle the vendor this host reaches', () async {
+    host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
+    debugLiteRtLmEngineHost = host;
+    final stamped = await load(
+      write('sm8750.litertlm', _bundle(textStamp: ('Qualcomm', 'SM8750'))),
+    );
+    expect(host.attempts.map((a) => a.backend), ['npu']);
+    expect(host.npuVendors, [NpuVendor.qualcomm]);
+    await stamped.close();
+
+    host.attempts.clear();
+    host.npuVendors.clear();
+    final generic = await load(
+      write('generic.litertlm', _bundle()),
+      preferredBackend: PreferredBackend.npu,
+    );
+    expect(host.attempts.map((a) => a.backend), ['npu']);
+    expect(host.npuVendors, [NpuVendor.qualcomm]);
+    await generic.close();
+
+    // A host no vendor runs on: the NPU is dropped before any engine, and the
+    // GPU attempt names no vendor.
+    host = _FakeHost(npuShips: true);
+    debugLiteRtLmEngineHost = host;
+    final mac = await load(
+      write('generic_mac.litertlm', _bundle()),
+      preferredBackend: PreferredBackend.npu,
+    );
+    expect(host.attempts.map((a) => a.backend), ['gpu']);
+    expect(host.npuVendors, [null]);
+    expect(host.stackChecks, 0);
+    expect(host.npuProbes, 0);
+    await mac.close();
+  });
 
   test("the plan's encoder backends reach the client and the model", () async {
     // An encoder on the NPU runs only with a text model on the NPU.

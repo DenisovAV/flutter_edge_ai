@@ -13,6 +13,8 @@ import 'package:path_provider/path_provider.dart';
 import 'ffi/backend_preference.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_stack_manifest.dart';
+import 'ffi/npu_vendor_host.dart';
+import 'npu_stacks.dart';
 
 /// What a native `.litertlm` LLM load reaches outside Dart.
 class LiteRtLmEngineHost {
@@ -28,14 +30,17 @@ class LiteRtLmEngineHost {
   /// `Abi.current()`, as a string.
   String get abi => '${Abi.current()}';
 
-  /// Whether this build bundles the Qualcomm NPU stack
-  /// ([checkQualcommNpuStack]).
-  Future<NpuStackCheck> qualcommNpuStack() => checkQualcommNpuStack();
+  /// Whether this build carries [vendor]'s NPU stack ([npuStackOf]).
+  Future<NpuStackCheck> npuStack(NpuVendor vendor) => npuStackOf(vendor);
 
-  /// [hostShipsNpuDispatch]. On Android it opens a vendor library.
-  bool get npuDispatchShips => hostShipsNpuDispatch;
+  /// [hostReachesNpu]. On Android it opens a vendor library.
+  bool reachesNpu(NpuVendor vendor) => hostReachesNpu(vendor);
 
-  /// [hostNpuUnavailableReason]; read after [npuDispatchShips].
+  /// [hostNpuUnreachableReason]; read after [reachesNpu].
+  String npuUnreachableReason(NpuVendor vendor) =>
+      hostNpuUnreachableReason(vendor);
+
+  /// [hostNpuUnavailableReason]: why no vendor's NPU runs on this host.
   String get npuUnavailableReason => hostNpuUnavailableReason;
 
   /// A client for one backend attempt.
@@ -55,6 +60,7 @@ class LiteRtLmEngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    required NpuVendor? npuVendor,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
@@ -67,6 +73,7 @@ class LiteRtLmEngineHost {
     audioBackend: audioBackend,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     activationDataType: activationDataType,
+    npuVendor: npuVendor,
   );
 }
 

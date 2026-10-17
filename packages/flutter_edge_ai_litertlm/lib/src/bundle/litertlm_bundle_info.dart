@@ -10,6 +10,7 @@
 import 'dart:typed_data';
 
 import '../litertlm_flatbuffer.dart';
+import '../npu_stacks.dart' show NpuVendor;
 
 /// The SoC a `.litertlm` bundle's compiled sections target.
 final class LiteRtLmNpuTarget {
@@ -23,12 +24,12 @@ final class LiteRtLmNpuTarget {
   /// `PTL`, `Tensor_G5`.
   final String soc;
 
-  bool get isQualcomm => vendor.toLowerCase() == 'qualcomm';
+  bool get isQualcomm => npuVendorOf(this) == NpuVendor.qualcomm;
 
   /// Compiled by LiteRT's OpenVINO plugin for an Intel NPU: Google's
   /// `…_Intel_PTL` bundles are stamped `IntelOpenVINO` / `PTL` (read from the
   /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
-  bool get isIntel => vendor.toLowerCase() == 'intelopenvino';
+  bool get isIntel => npuVendorOf(this) == NpuVendor.intel;
 
   @override
   bool operator ==(Object other) =>
@@ -40,6 +41,12 @@ final class LiteRtLmNpuTarget {
   @override
   String toString() => '$vendor $soc';
 }
+
+/// The vendor this package dispatches a bundle stamped [target] to, or null
+/// when it has no dispatch for that vendor. Internal: not in the package's
+/// `show` list, so [NpuVendor] stays out of the public API.
+NpuVendor? npuVendorOf(LiteRtLmNpuTarget target) =>
+    NpuVendor.forStamp(target.vendor);
 
 /// One section of a `.litertlm` container.
 final class LiteRtLmSection {

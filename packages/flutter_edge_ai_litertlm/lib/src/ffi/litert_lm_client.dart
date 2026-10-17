@@ -9,13 +9,13 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:mutex/mutex.dart';
 
 import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
+import 'npu_vendor_host.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
@@ -750,6 +750,10 @@ class LiteRtLmFfiClient {
   ///
   /// [activationDataType] is the C API's number (see
   /// `activationDataTypeWireValue`); null leaves the engine's own choice.
+  ///
+  /// [npuVendor] is whose NPU dispatch an `npu` [backend] loads: the vendor
+  /// the load plan chose (the bundle's stamp, else the vendor this device
+  /// reaches). Null takes the vendor of this operating system.
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
@@ -762,6 +766,7 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? activationDataType,
+    NpuVendor? npuVendor,
   }) async {
     final initSw = Stopwatch()..start();
     _ensureBindings();
@@ -798,13 +803,15 @@ class LiteRtLmFfiClient {
     try {
       // Asked before the settings exist: a missing NPU stack is an expected
       // fallback, and throwing after settings_create would leak the settings.
-      final npuDispatchDir = backend != 'npu'
+      final dispatchVendor = backend != 'npu'
           ? null
-          : Platform.isAndroid
-          ? await prepareAndroidNpuDispatchDir()
-          : Platform.isLinux
-          ? prepareLinuxNpuDispatchDir()
-          : null;
+          : npuVendor ??
+                NpuVendor.values
+                    .where((v) => v.runsOn(Platform.operatingSystem))
+                    .firstOrNull;
+      final npuDispatchDir = dispatchVendor == null
+          ? null
+          : await prepareNpuDispatchDir(dispatchVendor);
 
       // The bundle's own sampler: the container header and its LlmMetadata
       // section, a few KB read before the engine exists. A bad or unreadable
@@ -877,27 +884,18 @@ class LiteRtLmFfiClient {
         );
       }
 
-      // Windows NPU: point LiteRT at the directory containing
-      // `LiteRtDispatch.dll` and disable HW mask update path. Native Assets
-      // bundles both DLLs next to the executable, so resolvedExecutable.parent
-      // is the right path. Without `dispatch_lib_dir` LiteRT reads
-      // uninitialized env-option memory and engine_create crashes; without
+      // Intel NPU (Windows): the dispatch dir is the directory containing
+      // `LiteRtDispatch.dll` (prepareNpuDispatchDir: Native Assets bundles the
+      // DLLs next to the executable), and the HW mask update path is off.
+      // Without `dispatch_lib_dir` LiteRT reads uninitialized env-option
+      // memory and engine_create crashes; without
       // `use_hw_masking_for_npu(false)` LiteRT sets up the kWH HW mask method
       // which Intel preview NPU (LunarLake/PantherLake) doesn't fully support
       // → CFG check failure 0xc0000409 (per Matt Kreileder's Intel NPU
       // pipeline instructions).
-      if (Platform.isWindows && backend == 'npu') {
-        final exeDir = File(Platform.resolvedExecutable).parent.path;
-        final dirPtr = exeDir.toNativeUtf8();
-        b.litert_lm_engine_settings_set_litert_dispatch_lib_dir(
-          settings,
-          dirPtr.cast(),
-        );
-        calloc.free(dirPtr);
+      if (dispatchVendor == NpuVendor.intel) {
         b.litert_lm_engine_settings_set_use_hw_masking_for_npu(settings, false);
-        edgeAiLog(
-          '[LiteRtLmFfi] NPU Windows: dispatch_lib_dir=$exeDir, use_hw_masking_for_npu=false',
-        );
+        edgeAiLog('[LiteRtLmFfi] NPU Intel: use_hw_masking_for_npu=false');
       }
 
       if (npuDispatchDir != null) {
@@ -908,8 +906,8 @@ class LiteRtLmFfiClient {
         );
         calloc.free(dirPtr);
         edgeAiLog(
-          '[LiteRtLmFfi] NPU ${Platform.operatingSystem}: '
-          'dispatch_lib_dir=$npuDispatchDir',
+          '[LiteRtLmFfi] NPU ${dispatchVendor!.label} '
+          '(${Platform.operatingSystem}): dispatch_lib_dir=$npuDispatchDir',
         );
       }
 
@@ -2299,83 +2297,3 @@ String _activationName(int value) => switch (value) {
   3 => 'int8',
   _ => 'type $value',
 };
-
-/// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Android —
-/// for the LLM engine and the EmbeddingGemma 2 embedding pass alike (the pass
-/// asks from `LiteRtEmbeddingBackend.describe()`, on the caller's isolate:
-/// this goes through a platform channel, which core's worker cannot reach).
-///
-/// LiteRT opendir()-scans it for libLiteRtDispatch_*.so and the QNN libraries,
-/// so they must exist as files. The core plugin returns a directory holding
-/// exactly the stack this build bundled — nativeLibraryDir when the installer
-/// extracted them, else a copy taken from the base APK or its config split (a
-/// Play install). The list comes from here because the build decides it.
-Future<String> prepareAndroidNpuDispatchDir() async {
-  const bundledChannel = MethodChannel('flutter_gemma_bundled');
-  final String? dir;
-  try {
-    dir = await bundledChannel.invokeMethod<String>('prepareNpuDispatchDir', {
-      'libs': [for (final n in qualcommNpuLibs) androidLibFileName(n)],
-    });
-  } on MissingPluginException {
-    throw const NpuDispatchUnavailableException(
-      'the installed flutter_edge_ai has no prepareNpuDispatchDir; '
-      'update flutter_edge_ai to the version flutter_edge_ai_litertlm '
-      'requires',
-    );
-  } on PlatformException catch (e) {
-    throw NpuDispatchUnavailableException(
-      'the Qualcomm NPU libraries could not be prepared '
-      '(${e.code}: ${e.message})',
-    );
-  }
-  if (dir == null) {
-    throw const NpuDispatchUnavailableException(
-      'prepareNpuDispatchDir returned no directory',
-    );
-  }
-  return dir;
-}
-
-/// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Linux arm64,
-/// after loading what QNN cannot find on its own. Shared with the
-/// EmbeddingGemma 2 pass; the libraries it loads are process-wide, so loading
-/// them from the caller's isolate serves the embedding worker too.
-///
-/// Native Assets puts the whole stack in the bundle's `lib/`. From there the
-/// dispatch loads libQnnHtp and libQnnSystem by full path, and prepends the
-/// directory to `ADSP_LIBRARY_PATH` so FastRPC finds the Skels (fastrpc appends
-/// the system DSP paths itself). One step it cannot do: libQnnHtp opens its
-/// Hexagon Stub by bare name and has no RPATH, so glibc searches
-/// LD_LIBRARY_PATH and the system — never the app — and LD_LIBRARY_PATH cannot
-/// change after the process started. A library already loaded under that
-/// SONAME is matched first, so the Stubs are loaded here by full path, after
-/// the libcdsprpc.so shim they NEED.
-String prepareLinuxNpuDispatchDir() {
-  final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
-  final missing = [
-    for (final n in qualcommNpuLibsLinux)
-      if (!File('$libDir/${androidLibFileName(n)}').existsSync())
-        androidLibFileName(n),
-  ];
-  if (missing.isNotEmpty) {
-    throw NpuDispatchUnavailableException(
-      'the Qualcomm NPU stack is not in $libDir (missing ${missing.join(', ')}); '
-      'build the app with hooks.user_defines.flutter_edge_ai_litertlm.'
-      '$qualcommNpuUserDefine: true',
-    );
-  }
-  for (final n in [
-    cdsprpcShimLib,
-    for (final lib in qairtLinuxLibs)
-      if (lib.endsWith('Stub')) lib,
-  ]) {
-    final path = '$libDir/${androidLibFileName(n)}';
-    try {
-      DynamicLibrary.open(path);
-    } on Object catch (e) {
-      throw NpuDispatchUnavailableException('$path did not load: $e');
-    }
-  }
-  return libDir;
-}

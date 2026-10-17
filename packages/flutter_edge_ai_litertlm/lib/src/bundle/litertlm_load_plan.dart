@@ -36,8 +36,8 @@
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 
-import '../embedding/litert_lm_npu.dart' show liteRtLmNpuEmbeddingAbis;
 import '../litert_lm_load_errors.dart';
+import '../npu_stacks.dart';
 import 'litertlm_bundle_info.dart';
 
 /// What a `.litertlm` load does.
@@ -151,6 +151,19 @@ bool liteRtLmEncoderOnNpu({
           onNpu(bundle.visionEncoder, preferredVisionBackend)) ||
       (supportAudio && onNpu(bundle.audioEncoder, preferredAudioBackend));
 }
+
+/// The NPU a load of [bundle] runs on when it runs on one: the text model's
+/// (its own stamp, else `tf_lite_aux`'s), else that of an encoder the load
+/// turns on. Null for a bundle compiled for no NPU, and for one that was not
+/// read. The engine asks it before the plan, to look up that vendor's stack.
+LiteRtLmNpuTarget? liteRtLmLoadNpuTarget({
+  required LiteRtLmBundleInfo? bundle,
+  required bool supportImage,
+  required bool supportAudio,
+}) =>
+    _textNpuTarget(bundle) ??
+    (supportImage ? bundle?.visionEncoder?.npuTarget : null) ??
+    (supportAudio ? bundle?.audioEncoder?.npuTarget : null);
 
 /// Decides a load of [path] from what the file says ([bundle]; null when it
 /// could not be read, which keeps the rules that need no file) and what the
@@ -284,10 +297,11 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     textBackends: textBackends,
     visionBackend: visionBackend,
     audioBackend: audioBackend,
-    npuTarget:
-        target ??
-        (visionBackend == null ? null : bundle?.visionEncoder?.npuTarget) ??
-        (audioBackend == null ? null : bundle?.audioEncoder?.npuTarget),
+    npuTarget: liteRtLmLoadNpuTarget(
+      bundle: bundle,
+      supportImage: supportImage,
+      supportAudio: supportAudio,
+    ),
     dropped: candidates.dropped,
   );
 }
@@ -436,30 +450,17 @@ PreferredBackend _encoderDefault(LiteRtLmSection encoder) {
   return PreferredBackend.cpu;
 }
 
-/// Refuses a [target] NPU this package has no dispatch for on [abi]: Qualcomm
-/// runs on Android and Linux arm64, Intel on Windows x64. [encoder] is the
-/// kind (vision, audio) of the encoder compiled for it, null for the text
-/// model.
+/// Refuses a [target] NPU this package has no dispatch for on [abi]
+/// ([NpuVendor.abis]). [encoder] is the kind (vision, audio) of the encoder
+/// compiled for it, null for the text model.
 void _checkNpuVendor(
   String path,
   LiteRtLmNpuTarget target,
   String abi, {
   String? encoder,
 }) {
-  final vendor = target.isQualcomm
-      ? 'Qualcomm'
-      : target.isIntel
-      ? 'Intel'
-      : null;
-  final hostVendor = liteRtLmNpuEmbeddingAbis[abi];
-  if (vendor != null && vendor == hostVendor) return;
-  final hosts = vendor == null
-      ? null
-      : [
-          for (final MapEntry(key: hostAbi, value: v)
-              in liteRtLmNpuEmbeddingAbis.entries)
-            if (v == vendor) hostAbi,
-        ];
+  final vendor = npuVendorOf(target);
+  if (vendor != null && vendor.abis.contains(abi)) return;
   final what = encoder == null ? path : "$path's $encoder encoder";
   // An encoder that is off is not run: the load works without it.
   final instead = switch (encoder) {
@@ -471,11 +472,12 @@ void _checkNpuVendor(
     LiteRtLmBundleProblem.unsupportedNpu,
     vendor == null
         ? '$what is compiled for the $target NPU. flutter_edge_ai_litertlm '
-              'runs Qualcomm and Intel NPU bundles only; $instead the generic '
-              'bundle of this model to run it on the GPU or the CPU.'
+              'runs ${npuSentenceList(NpuVendor.values.map((v) => v.label))} '
+              'NPU bundles only; $instead the generic bundle of this model to '
+              'run it on the GPU or the CPU.'
         : '$what is compiled for the $target NPU, which runs on '
-              '${hosts!.join(' and ')} only, and this is $abi; $instead the '
-              'generic bundle of this model to run it here.',
+              '${vendor.abis.join(' and ')} only, and this is $abi; $instead '
+              'the generic bundle of this model to run it here.',
     path: path,
   );
 }

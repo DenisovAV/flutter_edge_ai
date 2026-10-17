@@ -7,18 +7,19 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../litert_lm_load_errors.dart';
+import '../npu_stacks.dart';
 
 export '../litert_lm_load_errors.dart'
     show BackendInitAttemptFailure, BackendInitException;
 
-/// Whether this host ships an NPU dispatch stack at all.
+/// Whether this device reaches the NPU of any vendor ([NpuVendor]) at all.
 ///
-/// Three can: Android and Linux arm64 carry the Qualcomm QNN stack and Windows
-/// carries Intel's (`LiteRtDispatch.dll` + OpenVino + TBB). Nothing ships for
-/// macOS or iOS. On Android and Linux the stack is opt-in per app
+/// Three hosts can: Android and Linux arm64 carry the Qualcomm QNN stack and
+/// Windows carries Intel's (`LiteRtDispatch.dll` + OpenVino + TBB). Nothing
+/// ships for macOS or iOS. On Android and Linux the stack is opt-in per app
 /// (`qualcomm_npu`), so `LiteRtLmEngine.createModel` first asks
 /// NativeAssetsManifest.json whether this build bundled it and only then lets
-/// this probe decide.
+/// the vendor's probe ([hostReachesNpu]) decide.
 ///
 /// This gate exists because `backend: "npu"` is a string the native runtime
 /// accepts WITHOUT complaint on a host that cannot honour it. Since
@@ -37,15 +38,22 @@ export '../litert_lm_load_errors.dart'
 /// Windows has none yet because its positive arm can only be verified on
 /// Intel NPU silicon, and a probe guessed without that could switch off the
 /// NPU on the machines that have one.
-bool get hostShipsNpuDispatch {
+bool get hostShipsNpuDispatch => NpuVendor.values.any(hostReachesNpu);
+
+/// Whether this device can run [vendor]'s NPU stack: its device probe, run
+/// once per isolate, and only on the operating system it is for.
+bool hostReachesNpu(NpuVendor vendor) {
   final os = Platform.operatingSystem;
-  // `&&`, so the probe runs on Android only. As a plain argument it was
+  // `&&`, so a probe runs on its own platform only. As a plain argument it was
   // evaluated on every host that asked for npu: a dlopen of a Qualcomm library
   // on macOS, Linux and iOS, and on Windows a LoadLibrary that walks PATH.
-  return npuDispatchShipsFor(
+  return npuVendorReachableOn(
+    vendor,
     os,
-    androidHasFastRpc: os == 'android' && _androidHasFastRpc,
-    linuxHasQualcommNpu: os == 'linux' && _linuxHasQualcommNpu,
+    androidHasFastRpc:
+        vendor == NpuVendor.qualcomm && os == 'android' && _androidHasFastRpc,
+    linuxHasQualcommNpu:
+        vendor == NpuVendor.qualcomm && os == 'linux' && _linuxHasQualcommNpu,
   );
 }
 
@@ -54,7 +62,8 @@ bool get hostShipsNpuDispatch {
 @visibleForTesting
 bool get fastRpcProbed => _fastRpcProbe != null;
 
-/// The rule behind [hostShipsNpuDispatch], as a pure function.
+/// The rule behind [hostShipsNpuDispatch], as a pure function: whether any
+/// vendor is reachable on [operatingSystem] ([npuVendorReachableOn]).
 ///
 /// Split out because `Platform.operatingSystem` has no override seam — `dart:io`'s
 /// `IOOverrides` covers files, directories and sockets, not the platform — so the
@@ -64,11 +73,30 @@ bool npuDispatchShipsFor(
   String operatingSystem, {
   required bool androidHasFastRpc,
   bool linuxHasQualcommNpu = false,
-}) => switch (operatingSystem) {
-  'windows' => true, // Per OS, knowingly too coarse — see hostShipsNpuDispatch.
-  'android' => androidHasFastRpc,
-  'linux' => linuxHasQualcommNpu,
-  _ => false,
+}) => NpuVendor.values.any(
+  (vendor) => npuVendorReachableOn(
+    vendor,
+    operatingSystem,
+    androidHasFastRpc: androidHasFastRpc,
+    linuxHasQualcommNpu: linuxHasQualcommNpu,
+  ),
+);
+
+/// The rule behind [hostReachesNpu], as a pure function over the probes'
+/// answers.
+bool npuVendorReachableOn(
+  NpuVendor vendor,
+  String operatingSystem, {
+  required bool androidHasFastRpc,
+  bool linuxHasQualcommNpu = false,
+}) => switch (vendor) {
+  NpuVendor.qualcomm => switch (operatingSystem) {
+    'android' => androidHasFastRpc,
+    'linux' => linuxHasQualcommNpu,
+    _ => false,
+  },
+  // Per OS, knowingly too coarse — see hostShipsNpuDispatch.
+  NpuVendor.intel => operatingSystem == 'windows',
 };
 
 /// Whether the Linux probe has run in this isolate; see [fastRpcProbed].
@@ -167,32 +195,86 @@ bool get _androidHasFastRpc => _fastRpcProbe ??= () {
   }
 }();
 
-/// Why npu is not on offer here, worded per platform.
+/// Why no vendor's NPU is on offer on [operatingSystem]: the reason of each
+/// vendor that runs there ([npuVendorUnreachableReason]), with the error its
+/// probe kept in [probeErrors].
 ///
 /// Android is its own case: the stack DOES ship there, in every arm64 build —
 /// what is missing is the device's FastRPC. Saying "no NPU dispatch stack ships
 /// for android" and then "NPU is available on Android" in one line was the
 /// shape this replaced.
 @visibleForTesting
-String npuUnavailableReason(String operatingSystem, {String? fastRpcError}) =>
-    switch (operatingSystem) {
-      'android' =>
-        'this device has no Qualcomm FastRPC (libcdsprpc.so did not open'
-            '${fastRpcError == null ? '' : ': $fastRpcError'}), so the bundled '
-            'NPU stack cannot run here',
-      'linux' =>
-        'the bundled Qualcomm NPU stack cannot run here: '
-            '${fastRpcError ?? 'this machine has no Qualcomm NPU'}',
-      _ => 'no NPU dispatch stack ships for $operatingSystem',
-    };
+String npuUnavailableReason(
+  String operatingSystem, {
+  Map<NpuVendor, String> probeErrors = const {},
+}) {
+  final reasons = [
+    for (final vendor in NpuVendor.values)
+      if (vendor.runsOn(operatingSystem))
+        npuVendorUnreachableReason(
+          vendor,
+          operatingSystem,
+          probeError: probeErrors[vendor],
+        ),
+  ];
+  return reasons.isEmpty
+      ? 'no NPU dispatch stack ships for $operatingSystem'
+      : reasons.join('; ');
+}
 
-/// Why this host cannot run its NPU stack, from the probe [hostShipsNpuDispatch]
-/// ran (read it after that getter). For the EmbeddingGemma 2 refusal, which
-/// words the same reason as the LLM path's fallback notice.
+/// Why [vendor]'s NPU stack cannot run on [operatingSystem], with the error
+/// its probe kept, when it kept one.
+String npuVendorUnreachableReason(
+  NpuVendor vendor,
+  String operatingSystem, {
+  String? probeError,
+}) => switch (vendor) {
+  NpuVendor.qualcomm =>
+    operatingSystem == 'linux'
+        ? 'the bundled Qualcomm NPU stack cannot run here: '
+              '${probeError ?? 'this machine has no Qualcomm NPU'}'
+        : 'this device has no Qualcomm FastRPC (libcdsprpc.so did not open'
+              '${probeError == null ? '' : ': $probeError'}), so the bundled '
+              'NPU stack cannot run here',
+  // Never unreachable where it runs: Windows has no NPU probe yet
+  // (hostShipsNpuDispatch).
+  NpuVendor.intel => 'no Intel NPU stack ships for $operatingSystem',
+};
+
+/// The error [vendor]'s probe kept on this host; null when it did not run or
+/// did not fail.
+String? _probeError(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm =>
+    Platform.isLinux ? _linuxNpuProbeError : _fastRpcProbeError,
+  NpuVendor.intel => null,
+};
+
+/// Why this host cannot run any vendor's NPU stack, from the probes
+/// [hostShipsNpuDispatch] ran (read it after that getter).
 String get hostNpuUnavailableReason => npuUnavailableReason(
   Platform.operatingSystem,
-  fastRpcError: Platform.isLinux ? _linuxNpuProbeError : _fastRpcProbeError,
+  probeErrors: {
+    for (final vendor in NpuVendor.values) vendor: ?_probeError(vendor),
+  },
 );
+
+/// Why this host cannot run [vendor]'s NPU stack, from the probe
+/// [hostReachesNpu] ran (read it after that call). For the EmbeddingGemma 2
+/// refusal and the LLM load plan, which word the same reason.
+String hostNpuUnreachableReason(NpuVendor vendor) => npuVendorUnreachableReason(
+  vendor,
+  Platform.operatingSystem,
+  probeError: _probeError(vendor),
+);
+
+/// Where [vendor]'s NPU runs, for the notice that the NPU was not tried.
+String _whereNpuRuns(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm =>
+    'Qualcomm Android and Qualcomm Linux arm64 (in apps built with '
+        'hooks.user_defines.flutter_edge_ai_litertlm.$qualcommNpuUserDefine: '
+        'true)',
+  NpuVendor.intel => 'on Windows (Intel LunarLake/PantherLake)',
+};
 
 /// The backends to try, in order, for a [preferredBackend] request.
 ///
@@ -301,21 +383,12 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
     );
   } else if (preferredBackend == PreferredBackend.npu &&
       !backends.contains(PreferredBackend.npu)) {
-    final reason =
-        npuUnavailableBecause ??
-        npuUnavailableReason(
-          Platform.operatingSystem,
-          fastRpcError: Platform.isLinux
-              ? _linuxNpuProbeError
-              : _fastRpcProbeError,
-        );
+    final reason = npuUnavailableBecause ?? hostNpuUnavailableReason;
     // ignore: avoid_print
     print(
       '[flutter_edge_ai] WARNING: $logTag npu was requested, but $reason — '
       'trying ${backends.map(ffiBackendWireName).join(" -> ")} instead. NPU '
-      'runs on Qualcomm Android and Qualcomm Linux arm64 (in apps built with '
-      'hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu: true) and '
-      'on Windows (Intel LunarLake/PantherLake). '
+      'runs on ${npuSentenceList(NpuVendor.values.map(_whereNpuRuns))}. '
       'InferenceModel.activeBackend names what actually ran.',
     );
   }

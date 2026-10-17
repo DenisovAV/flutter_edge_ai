@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuVendor;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
@@ -724,16 +725,18 @@ final class _QualcommAndroid implements LiteRtLmNpuHost {
   @override
   String get abi => 'android_arm64';
   @override
-  Future<NpuStackCheck> qualcommStack() async => const NpuStackCheck.bundled();
+  Future<NpuStackCheck> stack(NpuVendor vendor) async => switch (vendor) {
+    NpuVendor.qualcomm => const NpuStackCheck.bundled(),
+    NpuVendor.intel => throw StateError(
+      'an Android host has no Intel stack to ask about',
+    ),
+  };
   @override
-  Future<NpuStackCheck> intelStack() =>
-      throw StateError('an Android host has no Intel stack to ask about');
+  bool reaches(NpuVendor vendor) => true;
   @override
-  bool get hasNpu => true;
+  String unreachableReason(NpuVendor vendor) => '';
   @override
-  String get noNpuReason => '';
-  @override
-  Future<String> prepareDispatchDir() async {
+  Future<String> prepareDispatchDir(NpuVendor vendor) async {
     prepared = true;
     return '/data/app/npu';
   }
@@ -746,14 +749,16 @@ final class _IntelWindows implements LiteRtLmNpuHost {
   @override
   String get abi => 'windows_x64';
   @override
-  Future<NpuStackCheck> qualcommStack() =>
-      throw StateError('a Windows host has no Qualcomm stack to ask about');
+  Future<NpuStackCheck> stack(NpuVendor vendor) async => switch (vendor) {
+    NpuVendor.intel => const NpuStackCheck.bundled(),
+    NpuVendor.qualcomm => throw StateError(
+      'a Windows host has no Qualcomm stack to ask about',
+    ),
+  };
   @override
-  Future<NpuStackCheck> intelStack() async => const NpuStackCheck.bundled();
+  bool reaches(NpuVendor vendor) => vendor == NpuVendor.intel;
   @override
-  bool get hasNpu => throw StateError('Windows has no NPU probe');
+  String unreachableReason(NpuVendor vendor) => '';
   @override
-  String get noNpuReason => '';
-  @override
-  Future<String> prepareDispatchDir() async => r'C:\Apps\demo';
+  Future<String> prepareDispatchDir(NpuVendor vendor) async => r'C:\Apps\demo';
 }

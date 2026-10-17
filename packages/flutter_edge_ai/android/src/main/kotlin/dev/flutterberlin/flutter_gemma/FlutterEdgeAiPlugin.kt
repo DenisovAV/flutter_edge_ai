@@ -203,9 +203,21 @@ class FlutterEdgeAiPlugin: FlutterPlugin {
 
     // Legacy packaging (extractNativeLibs=true): the installer already wrote
     // every lib to nativeLibraryDir. Check each file, not the dir: the dir
-    // exists, empty, when the libs stay inside the APK.
+    // exists, empty, when the libs stay inside the APK. LiteRT loads the first
+    // libLiteRtDispatch*.so its directory scan meets (litert/core/
+    // dynamic_loading.cc), so nativeLibraryDir serves only while it holds no
+    // dispatch but the requested one; an app that bundles two vendors' stacks
+    // gets the requested libs copied into a dir of their own below.
     val installed = appInfo.nativeLibraryDir?.let(::File)
-    if (installed != null && libs.all { File(installed, it).let { f -> f.isFile && f.length() > 0 } }) {
+    val otherDispatch = installed?.list()
+      ?.filter { it.startsWith(NPU_DISPATCH_PREFIX) && it.endsWith(".so") && it !in libs }
+      .orEmpty()
+    if (otherDispatch.isNotEmpty()) {
+      Log.i(LOG_TAG, "NPU: nativeLibraryDir also holds ${otherDispatch.joinToString()}; " +
+          "copying ${libs.size} libs into a dir of their own")
+    }
+    if (installed != null && otherDispatch.isEmpty() &&
+        libs.all { File(installed, it).let { f -> f.isFile && f.length() > 0 } }) {
       val bytes = libs.sumOf { File(installed, it).length() }
       Log.i(LOG_TAG, "NPU: dispatch_lib_dir=${installed.path} (nativeLibraryDir, " +
           "${libs.size} libs, $bytes bytes, ${elapsedMs(started)} ms)")
@@ -378,6 +390,7 @@ class FlutterEdgeAiPlugin: FlutterPlugin {
     val NPU_DISPATCH_LOCK = Any()
     val NPU_LIB_NAME = Regex("lib[A-Za-z0-9._+-]+\\.so")
     const val NPU_ABI_DIR = "lib/arm64-v8a/"
+    const val NPU_DISPATCH_PREFIX = "libLiteRtDispatch"
     const val NPU_DIR_PREFIX = "npu_libs-"
     const val NPU_TMP_PREFIX = "npu_libs.tmp-"
     const val NPU_TMP_STALE_MS = 10 * 60 * 1000L

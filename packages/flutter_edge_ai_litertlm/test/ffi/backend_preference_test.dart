@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Runs [body] and returns everything it `print`ed, with `gemmaLog` muted — so
@@ -125,7 +126,10 @@ void main() {
     test('the reason npu is missing is worded per platform', () {
       final android = npuUnavailableReason(
         'android',
-        fastRpcError: 'dlopen failed: library "libcdsprpc.so" not found',
+        probeErrors: {
+          NpuVendor.qualcomm:
+              'dlopen failed: library "libcdsprpc.so" not found',
+        },
       );
       expect(android, contains('libcdsprpc.so'));
       expect(android, contains('not found'), reason: 'the probe error is kept');
@@ -137,9 +141,11 @@ void main() {
 
       final linux = npuUnavailableReason(
         'linux',
-        fastRpcError:
-            '/dev/dma_heap/system is not accessible to this user. '
-            'Add the user to group fastrpc',
+        probeErrors: {
+          NpuVendor.qualcomm:
+              '/dev/dma_heap/system is not accessible to this user. '
+              'Add the user to group fastrpc',
+        },
       );
       expect(linux, contains('group fastrpc'), reason: 'the fix is named');
       expect(linux, isNot(contains('ships')));
@@ -147,6 +153,41 @@ void main() {
 
       expect(npuUnavailableReason('macos'), contains('no NPU dispatch stack'));
       expect(npuUnavailableReason('macos'), isNot(contains('FastRPC')));
+    });
+
+    test('a vendor is reachable only where its probe answered yes, and Intel '
+        'on Windows without one', () {
+      bool reach(NpuVendor vendor, String os, {bool fastRpc = true}) =>
+          npuVendorReachableOn(
+            vendor,
+            os,
+            androidHasFastRpc: fastRpc,
+            linuxHasQualcommNpu: true,
+          );
+      expect(reach(NpuVendor.qualcomm, 'android'), isTrue);
+      expect(reach(NpuVendor.qualcomm, 'android', fastRpc: false), isFalse);
+      expect(reach(NpuVendor.qualcomm, 'linux'), isTrue);
+      expect(reach(NpuVendor.qualcomm, 'windows'), isFalse);
+      expect(reach(NpuVendor.intel, 'windows', fastRpc: false), isTrue);
+      for (final os in ['android', 'linux', 'macos', 'ios']) {
+        expect(reach(NpuVendor.intel, os), isFalse, reason: os);
+      }
+    });
+
+    test("a vendor's reason names its own stack", () {
+      expect(
+        npuVendorUnreachableReason(
+          NpuVendor.qualcomm,
+          'android',
+          probeError: 'not found',
+        ),
+        'this device has no Qualcomm FastRPC (libcdsprpc.so did not open: '
+        'not found), so the bundled NPU stack cannot run here',
+      );
+      expect(
+        npuVendorUnreachableReason(NpuVendor.qualcomm, 'linux'),
+        contains('no Qualcomm NPU'),
+      );
     });
 
     test('tries GPU, then CPU for a GPU preference', () {

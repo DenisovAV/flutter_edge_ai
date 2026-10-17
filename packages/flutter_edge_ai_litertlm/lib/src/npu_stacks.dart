@@ -178,14 +178,86 @@ const qualcommNpuLibsLinux = [
   ...qairtLinuxLibs,
 ];
 
-/// The Qualcomm NPU stack of [operatingSystem] (`Platform.operatingSystem`
-/// spelling), or empty where none exists.
-List<String> qualcommNpuLibsFor(String operatingSystem) =>
-    switch (operatingSystem) {
-      'android' => qualcommNpuLibs,
-      'linux' => qualcommNpuLibsLinux,
-      _ => const [],
+/// Intel's NPU stack for Windows x64: our OpenVINO dispatch, the OpenVINO
+/// runtime and release TBB (~102 MB; it only enables `PreferredBackend.npu` on
+/// LunarLake/PantherLake — a model still loads on CPU/GPU without it). In every
+/// Windows x64 build: the hook lists it in `windowsExtraLibs`.
+///
+/// THIS LIST AND THE WINDOWS WORKFLOW'S `$ovWanted` ARE ONE SET IN TWO PLACES.
+/// The tarball is what CI assembles; this is what becomes a CodeAsset and
+/// lands next to the app binary. A name present there and absent here
+/// extracts to the cache and is never shipped — which is exactly how
+/// openvino_intel_npu_compiler(.dll/_loader.dll) went missing at v0.16.0:
+/// 78.8 MB of the stack, allow-listed and `throw`-guarded in CI, silently not
+/// bundled, so openvino_intel_npu_plugin could not resolve its compiler and
+/// backend=npu stayed broken in the release that set out to fix it. Change
+/// one, change the other. Release TBB only: the debug variants were once
+/// registered into user apps — 1.8 MB of parallel debug builds beside the
+/// release set, the mis-binding hazard the workflow's allow-list exists to
+/// avoid.
+const intelNpuLibs = [
+  intelDispatchLib,
+  'openvino',
+  'openvino_intel_npu_plugin',
+  'openvino_intel_npu_compiler',
+  'openvino_intel_npu_compiler_loader',
+  'openvino_tensorflow_lite_frontend',
+  'tbb12',
+  'tbbbind_2_5',
+  'tbbmalloc',
+  'tbbmalloc_proxy',
+];
+
+/// Our Intel OpenVINO dispatch (built from the LiteRT pin), `LiteRtDispatch.dll`.
+const intelDispatchLib = 'LiteRtDispatch';
+
+/// The user_define that bundles [vendor]'s stack into an app, or null when
+/// every build for the vendor's ABIs carries it.
+String? npuUserDefine(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm => qualcommNpuUserDefine,
+  NpuVendor.intel => null,
+};
+
+/// [vendor]'s dispatch library, as a CodeAsset name: what LiteRT finds in the
+/// dispatch directory, and what every native tarball of the vendor's ABIs
+/// must carry (`verify_tarball_manifest.sh` REQUIRED).
+String npuDispatchLib(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm => qualcommDispatchLib,
+  NpuVendor.intel => intelDispatchLib,
+};
+
+/// Every library of [vendor]'s stack on [operatingSystem]
+/// (`Platform.operatingSystem` spelling), as CodeAsset names: what
+/// NativeAssetsManifest.json lists when the build carries the stack, and what
+/// Android hands LiteRT as the dispatch directory.
+List<String> npuStackLibs(NpuVendor vendor, String operatingSystem) =>
+    switch (vendor) {
+      NpuVendor.qualcomm => switch (operatingSystem) {
+        'android' => qualcommNpuLibs,
+        'linux' => qualcommNpuLibsLinux,
+        _ => throw ArgumentError.value(
+          operatingSystem,
+          'operatingSystem',
+          'NpuVendor.qualcomm has no stack here',
+        ),
+      },
+      NpuVendor.intel => switch (operatingSystem) {
+        'windows' => intelNpuLibs,
+        _ => throw ArgumentError.value(
+          operatingSystem,
+          'operatingSystem',
+          'NpuVendor.intel has no stack here',
+        ),
+      },
     };
+
+/// The system libraries [vendor]'s device probe opens on Android, which the
+/// core plugin's AndroidManifest.xml must declare as `<uses-native-library>`:
+/// without the declaration the dlopen fails in the app's linker namespace.
+List<String> npuAndroidSystemLibs(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm => const ['libcdsprpc.so'],
+  NpuVendor.intel => const [],
+};
 
 /// The asset id the build hook registers [name] under — the key Flutter
 /// writes into NativeAssetsManifest.json.

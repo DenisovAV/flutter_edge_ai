@@ -145,10 +145,12 @@ bool npuDisablesHwMasking(NpuVendor vendor) => switch (vendor) {
 
 /// Whether this build carries [vendor]'s NPU stack where LiteRT will load it:
 /// for Qualcomm, what NativeAssetsManifest.json says the build bundled
-/// ([checkQualcommNpuStack]); for Intel, whether its dispatch is beside the
-/// executable ([checkIntelNpuStack]).
+/// ([checkNpuStackInManifest]); for Intel, whether its dispatch is beside the
+/// executable ([checkIntelNpuStack]) — the directory LiteRT is pointed at, and
+/// a stack that answers [NpuStackCheck.unknown] there would go unchecked:
+/// Intel's [prepareNpuDispatchDir] checks nothing.
 Future<NpuStackCheck> npuStackOf(NpuVendor vendor) async => switch (vendor) {
-  NpuVendor.qualcomm => await checkQualcommNpuStack(),
+  NpuVendor.qualcomm => await checkNpuStackInManifest(vendor),
   NpuVendor.intel => checkIntelNpuStack(windowsNpuDispatchDir),
 };
 
@@ -282,7 +284,7 @@ const intelNpuDispatchLib = 'LiteRtDispatch.dll';
 
 /// Whether [dir] holds [intelNpuDispatchLib].
 ///
-/// File presence, unlike [checkQualcommNpuStack]'s manifest: [dir] is the
+/// File presence, unlike [checkNpuStackInManifest]: [dir] is the
 /// directory LiteRT is pointed at, so the question is what it will find
 /// there. Only the dispatch is checked — which of the OpenVINO and TBB
 /// libraries a precompiled EmbeddingGemma 2 graph needs has not been

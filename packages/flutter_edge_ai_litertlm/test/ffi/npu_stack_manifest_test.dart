@@ -25,7 +25,8 @@ Future<NpuStackCheck> _check(
   String text, {
   String abi = 'android_arm64',
   String os = 'android',
-}) => checkQualcommNpuStack(
+}) => checkNpuStackInManifest(
+  NpuVendor.qualcomm,
   read: () async => text,
   abi: abi,
   operatingSystem: os,
@@ -78,10 +79,12 @@ void main() {
 
   test('an unreadable manifest is unknown, not "not enabled"', () async {
     // What rootBundle throws in a background isolate with no binding.
-    final r = await checkQualcommNpuStack(
+    final r = await checkNpuStackInManifest(
+      NpuVendor.qualcomm,
       read: () async =>
           throw StateError('Binding has not yet been initialized'),
       abi: 'android_arm64',
+      operatingSystem: 'android',
     );
     expect(r.bundled, isFalse);
     expect(r.known, isFalse, reason: 'the platform side decides instead');
@@ -135,14 +138,16 @@ void main() {
     });
   });
 
-  test('a host with no Qualcomm stack is a definite no', () async {
-    final r = await _check(
-      _manifest({'macos_arm64': _base}),
-      abi: 'macos_arm64',
-      os: 'macos',
+  test('asking about a host the vendor has no stack for is a programming '
+      'error: chooseNpuVendor never asks it', () async {
+    await expectLater(
+      _check(
+        _manifest({'macos_arm64': _base}),
+        abi: 'macos_arm64',
+        os: 'macos',
+      ),
+      throwsArgumentError,
     );
-    expect(r.bundled, isFalse);
-    expect(r.known, isTrue);
   });
 
   test('ids match what the hook registers', () {

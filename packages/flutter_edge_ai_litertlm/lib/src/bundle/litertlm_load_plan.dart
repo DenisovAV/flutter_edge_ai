@@ -202,6 +202,19 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
   );
   final target = _textNpuTarget(bundle);
   var textBackends = candidates.backends;
+  // An encoder that is on and compiled for an NPU this host has no dispatch
+  // for is refused for what it is before the NPU is asked about: the question
+  // has no answer for a vendor this host does not run, and its reason would
+  // name the wrong stack.
+  for (final (kind, on, encoder) in [
+    ('vision', supportImage, bundle?.visionEncoder),
+    ('audio', supportAudio, bundle?.audioEncoder),
+  ]) {
+    final compiledFor = encoder?.npuTarget;
+    if (on && compiledFor != null) {
+      _checkNpuVendor(path, compiledFor, abi, encoder: kind);
+    }
+  }
   // Asked once per load: on Android it opens a vendor library.
   bool? reachable;
   bool npuReachable() => reachable ??= npuAvailable();

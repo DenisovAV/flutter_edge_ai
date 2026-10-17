@@ -254,6 +254,53 @@ void main() {
     await mac.close();
   });
 
+  test(
+    'an encoder compiled for an NPU this host has no dispatch for is '
+    'refused for what it is, not for the host, and nothing is probed',
+    () async {
+      host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
+      debugLiteRtLmEngineHost = host;
+      final path = write(
+        'vision_mt6991.litertlm',
+        _bundle(visionStamp: ('MediaTek', 'MT6991')),
+      );
+
+      for (final backendFallback in [false, true]) {
+        await expectLater(
+          load(
+            path,
+            preferredBackend: PreferredBackend.npu,
+            supportImage: true,
+            backendFallback: backendFallback,
+          ),
+          throwsA(
+            isA<LiteRtLmBundleException>()
+                .having(
+                  (e) => e.problem,
+                  'problem',
+                  LiteRtLmBundleProblem.unsupportedNpu,
+                )
+                .having(
+                  (e) => e.message,
+                  'message',
+                  allOf(
+                    contains(
+                      "vision encoder is compiled for the MediaTek "
+                      'MT6991 NPU',
+                    ),
+                    contains('load it without supportImage'),
+                  ),
+                ),
+          ),
+          reason: 'backendFallback: $backendFallback',
+        );
+      }
+      expect(host.stackChecks, 0, reason: 'no stack of a foreign vendor');
+      expect(host.npuProbes, 0, reason: 'no probe answers for another vendor');
+      expect(host.attempts, isEmpty);
+    },
+  );
+
   test("the plan's encoder backends reach the client and the model", () async {
     // An encoder on the NPU runs only with a text model on the NPU.
     host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);

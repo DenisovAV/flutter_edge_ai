@@ -4,6 +4,8 @@
 
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmNpuTarget;
+import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
+    show NpuDispatchUnavailableException;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
@@ -113,6 +115,24 @@ void main() {
       expect(host.asked, ['stack:intel', 'probe:intel']);
     },
   );
+
+  test('a channel this isolate cannot reach is a stack that could not be '
+      'prepared, not a raw Error', () async {
+    // No binding here, as in a background isolate without
+    // BackgroundIsolateBinaryMessenger: the channel throws an Error.
+    await expectLater(
+      prepareAndroidNpuDispatchDir(const [
+        'LiteRtDispatch_Qualcomm',
+      ], NpuVendor.qualcomm),
+      throwsA(
+        isA<NpuDispatchUnavailableException>().having(
+          (e) => e.message,
+          'message',
+          startsWith('the Qualcomm NPU libraries could not be prepared: '),
+        ),
+      ),
+    );
+  });
 
   test('each vendor says whether it turns the HW mask update path off', () {
     expect(npuDisablesHwMasking(NpuVendor.qualcomm), isFalse);

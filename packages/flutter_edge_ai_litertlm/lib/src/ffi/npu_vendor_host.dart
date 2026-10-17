@@ -168,8 +168,8 @@ Future<String> prepareNpuDispatchDir(
 }) async => switch (vendor) {
   NpuVendor.qualcomm => switch (operatingSystem ?? Platform.operatingSystem) {
     'android' => await prepareAndroidNpuDispatchDir(
-      qualcommNpuLibs,
-      vendor.label,
+      npuStackLibs(vendor, 'android'),
+      vendor,
     ),
     'linux' => prepareLinuxNpuDispatchDir(),
     final os => throw StateError(
@@ -190,16 +190,21 @@ Future<String> prepareNpuDispatchDir(
 /// `LiteRtEmbeddingBackend.describe()`, on the caller's isolate: this goes
 /// through a platform channel, which core's worker cannot reach).
 ///
-/// LiteRT opendir()-scans it for libLiteRtDispatch_*.so and loads the first it
-/// finds, so the directory must hold this vendor's dispatch and no other's, and
-/// the vendor's libraries must exist there as files. The core plugin returns a
-/// directory holding exactly [libs] — nativeLibraryDir when the installer
-/// extracted them and no other vendor's dispatch is there, else a copy taken
-/// from the base APK or its config split (a Play install). The list comes from
-/// here because the build decides it.
+/// LiteRT scans it for every libLiteRtDispatch*.so and loads the first it
+/// finds, so the directory must hold this vendor's dispatch and no other's.
+/// What else must be there is the vendor's rule: Qualcomm's dispatch loads
+/// libQnnHtp/libQnnSystem from it and puts it on ADSP_LIBRARY_PATH for the
+/// Skels, so the whole QNN stack must exist there as files. The core plugin
+/// returns a directory holding exactly [libs] — nativeLibraryDir when the
+/// installer extracted them and it holds no other dispatch or compiler plugin,
+/// else a copy taken from the base APK or its config split (a Play install).
+/// A core from before that rule returns nativeLibraryDir whatever else it
+/// holds, so the release that adds a second Android vendor must raise this
+/// package's flutter_edge_ai floor to the first core with it. The list comes
+/// from here because the build decides it.
 Future<String> prepareAndroidNpuDispatchDir(
   List<String> libs,
-  String vendor,
+  NpuVendor vendor,
 ) async {
   const bundledChannel = MethodChannel('flutter_gemma_bundled');
   final String? dir;
@@ -215,8 +220,16 @@ Future<String> prepareAndroidNpuDispatchDir(
     );
   } on PlatformException catch (e) {
     throw NpuDispatchUnavailableException(
-      'the $vendor NPU libraries could not be prepared '
+      'the ${vendor.label} NPU libraries could not be prepared '
       '(${e.code}: ${e.message})',
+    );
+  } on Object catch (e) {
+    // A channel this isolate cannot reach (a background isolate without
+    // BackgroundIsolateBinaryMessenger) throws an Error, not an Exception: it
+    // is still a stack that could not be prepared, and the callers' contract
+    // is NpuDispatchUnavailableException.
+    throw NpuDispatchUnavailableException(
+      'the ${vendor.label} NPU libraries could not be prepared: $e',
     );
   }
   if (dir == null) {

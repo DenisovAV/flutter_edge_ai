@@ -356,6 +356,16 @@ void main() {
     });
   });
 
+  test('the web refusal, word for word: it is assembled from the vendor '
+      'table, so a reordered enum or a changed join shows here', () {
+    expect(
+      liteRtLmWebNpuRefusal,
+      'EmbeddingGemma 2 runs on the NPU on Qualcomm Android and Qualcomm Linux '
+      'arm64, and on Intel NPUs with Windows x64, only, not on the web. Omit '
+      'preferredBackend here.',
+    );
+  });
+
   test('the web refusal names both NPU hosts, Intel included', () {
     expect(
       liteRtLmWebNpuRefusal,

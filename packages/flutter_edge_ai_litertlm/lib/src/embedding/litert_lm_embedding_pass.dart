@@ -89,12 +89,12 @@ import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
 import '../ffi/litert_lm_embedding_bindings.dart';
 import '../ffi/litert_lm_library.dart';
 import '../ffi/sigprof_mask.dart';
+import '../npu_stacks.dart' show NpuVendor;
 import 'embedding_parts.dart';
 import 'litert_lm_embedding_common.dart';
 import 'litertlm_container_io.dart';
 import 'litertlm_npu_target.dart';
 import 'vision_budget.dart';
-import '../npu_stacks.dart' show NpuVendor;
 
 // Shared with the web pass; re-exported so this file's users keep one import.
 export 'litert_lm_embedding_common.dart'
@@ -213,9 +213,12 @@ String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) =>
     switch (npuVendorOf(target)) {
       NpuVendor.intel =>
         'on another SoC, or on a PC without an Intel NPU or its driver',
-      NpuVendor.qualcomm || null =>
+      NpuVendor.qualcomm =>
         'on another SoC, or with a QNN runtime that has no Skel for this '
             "device's Hexagon version",
+      // The placement refuses a bundle of a vendor with no dispatch here
+      // before any probe embed.
+      null => throw StateError('$target: no NPU vendor of this package'),
     };
 
 /// Every C function the pass calls. A `libLiteRtLm` that exports fewer is

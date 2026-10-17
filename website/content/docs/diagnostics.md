@@ -87,7 +87,7 @@ if (FlutterEdgeAiDiagnostics.isSupported) {
 
 On Android, clean does not mean exclusively file-backed. `Private_Clean` can include anonymous pages read back from zram and not written since, and `MADV_FREE` pages. On zram's skip-swapcache path, a page can lose its swap slot and leave `SwapPss`. Loading a model under memory pressure can therefore move cold heap memory from `anonymousBytes` into `fileBackedBytes`; the delta is not an exact count of mapped weights.
 
-**GPU backends.** On a GPU backend on Adreno, the driver's buffers are mapped through `/dev/kgsl-3d0` and are mostly clean pages, so they are counted here too. In one run on the vivo 1933 (Adreno 616, kernel 4.9) a Gemma 4 E2B GPU load raised that mapping from 6 to 981 MiB (988 after one prompt), matching `dumpsys meminfo`'s Gfx dev (989 MiB); about 115 MiB of it was dirty, which is in `anonymousBytes`, and all file mappings together (model, libraries, others) were about 260 MiB (Pss). With a GPU backend `fileBackedBytes` is therefore not a model-file figure: compare with a run of the same app on CPU, or subtract the clean pages of the `/dev/kgsl*` mappings of `/proc/self/smaps`. One device and one run each; other GPU drivers (Mali) were not measured.
+**GPU backends.** On a GPU backend on Adreno, the driver's buffers are mapped through `/dev/kgsl-3d0` and are mostly clean pages, so they are counted here too. In one run on the vivo 1933 (Adreno 616, kernel 4.9) a Gemma 4 E2B GPU load raised that mapping from 6 to 981 MiB (988 after one prompt), matching `dumpsys meminfo`'s Gfx dev (989 MiB); about 115 MiB of it was dirty, which is in `anonymousBytes`, and all file mappings together (model, libraries, others) were about 260 MiB (Pss). With a GPU backend `fileBackedBytes` is therefore not a model-file figure: compare with a run of the same app on CPU, or subtract `GpuMemoryReading.inFileBackedBytes` from `FlutterEdgeAiDiagnostics.gpuMemory()` (experimental, see below). One device and one run each; other GPU drivers (Mali) were not measured.
 
 The baseline includes every clean mapped file the process has touched. Take a reading before loading and subtract, while interpreting both counters together. Singly mapped dirty file pages count in `Private_Dirty` (inside `anonymousBytes`); `Shared_Dirty` is in neither field. Clean pages and dirty pages do not form a complete split of anonymous and file-backed memory.
 
@@ -190,7 +190,23 @@ With version 0.2.2 on vivo 1933 (Android 11, kernel 4.9), the opt-in Gemma 4 E2B
 
 At load and after the prompt, `Private_Clean + Shared_Clean − (Rss − Anonymous)` was negative on both backends. This gives no positive lower bound for clean anonymous pages in this run; it does not establish their absence. Values depend on the device and what pages were already resident.
 
-Planned: an experimental `gpuBytes`.
+`gpuMemory()` is experimental and Adreno-only; a Mali reading, GPU memory on iOS and macOS, and `fileBackedBytes` on iOS from `TASK_VM_INFO.external`, are not done.
+
+## GPU memory (experimental)
+
+`FlutterEdgeAiDiagnostics.gpuMemory()` returns a `GpuMemoryReading`, or null when there is no reader for the device. It is a separate call, not a `MemorySnapshot` field, because it costs more and may change.
+
+| Field | Meaning |
+|---|---|
+| `inAnonymousBytes` | `Private_Dirty` of the process's `kgsl-3d0` mappings: already in `anonymousBytes` |
+| `inFileBackedBytes` | `Private_Clean + Shared_Clean` of the same mappings: already in `fileBackedBytes`; subtract it to get the non-GPU file-backed memory |
+| `outsideSnapshotBytes` | GPU memory held for the process without a mapping in it. Always null in this version: the kernel counters for it are under `/sys/class/kgsl`, which an app could not read on the one device tried |
+
+- **What it covers.** Only the Adreno memory that is mapped into the process. On a vivo 1933 with FunctionGemma 270M on the GPU, `dumpsys meminfo` listed Gfx dev 363,080 kB, GL mtrack 365,960 kB and Graphics 749,592 kB, and the reading was 363,080 kB (340,736 dirty + 22,344 clean): about half of Graphics. A leak in GPU buffers the process never maps would not show here. Whether GL mtrack counts the same pages again was not determined.
+- **Platforms.** Android with an Adreno GPU. Null on an Android process that maps no `kgsl-3d0` (a Mali GPU, for one; not measured), and on iOS and macOS, where it is not read yet (`task_vm_info.ledger_tag_graphics_footprint` and `MTLDevice.currentAllocatedSize` exist; Apple's GPU memory is already inside `phys_footprint`). Elsewhere it throws `UnsupportedError`.
+- **How it is read.** `/proc/self/smaps`, matching `kgsl-3d0` anywhere in a mapping's name, as AOSP's libmeminfo does, so the `/kgsl-3d0` name kernels from 6.6 use is covered (not tried on such a kernel). The file is read as Latin-1, and malformed input throws `MemoryReadException` instead of giving a number.
+- **Cost.** The kernel builds per-mapping `smaps` mapping by mapping and holds the process's mmap lock while it does, on every kernel. On the vivo it took about 0.2 s before a model was loaded and 0.3 to 0.4 s with one on the GPU (3,300 and 4,200 mappings, screen on). The read is asynchronous but the scan runs on the calling isolate. Call it at a few points, not per frame or per token.
+- **A reading, not a delta.** It includes what the app's own rendering maps (about 6 MiB in a Flutter app). Take one before loading a model and subtract.
 
 ## Teach your AI assistant
 

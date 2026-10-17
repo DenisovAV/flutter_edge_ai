@@ -6,6 +6,7 @@
 //
 // No setUp, on purpose (Rule 6b): anything that can fail sits inside the test
 // body, so a failure is reported as a failure.
+import 'dart:convert' show latin1;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -56,6 +57,44 @@ void main() {
       expect(snapshot.availableBytes, isNotNull);
       expect(snapshot.availableBytes, greaterThan(0));
     }
+  }, skip: skip);
+
+  testWidgets('gpuMemory is non-null exactly when the process maps kgsl-3d0', (
+    tester,
+  ) async {
+    // ignore: experimental_member_use
+    final reading = await FlutterEdgeAiDiagnostics.gpuMemory();
+    // ignore: avoid_print
+    print('gpuMemory: $reading');
+    if (!Platform.isAndroid) {
+      expect(reading, isNull);
+      return;
+    }
+    // The oracle does not use the package's parser: /proc/self/maps, and the
+    // Pss of the same mappings from smaps, summed by hand.
+    final maps = File('/proc/self/maps').readAsStringSync(encoding: latin1);
+    expect(reading != null, maps.contains('kgsl-3d0'));
+    if (reading == null) return;
+    var pssKb = 0;
+    var inKgsl = false;
+    for (final line in File(
+      '/proc/self/smaps',
+    ).readAsStringSync(encoding: latin1).split('\n')) {
+      if (line.isEmpty) continue;
+      final c = line.codeUnitAt(0);
+      if ((c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x66)) {
+        inKgsl = line.contains('kgsl-3d0');
+      } else if (inKgsl && line.startsWith('Pss:')) {
+        pssKb += int.parse(line.split(RegExp(r'\s+'))[1]);
+      }
+    }
+    final partsKb =
+        (reading.inAnonymousBytes + reading.inFileBackedBytes) ~/ 1024;
+    // Shared pages are divided in Pss and counted whole in Shared_Clean, so
+    // the parts can only be equal or larger; a GPU mapping is not shared.
+    expect(partsKb, greaterThanOrEqualTo(pssKb - 1024));
+    expect(partsKb, lessThan(pssKb + 4096));
+    expect(reading.outsideSnapshotBytes, isNull);
   }, skip: skip);
 
   testWidgets('anonymousBytes rises by what the app actually allocates', (

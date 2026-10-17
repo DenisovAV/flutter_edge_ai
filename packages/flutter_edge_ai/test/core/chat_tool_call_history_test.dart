@@ -135,6 +135,28 @@ void main() {
     expect(_recorded(chat).toolCalls, [_call]);
   });
 
+  test('a tagged call in one chunk, at end of stream, is a call', () async {
+    // The whole `<tool_call>` block in the last chunk: nothing after it makes
+    // the mid-stream check run, and the block itself is not JSON.
+    const tagged =
+        '<tool_call>{"name":"runIntent","arguments":{"intent":"x"}}'
+        '</tool_call>';
+    final chat = await _chat(ModelType.qwen, const [tagged]);
+
+    expect(await chat.generateChatResponseAsync().toList(), [_call]);
+    expect(_recorded(chat).text, tagged);
+    expect(_recorded(chat).toolCalls, [_call]);
+  });
+
+  test('a fenced call in one chunk, at end of stream, is a call', () async {
+    const fenced =
+        '```json\n{"name":"runIntent","parameters":{"intent":"x"}}\n```';
+    final chat = await _chat(ModelType.general, const [fenced]);
+
+    expect(await chat.generateChatResponseAsync().toList(), [_call]);
+    expect(_recorded(chat).toolCalls, [_call]);
+  });
+
   test('parallel calls are all stored, and toolCallsOf reads them', () async {
     const parallel =
         '{"role":"assistant","tool_calls":['

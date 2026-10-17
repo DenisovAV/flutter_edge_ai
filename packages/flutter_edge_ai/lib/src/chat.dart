@@ -515,27 +515,18 @@ class InferenceChat {
               modelType: modelType,
             )) {
               // First try to extract message from any JSON with message field
-              try {
-                final jsonData = jsonDecode(funcBuffer);
-                if (jsonData is Map<String, dynamic> &&
-                    jsonData.containsKey('message')) {
-                  // Found JSON with message field - extract and display the message
-                  final message = jsonData['message'] as String;
-                  if (kDebugMode) {
-                    edgeAiLog(
-                      'InferenceChat: Extracted message from JSON: "$message"',
-                      level: EdgeAiLogLevel.verbose,
-                    );
-                  }
-                  yield TextResponse(message);
-                  funcBuffer = '';
-                  shouldAddToBuffer = false; // Don't add JSON tokens to buffer
-                  continue;
+              final message = _jsonMessageField(funcBuffer);
+              if (message != null) {
+                if (kDebugMode) {
+                  edgeAiLog(
+                    'InferenceChat: Extracted message from JSON: "$message"',
+                    level: EdgeAiLogLevel.verbose,
+                  );
                 }
-              } catch (e) {
-                edgeAiLog(
-                  'InferenceChat: Failed to parse JSON for message extraction: $e',
-                );
+                yield TextResponse(message);
+                funcBuffer = '';
+                shouldAddToBuffer = false; // Don't add JSON tokens to buffer
+                continue;
               }
 
               // If no message field found, try parsing as function call(s)
@@ -732,23 +723,20 @@ class InferenceChat {
         contentToCheck,
         modelType: modelType,
       )) {
+        // For JSON parsing, use funcBuffer (the actual JSON part)
+        // For FunctionGemma parsing, use contentToCheck (full function call)
+        final message = modelType == ModelType.functionGemma
+            ? null
+            : _jsonMessageField(funcBuffer);
+        if (message != null) {
+          edgeAiLog(
+            'InferenceChat: Extracted message from end-of-stream JSON: "$message"',
+            level: EdgeAiLogLevel.verbose,
+          );
+          yield TextResponse(message);
+          return;
+        }
         try {
-          // For JSON parsing, use funcBuffer (the actual JSON part)
-          // For FunctionGemma parsing, use contentToCheck (full function call)
-          if (modelType != ModelType.functionGemma) {
-            final jsonData = jsonDecode(funcBuffer);
-            if (jsonData is Map<String, dynamic> &&
-                jsonData.containsKey('message')) {
-              final message = jsonData['message'] as String;
-              edgeAiLog(
-                'InferenceChat: Extracted message from end-of-stream JSON: "$message"',
-                level: EdgeAiLogLevel.verbose,
-              );
-              yield TextResponse(message);
-              return;
-            }
-          }
-
           // Try to parse as function call(s)
           final allCalls = FunctionCallParser.parseAll(
             contentToCheck,
@@ -874,6 +862,12 @@ class InferenceChat {
   /// loop exhausts [maxToolTurns] without a call-free answer — so a consumer
   /// driving this loop can surface its own terminal signal (e.g. AgentLoop's
   /// MaxIterationsEvent).
+  ///
+  /// Errors: an exception from [onToolCall], or a result [jsonEncode] cannot
+  /// write, is answered to the model (the call's siblings in that turn as not
+  /// run) and then rethrown on the stream; so is an error from the generation
+  /// itself, after its committed calls are answered. A balancing answer the
+  /// session rejects is printed, never thrown over the original error.
   Stream<ModelResponse> generateChatResponseWithTools({
     required FutureOr<Map<String, dynamic>> Function(FunctionCallResponse call)
     onToolCall,
@@ -929,12 +923,7 @@ class InferenceChat {
           // original below. The caller's safe recovery is to recreate the session
           // / clearHistory(replayHistory:), which the Dart-side history makes
           // correct once the session is usable again.
-          edgeAiLog(
-            'InferenceChat.generateChatResponseWithTools: could not balance '
-            'committed tool-call(s) after a stream error ($balanceError); the '
-            'persistent chat history may be left unbalanced — recover by '
-            'recreating the session.',
-          );
+          _logUnbalanced('a stream error', balanceError);
         }
         rethrow;
       }
@@ -966,32 +955,49 @@ class InferenceChat {
           return;
         }
         final call = pending[i];
-        final Map<String, dynamic> response;
+        Map<String, dynamic>? response;
+        final Message reply;
         try {
           response = await onToolCall(call);
-        } catch (e) {
-          // The app's tool threw. Answer the failed call (and any siblings in
-          // this turn not yet run) so the committed call isn't left dangling,
-          // then rethrow so the caller sees the failure.
-          await addQueryChunk(
-            Message.toolResponse(
-              toolName: call.name,
-              response: {'error': '$e'},
-              toolCallId: call.id,
-            ),
-          );
-          await _answerToolCalls(pending.sublist(i + 1), const {
-            'status': 'not run — an earlier tool call in this turn failed',
-          });
-          rethrow;
-        }
-        await addQueryChunk(
-          Message.toolResponse(
+          // Built inside the try: a result jsonEncode cannot write (a
+          // DateTime, say) fails the call like a throwing tool, instead of
+          // leaving it committed with no response.
+          reply = Message.toolResponse(
             toolName: call.name,
             response: response,
             toolCallId: call.id,
-          ),
-        );
+          );
+        } catch (e) {
+          // The app's tool threw, or its result could not be encoded. Answer
+          // the call (and any siblings in this turn not yet run) so the
+          // committed call isn't left dangling, then rethrow so the caller
+          // sees the failure. A tool that returned has run: saying so keeps
+          // the model from running it again.
+          try {
+            await _answerToolCalls(
+              [call],
+              response == null
+                  ? {'error': '$e'}
+                  : const {
+                      'status': 'ran',
+                      'error': 'the result could not be encoded as JSON',
+                    },
+            );
+          } catch (balanceError) {
+            _logUnbalanced('a tool failure', balanceError);
+          }
+          try {
+            await _answerToolCalls(pending.sublist(i + 1), const {
+              'status': 'not run — an earlier tool call in this turn failed',
+            });
+          } catch (balanceError) {
+            _logUnbalanced('a tool failure', balanceError);
+          }
+          // The tool's error, not a balancing one: that is what the caller
+          // has to act on.
+          rethrow;
+        }
+        await addQueryChunk(reply);
       }
     }
     // Exhausted maxToolTurns with calls still pending: each turn's calls WERE
@@ -1010,20 +1016,58 @@ class InferenceChat {
 
   /// Feeds a fixed [response] as the tool-response for each of [calls]. Used to
   /// balance history when a turn is cancelled or a tool throws mid-turn, so a
-  /// committed tool-call is never left without a matching response.
+  /// committed tool-call is never left without a matching response. Every call
+  /// is tried even when one feed fails; the first failure is rethrown after.
   Future<void> _answerToolCalls(
     List<FunctionCallResponse> calls,
     Map<String, dynamic> response,
   ) async {
+    (Object, StackTrace)? firstFailure;
     for (final call in calls) {
-      await addQueryChunk(
-        Message.toolResponse(
-          toolName: call.name,
-          response: response,
-          toolCallId: call.id,
-        ),
-      );
+      try {
+        await addQueryChunk(
+          Message.toolResponse(
+            toolName: call.name,
+            response: response,
+            toolCallId: call.id,
+          ),
+        );
+      } catch (e, stack) {
+        firstFailure ??= (e, stack);
+      }
     }
+    if (firstFailure case (final error, final stack)) {
+      Error.throwWithStackTrace(error, stack);
+    }
+  }
+
+  /// Printed, not thrown: a failed balancing feed must not replace the error
+  /// that made the loop balance in the first place ([cause]). A release build
+  /// is where the next turn goes wrong, and edgeAiLog is silent there.
+  void _logUnbalanced(String cause, Object balanceError) {
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai] WARNING: InferenceChat.generateChatResponseWithTools '
+      'could not answer a committed tool call after $cause ($balanceError); '
+      'the persistent chat history may be left unbalanced. Recover by '
+      'recreating the session.',
+    );
+  }
+
+  /// The `message` of a `{"message": "..."}` reply, which is text rather than
+  /// a call, or `null` when [buffer] is not one. A decode error says only that
+  /// [buffer] is not bare JSON: a tagged or fenced call is not, and it must
+  /// still reach the call parser.
+  static String? _jsonMessageField(String buffer) {
+    final Object? json;
+    try {
+      json = jsonDecode(buffer);
+    } on FormatException {
+      return null;
+    }
+    if (json is! Map<String, dynamic>) return null;
+    final message = json['message'];
+    return message is String ? message : null;
   }
 
   Future<void> _recreateSessionWithReducedChunks() async {

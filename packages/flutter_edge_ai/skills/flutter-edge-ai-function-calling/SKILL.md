@@ -72,7 +72,7 @@ await for (final r in chat.generateChatResponseWithTools(
 
 Gemma 4 often writes a sentence, then calls a tool. The sentence streams as `TextResponse`, so the snippet clears the buffer when a call arrives, as `flutter_edge_ai_agent` does; the chat's history keeps only the call (its `tool_calls` objects), not the sentence. Without `supportsFunctionCalls: true`, or with `toolChoice: ToolChoice.none`, the call's JSON stays in the text instead.
 
-`onToolCall` receives a `FunctionCallResponse` with `name` and `args`, and returns the map the model reads back. Its `id` is null on every bundled engine today; ids come from genai `callId`s and Genkit `ref`s. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall` is reported to the model, then rethrown on the stream.
+`onToolCall` receives a `FunctionCallResponse` with `name` and `args`, and returns the map the model reads back. Its `id` is null on every bundled engine today; ids come from genai `callId`s and Genkit `ref`s. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall`, or a result `jsonEncode` cannot write, is reported to the model, then rethrown on the stream.
 
 ## Handling calls yourself
 

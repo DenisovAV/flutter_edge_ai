@@ -1,20 +1,40 @@
-/// The opt-in vendor NPU stacks, named once for the three places that must
-/// agree on them: the build hook (what gets bundled), the runtime gate (what
-/// this build bundled, read back from Flutter's NativeAssetsManifest.json) and
-/// the Android channel call that extracts the libraries for LiteRT.
+/// The NPU vendors this package dispatches to and their stacks, named once for
+/// the places that must agree on them: the build hook (what gets bundled), the
+/// runtime gate (what this build bundled, read back from Flutter's
+/// NativeAssetsManifest.json) and the Android channel call that extracts the
+/// libraries for LiteRT.
 ///
-/// Pure Dart on purpose: `hook/build.dart` imports this file and runs on the
-/// plain Dart VM, so nothing here may import Flutter.
+/// Pure Dart on purpose, with no imports at all: `hook/build.dart` imports this
+/// file and runs on the plain Dart VM, so nothing here may import Flutter, and
+/// the web arm reaches it too (through `litertlm_bundle_info.dart`), so nothing
+/// here may import dart:io, dart:ffi or dart:isolate either.
 library;
 
 /// A vendor whose NPU this package dispatches to.
 ///
 /// A bundle compiled for an NPU names its vendor in the `LiteRtStamp` its
-/// compiler wrote (`LiteRtLmNpuTarget.npuVendor`); a load without one uses the
-/// vendor this device reaches. Every answer that differs per vendor — the
-/// build's stack, the device probe, the dispatch directory, the wording — is a
-/// `switch` over this enum with no default, so a vendor added here is a compile
-/// error at each place that still needs its answer.
+/// compiler wrote (`npuVendorOf(target)`, internal); which vendor a load runs
+/// on is decided by `chooseNpuVendor` (lib/src/ffi/npu_vendor_host.dart), for
+/// the LLM engine and the EmbeddingGemma 2 placement alike. LiteRT never checks
+/// the stamp against the dispatch it loads, so this choice is the only guard.
+///
+/// The runtime answers that differ per vendor — the build's stack, the device
+/// probe (`npuUnreachable`, one member per probe on `NpuProbes`), the dispatch
+/// directory, the HW masking setting, the wording — are `switch`es over this
+/// enum with no default, so a vendor added here is a compile error at each of
+/// them. NOT forced by the compiler, and needed for a new vendor all the same:
+/// its native build (`native/litert_lm/build_*.sh`), its files in
+/// `verify_tarball_manifest.sh` REQUIRED, its system libraries as
+/// `<uses-native-library>` in the core plugin's AndroidManifest.xml (the
+/// probe's dlopen fails in the app's namespace without them), the core version
+/// floor in this package's pubspec when core's side changes, the docs, and the
+/// example's catalog enum (`EmbeddingNpuVendor`).
+///
+/// Declaration order is the order in which a load whose bundle names no vendor
+/// tries the vendors of its ABI; a device is expected to reach at most one.
+/// LiteRT's dispatch is process-global: the first NPU load fixes the vendor and
+/// the dispatch directory for every later NPU load in the process
+/// (`IsTheApiInitialized`, litert/runtime/dispatch/litert_dispatch.cc).
 enum NpuVendor {
   /// Qualcomm Hexagon through QNN, in apps that opt in with
   /// [qualcommNpuUserDefine].
@@ -40,13 +60,9 @@ enum NpuVendor {
   final String stampVendor;
 
   /// The hosts, in `Abi.current()` spelling, where this package runs this
-  /// vendor's NPU bundles.
+  /// vendor's NPU bundles: the only answer to where a vendor runs, so a host
+  /// whose ABI is not here is never asked about this vendor.
   final Set<String> abis;
-
-  /// Whether this vendor's NPU runs on [operatingSystem]
-  /// (`Platform.operatingSystem` spelling) on any of its [abis].
-  bool runsOn(String operatingSystem) =>
-      abis.any((abi) => abi.startsWith('${operatingSystem}_'));
 
   /// The vendor of a bundle stamped [vendor] (any case), or null when this
   /// package has no dispatch for it.

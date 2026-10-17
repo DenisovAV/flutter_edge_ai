@@ -489,7 +489,7 @@ void _checkNpuVendor(
               'NPU bundles only; $instead the generic bundle of this model to '
               'run it on the GPU or the CPU.'
         : '$what is compiled for the $target NPU, which runs on '
-              '${vendor.abis.join(' and ')} only, and this is $abi; $instead '
+              '${npuSentenceList(vendor.abis)} only, and this is $abi; $instead '
               'the generic bundle of this model to run it here.',
     path: path,
   );

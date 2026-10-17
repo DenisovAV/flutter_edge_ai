@@ -1,6 +1,8 @@
 // The NPU vendor table every per-vendor answer switches over: which stamps a
 // vendor owns, which hosts it runs on, and how a list of them reads.
 
+import 'dart:ffi' show Abi;
+
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmNpuTarget;
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart'
@@ -53,14 +55,26 @@ void main() {
         expect(NpuVendor.forAbi(abi), isEmpty, reason: abi);
       }
     });
+  });
 
-    test('runsOn follows the hosts, by operating system', () {
-      expect(NpuVendor.qualcomm.runsOn('android'), isTrue);
-      expect(NpuVendor.qualcomm.runsOn('linux'), isTrue);
-      expect(NpuVendor.qualcomm.runsOn('windows'), isFalse);
-      expect(NpuVendor.intel.runsOn('windows'), isTrue);
-      expect(NpuVendor.intel.runsOn('macos'), isFalse);
-    });
+  test('the table itself: every ABI is one Dart knows, every stamp lower '
+      'case and owned by one vendor', () {
+    // Guards a vendor added later without repeating its strings: a typo in an
+    // ABI would silently drop that host, a mixed-case stamp would never match.
+    final abiNames = {for (final abi in Abi.values) '$abi'};
+    for (final vendor in NpuVendor.values) {
+      expect(abiNames, containsAll(vendor.abis), reason: vendor.name);
+      expect(vendor.abis, isNotEmpty, reason: vendor.name);
+      expect(
+        vendor.stampVendor,
+        vendor.stampVendor.toLowerCase(),
+        reason: vendor.name,
+      );
+    }
+    expect(
+      NpuVendor.values.map((v) => v.stampVendor).toSet(),
+      hasLength(NpuVendor.values.length),
+    );
   });
 
   test('npuSentenceList reads like a sentence', () {

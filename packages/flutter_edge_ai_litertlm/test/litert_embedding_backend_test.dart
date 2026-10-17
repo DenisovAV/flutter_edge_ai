@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuVendor;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -732,9 +733,7 @@ final class _QualcommAndroid implements LiteRtLmNpuHost {
     ),
   };
   @override
-  bool reaches(NpuVendor vendor) => true;
-  @override
-  String unreachableReason(NpuVendor vendor) => '';
+  String? unreachable(NpuVendor vendor) => null;
   @override
   Future<String> prepareDispatchDir(NpuVendor vendor) async {
     prepared = true;
@@ -756,9 +755,8 @@ final class _IntelWindows implements LiteRtLmNpuHost {
     ),
   };
   @override
-  bool reaches(NpuVendor vendor) => vendor == NpuVendor.intel;
-  @override
-  String unreachableReason(NpuVendor vendor) => '';
+  String? unreachable(NpuVendor vendor) =>
+      vendor == NpuVendor.intel ? null : 'not this host';
   @override
   Future<String> prepareDispatchDir(NpuVendor vendor) async => r'C:\Apps\demo';
 }

@@ -11,7 +11,6 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:mutex/mutex.dart';
 
-import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
@@ -751,9 +750,10 @@ class LiteRtLmFfiClient {
   /// [activationDataType] is the C API's number (see
   /// `activationDataTypeWireValue`); null leaves the engine's own choice.
   ///
-  /// [npuVendor] is whose NPU dispatch an `npu` [backend] loads: the vendor
-  /// the load plan chose (the bundle's stamp, else the vendor this device
-  /// reaches). Null takes the vendor of this operating system.
+  /// [npuDispatch] is what an `npu` [backend] hands LiteRT-LM: the dispatch
+  /// directory of the vendor `chooseNpuVendor` chose, prepared by the caller,
+  /// and whether that vendor turns the HW mask update path off. Required for
+  /// `npu`: the client never picks a vendor itself.
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
@@ -766,8 +766,11 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? activationDataType,
-    NpuVendor? npuVendor,
+    NpuDispatch? npuDispatch,
   }) async {
+    if (backend == 'npu' && npuDispatch == null) {
+      throw ArgumentError.notNull('npuDispatch');
+    }
     final initSw = Stopwatch()..start();
     _ensureBindings();
     _backend = backend;
@@ -801,17 +804,7 @@ class LiteRtLmFfiClient {
     final audioBackendPtr = enableAudio ? audioBackend.toNativeUtf8() : nullptr;
 
     try {
-      // Asked before the settings exist: a missing NPU stack is an expected
-      // fallback, and throwing after settings_create would leak the settings.
-      final dispatchVendor = backend != 'npu'
-          ? null
-          : npuVendor ??
-                NpuVendor.values
-                    .where((v) => v.runsOn(Platform.operatingSystem))
-                    .firstOrNull;
-      final npuDispatchDir = dispatchVendor == null
-          ? null
-          : await prepareNpuDispatchDir(dispatchVendor);
+      final npuDispatchDir = backend == 'npu' ? npuDispatch!.dir : null;
 
       // The bundle's own sampler: the container header and its LlmMetadata
       // section, a few KB read before the engine exists. A bad or unreadable
@@ -884,18 +877,11 @@ class LiteRtLmFfiClient {
         );
       }
 
-      // Intel NPU (Windows): the dispatch dir is the directory containing
-      // `LiteRtDispatch.dll` (prepareNpuDispatchDir: Native Assets bundles the
-      // DLLs next to the executable), and the HW mask update path is off.
-      // Without `dispatch_lib_dir` LiteRT reads uninitialized env-option
-      // memory and engine_create crashes; without
-      // `use_hw_masking_for_npu(false)` LiteRT sets up the kWH HW mask method
-      // which Intel preview NPU (LunarLake/PantherLake) doesn't fully support
-      // → CFG check failure 0xc0000409 (per Matt Kreileder's Intel NPU
-      // pipeline instructions).
-      if (dispatchVendor == NpuVendor.intel) {
+      // The vendor decides (`npuDisablesHwMasking`): Intel turns the HW mask
+      // update path off.
+      if (backend == 'npu' && npuDispatch!.disableHwMasking) {
         b.litert_lm_engine_settings_set_use_hw_masking_for_npu(settings, false);
-        edgeAiLog('[LiteRtLmFfi] NPU Intel: use_hw_masking_for_npu=false');
+        edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=false');
       }
 
       if (npuDispatchDir != null) {
@@ -906,8 +892,8 @@ class LiteRtLmFfiClient {
         );
         calloc.free(dirPtr);
         edgeAiLog(
-          '[LiteRtLmFfi] NPU ${dispatchVendor!.label} '
-          '(${Platform.operatingSystem}): dispatch_lib_dir=$npuDispatchDir',
+          '[LiteRtLmFfi] NPU ${Platform.operatingSystem}: '
+          'dispatch_lib_dir=$npuDispatchDir',
         );
       }
 

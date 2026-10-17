@@ -20,24 +20,15 @@
 // What the bundle IS comes from its own bytes (`readLiteRtLmNpuTarget`), not
 // from its file name.
 
-import 'dart:ffi' show Abi;
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
-import '../ffi/backend_preference.dart'
-    show hostNpuUnreachableReason, hostReachesNpu;
 import '../ffi/litert_lm_client.dart' show NpuDispatchUnavailableException;
-import '../ffi/npu_stack_manifest.dart';
 import '../ffi/npu_vendor_host.dart';
 import '../npu_stacks.dart';
 import 'litert_lm_embedding_common.dart';
 import 'litertlm_npu_target.dart';
-
-export '../ffi/npu_vendor_host.dart'
-    show checkIntelNpuStack, intelNpuDispatchLib, windowsNpuDispatchDir;
 
 /// Where the pass will run a bundle: [backend] `cpu` for a generic bundle,
 /// `npu` for a per-SoC one, with its [target] and the [dispatchDir] LiteRT
@@ -47,59 +38,6 @@ typedef LiteRtLmEmbeddingPlacement = ({
   LiteRtLmNpuTarget? target,
   String? dispatchDir,
 });
-
-/// What [placeLiteRtLmEmbedder] asks of the host. The real one is
-/// [LiteRtLmPlatformNpuHost]; tests pass a fake, because every answer here is
-/// a property of a device a test host is not.
-abstract interface class LiteRtLmNpuHost {
-  /// `Platform.operatingSystem`.
-  String get operatingSystem;
-
-  /// `Abi.current()`, as its `toString()` (`android_arm64`, `linux_arm64`, …).
-  String get abi;
-
-  /// Whether this build carries [vendor]'s NPU stack where LiteRT will load
-  /// it ([npuStackOf]): the opt-in Qualcomm stack in NativeAssetsManifest.json,
-  /// Intel's dispatch beside the executable.
-  Future<NpuStackCheck> stack(NpuVendor vendor);
-
-  /// Whether this device can run [vendor]'s stack ([hostReachesNpu]: for
-  /// Qualcomm on Android, FastRPC opens; on Linux, a compute DSP the user may
-  /// open, and libcdsprpc.so.1; Windows has no probe).
-  bool reaches(NpuVendor vendor);
-
-  /// Why [reaches] is false, worded for the person who has to fix it.
-  String unreachableReason(NpuVendor vendor);
-
-  /// The `dispatch_lib_dir` for LiteRT ([prepareNpuDispatchDir]). Throws
-  /// [NpuDispatchUnavailableException] when the stack cannot be prepared.
-  Future<String> prepareDispatchDir(NpuVendor vendor);
-}
-
-/// The host this process runs on.
-final class LiteRtLmPlatformNpuHost implements LiteRtLmNpuHost {
-  const LiteRtLmPlatformNpuHost();
-
-  @override
-  String get operatingSystem => Platform.operatingSystem;
-
-  @override
-  String get abi => '${Abi.current()}';
-
-  @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) => npuStackOf(vendor);
-
-  @override
-  bool reaches(NpuVendor vendor) => hostReachesNpu(vendor);
-
-  @override
-  String unreachableReason(NpuVendor vendor) =>
-      hostNpuUnreachableReason(vendor);
-
-  @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) =>
-      prepareNpuDispatchDir(vendor);
-}
 
 /// The host [placeLiteRtLmEmbedder] asks when it is given none —
 /// `LiteRtEmbeddingBackend.describe()` passes none. Replaced only by tests,
@@ -162,23 +100,17 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
       '$file is compiled for the $target NPU, and on ${host.operatingSystem} '
       '(${host.abi}) flutter_edge_ai_litertlm runs '
       '${npuSentenceList(hostVendors.map((v) => v.label))} NPU bundles only; '
-      '${vendor.label} ones run on ${vendor.abis.join(' and ')}. Install the '
+      '${vendor.label} ones run on ${npuSentenceList(vendor.abis)}. Install the '
       'generic EmbeddingGemma 2 bundle to embed here on CPU.',
     );
   }
-  // An opt-in stack the manifest cannot vouch for goes ahead: preparing the
-  // dispatch directory checks the libraries before anything is loaded.
-  final stack = await host.stack(vendor);
-  if (stack.known && !stack.bundled) {
-    _refuse('$file needs the $target NPU, and ${stack.reason}.');
-  }
-  // Intel's "reach" is a yes without a probe (Windows has none, like the LLM
-  // path), so a PC without an Intel NPU is told apart by the pass's probe embed
-  // at load.
-  if (!host.reaches(vendor)) {
-    _refuse(
-      '$file needs the $target NPU, and ${host.unreachableReason(vendor)}.',
-    );
+  // The rule the LLM engine follows too: the build's stack, then the device.
+  // Intel's device answer is a yes without a probe (Windows has none), so a PC
+  // without an Intel NPU is told apart by the pass's probe embed at load.
+  if (await chooseNpuVendor(target: target, host: host) case NpuRefused(
+    :final reason,
+  )) {
+    _refuse('$file needs the $target NPU, and $reason.');
   }
   final String dispatchDir;
   try {

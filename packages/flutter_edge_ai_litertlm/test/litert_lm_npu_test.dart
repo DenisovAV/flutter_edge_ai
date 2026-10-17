@@ -13,8 +13,7 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart'
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show NpuDispatchUnavailableException;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
-import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
-    show prepareNpuDispatchDir;
+import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -414,7 +413,10 @@ void main() {
 
     test('Windows hands LiteRT the executable\'s directory', () async {
       expect(
-        await prepareNpuDispatchDir(NpuVendor.intel),
+        await prepareNpuDispatchDir(
+          NpuVendor.intel,
+          operatingSystem: 'windows',
+        ),
         windowsNpuDispatchDir,
       );
     });
@@ -456,14 +458,11 @@ final class _FakeHost implements LiteRtLmNpuHost {
   }
 
   @override
-  bool reaches(NpuVendor vendor) {
+  String? unreachable(NpuVendor vendor) {
     asked.add('reaches');
     vendors.add(vendor);
-    return reachable;
+    return reachable ? null : noNpuReason;
   }
-
-  @override
-  String unreachableReason(NpuVendor vendor) => noNpuReason;
 
   @override
   Future<String> prepareDispatchDir(NpuVendor vendor) async {

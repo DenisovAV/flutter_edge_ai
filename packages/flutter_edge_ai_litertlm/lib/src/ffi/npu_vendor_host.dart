@@ -1,18 +1,147 @@
-// What this process can tell about each NPU vendor's stack ([NpuVendor]):
-// whether this build carries it, and the directory LiteRT loads its dispatch
-// from. Whether the device reaches it is the vendor's probe, in
-// backend_preference.dart. The LLM engine (litert_lm_engine_host.dart) and the
-// EmbeddingGemma 2 placement (litert_lm_npu.dart) both ask here, so the two
+// Which vendor's NPU a load runs on ([chooseNpuVendor]) and what this process
+// can tell about each vendor ([NpuVendor]): whether this build carries its
+// stack, whether the device reaches it (the vendor's probe, in
+// backend_preference.dart), and the directory LiteRT loads its dispatch from.
+// The LLM engine (litert_lm_engine.dart) and the EmbeddingGemma 2 placement
+// (litert_lm_npu.dart) both choose here, through one host interface, so the two
 // cannot disagree about a vendor.
 
 import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
 
+import '../bundle/litertlm_bundle_info.dart'
+    show LiteRtLmNpuTarget, npuVendorOf;
 import '../litert_lm_load_errors.dart' show NpuDispatchUnavailableException;
 import '../npu_stacks.dart';
+import 'backend_preference.dart'
+    show npuNoVendorReason, npuUnreachable, platformNpuProbes;
 import 'npu_stack_manifest.dart';
+
+/// What choosing an NPU vendor asks of the host. The real one is
+/// [LiteRtLmPlatformNpuHost]; tests pass a fake, because every answer here is
+/// a property of a device a test host is not.
+abstract interface class LiteRtLmNpuHost {
+  /// `Platform.operatingSystem`.
+  String get operatingSystem;
+
+  /// `Abi.current()`, as its `toString()` (`android_arm64`, `linux_arm64`, …).
+  String get abi;
+
+  /// Whether this build carries [vendor]'s NPU stack where LiteRT will load
+  /// it ([npuStackOf]): the opt-in Qualcomm stack in NativeAssetsManifest.json,
+  /// Intel's dispatch beside the executable.
+  Future<NpuStackCheck> stack(NpuVendor vendor);
+
+  /// Why this device cannot run [vendor]'s stack, or null when it can
+  /// ([npuUnreachable]: for Qualcomm on Android, FastRPC opens; on Linux, a
+  /// compute DSP the user may open, and libcdsprpc.so.1; Windows has no
+  /// probe). Asked only for a vendor of [abi].
+  String? unreachable(NpuVendor vendor);
+
+  /// The `dispatch_lib_dir` for LiteRT ([prepareNpuDispatchDir]). Throws
+  /// [NpuDispatchUnavailableException] when the stack cannot be prepared.
+  Future<String> prepareDispatchDir(NpuVendor vendor);
+}
+
+/// The host this process runs on.
+final class LiteRtLmPlatformNpuHost implements LiteRtLmNpuHost {
+  const LiteRtLmPlatformNpuHost();
+
+  @override
+  String get operatingSystem => Platform.operatingSystem;
+
+  @override
+  String get abi => '${Abi.current()}';
+
+  @override
+  Future<NpuStackCheck> stack(NpuVendor vendor) => npuStackOf(vendor);
+
+  @override
+  String? unreachable(NpuVendor vendor) =>
+      npuUnreachable(vendor, operatingSystem, platformNpuProbes);
+
+  @override
+  Future<String> prepareDispatchDir(NpuVendor vendor) =>
+      prepareNpuDispatchDir(vendor);
+}
+
+/// Which vendor's NPU a load runs on ([NpuChosen]), or why none
+/// ([NpuRefused]).
+sealed class NpuChoice {
+  const NpuChoice();
+}
+
+/// The load runs on [vendor]'s NPU.
+final class NpuChosen extends NpuChoice {
+  const NpuChosen(this.vendor);
+  final NpuVendor vendor;
+}
+
+/// No NPU this host reaches can run the load; [reason] says why, worded for
+/// the person who has to fix it.
+final class NpuRefused extends NpuChoice {
+  const NpuRefused(this.reason);
+  final String reason;
+}
+
+/// The one rule for which vendor's NPU a load runs on, for the LLM engine and
+/// the EmbeddingGemma 2 placement alike.
+///
+/// The candidates are the vendors of the host's ABI ([NpuVendor.forAbi]): for a
+/// bundle compiled for an NPU ([target], its `LiteRtStamp`), only that vendor;
+/// otherwise each in [NpuVendor] declaration order. The caller refuses a
+/// stamped vendor this package or this host has no dispatch for before it
+/// asks, so that the refusal names the vendor rather than this host's stack.
+/// For each candidate the build is asked before the device: an app that did not
+/// bundle an opt-in stack must not even dlopen that vendor's library. A stack
+/// the manifest cannot vouch for (no binding in a background isolate) goes on
+/// to the probe: preparing its dispatch directory checks the libraries before
+/// anything is loaded. The first candidate whose stack is there and whose
+/// device answers is chosen.
+Future<NpuChoice> chooseNpuVendor({
+  required LiteRtLmNpuTarget? target,
+  required LiteRtLmNpuHost host,
+}) async {
+  final compiledFor = target == null ? null : npuVendorOf(target);
+  final candidates = [
+    for (final vendor in NpuVendor.forAbi(host.abi))
+      if (target == null || vendor == compiledFor) vendor,
+  ];
+  if (candidates.isEmpty) return NpuRefused(npuNoVendorReason(host.abi));
+  final reasons = <String>[];
+  for (final vendor in candidates) {
+    final stack = await host.stack(vendor);
+    if (!stack.known) {
+      edgeAiLog(
+        '[NPU] ${stack.reason}; trying the ${vendor.label} NPU, the platform '
+        'side checks the libraries',
+      );
+    } else if (!stack.bundled) {
+      reasons.add(stack.reason!);
+      continue;
+    }
+    final unreachable = host.unreachable(vendor);
+    if (unreachable == null) return NpuChosen(vendor);
+    reasons.add(unreachable);
+  }
+  return NpuRefused(reasons.join('; '));
+}
+
+/// What an NPU attempt hands LiteRT-LM: the `dispatch_lib_dir` its vendor
+/// prepared, and whether to turn LiteRT's HW mask update path off.
+typedef NpuDispatch = ({String dir, bool disableHwMasking});
+
+/// Whether an LLM engine on [vendor]'s NPU turns `use_hw_masking_for_npu`
+/// off. Intel: with it on, LiteRT sets up the kWH HW mask method, which Intel
+/// preview NPUs (LunarLake/PantherLake) do not fully support → CFG check
+/// failure 0xc0000409 (per Matt Kreileder's Intel NPU pipeline instructions).
+bool npuDisablesHwMasking(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm => false,
+  NpuVendor.intel => true,
+};
 
 /// Whether this build carries [vendor]'s NPU stack where LiteRT will load it:
 /// for Qualcomm, what NativeAssetsManifest.json says the build bundled
@@ -27,14 +156,31 @@ Future<NpuStackCheck> npuStackOf(NpuVendor vendor) async => switch (vendor) {
 /// prepared Qualcomm libraries on Android ([prepareAndroidNpuDispatchDir]) and
 /// on Linux ([prepareLinuxNpuDispatchDir]), [windowsNpuDispatchDir] for Intel.
 /// Throws [NpuDispatchUnavailableException] when the stack cannot be prepared.
-Future<String> prepareNpuDispatchDir(NpuVendor vendor) async =>
-    switch (vendor) {
-      NpuVendor.qualcomm =>
-        Platform.isAndroid
-            ? await prepareAndroidNpuDispatchDir(qualcommNpuLibs, vendor.label)
-            : prepareLinuxNpuDispatchDir(),
-      NpuVendor.intel => windowsNpuDispatchDir,
-    };
+///
+/// [operatingSystem] is `Platform.operatingSystem` unless a test names one:
+/// that getter has no override seam, so the Windows arm is otherwise
+/// unreachable from a test run on another host.
+Future<String> prepareNpuDispatchDir(
+  NpuVendor vendor, {
+  String? operatingSystem,
+}) async => switch (vendor) {
+  NpuVendor.qualcomm => switch (operatingSystem ?? Platform.operatingSystem) {
+    'android' => await prepareAndroidNpuDispatchDir(
+      qualcommNpuLibs,
+      vendor.label,
+    ),
+    'linux' => prepareLinuxNpuDispatchDir(),
+    final os => throw StateError(
+      'NpuVendor.qualcomm has no dispatch directory on $os',
+    ),
+  },
+  NpuVendor.intel => switch (operatingSystem ?? Platform.operatingSystem) {
+    'windows' => windowsNpuDispatchDir,
+    final os => throw StateError(
+      'NpuVendor.intel has no dispatch directory on $os',
+    ),
+  },
+};
 
 /// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Android for
 /// one vendor's stack, [libs] (CodeAsset names) — for the LLM engine and the

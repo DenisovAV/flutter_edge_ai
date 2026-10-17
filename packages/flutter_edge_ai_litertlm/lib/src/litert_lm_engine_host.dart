@@ -10,38 +10,41 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
-import 'ffi/backend_preference.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_stack_manifest.dart';
 import 'ffi/npu_vendor_host.dart';
 import 'npu_stacks.dart';
 
-/// What a native `.litertlm` LLM load reaches outside Dart.
-class LiteRtLmEngineHost {
+/// What a native `.litertlm` LLM load reaches outside Dart. Its NPU answers
+/// are the same [LiteRtLmNpuHost] the EmbeddingGemma 2 placement asks, so
+/// [chooseNpuVendor] runs over either.
+class LiteRtLmEngineHost implements LiteRtLmNpuHost {
   const LiteRtLmEngineHost();
+
+  static const _npu = LiteRtLmPlatformNpuHost();
 
   /// The directory LiteRT-LM keeps its caches in.
   Future<String> cacheDir() async =>
       (await getApplicationSupportDirectory()).path;
 
-  /// `Platform.operatingSystem`.
+  @override
   String get operatingSystem => Platform.operatingSystem;
 
-  /// `Abi.current()`, as a string.
+  @override
   String get abi => '${Abi.current()}';
 
-  /// Whether this build carries [vendor]'s NPU stack ([npuStackOf]).
-  Future<NpuStackCheck> npuStack(NpuVendor vendor) => npuStackOf(vendor);
+  @override
+  Future<NpuStackCheck> stack(NpuVendor vendor) => _npu.stack(vendor);
 
-  /// [hostReachesNpu]. On Android it opens a vendor library.
-  bool reachesNpu(NpuVendor vendor) => hostReachesNpu(vendor);
+  /// On Android it opens a vendor library.
+  @override
+  String? unreachable(NpuVendor vendor) => _npu.unreachable(vendor);
 
-  /// [hostNpuUnreachableReason]; read after [reachesNpu].
-  String npuUnreachableReason(NpuVendor vendor) =>
-      hostNpuUnreachableReason(vendor);
-
-  /// [hostNpuUnavailableReason]: why no vendor's NPU runs on this host.
-  String get npuUnavailableReason => hostNpuUnavailableReason;
+  /// On Android it extracts the vendor's libraries out of the APK when the
+  /// installer did not.
+  @override
+  Future<String> prepareDispatchDir(NpuVendor vendor) =>
+      _npu.prepareDispatchDir(vendor);
 
   /// A client for one backend attempt.
   LiteRtLmFfiClient createClient() => LiteRtLmFfiClient();
@@ -60,7 +63,7 @@ class LiteRtLmEngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
-    required NpuVendor? npuVendor,
+    required NpuDispatch? npuDispatch,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
@@ -73,7 +76,7 @@ class LiteRtLmEngineHost {
     audioBackend: audioBackend,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     activationDataType: activationDataType,
-    npuVendor: npuVendor,
+    npuDispatch: npuDispatch,
   );
 }
 

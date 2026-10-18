@@ -651,7 +651,9 @@ elif git -C "$DIR" apply --reverse --check "$REWIND_PATCH" 2>/dev/null; then
 else
   echo "  ERROR: $REWIND_PATCH does not apply to this LiteRT-LM revision —" >&2
   echo "         runtime/conversation/conversation.{h,cc} or" >&2
-  echo "         c/conversation{.h,.cc,_internal.h} moved; re-create the patch." >&2
+  echo "         c/conversation{.h,.cc,_internal.h} moved (re-create the patch)," >&2
+  echo "         or the tree carries an older version of it (start from a clean" >&2
+  echo "         checkout)." >&2
   git -C "$DIR" apply --check "$REWIND_PATCH" >&2 || true
   exit 1
 fi
@@ -667,9 +669,13 @@ grep -qF 'absl::Status RewindCancelledTurn(' \
 grep -qF 'last_task_ids_ = it->second.last_task_ids;' \
   "$DIR/runtime/core/session_advanced.cc" ||
   rewind_fail "SessionAdvanced::RewindToCheckpoint no longer restores last_task_ids_"
-# The wait must not open before the callbacks have run: the session is done
-# only once its active-task list is empty, and a task leaves it at its end
-# state, which is set after its callback.
+# The wait must not open before the callbacks have run: Conversation's
+# WaitUntilDone is the session's, which waits for its active-task list to
+# empty, and a task leaves it at its end state, which is set after its
+# callback.
+grep -qF 'return execution_manager_lock->WaitUntilSessionDone(' \
+  "$DIR/runtime/core/session_advanced.h" ||
+  rewind_fail "SessionAdvanced::WaitUntilDone no longer waits for the session's tasks"
 grep -qF 'session_lookup_.at(session_id)->active_tasks.empty();' \
   "$DIR/runtime/framework/resource_management/threaded_execution_manager.cc" ||
   rewind_fail "WaitUntilSessionDone no longer waits for the session's active tasks"

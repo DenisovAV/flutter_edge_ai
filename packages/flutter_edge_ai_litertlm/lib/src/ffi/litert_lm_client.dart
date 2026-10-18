@@ -113,9 +113,12 @@ enum StoppedTurnRewind {
 enum NativeLastTurnEnd { none, completed, cancelled, failed, running }
 
 /// What `litert_lm_conversation_rewind_cancelled_turn` returning [code], with
-/// the last send having ended as [lastTurnEnd] (a `LiteRtLmTurnEnd`), means:
-/// 0 is a usable conversation — rewound if that send was cancelled, untouched
-/// otherwise — and any other code a conversation to rebuild.
+/// the last send having ended as [lastTurnEnd] (a `LiteRtLmTurnEnd`; -1 when
+/// native wrote none), means: 0 with that send cancelled is a rewind, 0 with it
+/// completed (or none sent) an untouched conversation. Anything else — any
+/// non-zero code, or 0 with an end that native never pairs with it, as a
+/// library built before the contract would give — is a conversation to
+/// rebuild.
 @visibleForTesting
 StoppedTurnRewind stoppedTurnRewindOutcome(
   int code,
@@ -125,12 +128,28 @@ StoppedTurnRewind stoppedTurnRewindOutcome(
   final end = lastTurnEnd >= 0 && lastTurnEnd < NativeLastTurnEnd.values.length
       ? NativeLastTurnEnd.values[lastTurnEnd]
       : null;
-  if (code != 0) {
-    throw StoppedTurnRewindException(code, message, lastTurnEnd: end);
+  if (code == 0) {
+    switch (end) {
+      case NativeLastTurnEnd.cancelled:
+        return StoppedTurnRewind.rewound;
+      case NativeLastTurnEnd.none:
+      case NativeLastTurnEnd.completed:
+        return StoppedTurnRewind.notCancelled;
+      case NativeLastTurnEnd.failed:
+      case NativeLastTurnEnd.running:
+      case null:
+        throw StoppedTurnRewindException(
+          0,
+          'native reported success with last turn end $lastTurnEnd',
+          lastTurnEnd: end,
+        );
+    }
   }
-  return end == NativeLastTurnEnd.cancelled
-      ? StoppedTurnRewind.rewound
-      : StoppedTurnRewind.notCancelled;
+  throw StoppedTurnRewindException(
+    code,
+    message,
+    lastTurnEnd: end ?? NativeLastTurnEnd.running,
+  );
 }
 
 /// The stopped turn could not be rewound, so the conversation must be
@@ -262,7 +281,8 @@ class LiteRtLmConversationHandle implements ConversationHandle {
       messageJson,
       extraContext: extraContext,
       onEnded: (how) {
-        if (how == NativeTurnEnd.completed && identical(_lastSend, record)) {
+        // Kept only after a cancelled send, the one a rewind puts back.
+        if (how != NativeTurnEnd.cancelled && identical(_lastSend, record)) {
           _lastSend = null;
         }
       },
@@ -449,7 +469,9 @@ _rewindCancelledTurnOffMainIsolate({
         >('litert_lm_conversation_rewind_cancelled_turn');
     final exchange = exchangeJson.toNativeUtf8();
     final extra = extraContext?.toNativeUtf8() ?? nullptr;
-    final lastTurnEnd = malloc<Int32>()..value = 0;
+    // -1 until native writes it: a library that never does is not taken for
+    // one that reported "nothing was sent".
+    final lastTurnEnd = malloc<Int32>()..value = -1;
     try {
       final code = rewind(
         Pointer.fromAddress(conversationAddr),
@@ -1515,7 +1537,8 @@ class LiteRtLmFfiClient {
       // shutdown may now be queued behind us — in which case this conversation
       // must not escape. The engine is still alive here, so deleting is safe.
       if (_isShuttingDown || _engine == null) {
-        if (conv != nullptr) _deleteConversation(conv);
+        // Not published yet (not in _liveConvs), so delete it directly.
+        if (conv != nullptr) b.litert_lm_conversation_delete(conv);
         throw StateError('Client shut down while creating a conversation');
       }
     } finally {
@@ -1824,7 +1847,14 @@ class LiteRtLmFfiClient {
         unawaited(send.turn.ended.whenComplete(releaseAndCleanup));
         inner = send.stream.listen(
           controller.add,
-          onError: controller.addError,
+          onError: (Object e, StackTrace st) {
+            // Native cancelled a turn nobody stopped: the conversation is
+            // poisoned, so the next turn rebuilds it.
+            if (e is LiteRtLmTurnCancelledException) {
+              _virtualConvStopped = true;
+            }
+            controller.addError(e, st);
+          },
           onDone: () {
             if (!controller.isClosed) controller.close();
           },
@@ -1849,11 +1879,10 @@ class LiteRtLmFfiClient {
       //
       // Guard on `mutexHeld`: onCancel also fires as implicit teardown after a
       // stream completes normally (Dart delivers `done` by cancelling the
-      // subscription). On that path the inner stream's onDone has already run
-      // `releaseAndCleanup()`, which clears `mutexHeld` synchronously — so
-      // `mutexHeld` is false here and we skip cancelling a just-finished, about-
-      // to-be-reused `_virtualConv`. A genuine mid-flight cancel still holds the
-      // mutex, so `mutexHeld` is true and the cancel fires.
+      // subscription). By then native has ended the turn and
+      // `releaseAndCleanup()` has cleared `mutexHeld`, so we skip cancelling a
+      // just-finished, about-to-be-reused `_virtualConv`. A genuine mid-flight
+      // cancel comes before native's end, with `mutexHeld` still true.
       if (mutexHeld) cancelVirtualTurn(conversationToken);
       // Waits, bounded, for native's end; the lock is released at that end.
       // Without a running turn, onListen releases it when it sees the cancel.
@@ -1919,27 +1948,29 @@ class LiteRtLmFfiClient {
   }) {
     _assertInitialized();
     final b = _bindings!;
+    // Queued behind an operation whose end deleted it (a close meanwhile).
+    if (!_liveConvs.contains(conv)) {
+      throw StateError('Conversation was closed before the message was sent');
+    }
 
-    // Registered right before the native call below; the callback cannot run
-    // before that call.
-    late final NativeTurnStream<Pointer<LiteRtLmConversation>> send;
+    // Registered before anything native is allocated; every path below either
+    // starts the send or ends this turn.
+    final send = NativeTurnStream(_turns, conv);
 
     final messagePtr = messageJson.toNativeUtf8();
     final extraPtr = extraContext != null
         ? extraContext.toNativeUtf8()
         : nullptr;
 
-    // NativeCallable.listener is thread-safe — the callback can be
-    // invoked from the native background thread that LiteRT-LM uses
-    // for streaming, and Dart will marshal it to the right isolate.
-    // Dart callback — receives heap-copied strings from proxy
     late final NativeCallable<_StreamCallbackNative> callable;
-    callable = NativeCallable<_StreamCallbackNative>.listener((
-      Pointer<Void> data,
-      Pointer<Char> chunk,
-      int isFinal,
-      Pointer<Char> errorMsg,
-    ) {
+
+    void releaseNative() {
+      callable.close();
+      calloc.free(messagePtr);
+      if (extraPtr != nullptr) calloc.free(extraPtr);
+    }
+
+    void onChunk(Pointer<Char> chunk, int isFinal, Pointer<Char> errorMsg) {
       if (errorMsg != nullptr && errorMsg.address != 0) {
         final error = _decodeNativeString(errorMsg);
         _proxyFreeString!(errorMsg); // free strdup'd string
@@ -1953,32 +1984,49 @@ class LiteRtLmFfiClient {
         } else {
           send.failed(Exception('Stream error: $error'));
         }
-        callable.close();
-        calloc.free(messagePtr);
-        if (extraPtr != nullptr) calloc.free(extraPtr);
+        releaseNative();
         return;
       }
 
       if (chunk != nullptr && chunk.address != 0) {
-        final text = chunk.cast<Utf8>().toDartString();
+        final text = _decodeNativeString(chunk);
         _proxyFreeString!(chunk); // free strdup'd string
         send.chunk(text);
       }
 
       if (isFinal != 0) {
         send.finished();
-        callable.close();
-        calloc.free(messagePtr);
-        if (extraPtr != nullptr) calloc.free(extraPtr);
+        releaseNative();
+      }
+    }
+
+    // NativeCallable.listener is thread-safe — the callback can be
+    // invoked from the native background thread that LiteRT-LM uses
+    // for streaming, and Dart will marshal it to the right isolate.
+    // Dart callback — receives heap-copied strings from proxy
+    callable = NativeCallable<_StreamCallbackNative>.listener((
+      Pointer<Void> data,
+      Pointer<Char> chunk,
+      int isFinal,
+      Pointer<Char> errorMsg,
+    ) {
+      // A throw here would leave the turn — and the engine lock — running
+      // forever; end it as failed instead.
+      try {
+        onChunk(chunk, isFinal, errorMsg);
+      } catch (e) {
+        if (!send.turn.hasEnded) {
+          send.failed(e);
+          releaseNative();
+        }
       }
     });
 
     // Create proxy that strdup's strings before forwarding to Dart callback
     final create2 = _proxyCreate2;
     if (create2 != null && _missingChunkAccessors.isNotEmpty) {
-      callable.close();
-      calloc.free(messagePtr);
-      if (extraPtr != nullptr) calloc.free(extraPtr);
+      releaseNative();
+      send.failed(StateError('no stream-chunk accessors'));
       throw StateError(
         'libLiteRtLm does not export ${_missingChunkAccessors.join(', ')}, so '
         'no generation was started: without the stream-chunk accessors the '
@@ -2005,9 +2053,8 @@ class LiteRtLmFfiClient {
     // StreamProxy never returns NULL, so this fires only with `stream_proxy_create2`
     // (an allocation failure, or an argument the checks above already rule out).
     if (proxyData == nullptr || proxyFn == nullptr) {
-      callable.close();
-      calloc.free(messagePtr);
-      if (extraPtr != nullptr) calloc.free(extraPtr);
+      releaseNative();
+      send.failed(StateError('no stream proxy'));
       throw StateError(
         'stream_proxy_create2 returned null, so no generation was started '
         '(an allocation failure in StreamProxy). See #453.',
@@ -2020,16 +2067,14 @@ class LiteRtLmFfiClient {
     // the native call returns; the callback fires synchronously inside.
     final optionalArgs = b.litert_lm_conversation_optional_args_create();
     if (optionalArgs == nullptr) {
-      calloc.free(messagePtr);
-      if (extraPtr != nullptr) calloc.free(extraPtr);
-      callable.close();
+      releaseNative();
+      send.failed(StateError('no optional args'));
       throw StateError(
         'litert_lm_conversation_optional_args_create returned null — '
         'native libLiteRtLm.dylib initialization failure',
       );
     }
 
-    send = NativeTurnStream(_turns, conv);
     final result = b.litert_lm_conversation_send_message_stream(
       conv,
       messagePtr.cast(),
@@ -2044,9 +2089,7 @@ class LiteRtLmFfiClient {
 
     if (result != 0) {
       send.failed(Exception('Failed to start streaming (code: $result)'));
-      callable.close();
-      calloc.free(messagePtr);
-      if (extraPtr != nullptr) calloc.free(extraPtr);
+      releaseNative();
     }
 
     // A consumer that abandons the stream (subscription.cancel) without
@@ -2184,8 +2227,14 @@ class LiteRtLmFfiClient {
               exchangeJson: exchangeJson,
               extraContext: extraContext,
             );
-          } catch (e) {
-            throw StoppedTurnRewindException(-1, 'the call failed: $e');
+          } on Exception catch (e, st) {
+            // The call itself failed (an isolate that could not start); the
+            // conversation's state is unknown, so it is rebuilt. An Error is a
+            // bug and keeps its own type and stack.
+            Error.throwWithStackTrace(
+              StoppedTurnRewindException(-1, 'the call failed: $e'),
+              st,
+            );
           }
           final outcome = stoppedTurnRewindOutcome(
             result.code,
@@ -2215,8 +2264,11 @@ class LiteRtLmFfiClient {
     // Drop liveness first so any onCancel that races this teardown no-ops in
     // [_cancelOn] rather than dereferencing the pointer we are about to free.
     // A conversation that is not live was deleted already: deleting it again
-    // would free it twice.
-    if (!_liveConvs.remove(conv)) return;
+    // would free it twice. No path should get here; debug builds say so.
+    if (!_liveConvs.remove(conv)) {
+      assert(false, 'conversation $conv deleted twice');
+      return;
+    }
     _conversationSampling.remove(conv);
     if (_bindings != null) {
       _bindings!.litert_lm_conversation_delete(conv);
@@ -2266,8 +2318,19 @@ class LiteRtLmFfiClient {
       _virtualActiveToken = null;
     }
     // A conversation released while an operation ran on it is deleted when
-    // that operation ends; the engine must outlive both.
-    await _turns.allEnded();
+    // that operation ends; the engine must outlive both. Said out loud when it
+    // takes long: nothing else would show why shutdown does not return.
+    await _turns.allEnded().timeout(
+      const Duration(seconds: 10),
+      onTimeout: () async {
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_litertlm] shutdown is waiting for a native '
+          'generation that has not ended after 10 s',
+        );
+        await _turns.allEnded();
+      },
+    );
 
     if (_engine != null && _engine != nullptr && _bindings != null) {
       _bindings!.litert_lm_engine_delete(_engine!);

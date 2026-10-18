@@ -404,14 +404,15 @@
    // Clones the conversation. The cloned conversation will be independent of the
    // original conversation, including the history, state, etc.
    //
-@@ -810,6 +837,20 @@ class Conversation {
+@@ -799,6 +826,22 @@ class Conversation {
+       std::vector<std::unique_ptr<Engine::Session::TaskController>>>
+       task_controllers_ ABSL_GUARDED_BY(task_controllers_mutex_);
  
-   // Whether there is channel content present since the last user message.
-   bool channel_content_since_last_user_message_ = false;
-+
-+  // flutter_edge_ai section 15: what RewindCancelledTurn() returns to. Cleared
++  // flutter_edge_ai section 15: what RewindCancelledTurn() returns to, declared
++  // before session_ so it outlives the callbacks ~session_ waits for. Cleared
 +  // at the start of every send; set when that send's own prefill is scheduled,
-+  // with the two fields above as they were at that moment.
++  // with checkpoint_message_index_ and
++  // channel_content_since_last_user_message_ as they were at that moment.
 +  bool turn_checkpoint_saved_ ABSL_GUARDED_BY(history_mutex_) = false;
 +  // Why the checkpoint of the last send could not be saved, if it was not.
 +  absl::Status turn_checkpoint_error_ ABSL_GUARDED_BY(history_mutex_);
@@ -422,6 +423,7 @@
 +  // Set by the last send's cancel callback, which has removed its messages
 +  // from the history.
 +  bool last_turn_cancelled_ ABSL_GUARDED_BY(history_mutex_) = false;
- };
- }  // namespace litert::lm
- 
++
+   // Declare the session after model_data_processor_ and other members it
+   // depends on so that the session is destroyed before them. This is to avoid
+   // memory corruption and null-pointer deference issues.

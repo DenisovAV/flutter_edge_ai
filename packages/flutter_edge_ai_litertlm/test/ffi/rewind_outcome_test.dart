@@ -43,20 +43,15 @@ void main() {
     },
   );
 
-  test('an end value native does not define is not taken for one', () {
-    expect(
-      () => stoppedTurnRewindOutcome(13, 99, null),
-      throwsA(
-        isA<StoppedTurnRewindException>().having(
-          (e) => e.lastTurnEnd,
-          'lastTurnEnd',
-          isNull,
-        ),
-      ),
-    );
-    expect(
-      stoppedTurnRewindOutcome(0, 99, null),
-      StoppedTurnRewind.notCancelled,
-    );
+  test('success with an end native never pairs with it is a rebuild: a '
+      'library that did not write the end (-1), an undefined value, or a '
+      'failed or running turn', () {
+    for (final end in [-1, 99, _failed, _running]) {
+      expect(
+        () => stoppedTurnRewindOutcome(0, end, null),
+        throwsA(isA<StoppedTurnRewindException>()),
+        reason: 'end $end',
+      );
+    }
   });
 }

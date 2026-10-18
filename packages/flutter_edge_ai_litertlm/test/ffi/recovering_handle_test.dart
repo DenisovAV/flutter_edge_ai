@@ -120,8 +120,12 @@ class _Conversation implements ConversationHandle {
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
+  /// Like the native handle: closing cancels a turn that still runs.
   @override
-  void close() => closed = true;
+  void close() {
+    closed = true;
+    cancels++;
+  }
 }
 
 void main() {
@@ -555,9 +559,17 @@ void main() {
       );
     });
 
+    test('the thought marker matches what core extracts from a thought '
+        'chunk', () {
+      final text = LiteRtLmFfiClient.extractTextFromResponse(
+        '{"role":"assistant","channels":{"thought":"hmm"}}',
+      );
+      expect(text, startsWith(thoughtChunkPrefix));
+    });
+
     test('thought chunks are not put back as reply text', () async {
       first.rewindOutcome = StoppedTurnRewind.rewound;
-      first.lead = ['<|channel>thought\nhmm, the sea<channel|>'];
+      first.lead = ['${thoughtChunkPrefix}hmm, the sea<channel|>'];
       final gate = first.hold = Completer<void>();
       final out = <String>[];
       await for (final chunk in handle.chat('one')) {
@@ -570,6 +582,82 @@ void main() {
       await handle.chat('two').join();
       expect(out.first, startsWith('<|channel>thought'));
       expect(first.rewinds, [textReply('Hello')]);
+    });
+
+    test('a turn queued behind a healthy, long one waits for it: the long '
+        'one is not cut off and nothing is rebuilt', () async {
+      handle = RecoveringConversationHandle(
+        first,
+        reopen: (messagesJson) async {
+          final c = _Conversation('rebuilt', seed: messagesJson);
+          reopened.add(c);
+          return c;
+        },
+        windDownTimeout: const Duration(milliseconds: 50),
+      );
+      final gate = first.hold = Completer<void>();
+      final a = handle.chat('one').join();
+      await pumpEventQueue();
+      final b = handle.chat('two').join();
+      // Longer than the bound: the first turn is still generating.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(first.closed, isFalse);
+      expect(reopened, isEmpty);
+      gate.complete();
+      expect(await a, 'Hello there.');
+      expect(await b, 'Hello there.');
+      expect(first.sent, ['one', 'two']);
+      expect(reopened, isEmpty);
+    });
+
+    test(
+      'two turns that wait on the same stopped one recover it once',
+      () async {
+        first.rewindOutcome = StoppedTurnRewind.rewound;
+        final gate = first.hold = Completer<void>();
+        final stopped = handle.chat('one').join();
+        await pumpEventQueue();
+        handle.cancelGeneration();
+        final second = handle.chat('two').join();
+        final third = handle.chat('three').join();
+        await pumpEventQueue();
+        gate.complete();
+        await stopped;
+        expect(await second, 'Hello there.');
+        expect(await third, 'Hello there.');
+        expect(first.rewinds, hasLength(1));
+        expect(reopened, isEmpty);
+        expect(first.sent, ['one', 'two', 'three']);
+      },
+    );
+
+    test('a stop that lands while a turn waits for the previous one keeps it '
+        'from generating', () async {
+      final gate = first.hold = Completer<void>();
+      final a = handle.chat('one').join();
+      await pumpEventQueue();
+      final b = handle.chat('two').join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+      gate.complete();
+      await a;
+      expect(await b, isEmpty);
+      expect(first.sent, ['one'], reason: 'two never reached the model');
+    });
+
+    test('a close that lands while a turn waits fails that turn without '
+        'opening a conversation', () async {
+      final gate = first.hold = Completer<void>();
+      final a = handle.chat('one').join();
+      await pumpEventQueue();
+      final b = handle.chat('two').join();
+      await pumpEventQueue();
+      handle.close();
+      gate.complete();
+      expect(await a, 'Hello', reason: 'the close cancelled it');
+      await expectLater(b, throwsStateError);
+      expect(first.sent, ['one']);
+      expect(reopened, isEmpty);
     });
 
     test('a turn that starts during a long rewind waits for it, past the '
@@ -622,6 +710,12 @@ void main() {
         await stopMidTurn('one', first);
         await expectLater(handle.chat('two').join(), throwsStateError);
         expect(reopened, isEmpty, reason: 'no rebuild hides the error');
+        // The stop is still pending, its reply kept: the next turn tries the
+        // rewind again rather than rebuilding without the media.
+        first.rewindOutcome = StoppedTurnRewind.rewound;
+        expect(await handle.chat('three').join(), 'Hello there.');
+        expect(first.rewinds, [textReply('Hello'), textReply('Hello')]);
+        expect(reopened, isEmpty);
       },
     );
 

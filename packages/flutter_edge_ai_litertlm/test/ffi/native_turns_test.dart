@@ -17,9 +17,11 @@ void main() {
   });
 
   group('NativeTurns', () {
-    test('releasing an idle conversation deletes it at once', () {
+    test('releasing an idle conversation cancels and deletes it at once: '
+        'native may still be finishing a generation whose error already ended '
+        'our turn', () {
       turns.release('a');
-      expect(log, ['delete a']);
+      expect(log, ['cancel a', 'delete a']);
     });
 
     test(
@@ -35,6 +37,23 @@ void main() {
         expect(log, ['cancel a', 'delete a']);
         await pumpEventQueue();
         expect(log, ['cancel a', 'delete a', 'waiter']);
+      },
+    );
+
+    test(
+      'a delete that throws still ends the operation, so its lock goes',
+      () async {
+        final throwing = NativeTurns<String>(
+          cancelNative: (_) {},
+          deleteNative: (_) => throw StateError('native delete failed'),
+        );
+        final turn = throwing.begin('a');
+        throwing.release('a');
+        expect(
+          () => throwing.end('a', turn, NativeTurnEnd.cancelled),
+          throwsStateError,
+        );
+        expect(turn.hasEnded, isTrue);
       },
     );
 
@@ -124,8 +143,19 @@ void main() {
           consumerCancelWait: const Duration(milliseconds: 50),
         );
         final sub = send.stream.listen(null);
-        await sub.cancel().timeout(const Duration(seconds: 5));
+        final printed = <String>[];
+        await runZoned(
+          () => sub.cancel().timeout(const Duration(seconds: 5)),
+          zoneSpecification: ZoneSpecification(
+            print: (self, parent, zone, line) => printed.add(line),
+          ),
+        );
         expect(send.turn.hasEnded, isFalse, reason: 'native still runs');
+        expect(
+          printed.single,
+          contains('has not ended'),
+          reason: 'release builds hear that the engine stays locked',
+        );
       },
     );
 

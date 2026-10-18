@@ -78,8 +78,12 @@ class NativeTurns<C extends Object> {
   void end(C conversation, NativeTurn turn, NativeTurnEnd how) {
     if (turn.hasEnded) return;
     if (identical(_running[conversation], turn)) _running.remove(conversation);
-    if (turn.deleteWhenEnded) deleteNative(conversation);
-    turn._ended.complete(how);
+    try {
+      if (turn.deleteWhenEnded) deleteNative(conversation);
+    } finally {
+      // Whatever the delete did, the lock waiting on this end must go.
+      turn._ended.complete(how);
+    }
   }
 
   /// Deletes [conversation] now, or — when an operation runs on it — stops
@@ -87,6 +91,9 @@ class NativeTurns<C extends Object> {
   void release(C conversation) {
     final turn = _running[conversation];
     if (turn == null) {
+      // Nothing of ours runs, but native may still be finishing a generation
+      // whose error already ended our turn; a delete would wait for it (#364).
+      cancelNative(conversation);
       deleteNative(conversation);
       return;
     }
@@ -95,8 +102,9 @@ class NativeTurns<C extends Object> {
   }
 
   /// Completes when every operation registered so far has ended.
-  Future<void> allEnded() =>
-      Future.wait([for (final turn in _running.values) turn.ended]);
+  Future<void> allEnded() => Future.wait([
+    for (final turn in _running.values) turn.ended,
+  ]).then<void>((_) {});
 }
 
 /// The stream of one native send, fed by the native callbacks.
@@ -155,7 +163,17 @@ class NativeTurnStream<C extends Object> {
     _turns.cancel(_conversation);
     return turn.ended
         .then<void>((_) {})
-        .timeout(consumerCancelWait, onTimeout: () {});
+        .timeout(
+          consumerCancelWait,
+          onTimeout: () {
+            // Release builds too: the engine stays locked until native ends it.
+            // ignore: avoid_print
+            print(
+              '[flutter_edge_ai_litertlm] a stopped generation has not ended '
+              'after ${consumerCancelWait.inSeconds} s; the next one waits for it',
+            );
+          },
+        );
   }
 }
 

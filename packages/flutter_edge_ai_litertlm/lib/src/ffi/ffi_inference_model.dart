@@ -761,7 +761,8 @@ class FfiInferenceModelSession extends InferenceModelSession
 const _windDownTimeout = Duration(seconds: 5);
 
 /// How [LiteRtLmFfiClient.extractTextFromResponse] marks a thought chunk.
-const _thoughtPrefix = '<|channel>thought\n';
+@visibleForTesting
+const thoughtChunkPrefix = '<|channel>thought\n';
 
 /// The single-session lane's handle: one real native conversation, made to
 /// answer again after a turn is stopped.
@@ -814,9 +815,19 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// A cancel landed inside the current turn. Reset when the next turn starts.
   bool _stopRequested = false;
 
-  /// Completes when the current turn's `finally` has run, so a turn that
-  /// starts before a stopped one has wound down can wait for its history.
+  /// Completes when the latest turn to start has run its `finally`: each turn
+  /// waits for the one before it, so turns take the conversation one at a
+  /// time, and a stopped turn's end is known before the next one decides how
+  /// to recover.
   Future<void>? _turnDone;
+
+  /// The turn that holds the conversation — past its wait — and so owns
+  /// [_inFlight], [_stopRequested] and the stop it may leave behind.
+  Completer<void>? _current;
+
+  /// Counts [cancelGeneration] calls, so a turn still waiting for the one
+  /// before it can tell that a stop came meanwhile.
+  int _stopEpoch = 0;
 
   /// Set when a turn that reached the model was cut off; the next turn
   /// recovers the conversation before it runs.
@@ -887,6 +898,12 @@ class RecoveringConversationHandle implements ConversationHandle {
           result = await _live.rewindStoppedTurn(reply);
         } on StoppedTurnRewindException catch (e) {
           failure = e;
+        } catch (_) {
+          // Not a rewind failure (a closed client, a bug): the conversation is
+          // as the stop left it, so the next turn tries again from the start.
+          _stoppedReply = reply;
+          _rebuildBecause = rebuildBecause;
+          rethrow;
         }
         if (_closed) throw StateError('Conversation handle is closed');
         switch (result) {
@@ -941,38 +958,10 @@ class RecoveringConversationHandle implements ConversationHandle {
     required bool raw,
   }) async* {
     if (_closed) throw StateError('Conversation handle is closed');
-    if (_inFlight) {
-      // A recovery cannot be cut short (native bounds it); wait for it.
-      final recovery = _recovery;
-      if (recovery != null) await recovery.catchError((Object _) {});
-      // A turn that starts while the previous one is still winding down — a
-      // stopped one, or one whose subscription was cancelled without waiting —
-      // waits for its `finally`: how it ended decides whether this one
-      // recovers first, and a rebuild must replay its exchange. Bounded: a
-      // consumer that pauses the stream and never resumes it would otherwise
-      // block every later turn. Past the bound the previous turn is treated as
-      // having damaged the conversation, and it is rebuilt without its
-      // exchange rather than not at all.
-      await _turnDone?.timeout(
-        windDownTimeout,
-        onTimeout: () {
-          _stopped = true;
-          _stoppedReply = null;
-          _rebuildBecause =
-              'the previous turn did not wind down within '
-              '${windDownTimeout.inSeconds}s';
-          edgeAiLog(
-            '[FfiInferenceModel] the previous turn did not wind down within '
-            '${windDownTimeout.inSeconds}s (is its stream paused?); rebuilding '
-            'without it',
-          );
-        },
-      );
-    }
+    final epoch = _stopEpoch;
+    final previous = _turnDone;
     final done = Completer<void>();
     _turnDone = done.future;
-    _inFlight = true;
-    _stopRequested = false;
     // What the reply showed: thought chunks are left out, as native leaves a
     // finished turn's thoughts out of the context.
     final visible = StringBuffer();
@@ -982,6 +971,46 @@ class RecoveringConversationHandle implements ConversationHandle {
     var failed = false;
     var poisoned = false;
     try {
+      if (previous != null) {
+        // The turn before this one decides whether this one recovers first,
+        // and a rebuild must replay its exchange, so wait for its `finally`.
+        // Bounded: a consumer that pauses a stream and never resumes it would
+        // otherwise block every later turn. Past the bound, a stopped turn is
+        // treated as having damaged the conversation, which is rebuilt without
+        // its exchange; a turn that is still generating normally is left
+        // alone, and the native lock queues this one behind it.
+        await previous.timeout(
+          windDownTimeout,
+          onTimeout: () {
+            if (!_stopRequested) {
+              edgeAiLog(
+                '[FfiInferenceModel] the previous turn is still generating '
+                'after ${windDownTimeout.inSeconds}s; this one waits for it',
+              );
+              return;
+            }
+            _stopped = true;
+            _stoppedReply = null;
+            _rebuildBecause =
+                'the previous turn did not wind down within '
+                '${windDownTimeout.inSeconds}s';
+            edgeAiLog(
+              '[FfiInferenceModel] a stopped turn did not wind down within '
+              '${windDownTimeout.inSeconds}s (is its stream paused?); '
+              'rebuilding without it',
+            );
+          },
+        );
+      }
+      // A recovery cannot be cut short (native bounds it); one that started
+      // while this turn waited is still using the conversation.
+      for (var r = _recovery; r != null; r = _recovery) {
+        await r.catchError((Object _) {});
+      }
+      if (_closed) throw StateError('Conversation handle is closed');
+      _current = done;
+      _inFlight = true;
+      _stopRequested = false;
       if (_stopped) {
         final recovery = _recovery = _recover();
         try {
@@ -990,16 +1019,16 @@ class RecoveringConversationHandle implements ConversationHandle {
           if (identical(_recovery, recovery)) _recovery = null;
         }
       }
-      // Stopped while the conversation was being recovered: nothing has
-      // reached the model, so there is nothing to generate and nothing to
-      // record.
-      if (_stopRequested) return;
+      // Stopped while this turn waited for the one before it, or while the
+      // conversation was being recovered: nothing has reached the model, so
+      // there is nothing to generate and nothing to record.
+      if (_stopEpoch != epoch) return;
       sent = true;
       await for (final chunk in send(_live)) {
         final text = raw
             ? LiteRtLmFfiClient.extractTextFromResponse(chunk)
             : chunk;
-        if (!text.startsWith(_thoughtPrefix)) visible.write(text);
+        if (!text.startsWith(thoughtChunkPrefix)) visible.write(text);
         if (raw) rawReply.write(chunk);
         yield chunk;
       }
@@ -1015,9 +1044,9 @@ class RecoveringConversationHandle implements ConversationHandle {
       failed = true;
       rethrow;
     } finally {
-      // A turn that winds down after the next has started (past its bound)
-      // leaves the shared state to that one.
-      final latest = identical(_turnDone, done.future);
+      // A turn that winds down after the next one took the conversation (past
+      // its bound) leaves the shared state to that one.
+      final latest = identical(_current, done);
       if (latest) _inFlight = false;
       if (poisoned) {
         if (latest) {
@@ -1108,6 +1137,9 @@ class RecoveringConversationHandle implements ConversationHandle {
 
   @override
   void cancelGeneration() {
+    // A turn still waiting for the one before it hears of this and does not
+    // start.
+    _stopEpoch++;
     // Only a cancel that lands inside a turn damages the conversation. The
     // turn's `finally` turns this into a recovery if generation had begun.
     if (_inFlight) _stopRequested = true;

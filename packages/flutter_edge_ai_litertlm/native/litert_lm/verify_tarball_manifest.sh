@@ -455,7 +455,16 @@ except (FormatError, struct.error, ValueError, IndexError) as e:
 if symbol not in names:
     print(f"  [FAIL] {label} — {shown} does not export {symbol}")
     sys.exit(1)
-print(f"  [ok]   {label} — {shown} exports {symbol}")
+# The symbol kept its name when its contract changed (three arguments, then
+# five), so the name alone cannot tell the builds apart; this message exists
+# only in the current one.
+contract = b"The last turn failed; the conversation cannot continue."
+with open(library, "rb") as f:
+    if contract not in f.read():
+        print(f"  [FAIL] {label} — {shown} exports {symbol} from an older "
+              f"build of the patch")
+        sys.exit(1)
+print(f"  [ok]   {label} — {shown} exports {symbol} (current contract)")
 PYEOF_REWIND
   then
     rewind_fail=1

@@ -164,7 +164,7 @@ Barge-in and the one-turn-at-a-time rule work as in `runTurn`; the complete and
 interrupted events carry an empty transcript, and a recording under 2 bytes (a
 push-to-talk tap) completes without asking the model. After a barge-in a
 `.litertlm` chat keeps what was said in earlier audio turns with
-`flutter_edge_ai_litertlm` releases after 1.14.0; with 1.14.0 and earlier, and
+`flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and earlier, and
 on the NPU, it rebuilds its conversation from text and forgets it. `createChat` takes
 `supportAudio` from the model unless you pass it; on a chat whose
 `supportAudio` is false, `runAudioTurn` throws a `StateError`. With

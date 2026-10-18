@@ -139,12 +139,16 @@ dev_dependencies:
 # Opt in to the Qualcomm NPU stack on Android: the litertlm build hook fetches
 # com.qualcomm.qti:qnn-runtime from Maven Central and bundles it into this app.
 # Qualcomm's licence lets an application ship it, not a package, so it is never
-# in flutter_edge_ai_litertlm itself. This pubspec is the root that declares
+# in flutter_edge_ai_litertlm itself. And to the Google Tensor NPU dispatch,
+# which the hook bundles from the native archive (built from LiteRT's
+# litert/vendors/google_tensor, covered by Google's Tensor SDK terms besides
+# its sources' own headers). This pubspec is the root that declares
 # hooks: user_defines because the example is not a workspace member.
 hooks:
   user_defines:
     flutter_edge_ai_litertlm:
       qualcomm_npu: true
+      google_tensor_npu: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

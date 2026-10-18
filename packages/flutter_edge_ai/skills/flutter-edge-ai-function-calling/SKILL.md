@@ -10,7 +10,7 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
 ## Rules
 
 1. `createChat` needs `tools` and `supportsFunctionCalls: true`. Without the flag no call is parsed and only a debug warning is logged — and on `.litertlm` with Gemma 4 or FunctionGemma the declarations still reach the SDK, so the model answers with raw tool-call JSON inside the text stream.
-2. Pass `modelType` on web and on ONNX. `createChat` on native `.litertlm`, on MediaPipe Android and iOS, and on built-in AI uses the installed model's type when it is left out; the web engines and ONNX fall back to `ModelType.gemmaIt`, and another model's calls then arrive as raw text. `openChat` always falls back — pass it there on every platform.
+2. Pass `modelType` on web and on ONNX. `createChat` on native `.litertlm`, on MediaPipe Android and iOS, and on built-in AI uses the installed model's type when it is left out; the web engines and ONNX fall back to `ModelType.gemmaIt`, and another model's calls then arrive as raw text. `openChat` always falls back — pass it there on every platform. On `flutter_edge_ai_llama` (GGUF) llamadart reads the calls through the file's own chat template: `modelType`, which `createChat` and `openChat` both take from the install, only picks sampling defaults, and the tools are on unless `supportsFunctionCalls: false`.
 3. Switch over all four `ModelResponse` subtypes. It is sealed — a switch that leaves out `ThinkingResponse` does not compile.
 4. Return tool results as data, errors included. Never throw from a tool.
 5. Prefer `generateChatResponseWithTools` to a hand-written loop.
@@ -19,7 +19,8 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
    Gemma 3n E4B `.litertlm`, or the OS built-in model. Gemma 3 1B, Gemma 3
    270M, SmolLM, SmolLM3, LFM2.5, Phi-4 Mini Reasoning and the vision models
    (FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision) cannot — they describe the
-   action in prose instead.
+   action in prose instead. A GGUF model through `flutter_edge_ai_llama` can
+   call tools when its chat template supports them.
 
 ## Declare a tool
 
@@ -72,7 +73,7 @@ await for (final r in chat.generateChatResponseWithTools(
 
 Gemma 4 often writes a sentence, then calls a tool. The sentence streams as `TextResponse`, so the snippet clears the buffer when a call arrives, as `flutter_edge_ai_agent` does; the chat's history keeps only the call (its `tool_calls` objects), not the sentence. Without `supportsFunctionCalls: true`, or with `toolChoice: ToolChoice.none`, the call's JSON stays in the text instead.
 
-`onToolCall` receives a `FunctionCallResponse` with `name` and `args`, and returns the map the model reads back. Its `id` is null on every bundled engine today; ids come from genai `callId`s and Genkit `ref`s. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall`, or a result `jsonEncode` cannot write, is reported to the model, then rethrown on the stream.
+`onToolCall` receives a `FunctionCallResponse` with `name` and `args`, and returns the map the model reads back. `args` keeps the JSON types the model wrote — numbers, booleans, null, nested maps and lists, not only strings — so read a number as `num`. Its `id` is null on the `.litertlm`, MediaPipe, ONNX and built-in AI engines; `flutter_edge_ai_llama` gives every call one, and genai `callId`s and Genkit `ref`s carry theirs. The stream carries `TextResponse` and `ThinkingResponse`. Reaching `maxToolTurns` ends the stream without an error — `onMaxToolTurns` is the only signal. An exception from `onToolCall` is answered to the model as `{"error": …}`, and a result `jsonEncode` cannot write (a `DateTime`, say) as `{"status": "ran", …}`, because the tool did run — do not run it again. The turn's other calls are answered as not run, and the error is rethrown on the stream. When an answer cannot be fed (a session closed by a barge-in), that failure is printed and the tool's own error is still the one rethrown; recreate the chat, or `clearHistory(replayHistory:)`, before the next turn.
 
 ## Handling calls yourself
 
@@ -92,7 +93,7 @@ switch (response) {
         Message.toolResponse(
           toolName: call.name,
           response: result,
-          toolCallId: call.id, // kept in history; results pair by name, in order
+          toolCallId: call.id, // llama pairs by id; other engines by name, in order
         ),
       );
     }
@@ -125,7 +126,7 @@ await chat.clearHistory(replayHistory: [
 ]);
 ```
 
-`Message.toolCall` with `calls` alone writes `text` as `{"tool_calls":[{"id","name","arguments"}]}`. No bundled engine reads `toolCallId` yet: a result is paired with its call by `toolName`, in order.
+`Message.toolCall` with `calls` alone writes `text` as `{"tool_calls":[{"id","name","arguments"}]}`. Only `flutter_edge_ai_llama` reads `toolCallId` — pass it there when two calls share a name and their results go back out of order; the other engines pair a result with its call by `toolName`, in order.
 
 ## Errors are results
 
@@ -148,7 +149,7 @@ The model can recover from an error it can read. An exception thrown out of a to
 
 **Raw markers in the text**
 - Symptom: `<|tool_call>` or `<tool_call|>` appears in `TextResponse` tokens.
-- Fix: `modelType` does not match the installed model.
+- Fix: `modelType` does not match the installed model — or the call was cut off or malformed. A raw Gemma 4 call runs with its typed arguments or not at all (`flutter_edge_ai` 2.4.1): if one call of the turn does not parse in full — cut off by `maxOutputTokens`, say — none of that turn's calls runs and the text stays as it came. Raise `maxOutputTokens`.
 
 **Model calls the same tool again instead of answering the result**
 - Symptom: FunctionGemma on `.litertlm` repeats the call it just made after `Message.toolResponse`.

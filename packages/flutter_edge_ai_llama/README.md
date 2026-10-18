@@ -9,8 +9,6 @@ Tools, thinking, images/audio and native LoRA require compatible models and
 runtimes. See [advanced usage](doc/advanced_usage.md) and the
 [platform qualification matrix](doc/platforms.md) for their limits.
 
-**Unreleased:** this package is being prepared for upstream contribution.
-Use the checked-in example today; a pub.dev install command will follow release.
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.4.0+**,
 llamadart **0.13.1** and Apple companion **0.13.0**. Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. GGUF embeddings are deferred.
@@ -83,17 +81,12 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-External apps need core 2.4.0 on pub.dev; until it is published, use the
-repository workspace example. Once available, use a path dependency on this
-unreleased package. Replace the path below relative to your app's pubspec:
-
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_llama:
-    path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
+  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai_llama: ^0.0.1
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.13.0
 

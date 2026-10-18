@@ -18,7 +18,7 @@ find packages -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' \
 
 | File | What it is |
 |---|---|
-| `packages/flutter_edge_ai_litertlm/native/litert_lm/stream_proxy.c` | The one piece of C we author and ship. Adapts LiteRT-LM's streaming callback to the shape our Dart `NativeCallable` expects. `stream_proxy_create` (the tarballs shipped so far) picks the shape by probing at runtime; `stream_proxy_create2` (source only, first native tag after `native-v0.18.0-e`) takes the accessors from Dart and probes nothing. |
+| `packages/flutter_edge_ai_litertlm/native/litert_lm/stream_proxy.c` | The one piece of C we author and ship. Adapts LiteRT-LM's streaming callback to the shape our Dart `NativeCallable` expects. `stream_proxy_create` (what Dart used up to litertlm 1.14.0; still in the source until the next native tag) picks the shape by probing at runtime; `stream_proxy_create2` (every archive since `native-v0.18.0-f`, required by the Dart client) takes the accessors from Dart and probes nothing. |
 | `packages/flutter_edge_ai_litertlm/native/litert_lm/include/engine.h` | The LiteRT-LM C API header our `litert_lm_bindings.dart` is generated from. |
 | `packages/flutter_edge_ai_sqlite/native/sqlite_vec/src/sqlite-vec.{c,h}` | Vendored sqlite-vec amalgamation, built into the `vec0` loadable extension. |
 | `packages/flutter_edge_ai_sqlite/tool/sqlite_vec_patches/{getentropy.c,os_web.c}` | Patches so the amalgamation builds for wasm. |

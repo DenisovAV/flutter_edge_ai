@@ -15,7 +15,9 @@
 // model without a decision section.
 //
 // What is asserted per row, on this machine: the rendered prompt and its
-// token ids are the golden ones; the decider's top option is the reference's;
+// token ids are the golden ones; the decider's top option is the reference's,
+// or within 1 nat of it (int8 flips near-ties: litetune's own run of the
+// Score pack disagrees with its reference on 3 of 24 rows);
 // its answer follows the section's rule on its own scores, and is the golden
 // answer unless the golden top probability is within 0.05 of the threshold
 // (another CPU's int8 kernels move a probability that close across it);
@@ -54,6 +56,11 @@ const _referenceBound = 2.0;
 /// A golden answer whose top probability is this close to the threshold may
 /// fall on the other side on another CPU.
 const _borderline = 0.05;
+
+/// A reference margin within which int8 may rank the two options either way:
+/// litetune measured disagreements with its reference at margins up to 0.637
+/// nats (irony, E8) and 0.186 (SST-5).
+const _nearTie = 1.0;
 
 /// The decision contract's user message (`decisions.Decision.render`), from
 /// the section payload: the check that the golden prompts are the contract's.
@@ -185,7 +192,9 @@ void main() {
       var maxTopToReference = 0.0;
       var maxPrefixVsFull = 0.0;
       var argmaxAgree = 0;
+      var engineAgree = 0;
       var answerAgree = 0;
+      final nearTies = <String>[];
       final borderline = <String>[];
       final times = <int>[];
       final rows = (golden['rows'] as List).cast<Map<String, Object?>>();
@@ -263,7 +272,38 @@ void main() {
             (full.tokenScores[topIndex][i] - ref[i]).abs(),
           );
         }
-        if (top == row['reference_argmax']) argmaxAgree++;
+        // The top option is the reference's, or a near-tie of the reference's
+        // top: int8 moves a score by up to about a nat, so a margin under
+        // [_nearTie] can flip on any CPU — litetune's own run disagrees with
+        // the reference there (3 of 24 rows of the Score pack).
+        double behind(String key) {
+          final sums = [for (final o in options) (o[key] as num).toDouble()];
+          return sums.reduce(math.max) - sums[topIndex];
+        }
+
+        if (top == row['reference_argmax']) {
+          argmaxAgree++;
+        } else {
+          nearTies.add(
+            'row $index: here $top, reference ${row['reference_argmax']} '
+            '(${behind('reference_sum').toStringAsFixed(3)} nats behind), '
+            'golden engine ${row['engine_argmax']}',
+          );
+          expect(
+            behind('reference_sum'),
+            lessThanOrEqualTo(_nearTie),
+            reason: 'row $index: $top is not a near-tie of the reference top',
+          );
+        }
+        if (top == row['engine_argmax']) {
+          engineAgree++;
+        } else {
+          expect(
+            behind('engine_sum'),
+            lessThanOrEqualTo(_nearTie),
+            reason: 'row $index: $top is not a near-tie of the golden top',
+          );
+        }
 
         // The section's rule on the decider's own probabilities.
         final ptop = p[top]!;
@@ -278,6 +318,8 @@ void main() {
         );
         if (answer.choice == row['answer']) {
           answerAgree++;
+        } else if (top != row['engine_argmax']) {
+          // A near-tie of the golden top, checked above.
         } else if (below != null && (goldenTop - below).abs() < _borderline) {
           borderline.add(
             'row $index: golden ${row['answer']} (p ${goldenTop.toStringAsFixed(4)}), '
@@ -328,8 +370,11 @@ void main() {
       // ignore: avoid_print
       print(
         '[decider] ${_name(pack)}: ${rows.length} rows; top option = '
-        'reference on $argmaxAgree; answer = golden on $answerAgree'
-        '${borderline.isEmpty ? '' : '; borderline ${borderline.join('; ')}'}\n'
+        'reference on $argmaxAgree (golden engine on $engineAgree, golden '
+        'engine = reference on ${(golden['tolerances'] as Map)['engine_argmax_equals_reference_argmax_rows']}); '
+        'answer = golden on $answerAgree'
+        '${nearTies.isEmpty ? '' : '\n[decider]   near ties: ${nearTies.join('; ')}'}'
+        '${borderline.isEmpty ? '' : '\n[decider]   at the threshold: ${borderline.join('; ')}'}\n'
         '[decider]   max |here - reference| per token $maxToReference '
         '(top options only: $maxTopToReference)\n'
         '[decider]   max |here - golden engine| per token $maxToGoldenEngine '
@@ -341,7 +386,6 @@ void main() {
         '[decider]   ms per decision: median ${times[times.length ~/ 2]}, '
         'max ${times.last}',
       );
-      expect(argmaxAgree, rows.length);
       expect(maxToReference, lessThanOrEqualTo(_referenceBound));
       expect(maxPrefixVsFull, lessThan(1e-4));
     }, timeout: const Timeout(Duration(minutes: 20)));

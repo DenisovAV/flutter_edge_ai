@@ -371,16 +371,21 @@ void main() {
       debugLiteRtLmEngineHost = host;
       final path = write(
         'vision_mt6991.litertlm',
-        // The text model declares the NPU, so the NPU is a text candidate and
-        // the reachability question would come first without the vendor check.
-        _bundle(text: 'npu', visionStamp: ('MediaTek', 'MT6991')),
+        // The vision encoder runs on the NPU by its stamp, so the load asks
+        // for the NPU, and the reachability question would come first without
+        // the vendor check.
+        _bundle(visionStamp: ('MediaTek', 'MT6991')),
       );
 
-      for (final backendFallback in [false, true]) {
+      for (final (preferredBackend, backendFallback) in [
+        (null, false),
+        (null, true),
+        (PreferredBackend.npu, true),
+      ]) {
         await expectLater(
           load(
             path,
-            preferredBackend: PreferredBackend.npu,
+            preferredBackend: preferredBackend,
             supportImage: true,
             backendFallback: backendFallback,
           ),
@@ -403,7 +408,7 @@ void main() {
                   ),
                 ),
           ),
-          reason: 'backendFallback: $backendFallback',
+          reason: '$preferredBackend, backendFallback: $backendFallback',
         );
       }
       expect(host.stackChecks, 0, reason: 'no stack of a foreign vendor');
@@ -417,7 +422,10 @@ void main() {
     host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
     debugLiteRtLmEngineHost = host;
     final model = await load(
-      write('enc.litertlm', _bundle(text: 'npu', vision: 'gpu', audio: 'npu')),
+      write(
+        'enc.litertlm',
+        _bundle(textStamp: ('Qualcomm', 'SM8750'), vision: 'gpu', audio: 'npu'),
+      ),
       supportImage: true,
       supportAudio: true,
     );
@@ -594,8 +602,8 @@ void main() {
     }
   });
 
-  test('a text model that declares only the NPU asks for the app\'s NPU '
-      'stack before any NPU probe', () async {
+  test('a text model compiled for the NPU asks for the app\'s NPU stack '
+      'before any NPU probe', () async {
     host = _FakeHost(
       os: 'android',
       abiName: 'android_arm64',
@@ -606,7 +614,7 @@ void main() {
     debugLiteRtLmEngineHost = host;
 
     await expectLater(
-      load(write('npu.litertlm', _bundle(text: 'npu'))),
+      load(write('npu.litertlm', _bundle(textStamp: ('Qualcomm', 'SM8750')))),
       throwsA(
         isA<BackendInitException>().having(
           (e) => e.lastAttempt.error,

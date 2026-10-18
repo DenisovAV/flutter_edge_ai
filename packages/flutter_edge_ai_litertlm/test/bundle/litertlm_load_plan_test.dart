@@ -120,6 +120,19 @@ void main() {
         .having((e) => e.message, 'message', contains(says ?? '')),
   );
 
+  Matcher refusedWith(LiteRtLmBundleProblem problem, String message) => throwsA(
+    isA<LiteRtLmBundleException>()
+        .having((e) => e.problem, 'problem', problem)
+        .having((e) => e.message, 'message', message),
+  );
+
+  /// Why a text model compiled for no NPU is not tried on one.
+  const noNpuGraph =
+      'model.litertlm is not compiled for an NPU (its text model carries no '
+      'LiteRtStamp and there is no tf_lite_aux), so it cannot run on one: '
+      'LiteRT would try to compile it on the device with a compiler plugin, '
+      'which no NPU stack here ships, and run it on the CPU';
+
   Matcher npuUnreachable(Pattern says) => throwsA(
     isA<BackendInitException>()
         .having((e) => e.attempts.length, 'attempts', 1)
@@ -163,13 +176,7 @@ void main() {
       // reported npu.
       final npuOnGeneric = plan(info: generic, preferred: npu);
       expect(npuOnGeneric.textBackends, [gpu, cpu]);
-      expect(
-        npuOnGeneric.dropped[npu],
-        'model.litertlm is not compiled for an NPU (no section carries a '
-        'LiteRtStamp and there is no tf_lite_aux), so it cannot run on one: '
-        'LiteRT-LM would compile it on the device, which no NPU stack here '
-        'supports, and run it on the CPU',
-      );
+      expect(npuOnGeneric.dropped[npu], noNpuGraph);
       expect(npuAsked, 0, reason: 'not a candidate, so not unreachable');
     });
 
@@ -177,14 +184,11 @@ void main() {
         'install', () {
       expect(
         () => plan(info: generic, preferred: npu, fallback: false),
-        refused(
+        refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
-          'model.litertlm is not compiled for an NPU (no section carries a '
-          'LiteRtStamp and there is no tf_lite_aux), so it cannot run on one: '
-          'LiteRT-LM would compile it on the device, which no NPU stack here '
-          'supports, and run it on the CPU. Load it with PreferredBackend.gpu '
-          "or .cpu, or omit preferredBackend; to run on the NPU, install the "
-          "bundle compiled for this device's NPU.",
+          '$noNpuGraph. Load it with PreferredBackend.gpu or .cpu, or omit '
+          'preferredBackend; to run on the NPU, install the bundle compiled '
+          "for this device's NPU.",
         ),
       );
       expect(npuAsked, 0);
@@ -281,10 +285,86 @@ void main() {
       );
     });
 
-    test('a text model that declares only the NPU makes the NPU a candidate, '
-        'so the engine checks the NPU stack first', () {
-      final npuDeclared = bundle(text: ('npu', null));
-      expect(npuDeclared.isCompiledForNpu, isFalse);
+    test(
+      'a text model that declares only the NPU but is compiled for none '
+      'has nothing to run on: refused for every request, the NPU not asked',
+      () {
+        // No published bundle has this shape (14 read 2026-10-18): each that
+        // declares npu also carries a stamp and tf_lite_aux. On npu it would
+        // take LiteRT-LM's compiler-plugin path, as a generic bundle does.
+        final npuDeclared = bundle(text: ('npu', null));
+        expect(npuDeclared.isCompiledForNpu, isFalse);
+        final nothing = refusedWith(
+          LiteRtLmBundleProblem.wrongBackend,
+          'model.litertlm declares that its text model runs on npu '
+          '(backend_constraint) but is not compiled for an NPU (its text model '
+          'carries no LiteRtStamp and there is no tf_lite_aux), so no backend '
+          'here can run it: on the NPU LiteRT would try to compile it on the '
+          'device with a compiler plugin, which no NPU stack here ships, and run '
+          "it on the CPU. Install the bundle compiled for this device's NPU.",
+        );
+        for (final preferred in [null, npu, gpu, cpu]) {
+          for (final fallback in [true, false]) {
+            expect(
+              () => plan(
+                info: npuDeclared,
+                preferred: preferred,
+                fallback: fallback,
+              ),
+              nothing,
+              reason: '$preferred, fallback $fallback',
+            );
+          }
+        }
+        expect(
+          () => liteRtLmTextCandidates(
+            path: 'model.litertlm',
+            bundle: npuDeclared,
+            preferredBackend: null,
+            backendFallback: true,
+            abi: 'android_arm64',
+          ),
+          nothing,
+        );
+        expect(npuAsked, 0);
+      },
+    );
+
+    test('one that declares the NPU and the CPU runs on the CPU, the NPU '
+        'dropped for its missing NPU graph', () {
+      final npuOrCpu = bundle(text: ('npu,cpu', null));
+      expect(plan(info: npuOrCpu).textBackends, [cpu]);
+      final onNpu = plan(info: npuOrCpu, preferred: npu);
+      expect(onNpu.textBackends, [cpu]);
+      expect(onNpu.dropped, {
+        npu: noNpuGraph,
+        gpu:
+            'model.litertlm declares that its text model runs on npu, cpu '
+            '(backend_constraint)',
+      });
+      expect(
+        () => plan(info: npuOrCpu, preferred: npu, fallback: false),
+        refusedWith(
+          LiteRtLmBundleProblem.wrongBackend,
+          '$noNpuGraph. Load it with PreferredBackend.cpu, or omit '
+          'preferredBackend; to run on the NPU, install the bundle compiled '
+          "for this device's NPU.",
+        ),
+      );
+      expect(
+        () => plan(info: npuOrCpu, preferred: gpu, fallback: false),
+        refusedWith(
+          LiteRtLmBundleProblem.wrongBackend,
+          'model.litertlm declares that its text model runs on npu, cpu '
+          '(backend_constraint), not on gpu. Load it with '
+          'PreferredBackend.cpu, or omit preferredBackend.',
+        ),
+      );
+      expect(npuAsked, 0);
+    });
+
+    test("liteRtLmTextCandidates is the plan's text order, which the engine "
+        'reads to know whether to look for an NPU stack', () {
       List<PreferredBackend> candidates(
         LiteRtLmBundleInfo? info, [
         PreferredBackend? preferred,
@@ -295,13 +375,11 @@ void main() {
         backendFallback: true,
         abi: 'android_arm64',
       ).backends;
-      expect(candidates(npuDeclared), [npu]);
+      expect(candidates(officialSm8750), [npu]);
       expect(candidates(generic), [gpu, cpu]);
       expect(candidates(generic, npu), [gpu, cpu]);
       expect(candidates(null, npu), [npu, gpu, cpu]);
       expect(candidates(null), [gpu, cpu]);
-      expect(plan(info: npuDeclared).textBackends, [npu]);
-      expect(npuAsked, 1);
     });
   });
 
@@ -390,6 +468,29 @@ void main() {
       expect(plan(info: officialSm8750, abi: 'linux_arm64').textBackends, [
         npu,
       ]);
+    });
+
+    test('an encoder compiled for a vendor this package has no dispatch for is '
+        'refused for its vendor before an unreachable NPU is asked about', () {
+      // The text model makes the NPU a candidate, so asking first would name
+      // the unreachable Qualcomm stack instead of the encoder's vendor.
+      final tensorAudio = bundle(
+        text: (null, sm8750),
+        audio: (
+          null,
+          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
+        ),
+        aux: true,
+      );
+      expect(
+        () => plan(info: tensorAudio, audio: true, npuHere: false),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          "model.litertlm's audio encoder is compiled for the Google Tensor_G5 "
+          'NPU.',
+        ),
+      );
+      expect(npuAsked, 0);
     });
   });
 
@@ -661,9 +762,13 @@ void main() {
           preferred: npu,
           fallback: false,
         ),
-        refused(
+        // Exact: its vision section does carry a stamp, so the reason has
+        // to be about the text model.
+        refusedWith(
           LiteRtLmBundleProblem.wrongBackend,
-          'model.litertlm is not compiled for an NPU',
+          '$noNpuGraph. Load it with PreferredBackend.gpu or .cpu, or omit '
+          'preferredBackend; to run on the NPU, install the bundle compiled '
+          "for this device's NPU.",
         ),
       );
     });

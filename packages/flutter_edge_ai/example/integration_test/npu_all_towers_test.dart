@@ -112,6 +112,8 @@ void main() {
           'activeBackend=${model.activeBackend}',
         );
         expect(model.activeBackend, PreferredBackend.npu);
+        expect(model.activeVisionBackend, towers, reason: '$tag vision');
+        expect(model.activeAudioBackend, towers, reason: '$tag audio');
         final text = await _ask(
           model,
           const Message(text: 'Name one colour. One word.', isUser: true),

@@ -50,9 +50,10 @@ enum NpuVendor {
     abis: {'android_arm64', 'linux_arm64'},
   ),
 
-  /// Google Tensor G5/G6 through the Pixel system's LiteRT Edge TPU runtime.
-  /// The open-source dispatch bridge ships in every Android arm64 build; the
-  /// proprietary runtime remains on the system image.
+  /// Google Tensor G5/G6 through the Pixel system's LiteRT Edge TPU runtime,
+  /// in apps that opt in with [googleTensorNpuUserDefine]. The dispatch bridge
+  /// ships in the Android native tarball and is bundled only then; the
+  /// runtime stays on the system image.
   googleTensor('Google Tensor', stampVendor: 'google', abis: {'android_arm64'}),
 
   /// Intel NPUs (Lunar Lake, Panther Lake) through OpenVINO, in every Windows
@@ -119,9 +120,17 @@ const qualcommNpuAarUserDefine = 'qualcomm_npu_aar';
 /// ships in the native tarball and is bundled only with [qualcommNpuUserDefine].
 const qualcommDispatchLib = 'LiteRtDispatch_Qualcomm';
 
-/// Our Google Tensor dispatch bridge (built from the LiteRT pin, Apache 2.0).
-/// It late-binds [googleTensorSystemRuntime] from the Pixel system image; that
-/// proprietary runtime is never redistributed by this package.
+/// The user_define that bundles the Google Tensor dispatch bridge into an
+/// Android app. Opt-in, as for Qualcomm: the bridge is built from LiteRT's
+/// `litert/vendors/google_tensor`, a directory Google's Tensor SDK terms
+/// (`TERMS_OF_USE.md` there) cover besides the sources' own licence headers.
+const googleTensorNpuUserDefine = 'google_tensor_npu';
+
+/// Our Google Tensor dispatch bridge, built from the LiteRT pin's
+/// `litert/vendors/google_tensor/dispatch`. It ships in the Android native
+/// tarball and is bundled only with [googleTensorNpuUserDefine]. It
+/// late-binds [googleTensorSystemRuntime] from the Pixel system image, which
+/// this package never redistributes.
 const googleTensorDispatchLib = 'LiteRtDispatch_GoogleTensor';
 
 /// The Pixel system runtime used by [googleTensorDispatchLib].
@@ -237,7 +246,7 @@ const intelDispatchLib = 'LiteRtDispatch';
 /// every build for the vendor's ABIs carries it.
 String? npuUserDefine(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => qualcommNpuUserDefine,
-  NpuVendor.googleTensor => null,
+  NpuVendor.googleTensor => googleTensorNpuUserDefine,
   NpuVendor.intel => null,
 };
 

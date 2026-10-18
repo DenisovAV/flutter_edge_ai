@@ -202,6 +202,7 @@ class LiteRtLmEngine
               bundle: bundle,
               supportImage: config.supportImage,
               supportAudio: config.supportAudio,
+              abi: host.abi,
             ),
             host: host,
           )

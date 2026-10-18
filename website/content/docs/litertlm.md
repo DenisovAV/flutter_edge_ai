@@ -155,6 +155,16 @@ mirror, add `qualcomm_npu_maven_url: <maven base URL>` or
 compiled for an NPU is refused with a `BackendInitException` that says how to
 enable it; a generic bundle never runs on the NPU, flag or not.
 
+**Google Tensor has its own flag.** A bundle compiled for a Tensor NPU
+(`…_Google_Tensor_G5.litertlm`, `…_Google_Tensor_G6.litertlm`) runs on a Pixel
+with that Tensor generation and Android 16 or later when the app sets
+`google_tensor_npu: true` in the same `user_defines` block. The build then
+bundles `libLiteRtDispatch_GoogleTensor.so`, which we build from the pinned
+LiteRT source; Google's Tensor SDK terms cover that directory too. The runtime
+it drives, `libedgetpu_litert.so`, is part of the Pixel system image. Run so
+far on a Pixel 11 Pro (Tensor G6) with a debug build; a Tensor G5,
+EmbeddingGemma 2 and a release-signed build are not run yet.
+
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino
 VENTUNO Q — QCS9075, …), `qualcomm_npu: true` bundles the stack into the
@@ -205,8 +215,10 @@ plugin, which no NPU stack here ships, and run it on the CPU while reporting
 `npu` (measured on a Galaxy
 S24), so `npu` falls back to GPU and then CPU for it, and the floor applies to
 those attempts. A bundle compiled for an NPU runs only on Windows, on Android
-phones with Qualcomm FastRPC, and on Qualcomm Linux arm64 boards that pass the
-FastRPC checks above — the last two only when the app sets `qualcomm_npu`;
+phones with Qualcomm FastRPC, on Qualcomm Linux arm64 boards that pass the
+FastRPC checks above, and on Google Tensor G5/G6 Pixels with Android 16 or
+later — the last three only when the app sets `qualcomm_npu` or
+`google_tensor_npu`;
 anywhere else it is refused, because nothing there can run it (on macOS the
 native runtime was measured accepting `npu` anyway, which made `activeBackend`
 report an NPU that does not exist on the machine). On Windows the check is per

@@ -68,7 +68,8 @@ void main() {
     expect(r.reason, isNot(contains('libQnnHtp.so,')));
   });
 
-  test('Google Tensor bridge is always-on, not an opt-in stack', () async {
+  test('Google Tensor is opt-in: a build without it names its own flag, '
+      'not Qualcomm\'s', () async {
     final bundled = await checkNpuStackInManifest(
       NpuVendor.googleTensor,
       read: () async => _manifest({
@@ -86,7 +87,7 @@ void main() {
       operatingSystem: 'android',
     );
     expect(missing.bundled, isFalse);
-    expect(missing.reason, contains('native release bundles it'));
+    expect(missing.reason, contains('google_tensor_npu: true'));
     expect(missing.reason, isNot(contains('qualcomm_npu')));
   });
 

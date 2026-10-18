@@ -96,6 +96,30 @@ void main() {
       }
     });
 
+    test('every vendor answers on each OS of its ABIs and on no other: the '
+        'probe switch agrees with NpuVendor.abis', () {
+      const oses = ['android', 'ios', 'linux', 'macos', 'windows', 'fuchsia'];
+      for (final vendor in NpuVendor.values) {
+        final runsOn = {for (final abi in vendor.abis) abi.split('_').first};
+        for (final os in oses) {
+          final probes = _FakeProbes();
+          if (runsOn.contains(os)) {
+            expect(
+              npuUnreachable(vendor, os, probes),
+              isNull,
+              reason: '$vendor on $os',
+            );
+          } else {
+            expect(
+              () => npuUnreachable(vendor, os, probes),
+              throwsStateError,
+              reason: '$vendor on $os',
+            );
+          }
+        }
+      }
+    });
+
     test('the reason is worded per platform, with the probe error kept', () {
       final android = npuUnreachable(
         NpuVendor.qualcomm,

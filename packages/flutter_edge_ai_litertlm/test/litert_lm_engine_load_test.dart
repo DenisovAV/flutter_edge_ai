@@ -223,6 +223,13 @@ void main() {
     return printed;
   }
 
+  /// The release-visible warnings among [printed]: a debug-only notice, such
+  /// as an unreadable file's, is not one.
+  List<String> warnings(List<String> printed) => [
+    for (final line in printed)
+      if (line.startsWith('[flutter_edge_ai] WARNING')) line,
+  ];
+
   test(
     "the plan's text backends are the ones the client is asked for",
     () async {
@@ -236,7 +243,7 @@ void main() {
 
   test(
     'an NPU attempt gets the dispatch of the vendor its bundle is stamped '
-    'for, and a generic bundle that of the vendor this host reaches',
+    'for, and an unreadable file that of the vendor this host reaches',
     () async {
       host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
       debugLiteRtLmEngineHost = host;
@@ -293,12 +300,9 @@ void main() {
     expect(host.attempts.map((a) => a.backend), ['gpu']);
     expect(host.npuProbes, 0, reason: 'the build is asked before the device');
     expect(host.preparedFor, isEmpty);
-    expect(
-      printed,
-      anyElement(
-        contains('npu was requested, but $missing — trying gpu -> cpu'),
-      ),
-    );
+    expect(warnings(printed), [
+      contains('npu was requested, but $missing — trying gpu -> cpu'),
+    ]);
     await fallback.close();
   });
 
@@ -321,12 +325,9 @@ void main() {
     });
     expect(host.attempts.map((a) => a.backend), ['gpu']);
     expect(host.npuProbes, 0);
-    expect(
-      printed,
-      anyElement(
-        contains('npu was requested, but $notEnabled — trying gpu -> cpu'),
-      ),
-    );
+    expect(warnings(printed), [
+      contains('npu was requested, but $notEnabled — trying gpu -> cpu'),
+    ]);
     await model.close();
   });
 
@@ -350,15 +351,9 @@ void main() {
       expect(host.attempts.map((a) => a.backend), ['gpu'], reason: abi);
       expect(host.npuDispatches, [null], reason: abi);
       expect(host.askedVendors, isEmpty, reason: abi);
-      expect(
-        printed,
-        anyElement(
-          contains(
-            'npu was requested, but no NPU dispatch stack ships for $abi',
-          ),
-        ),
-        reason: abi,
-      );
+      expect(warnings(printed), [
+        contains('npu was requested, but no NPU dispatch stack ships for $abi'),
+      ], reason: abi);
       await model.close();
     }
   });

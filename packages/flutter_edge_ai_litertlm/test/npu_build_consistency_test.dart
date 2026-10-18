@@ -63,8 +63,8 @@ void main() {
     }
   });
 
-  test('every system library an Android vendor probes is declared in the core '
-      'plugin manifest', () {
+  test('every system library an Android vendor\'s stack or probe opens is '
+      'declared in the core plugin manifest', () {
     final manifest = File(
       '../flutter_edge_ai/android/src/main/AndroidManifest.xml',
     ).readAsStringSync();

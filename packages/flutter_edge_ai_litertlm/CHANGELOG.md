@@ -1,3 +1,7 @@
+## 1.15.0
+- `InferenceModel.createDecider` on CPU, from the `litetune.decision` section of a `.litertlm`.
+- Require `flutter_edge_ai` ^2.5.0.
+
 ## 1.14.0
 - **Behaviour change:** Gemma 4 gets its audio after the text; `getActiveModel(multimodalOrder:)` changes it.
 - EmbeddingGemma 2 reports its image token budget, so image-fitted deciders are bound to it.

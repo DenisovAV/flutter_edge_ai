@@ -26,13 +26,17 @@ final class DeciderInput
   field final EmbeddingInput input
 
 final class DeciderAnswer
-  constructor DeciderAnswer({required String? choice, required List<RankedOption> ranked, required ScoreKind scoreKind, required double margin, required DeciderProvenance provenance, double? confidence, AbstainReason? abstainReason, Map<String, double>? probabilities})
+  constructor DeciderAnswer({required String? choice, required List<RankedOption> ranked, required ScoreKind scoreKind, required double margin, required DeciderProvenance provenance, double? confidence, AbstainReason? abstainReason, Map<String, double>? probabilities, DeciderQuestionType questionType = DeciderQuestionType.choice, double? noul, double? expectedLevel, Map<String, String>? legend})
   field final AbstainReason? abstainReason
   field final String? choice
   field final double? confidence
+  field final double? expectedLevel
+  field final Map<String, String>? legend
   field final double margin
+  field final double? noul
   field final Map<String, double>? probabilities
   field final DeciderProvenance provenance
+  field final DeciderQuestionType questionType
   field final List<RankedOption> ranked
   field final ScoreKind scoreKind
   method Map<String, Object?> toJevJson()
@@ -84,6 +88,14 @@ final class AbstainSignalKind
   field static const AbstainSignalKind topCosine
   field static const AbstainSignalKind topProbability
   field static const List<AbstainSignalKind> values
+  method String toString()
+
+final class DeciderQuestionType
+  field static const DeciderQuestionType choice
+  field final String name
+  field static const DeciderQuestionType noul
+  field static const DeciderQuestionType score
+  field static const List<DeciderQuestionType> values
   method String toString()
 
 final class DeciderMethod

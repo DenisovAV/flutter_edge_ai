@@ -20,6 +20,7 @@ DeciderInput class final experimental
 DeciderMethod class final experimental
 DeciderOption class final experimental
 DeciderProvenance class final experimental
+DeciderQuestionType class final experimental
 DeciderRequest class final experimental
 DeciderSpaceMismatchException class final experimental
 DeciderUnsupportedException class final experimental
@@ -108,6 +109,9 @@ NetworkError class final
 NetworkSource class final
 NoActiveModelError class
 NotFoundError class final
+OptionScorer class abstract interface experimental
+OptionScoringModel class abstract interface experimental
+OptionScoringRun class final experimental
 OrphanedFileInfo class
 ParallelFunctionCallResponse class
 PreferredBackend enum

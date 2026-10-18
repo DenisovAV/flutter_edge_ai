@@ -184,9 +184,8 @@ List<({EmbeddingInput input, String optionId})>? labelledRowsOf(
 /// uncalibrated decider that never abstains and reports no probabilities.
 ///
 /// `InferenceModel.createDecider` checks these values (and refuses one that is
-/// out of range with [ArgumentError]) before anything else, also in this
-/// release, where no engine scores options and it then fails with
-/// `DeciderUnsupportedException`.
+/// out of range with [ArgumentError]) before anything else, and then that
+/// they are the ones the model file says were fitted for it.
 @experimental
 @immutable
 final class InferenceDeciderCalibration {

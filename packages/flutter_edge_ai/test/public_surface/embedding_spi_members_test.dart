@@ -61,6 +61,7 @@ const _deciderTypes = [
   'ScoreKind',
   'AbstainReason',
   'AbstainSignalKind',
+  'DeciderQuestionType',
   'DeciderMethod',
   'DeciderOption',
   'EmbeddingDeciderCalibration',
@@ -72,6 +73,19 @@ const _deciderTypes = [
 ];
 
 final _deciderGolden = File('test/public_surface/decider_members.golden.txt');
+
+/// What an engine implements so that `InferenceModel.createDecider` scores
+/// options with it (engine.dart). Engines compile against it member by
+/// member, as against the embedding SPI.
+const _optionScoringTypes = [
+  'OptionScoringModel',
+  'OptionScorer',
+  'OptionScoringRun',
+];
+
+final _optionScoringGolden = File(
+  'test/public_surface/option_scoring_spi_members.golden.txt',
+);
 
 void main() {
   test('the Decider API members match their golden', () async {
@@ -88,6 +102,26 @@ void main() {
       (expected, actual) => describeLineDrift(
         'The members of the Decider API in '
         'package:flutter_edge_ai/flutter_edge_ai.dart',
+        expected,
+        actual,
+      ),
+    );
+  }, timeout: const Timeout(Duration(minutes: 5)));
+
+  test('the option-scoring SPI members match their golden', () async {
+    final namespace = await exportNamespace('engine.dart');
+    expectGolden(
+      _optionScoringGolden,
+      _render(
+        namespace,
+        types: _optionScoringTypes,
+        functions: const [],
+        library: 'engine.dart',
+        title: 'the option-scoring SPI',
+      ),
+      (expected, actual) => describeLineDrift(
+        'The members of the option-scoring SPI in '
+        'package:flutter_edge_ai/engine.dart',
         expected,
         actual,
       ),

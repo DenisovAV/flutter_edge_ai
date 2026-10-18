@@ -361,6 +361,7 @@ class LiteRtLmEngine
 
     return FfiInferenceModel(
       ffiClient: ffiRuntime.client,
+      modelPath: config.modelPath,
       // The value the engine was actually built with: the same rule, resolved
       // against the backend whose attempt succeeded rather than the requested
       // one, so a fallback to CPU reports the clamped context it really has.

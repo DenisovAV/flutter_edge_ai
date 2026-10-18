@@ -146,6 +146,40 @@ the chat had tools:
   That is why the order follows the model rather than changing for every
   model.
 
+## Deciders from a model trained on the decision
+
+A `.litertlm` tuned by [LiteTune](https://pypi.org/project/litetune/) 0.5.0 or
+later for one decision — a Choice, Noul (yes/no) or Score (a level) question —
+carries that decision in a `litetune.decision` section, and
+`InferenceModel.createDecider` reads it (core's experimental Decider API):
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  preferredBackend: PreferredBackend.cpu,
+);
+final decider = await model.createDecider(
+  question: 'Which emotion does the text express?',
+  options: [DeciderOption('sadness'), DeciderOption('joy'), /* … */],
+  calibration: const InferenceDeciderCalibration(
+    temperature: 1.2367641844192563,
+    abstainBelow: 0.4998484989496927,
+  ),
+);
+```
+
+`litetune bundle` prints the call for its file; another question, option set,
+temperature or threshold is refused with `ArgumentError`. Each decision
+renders the prompt with the model's chat template, prefills it, and scores
+each option's shortest unique prefix as the model's reply through LiteRT-LM's
+session API (`run_text_scoring`, with a checkpoint and a rewind between
+options), on a background isolate and in turn with any chat on the same
+engine. CPU only: a model loaded on the GPU or the NPU is refused with
+`DeciderUnsupportedException`, as is a file without the section. Measured on
+an Apple M4 Pro CPU with google/gemma-3-270m-it tuned on dair-ai/emotion (6
+options, int8): 176 ms per decision, and the same top option as LiteTune's
+PyTorch reference on all 24 golden rows. The answers, Noul and Score included:
+[Decisions](https://flutteredge.ai/docs/decisions#deciders-from-a-language-model).
+
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)
 
 Repos that ship a

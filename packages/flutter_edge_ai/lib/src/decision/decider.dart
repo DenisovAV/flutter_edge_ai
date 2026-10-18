@@ -21,9 +21,9 @@ import 'embedding_decider.dart' show chooseAllWithSharedEmbeddings;
 /// Picks one of its options for an input — or abstains when none fits.
 ///
 /// Get one from a model: `EmbeddingModel.createDecider` (every embedding
-/// backend) or `InferenceModel.createDecider` (an engine that scores options;
-/// none does in this release). A decider BORROWS its model and never closes
-/// it.
+/// backend) or `InferenceModel.createDecider` (a model trained on the
+/// decision, whose engine scores options: `.litertlm` on the CPU). A decider
+/// BORROWS its model and never closes it.
 ///
 /// `abstract base`: outside core it can be extended (by a `base`, `final` or
 /// `sealed` class) but not implemented, so a member added here in a later
@@ -351,6 +351,40 @@ final class AbstainReason {
   String toString() => 'AbstainReason.$name';
 }
 
+/// The kind of question an answer answers, in Jev's terms: what
+/// [DeciderAnswer.toJevJson] writes.
+///
+/// A class with constant instances rather than an enum, as [DeciderMethod]
+/// is, so a type added in a later release does not break an app's
+/// exhaustive `switch`.
+@experimental
+@immutable
+final class DeciderQuestionType {
+  const DeciderQuestionType._(this.name);
+
+  /// One option of N, or an abstention. Every embedding decider answers
+  /// this.
+  static const choice = DeciderQuestionType._('choice');
+
+  /// Yes or no: the options are `no` and `yes`, and the answer carries the
+  /// probability of `yes` ([DeciderAnswer.noul]). Never abstains.
+  static const noul = DeciderQuestionType._('noul');
+
+  /// A level: the options are `0` … `K − 1`, lowest first, and the answer
+  /// carries the expected level ([DeciderAnswer.expectedLevel]) and each
+  /// level's text ([DeciderAnswer.legend]). Never abstains.
+  static const score = DeciderQuestionType._('score');
+
+  /// Every type this release knows, in declaration order.
+  static const values = [choice, noul, score];
+
+  /// Stable name, also Jev's `type`: `choice`, `noul`, `score`.
+  final String name;
+
+  @override
+  String toString() => 'DeciderQuestionType.$name';
+}
+
 /// What [DeciderProvenance.abstainSignal] is.
 ///
 /// For every kind, now and added later, a higher signal means a more
@@ -514,6 +548,15 @@ final class DeciderAnswer {
   /// have its signal on either side (the none option wins first);
   /// [AbstainReason.noCandidates] comes with nothing ranked, no signal, no
   /// probabilities and no confidence.
+  ///
+  /// [questionType] is [DeciderQuestionType.choice] unless given; then
+  /// [noul], [expectedLevel] and [legend] are null. A
+  /// [DeciderQuestionType.noul] or [DeciderQuestionType.score] answer never
+  /// abstains and has [probabilities]. A Noul answer's probabilities are over
+  /// `no` and `yes` exactly, and [noul] is the one of `yes`. A Score answer's
+  /// probabilities are over the levels `0` … `K − 1` (K ≥ 2), [expectedLevel]
+  /// is `Σ pᵢ · i` over them (within 1e-9), and [legend] has a text for each
+  /// level and nothing else. [legend] is copied.
   DeciderAnswer({
     required this.choice,
     required List<RankedOption> ranked,
@@ -523,10 +566,15 @@ final class DeciderAnswer {
     this.confidence,
     this.abstainReason,
     Map<String, double>? probabilities,
+    this.questionType = DeciderQuestionType.choice,
+    this.noul,
+    this.expectedLevel,
+    Map<String, String>? legend,
   }) : ranked = List.unmodifiable(ranked),
        probabilities = probabilities == null
            ? null
-           : Map.unmodifiable(probabilities) {
+           : Map.unmodifiable(probabilities),
+       legend = legend == null ? null : Map.unmodifiable(legend) {
     if ((choice == null) == (abstainReason == null)) {
       throw ArgumentError(
         'A DeciderAnswer has either a choice or an abstainReason, exactly '
@@ -567,6 +615,93 @@ final class DeciderAnswer {
     _checkRanked();
     _checkProbabilities();
     _checkAbstention();
+    _checkQuestionType();
+  }
+
+  void _checkQuestionType() {
+    final type = questionType;
+    if (identical(type, DeciderQuestionType.choice)) {
+      if (noul != null || expectedLevel != null || legend != null) {
+        throw ArgumentError(
+          'A choice answer has no noul, expectedLevel or legend; got noul '
+          '$noul, expectedLevel $expectedLevel, legend $legend.',
+        );
+      }
+      return;
+    }
+    if (abstainReason != null) {
+      throw ArgumentError.value(
+        abstainReason,
+        'abstainReason',
+        'a ${type.name} answer never abstains: Jev has no abstention',
+      );
+    }
+    final p = probabilities;
+    if (p == null) {
+      throw ArgumentError.value(
+        p,
+        'probabilities',
+        'a ${type.name} answer is read from its probabilities: they are '
+            'required',
+      );
+    }
+    if (identical(type, DeciderQuestionType.noul)) {
+      if (p.length != 2 || !p.containsKey('no') || !p.containsKey('yes')) {
+        throw ArgumentError.value(
+          p.keys.toList(),
+          'probabilities',
+          'a noul answer has probabilities over "no" and "yes" exactly',
+        );
+      }
+      if (noul != p['yes']) {
+        throw ArgumentError.value(
+          noul,
+          'noul',
+          'is the probability of "yes" (${p['yes']})',
+        );
+      }
+      if (expectedLevel != null || legend != null) {
+        throw ArgumentError(
+          'A noul answer has no expectedLevel or legend; got expectedLevel '
+          '$expectedLevel, legend $legend.',
+        );
+      }
+      return;
+    }
+    final levels = [for (var i = 0; i < p.length; i++) '$i'];
+    if (p.length < 2 || !levels.every(p.containsKey)) {
+      throw ArgumentError.value(
+        p.keys.toList(),
+        'probabilities',
+        'a score answer has probabilities over the levels "0" … "K − 1", '
+            'K ≥ 2',
+      );
+    }
+    var expected = 0.0;
+    for (var i = 0; i < levels.length; i++) {
+      expected += p[levels[i]]! * i;
+    }
+    final level = expectedLevel;
+    if (level == null || !((level - expected).abs() <= 1e-9)) {
+      throw ArgumentError.value(
+        level,
+        'expectedLevel',
+        'is Σ pᵢ · i over the levels ($expected)',
+      );
+    }
+    final l = legend;
+    if (l == null ||
+        l.length != levels.length ||
+        !levels.every(l.containsKey)) {
+      throw ArgumentError.value(
+        l?.keys.toList(),
+        'legend',
+        'a score answer has a text for each level and nothing else',
+      );
+    }
+    if (noul != null) {
+      throw ArgumentError.value(noul, 'noul', 'a score answer has no noul');
+    }
   }
 
   void _checkRanked() {
@@ -735,21 +870,52 @@ final class DeciderAnswer {
   /// Where this answer came from.
   final DeciderProvenance provenance;
 
-  /// The answer in Jev's Choice answer shape, e.g.
-  /// `{"type": "choice", "choice": "returns", "probabilities": {...},`
-  /// `"confidence": 0.93}`. `probabilities`
-  /// (every candidate, summing to 1) and `confidence` appear only when
-  /// calibrated. Jev has no abstention: an abstained answer has
-  /// `"choice": null`.
-  Map<String, Object?> toJevJson() => {
-    'type': 'choice',
-    'choice': choice,
-    if (probabilities case final p?) 'probabilities': {...p},
-    'confidence': ?confidence,
+  /// The kind of question this answers; what [toJevJson] writes.
+  /// [DeciderQuestionType.choice] for every embedding decider.
+  final DeciderQuestionType questionType;
+
+  /// A [DeciderQuestionType.noul] answer's probability of `yes`
+  /// (`probabilities['yes']`); null for other types.
+  final double? noul;
+
+  /// A [DeciderQuestionType.score] answer's expected level, `Σ pᵢ · i` over
+  /// the levels `0` … `K − 1`; null for other types. [choice] is the most
+  /// probable level, which can differ from the expected one.
+  final double? expectedLevel;
+
+  /// A [DeciderQuestionType.score] answer's text for each level, by level id;
+  /// null for other types. Unmodifiable.
+  final Map<String, String>? legend;
+
+  /// The answer in Jev's answer shape for its [questionType]:
+  /// - choice: `{"type": "choice", "choice": "returns", "probabilities":
+  ///   {...}, "confidence": 0.93}`. `probabilities` (every candidate, summing
+  ///   to 1) and `confidence` appear only when calibrated. Jev has no
+  ///   abstention: an abstained answer has `"choice": null`;
+  /// - noul: `{"type": "noul", "noul": 0.82}`, the probability of `yes`;
+  /// - score: `{"type": "score", "score": 2.4, "legend": {"0": ..., ...},
+  ///   "probabilities": {...}, "confidence": 0.61}`, `score` the expected
+  ///   level.
+  Map<String, Object?> toJevJson() => switch (questionType.name) {
+    'noul' => {'type': 'noul', 'noul': noul},
+    'score' => {
+      'type': 'score',
+      'score': expectedLevel,
+      'legend': {...?legend},
+      'probabilities': {...?probabilities},
+      'confidence': ?confidence,
+    },
+    _ => {
+      'type': 'choice',
+      'choice': choice,
+      if (probabilities case final p?) 'probabilities': {...p},
+      'confidence': ?confidence,
+    },
   };
 
   @override
   String toString() =>
-      'DeciderAnswer(${choice ?? 'abstained: ${abstainReason?.name}'}, '
+      'DeciderAnswer(${identical(questionType, DeciderQuestionType.choice) ? '' : '${questionType.name} '}'
+      '${choice ?? 'abstained: ${abstainReason?.name}'}, '
       'margin $margin, ${ranked.join(', ')})';
 }

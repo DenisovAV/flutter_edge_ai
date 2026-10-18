@@ -1,3 +1,7 @@
+// The decider SPI (OptionScoringModel) is @experimental; this model is its
+// LiteRT-LM implementation.
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -5,17 +9,24 @@ import 'package:flutter_edge_ai/engine.dart';
 
 import 'package:flutter/foundation.dart';
 
+import '../litertlm_decision_section.dart';
 import 'litert_lm_client.dart';
 import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
-class FfiInferenceModel extends InferenceModel with CloseNotifier {
+///
+/// Scores options for `createDecider` ([OptionScoringModel]) on the CPU
+/// backend, from the decision litetune wrote into [modelPath].
+class FfiInferenceModel extends InferenceModel
+    with CloseNotifier
+    implements OptionScoringModel {
   FfiInferenceModel({
     required this.ffiClient,
     required this.maxTokens,
     required this.modelType,
     required this.activeBackend,
+    this.modelPath,
     this.activeVisionBackend,
     this.activeAudioBackend,
     this.fileType = ModelFileType.litertlm,
@@ -29,6 +40,10 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
 
   final LiteRtLmFfiClient ffiClient;
   final ModelType modelType;
+
+  /// The `.litertlm` file the engine loaded; null only for a model built
+  /// without one (tests), which then cannot read its decision.
+  final String? modelPath;
   @override
   final ModelFileType fileType;
   @override
@@ -63,6 +78,31 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   InferenceModelSession? get session => _session;
+
+  @override
+  Future<String?> readDecisionSection() async {
+    final path = modelPath;
+    if (path == null) {
+      throw const DeciderUnsupportedException(
+        'This model was built without its file path, so its decision section '
+        'cannot be read.',
+      );
+    }
+    return readLitetuneDecisionSection(path);
+  }
+
+  @override
+  Future<OptionScorer> openOptionScorer() async {
+    if (_isClosed) throw StateError('The model is closed.');
+    if (activeBackend != PreferredBackend.cpu) {
+      throw DeciderUnsupportedException(
+        'Option scoring is measured on the CPU backend only, and this model '
+        'runs on ${activeBackend?.name ?? 'an unknown backend'}. Load it with '
+        'preferredBackend: PreferredBackend.cpu to create a decider from it.',
+      );
+    }
+    return _LiteRtLmOptionScorer(this);
+  }
 
   @override
   List<InferenceModelSession> get sessions =>
@@ -1392,4 +1432,46 @@ class _VirtualConversationHandle implements ConversationHandle {
     _history.clear();
     client.releaseVirtualConversation(token);
   }
+}
+
+/// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no
+/// native resource between calls: each scoring pass opens and deletes its own
+/// session.
+final class _LiteRtLmOptionScorer implements OptionScorer {
+  _LiteRtLmOptionScorer(this._model);
+
+  final FfiInferenceModel _model;
+  bool _closed = false;
+
+  LiteRtLmFfiClient get _client {
+    if (_closed) throw StateError('The option scorer is closed.');
+    if (_model.isClosed) throw StateError('The model is closed.');
+    return _model.ffiClient;
+  }
+
+  @override
+  Future<List<int>> tokenize(String text) => _client.tokenIds(text);
+
+  @override
+  Future<String> detokenize(List<int> ids) => _client.detokenizeIds(ids);
+
+  @override
+  Future<String> renderUserMessage(String content) =>
+      _client.renderUserMessage(content);
+
+  @override
+  Future<OptionScoringRun> score(
+    String prompt,
+    List<String> targets, {
+    String? reprefill,
+    CancelToken? cancelToken,
+  }) async {
+    if (cancelToken?.isCancelled ?? false) {
+      throw const DeciderCancelledException('The decision was cancelled.');
+    }
+    return _client.scoreTargets(prompt, targets, reprefill: reprefill);
+  }
+
+  @override
+  Future<void> close() async => _closed = true;
 }

@@ -16,6 +16,7 @@ import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
 import 'native_turns.dart';
 import 'npu_vendor_host.dart';
+import 'option_scoring_ffi.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
@@ -587,7 +588,8 @@ class LiteRtLmFfiClient {
   Future<T> _guardCreate<T>(Future<T> Function() body) async {
     if (_isShuttingDown) {
       throw StateError(
-        'Client is shutting down; cannot create or rewind a conversation',
+        'Client is shutting down; cannot create or rewind a conversation, '
+        'or score options',
       );
     }
     _enterCreate();
@@ -2428,6 +2430,106 @@ class LiteRtLmFfiClient {
       }
     });
   }
+
+  /// The engine's token ids for [text], with no BOS added: what the option
+  /// scorer of `InferenceModel.createDecider` compares. Unlike [tokenCount]
+  /// it throws: a [StateError] without a loaded engine, and when the native
+  /// call fails. Holds [_nativeMutex].
+  Future<List<int>> tokenIds(String text) => _nativeMutex.protect(() async {
+    final b = _bindings;
+    final engine = _engine;
+    if (b == null || engine == null || engine == nullptr) {
+      throw StateError('The LiteRT-LM engine is not loaded.');
+    }
+    final textPtr = text.toNativeUtf8();
+    Pointer<LiteRtLmTokenizeResult> result = nullptr;
+    try {
+      result = b.litert_lm_engine_tokenize(engine, textPtr.cast<Char>());
+      if (result == nullptr) {
+        throw StateError(
+          'litert_lm_engine_tokenize failed for ${jsonEncode(text)}',
+        );
+      }
+      final n = b.litert_lm_tokenize_result_get_num_tokens(result);
+      final ids = b.litert_lm_tokenize_result_get_tokens(result);
+      if (n < 0 || (n > 0 && ids == nullptr)) {
+        throw StateError('litert_lm_engine_tokenize returned $n tokens');
+      }
+      return [for (var i = 0; i < n; i++) ids[i]];
+    } finally {
+      if (result != nullptr) b.litert_lm_tokenize_result_delete(result);
+      calloc.free(textPtr);
+    }
+  });
+
+  /// The text of [ids], from the engine's tokenizer. Throws as [tokenIds].
+  Future<String> detokenizeIds(List<int> ids) => _nativeMutex.protect(() async {
+    final b = _bindings;
+    final engine = _engine;
+    if (b == null || engine == null || engine == nullptr) {
+      throw StateError('The LiteRT-LM engine is not loaded.');
+    }
+    final tokens = calloc<Int>(ids.isEmpty ? 1 : ids.length);
+    Pointer<LiteRtLmDetokenizeResult> result = nullptr;
+    try {
+      for (var i = 0; i < ids.length; i++) {
+        tokens[i] = ids[i];
+      }
+      result = b.litert_lm_engine_detokenize(engine, tokens, ids.length);
+      if (result == nullptr) {
+        throw StateError('litert_lm_engine_detokenize failed for $ids');
+      }
+      final text = b.litert_lm_detokenize_result_get_string(result);
+      if (text == nullptr) {
+        throw StateError('litert_lm_engine_detokenize returned no text');
+      }
+      return text.cast<Utf8>().toDartString();
+    } finally {
+      if (result != nullptr) b.litert_lm_detokenize_result_delete(result);
+      calloc.free(tokens);
+    }
+  });
+
+  /// [content] as one user message, rendered by the model's chat template up
+  /// to where its reply begins. On a spawned isolate, under [_nativeMutex];
+  /// [shutdown] waits for it.
+  Future<String> renderUserMessage(String content) => _guardCreate(
+    () => _nativeMutex.protect(() async {
+      final engine = _engine;
+      if (engine == null || engine == nullptr) {
+        throw StateError('The LiteRT-LM engine is not loaded.');
+      }
+      return renderUserMessageOffMainIsolate(
+        engineAddr: engine.address,
+        content: content,
+      );
+    }),
+  );
+
+  /// Scores [targets] as the model's continuation of [prompt] in one fresh
+  /// session without a prompt template (`OptionScorer.score`). On a spawned
+  /// isolate, under [_nativeMutex], so it runs between turns of any
+  /// conversation on this engine; [shutdown] waits for it.
+  // The decider SPI is @experimental.
+  // ignore: experimental_member_use
+  Future<OptionScoringRun> scoreTargets(
+    String prompt,
+    List<String> targets, {
+    String? reprefill,
+  }) => _guardCreate(
+    () => _nativeMutex.protect(() async {
+      final engine = _engine;
+      if (engine == null || engine == nullptr) {
+        throw StateError('The LiteRT-LM engine is not loaded.');
+      }
+      return scoreTargetsOffMainIsolate(
+        engineAddr: engine.address,
+        prompt: prompt,
+        targets: targets,
+        reprefill: reprefill,
+      );
+    }),
+  );
 
   /// Get session metrics from the given conversation including token usage.
   /// Returns empty SessionMetrics if benchmark unavailable.

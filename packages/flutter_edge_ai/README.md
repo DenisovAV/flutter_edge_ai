@@ -346,8 +346,12 @@ loaded onto an NPU bundle. Measured with EmbeddingGemma 2 on CLINC150 and
 HWU64, the numbers and their limits:
 [Decisions](https://flutteredge.ai/docs/decisions).
 `InferenceModel.createDecider(question:, options:, calibration:)` is the
-language-model kind, with answers of the same shape; no engine scores options
-in this release, so it throws `DeciderUnsupportedException`.
+language-model kind, with answers of the same shape: a small `.litertlm` tuned
+for the decision by LiteTune, which carries the question, options, temperature
+and threshold in the file and prints the matching call; each option's id is
+scored as the model's reply, on the CPU (`flutter_edge_ai_litertlm` 1.15.0).
+It answers Choice, Noul (`answer.noul`, P(yes)) and Score
+(`answer.expectedLevel`) questions.
 
 ## Three things that fail quietly
 

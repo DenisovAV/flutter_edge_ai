@@ -163,11 +163,13 @@ class _NativeBundle {
       }
     }
     if (os == OS.android) {
-      for (final a in googleTensorNpuLibs) {
-        yield _dylibFileName(os, a);
-      }
-      for (final a in androidExtraLibs) {
-        yield _dylibFileName(os, a);
+      // Every vendor stack that runs on Android, from the table (Qualcomm's is
+      // androidExtraLibs).
+      for (final vendor in NpuVendor.values) {
+        if (!vendor.abis.any((abi) => abi.startsWith('android_'))) continue;
+        for (final name in npuStackLibs(vendor, 'android')) {
+          yield _dylibFileName(os, name);
+        }
       }
     }
     if (os == OS.linux) {
@@ -1076,9 +1078,10 @@ Future<void> _processBundle({
   }
 }
 
-/// Registers an always-on vendor stack already present in the native archive.
-/// Missing files mean the Dart package and native archive are version-skewed,
-/// so fail the build rather than advertise a dispatch that is not packaged.
+/// Registers the Android stack of [vendor], for an app that set its opt-in
+/// (checked by the caller's vendor loop, from the table), from the native
+/// archive. A file missing there is a native release that does not carry the
+/// stack yet: the build fails rather than ship a flag that does nothing.
 void _registerBundledNpuStack({
   required NpuVendor vendor,
   required BuildOutputBuilder output,
@@ -1090,8 +1093,10 @@ void _registerBundledNpuStack({
     final file = prebuiltDir.resolve(fileName);
     if (!File.fromUri(file).existsSync()) {
       throw StateError(
-        '[$_packageName] $fileName is missing from the Android native bundle. '
-        'Use a native release that includes ${vendor.label} support.',
+        '[$_packageName] ${npuUserDefine(vendor)}: $fileName is not in this '
+        "release's Android native bundle; ${vendor.label} needs a "
+        '$_packageName release whose native bundle carries it. Remove '
+        '${npuUserDefine(vendor)} until then.',
       );
     }
     output.assets.code.add(

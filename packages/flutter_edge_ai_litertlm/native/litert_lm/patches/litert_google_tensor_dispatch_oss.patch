@@ -1,7 +1,7 @@
 diff --git a/litert/vendors/google_tensor/dispatch/BUILD b/litert/vendors/google_tensor/dispatch/BUILD
 --- a/litert/vendors/google_tensor/dispatch/BUILD
 +++ b/litert/vendors/google_tensor/dispatch/BUILD
-@@ -124,7 +124,6 @@ litert_dispatch_api(
+@@ -138,7 +138,6 @@ litert_dispatch_api(
          ":google_tensor_hook",
          "//litert/c:litert_profiler_types",
          # copybara:uncomment "//litert/c/options/google:litert_google_tensor_privileged_options_type",

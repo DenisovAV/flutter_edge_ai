@@ -58,9 +58,7 @@ String? npuUnreachable(
   NpuVendor.googleTensor => switch (operatingSystem) {
     'android' => switch (probes.androidGoogleTensorRuntime()) {
       null => null,
-      final error =>
-        'the Google Tensor system runtime $googleTensorSystemRuntime did not '
-            'open: $error',
+      final error => 'the Google Tensor NPU cannot run here: $error',
     },
     _ => throw StateError(
       'NpuVendor.googleTensor has no device probe for $operatingSystem',
@@ -211,20 +209,71 @@ String? get _androidFastRpcError => (_fastRpcProbe ??= (
   }(),
 )).$1;
 
-/// Whether the Pixel system's public LiteRT Edge TPU runtime resolves in this
-/// process. The core Android manifest declares its soname as optional, opening
-/// the vendor linker namespace without blocking installs elsewhere.
+/// The Google Tensor probe's answer: null when it passed, else why not.
 (String?,)? _googleTensorProbe;
+
+/// Whether this device can run the Google Tensor NPU
+/// ([googleTensorDeviceRefusal]) and the Pixel system's LiteRT Edge TPU
+/// runtime resolves in this process: null when both hold. The core Android
+/// manifest declares the runtime's soname as optional, which opens it to this
+/// app's linker namespace without blocking installs elsewhere.
 String? get _androidGoogleTensorRuntimeError => (_googleTensorProbe ??= (
   () {
+    final refusal = googleTensorDeviceRefusal(_androidProperty);
+    if (refusal != null) return refusal;
     try {
       DynamicLibrary.open(googleTensorSystemRuntime);
       return null;
     } on Object catch (e) {
-      return '$e';
+      return 'the Google Tensor system runtime $googleTensorSystemRuntime did '
+          'not open: $e';
     }
   }(),
 )).$1;
+
+/// Why a device whose system properties [property] reads cannot run the
+/// Google Tensor NPU, or null when it can.
+///
+/// LiteRT's own check (`isGoogleTensorDevice` in
+/// litert/kotlin/.../AcceleratorProvider.kt at the pin): Android 16 (API 36)
+/// or later, a build ID that does not start with BP2A ("the only Android 16
+/// build ID that does not support NPU"), and a Google SoC. Asked before the
+/// runtime is opened, so a device the dispatch cannot run on is told so
+/// instead of failing inside it. Which Tensor generation a bundle is compiled
+/// for is not checked here: LiteRT refuses a mismatch at engine_create.
+@visibleForTesting
+String? googleTensorDeviceRefusal(String? Function(String key) property) {
+  final sdk = int.tryParse(property('ro.build.version.sdk') ?? '');
+  if (sdk == null || sdk < 36) {
+    return 'Android API ${sdk ?? '(unknown)'}: the Google Tensor NPU needs '
+        'Android 16 (API 36) or later';
+  }
+  final buildId = property('ro.build.id') ?? '';
+  if (buildId.startsWith('BP2A')) {
+    return 'build $buildId: LiteRT does not run the Google Tensor NPU on BP2A '
+        'builds';
+  }
+  final manufacturer = property('ro.soc.manufacturer') ?? '';
+  final model = property('ro.soc.model') ?? '';
+  final hardware = property('ro.hardware') ?? '';
+  if (manufacturer.toLowerCase() != 'google' &&
+      !model.toLowerCase().contains('tensor') &&
+      !hardware.toLowerCase().contains('tensor')) {
+    return 'this is not a Google Tensor SoC ($manufacturer $model)';
+  }
+  return null;
+}
+
+/// An Android system property ([key]) through `getprop`, or null when it
+/// cannot be read. Synchronous and asked once per probe.
+String? _androidProperty(String key) {
+  try {
+    final result = Process.runSync('getprop', [key]);
+    return result.exitCode == 0 ? '${result.stdout}'.trim() : null;
+  } on Object {
+    return null;
+  }
+}
 
 /// Where [vendor]'s NPU runs, for the notice that the NPU was not tried.
 String _whereNpuRuns(NpuVendor vendor) => switch (vendor) {

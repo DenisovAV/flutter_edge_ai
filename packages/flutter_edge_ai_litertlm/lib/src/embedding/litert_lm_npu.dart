@@ -15,8 +15,11 @@
 //   the LLM path uses) and a device whose FastRPC the stack can reach; an
 //   Intel bundle (Google's `…_Intel_PTL`, Panther Lake) on Windows x64, with
 //   the Intel stack every Windows build carries beside the executable — added
-//   in 1.13.2 without a run on Intel NPU hardware;
-//   anything else is refused, never moved to CPU.
+//   in 1.13.2 without a run on Intel NPU hardware; a Google Tensor bundle
+//   (`…_Google_Tensor_G5|G6`) on Android arm64, with the app's opt-in Tensor
+//   dispatch (`google_tensor_npu`) on a device LiteRT runs the Tensor NPU on
+//   (Android 16 or later, not a BP2A build) — no EmbeddingGemma 2 run on a
+//   Tensor device yet; anything else is refused, never moved to CPU.
 // What the bundle IS comes from its own bytes (`readLiteRtLmNpuTarget`), not
 // from its file name.
 
@@ -47,7 +50,8 @@ LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 
 /// The per-SoC Qualcomm bundles verified on device. Others are published by
 /// Google (SM8550, SM8750; Tensor G5/G6; MediaTek MT6991/MT6993; Intel PTL)
-/// and not verified here; of those, the Qualcomm ones and Intel PTL load.
+/// and not verified here; of those, the Qualcomm ones, Intel PTL and Tensor
+/// G5/G6 (with `google_tensor_npu`) load, and MediaTek is refused.
 const liteRtLmVerifiedNpuSocs = ['SM8850', 'SM8650', 'QCS8275'];
 
 /// Decides where [file] runs for a [requested] backend, or refuses with an

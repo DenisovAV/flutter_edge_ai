@@ -86,9 +86,51 @@ void main() {
       final missing = _FakeProbes(error: 'dlopen failed');
       expect(
         npuUnreachable(NpuVendor.googleTensor, 'android', missing),
-        contains('libedgetpu_litert.so did not open: dlopen failed'),
+        'the Google Tensor NPU cannot run here: dlopen failed',
       );
       expect(missing.asked, ['androidGoogleTensorRuntime']);
+    });
+
+    test('Google Tensor runs on LiteRT\'s devices only: Android 16+, not BP2A, '
+        'a Google SoC', () {
+      String? refusal(Map<String, String> props) =>
+          googleTensorDeviceRefusal((key) => props[key]);
+      const pixel = {
+        'ro.build.version.sdk': '36',
+        'ro.build.id': 'BP3A.250905.014',
+        'ro.soc.manufacturer': 'Google',
+        'ro.soc.model': 'Tensor G5',
+        'ro.hardware': 'frankel',
+      };
+      expect(refusal(pixel), isNull);
+      expect(
+        refusal({...pixel, 'ro.build.version.sdk': '35'}),
+        'Android API 35: the Google Tensor NPU needs Android 16 (API 36) or '
+        'later',
+      );
+      expect(
+        refusal({...pixel}..remove('ro.build.version.sdk')),
+        contains('API (unknown)'),
+      );
+      expect(
+        refusal({...pixel, 'ro.build.id': 'BP2A.250605.031'}),
+        'build BP2A.250605.031: LiteRT does not run the Google Tensor NPU on '
+        'BP2A builds',
+      );
+      expect(
+        refusal({
+          ...pixel,
+          'ro.soc.manufacturer': 'QTI',
+          'ro.soc.model': 'SM8750',
+          'ro.hardware': 'qcom',
+        }),
+        'this is not a Google Tensor SoC (QTI SM8750)',
+      );
+      expect(
+        refusal({...pixel, 'ro.soc.manufacturer': '', 'ro.hardware': 'x'}),
+        isNull,
+        reason: 'a Tensor SoC model is enough, as in LiteRT',
+      );
     });
 
     test('an operating system a vendor has no probe for is a programming '

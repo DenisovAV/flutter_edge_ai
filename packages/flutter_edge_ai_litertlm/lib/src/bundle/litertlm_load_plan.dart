@@ -156,25 +156,42 @@ bool liteRtLmEncoderOnNpu({
 /// (its own stamp, else `tf_lite_aux`'s), else that of an encoder the load
 /// turns on. Null for a bundle compiled for no NPU, and for one that was not
 /// read. The engine asks it before the plan, to look up that vendor's stack.
+///
+/// Every section the load turns on that is compiled for an NPU this package
+/// has no dispatch for on [abi] is refused for its vendor first: the NPU
+/// question has no answer for a vendor this host does not run, and its reason
+/// would name the wrong stack. Sections compiled for two different NPUs are
+/// refused next ([LiteRtLmBundleProblem.unsupportedNpu]): one load runs one
+/// vendor's dispatch.
 LiteRtLmNpuTarget? liteRtLmLoadNpuTarget({
   required String path,
   required LiteRtLmBundleInfo? bundle,
   required bool supportImage,
   required bool supportAudio,
+  required String abi,
 }) {
-  final targets = <LiteRtLmNpuTarget>[
-    ?_textNpuTarget(bundle),
-    if (supportImage) ?bundle?.visionEncoder?.npuTarget,
-    if (supportAudio) ?bundle?.audioEncoder?.npuTarget,
+  final textTarget = _textNpuTarget(bundle);
+  final active = <(String?, LiteRtLmNpuTarget)>[
+    if (textTarget != null) (null, textTarget),
+    if (supportImage && bundle?.visionEncoder?.npuTarget != null)
+      ('vision', bundle!.visionEncoder!.npuTarget!),
+    if (supportAudio && bundle?.audioEncoder?.npuTarget != null)
+      ('audio', bundle!.audioEncoder!.npuTarget!),
   ];
-  if (targets.isEmpty) return null;
-  final first = targets.first;
-  if (targets.any((target) => target != first)) {
+  for (final (kind, target) in active) {
+    _checkNpuVendor(path, target, abi, encoder: kind);
+  }
+  if (active.isEmpty) return null;
+  final first = active.first.$2;
+  final targets = {for (final (_, target) in active) target};
+  if (targets.length > 1) {
     throw LiteRtLmBundleException(
-      LiteRtLmBundleProblem.malformed,
-      '$path has active sections compiled for different NPUs '
-      '(${targets.toSet().join(', ')}); one load can expose only one vendor\'s '
-      'dispatch, so the request is ambiguous',
+      LiteRtLmBundleProblem.unsupportedNpu,
+      '$path has sections the load turns on compiled for different NPUs '
+      '(${targets.join(', ')}); flutter_edge_ai_litertlm runs one NPU\'s '
+      'dispatch per load. Load it without supportImage or supportAudio to run '
+      'the text model alone, or install a bundle compiled for one NPU '
+      'throughout.',
       path: path,
     );
   }
@@ -221,22 +238,10 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     bundle: bundle,
     supportImage: supportImage,
     supportAudio: supportAudio,
+    abi: abi,
   );
   final target = _textNpuTarget(bundle);
   var textBackends = candidates.backends;
-  // An encoder that is on and compiled for an NPU this host has no dispatch
-  // for is refused for what it is before the NPU is asked about: the question
-  // has no answer for a vendor this host does not run, and its reason would
-  // name the wrong stack.
-  for (final (kind, on, encoder) in [
-    ('vision', supportImage, bundle?.visionEncoder),
-    ('audio', supportAudio, bundle?.audioEncoder),
-  ]) {
-    final compiledFor = encoder?.npuTarget;
-    if (on && compiledFor != null) {
-      _checkNpuVendor(path, compiledFor, abi, encoder: kind);
-    }
-  }
   // Asked once per load: on Android it opens a vendor library.
   bool? reachable;
   bool npuReachable() => reachable ??= npuAvailable();

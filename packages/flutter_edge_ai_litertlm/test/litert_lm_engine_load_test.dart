@@ -370,7 +370,14 @@ void main() {
     });
     expect(host.attempts.map((a) => a.backend), ['gpu']);
     expect(host.npuProbes, 0);
-    expect(warnings(printed), [contains('npu was requested, but $notEnabled')]);
+    // Both Android vendors are opt-in: the notice names each one's reason.
+    expect(warnings(printed), [
+      allOf(
+        contains('npu was requested, but $notEnabled'),
+        contains('without the Google Tensor NPU bridge'),
+        contains('— trying gpu -> cpu'),
+      ),
+    ]);
     await model.close();
   });
 

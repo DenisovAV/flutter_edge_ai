@@ -111,13 +111,22 @@ Future<NpuStackCheck> checkNpuStackInManifest(
 /// since every build for the vendor's ABIs is meant to carry it.
 String npuNotBundledReason(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => qualcommNpuNotEnabledReason,
-  NpuVendor.googleTensor =>
-    'this build carries none of the Google Tensor NPU dispatch bridge; use a '
-        'flutter_edge_ai_litertlm whose native release bundles it and rebuild',
+  NpuVendor.googleTensor => googleTensorNpuNotEnabledReason,
   NpuVendor.intel =>
     'this build carries none of the Intel NPU stack; use a '
         'flutter_edge_ai_litertlm whose native release bundles it and rebuild',
 };
+
+/// What an app that did not opt in to Google Tensor sees when it asks for npu.
+const googleTensorNpuNotEnabledReason =
+    'this app was built without the Google Tensor NPU dispatch. It is '
+    'opt-in: add\n'
+    '  hooks:\n'
+    '    user_defines:\n'
+    '      flutter_edge_ai_litertlm:\n'
+    '        $googleTensorNpuUserDefine: true\n'
+    "to the app's pubspec.yaml (the workspace root pubspec if the app is a "
+    'pub workspace member) and rebuild';
 
 /// What an app that did not opt in sees when it asks for npu.
 const qualcommNpuNotEnabledReason =

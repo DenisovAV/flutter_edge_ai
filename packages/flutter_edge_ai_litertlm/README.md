@@ -200,7 +200,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Google Tensor G5/G6 and Qualcomm NPUs (Android), Qualcomm NPUs (Linux arm64), and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -522,7 +522,7 @@ final note = await embedder.embed(
 
 `EmbeddingModel.activeBackend` is `cpu` on native and `gpu` for EmbeddingGemma
 2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Google
-Tensor NPU ([below](#google-tensor-npu-on-android)), Qualcomm NPU
+Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
@@ -563,8 +563,9 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
   VENTUNO Q). Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
   MT6991/MT6993 and Intel PTL builds; the Qualcomm ones load here but are not
-  verified by us, Tensor G5/G6 runs on matching Pixels
-  ([below](#google-tensor-npu-on-android)), Intel PTL runs on Windows
+  verified by us, Tensor G5/G6 runs on matching Pixels in apps built with
+  `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), not
+  yet run for EmbeddingGemma 2, Intel PTL runs on Windows
   ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek is
   refused (no dispatch for it ships). What a bundle is compiled for is read
   from the bundle itself, not from its name.
@@ -766,7 +767,7 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL; NPU on Google Tensor G5/G6, or Qualcomm — opt-in, below) |
+| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — both opt-in, below) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
@@ -780,17 +781,10 @@ which the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
-The currently published `native-v0.18.0-e` Android archive predates the Google
-Tensor bridge. A clean hosted-package build therefore remains blocked until an
-official native archive includes the bridge and the package's version/checksum
-metadata is updated; this integration intentionally changes neither. Maintainer
-source builds can use `native/litert_lm/build_android.sh` and the resulting
-gitignored local prebuilt directory in the meantime.
-
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
-only on Windows, on Google Tensor Android devices, on Android devices with
-Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux arm64 boards. Google
-Tensor needs no build opt-in; the Qualcomm paths require the opt-in below. A
+only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later, on
+Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux
+arm64 boards; the Tensor and Qualcomm paths only in apps that opted in (below). A
 generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
 for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
 Windows has no device probe: a bundle compiled for the Intel NPU is not refused
@@ -903,27 +897,36 @@ It reads the header and a few hundred bytes per compiled section, never the
 weights. A file that is not a `.litertlm` container, of another container
 version, or with an unreadable header throws `LiteRtLmBundleException`.
 
-### Google Tensor NPU on Android
+### Google Tensor NPU on Android (opt-in)
 
-Google Tensor G5/G6 bundles run only on the matching Tensor generation. Their
-`Google` `LiteRtStamp` selects the Google Tensor vendor through the same
-central dispatch path as Qualcomm and Intel; it does not depend on the model's
-file name. The load is strict NPU-only: a missing or incompatible Pixel runtime
-is an error, never a GPU/CPU fallback.
+A bundle compiled for a Tensor NPU (`…_Google_Tensor_G5.litertlm`,
+`…_Google_Tensor_G6.litertlm`; its `LiteRtStamp` names `Google`, the file name
+is not read) runs on the NPU of a Pixel with that Tensor generation and Android
+16 or later, not a BP2A build: LiteRT's own requirement, checked before any
+engine. The load is NPU-only: a device that cannot run it is refused, never
+moved to the GPU or the CPU.
 
-No app opt-in is required. The Android native archive contains only LiteRT's
-Apache-2.0 `libLiteRtDispatch_GoogleTensor.so` bridge, built from the pinned
-LiteRT source. It does not redistribute Google's proprietary compiler, SDK, or
-`libedgetpu_litert.so`; that runtime remains on the Pixel system image and is
-declared as an optional system library. Apps may also set `qualcomm_npu: true`:
-the selected bundle stamp still determines the vendor, and LiteRT receives an
-isolated directory containing only that vendor's dispatch stack.
+The dispatch is opt-in, as Qualcomm's is:
 
-Use `PreferredBackend.npu` with a `…_Google_Tensor_G5.litertlm` or
-`…_Google_Tensor_G6.litertlm` bundle matching the device.
-`activeBackend == PreferredBackend.npu` reports the selected LiteRT-LM
-backend, but native dispatch logs and a real inference run are required to
-claim physical TPU execution.
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      google_tensor_npu: true
+```
+
+With it the build bundles `libLiteRtDispatch_GoogleTensor.so`, which we build
+from the pinned LiteRT source (`litert/vendors/google_tensor/dispatch`; Google's
+Tensor SDK terms, `TERMS_OF_USE.md` in that directory, cover it besides its
+sources' own licence headers). The runtime it drives, `libedgetpu_litert.so`, is
+part of the Pixel system image, is never redistributed, and core declares it as
+an optional system library. An app can set both opt-ins: the bundle's stamp
+picks the vendor, and LiteRT gets a directory with that vendor's libraries only.
+
+Run on a Pixel 11 Pro (Tensor G6) with a debug build: text, images and audio on
+the NPU. Not run yet: a Tensor G5, EmbeddingGemma 2, and a release-signed
+build. The Pixel's EdgeTPU service logs that an app is not on its allowlist;
+that did not stop the debug run.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 

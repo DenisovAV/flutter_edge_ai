@@ -55,6 +55,14 @@ the reason: a `BackendInitException` whose one attempt is an
 `NpuDispatchUnavailableException` naming the flag. A generic bundle never runs
 on the NPU, flag or not: `npu` falls back to GPU, then CPU, for it.
 
+Google Tensor takes its own flag in the same block, `google_tensor_npu: true`:
+the build then bundles the Tensor dispatch (built from LiteRT; the runtime,
+`libedgetpu_litert.so`, is part of the Pixel system image). A
+`…_Google_Tensor_G5.litertlm` or `…_Google_Tensor_G6.litertlm` bundle runs on a
+Pixel with that Tensor generation and Android 16 or later, not a BP2A build;
+elsewhere it is refused before any engine. Run so far on one Tensor G6 Pixel
+with a debug build.
+
 ## iOS
 
 Minimum iOS 15.0 — 16.0 if the app includes `flutter_edge_ai_mediapipe`.

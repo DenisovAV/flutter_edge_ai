@@ -74,7 +74,7 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.4.0
+  flutter_edge_ai: ^2.5.0
   flutter_edge_ai_litertlm: ^1.14.0   # or any other engine from the table
 ```
 
@@ -373,6 +373,14 @@ through `flutter_edge_ai_litertlm`; MiniLM-class
 `.onnx` models through `flutter_edge_ai_onnx`. Download links, sizes, formats
 per platform, embedding and speech models:
 [models](https://flutteredge.ai/docs/models).
+
+Core 2.5.0 lets embedding providers accept self-contained `.gguf` files without
+a separate tokenizer. A registered backend must support the file; the GGUF
+adapter is still unreleased. Providers can distinguish CPU, GPU and automatic
+requests with `EmbeddingBackendProvider.cacheBackend` and report the loaded
+accelerator through `EmbeddingPassInfo.activeBackend`. Core keeps ownership of
+the model cache, worker and close lifecycle. Existing providers keep their
+CPU/NPU cache behavior.
 
 ## Going further
 

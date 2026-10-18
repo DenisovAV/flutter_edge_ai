@@ -142,6 +142,27 @@ replaced the model before it ran (`EmbedderClosedException`) is retried once.
 Queries over text documents use `TaskType.retrievalQuery`; pass `queryTask:`
 for another task, e.g. `TaskType.questionAnswering`.
 
+## Custom embedding providers (core 2.5.0)
+
+Engine authors import the SPI:
+
+```dart
+import 'package:flutter_edge_ai/engine.dart';
+```
+
+Core accepts self-contained `.gguf` embedding files without a separate
+tokenizer, but installation still requires a registered backend that can run
+the file. The GGUF adapter is unreleased. `flutter_edge_ai_embeddings` remains
+the tokenizer package; runtime passes belong to their engine packages.
+
+An `EmbeddingBackendProvider` can override `cacheBackend(requested)` to return
+the request unchanged, including null for automatic selection, when it honors
+CPU/GPU selection. The default preserves existing CPU/NPU cache behavior.
+Report the actual accelerator in `EmbeddingPassInfo.activeBackend` after load;
+leave the descriptor's accelerator null if it cannot be known before load.
+`EmbeddingModel.maxInputTokens` is the effective loaded context/batch capacity.
+Core hosts, caches and closes the pass.
+
 ## EmbeddingGemma 2 (one `.litertlm` file)
 
 EmbeddingGemma 2 ships as one `.litertlm` bundle that carries its own

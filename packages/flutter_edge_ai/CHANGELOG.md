@@ -1,4 +1,4 @@
-## Unreleased
+## 2.5.0
 - Self-contained GGUF embedders, provider-aware accelerator caching, and loaded backend reporting.
 
 ## 2.4.1

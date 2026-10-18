@@ -23,6 +23,9 @@ jobs:
           - {platform: minimum-sdk, runner: ubuntu-latest, flutter: '3.44.0', runtime: false}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
+    env:
+      # Dart emits UTF-8 JSON and Unicode diagnostics on Windows too.
+      PYTHONUTF8: '1'
     defaults:
       run:
         shell: bash

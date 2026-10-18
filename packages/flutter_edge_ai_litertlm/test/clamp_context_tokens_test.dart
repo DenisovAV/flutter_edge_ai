@@ -99,7 +99,7 @@ void main() {
           // chain regardless of whether the test host ships an NPU dispatch.
           for (final backend in ffiBackendFallbackOrder(
             PreferredBackend.npu,
-            npuDispatchAvailable: true,
+            npuAvailable: true,
           ))
             backend: clampLitertlmContextTokens(
               requested,

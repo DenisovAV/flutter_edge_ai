@@ -36,8 +36,8 @@
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 
-import '../embedding/litert_lm_npu.dart' show liteRtLmNpuEmbeddingAbis;
 import '../litert_lm_load_errors.dart';
+import '../npu_stacks.dart';
 import 'litertlm_bundle_info.dart';
 
 /// What a `.litertlm` load does.
@@ -115,7 +115,7 @@ liteRtLmTextCandidates({
       (requested != null && !allowed.contains(requested) && !backendFallback)) {
     throw LiteRtLmBundleException(
       LiteRtLmBundleProblem.wrongBackend,
-      _wrongTextBackend(path, bundle!, requested!),
+      _wrongTextBackend(path, bundle!, requested),
       path: path,
     );
   }
@@ -125,7 +125,7 @@ liteRtLmTextCandidates({
       if (requested != null && backendFallback)
         for (final candidate in _fallbackOrder(requested))
           if (!allowed.contains(candidate))
-            candidate: _textRulesOut(path, bundle!),
+            candidate: _textRulesOut(path, bundle!, candidate),
     },
   );
 }
@@ -150,6 +150,52 @@ bool liteRtLmEncoderOnNpu({
   return (supportImage &&
           onNpu(bundle.visionEncoder, preferredVisionBackend)) ||
       (supportAudio && onNpu(bundle.audioEncoder, preferredAudioBackend));
+}
+
+/// The NPU a load of [bundle] runs on when it runs on one: the text model's
+/// (its own stamp, else `tf_lite_aux`'s), else that of an encoder the load
+/// turns on. Null for a bundle compiled for no NPU, and for one that was not
+/// read. The engine asks it before the plan, to look up that vendor's stack.
+///
+/// Every section the load turns on that is compiled for an NPU this package
+/// has no dispatch for on [abi] is refused for its vendor first: the NPU
+/// question has no answer for a vendor this host does not run, and its reason
+/// would name the wrong stack. Sections compiled for two different NPUs are
+/// refused next ([LiteRtLmBundleProblem.unsupportedNpu]): one load runs one
+/// vendor's dispatch.
+LiteRtLmNpuTarget? liteRtLmLoadNpuTarget({
+  required String path,
+  required LiteRtLmBundleInfo? bundle,
+  required bool supportImage,
+  required bool supportAudio,
+  required String abi,
+}) {
+  final textTarget = _textNpuTarget(bundle);
+  final active = <(String?, LiteRtLmNpuTarget)>[
+    if (textTarget != null) (null, textTarget),
+    if (supportImage && bundle?.visionEncoder?.npuTarget != null)
+      ('vision', bundle!.visionEncoder!.npuTarget!),
+    if (supportAudio && bundle?.audioEncoder?.npuTarget != null)
+      ('audio', bundle!.audioEncoder!.npuTarget!),
+  ];
+  for (final (kind, target) in active) {
+    _checkNpuVendor(path, target, abi, encoder: kind);
+  }
+  if (active.isEmpty) return null;
+  final first = active.first.$2;
+  final targets = {for (final (_, target) in active) target};
+  if (targets.length > 1) {
+    throw LiteRtLmBundleException(
+      LiteRtLmBundleProblem.unsupportedNpu,
+      '$path has sections the load turns on compiled for different NPUs '
+      '(${targets.join(', ')}); flutter_edge_ai_litertlm runs one NPU\'s '
+      'dispatch per load. Load it without supportImage or supportAudio to run '
+      'the text model alone, or install a bundle compiled for one NPU '
+      'throughout.',
+      path: path,
+    );
+  }
+  return first;
 }
 
 /// Decides a load of [path] from what the file says ([bundle]; null when it
@@ -185,6 +231,13 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     bundle: bundle,
     preferredBackend: preferredBackend,
     backendFallback: backendFallback,
+    abi: abi,
+  );
+  final loadNpuTarget = liteRtLmLoadNpuTarget(
+    path: path,
+    bundle: bundle,
+    supportImage: supportImage,
+    supportAudio: supportAudio,
     abi: abi,
   );
   final target = _textNpuTarget(bundle);
@@ -284,10 +337,7 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     textBackends: textBackends,
     visionBackend: visionBackend,
     audioBackend: audioBackend,
-    npuTarget:
-        target ??
-        (visionBackend == null ? null : bundle?.visionEncoder?.npuTarget) ??
-        (audioBackend == null ? null : bundle?.audioEncoder?.npuTarget),
+    npuTarget: loadNpuTarget,
     dropped: candidates.dropped,
   );
 }
@@ -308,13 +358,38 @@ List<PreferredBackend> _fallbackOrder(PreferredBackend requested) =>
     };
 
 /// The backends the text model can run on: the NPU only for a bundle compiled
-/// for one, else its `backend_constraint`, else any.
+/// for one, else its `backend_constraint`, else the GPU and the CPU.
+///
+/// Not the NPU for a bundle compiled for none, whatever its
+/// `backend_constraint` says. Without a `tf_lite_aux` section LiteRT-LM takes
+/// its on-device compiler-plugin path for `npu`
+/// (`llm_litert_compiled_model_executor_factory.cc`), no NPU stack here ships a
+/// compiler plugin, and LiteRT then falls through to the CPU while the engine
+/// reports `npu`. Measured 2026-10-18 on a DDP Galaxy S24 (SM8650) with the
+/// generic Gemma 3 1B: `activeBackend == npu`, "No compiler plugin found", no
+/// dispatch or QNN library mapped, the CPU's text at 28 tokens/s against 41 on
+/// an explicit CPU. A vendor whose stack ships a LiteRT compiler plugin
+/// (Google's `litert-npu-runtime-mediatek` AAR carries one) makes that path
+/// real, and this rule then has to ask the vendor table. A file that could not
+/// be read keeps every backend.
 Set<PreferredBackend> _textBackendsAllowed(LiteRtLmBundleInfo? bundle) {
   if (bundle == null) return PreferredBackend.values.toSet();
   if (bundle.isCompiledForNpu) return {PreferredBackend.npu};
   final declared = _backends(bundle.textModel?.backendConstraint);
-  return declared.isEmpty ? PreferredBackend.values.toSet() : declared;
+  return declared.isEmpty
+      ? const {PreferredBackend.gpu, PreferredBackend.cpu}
+      : declared.difference(const {PreferredBackend.npu});
 }
+
+/// Why a text model is compiled for no NPU
+/// ([LiteRtLmBundleInfo.isCompiledForNpu]).
+const _noNpuGraph =
+    'its text model carries no LiteRtStamp and there is no tf_lite_aux';
+
+/// What LiteRT does with such a text model on `npu` ([_textBackendsAllowed]).
+const _npuRunsItOnTheCpu =
+    'LiteRT would try to compile it on the device with a compiler plugin, '
+    'which no NPU stack here ships, and run it on the CPU';
 
 /// The NPU the text model is compiled for: its own stamp, else the
 /// `tf_lite_aux` section's — the two sections that make it NPU-only
@@ -330,28 +405,71 @@ Set<PreferredBackend> _backends(List<String>? constraint) => {
       if (backend.name == name) backend,
 };
 
+/// The refusal of a text model that cannot run on [requested] — or, for a
+/// file that declares only the NPU it is not compiled for, on anything.
 String _wrongTextBackend(
   String path,
   LiteRtLmBundleInfo bundle,
-  PreferredBackend requested,
+  PreferredBackend? requested,
 ) {
   if (bundle.isCompiledForNpu) {
-    return '${_textRulesOut(path, bundle)}, not on ${requested.name}. Load it '
-        'with preferredBackend: PreferredBackend.npu, or omit '
-        'preferredBackend; to run on the ${requested.name}, install the '
-        'generic bundle of this model.';
+    // Set: with none asked, a bundle compiled for an NPU runs there.
+    final asked = requested!;
+    return '${_textRulesOut(path, bundle, asked)}, not on ${asked.name}. Load '
+        'it with preferredBackend: PreferredBackend.npu, or omit '
+        'preferredBackend; to run on the ${asked.name}, install the generic '
+        'bundle of this model.';
   }
-  return '${_textRulesOut(path, bundle)}, not on ${requested.name}. Load it '
-      'with one of those, or omit preferredBackend.';
+  final runs = [
+    PreferredBackend.gpu,
+    PreferredBackend.cpu,
+  ].where(_textBackendsAllowed(bundle).contains).toList();
+  if (runs.isEmpty) {
+    final declared = bundle.textModel!.backendConstraint!.join(', ');
+    return '$path declares that its text model runs on $declared '
+        '(backend_constraint) but is not compiled for an NPU ($_noNpuGraph), '
+        'so no backend here can run it: on the NPU $_npuRunsItOnTheCpu. '
+        "Install the bundle compiled for this device's NPU.";
+  }
+  final options = runs.length == 1
+      ? 'PreferredBackend.${runs.single.name}'
+      : 'PreferredBackend.gpu or .cpu';
+  // Set: with none asked, the text model runs on [runs].
+  final asked = requested!;
+  if (_noNpuGraphRulesOut(bundle, asked)) {
+    return '${_textRulesOut(path, bundle, asked)}. Load it with $options, or '
+        'omit preferredBackend; to run on the NPU, install the bundle compiled '
+        "for this device's NPU.";
+  }
+  return '${_textRulesOut(path, bundle, asked)}, not on ${asked.name}. Load it '
+      'with $options, or omit preferredBackend.';
 }
 
-/// Why the file rules a backend out for its text model: it is compiled for an
-/// NPU, or it declares the backends it runs on.
-String _textRulesOut(String path, LiteRtLmBundleInfo bundle) {
+/// Whether [backend] is ruled out for [bundle]'s text model because it is
+/// compiled for no NPU, and not by its own `backend_constraint`: the NPU, when
+/// the file declares nothing or declares the NPU too.
+bool _noNpuGraphRulesOut(LiteRtLmBundleInfo bundle, PreferredBackend backend) {
+  if (bundle.isCompiledForNpu || backend != PreferredBackend.npu) return false;
+  final declared = _backends(bundle.textModel?.backendConstraint);
+  return declared.isEmpty || declared.contains(PreferredBackend.npu);
+}
+
+/// Why the file rules [backend] out for its text model: it is compiled for an
+/// NPU; it is compiled for none ([_noNpuGraphRulesOut]); else it declares the
+/// backends it runs on ([_textBackendsAllowed]).
+String _textRulesOut(
+  String path,
+  LiteRtLmBundleInfo bundle,
+  PreferredBackend backend,
+) {
   if (bundle.isCompiledForNpu) {
     final target = _textNpuTarget(bundle);
     return '$path is compiled for the ${target == null ? 'NPU' : '$target NPU'} '
         'and runs only there';
+  }
+  if (_noNpuGraphRulesOut(bundle, backend)) {
+    return '$path is not compiled for an NPU ($_noNpuGraph), so it cannot run '
+        'on one: $_npuRunsItOnTheCpu';
   }
   final declared = bundle.textModel!.backendConstraint!.join(', ');
   return '$path declares that its text model runs on $declared '
@@ -436,30 +554,17 @@ PreferredBackend _encoderDefault(LiteRtLmSection encoder) {
   return PreferredBackend.cpu;
 }
 
-/// Refuses a [target] NPU this package has no dispatch for on [abi]: Qualcomm
-/// runs on Android and Linux arm64, Intel on Windows x64. [encoder] is the
-/// kind (vision, audio) of the encoder compiled for it, null for the text
-/// model.
+/// Refuses a [target] NPU this package has no dispatch for on [abi]
+/// ([NpuVendor.abis]). [encoder] is the kind (vision, audio) of the encoder
+/// compiled for it, null for the text model.
 void _checkNpuVendor(
   String path,
   LiteRtLmNpuTarget target,
   String abi, {
   String? encoder,
 }) {
-  final vendor = target.isQualcomm
-      ? 'Qualcomm'
-      : target.isIntel
-      ? 'Intel'
-      : null;
-  final hostVendor = liteRtLmNpuEmbeddingAbis[abi];
-  if (vendor != null && vendor == hostVendor) return;
-  final hosts = vendor == null
-      ? null
-      : [
-          for (final MapEntry(key: hostAbi, value: v)
-              in liteRtLmNpuEmbeddingAbis.entries)
-            if (v == vendor) hostAbi,
-        ];
+  final vendor = npuVendorOf(target);
+  if (vendor != null && vendor.abis.contains(abi)) return;
   final what = encoder == null ? path : "$path's $encoder encoder";
   // An encoder that is off is not run: the load works without it.
   final instead = switch (encoder) {
@@ -471,11 +576,12 @@ void _checkNpuVendor(
     LiteRtLmBundleProblem.unsupportedNpu,
     vendor == null
         ? '$what is compiled for the $target NPU. flutter_edge_ai_litertlm '
-              'runs Qualcomm and Intel NPU bundles only; $instead the generic '
-              'bundle of this model to run it on the GPU or the CPU.'
+              'runs ${npuSentenceList(NpuVendor.values.map((v) => v.label))} '
+              'NPU bundles only; $instead the generic bundle of this model to '
+              'run it on the GPU or the CPU.'
         : '$what is compiled for the $target NPU, which runs on '
-              '${hosts!.join(' and ')} only, and this is $abi; $instead the '
-              'generic bundle of this model to run it here.',
+              '${npuSentenceList(vendor.abis)} only, and this is $abi; $instead '
+              'the generic bundle of this model to run it here.',
     path: path,
   );
 }

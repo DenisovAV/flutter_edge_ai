@@ -2,10 +2,13 @@
 // LiteRT-LM's C API and the web one over `@litert-lm/core`'s EmbeddingEngine:
 // the engine tag, the input cap, the image and audio containers, and the
 // refusal of audio on a bundle without an audio encoder.
-// Web-safe: imports only core's engine library, so the web arm of
-// `LiteRtEmbeddingBackend` can use it without pulling dart:ffi.
+// Web-safe: imports only core's engine library and the pure-Dart vendor table
+// (npu_stacks.dart), so the web arm of `LiteRtEmbeddingBackend` can use it
+// without pulling dart:ffi.
 
 import 'package:flutter_edge_ai/engine.dart';
+
+import '../npu_stacks.dart';
 
 /// The engine's name in messages and errors, native and web alike: the same
 /// LiteRT-LM runtime, compiled to WebAssembly on the web.
@@ -75,8 +78,18 @@ final liteRtLmAudioFormats = Set<EncodedMediaFormat>.unmodifiable({
 });
 
 /// What the web arm says to `npu` for a `.litertlm` bundle: the NPU runs
-/// EmbeddingGemma 2 only through a native dispatch (Qualcomm, Intel).
-const liteRtLmWebNpuRefusal =
-    'EmbeddingGemma 2 runs on the NPU on Qualcomm Android and Qualcomm Linux '
-    'arm64, and on Intel NPUs with Windows x64, only, not on the web. Omit '
-    'preferredBackend here.';
+/// EmbeddingGemma 2 only through a native dispatch ([NpuVendor]).
+final liteRtLmWebNpuRefusal =
+    'EmbeddingGemma 2 runs on the NPU ${liteRtLmEmbeddingNpuHosts()}, not on '
+    'the web. Omit preferredBackend here.';
+
+/// Where EmbeddingGemma 2 runs on an NPU, for a sentence: `on <vendor's
+/// hosts>, and on <…>, only`.
+String liteRtLmEmbeddingNpuHosts() =>
+    'on ${NpuVendor.values.map(_embeddingNpuHosts).join(', and on ')}, only';
+
+String _embeddingNpuHosts(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm => 'Qualcomm Android and Qualcomm Linux arm64',
+  NpuVendor.googleTensor => 'Google Tensor G5/G6 Android devices',
+  NpuVendor.intel => 'Intel NPUs with Windows x64',
+};

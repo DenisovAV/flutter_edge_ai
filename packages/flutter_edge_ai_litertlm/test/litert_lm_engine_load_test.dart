@@ -34,6 +34,7 @@ class _FakeHost extends LiteRtLmEngineHost {
     this.os = 'macos',
     this.abiName = 'macos_arm64',
     NpuStackCheck stack = const NpuStackCheck.bundled(),
+    this.stacks = const {},
     this.npuShips = false,
     this.failures = const {},
   }) : stackCheck = stack;
@@ -41,6 +42,7 @@ class _FakeHost extends LiteRtLmEngineHost {
   final String os;
   final String abiName;
   final NpuStackCheck stackCheck;
+  final Map<NpuVendor, NpuStackCheck> stacks;
   final bool npuShips;
 
   /// The error each backend's create throws; a backend not here succeeds.
@@ -72,7 +74,7 @@ class _FakeHost extends LiteRtLmEngineHost {
   Future<NpuStackCheck> stack(NpuVendor vendor) async {
     stackChecks++;
     askedVendors.add(vendor);
-    return stackCheck;
+    return stacks[vendor] ?? stackCheck;
   }
 
   @override
@@ -271,6 +273,44 @@ void main() {
     },
   );
 
+  test(
+    'Tensor G5/G6 bundles expose only Google dispatch and never fall back',
+    () async {
+      for (final soc in ['Tensor_G5', 'Tensor_G6']) {
+        host = _FakeHost(
+          os: 'android',
+          abiName: 'android_arm64',
+          npuShips: true,
+          failures: const {
+            'npu': LiteRtLmEngineCreateException('Google NPU create failed'),
+          },
+        );
+        debugLiteRtLmEngineHost = host;
+
+        await expectLater(
+          load(write('$soc.litertlm', _bundle(textStamp: ('Google', soc)))),
+          throwsA(
+            isA<BackendInitException>().having(
+              (e) => e.attempts.length,
+              'attempts',
+              1,
+            ),
+          ),
+        );
+        expect(host.attempts.map((a) => a.backend), ['npu'], reason: soc);
+        expect(host.askedVendors, [
+          NpuVendor.googleTensor,
+          NpuVendor.googleTensor,
+        ], reason: soc);
+        expect(host.preparedFor, [NpuVendor.googleTensor], reason: soc);
+        expect(host.npuDispatches.single, (
+          dir: '/fake/npu/googleTensor',
+          disableHwMasking: false,
+        ));
+      }
+    },
+  );
+
   test('Windows x64: the Intel stack is checked before the NPU is tried, and '
       'an Intel attempt turns the HW mask update path off', () async {
     host = _FakeHost(os: 'windows', abiName: 'windows_x64', npuShips: true);
@@ -314,20 +354,23 @@ void main() {
       abiName: 'android_arm64',
       npuShips: true,
       stack: const NpuStackCheck.missing(notEnabled),
+      stacks: const {
+        NpuVendor.googleTensor: NpuStackCheck.missing(
+          'this app was built without the Google Tensor NPU bridge',
+        ),
+      },
     );
     debugLiteRtLmEngineHost = host;
     late InferenceModel model;
     final printed = await printedBy(() async {
       model = await load(
-        writeUnread('unread.task'),
+        writeUnread('generic.task'),
         preferredBackend: PreferredBackend.npu,
       );
     });
     expect(host.attempts.map((a) => a.backend), ['gpu']);
     expect(host.npuProbes, 0);
-    expect(warnings(printed), [
-      contains('npu was requested, but $notEnabled — trying gpu -> cpu'),
-    ]);
+    expect(warnings(printed), [contains('npu was requested, but $notEnabled')]);
     await model.close();
   });
 

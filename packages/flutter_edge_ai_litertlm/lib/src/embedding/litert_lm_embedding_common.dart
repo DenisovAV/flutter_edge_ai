@@ -90,5 +90,6 @@ String liteRtLmEmbeddingNpuHosts() =>
 
 String _embeddingNpuHosts(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => 'Qualcomm Android and Qualcomm Linux arm64',
+  NpuVendor.googleTensor => 'Google Tensor G5/G6 Android devices',
   NpuVendor.intel => 'Intel NPUs with Windows x64',
 };

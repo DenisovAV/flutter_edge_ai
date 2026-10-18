@@ -111,6 +111,9 @@ Future<NpuStackCheck> checkNpuStackInManifest(
 /// since every build for the vendor's ABIs is meant to carry it.
 String npuNotBundledReason(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => qualcommNpuNotEnabledReason,
+  NpuVendor.googleTensor =>
+    'this build carries none of the Google Tensor NPU dispatch bridge; use a '
+        'flutter_edge_ai_litertlm whose native release bundles it and rebuild',
   NpuVendor.intel =>
     'this build carries none of the Intel NPU stack; use a '
         'flutter_edge_ai_litertlm whose native release bundles it and rebuild',

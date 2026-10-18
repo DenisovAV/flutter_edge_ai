@@ -431,8 +431,9 @@ void main() {
               contains(
                 Abi.current() == Abi.windowsX64
                     ? 'runs Intel NPU bundles only'
-                    : 'Qualcomm Android and Qualcomm Linux arm64, and on Intel '
-                          'NPUs with Windows x64, only',
+                    : 'Qualcomm Android and Qualcomm Linux arm64, and on Google '
+                          'Tensor G5/G6 Android devices, and on Intel NPUs with '
+                          'Windows x64, only',
               ),
               contains('${Abi.current()}'),
             ),
@@ -728,6 +729,9 @@ final class _QualcommAndroid implements LiteRtLmNpuHost {
   @override
   Future<NpuStackCheck> stack(NpuVendor vendor) async => switch (vendor) {
     NpuVendor.qualcomm => const NpuStackCheck.bundled(),
+    NpuVendor.googleTensor => throw StateError(
+      'this fake is specifically a Qualcomm Android phone',
+    ),
     NpuVendor.intel => throw StateError(
       'an Android host has no Intel stack to ask about',
     ),
@@ -752,6 +756,9 @@ final class _IntelWindows implements LiteRtLmNpuHost {
     NpuVendor.intel => const NpuStackCheck.bundled(),
     NpuVendor.qualcomm => throw StateError(
       'a Windows host has no Qualcomm stack to ask about',
+    ),
+    NpuVendor.googleTensor => throw StateError(
+      'a Windows host has no Google Tensor stack to ask about',
     ),
   };
   @override

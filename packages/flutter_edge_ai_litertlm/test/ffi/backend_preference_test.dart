@@ -78,11 +78,26 @@ void main() {
       expect(probes.asked, isEmpty);
     });
 
+    test('Google Tensor asks only for the Pixel system runtime', () {
+      final probes = _FakeProbes();
+      expect(npuUnreachable(NpuVendor.googleTensor, 'android', probes), isNull);
+      expect(probes.asked, ['androidGoogleTensorRuntime']);
+
+      final missing = _FakeProbes(error: 'dlopen failed');
+      expect(
+        npuUnreachable(NpuVendor.googleTensor, 'android', missing),
+        contains('libedgetpu_litert.so did not open: dlopen failed'),
+      );
+      expect(missing.asked, ['androidGoogleTensorRuntime']);
+    });
+
     test('an operating system a vendor has no probe for is a programming '
         'error, never another platform\'s answer', () {
       for (final (vendor, os) in [
         (NpuVendor.qualcomm, 'windows'),
         (NpuVendor.qualcomm, 'macos'),
+        (NpuVendor.googleTensor, 'windows'),
+        (NpuVendor.googleTensor, 'linux'),
         (NpuVendor.intel, 'android'),
         (NpuVendor.intel, 'linux'),
       ]) {
@@ -484,6 +499,12 @@ final class _FakeProbes implements NpuProbes {
   @override
   String? androidFastRpc() {
     asked.add('androidFastRpc');
+    return error;
+  }
+
+  @override
+  String? androidGoogleTensorRuntime() {
+    asked.add('androidGoogleTensorRuntime');
     return error;
   }
 

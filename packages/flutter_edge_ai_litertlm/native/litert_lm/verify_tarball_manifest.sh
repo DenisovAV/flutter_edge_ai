@@ -264,6 +264,9 @@ FORBIDDEN=(
   "macos_arm64:libLiteRtMetalAccelerator.dylib"
 )
 REQUIRED=(
+  # Google Tensor G5/G6 AOT bundles use LiteRT's generic NPU executor plus
+  # this open-source bridge, which late-binds the Pixel system runtime.
+  "android_arm64:libLiteRtDispatch_GoogleTensor.so"
   "android_arm64:libLiteRtDispatch_Qualcomm.so"
   # native-v0.18.0-c: Qualcomm NPU on Linux arm64 — our dispatch and the
   # libcdsprpc.so shim the QNN Stubs need (build_qualcomm_dispatch.sh).

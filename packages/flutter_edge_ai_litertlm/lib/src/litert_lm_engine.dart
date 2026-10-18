@@ -198,6 +198,7 @@ class LiteRtLmEngine
     final npu = npuMayRun
         ? await chooseNpuVendor(
             target: liteRtLmLoadNpuTarget(
+              path: config.modelPath,
               bundle: bundle,
               supportImage: config.supportImage,
               supportAudio: config.supportAudio,

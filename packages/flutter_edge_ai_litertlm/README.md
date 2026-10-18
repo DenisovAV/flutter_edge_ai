@@ -200,7 +200,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Google Tensor G5/G6 and Qualcomm NPUs (Android), Qualcomm NPUs (Linux arm64), and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -521,8 +521,9 @@ final note = await embedder.embed(
   web query finds the clips embedded natively.
 
 `EmbeddingModel.activeBackend` is `cpu` on native and `gpu` for EmbeddingGemma
-2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Qualcomm
-NPU ([below](#embeddinggemma-2-on-a-qualcomm-npu)) or an Intel one
+2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Google
+Tensor NPU ([below](#google-tensor-npu-on-android)), Qualcomm NPU
+([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
@@ -562,10 +563,11 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
   VENTUNO Q). Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
   MT6991/MT6993 and Intel PTL builds; the Qualcomm ones load here but are not
-  verified by us, Intel PTL runs on Windows
-  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and
-  the others are refused (no dispatch for them ships). What a bundle is
-  compiled for is read from the bundle itself, not from its name.
+  verified by us, Tensor G5/G6 runs on matching Pixels
+  ([below](#google-tensor-npu-on-android)), Intel PTL runs on Windows
+  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek is
+  refused (no dispatch for it ships). What a bundle is compiled for is read
+  from the bundle itself, not from its name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
   SM8650 (Galaxy S24): a text in about 9 ms (53 ms on its CPU), an image in
   about 0.31 s, the 270m loaded in 0.85 s. Against the CPU bundle, the cosine is
@@ -764,7 +766,7 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL, NPU on Qualcomm — opt-in, below) |
+| Android  | ✅ FFI (GPU via OpenCL; NPU on Google Tensor G5/G6, or Qualcomm — opt-in, below) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
@@ -778,9 +780,17 @@ which the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
+The currently published `native-v0.18.0-e` Android archive predates the Google
+Tensor bridge. A clean hosted-package build therefore remains blocked until an
+official native archive includes the bridge and the package's version/checksum
+metadata is updated; this integration intentionally changes neither. Maintainer
+source builds can use `native/litert_lm/build_android.sh` and the resulting
+gitignored local prebuilt directory in the meantime.
+
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
-only on Windows, on Android devices with Qualcomm FastRPC (`libcdsprpc.so`) and
-on Qualcomm Linux arm64 boards, the last two when the app opted in (below). A
+only on Windows, on Google Tensor Android devices, on Android devices with
+Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux arm64 boards. Google
+Tensor needs no build opt-in; the Qualcomm paths require the opt-in below. A
 generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
 for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
 Windows has no device probe: a bundle compiled for the Intel NPU is not refused
@@ -833,8 +843,9 @@ chosen, and are null for a bundle without that encoder.
 A refusal is a `LiteRtLmBundleException` with a `problem`
 (`incomplete`, `wrongBackend`, `unsupportedNpu` for a text model, or an encoder
 the load turns on, compiled for an NPU this package has no dispatch for here —
-Google Tensor, MediaTek, or a Qualcomm bundle on Windows — or for an NPU
-encoder next to a text model that is not on the NPU) and a message that says
+MediaTek, a Qualcomm bundle on Windows, or a Google Tensor bundle off Android —
+or for an NPU encoder next to a text model that is not on the NPU) and a
+message that says
 what to do; no engine is created. An NPU bundle, or an encoder the load turns
 on that runs on the NPU, on a device whose NPU cannot be reached fails the same
 way as a strict load (below), at once, and is never tried on the GPU. The SoC
@@ -879,7 +890,7 @@ throws `UnsupportedError` on the web):
 final info = await readLiteRtLmBundleInfo(path);
 info.isComplete;               // false for a download that stopped early
 info.isCompiledForNpu;         // runs on the NPU only
-info.npuTarget;                // e.g. Qualcomm SM8750, or null
+info.npuTarget;                // e.g. Qualcomm SM8750 / Google Tensor_G5
 info.visionEncoder?.npuTarget; // null: the encoder is not compiled
 info.audioEncoder?.backendConstraint; // e.g. ['cpu']
 info.hasMtpDrafter;            // can decode speculatively
@@ -891,6 +902,28 @@ for (final section in info.sections) {
 It reads the header and a few hundred bytes per compiled section, never the
 weights. A file that is not a `.litertlm` container, of another container
 version, or with an unreadable header throws `LiteRtLmBundleException`.
+
+### Google Tensor NPU on Android
+
+Google Tensor G5/G6 bundles run only on the matching Tensor generation. Their
+`Google` `LiteRtStamp` selects the Google Tensor vendor through the same
+central dispatch path as Qualcomm and Intel; it does not depend on the model's
+file name. The load is strict NPU-only: a missing or incompatible Pixel runtime
+is an error, never a GPU/CPU fallback.
+
+No app opt-in is required. The Android native archive contains only LiteRT's
+Apache-2.0 `libLiteRtDispatch_GoogleTensor.so` bridge, built from the pinned
+LiteRT source. It does not redistribute Google's proprietary compiler, SDK, or
+`libedgetpu_litert.so`; that runtime remains on the Pixel system image and is
+declared as an optional system library. Apps may also set `qualcomm_npu: true`:
+the selected bundle stamp still determines the vendor, and LiteRT receives an
+isolated directory containing only that vendor's dispatch stack.
+
+Use `PreferredBackend.npu` with a `…_Google_Tensor_G5.litertlm` or
+`…_Google_Tensor_G6.litertlm` bundle matching the device.
+`activeBackend == PreferredBackend.npu` reports the selected LiteRT-LM
+backend, but native dispatch logs and a real inference run are required to
+claim physical TPU execution.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 

@@ -148,6 +148,7 @@ typedef NpuDispatch = ({String dir, bool disableHwMasking});
 /// failure 0xc0000409 (per Matt Kreileder's Intel NPU pipeline instructions).
 bool npuDisablesHwMasking(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => false,
+  NpuVendor.googleTensor => false,
   NpuVendor.intel => true,
 };
 
@@ -159,6 +160,7 @@ bool npuDisablesHwMasking(NpuVendor vendor) => switch (vendor) {
 /// Intel's [prepareNpuDispatchDir] checks nothing.
 Future<NpuStackCheck> npuStackOf(NpuVendor vendor) async => switch (vendor) {
   NpuVendor.qualcomm => await checkNpuStackInManifest(vendor),
+  NpuVendor.googleTensor => await checkNpuStackInManifest(vendor),
   NpuVendor.intel => checkIntelNpuStack(windowsNpuDispatchDir),
 };
 
@@ -182,6 +184,16 @@ Future<String> prepareNpuDispatchDir(
     'linux' => prepareLinuxNpuDispatchDir(),
     final os => throw StateError(
       'NpuVendor.qualcomm has no dispatch directory on $os',
+    ),
+  },
+  NpuVendor.googleTensor => switch (operatingSystem ??
+      Platform.operatingSystem) {
+    'android' => await prepareAndroidNpuDispatchDir(
+      npuStackLibs(vendor, 'android'),
+      vendor,
+    ),
+    final os => throw StateError(
+      'NpuVendor.googleTensor has no dispatch directory on $os',
     ),
   },
   NpuVendor.intel => switch (operatingSystem ?? Platform.operatingSystem) {

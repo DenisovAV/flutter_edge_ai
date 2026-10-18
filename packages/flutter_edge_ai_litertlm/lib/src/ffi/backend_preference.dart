@@ -55,6 +55,17 @@ String? npuUnreachable(
       'NpuVendor.qualcomm has no device probe for $operatingSystem',
     ),
   },
+  NpuVendor.googleTensor => switch (operatingSystem) {
+    'android' => switch (probes.androidGoogleTensorRuntime()) {
+      null => null,
+      final error =>
+        'the Google Tensor system runtime $googleTensorSystemRuntime did not '
+            'open: $error',
+    },
+    _ => throw StateError(
+      'NpuVendor.googleTensor has no device probe for $operatingSystem',
+    ),
+  },
   // Windows has no probe yet. What a bundle compiled for the Intel NPU does on
   // a PC without one is not measured. The run that once argued the check is
   // too coarse (2026-09-27, a Windows Server VM with no NPU: a generic Gemma 4
@@ -83,6 +94,10 @@ abstract interface class NpuProbes {
   /// when `libcdsprpc.so` opens, else the dlopen error.
   String? androidFastRpc();
 
+  /// Whether the Pixel system's LiteRT Edge TPU runtime resolves in this
+  /// Android process: null when it opens, else the dlopen error.
+  String? androidGoogleTensorRuntime();
+
   /// Whether this Linux machine can run the Qualcomm NPU stack: null when it
   /// can, else why not.
   String? linuxQualcommNpu();
@@ -97,6 +112,9 @@ final class _PlatformNpuProbes implements NpuProbes {
 
   @override
   String? androidFastRpc() => _androidFastRpcError;
+
+  @override
+  String? androidGoogleTensorRuntime() => _androidGoogleTensorRuntimeError;
 
   @override
   String? linuxQualcommNpu() => _linuxQualcommNpuError;
@@ -193,12 +211,28 @@ String? get _androidFastRpcError => (_fastRpcProbe ??= (
   }(),
 )).$1;
 
+/// Whether the Pixel system's public LiteRT Edge TPU runtime resolves in this
+/// process. The core Android manifest declares its soname as optional, opening
+/// the vendor linker namespace without blocking installs elsewhere.
+(String?,)? _googleTensorProbe;
+String? get _androidGoogleTensorRuntimeError => (_googleTensorProbe ??= (
+  () {
+    try {
+      DynamicLibrary.open(googleTensorSystemRuntime);
+      return null;
+    } on Object catch (e) {
+      return '$e';
+    }
+  }(),
+)).$1;
+
 /// Where [vendor]'s NPU runs, for the notice that the NPU was not tried.
 String _whereNpuRuns(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm =>
     'Qualcomm Android and Qualcomm Linux arm64 (in apps built with '
         'hooks.user_defines.flutter_edge_ai_litertlm.$qualcommNpuUserDefine: '
         'true)',
+  NpuVendor.googleTensor => 'Google Tensor G5/G6 Android devices',
   NpuVendor.intel => 'on Windows (Intel LunarLake/PantherLake)',
 };
 

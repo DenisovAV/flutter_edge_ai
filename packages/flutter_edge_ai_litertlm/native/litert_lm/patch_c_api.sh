@@ -382,7 +382,10 @@ else:
     content = content.replace(
         '    name = "litert",\n',
         '    name = "litert",\n'
-        '    patches = ["//:flutter_gemma_litert_gpu_registry.patch"],\n'
+        '    patches = [\n'
+        '        "//:flutter_gemma_litert_gpu_registry.patch",\n'
+        '        "//:flutter_gemma_litert_google_tensor_dispatch_oss.patch",\n'
+        '    ],\n'
         '    patch_args = ["-p1"],\n', 1)
     if 'flutter_gemma_litert_gpu_registry.patch' not in content:
         raise SystemExit("  ERROR: could not add the gpu_registry patch to the litert archive")
@@ -390,9 +393,12 @@ else:
         f.write(content)
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
     print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
+    print("  OK: LiteRT Google Tensor dispatch drops its unused internal hooks dependency")
 PYEOF
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
     "$DIR/flutter_gemma_litert_gpu_registry.patch"
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
+    "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
     # A tree patched by an older patch_c_api.sh has the sed but not the diff:
@@ -404,8 +410,16 @@ else
         "(no gpu_registry diff); start from a fresh LiteRT-LM tree" >&2
       exit 1
     fi
+    if ! grep -q "flutter_gemma_litert_google_tensor_dispatch_oss.patch" \
+        "$WORKSPACE_FILE"; then
+      echo "  ERROR: $WORKSPACE_FILE has no Google Tensor OSS dispatch patch;" \
+        "start from a fresh LiteRT-LM tree" >&2
+      exit 1
+    fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
       "$DIR/flutter_gemma_litert_gpu_registry.patch"
+    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
+      "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2

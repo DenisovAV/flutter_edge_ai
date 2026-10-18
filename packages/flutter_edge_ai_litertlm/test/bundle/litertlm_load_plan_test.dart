@@ -440,16 +440,19 @@ void main() {
     });
 
     test('an NPU this package has no dispatch for is refused', () {
-      final tensor = bundle(
+      final mediaTek = bundle(
         text: (
           null,
-          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
+          const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
         ),
         aux: true,
       );
       expect(
-        () => plan(info: tensor),
-        refused(LiteRtLmBundleProblem.unsupportedNpu, 'Qualcomm and Intel'),
+        () => plan(info: mediaTek),
+        refused(
+          LiteRtLmBundleProblem.unsupportedNpu,
+          'Qualcomm, Google Tensor and Intel',
+        ),
       );
       expect(
         () => plan(info: officialSm8750, abi: 'windows_x64'),
@@ -470,28 +473,29 @@ void main() {
       ]);
     });
 
-    test('an encoder compiled for a vendor this package has no dispatch for is '
-        'refused for its vendor before an unreachable NPU is asked about', () {
-      // The text model makes the NPU a candidate, so asking first would name
-      // the unreachable Qualcomm stack instead of the encoder's vendor.
-      final tensorAudio = bundle(
-        text: (null, sm8750),
-        audio: (
-          null,
-          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
-        ),
-        aux: true,
-      );
-      expect(
-        () => plan(info: tensorAudio, audio: true, npuHere: false),
-        refused(
-          LiteRtLmBundleProblem.unsupportedNpu,
-          "model.litertlm's audio encoder is compiled for the Google Tensor_G5 "
-          'NPU.',
-        ),
-      );
-      expect(npuAsked, 0);
-    });
+    test(
+      'sections compiled for different vendors are explicitly ambiguous',
+      () {
+        final tensorAudio = bundle(
+          text: (null, sm8750),
+          audio: (
+            null,
+            const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
+          ),
+          aux: true,
+        );
+        expect(
+          () => plan(info: tensorAudio, audio: true, npuHere: false),
+          refused(
+            LiteRtLmBundleProblem.malformed,
+            'active sections compiled for different NPUs '
+            '(Qualcomm SM8750, Google Tensor_G5); one load can expose only one '
+            "vendor's dispatch, so the request is ambiguous",
+          ),
+        );
+        expect(npuAsked, 0);
+      },
+    );
   });
 
   group('encoders', () {
@@ -687,21 +691,21 @@ void main() {
 
     test('a vendor this package has no dispatch for: the same, on every '
         'host', () {
-      final tensorAudio = bundle(
+      final mediaTekAudio = bundle(
         audio: (
           null,
-          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
+          const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
         ),
       );
-      expect(plan(info: tensorAudio).textBackends, [gpu, cpu]);
-      expect(plan(info: tensorAudio, image: true).visionBackend, cpu);
+      expect(plan(info: mediaTekAudio).textBackends, [gpu, cpu]);
+      expect(plan(info: mediaTekAudio, image: true).visionBackend, cpu);
       expect(
-        () => plan(info: tensorAudio, audio: true),
+        () => plan(info: mediaTekAudio, audio: true),
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
-          "model.litertlm's audio encoder is compiled for the Google Tensor_G5 "
-          'NPU. flutter_edge_ai_litertlm runs Qualcomm and Intel NPU bundles '
-          'only; load it without supportAudio, or install',
+          "model.litertlm's audio encoder is compiled for the MediaTek MT6991 "
+          'NPU. flutter_edge_ai_litertlm runs Qualcomm, Google Tensor and Intel '
+          'NPU bundles only; load it without supportAudio, or install',
         ),
       );
     });

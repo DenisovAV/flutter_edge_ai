@@ -72,6 +72,7 @@ void main() {
               contains('generic EmbeddingGemma 2 bundle'),
               contains('no NPU graph'),
               contains('_Qualcomm_<SoC>.litertlm'),
+              contains('<model>_Google_Tensor_G5|G6.litertlm'),
               contains('<model>_Intel_PTL.litertlm'),
               contains('SM8850, SM8650, QCS8275 are verified'),
               contains('omit preferredBackend'),
@@ -140,8 +141,9 @@ void main() {
             _refusal(
               allOf(
                 contains(
-                  'Qualcomm Android and Qualcomm Linux arm64, and on Intel '
-                  'NPUs with Windows x64, only',
+                  'Qualcomm Android and Qualcomm Linux arm64, and on Google '
+                  'Tensor G5/G6 Android devices, and on Intel NPUs with '
+                  'Windows x64, only',
                 ),
                 contains('this is $os ($abi)'),
                 contains('generic EmbeddingGemma 2 bundle'),
@@ -164,7 +166,6 @@ void main() {
           ..operatingSystem = os
           ..abi = abi;
         for (final target in const [
-          LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
           LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
           // Only LiteRT's OpenVINO stamp is an Intel bundle this runs.
           LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL'),
@@ -174,7 +175,7 @@ void main() {
             _refusal(
               allOf(
                 contains('compiled for a ${target.vendor} NPU (${target.soc})'),
-                contains('Qualcomm and Intel NPUs only'),
+                contains('Qualcomm, Google Tensor and Intel NPUs only'),
               ),
             ),
             reason: '$abi $target',
@@ -182,6 +183,15 @@ void main() {
         }
       }
       expect(host.asked, isEmpty);
+    });
+
+    test('a Google Tensor bundle selects only the Google dispatch', () async {
+      const tensor = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
+      final placement = await place(target: tensor);
+      expect(placement.backend, PreferredBackend.npu);
+      expect(placement.target, tensor);
+      expect(host.asked, ['stack:googleTensor', 'reaches', 'dispatchDir']);
+      expect(host.vendors, {NpuVendor.googleTensor});
     });
 
     test('compiled for Qualcomm is refused on Windows x64, which runs Intel '
@@ -320,8 +330,9 @@ void main() {
             allOf(
               contains('compiled for the IntelOpenVINO PTL NPU'),
               contains(
-                'on $os ($abi) flutter_edge_ai_litertlm runs Qualcomm NPU '
-                'bundles only; Intel ones run on windows_x64',
+                'on $os ($abi) flutter_edge_ai_litertlm runs '
+                '${os == 'android' ? 'Qualcomm and Google Tensor' : 'Qualcomm'} '
+                'NPU bundles only; Intel ones run on windows_x64',
               ),
             ),
           ),
@@ -361,8 +372,8 @@ void main() {
     expect(
       liteRtLmWebNpuRefusal,
       'EmbeddingGemma 2 runs on the NPU on Qualcomm Android and Qualcomm Linux '
-      'arm64, and on Intel NPUs with Windows x64, only, not on the web. Omit '
-      'preferredBackend here.',
+      'arm64, and on Google Tensor G5/G6 Android devices, and on Intel NPUs '
+      'with Windows x64, only, not on the web. Omit preferredBackend here.',
     );
   });
 
@@ -371,6 +382,7 @@ void main() {
       liteRtLmWebNpuRefusal,
       allOf(
         contains('Qualcomm Android and Qualcomm Linux arm64'),
+        contains('Google Tensor G5/G6 Android devices'),
         contains('Intel NPUs with Windows x64'),
         contains('not on the web'),
       ),
@@ -442,6 +454,8 @@ final class _FakeHost implements LiteRtLmNpuHost {
 
   NpuStackCheck qualcomm = const NpuStackCheck.bundled();
 
+  NpuStackCheck googleTensor = const NpuStackCheck.bundled();
+
   NpuStackCheck intel = const NpuStackCheck.bundled();
 
   String dispatchDir = '/data/app/code_cache/npu';
@@ -463,6 +477,7 @@ final class _FakeHost implements LiteRtLmNpuHost {
     vendors.add(vendor);
     return switch (vendor) {
       NpuVendor.qualcomm => qualcomm,
+      NpuVendor.googleTensor => googleTensor,
       NpuVendor.intel => intel,
     };
   }

@@ -18,6 +18,7 @@ String _manifest(Map<String, Iterable<String>> idsByAbi) => jsonEncode({
 
 final _base = [nativeAssetId('LiteRtLm'), nativeAssetId('StreamProxy')];
 final _stack = [for (final n in qualcommNpuLibs) nativeAssetId(n)];
+final _googleStack = [for (final n in googleTensorNpuLibs) nativeAssetId(n)];
 
 final _linuxStack = [for (final n in qualcommNpuLibsLinux) nativeAssetId(n)];
 
@@ -65,6 +66,28 @@ void main() {
     expect(r.bundled, isFalse);
     expect(r.reason, contains('libQnnHtpV79Skel.so'));
     expect(r.reason, isNot(contains('libQnnHtp.so,')));
+  });
+
+  test('Google Tensor bridge is always-on, not an opt-in stack', () async {
+    final bundled = await checkNpuStackInManifest(
+      NpuVendor.googleTensor,
+      read: () async => _manifest({
+        'android_arm64': [..._base, ..._googleStack],
+      }),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(bundled.bundled, isTrue);
+
+    final missing = await checkNpuStackInManifest(
+      NpuVendor.googleTensor,
+      read: () async => _manifest({'android_arm64': _base}),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(missing.bundled, isFalse);
+    expect(missing.reason, contains('native release bundles it'));
+    expect(missing.reason, isNot(contains('qualcomm_npu')));
   });
 
   test('the stack under another ABI does not count', () async {

@@ -27,7 +27,8 @@ runtimes and stores your app uses.
 - **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
 - **Multimodal:** image and audio input on the models that support it.
 - **Function calling** and **thinking mode** on the models that support them.
-- **CPU, GPU and NPU** backends — Qualcomm NPU on Android and Linux arm64 (opt-in), Intel NPU on Windows.
+- **CPU, GPU and NPU** backends — Google Tensor on Android, Qualcomm on
+  Android and Linux arm64 (opt-in), and Intel on Windows.
 - **Embeddings and on-device RAG:** text, image and audio embeddings (EmbeddingGemma 2 and 1, Gecko, ONNX models — [models](https://flutteredge.ai/docs/models)) with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.

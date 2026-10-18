@@ -1,6 +1,6 @@
-// Gemma 4 E2B bundles with every modality compiled for the Qualcomm NPU
-// (Google, 2026-10-12): does the package run the vision and audio encoders on
-// the Hexagon when the app asks for it, and what does that buy?
+// Gemma 4 E2B bundles with every modality compiled for one NPU: does the
+// package run the vision and audio encoders on that NPU when the app asks for
+// it, and what does that buy?
 //
 // One process, two loads of the same bundle: encoders on the NPU, then on the
 // CPU (the package default for encoders). Each load answers a text prompt (the
@@ -13,6 +13,8 @@
 //   flutter test integration_test/npu_all_towers_test.dart -d linux \
 //     --dart-define=NPU_MEDIA_MODEL=$HOME/models/<bundle>.litertlm
 // Run (Android, pushed to /data/local/tmp/flutter_gemma_test): same define.
+// For a strict all-NPU bundle with no CPU encoder variant (Google Tensor):
+// add --dart-define=NPU_STRICT_ONLY=true.
 // ignore_for_file: avoid_print
 import 'dart:io';
 import 'dart:typed_data';
@@ -25,6 +27,7 @@ import 'package:integration_test/integration_test.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
 
 const _modelPath = String.fromEnvironment('NPU_MEDIA_MODEL');
+const _strictOnly = bool.fromEnvironment('NPU_STRICT_ONLY');
 
 Future<Uint8List> _asset(String key) async {
   final data = await rootBundle.load(key);
@@ -82,7 +85,10 @@ void main() {
     ).fromFile(_modelPath).install();
 
     final failures = <String>[];
-    for (final towers in [PreferredBackend.npu, PreferredBackend.cpu]) {
+    final towerBackends = _strictOnly
+        ? const [PreferredBackend.npu]
+        : const [PreferredBackend.npu, PreferredBackend.cpu];
+    for (final towers in towerBackends) {
       final tag = '[towers=${towers.name}]';
       final InferenceModel model;
       final loadSw = Stopwatch()..start();
@@ -105,6 +111,7 @@ void main() {
           '$tag loaded in ${loadSw.elapsedMilliseconds} ms, '
           'activeBackend=${model.activeBackend}',
         );
+        expect(model.activeBackend, PreferredBackend.npu);
         final text = await _ask(
           model,
           const Message(text: 'Name one colour. One word.', isUser: true),

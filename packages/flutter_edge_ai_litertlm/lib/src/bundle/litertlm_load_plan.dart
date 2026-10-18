@@ -157,13 +157,29 @@ bool liteRtLmEncoderOnNpu({
 /// turns on. Null for a bundle compiled for no NPU, and for one that was not
 /// read. The engine asks it before the plan, to look up that vendor's stack.
 LiteRtLmNpuTarget? liteRtLmLoadNpuTarget({
+  required String path,
   required LiteRtLmBundleInfo? bundle,
   required bool supportImage,
   required bool supportAudio,
-}) =>
-    _textNpuTarget(bundle) ??
-    (supportImage ? bundle?.visionEncoder?.npuTarget : null) ??
-    (supportAudio ? bundle?.audioEncoder?.npuTarget : null);
+}) {
+  final targets = <LiteRtLmNpuTarget>[
+    ?_textNpuTarget(bundle),
+    if (supportImage) ?bundle?.visionEncoder?.npuTarget,
+    if (supportAudio) ?bundle?.audioEncoder?.npuTarget,
+  ];
+  if (targets.isEmpty) return null;
+  final first = targets.first;
+  if (targets.any((target) => target != first)) {
+    throw LiteRtLmBundleException(
+      LiteRtLmBundleProblem.malformed,
+      '$path has active sections compiled for different NPUs '
+      '(${targets.toSet().join(', ')}); one load can expose only one vendor\'s '
+      'dispatch, so the request is ambiguous',
+      path: path,
+    );
+  }
+  return first;
+}
 
 /// Decides a load of [path] from what the file says ([bundle]; null when it
 /// could not be read, which keeps the rules that need no file) and what the
@@ -199,6 +215,12 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     preferredBackend: preferredBackend,
     backendFallback: backendFallback,
     abi: abi,
+  );
+  final loadNpuTarget = liteRtLmLoadNpuTarget(
+    path: path,
+    bundle: bundle,
+    supportImage: supportImage,
+    supportAudio: supportAudio,
   );
   final target = _textNpuTarget(bundle);
   var textBackends = candidates.backends;
@@ -310,11 +332,7 @@ LiteRtLmLoadPlan planLiteRtLmLoad({
     textBackends: textBackends,
     visionBackend: visionBackend,
     audioBackend: audioBackend,
-    npuTarget: liteRtLmLoadNpuTarget(
-      bundle: bundle,
-      supportImage: supportImage,
-      supportAudio: supportAudio,
-    ),
+    npuTarget: loadNpuTarget,
     dropped: candidates.dropped,
   );
 }

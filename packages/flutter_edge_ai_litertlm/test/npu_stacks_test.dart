@@ -15,12 +15,14 @@ void main() {
     test('matches the stamp LiteRT writes, in any case', () {
       expect(NpuVendor.forStamp('Qualcomm'), NpuVendor.qualcomm);
       expect(NpuVendor.forStamp('QUALCOMM'), NpuVendor.qualcomm);
+      expect(NpuVendor.forStamp('Google'), NpuVendor.googleTensor);
+      expect(NpuVendor.forStamp('GOOGLE'), NpuVendor.googleTensor);
       expect(NpuVendor.forStamp('IntelOpenVINO'), NpuVendor.intel);
       expect(NpuVendor.forStamp('intelopenvino'), NpuVendor.intel);
     });
 
     test('has no vendor for a stamp this package has no dispatch for', () {
-      for (final stamp in ['MediaTek', 'Google', 'Intel', '']) {
+      for (final stamp in ['MediaTek', 'Intel', '']) {
         expect(NpuVendor.forStamp(stamp), isNull, reason: stamp);
       }
     });
@@ -31,6 +33,12 @@ void main() {
         NpuVendor.qualcomm,
       );
       expect(
+        npuVendorOf(
+          const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
+        ),
+        NpuVendor.googleTensor,
+      );
+      expect(
         npuVendorOf(const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991')),
         isNull,
       );
@@ -38,11 +46,17 @@ void main() {
   });
 
   group('NpuVendor.forAbi', () {
-    test('Qualcomm on Android and Linux arm64, Intel on Windows x64', () {
-      expect(NpuVendor.forAbi('android_arm64'), [NpuVendor.qualcomm]);
-      expect(NpuVendor.forAbi('linux_arm64'), [NpuVendor.qualcomm]);
-      expect(NpuVendor.forAbi('windows_x64'), [NpuVendor.intel]);
-    });
+    test(
+      'Qualcomm and Google on Android, Qualcomm on Linux, Intel on Windows',
+      () {
+        expect(NpuVendor.forAbi('android_arm64'), [
+          NpuVendor.qualcomm,
+          NpuVendor.googleTensor,
+        ]);
+        expect(NpuVendor.forAbi('linux_arm64'), [NpuVendor.qualcomm]);
+        expect(NpuVendor.forAbi('windows_x64'), [NpuVendor.intel]);
+      },
+    );
 
     test('nothing elsewhere', () {
       for (final abi in [

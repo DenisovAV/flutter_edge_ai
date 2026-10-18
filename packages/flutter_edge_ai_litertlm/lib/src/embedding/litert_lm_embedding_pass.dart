@@ -216,6 +216,9 @@ String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) =>
       NpuVendor.qualcomm =>
         'on another SoC, or with a QNN runtime that has no Skel for this '
             "device's Hexagon version",
+      NpuVendor.googleTensor =>
+        'on another Tensor generation (G5 and G6 bundles are not '
+            'interchangeable), or without a compatible Pixel system runtime',
       // The placement refuses a bundle of a vendor with no dispatch here
       // before any probe embed.
       null => throw StateError('$target: no NPU vendor of this package'),

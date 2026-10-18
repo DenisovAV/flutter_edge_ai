@@ -142,6 +142,7 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
 /// The file names litert-community gives [vendor]'s EmbeddingGemma 2 bundles.
 String _bundleNames(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => '`<model>_Qualcomm_<SoC>.litertlm`',
+  NpuVendor.googleTensor => '`<model>_Google_Tensor_G5|G6.litertlm`',
   NpuVendor.intel => '`<model>_Intel_PTL.litertlm`',
 };
 

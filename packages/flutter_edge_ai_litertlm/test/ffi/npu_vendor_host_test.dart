@@ -12,6 +12,7 @@ import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+const _tensorG5 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
 const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
 
 void main() {
@@ -51,6 +52,17 @@ void main() {
       expect(host.asked, isEmpty);
     }
   });
+
+  test(
+    'a Google stamp selects only Google even when Qualcomm is also built',
+    () async {
+      final host = _FakeHost('android_arm64');
+      final choice = await chooseNpuVendor(target: _tensorG5, host: host);
+      expect(choice, isA<NpuChosen>());
+      expect((choice as NpuChosen).vendor, NpuVendor.googleTensor);
+      expect(host.asked, ['stack:googleTensor', 'probe:googleTensor']);
+    },
+  );
 
   test(
     'a host no vendor runs on is refused by its ABI, nothing asked',
@@ -140,6 +152,7 @@ void main() {
 
   test('each vendor says whether it turns the HW mask update path off', () {
     expect(npuDisablesHwMasking(NpuVendor.qualcomm), isFalse);
+    expect(npuDisablesHwMasking(NpuVendor.googleTensor), isFalse);
     expect(npuDisablesHwMasking(NpuVendor.intel), isTrue);
   });
 }

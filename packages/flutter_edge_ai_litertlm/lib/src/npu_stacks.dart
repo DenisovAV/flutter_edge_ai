@@ -50,6 +50,11 @@ enum NpuVendor {
     abis: {'android_arm64', 'linux_arm64'},
   ),
 
+  /// Google Tensor G5/G6 through the Pixel system's LiteRT Edge TPU runtime.
+  /// The open-source dispatch bridge ships in every Android arm64 build; the
+  /// proprietary runtime remains on the system image.
+  googleTensor('Google Tensor', stampVendor: 'google', abis: {'android_arm64'}),
+
   /// Intel NPUs (Lunar Lake, Panther Lake) through OpenVINO, in every Windows
   /// x64 build. Google's `…_Intel_PTL` bundles are stamped `IntelOpenVINO` /
   /// `PTL` (read from the published 270m, 440m and 740m, revisions 9be6e8b9,
@@ -113,6 +118,17 @@ const qualcommNpuAarUserDefine = 'qualcomm_npu_aar';
 /// Our Qualcomm dispatch library (built from the LiteRT pin, Apache 2.0). It
 /// ships in the native tarball and is bundled only with [qualcommNpuUserDefine].
 const qualcommDispatchLib = 'LiteRtDispatch_Qualcomm';
+
+/// Our Google Tensor dispatch bridge (built from the LiteRT pin, Apache 2.0).
+/// It late-binds [googleTensorSystemRuntime] from the Pixel system image; that
+/// proprietary runtime is never redistributed by this package.
+const googleTensorDispatchLib = 'LiteRtDispatch_GoogleTensor';
+
+/// The Pixel system runtime used by [googleTensorDispatchLib].
+const googleTensorSystemRuntime = 'libedgetpu_litert.so';
+
+/// The complete app-bundled Google Tensor stack: the bridge only.
+const googleTensorNpuLibs = [googleTensorDispatchLib];
 
 /// Qualcomm's QNN runtime, taken from `com.qualcomm.qti:qnn-runtime` on Maven
 /// Central at build time — never shipped in this package's own release.
@@ -221,6 +237,7 @@ const intelDispatchLib = 'LiteRtDispatch';
 /// every build for the vendor's ABIs carries it.
 String? npuUserDefine(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => qualcommNpuUserDefine,
+  NpuVendor.googleTensor => null,
   NpuVendor.intel => null,
 };
 
@@ -229,6 +246,7 @@ String? npuUserDefine(NpuVendor vendor) => switch (vendor) {
 /// must carry (`verify_tarball_manifest.sh` REQUIRED).
 String npuDispatchLib(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => qualcommDispatchLib,
+  NpuVendor.googleTensor => googleTensorDispatchLib,
   NpuVendor.intel => intelDispatchLib,
 };
 
@@ -245,6 +263,14 @@ List<String> npuStackLibs(NpuVendor vendor, String operatingSystem) =>
           operatingSystem,
           'operatingSystem',
           'NpuVendor.qualcomm has no stack here',
+        ),
+      },
+      NpuVendor.googleTensor => switch (operatingSystem) {
+        'android' => googleTensorNpuLibs,
+        _ => throw ArgumentError.value(
+          operatingSystem,
+          'operatingSystem',
+          'NpuVendor.googleTensor has no stack here',
         ),
       },
       NpuVendor.intel => switch (operatingSystem) {
@@ -269,6 +295,7 @@ const qualcommAndroidFastRpcLib = 'libcdsprpc.so';
 /// adapters, Tensor's `libedgetpu_litert.so`), not only what the probe opens.
 List<String> npuAndroidSystemLibs(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => const [qualcommAndroidFastRpcLib],
+  NpuVendor.googleTensor => const [googleTensorSystemRuntime],
   NpuVendor.intel => const [],
 };
 

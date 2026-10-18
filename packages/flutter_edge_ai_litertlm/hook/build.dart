@@ -163,6 +163,9 @@ class _NativeBundle {
       }
     }
     if (os == OS.android) {
+      for (final a in googleTensorNpuLibs) {
+        yield _dylibFileName(os, a);
+      }
       for (final a in androidExtraLibs) {
         yield _dylibFileName(os, a);
       }
@@ -1023,6 +1026,15 @@ Future<void> _processBundle({
         );
       case NpuVendor.qualcomm:
         throw StateError('NpuVendor.qualcomm has no stack for $targetAbi');
+      case NpuVendor.googleTensor when os == OS.android:
+        _registerBundledNpuStack(
+          vendor: vendor,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
+      case NpuVendor.googleTensor:
+        throw StateError('NpuVendor.googleTensor has no stack for $targetAbi');
       // In every Windows x64 build, through windowsExtraLibs above.
       case NpuVendor.intel:
         break;
@@ -1061,6 +1073,35 @@ Future<void> _processBundle({
   );
   if (localDir.uri != prebuiltDir) {
     output.dependencies.add(_watchableAncestor(localDir).uri);
+  }
+}
+
+/// Registers an always-on vendor stack already present in the native archive.
+/// Missing files mean the Dart package and native archive are version-skewed,
+/// so fail the build rather than advertise a dispatch that is not packaged.
+void _registerBundledNpuStack({
+  required NpuVendor vendor,
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) {
+  for (final name in npuStackLibs(vendor, 'android')) {
+    final fileName = _dylibFileName(OS.android, name);
+    final file = prebuiltDir.resolve(fileName);
+    if (!File.fromUri(file).existsSync()) {
+      throw StateError(
+        '[$_packageName] $fileName is missing from the Android native bundle. '
+        'Use a native release that includes ${vendor.label} support.',
+      );
+    }
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: 'src/native/$name',
+        linkMode: DynamicLoadingBundled(),
+        file: stage(file),
+      ),
+    );
   }
 }
 

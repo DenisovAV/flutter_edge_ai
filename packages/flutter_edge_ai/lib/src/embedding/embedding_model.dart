@@ -39,8 +39,8 @@ abstract base class EmbeddingModel {
   Set<EmbeddingModality> get modalities => const {EmbeddingModality.text};
 
   /// Longest input in tokens — task prefix, BOS and EOS included — as the
-  /// engine read it from the MODEL FILE at load. Null when the file declares
-  /// no limit. Longer inputs fail with `EmbeddingInputTooLongException`; they
+  /// loaded engine can accept it, including any configured context or batch
+  /// limit. Null when the engine cannot establish a limit. Longer inputs fail with `EmbeddingInputTooLongException`; they
   /// are never truncated.
   int? get maxInputTokens => null;
 

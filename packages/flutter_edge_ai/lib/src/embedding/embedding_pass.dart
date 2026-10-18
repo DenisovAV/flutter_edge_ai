@@ -71,8 +71,9 @@ final class EmbeddingPassInfo {
   /// What THIS engine version serves for THIS model file.
   final Set<EmbeddingModality> modalities;
 
-  /// Longest input in tokens, prefix and terminators included, read from the
-  /// model file. Null when the file declares no limit.
+  /// Longest input in tokens, prefix and terminators included, that the
+  /// loaded engine can accept. Include configured context and single-pass
+  /// batch limits; null when no effective limit is known.
   final int? maxInputTokens;
 
   /// Image containers the engine decodes. Non-empty exactly when

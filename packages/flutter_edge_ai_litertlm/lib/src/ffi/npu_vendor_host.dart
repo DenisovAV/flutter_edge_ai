@@ -110,7 +110,15 @@ Future<NpuChoice> chooseNpuVendor({
     for (final vendor in NpuVendor.forAbi(host.abi))
       if (target == null || vendor == compiledFor) vendor,
   ];
-  if (candidates.isEmpty) return NpuRefused(npuNoVendorReason(host.abi));
+  if (candidates.isEmpty) {
+    return NpuRefused(
+      target == null
+          ? npuNoVendorReason(host.abi)
+          // The host may run another vendor: this one is what is missing.
+          : 'no ${compiledFor?.label ?? target.vendor} NPU dispatch stack '
+                'ships for ${host.abi}',
+    );
+  }
   final reasons = <String>[];
   for (final vendor in candidates) {
     final stack = await host.stack(vendor);

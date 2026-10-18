@@ -29,24 +29,28 @@ void main() {
     }
   });
 
-  test(
-    'a vendor this ABI does not run is refused without asking anything',
-    () async {
-      // On android_arm64 an Intel bundle has no candidate: the stamp narrows the
-      // ABI's vendors, it never adds one.
+  test('a vendor this ABI does not run is refused by name, without asking '
+      'anything', () async {
+    // On android_arm64 an Intel bundle has no candidate: the stamp narrows the
+    // ABI's vendors, it never adds one. Qualcomm's stack may well ship here,
+    // so the reason names the vendor that is missing.
+    for (final (target, vendor) in const [
+      (_ptl, 'Intel'),
+      (LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'), 'MediaTek'),
+    ]) {
       final host = _FakeHost('android_arm64');
-      final choice = await chooseNpuVendor(target: _ptl, host: host);
+      final choice = await chooseNpuVendor(target: target, host: host);
       expect(
         choice,
         isA<NpuRefused>().having(
           (r) => r.reason,
           'reason',
-          'no NPU dispatch stack ships for android_arm64',
+          'no $vendor NPU dispatch stack ships for android_arm64',
         ),
       );
       expect(host.asked, isEmpty);
-    },
-  );
+    }
+  });
 
   test(
     'a host no vendor runs on is refused by its ABI, nothing asked',

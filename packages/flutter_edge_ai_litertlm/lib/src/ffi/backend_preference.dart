@@ -44,8 +44,8 @@ String? npuUnreachable(
     'android' => switch (probes.androidFastRpc()) {
       null => null,
       final error =>
-        'this device has no Qualcomm FastRPC (libcdsprpc.so did not open: '
-            '$error), so the bundled NPU stack cannot run here',
+        'this device has no Qualcomm FastRPC ($qualcommAndroidFastRpcLib did '
+            'not open: $error), so the bundled NPU stack cannot run here',
     },
     'linux' => switch (probes.linuxQualcommNpu()) {
       null => null,
@@ -184,7 +184,7 @@ String? get _linuxQualcommNpuError => (_linuxNpuProbe ??= (
 String? get _androidFastRpcError => (_fastRpcProbe ??= (
   () {
     try {
-      DynamicLibrary.open('libcdsprpc.so');
+      DynamicLibrary.open(qualcommAndroidFastRpcLib);
       return null;
     } on Object catch (e) {
       return '$e';

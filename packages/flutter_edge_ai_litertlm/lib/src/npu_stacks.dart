@@ -251,11 +251,18 @@ List<String> npuStackLibs(NpuVendor vendor, String operatingSystem) =>
       },
     };
 
-/// The system libraries [vendor]'s device probe opens on Android, which the
-/// core plugin's AndroidManifest.xml must declare as `<uses-native-library>`:
-/// without the declaration the dlopen fails in the app's linker namespace.
+/// Qualcomm's FastRPC library on Android, from the vendor partition: the
+/// device probe opens it, and the stack's Hexagon Stubs load it.
+const qualcommAndroidFastRpcLib = 'libcdsprpc.so';
+
+/// The system libraries [vendor]'s NPU stack or its device probe opens on
+/// Android, which the core plugin's AndroidManifest.xml must declare as
+/// `<uses-native-library>`: without the declaration the dlopen fails in the
+/// app's linker namespace — the probe's, or the dispatch's at engine_create.
+/// A dispatch that opens a vendor runtime lists all of it (MediaTek's Neuron
+/// adapters, Tensor's `libedgetpu_litert.so`), not only what the probe opens.
 List<String> npuAndroidSystemLibs(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => const ['libcdsprpc.so'],
+  NpuVendor.qualcomm => const [qualcommAndroidFastRpcLib],
   NpuVendor.intel => const [],
 };
 

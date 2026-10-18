@@ -7,6 +7,7 @@
 
 import 'dart:io';
 
+import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -82,6 +83,22 @@ void main() {
       }
       expect(libs, isNotEmpty, reason: '${vendor.name} needs a device probe');
       expect(declared, containsAll(libs), reason: vendor.name);
+    }
+  });
+
+  test('a vendor whose stack ships on request is opted into with the '
+      'user_define the hook reads, which the runtime names when it is off', () {
+    // The hook's vendor loop reads npuUserDefine(vendor); measured
+    // 2026-10-18 on the example's APK: 11 Qualcomm libraries with
+    // qualcomm_npu true, none with false.
+    for (final vendor in NpuVendor.values) {
+      final define = npuUserDefine(vendor);
+      final reason = npuNotBundledReason(vendor);
+      if (define == null) {
+        expect(reason, isNot(contains('user_defines')), reason: vendor.name);
+      } else {
+        expect(reason, contains('$define: true'), reason: vendor.name);
+      }
     }
   });
 }

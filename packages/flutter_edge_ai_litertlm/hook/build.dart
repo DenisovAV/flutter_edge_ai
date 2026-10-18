@@ -978,10 +978,33 @@ Future<void> _processBundle({
   // The NPU stack of each vendor of this target (NpuVendor.abis), the same
   // table the runtime chooses a vendor from. The ABI string is Abi.current()'s
   // spelling, which code_assets' OS and Architecture names share.
+  //
+  // A vendor whose stack ships on request (npuUserDefine) is bundled when the
+  // app set the flag, never because the files are there: an older flat cache
+  // or a maintainer's prebuilt can hold them, and registering them on presence
+  // would put the vendor's libraries into an app that did not ask for them —
+  // and make NativeAssetsManifest.json, which the runtime gate reads, claim a
+  // stack the developer never enabled.
   final targetAbi = '${os.name}_${input.config.code.targetArchitecture.name}';
-  for (final vendor in NpuVendor.forAbi(targetAbi)) {
+  for (final vendor in NpuVendor.values) {
+    if (!vendor.abis.any((abi) => abi.startsWith('${os.name}_'))) continue;
+    final define = npuUserDefine(vendor);
+    if (define != null &&
+        !readBoolUserDefine(input.userDefines[define], define)) {
+      continue;
+    }
+    if (!vendor.abis.contains(targetAbi)) {
+      // Set by an app that also builds this OS where the vendor has an NPU
+      // (Linux x64 next to Linux arm64): said, instead of failing the build.
+      if (define != null) {
+        stderr.writeln(
+          '[$_packageName] $define: no ${vendor.label} NPU on $targetAbi; '
+          'nothing to bundle there.',
+        );
+      }
+      continue;
+    }
     switch (vendor) {
-      // For apps that opted in (qualcommNpuUserDefine).
       case NpuVendor.qualcomm when os == OS.android:
         if (bundle.androidExtraLibs.isEmpty) break;
         await _registerQualcommNpu(
@@ -1045,25 +1068,14 @@ Future<void> _processBundle({
 // Opt-in Qualcomm NPU stack (Android)
 // ============================================================================
 
-/// Registers the Android Qualcomm NPU stack when the app set `qualcomm_npu`.
-///
-/// Registration follows the flag, never file presence. An older flat cache or
-/// a maintainer's prebuilt can still hold these files, and registering them
-/// on presence would put Qualcomm's libraries into an app that did not ask
-/// for them — and make NativeAssetsManifest.json, which the runtime gate
-/// reads, claim a stack the developer never enabled.
+/// Registers the Android Qualcomm NPU stack, for an app that set
+/// `qualcomm_npu` (checked by the caller's vendor loop, from the table).
 Future<void> _registerQualcommNpu({
   required BuildInput input,
   required BuildOutputBuilder output,
   required Uri prebuiltDir,
   required Uri Function(Uri) stage,
 }) async {
-  final enabled = readBoolUserDefine(
-    input.userDefines[qualcommNpuUserDefine],
-    qualcommNpuUserDefine,
-  );
-  if (!enabled) return;
-
   void register(String name, Uri file) => output.assets.code.add(
     CodeAsset(
       package: _packageName,
@@ -1188,33 +1200,17 @@ Directory _qnnCacheRoot(BuildInput input, [String target = 'android_arm64']) {
   }
 }
 
-/// Registers the Linux arm64 Qualcomm NPU stack when the app set
-/// `qualcomm_npu`: our dispatch and libcdsprpc.so shim from the native
-/// bundle, Qualcomm's QNN runtime from the QAIRT SDK zip via the cache.
-///
-/// Registration follows the flag, never file presence — as on Android, and
-/// for the same two reasons. On linux_x64 the flag has nothing to bundle (no
-/// Qualcomm NPU there), and says so instead of failing an app that sets it
-/// for its Android or Linux arm64 builds.
+/// Registers the Linux arm64 Qualcomm NPU stack, for an app that set
+/// `qualcomm_npu` (checked by the caller's vendor loop, from the table, which
+/// also says on linux_x64 that there is nothing to bundle): our dispatch and
+/// libcdsprpc.so shim from the native bundle, Qualcomm's QNN runtime from the
+/// QAIRT SDK zip via the cache.
 Future<void> _registerQualcommNpuLinux({
   required BuildInput input,
   required BuildOutputBuilder output,
   required Uri prebuiltDir,
   required Uri Function(Uri) stage,
 }) async {
-  final enabled = readBoolUserDefine(
-    input.userDefines[qualcommNpuUserDefine],
-    qualcommNpuUserDefine,
-  );
-  if (!enabled) return;
-  if (input.config.code.targetArchitecture != Architecture.arm64) {
-    stderr.writeln(
-      '[$_packageName] qualcomm_npu: no Qualcomm NPU on linux_'
-      '${input.config.code.targetArchitecture.name}; nothing to bundle there.',
-    );
-    return;
-  }
-
   void register(String name, Uri file) => output.assets.code.add(
     CodeAsset(
       package: _packageName,

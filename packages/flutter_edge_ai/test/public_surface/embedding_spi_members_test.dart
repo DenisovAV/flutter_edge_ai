@@ -202,6 +202,12 @@ String _declaration(InterfaceElement element) {
     if (supertype != null && !supertype.isDartCoreObject) {
       parts.add('extends ${_type(supertype)}');
     }
+  } else if (element is MixinElement) {
+    if (element.isBase) parts.add('base');
+    parts.add('mixin ${element.name}${_typeParameters(element)}');
+    if (element.superclassConstraints.isNotEmpty) {
+      parts.add('on ${element.superclassConstraints.map(_type).join(', ')}');
+    }
   }
   if (element.mixins.isNotEmpty) {
     parts.add('with ${element.mixins.map(_type).join(', ')}');

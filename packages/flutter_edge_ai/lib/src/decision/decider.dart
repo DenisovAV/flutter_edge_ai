@@ -104,6 +104,12 @@ abstract base class Decider {
       rethrow;
     }
     throwIfDeciderCancelled(cancelToken);
+    if (!identical(answer.questionType, capabilities.questionType)) {
+      throw StateError(
+        '$runtimeType answered a ${answer.questionType.name} question; its '
+        'capabilities say ${capabilities.questionType.name}.',
+      );
+    }
     return answer;
   }
 
@@ -133,9 +139,10 @@ abstract base class Decider {
     'restore.',
   );
 
-  /// Whether [choose] can no longer answer: [close] was called, or — for an
-  /// embedding decider — its model is closed and core serves none in its
-  /// place (a model `getActiveEmbedder` did not build). A decider on a model
+  /// Whether [choose] can no longer answer: [close] was called, or its model
+  /// is closed — for an embedding decider, closed with no replacement core
+  /// serves in its place (a model `getActiveEmbedder` did not build); for a
+  /// language-model decider, closed at all. A decider on a model
   /// core replaced is not closed: its next [choose] takes the replacement.
   bool get isClosed;
 
@@ -385,6 +392,15 @@ final class DeciderQuestionType {
   String toString() => 'DeciderQuestionType.$name';
 }
 
+/// The question type named [name], or null for a name this release does not
+/// know. Not exported.
+DeciderQuestionType? deciderQuestionTypeByName(String name) => switch (name) {
+  'choice' => DeciderQuestionType.choice,
+  'noul' => DeciderQuestionType.noul,
+  'score' => DeciderQuestionType.score,
+  _ => null,
+};
+
 /// What [DeciderProvenance.abstainSignal] is.
 ///
 /// For every kind, now and added later, a higher signal means a more
@@ -504,7 +520,13 @@ final class DeciderCapabilities {
     required this.supportsContext,
     required this.supportsAmong,
     required this.storable,
+    this.questionType = DeciderQuestionType.choice,
   });
+
+  /// The kind of question every answer of this decider answers;
+  /// [DeciderQuestionType.choice] for every embedding decider. `choose`
+  /// refuses an answer of another type.
+  final DeciderQuestionType questionType;
 
   /// What an input may carry.
   final Set<EmbeddingModality> modalities;
@@ -550,13 +572,12 @@ final class DeciderAnswer {
   /// probabilities and no confidence.
   ///
   /// [questionType] is [DeciderQuestionType.choice] unless given; then
-  /// [noul], [expectedLevel] and [legend] are null. A
-  /// [DeciderQuestionType.noul] or [DeciderQuestionType.score] answer never
-  /// abstains and has [probabilities]. A Noul answer's probabilities are over
-  /// `no` and `yes` exactly, and [noul] is the one of `yes`. A Score answer's
-  /// probabilities are over the levels `0` … `K − 1` (K ≥ 2), [expectedLevel]
-  /// is `Σ pᵢ · i` over them (within 1e-9), and [legend] has a text for each
-  /// level and nothing else. [legend] is copied.
+  /// [legend] is null. A [DeciderQuestionType.noul] or
+  /// [DeciderQuestionType.score] answer never abstains, has no threshold,
+  /// has [probabilities], and chooses its most probable option. A Noul
+  /// answer's probabilities are over `no` and `yes` exactly; a Score answer's
+  /// over the levels `0` … `K − 1` (K ≥ 2), and its [legend] has a non-empty
+  /// text for each level and nothing else. [legend] is copied.
   DeciderAnswer({
     required this.choice,
     required List<RankedOption> ranked,
@@ -567,8 +588,6 @@ final class DeciderAnswer {
     this.abstainReason,
     Map<String, double>? probabilities,
     this.questionType = DeciderQuestionType.choice,
-    this.noul,
-    this.expectedLevel,
     Map<String, String>? legend,
   }) : ranked = List.unmodifiable(ranked),
        probabilities = probabilities == null
@@ -621,19 +640,31 @@ final class DeciderAnswer {
   void _checkQuestionType() {
     final type = questionType;
     if (identical(type, DeciderQuestionType.choice)) {
-      if (noul != null || expectedLevel != null || legend != null) {
-        throw ArgumentError(
-          'A choice answer has no noul, expectedLevel or legend; got noul '
-          '$noul, expectedLevel $expectedLevel, legend $legend.',
+      if (legend != null) {
+        throw ArgumentError.value(
+          legend,
+          'legend',
+          'a choice answer has no legend',
         );
       }
       return;
+    }
+    if (!identical(type, DeciderQuestionType.noul) &&
+        !identical(type, DeciderQuestionType.score)) {
+      throw StateError('DeciderAnswer does not check the question type $type');
     }
     if (abstainReason != null) {
       throw ArgumentError.value(
         abstainReason,
         'abstainReason',
         'a ${type.name} answer never abstains: Jev has no abstention',
+      );
+    }
+    if (provenance.threshold != null) {
+      throw ArgumentError.value(
+        provenance.threshold,
+        'provenance.threshold',
+        'a ${type.name} answer never abstains, so it has no threshold',
       );
     }
     final p = probabilities;
@@ -645,6 +676,15 @@ final class DeciderAnswer {
             'required',
       );
     }
+    final pmax = p.values.reduce((a, b) => a > b ? a : b);
+    if (!(p[choice]! >= pmax)) {
+      throw ArgumentError.value(
+        choice,
+        'choice',
+        'a ${type.name} answer chooses its most probable option '
+            '(p ${p[choice]} < $pmax)',
+      );
+    }
     if (identical(type, DeciderQuestionType.noul)) {
       if (p.length != 2 || !p.containsKey('no') || !p.containsKey('yes')) {
         throw ArgumentError.value(
@@ -653,17 +693,11 @@ final class DeciderAnswer {
           'a noul answer has probabilities over "no" and "yes" exactly',
         );
       }
-      if (noul != p['yes']) {
+      if (legend != null) {
         throw ArgumentError.value(
-          noul,
-          'noul',
-          'is the probability of "yes" (${p['yes']})',
-        );
-      }
-      if (expectedLevel != null || legend != null) {
-        throw ArgumentError(
-          'A noul answer has no expectedLevel or legend; got expectedLevel '
-          '$expectedLevel, legend $legend.',
+          legend,
+          'legend',
+          'a noul answer has no legend',
         );
       }
       return;
@@ -677,30 +711,15 @@ final class DeciderAnswer {
             'K ≥ 2',
       );
     }
-    var expected = 0.0;
-    for (var i = 0; i < levels.length; i++) {
-      expected += p[levels[i]]! * i;
-    }
-    final level = expectedLevel;
-    if (level == null || !((level - expected).abs() <= 1e-9)) {
-      throw ArgumentError.value(
-        level,
-        'expectedLevel',
-        'is Σ pᵢ · i over the levels ($expected)',
-      );
-    }
     final l = legend;
     if (l == null ||
         l.length != levels.length ||
-        !levels.every(l.containsKey)) {
+        !levels.every((level) => (l[level] ?? '').isNotEmpty)) {
       throw ArgumentError.value(
         l?.keys.toList(),
         'legend',
-        'a score answer has a text for each level and nothing else',
+        'a score answer has a non-empty text for each level and nothing else',
       );
-    }
-    if (noul != null) {
-      throw ArgumentError.value(noul, 'noul', 'a score answer has no noul');
     }
   }
 
@@ -876,12 +895,22 @@ final class DeciderAnswer {
 
   /// A [DeciderQuestionType.noul] answer's probability of `yes`
   /// (`probabilities['yes']`); null for other types.
-  final double? noul;
+  double? get noul => identical(questionType, DeciderQuestionType.noul)
+      ? probabilities!['yes']
+      : null;
 
   /// A [DeciderQuestionType.score] answer's expected level, `Σ pᵢ · i` over
   /// the levels `0` … `K − 1`; null for other types. [choice] is the most
   /// probable level, which can differ from the expected one.
-  final double? expectedLevel;
+  double? get expectedLevel {
+    if (!identical(questionType, DeciderQuestionType.score)) return null;
+    final p = probabilities!;
+    var level = 0.0;
+    for (var i = 0; i < p.length; i++) {
+      level += p['$i']! * i;
+    }
+    return level;
+  }
 
   /// A [DeciderQuestionType.score] answer's text for each level, by level id;
   /// null for other types. Unmodifiable.
@@ -896,21 +925,25 @@ final class DeciderAnswer {
   /// - score: `{"type": "score", "score": 2.4, "legend": {"0": ..., ...},
   ///   "probabilities": {...}, "confidence": 0.61}`, `score` the expected
   ///   level.
-  Map<String, Object?> toJevJson() => switch (questionType.name) {
-    'noul' => {'type': 'noul', 'noul': noul},
-    'score' => {
+  Map<String, Object?> toJevJson() => switch (questionType) {
+    DeciderQuestionType.noul => {'type': 'noul', 'noul': noul},
+    DeciderQuestionType.score => {
       'type': 'score',
       'score': expectedLevel,
       'legend': {...?legend},
       'probabilities': {...?probabilities},
       'confidence': ?confidence,
     },
-    _ => {
+    DeciderQuestionType.choice => {
       'type': 'choice',
       'choice': choice,
       if (probabilities case final p?) 'probabilities': {...p},
       'confidence': ?confidence,
     },
+    _ => throw StateError(
+      'toJevJson does not write the question type '
+      '$questionType',
+    ),
   };
 
   @override

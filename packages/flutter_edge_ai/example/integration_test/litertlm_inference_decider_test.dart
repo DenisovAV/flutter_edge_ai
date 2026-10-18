@@ -10,20 +10,24 @@
 // or name the parent with --dart-define=DECIDER_PACKS=<dir>. A float32 twin
 // of a pack's model, staged beside it as `twin.litertlm`, is checked against
 // the reference to 1e-3 nats per token: the method alone, with no
-// quantisation in between. The refusal tests also need FunctionGemma 270M
-// (`functiongemma-270M-it.litertlm`) in the container Documents: a real chat
-// model without a decision section.
+// quantisation in between; without one that test is skipped, and the
+// method is checked only through the int8 bounds below. The refusal tests also
+// need FunctionGemma 270M (`functiongemma-270M-it.litertlm`, a chat model
+// without a decision) and, for the self-check on another template,
+// `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` in the container Documents.
 //
 // What is asserted per row, on this machine: the rendered prompt and its
-// token ids are the golden ones; the decider's top option is the reference's,
-// or within 1 nat of it (int8 flips near-ties: litetune's own run of the
-// Score pack disagrees with its reference on 3 of 24 rows);
+// token ids are the golden ones; the decider's top option is the argmax of
+// its own scores, and the reference's — or within 1 nat of it (int8 flips
+// near-ties: litetune's own run of the Score pack disagrees with its
+// reference on 3 of 24 rows), on at most 2 rows more than litetune's own run;
 // its answer follows the section's rule on its own scores, and is the golden
 // answer unless the golden top probability is within 0.05 of the threshold
 // (another CPU's int8 kernels move a probability that close across it);
-// every token is within 2.0 nats of the reference. The gap to the golden
-// engine scores is printed, not asserted: it measures this CPU's int8
-// arithmetic against the one litetune ran on.
+// every token is within 2.0 nats of the reference; a target scored alone
+// equals the same target scored after a rewind. The gap to the golden engine
+// scores is printed, not asserted: it measures this CPU's int8 arithmetic
+// against the one litetune ran on.
 //
 // Run (CPU; one model at a time):
 //   flutter test integration_test/litertlm_inference_decider_test.dart -d macos
@@ -49,7 +53,7 @@ Directory get _packsDir =>
     Directory(_packsDefine.isNotEmpty ? _packsDefine : '$_documents/decisions');
 
 /// A per-token bound that holds on both CPUs measured: 1.4272 nats on
-/// litetune's Xeon, 1.8833 on an Apple M-series (2026-10-18). Wrong scoring
+/// litetune's Xeon, 1.8833 on an Apple M4 Pro (2026-10-18). Wrong scoring
 /// (the other #3561 mode) is 8.75 nats off.
 const _referenceBound = 2.0;
 
@@ -61,6 +65,10 @@ const _borderline = 0.05;
 /// litetune measured disagreements with its reference at margins up to 0.637
 /// nats (irony, E8) and 0.186 (SST-5).
 const _nearTie = 1.0;
+
+/// How many more rows than litetune's own run may disagree with the
+/// reference on this CPU.
+const _extraFlips = 2;
 
 /// The decision contract's user message (`decisions.Decision.render`), from
 /// the section payload: the check that the golden prompts are the contract's.
@@ -76,13 +84,21 @@ String _render(Map<String, Object?> payload, String state) {
       '${lines.join('\n')}\nAnswer with the id of one option.';
 }
 
-List<DeciderOption> _options(Map<String, Object?> payload) => [
+/// The trained options without the none option: the call LiteTune prints,
+/// with `InferenceDeciderCalibration.fromModel()`.
+List<DeciderOption> _trainedOptions(Map<String, Object?> payload) => [
   for (final o in (payload['options'] as List).cast<Map<String, Object?>>())
     DeciderOption(o['id'] as String, description: o['description'] as String?),
+];
+
+/// Every listed option, the none option included: the call with explicit
+/// values.
+List<DeciderOption> _listedOptions(Map<String, Object?> payload) => [
+  ..._trainedOptions(payload),
   if (payload['none_option'] case final String none) DeciderOption(none),
 ];
 
-InferenceDeciderCalibration _calibration(Map<String, Object?> payload) {
+InferenceDeciderCalibration _explicitCalibration(Map<String, Object?> payload) {
   final below = (payload['abstain_below'] as num?)?.toDouble();
   return InferenceDeciderCalibration(
     temperature: (payload['temperature'] as num).toDouble(),
@@ -109,6 +125,11 @@ Future<InferenceModel> _load(
   );
 }
 
+/// The scoring mode the model's self-check picked (`LiteRtLmScoringMode`,
+/// internal to flutter_edge_ai_litertlm).
+String? _modeOf(InferenceModel model) =>
+    ((model as dynamic).scoringMode as Enum?)?.name;
+
 List<Directory> _packs() {
   final dir = _packsDir;
   if (!dir.existsSync()) return const [];
@@ -123,6 +144,38 @@ List<Directory> _packs() {
 }
 
 String _name(Directory pack) => pack.path.split('/').last;
+
+Map<String, Object?> _goldenOf(Directory pack) =>
+    jsonDecode(File('${pack.path}/golden.json').readAsStringSync())
+        as Map<String, Object?>;
+
+Map<String, Object?> _payloadOf(Map<String, Object?> golden) =>
+    ((golden['provenance'] as Map)['section'] as Map)['payload']
+        as Map<String, Object?>;
+
+/// A greedy chat's second reply, with [between] run between its two turns.
+Future<String> _secondTurn(
+  InferenceModel model, {
+  Future<void> Function()? between,
+}) async {
+  final chat = await model.createChat(topK: 1, maxOutputTokens: 24);
+  try {
+    Future<String> turn(String text) async {
+      await chat.addQueryChunk(Message(text: text, isUser: true));
+      final reply = StringBuffer();
+      await for (final r in chat.generateChatResponseAsync()) {
+        if (r is TextResponse) reply.write(r.token);
+      }
+      return reply.toString();
+    }
+
+    await turn('Remember the word PELICAN. Reply OK.');
+    if (between != null) await between();
+    return await turn('Which word did I ask you to remember?');
+  } finally {
+    await chat.close();
+  }
+}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -144,9 +197,7 @@ void main() {
 
   for (final pack in packs) {
     test('${_name(pack)}: every golden row on the real model', () async {
-      final golden =
-          jsonDecode(File('${pack.path}/golden.json').readAsStringSync())
-              as Map<String, Object?>;
+      final golden = _goldenOf(pack);
       final provenance = golden['provenance'] as Map<String, Object?>;
       final section = provenance['section'] as Map<String, Object?>;
       final payload = section['payload'] as Map<String, Object?>;
@@ -169,14 +220,16 @@ void main() {
       final temperature = (payload['temperature'] as num).toDouble();
       final below = (payload['abstain_below'] as num?)?.toDouble();
 
+      // The call LiteTune prints: the question, the trained options, and the
+      // file's calibration.
       final created = Stopwatch()..start();
       final decider = await model.createDecider(
         question: payload['question'] as String,
-        options: _options(payload),
-        calibration: _calibration(payload),
+        options: _trainedOptions(payload),
+        calibration: const InferenceDeciderCalibration.fromModel(),
       );
       created.stop();
-      final mode = ((decider as dynamic).mode as Enum).name;
+      final mode = _modeOf(model);
       // ignore: avoid_print
       print(
         '[decider] ${_name(pack)}: $type, ${listed.length} options, '
@@ -184,6 +237,8 @@ void main() {
         '(golden ${provenance['mode']})',
       );
       expect(mode, provenance['mode']);
+      expect(decider.capabilities.questionType.name, type);
+      expect(decider.options.map((o) => o.id), listed);
 
       final scorer = await engine.openOptionScorer();
       final fullTargets = [for (final id in listed) '$id$terminator'];
@@ -191,6 +246,7 @@ void main() {
       var maxToGoldenEngine = 0.0;
       var maxTopToReference = 0.0;
       var maxPrefixVsFull = 0.0;
+      var maxAloneVsRun = 0.0;
       var argmaxAgree = 0;
       var engineAgree = 0;
       var answerAgree = 0;
@@ -198,7 +254,8 @@ void main() {
       final borderline = <String>[];
       final times = <int>[];
       final rows = (golden['rows'] as List).cast<Map<String, Object?>>();
-      for (final row in rows) {
+      for (var r = 0; r < rows.length; r++) {
+        final row = rows[r];
         final index = row['index'];
         final state = row['state'] as String;
         final userMessage = _render(payload, state);
@@ -209,15 +266,23 @@ void main() {
         final ids = await scorer.tokenize(rendered);
         expect(ids, row['engine_prompt_ids'], reason: 'row $index');
         expect(ids.length + 1, row['prompt_tokens_with_bos']);
-        final last = await scorer.detokenize([ids.last]);
 
         // Every token of every option's full target, as the reference has
-        // them, by the mode the self-check picked.
-        final full = await scorer.score(
-          rendered,
-          fullTargets,
-          reprefill: mode == 'once' ? last : null,
-        );
+        // them.
+        final full = await scorer.score(rendered, fullTargets);
+        if (r < 3) {
+          // Each target scored in a session of its own equals the same target
+          // scored after the checkpoint's rewind.
+          for (var j = 0; j < listed.length; j++) {
+            final alone = await scorer.score(rendered, [fullTargets[j]]);
+            for (var i = 0; i < alone.tokenScores.single.length; i++) {
+              maxAloneVsRun = math.max(
+                maxAloneVsRun,
+                (alone.tokenScores.single[i] - full.tokenScores[j][i]).abs(),
+              );
+            }
+          }
+        }
         final options = (row['options'] as List).cast<Map<String, Object?>>();
         final prefixSums = <double>[];
         for (var j = 0; j < listed.length; j++) {
@@ -254,16 +319,21 @@ void main() {
         final m = prefixSums.reduce(math.max);
         final lse =
             m + math.log(prefixSums.fold(0.0, (a, s) => a + math.exp(s - m)));
-        for (final r in answer.ranked) {
-          final j = listed.indexOf(r.id);
+        for (final ranked in answer.ranked) {
+          final j = listed.indexOf(ranked.id);
           maxPrefixVsFull = math.max(
             maxPrefixVsFull,
-            (r.score - (prefixSums[j] - lse)).abs(),
+            (ranked.score - (prefixSums[j] - lse)).abs(),
           );
         }
 
         final top = answer.ranked.first.id;
         final topIndex = listed.indexOf(top);
+        expect(
+          topIndex,
+          prefixSums.indexOf(m),
+          reason: 'row $index: the top option is the argmax of the scores',
+        );
         final ref = (options[topIndex]['reference_token_scores'] as List)
             .cast<num>();
         for (var i = 0; i < scoredLengths[topIndex]; i++) {
@@ -274,8 +344,7 @@ void main() {
         }
         // The top option is the reference's, or a near-tie of the reference's
         // top: int8 moves a score by up to about a nat, so a margin under
-        // [_nearTie] can flip on any CPU — litetune's own run disagrees with
-        // the reference there (3 of 24 rows of the Score pack).
+        // [_nearTie] can flip on any CPU.
         double behind(String key) {
           final sums = [for (final o in options) (o[key] as num).toDouble()];
           return sums.reduce(math.max) - sums[topIndex];
@@ -367,12 +436,15 @@ void main() {
       await scorer.close();
       await decider.close();
       times.sort();
+      final goldenAgree =
+          (golden['tolerances']
+                  as Map)['engine_argmax_equals_reference_argmax_rows']
+              as int;
       // ignore: avoid_print
       print(
         '[decider] ${_name(pack)}: ${rows.length} rows; top option = '
         'reference on $argmaxAgree (golden engine on $engineAgree, golden '
-        'engine = reference on ${(golden['tolerances'] as Map)['engine_argmax_equals_reference_argmax_rows']}); '
-        'answer = golden on $answerAgree'
+        'engine = reference on $goldenAgree); answer = golden on $answerAgree'
         '${nearTies.isEmpty ? '' : '\n[decider]   near ties: ${nearTies.join('; ')}'}'
         '${borderline.isEmpty ? '' : '\n[decider]   at the threshold: ${borderline.join('; ')}'}\n'
         '[decider]   max |here - reference| per token $maxToReference '
@@ -382,24 +454,23 @@ void main() {
         '${(provenance['runtime'] as Map?)?['litert-lm']}; here: '
         '${Platform.operatingSystem} ${Platform.operatingSystemVersion}, '
         '${Platform.numberOfProcessors} cores)\n'
-        '[decider]   max |unique prefix - full target prefix| $maxPrefixVsFull\n'
+        '[decider]   max |unique prefix - full target prefix| $maxPrefixVsFull; '
+        'max |alone - after a rewind| $maxAloneVsRun\n'
         '[decider]   ms per decision: median ${times[times.length ~/ 2]}, '
         'max ${times.last}',
       );
+      expect(argmaxAgree, greaterThanOrEqualTo(goldenAgree - _extraFlips));
       expect(maxToReference, lessThanOrEqualTo(_referenceBound));
       expect(maxPrefixVsFull, lessThan(1e-4));
+      expect(maxAloneVsRun, 0.0);
     }, timeout: const Timeout(Duration(minutes: 20)));
 
     final twin = File('${pack.path}/twin.litertlm');
     test(
       '${_name(pack)}: the float32 twin is within 1e-3 nats of the reference',
       () async {
-        final golden =
-            jsonDecode(File('${pack.path}/golden.json').readAsStringSync())
-                as Map<String, Object?>;
-        final provenance = golden['provenance'] as Map<String, Object?>;
-        final payload =
-            (provenance['section'] as Map)['payload'] as Map<String, Object?>;
+        final golden = _goldenOf(pack);
+        final payload = _payloadOf(golden);
         final listed = [
           for (final o in (payload['options'] as List).cast<Map>())
             o['id'] as String,
@@ -407,17 +478,14 @@ void main() {
         ];
         final model = await _load(twin.path);
         final scorer = await (model as OptionScoringModel).openOptionScorer();
-        final reprefill = provenance['twin_mode'] == 'once';
         var worst = 0.0;
         for (final row in (golden['rows'] as List).cast<Map>()) {
           final rendered = await scorer.renderUserMessage(
             row['user_message'] as String,
           );
-          final ids = await scorer.tokenize(rendered);
-          final last = await scorer.detokenize([ids.last]);
           final run = await scorer.score(rendered, [
             for (final id in listed) '$id${payload['terminator']}',
-          ], reprefill: reprefill ? last : null);
+          ]);
           final options = (row['options'] as List).cast<Map>();
           for (var j = 0; j < listed.length; j++) {
             final ref = (options[j]['reference_token_scores'] as List)
@@ -432,21 +500,19 @@ void main() {
         print('[decider] ${_name(pack)} twin: max |twin - reference| $worst');
         expect(worst, lessThan(1e-3));
       },
-      skip: twin.existsSync() ? false : 'no twin.litertlm staged',
+      skip: twin.existsSync()
+          ? false
+          : 'no twin.litertlm staged: the method is checked only through the '
+                'int8 bounds',
       timeout: const Timeout(Duration(minutes: 20)),
     );
   }
 
-  group('refusals and coexistence, on the first choice pack', () {
+  group('refusals, coexistence and stopping, on the first choice pack', () {
     Directory? pack;
     Map<String, Object?>? payload;
     for (final candidate in packs) {
-      final golden =
-          jsonDecode(File('${candidate.path}/golden.json').readAsStringSync())
-              as Map<String, Object?>;
-      final p =
-          ((golden['provenance'] as Map)['section'] as Map)['payload']
-              as Map<String, Object?>;
+      final p = _payloadOf(_goldenOf(candidate));
       if (p['type'] == 'choice') {
         pack = candidate;
         payload = p;
@@ -455,20 +521,25 @@ void main() {
     }
     final skip = pack == null ? 'no choice pack staged' : false;
     final trained = payload ?? const <String, Object?>{};
+    final question = trained['question'] as String? ?? '';
 
     Future<InferenceModel> model() => _load('${pack!.path}/model.litertlm');
 
     Future<Decider> decider(InferenceModel m) => m.createDecider(
-      question: trained['question'] as String,
-      options: _options(trained),
-      calibration: _calibration(trained),
+      question: question,
+      options: _trainedOptions(trained),
+      calibration: const InferenceDeciderCalibration.fromModel(),
     );
 
-    test('arguments that are not the trained ones are refused', () async {
+    final input = DeciderInput(
+      EmbeddingInput.text('i am so scared of what tomorrow brings'),
+    );
+
+    test('explicit values must be the file\'s; other arguments are '
+        'refused', () async {
       final m = await model();
-      final options = _options(trained);
-      final calibration = _calibration(trained);
-      final question = trained['question'] as String;
+      final options = _listedOptions(trained);
+      final calibration = _explicitCalibration(trained);
       Future<void> refused(
         Future<Decider> Function() create,
         String field,
@@ -526,38 +597,44 @@ void main() {
         ),
         'calibration.temperature',
       );
-      await refused(
-        () => m.createDecider(
-          question: question,
-          options: options,
-          calibration: InferenceDeciderCalibration(
-            temperature: calibration.temperature,
-            noneOption: calibration.noneOption,
-          ),
-        ),
-        'calibration.abstainBelow',
-      );
-      // Another order, and a description equal to the id, are accepted.
-      final reordered = await m.createDecider(
+      // The file's own values, given explicitly, are accepted.
+      final explicit = await m.createDecider(
         question: question,
-        options: [
-          for (final o in options.reversed)
-            DeciderOption(o.id, description: o.description ?? o.id),
-        ],
+        options: options,
         calibration: calibration,
       );
-      final answer = await reordered.choose(
-        DeciderInput(EmbeddingInput.text('i feel so happy and grateful today')),
+      final fromModel = await decider(m);
+      expect(
+        (await explicit.choose(input)).probabilities,
+        (await fromModel.choose(input)).probabilities,
       );
-      expect(answer.choice, isNotNull);
-      await reordered.close();
+      await explicit.close();
+      await fromModel.close();
+    }, skip: skip);
+
+    test('another option order gives the same answer', () async {
+      final m = await model();
+      final trainedOrder = await decider(m);
+      final reversed = await m.createDecider(
+        question: question,
+        options: [
+          for (final o in _trainedOptions(trained).reversed)
+            DeciderOption(o.id, description: o.description ?? o.id),
+        ],
+        calibration: const InferenceDeciderCalibration.fromModel(),
+      );
+      final a = await trainedOrder.choose(input);
+      final b = await reversed.choose(input);
+      expect(b.probabilities, a.probabilities);
+      expect(b.choice, a.choice);
+      await trainedOrder.close();
+      await reversed.close();
     }, skip: skip);
 
     test('requests a v1 decider does not take are refused', () async {
       final d = await decider(await model());
-      final text = DeciderInput(EmbeddingInput.text('i am fine'));
       await expectLater(
-        d.choose(text, among: [d.options.first.id]),
+        d.choose(input, among: [d.options.first.id]),
         throwsA(isA<DeciderUnsupportedException>()),
       );
       await expectLater(
@@ -586,39 +663,114 @@ void main() {
       );
       final token = CancelToken()..cancel();
       await expectLater(
-        d.choose(text, cancelToken: token),
+        d.choose(input, cancelToken: token),
         throwsA(isA<DeciderCancelledException>()),
       );
       await d.close();
       expect(d.isClosed, isTrue);
-      await expectLater(d.choose(text), throwsA(isA<StateError>()));
+      await expectLater(d.choose(input), throwsA(isA<StateError>()));
     }, skip: skip);
 
     test(
-      'a chat on the same model works between and beside decisions',
+      'an input longer than the context is refused, not truncated',
       () async {
-        final m = await model();
-        final d = await decider(m);
-        final input = DeciderInput(
-          EmbeddingInput.text('i am so scared of what tomorrow brings'),
+        final d = await decider(await model());
+        await expectLater(
+          d.choose(DeciderInput(EmbeddingInput.text('i feel ' * 600))),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message,
+              'message',
+              contains('maxTokens 1024'),
+            ),
+          ),
         );
-        final before = await d.choose(input);
-        final chat = await m.createChat(topK: 1, maxOutputTokens: 16);
+        // The decider still answers.
+        expect((await d.choose(input)).ranked, isNotEmpty);
+        await d.close();
+      },
+      skip: skip,
+    );
+
+    test('a chat\'s next turn is the same after a decision, and after a '
+        'decider\'s creation, between its turns', () async {
+      final m = await model();
+      final plain = await _secondTurn(m);
+      final d = await decider(m);
+      final afterDecision = await _secondTurn(
+        m,
+        between: () async {
+          await d.choose(input);
+        },
+      );
+      final afterCreation = await _secondTurn(
+        m,
+        between: () async {
+          final fresh = await decider(m);
+          await fresh.choose(input);
+          await fresh.close();
+        },
+      );
+      // ignore: avoid_print
+      print(
+        '[decider] second turn: plain ${jsonEncode(plain)}, after a decision '
+        '${jsonEncode(afterDecision)}, after a creation '
+        '${jsonEncode(afterCreation)}',
+      );
+      expect(afterDecision, plain);
+      expect(afterCreation, plain);
+      await d.close();
+    }, skip: skip);
+
+    test('a decision waits for a chat turn on the same model', () async {
+      final m = await model();
+      final d = await decider(m);
+      final before = await d.choose(input);
+      final chat = await m.createChat(topK: 1, maxOutputTokens: 16);
+      try {
         await chat.addQueryChunk(
           const Message(text: 'Say hello.', isUser: true),
         );
         // A decision while the chat generates: the native lock orders them.
         final reply = chat.generateChatResponseAsync().toList();
         final during = await d.choose(input);
-        final chunks = await reply;
-        expect(chunks, isNotEmpty);
+        expect(await reply, isNotEmpty);
         final after = await d.choose(input);
         expect(during.probabilities, before.probabilities);
         expect(after.probabilities, before.probabilities);
+      } finally {
+        await chat.close();
         await d.close();
-      },
-      skip: skip,
-    );
+      }
+    }, skip: skip);
+
+    test('a cancel stops a long scoring run between targets', () async {
+      final m = await model();
+      final scorer = await (m as OptionScoringModel).openOptionScorer();
+      final targets = [
+        for (final o in _listedOptions(trained))
+          '${o.id}${trained['terminator']}',
+      ];
+      final many = List.generate(300, (i) => targets[i % targets.length]);
+      final rendered = await scorer.renderUserMessage('a state to score');
+      await scorer.prepare(targets);
+      final token = CancelToken();
+      final watch = Stopwatch()..start();
+      final run = expectLater(
+        scorer.score(rendered, many, cancelToken: token),
+        throwsA(isA<DeciderCancelledException>()),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      token.cancel();
+      await run;
+      // ignore: avoid_print
+      print(
+        '[decider] a 300-target run cancelled at 100 ms ended at '
+        '${watch.elapsedMilliseconds} ms',
+      );
+      expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+      await scorer.close();
+    }, skip: skip);
 
     test('a model without a decision section is refused', () async {
       final path = '$_documents/functiongemma-270M-it.litertlm';
@@ -630,19 +782,42 @@ void main() {
       expect(await (m as OptionScoringModel).readDecisionSection(), isNull);
       await expectLater(
         m.createDecider(
-          question: trained['question'] as String,
-          options: _options(trained),
-          calibration: _calibration(trained),
+          question: question,
+          options: _trainedOptions(trained),
+          calibration: const InferenceDeciderCalibration.fromModel(),
         ),
         throwsA(
           isA<DeciderUnsupportedException>().having(
             (e) => e.message,
             'message',
-            contains('no decision section'),
+            contains('carries no decision'),
           ),
         ),
       );
     }, skip: skip);
+
+    test(
+      'the self-check also tells the mode on another chat template',
+      () async {
+        final path = '$_documents/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm';
+        if (!File(path).existsSync()) {
+          markTestSkipped('Qwen3 0.6B is not staged at $path');
+          return;
+        }
+        final m = await _load(path, modelType: ModelType.qwen3);
+        final scorer = await (m as OptionScoringModel).openOptionScorer();
+        await scorer.prepare([
+          'yes<|im_end|>',
+          'no<|im_end|>',
+          'maybe<|im_end|>',
+        ]);
+        // ignore: avoid_print
+        print('[decider] Qwen3 0.6B self-check: ${_modeOf(m)}');
+        expect(_modeOf(m), 'once');
+        await scorer.close();
+      },
+      skip: skip,
+    );
 
     test('a model on the GPU is refused: only the CPU is measured', () async {
       final m = await _load(
@@ -660,6 +835,34 @@ void main() {
           ),
         ),
       );
+    }, skip: skip);
+
+    test('closing the model stops a long scoring run', () async {
+      final m = await model();
+      final scorer = await (m as OptionScoringModel).openOptionScorer();
+      final targets = [
+        for (final o in _listedOptions(trained))
+          '${o.id}${trained['terminator']}',
+      ];
+      final many = List.generate(300, (i) => targets[i % targets.length]);
+      final rendered = await scorer.renderUserMessage('a state to score');
+      // The self-check first, so that the close lands in the long run.
+      await scorer.prepare(targets);
+      final watch = Stopwatch()..start();
+      final run = expectLater(
+        scorer.score(rendered, many),
+        throwsA(isA<StateError>()),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await m.close();
+      final closed = watch.elapsed;
+      await run;
+      // ignore: avoid_print
+      print(
+        '[decider] closing during a 300-target run took '
+        '${closed.inMilliseconds - 100} ms',
+      );
+      expect(closed, lessThan(const Duration(seconds: 3)));
     }, skip: skip);
   });
 }

@@ -455,13 +455,15 @@ option `choose` gains in a later release reaches `decide` as a new field of
 kind of decider: a small LLM trained on one question and its options lists
 them in a prompt and scores each option's id as its reply
 (`DeciderMethod.optionScoring`). `flutter_edge_ai_litertlm` 1.15.0 implements
-it for `.litertlm` models on the CPU backend.
+it for `.litertlm` models on the CPU backend, on native platforms; on the web
+`createDecider` throws `DeciderUnsupportedException`.
 
 The model is an ordinary generative `.litertlm`, tuned for the decision by
 [LiteTune](https://pypi.org/project/litetune/) 0.5.0 or later. When its verify
-passes, `litetune bundle` writes a `litetune.decision` section into the file —
+passes, `litetune bundle` writes a `litetune.decision` section into the file:
 the question, the options, the softmax temperature and the abstain threshold
-fitted for it — and prints the call that matches it:
+fitted for it. Pass the question and the trained options, and take the rest
+from the file with `InferenceDeciderCalibration.fromModel()`:
 
 ```dart
 await FlutterEdgeAi.installModel(
@@ -477,36 +479,50 @@ final decider = await model.createDecider(
     DeciderOption('sadness'), DeciderOption('joy'), DeciderOption('love'),
     DeciderOption('anger'), DeciderOption('fear'), DeciderOption('surprise'),
   ],
-  calibration: const InferenceDeciderCalibration(
-    temperature: 1.2367641844192563,
-    abstainBelow: 0.4998484989496927,
-  ),
+  calibration: const InferenceDeciderCalibration.fromModel(),
 );
 final answer = await decider.choose(
   DeciderInput(EmbeddingInput.text('im feeling far more mellow than normal')),
 );
 ```
 
-The call must match the section, because the temperature and the threshold
+LiteTune 0.5.0's `bundle` prints only the `options:` part of that call
+(`model.createDecider(options: [...])`); add the `question:`, which its
+`contract.json` and the section carry, and the `fromModel()` calibration.
+
+The call must match the decision, because the temperature and the threshold
 mean nothing for another question or another option list:
 
 - another question, an option the model was not trained on, a subset of its
-  options, another description (one equal to the id is accepted, as
-  `DeciderOption.fromJevChoice` sets it), temperature, threshold or
-  `noneOption` fails with `ArgumentError`, naming the trained value;
+  options, or another description (one equal to the id is accepted, as
+  `DeciderOption.fromJevChoice` sets it) fails with `ArgumentError`, naming
+  the trained value;
+- with `fromModel()`, a model trained with a "none of these" option may leave
+  it out of `options:` — the decider lists it last (`decider.options`);
+- explicit `InferenceDeciderCalibration` values must be the file's — they pin
+  the app to one build of the model, so a retrained model is refused; with
+  them the none option is listed among the options and named in
+  `noneOption`, and a file threshold of 0 is `abstainBelow: null`;
 - the options may come in any order: the prompt lists them as trained;
-- a section threshold of 0 is `abstainBelow: null` (it never abstains on the
-  probability; only the none option abstains);
 - a file without the section is an ordinary chat model:
   `DeciderUnsupportedException`.
 
 Each decision renders the prompt with the model's own chat template, prefills
 it once, and scores every option on its shortest unique prefix, rewinding to
-the prompt between options. When the decider is created, a self-check finds
-out how this LiteRT-LM version scores right after a prefill (0.18.0 drops the
-prompt's second-to-last token, LiteRT-LM #3561, and the decider prefills the
-last token again to match), once per loaded model. An engine whose check is
-neither answer is refused rather than guessed.
+the prompt between options. Before the first decision on a loaded model,
+LiteRT-LM checks how its version scores right after a prefill (0.18.0 drops
+the prompt's second-to-last token, LiteRT-LM #3561, and the decider prefills
+the last token again to match); an engine whose check gives neither answer,
+or whose scores are not repeatable, is refused rather than guessed. An input
+whose prompt does not fit the model's `maxTokens` is refused with
+`ArgumentError`, never truncated, and a decision that cannot fit even with a
+one-character input is refused when the decider is created. A cancel stops a
+decision between two options.
+
+The decider borrows the model. Core keeps one active inference model, and
+closes it when another one is requested (another file, another `maxTokens`):
+the decider is then closed too, and `choose` throws `StateError`. Create it
+again on the new model.
 
 Three kinds of question, from the section:
 
@@ -531,17 +547,21 @@ Its answers have the same shape as an embedding decider's, with these values:
 | `provenance.spaceId` | the embedding space | null |
 | `capabilities.supportsAmong`, `storable` | true, true | false, false |
 
-Not in this release: `among`, `DeciderInput.context`, images and audio, and the
-GPU and NPU (refused: option scoring is measured on the CPU only). An input
+Not in this release: `among`, `DeciderInput.context`, images and audio, the
+GPU and NPU (refused: option scoring is measured on the CPU only), and the web
+(refused). Measured on macOS (Apple M4 Pro); Android, iOS, Linux and Windows
+use the same C calls and are not measured yet. An input
 that contains a chat template's control text (`<start_of_turn>`,
 `<end_of_turn>`, `<bos>`, …) is refused with `ArgumentError`: the model was
 never trained on such a prompt.
 
-**Measured.** google/gemma-3-270m-it tuned by LiteTune on dair-ai/emotion (6
-options, int8), 24 held-out rows of LiteTune's golden pack, on an Apple M4 Pro
-CPU: the prompt's tokens equal LiteTune's on every row, the top option equals
-the PyTorch reference's on every row, and a decision takes 176 ms (median;
-creating the decider, self-check included, 463 ms). LiteTune measured the same
+**Measured.** On an Apple M4 Pro CPU, with LiteTune's golden packs (24
+held-out rows each, google/gemma-3-270m-it tuned by LiteTune, int8): emotion
+(Choice, 6 options), SST-2 (Noul) and SST-5 (Score, 5 levels). The prompt's
+tokens equal LiteTune's on every row; the top option is the PyTorch
+reference's on 24, 23 and 21 rows, the others near-ties on which LiteTune's
+own run disagrees with the reference too; a decision takes 120–190 ms
+(median). LiteTune measured the same
 method on a server CPU at 0.38 s for 6 options, 5.0 s for 55 and 7.2 s for 151:
 one scoring pass per option, against one embedding whatever the number of
 options for an embedding decider. So a language-model decider is for a few
@@ -569,9 +589,9 @@ questions only: `noul` and `score` throw `ArgumentError`.
 | Failure | Thrown |
 |---|---|
 | `InferenceModel.createDecider`: a blank question, an option with examples, a calibration value out of range or a `noneOption` that is not an option, or any of them other than the model was trained with; no options, duplicate ids, an option with nothing to embed, a calibration the options or labelled rows cannot support, an unknown `among` id, a model without installed files or a backend and no `embedderId` | `ArgumentError` |
-| A language-model decider's input that is empty or contains a chat template's control text | `ArgumentError` |
+| A language-model decider's input that is empty, contains a chat template's control text, or renders to a prompt longer than the model's `maxTokens` | `ArgumentError` |
 | `DeciderInput.context` to a decider without `supportsContext` (none in this release); `among` to one without `supportsAmong`; an input modality not in `capabilities.modalities` | `DeciderUnsupportedException` |
-| `InferenceModel.createDecider` on a model whose engine does not score options, a file without a `litetune.decision` section or with one this release does not read, a backend other than the CPU, a tokenizer that splits the options otherwise than the calibration saw, an engine whose scoring self-check is neither answer; `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
+| `InferenceModel.createDecider` on a model whose engine does not score options (every model on the web), a file without a `litetune.decision` section or with one this release does not read, a backend other than the CPU, a tokenizer that splits the options otherwise than the calibration saw, a decision that cannot fit the model's `maxTokens`, an engine whose scoring self-check gives no answer; a language-model decider's engine returning scores that are not log-probabilities; `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
 | `DeciderMethod.optionScoring` given to `EmbeddingModel.createDecider` | `ArgumentError` |
 | An artifact from another embedding space; core's replacement embedder in another space | `DeciderSpaceMismatchException` |
 | A malformed, contradictory or newer artifact | `FormatException` |

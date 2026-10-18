@@ -179,31 +179,47 @@ List<({EmbeddingInput input, String optionId})>? labelledRowsOf(
 /// option scores into probabilities, and when it abstains.
 ///
 /// The values are fitted OFFLINE, for one model, one question and one option
-/// list — the report of the tool that trained the model prints them — and
-/// mean nothing for another. Every member is optional: all null is an
-/// uncalibrated decider that never abstains and reports no probabilities.
-///
-/// `InferenceModel.createDecider` checks these values (and refuses one that is
-/// out of range with [ArgumentError]) before anything else, and then that
-/// they are the ones the model file says were fitted for it.
+/// list, and mean nothing for another. A model tuned by LiteTune carries them
+/// in its file: pass [InferenceDeciderCalibration.fromModel] to use them, so
+/// the app keeps working when the model is retrained and its values change.
+/// Values given explicitly pin the call to one build of the model:
+/// `createDecider` refuses them with [ArgumentError] unless they are the
+/// file's, as it refuses one out of range before anything else.
 @experimental
 @immutable
 final class InferenceDeciderCalibration {
+  /// The values given here, which must be the ones the model file carries.
+  /// A file threshold of 0 (only the none option abstains) is
+  /// `abstainBelow: null`.
   const InferenceDeciderCalibration({
     this.temperature,
     this.abstainBelow,
     this.noneOption,
-  });
+  }) : fromModelFile = false;
+
+  /// The temperature, threshold and none option the model file carries.
+  /// The call then needs only the question and the options; the none option
+  /// may be left out of them, and the decider lists it last.
+  const InferenceDeciderCalibration.fromModel()
+    : temperature = null,
+      abstainBelow = null,
+      noneOption = null,
+      fromModelFile = true;
+
+  /// Whether the values come from the model file
+  /// ([InferenceDeciderCalibration.fromModel]); the three members below are
+  /// then null.
+  final bool fromModelFile;
 
   /// The softmax temperature `T` (positive, finite): the answer's
   /// probabilities are `softmax(s / T)` over the options, with a confidence.
-  /// Null: no probabilities, no confidence.
   final double? temperature;
 
   /// A probability in (0, 1): the decider abstains
   /// (`AbstainReason.belowThreshold`, with the signal
-  /// `AbstainSignalKind.topProbability`) when the top probability is below it — unless [noneOption] ranked first,
-  /// which is checked before it. Needs [temperature].
+  /// `AbstainSignalKind.topProbability`) when the top probability is below
+  /// it — unless [noneOption] ranked first, which is checked before it.
+  /// Needs [temperature].
   final double? abstainBelow;
 
   /// The id of the option the model was trained to give for "none of these";
@@ -213,7 +229,8 @@ final class InferenceDeciderCalibration {
   final String? noneOption;
 
   @override
-  String toString() =>
-      'InferenceDeciderCalibration(temperature: $temperature, '
-      'abstainBelow: $abstainBelow, noneOption: $noneOption)';
+  String toString() => fromModelFile
+      ? 'InferenceDeciderCalibration.fromModel()'
+      : 'InferenceDeciderCalibration(temperature: $temperature, '
+            'abstainBelow: $abstainBelow, noneOption: $noneOption)';
 }

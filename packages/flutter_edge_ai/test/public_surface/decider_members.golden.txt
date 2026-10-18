@@ -26,19 +26,19 @@ final class DeciderInput
   field final EmbeddingInput input
 
 final class DeciderAnswer
-  constructor DeciderAnswer({required String? choice, required List<RankedOption> ranked, required ScoreKind scoreKind, required double margin, required DeciderProvenance provenance, double? confidence, AbstainReason? abstainReason, Map<String, double>? probabilities, DeciderQuestionType questionType = DeciderQuestionType.choice, double? noul, double? expectedLevel, Map<String, String>? legend})
+  constructor DeciderAnswer({required String? choice, required List<RankedOption> ranked, required ScoreKind scoreKind, required double margin, required DeciderProvenance provenance, double? confidence, AbstainReason? abstainReason, Map<String, double>? probabilities, DeciderQuestionType questionType = DeciderQuestionType.choice, Map<String, String>? legend})
   field final AbstainReason? abstainReason
   field final String? choice
   field final double? confidence
-  field final double? expectedLevel
   field final Map<String, String>? legend
   field final double margin
-  field final double? noul
   field final Map<String, double>? probabilities
   field final DeciderProvenance provenance
   field final DeciderQuestionType questionType
   field final List<RankedOption> ranked
   field final ScoreKind scoreKind
+  getter double? expectedLevel
+  getter double? noul
   method Map<String, Object?> toJevJson()
   method String toString()
 
@@ -61,9 +61,10 @@ final class DeciderProvenance
   field final double? threshold
 
 final class DeciderCapabilities
-  constructor const DeciderCapabilities({required Set<EmbeddingModality> modalities, required bool calibratedProbabilities, required bool supportsContext, required bool supportsAmong, required bool storable})
+  constructor const DeciderCapabilities({required Set<EmbeddingModality> modalities, required bool calibratedProbabilities, required bool supportsContext, required bool supportsAmong, required bool storable, DeciderQuestionType questionType = DeciderQuestionType.choice})
   field final bool calibratedProbabilities
   field final Set<EmbeddingModality> modalities
+  field final DeciderQuestionType questionType
   field final bool storable
   field final bool supportsAmong
   field final bool supportsContext
@@ -127,7 +128,9 @@ final class EmbeddingDeciderCalibration
 
 final class InferenceDeciderCalibration
   constructor const InferenceDeciderCalibration({double? temperature, double? abstainBelow, String? noneOption})
+  constructor const InferenceDeciderCalibration.fromModel()
   field final double? abstainBelow
+  field final bool fromModelFile
   field final String? noneOption
   field final double? temperature
   method String toString()

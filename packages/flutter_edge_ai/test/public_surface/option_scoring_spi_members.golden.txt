@@ -3,19 +3,21 @@
 # (UPDATE_GOLDENS=1 regenerates). One block per type: its declaration,
 # then one line per public member it declares, sorted by kind and name.
 
-abstract interface class OptionScoringModel
+base mixin OptionScoringModel on InferenceModel
   method Future<OptionScorer> openOptionScorer() abstract
   method Future<String?> readDecisionSection() abstract
 
-abstract interface class OptionScorer
+abstract base class OptionScorer
+  constructor const OptionScorer()
   method Future<void> close() abstract
   method Future<String> detokenize(List<int> ids) abstract
+  method Future<void> prepare(List<String> targets)
   method Future<String> renderUserMessage(String content) abstract
-  method Future<OptionScoringRun> score(String prompt, List<String> targets, {String? reprefill, CancelToken? cancelToken}) abstract
+  method Future<OptionScoringRun> score(String prompt, List<String> targets, {CancelToken? cancelToken}) abstract
   method Future<List<int>> tokenize(String text) abstract
 
 final class OptionScoringRun
-  constructor const OptionScoringRun({required List<List<double>> tokenScores, required Duration prefillTime, required Duration scoreTime})
+  constructor OptionScoringRun({required List<List<double>> tokenScores, required Duration prefillTime, required Duration scoreTime})
   field final Duration prefillTime
   field final Duration scoreTime
   field final List<List<double>> tokenScores

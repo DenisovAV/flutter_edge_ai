@@ -68,7 +68,8 @@ void main() {
     expect(await readLitetuneDecisionSection(path), isNull);
   });
 
-  test('the name on a section of another type is not it', () async {
+  test('the name on a section of another type is refused, not taken for '
+      '"no section"', () async {
     final path = write(
       litertlmContainer(
         [tflite()],
@@ -77,7 +78,52 @@ void main() {
         },
       ),
     );
-    expect(await readLitetuneDecisionSection(path), isNull);
+    await expectLater(
+      readLitetuneDecisionSection(path),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('data type'),
+        ),
+      ),
+    );
+  });
+
+  test('a generic section whose name is not a string is refused', () async {
+    final path = write(
+      litertlmContainer(
+        [generic(utf8.encode(_payload))],
+        items: {
+          0: {'name': 7},
+        },
+      ),
+    );
+    await expectLater(
+      readLitetuneDecisionSection(path),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('a load-time read captures an unreadable file as the decision\'s '
+      'error', () async {
+    final read = await LitetuneDecisionRead.read(
+      '${dir.path}/missing.litertlm',
+    );
+    expect(read.payload, isNull);
+    expect(read.error, isA<FormatException>());
+    final good = await LitetuneDecisionRead.read(
+      write(
+        litertlmContainer(
+          [generic(utf8.encode(_payload))],
+          items: {
+            0: {'name': litetuneDecisionSectionName},
+          },
+        ),
+      ),
+    );
+    expect(good.payload, _payload);
+    expect(good.error, isNull);
   });
 
   test('two decision sections are refused, not one picked', () async {

@@ -1,5 +1,5 @@
 ## 1.15.0
-- `InferenceModel.createDecider` on CPU, from the `litetune.decision` section of a `.litertlm`.
+- `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.
 - Require `flutter_edge_ai` ^2.5.0.
 
 ## 1.14.0

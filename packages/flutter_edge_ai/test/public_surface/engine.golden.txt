@@ -109,8 +109,8 @@ NetworkError class final
 NetworkSource class final
 NoActiveModelError class
 NotFoundError class final
-OptionScorer class abstract interface experimental
-OptionScoringModel class abstract interface experimental
+OptionScorer class abstract base experimental
+OptionScoringModel mixin base experimental
 OptionScoringRun class final experimental
 OrphanedFileInfo class
 ParallelFunctionCallResponse class

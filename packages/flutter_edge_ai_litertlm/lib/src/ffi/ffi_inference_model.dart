@@ -10,6 +10,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter/foundation.dart';
 
 import '../litertlm_decision_section.dart';
+import '../option_scoring_self_check.dart';
 import 'litert_lm_client.dart';
 import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 
@@ -17,16 +18,16 @@ import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 /// Shared between desktop and mobile (iOS) for .litertlm models.
 ///
 /// Scores options for `createDecider` ([OptionScoringModel]) on the CPU
-/// backend, from the decision litetune wrote into [modelPath].
-class FfiInferenceModel extends InferenceModel
-    with CloseNotifier
-    implements OptionScoringModel {
+/// backend, from the decision litetune wrote into the model file
+/// ([decisionRead], read when the model was loaded).
+base class FfiInferenceModel extends InferenceModel
+    with CloseNotifier, OptionScoringModel {
   FfiInferenceModel({
     required this.ffiClient,
     required this.maxTokens,
     required this.modelType,
     required this.activeBackend,
-    this.modelPath,
+    this.decisionRead,
     this.activeVisionBackend,
     this.activeAudioBackend,
     this.fileType = ModelFileType.litertlm,
@@ -41,9 +42,16 @@ class FfiInferenceModel extends InferenceModel
   final LiteRtLmFfiClient ffiClient;
   final ModelType modelType;
 
-  /// The `.litertlm` file the engine loaded; null only for a model built
-  /// without one (tests), which then cannot read its decision.
-  final String? modelPath;
+  /// The decision the loaded `.litertlm` carries, read with the model so
+  /// that a decider reads the file the engine loaded; null only for a model
+  /// built without one (tests), which then cannot read its decision.
+  final LitetuneDecisionRead? decisionRead;
+
+  /// How this engine scores right after a prefill, found by the self-check
+  /// before the first decision on this model; null until then.
+  LiteRtLmScoringMode? get scoringMode => _scoringMode;
+  LiteRtLmScoringMode? _scoringMode;
+  Future<LiteRtLmScoringMode>? _scoringCheck;
   @override
   final ModelFileType fileType;
   @override
@@ -81,14 +89,49 @@ class FfiInferenceModel extends InferenceModel
 
   @override
   Future<String?> readDecisionSection() async {
-    final path = modelPath;
-    if (path == null) {
+    final read = decisionRead;
+    if (read == null) {
       throw const DeciderUnsupportedException(
-        'This model was built without its file path, so its decision section '
-        'cannot be read.',
+        'This model was built without reading its file, so it has no '
+        'decision to read.',
       );
     }
-    return readLitetuneDecisionSection(path);
+    if (read.error case final error?) throw error;
+    return read.payload;
+  }
+
+  /// The self-check, once per model; a check that failed runs again next
+  /// time (it may have failed on a model that was closing).
+  Future<LiteRtLmScoringMode> _scoringModeFor(
+    _LiteRtLmOptionScorer scorer,
+    List<String> targets,
+  ) {
+    final known = _scoringCheck;
+    if (known != null) return known;
+    final check = liteRtLmScoringSelfCheck(
+      targets: targets,
+      tokenize: scorer.tokenize,
+      detokenize: scorer.detokenize,
+      scoreOneToken: (prompt, token) async {
+        final run = await scorer._client.scoreTargets(prompt, [token]);
+        final scores = run.tokenScores.single;
+        if (scores.length != 1) {
+          throw DeciderUnsupportedException(
+            'The self-check\'s one-token target "$token" scored '
+            '${scores.length} tokens.',
+          );
+        }
+        return scores.single;
+      },
+    );
+    _scoringCheck = check;
+    return check.then(
+      (mode) => _scoringMode = mode,
+      onError: (Object e, StackTrace st) {
+        if (identical(_scoringCheck, check)) _scoringCheck = null;
+        Error.throwWithStackTrace(e, st);
+      },
+    );
   }
 
   @override
@@ -1437,7 +1480,7 @@ class _VirtualConversationHandle implements ConversationHandle {
 /// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no
 /// native resource between calls: each scoring pass opens and deletes its own
 /// session.
-final class _LiteRtLmOptionScorer implements OptionScorer {
+final class _LiteRtLmOptionScorer extends OptionScorer {
   _LiteRtLmOptionScorer(this._model);
 
   final FfiInferenceModel _model;
@@ -1460,16 +1503,45 @@ final class _LiteRtLmOptionScorer implements OptionScorer {
       _client.renderUserMessage(content);
 
   @override
+  Future<void> prepare(List<String> targets) =>
+      _model._scoringModeFor(this, targets);
+
+  @override
   Future<OptionScoringRun> score(
     String prompt,
     List<String> targets, {
-    String? reprefill,
     CancelToken? cancelToken,
   }) async {
-    if (cancelToken?.isCancelled ?? false) {
-      throw const DeciderCancelledException('The decision was cancelled.');
+    final mode = await _model._scoringModeFor(this, targets);
+    String? reprefill;
+    if (mode == LiteRtLmScoringMode.once) {
+      // The session adds BOS itself, so a prompt that starts with its text
+      // would carry two.
+      if (prompt.startsWith('<bos>')) {
+        throw const DeciderUnsupportedException(
+          'The rendered prompt starts with <bos>, which the scoring session '
+          'adds itself.',
+        );
+      }
+      final ids = await tokenize(prompt);
+      final last = await detokenize([ids.last]);
+      final back = await tokenize(last);
+      if (!prompt.endsWith(last) ||
+          back.length != 1 ||
+          back.single != ids.last) {
+        throw DeciderUnsupportedException(
+          'The prompt\'s last token ${ids.last} does not round-trip as '
+          '"$last", so it cannot be prefilled again on its own.',
+        );
+      }
+      reprefill = last;
     }
-    return _client.scoreTargets(prompt, targets, reprefill: reprefill);
+    return _client.scoreTargets(
+      prompt,
+      targets,
+      reprefill: reprefill,
+      cancelToken: cancelToken,
+    );
   }
 
   @override

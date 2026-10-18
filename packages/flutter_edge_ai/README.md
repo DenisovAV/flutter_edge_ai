@@ -347,10 +347,11 @@ HWU64, the numbers and their limits:
 [Decisions](https://flutteredge.ai/docs/decisions).
 `InferenceModel.createDecider(question:, options:, calibration:)` is the
 language-model kind, with answers of the same shape: a small `.litertlm` tuned
-for the decision by LiteTune, which carries the question, options, temperature
-and threshold in the file and prints the matching call; each option's id is
-scored as the model's reply, on the CPU (`flutter_edge_ai_litertlm` 1.15.0).
-It answers Choice, Noul (`answer.noul`, P(yes)) and Score
+for the decision by LiteTune carries the question, options, temperature and
+threshold in the file; pass the question and the options, with
+`InferenceDeciderCalibration.fromModel()` for the rest. Each option's id is
+scored as the model's reply, on the CPU, natively (`flutter_edge_ai_litertlm`
+1.15.0). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
 (`answer.expectedLevel`) questions.
 
 ## Three things that fail quietly

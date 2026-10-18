@@ -46,7 +46,7 @@ Future<String> renderUserMessageOffMainIsolate({
   final isolateLogLevel = edgeAiLogLevel;
   return Isolate.run(() {
     edgeAiLogLevel = isolateLogLevel;
-    final n = _Native(openLiteRtLmLibrary());
+    final n = _Native(openLiteRtLmLibrary())..clearLastError();
     final sessionConfig = n.greedySessionConfig(applyPromptTemplate: null);
     n.sessionConfigSetMaxOutputTokens(sessionConfig, 1);
     final config = n.conversationConfigCreate();
@@ -76,7 +76,7 @@ Future<String> renderUserMessageOffMainIsolate({
         );
       }
       // Owned by the conversation: copied before it is deleted.
-      return rendered.toDartString();
+      return nativeText(rendered.cast());
     } finally {
       malloc.free(message);
       n.conversationDelete(conversation);
@@ -85,17 +85,32 @@ Future<String> renderUserMessageOffMainIsolate({
 }
 
 /// Scores each of [targets] after [prompt] in one fresh session; see
-/// `OptionScorer.score`.
+/// `OptionScorer.score`. With [reprefill], prefills it once after the
+/// checkpoint (mode `once`).
+///
+/// [stopFlagAddr] is the address of an `Int32` the caller sets to non-zero to
+/// stop the run: it is read before the prefill and before each target, and a
+/// set flag fails the run with `DeciderCancelledException` — the native call
+/// in progress is not interrupted.
 Future<OptionScoringRun> scoreTargetsOffMainIsolate({
   required int engineAddr,
   required String prompt,
   required List<String> targets,
+  required int stopFlagAddr,
   String? reprefill,
 }) {
   final isolateLogLevel = edgeAiLogLevel;
   return Isolate.run(() {
     edgeAiLogLevel = isolateLogLevel;
-    final n = _Native(openLiteRtLmLibrary());
+    final stop = Pointer<Int32>.fromAddress(stopFlagAddr);
+    void stopIfAsked() {
+      if (stop.value != 0) {
+        throw const DeciderCancelledException('The scoring was stopped.');
+      }
+    }
+
+    stopIfAsked();
+    final n = _Native(openLiteRtLmLibrary())..clearLastError();
     final config = n.greedySessionConfig(applyPromptTemplate: false);
     final session = n.engineCreateSession(
       Pointer.fromAddress(engineAddr),
@@ -123,6 +138,7 @@ Future<OptionScoringRun> scoreTargetsOffMainIsolate({
       final scoreWatch = Stopwatch()..start();
       final scores = <List<double>>[];
       for (var i = 0; i < targets.length; i++) {
+        stopIfAsked();
         scores.add(n.score(session, targets[i]));
         if (i < targets.length - 1) {
           n.checked(
@@ -357,10 +373,10 @@ final class _Native {
       try {
         final count = responsesNumTokenScoresAt(responses, 0);
         final scores = responsesTokenScoresAt(responses, 0);
-        if (count < 0 || (count > 0 && scores == nullptr)) {
+        if (count <= 0 || scores == nullptr) {
           throw StateError(
-            'litert_lm_session_run_text_scoring returned $count token scores '
-            'for ${jsonEncode(target)}',
+            '${failure('litert_lm_session_run_text_scoring')} (it returned '
+            '$count token scores)',
           );
         }
         return Float64List.fromList(scores.asTypedList(count));
@@ -377,18 +393,39 @@ final class _Native {
     if (code != 0) throw StateError(failure(call, code: code));
   }
 
+  /// Clears LiteRT-LM's thread-local last error, which a success never
+  /// clears, so that [failure] reports this run's, not an older one.
+  void clearLastError() {
+    if (lib.providesSymbol('litert_lm_clear_last_error')) {
+      lib.lookupFunction<Void Function(), void Function()>(
+        'litert_lm_clear_last_error',
+      )();
+    }
+  }
+
   /// [call] failed: its name, its status code when it returns one, and
   /// LiteRT-LM's last error, which is thread-local and so read here.
   String failure(String call, {int? code}) {
     String? message;
     if (lib.providesSymbol('litert_lm_get_last_error_message')) {
       final ptr = lib
-          .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+          .lookupFunction<Pointer<Uint8> Function(), Pointer<Uint8> Function()>(
             'litert_lm_get_last_error_message',
           )();
-      if (ptr != nullptr) message = ptr.toDartString();
+      if (ptr != nullptr) message = nativeText(ptr);
     }
     return '$call failed${code == null ? '' : ' with $code'}'
         '${message == null || message.isEmpty ? '' : ': $message'}';
   }
+}
+
+/// The NUL-terminated native string at [ptr], decoded as UTF-8 with any
+/// malformed bytes replaced, so that a broken byte never hides what it was
+/// part of.
+String nativeText(Pointer<Uint8> ptr) {
+  var length = 0;
+  while (ptr[length] != 0) {
+    length++;
+  }
+  return utf8.decode(ptr.asTypedList(length), allowMalformed: true);
 }

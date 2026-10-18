@@ -1,6 +1,5 @@
 ## 2.5.0
-- Experimental: `InferenceModel.createDecider` scores options on a model trained on the decision.
-- `DeciderAnswer.questionType`, `noul`, `expectedLevel`, `legend`; `toJevJson` writes Noul and Score.
+- Experimental: `InferenceModel.createDecider` scores options on a model trained on it, Noul and Score too.
 
 ## 2.4.1
 - Tool calls: a raw Gemma 4 call runs with typed arguments or not at all; one-chunk tagged calls parse.

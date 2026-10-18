@@ -160,24 +160,25 @@ final model = await FlutterEdgeAi.getActiveModel(
 final decider = await model.createDecider(
   question: 'Which emotion does the text express?',
   options: [DeciderOption('sadness'), DeciderOption('joy'), /* … */],
-  calibration: const InferenceDeciderCalibration(
-    temperature: 1.2367641844192563,
-    abstainBelow: 0.4998484989496927,
-  ),
+  calibration: const InferenceDeciderCalibration.fromModel(),
 );
 ```
 
-`litetune bundle` prints the call for its file; another question, option set,
-temperature or threshold is refused with `ArgumentError`. Each decision
-renders the prompt with the model's chat template, prefills it, and scores
-each option's shortest unique prefix as the model's reply through LiteRT-LM's
+`fromModel()` takes the temperature, threshold and none option from the file;
+another question or option set is refused with `ArgumentError`. LiteTune
+0.5.0's `bundle` prints only the `options:` part of the call. Each decision
+renders the prompt with the model's chat template, prefills it, and scores each
+option's shortest unique prefix as the model's reply through LiteRT-LM's
 session API (`run_text_scoring`, with a checkpoint and a rewind between
 options), on a background isolate and in turn with any chat on the same
-engine. CPU only: a model loaded on the GPU or the NPU is refused with
-`DeciderUnsupportedException`, as is a file without the section. Measured on
-an Apple M4 Pro CPU with google/gemma-3-270m-it tuned on dair-ai/emotion (6
-options, int8): 176 ms per decision, and the same top option as LiteTune's
-PyTorch reference on all 24 golden rows. The answers, Noul and Score included:
+engine; a cancel stops it between two options, and so does closing the model.
+Native platforms, CPU only: the web, a model loaded on the GPU or the NPU, and
+a file without the section are refused with `DeciderUnsupportedException`; an
+input whose prompt does not fit `maxTokens` with `ArgumentError`. Measured on
+an Apple M4 Pro CPU with LiteTune's golden packs (google/gemma-3-270m-it,
+int8): 120–190 ms per decision, and the same top option as LiteTune's PyTorch
+reference on every row but near-ties. Android, iOS, Linux and Windows use the
+same C calls and are not measured yet. The answers, Noul and Score included:
 [Decisions](https://flutteredge.ai/docs/decisions#deciders-from-a-language-model).
 
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)

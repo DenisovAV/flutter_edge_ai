@@ -2298,6 +2298,11 @@ class LiteRtLmFfiClient {
   /// timeout escape hatch.
   Future<void> shutdown() async {
     _isShuttingDown = true;
+    // A scoring run in flight stops at its next target instead of running all
+    // of them first.
+    for (final stop in _scoringStops) {
+      stop.value = 1;
+    }
     if (_createsInFlight > 0) {
       _createsQuiescent ??= Completer<void>();
       await _createsQuiescent!.future;
@@ -2447,13 +2452,18 @@ class LiteRtLmFfiClient {
       result = b.litert_lm_engine_tokenize(engine, textPtr.cast<Char>());
       if (result == nullptr) {
         throw StateError(
-          'litert_lm_engine_tokenize failed for ${jsonEncode(text)}',
+          'litert_lm_engine_tokenize failed for a text of ${text.length} '
+          'characters',
         );
       }
       final n = b.litert_lm_tokenize_result_get_num_tokens(result);
       final ids = b.litert_lm_tokenize_result_get_tokens(result);
-      if (n < 0 || (n > 0 && ids == nullptr)) {
-        throw StateError('litert_lm_engine_tokenize returned $n tokens');
+      // Non-empty text cannot tokenise to nothing (see [tokenCount]).
+      if (n < 0 || (n == 0 && text.isNotEmpty) || (n > 0 && ids == nullptr)) {
+        throw StateError(
+          'litert_lm_engine_tokenize returned $n tokens for a text of '
+          '${text.length} characters',
+        );
       }
       return [for (var i = 0; i < n; i++) ids[i]];
     } finally {
@@ -2462,7 +2472,9 @@ class LiteRtLmFfiClient {
     }
   });
 
-  /// The text of [ids], from the engine's tokenizer. Throws as [tokenIds].
+  /// The text of [ids], from the engine's tokenizer, malformed UTF-8 (a
+  /// token that ends inside a character) replaced rather than thrown. Throws
+  /// as [tokenIds].
   Future<String> detokenizeIds(List<int> ids) => _nativeMutex.protect(() async {
     final b = _bindings;
     final engine = _engine;
@@ -2483,7 +2495,7 @@ class LiteRtLmFfiClient {
       if (text == nullptr) {
         throw StateError('litert_lm_engine_detokenize returned no text');
       }
-      return text.cast<Utf8>().toDartString();
+      return nativeText(text.cast());
     } finally {
       if (result != nullptr) b.litert_lm_detokenize_result_delete(result);
       calloc.free(tokens);
@@ -2496,7 +2508,7 @@ class LiteRtLmFfiClient {
   Future<String> renderUserMessage(String content) => _guardCreate(
     () => _nativeMutex.protect(() async {
       final engine = _engine;
-      if (engine == null || engine == nullptr) {
+      if (_isShuttingDown || engine == null || engine == nullptr) {
         throw StateError('The LiteRT-LM engine is not loaded.');
       }
       return renderUserMessageOffMainIsolate(
@@ -2506,28 +2518,63 @@ class LiteRtLmFfiClient {
     }),
   );
 
+  /// The stop flags of the scoring runs in flight; [shutdown] sets them.
+  final Set<Pointer<Int32>> _scoringStops = {};
+
   /// Scores [targets] as the model's continuation of [prompt] in one fresh
   /// session without a prompt template (`OptionScorer.score`). On a spawned
   /// isolate, under [_nativeMutex], so it runs between turns of any
   /// conversation on this engine; [shutdown] waits for it.
+  ///
+  /// [cancelToken] and [shutdown] stop the run before its prefill or between
+  /// targets: a cancel fails it with `DeciderCancelledException`, a shutdown
+  /// with [StateError].
   // The decider SPI is @experimental.
   // ignore: experimental_member_use
   Future<OptionScoringRun> scoreTargets(
     String prompt,
     List<String> targets, {
     String? reprefill,
+    CancelToken? cancelToken,
   }) => _guardCreate(
     () => _nativeMutex.protect(() async {
       final engine = _engine;
-      if (engine == null || engine == nullptr) {
+      if (_isShuttingDown || engine == null || engine == nullptr) {
         throw StateError('The LiteRT-LM engine is not loaded.');
       }
-      return scoreTargetsOffMainIsolate(
-        engineAddr: engine.address,
-        prompt: prompt,
-        targets: targets,
-        reprefill: reprefill,
-      );
+      if (cancelToken?.isCancelled ?? false) {
+        // ignore: experimental_member_use
+        throw const DeciderCancelledException('The decision was cancelled.');
+      }
+      final stop = calloc<Int32>();
+      _scoringStops.add(stop);
+      var running = true;
+      if (cancelToken != null) {
+        unawaited(
+          cancelToken.whenCancelled.then((_) {
+            if (running) stop.value = 1;
+          }),
+        );
+      }
+      try {
+        return await scoreTargetsOffMainIsolate(
+          engineAddr: engine.address,
+          prompt: prompt,
+          targets: targets,
+          stopFlagAddr: stop.address,
+          reprefill: reprefill,
+        );
+        // ignore: experimental_member_use
+      } on DeciderCancelledException {
+        if (_isShuttingDown && !(cancelToken?.isCancelled ?? false)) {
+          throw StateError('The model was closed while it scored options.');
+        }
+        rethrow;
+      } finally {
+        running = false;
+        _scoringStops.remove(stop);
+        calloc.free(stop);
+      }
     }),
   );
 

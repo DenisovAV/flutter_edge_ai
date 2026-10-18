@@ -8,8 +8,8 @@
 // - the section and its checks: `decision_verify.section_payload` and
 //   `decisions.decision_from`;
 // - the prompt: `Decision.render`, byte for byte;
-// - the targets, the self-check and the scoring: `decision_scripts`
-//   ENGINE_SCRIPT;
+// - the targets: `decision_scripts` ENGINE_SCRIPT (the scoring itself, and
+//   its self-check, are the engine's: `OptionScorer`);
 // - the answer: `decision_verify._given` and `calibration.answers`, with the
 //   probabilities `softmax(s / T)` over the listed options.
 
@@ -48,12 +48,6 @@ const decisionControlText = [
   '<eos>',
   '<pad>',
 ];
-
-/// The pair the self-check compares: the same text ending in the model turn's
-/// opening and in the user turn's (`decision_scripts.FIXED`).
-const _selfCheckPrompt =
-    '<start_of_turn>user\nAnswer with one word.<end_of_turn>\n'
-    '<start_of_turn>model\n';
 
 /// The keys of a version-1 section payload, every one required.
 const _sectionKeys = {
@@ -129,7 +123,10 @@ final class DecisionSection {
       );
     }
     final type = decoded['type'];
-    if (type is! String || !const {'choice', 'noul', 'score'}.contains(type)) {
+    final questionType = type is String
+        ? deciderQuestionTypeByName(type)
+        : null;
+    if (questionType == null) {
       throw FormatException(
         'its type ${jsonEncode(type)} is not choice, noul or score',
       );
@@ -251,11 +248,7 @@ final class DecisionSection {
       }
     }
     return DecisionSection._(
-      type: switch (type) {
-        'noul' => DeciderQuestionType.noul,
-        'score' => DeciderQuestionType.score,
-        _ => DeciderQuestionType.choice,
-      },
+      type: questionType,
       question: question,
       options: List.unmodifiable(options),
       noneOption: noneOption,
@@ -294,10 +287,10 @@ final class DecisionSection {
 
   /// The options as the prompt lists them: the trained ones, then the
   /// `none_option`.
-  List<DecisionOption> get listed => [
+  late final List<DecisionOption> listed = List.unmodifiable([
     ...options,
     if (noneOption case final none?) DecisionOption(none),
-  ];
+  ]);
 
   /// The threshold as `InferenceDeciderCalibration.abstainBelow` carries it:
   /// a threshold of 0 never abstains, so it is null there.
@@ -327,18 +320,18 @@ final class DecisionSection {
   }
 }
 
-/// How the engine is scored right after a prefill: `once` re-prefills the
-/// prompt's last token once per decision (LiteRT-LM 0.18.0 drops the token
-/// before it, #3561), `plain` scores as is (an engine with the fix).
-enum OptionScoringMode { once, plain }
+/// A token score above this is not a log-probability (they are ≤ 0), with
+/// room for float rounding.
+const _maxTokenScore = 1e-4;
 
-/// The mode each model's self-check picked, run once per loaded model.
-final _modes = Expando<Future<OptionScoringMode>>('option scoring mode');
+/// The options' probabilities, `exp(logsumexp(s))`, sum to at most 1 for an
+/// engine that returns log-probabilities: the targets are prefix-free. This
+/// is the rounding allowed above 0 for `logsumexp(s)`.
+const _maxLogSumExp = 1e-3;
 
 /// [InferenceModel.createDecider] on a model whose engine scores options.
 Future<Decider> createOptionScoringDecider(
-  InferenceModel model,
-  OptionScoringModel engine, {
+  OptionScoringModel model, {
   required String question,
   required List<DeciderOption> options,
   required InferenceDeciderCalibration calibration,
@@ -346,19 +339,19 @@ Future<Decider> createOptionScoringDecider(
 }) async {
   final String? payload;
   try {
-    payload = await engine.readDecisionSection();
+    payload = await model.readDecisionSection();
   } on FormatException catch (e) {
     throw DeciderUnsupportedException(
-      'The model file of ${model.runtimeType} cannot be read for its '
-      'decision section: ${e.message}',
+      'The decision of the model file of ${model.runtimeType} cannot be '
+      'read: $e',
     );
   }
   if (payload == null) {
     throw DeciderUnsupportedException(
-      'The model file of ${model.runtimeType} carries no decision section '
-      '(litetune.decision): it is a chat model, not one trained to decide. '
-      'A model tuned for a decision by litetune carries one when its verify '
-      'passed; use EmbeddingModel.createDecider for any other.',
+      'The model file of ${model.runtimeType} carries no decision (a '
+      'litetune.decision section): it is an ordinary chat model. A model '
+      'tuned for a decision by LiteTune carries one when its verify passed; '
+      'use EmbeddingModel.createDecider for any other.',
     );
   }
   final DecisionSection section;
@@ -366,41 +359,68 @@ Future<Decider> createOptionScoringDecider(
     section = DecisionSection.parse(payload);
   } on FormatException catch (e) {
     throw DeciderUnsupportedException(
-      'The decision section of the model file of ${model.runtimeType} is not '
-      'one this release reads: ${e.message}',
+      'The decision in the model file of ${model.runtimeType} is not one '
+      'this release reads: ${e.message}',
     );
   }
-  checkAgainstDecisionSection(
+  final decided = checkAgainstDecisionSection(
     section,
     question: question,
     options: options,
     calibration: calibration,
   );
   throwIfDeciderCancelled(cancelToken);
-  final scorer = await engine.openOptionScorer();
+  final scorer = await model.openOptionScorer();
   try {
     final targets = await optionTargets(scorer, section);
     throwIfDeciderCancelled(cancelToken);
-    final mode = await _modeOf(engine, scorer, targets.continuations);
+    await scorer.prepare(targets.texts);
+    throwIfDeciderCancelled(cancelToken);
+    // The decision must fit the model's context with the shortest input: a
+    // prompt with a one-character state, its BOS, the longest target and a
+    // token an engine may prefill again.
+    final fixed = await scorer.tokenize(
+      await scorer.renderUserMessage(section.render('.')),
+    );
+    final least = fixed.length + 2 + section.scoredLengths.reduce(math.max);
+    if (least > model.maxTokens) {
+      throw DeciderUnsupportedException(
+        'This decision needs $least tokens of context before any input — its '
+        'question and ${section.listed.length} options — and the model is '
+        'loaded with maxTokens ${model.maxTokens}. Load it with a larger '
+        'maxTokens.',
+      );
+    }
     throwIfDeciderCancelled(cancelToken);
     return OptionScoringDecider._(
       model,
       scorer,
       section,
-      List.unmodifiable(options),
+      decided,
       targets.texts,
-      mode,
     );
-  } catch (_) {
-    await scorer.close();
-    rethrow;
+  } catch (e, st) {
+    try {
+      await scorer.close();
+    } on Object catch (closeError) {
+      // The creation's own failure is the one the caller needs; release
+      // builds hear about this one too.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai] closing the option scorer after a failed '
+        'createDecider failed too: $closeError',
+      );
+    }
+    Error.throwWithStackTrace(e, st);
   }
 }
 
 /// Throws [ArgumentError] unless [question], [options] and [calibration] are
-/// the ones [section] was trained and fitted with. The app's option order
-/// may differ: the prompt lists the trained order.
-void checkAgainstDecisionSection(
+/// the ones [section] was trained and fitted with, and returns the decider's
+/// options: the app's, in the app's order, with the none option appended
+/// when [InferenceDeciderCalibration.fromModel] let the app leave it out.
+/// The prompt lists the trained order whatever the app's is.
+List<DeciderOption> checkAgainstDecisionSection(
   DecisionSection section, {
   required String question,
   required List<DeciderOption> options,
@@ -423,14 +443,20 @@ void checkAgainstDecisionSection(
       'are not options this model was trained on (${listed.keys.toList()})',
     );
   }
-  final missing = listed.keys.where((id) => !given.contains(id)).toList();
+  final none = section.noneOption;
+  final noneLeftOut =
+      calibration.fromModelFile && none != null && !given.contains(none);
+  final missing = [
+    for (final id in listed.keys)
+      if (!given.contains(id) && !(noneLeftOut && id == none)) id,
+  ];
   if (missing.isNotEmpty) {
     throw ArgumentError.value(
       missing,
       'options',
       'are trained options the call leaves out. A subset of the trained '
           'options is not measured; pass all of '
-          '${listed.keys.toList()}',
+          '${section.options.map((o) => o.id).toList()}',
     );
   }
   for (final option in options) {
@@ -448,34 +474,39 @@ void checkAgainstDecisionSection(
       );
     }
   }
-  if (calibration.temperature != section.temperature) {
-    throw ArgumentError.value(
-      calibration.temperature,
-      'calibration.temperature',
-      'is not the temperature fitted for this model (${section.temperature})',
-    );
+  if (!calibration.fromModelFile) {
+    if (calibration.temperature != section.temperature) {
+      throw ArgumentError.value(
+        calibration.temperature,
+        'calibration.temperature',
+        'is not the temperature fitted for this model build '
+            '(${section.temperature}); pass '
+            'InferenceDeciderCalibration.fromModel() to use the file\'s',
+      );
+    }
+    final below = section.calibrationAbstainBelow;
+    if (calibration.abstainBelow != below) {
+      throw ArgumentError.value(
+        calibration.abstainBelow,
+        'calibration.abstainBelow',
+        'is not the threshold fitted for this model build ($below); pass '
+            'InferenceDeciderCalibration.fromModel() to use the file\'s',
+      );
+    }
+    if (calibration.noneOption != none) {
+      throw ArgumentError.value(
+        calibration.noneOption,
+        'calibration.noneOption',
+        'is not the none option this model was trained with ($none)',
+      );
+    }
   }
-  final below = section.calibrationAbstainBelow;
-  if (calibration.abstainBelow != below) {
-    throw ArgumentError.value(
-      calibration.abstainBelow,
-      'calibration.abstainBelow',
-      'is not the threshold fitted for this model ($below)',
-    );
-  }
-  if (calibration.noneOption != section.noneOption) {
-    throw ArgumentError.value(
-      calibration.noneOption,
-      'calibration.noneOption',
-      'is not the none option this model was trained with '
-          '(${section.noneOption})',
-    );
-  }
+  return List.unmodifiable([...options, if (noneLeftOut) DeciderOption(none)]);
 }
 
 /// Each listed option's target text and the token ids of its whole target
 /// (`<id><terminator>`).
-typedef OptionTargets = ({List<String> texts, List<List<int>> continuations});
+typedef OptionTargets = ({List<String> texts, List<List<int>> wholeTargetIds});
 
 /// The targets of [section]'s listed options: each one's shortest unique
 /// prefix (the first k ids of `<id><terminator>`, k the smallest no other
@@ -488,12 +519,12 @@ Future<OptionTargets> optionTargets(
   DecisionSection section,
 ) async {
   final listed = section.listed;
-  final continuations = [
+  final whole = [
     for (final option in listed)
       await scorer.tokenize('${option.id}${section.terminator}'),
   ];
   for (var i = 0; i < listed.length; i++) {
-    if (continuations[i].isEmpty) {
+    if (whole[i].isEmpty) {
       throw DeciderUnsupportedException(
         'The option "${listed[i].id}" tokenises to nothing.',
       );
@@ -502,9 +533,9 @@ Future<OptionTargets> optionTargets(
   final texts = <String>[];
   final lengths = <int>[];
   for (var i = 0; i < listed.length; i++) {
-    final ids = continuations[i];
+    final ids = whole[i];
     var k = 1;
-    while (_sharesPrefix(continuations, i, k)) {
+    while (_sharesPrefix(whole, i, k)) {
       k++;
       if (k > ids.length) {
         throw DeciderUnsupportedException(
@@ -537,7 +568,9 @@ Future<OptionTargets> optionTargets(
   }
   return (
     texts: List<String>.unmodifiable(texts),
-    continuations: List<List<int>>.unmodifiable(continuations),
+    wholeTargetIds: List<List<int>>.unmodifiable([
+      for (final ids in whole) List<int>.unmodifiable(ids),
+    ]),
   );
 }
 
@@ -560,95 +593,6 @@ bool _sameIds(List<int> a, List<int> b) {
   return true;
 }
 
-Future<OptionScoringMode> _modeOf(
-  OptionScoringModel engine,
-  OptionScorer scorer,
-  List<List<int>> continuations,
-) {
-  final known = _modes[engine];
-  if (known != null) return known;
-  final check = optionScoringSelfCheck(scorer, continuations);
-  _modes[engine] = check;
-  // A check that failed runs again for the next decider: it may have failed
-  // on a closed model rather than on the engine.
-  unawaited(
-    check.then<void>(
-      (_) {},
-      onError: (Object _) {
-        if (identical(_modes[engine], check)) _modes[engine] = null;
-      },
-    ),
-  );
-  return check;
-}
-
-/// Whether this engine scores right after a prefill without the prompt's
-/// second-to-last token (LiteRT-LM #3561), from two prompts that differ only
-/// in that token: identical scores mean it is dropped ([OptionScoringMode.once]),
-/// different ones that it is not ([OptionScoringMode.plain]). Each of the first
-/// three options' first token that tokenises back to itself is scored on
-/// both, twice. A mix, or no comparison at all, is an engine nobody measured:
-/// `DeciderUnsupportedException`.
-Future<OptionScoringMode> optionScoringSelfCheck(
-  OptionScorer scorer,
-  List<List<int>> continuations,
-) async {
-  final probes = <String>[];
-  for (var j = 0; j < math.min(3, continuations.length); j++) {
-    final first = continuations[j].first;
-    final z = await scorer.detokenize([first]);
-    if (_sameIds(await scorer.tokenize(z), [first])) probes.add(z);
-  }
-  const a = _selfCheckPrompt;
-  final b = '${a.substring(0, a.length - 'model\n'.length)}user\n';
-  final ia = await scorer.tokenize(a);
-  final ib = await scorer.tokenize(b);
-  final differing = [
-    for (var i = 0; i < math.min(ia.length, ib.length); i++)
-      if (ia[i] != ib[i]) i,
-  ];
-  final diffs = <double>[];
-  if (ia.length == ib.length &&
-      differing.length == 1 &&
-      differing.single == ia.length - 2) {
-    for (final z in probes) {
-      for (var repeat = 0; repeat < 2; repeat++) {
-        diffs.add(
-          (await _oneToken(scorer, a, z) - await _oneToken(scorer, b, z)).abs(),
-        );
-      }
-    }
-  }
-  if (diffs.isEmpty) {
-    throw const DeciderUnsupportedException(
-      'The scoring self-check had nothing to compare: none of the first three '
-      'options starts with a token that tokenises back to itself, or the '
-      'check\'s two prompts do not differ in their second-to-last token alone. '
-      'Without it the engine\'s scoring mode cannot be told.',
-    );
-  }
-  final most = diffs.reduce(math.max);
-  final least = diffs.reduce(math.min);
-  if (most == 0) return OptionScoringMode.once;
-  if (least > 0) return OptionScoringMode.plain;
-  throw DeciderUnsupportedException(
-    'The scoring self-check is mixed: of ${diffs.length} comparisons some '
-    'scored identically and some did not (largest difference $most). This '
-    'engine scores in a way nobody has measured.',
-  );
-}
-
-Future<double> _oneToken(OptionScorer scorer, String prompt, String z) async {
-  final run = await scorer.score(prompt, [z]);
-  final scores = run.tokenScores.single;
-  if (scores.length != 1) {
-    throw DeciderUnsupportedException(
-      'The one-token target "$z" scored ${scores.length} tokens.',
-    );
-  }
-  return scores.single;
-}
-
 /// The decider of an `InferenceModel` whose engine scores options. Borrows
 /// the model and never closes it.
 final class OptionScoringDecider extends Decider {
@@ -658,48 +602,60 @@ final class OptionScoringDecider extends Decider {
     this._section,
     this.options,
     this._targets,
-    this.mode,
   ) : _listedIndex = {
         for (var i = 0; i < _section.listed.length; i++)
           _section.listed[i].id: i,
       };
 
-  final InferenceModel _model;
+  final OptionScoringModel _model;
   final OptionScorer _scorer;
   final DecisionSection _section;
   final List<String> _targets;
   final Map<String, int> _listedIndex;
 
-  /// The scoring mode the model's self-check picked.
-  final OptionScoringMode mode;
-
-  bool _closed = false;
+  Future<void>? _closing;
 
   @override
   final List<DeciderOption> options;
 
   @override
-  DeciderCapabilities get capabilities => const DeciderCapabilities(
-    modalities: {EmbeddingModality.text},
+  DeciderCapabilities get capabilities => DeciderCapabilities(
+    modalities: const {EmbeddingModality.text},
     calibratedProbabilities: true,
     supportsContext: false,
     supportsAmong: false,
     storable: false,
+    questionType: _section.type,
   );
 
   @override
-  bool get isClosed => _closed || _model.isClosed;
+  bool get isClosed => _closing != null || _model.isClosed;
 
   @override
-  Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
-    await _scorer.close();
+  Future<void> close() => _closing ??= _scorer.close();
+
+  /// [call] on the scorer, failing with `DeciderCancelledException` when the
+  /// request was cancelled or the decider closed before or while it ran — a
+  /// closed scorer's own `StateError` included.
+  Future<T> _scorerCall<T>(
+    CancelToken? token,
+    Future<T> Function() call,
+  ) async {
+    _stillWanted(token);
+    final T result;
+    try {
+      result = await call();
+    } on StateError {
+      _stillWanted(token);
+      rethrow;
+    }
+    _stillWanted(token);
+    return result;
   }
 
   void _stillWanted(CancelToken? token) {
     throwIfDeciderCancelled(token);
-    if (_closed) {
+    if (_closing != null) {
       throw const DeciderCancelledException('The decider was closed.');
     }
   }
@@ -708,7 +664,9 @@ final class OptionScoringDecider extends Decider {
   Future<DeciderAnswer> decide(DeciderRequest request) async {
     if (isClosed) {
       throw StateError(
-        _closed ? 'The decider is closed.' : 'The decider\'s model is closed.',
+        _closing != null
+            ? 'The decider is closed.'
+            : 'The decider\'s model is closed.',
       );
     }
     final state = request.input.input.text!;
@@ -732,57 +690,79 @@ final class OptionScoringDecider extends Decider {
     }
     final token = request.cancelToken;
     final watch = Stopwatch()..start();
-    final rendered = await _scorer.renderUserMessage(_section.render(state));
-    _stillWanted(token);
-    if (rendered.isEmpty || rendered.startsWith('<bos>')) {
-      throw DeciderUnsupportedException(
-        'The engine rendered the prompt as '
-        '${rendered.isEmpty ? 'empty text' : 'text that starts with <bos>, '
-                  'which the scoring session adds itself'}.',
-      );
-    }
-    final ids = await _scorer.tokenize(rendered);
-    if (ids.isEmpty) {
+    final rendered = await _scorerCall(
+      token,
+      () => _scorer.renderUserMessage(_section.render(state)),
+    );
+    if (rendered.isEmpty) {
       throw const DeciderUnsupportedException(
-        'The engine tokenised the rendered prompt to nothing.',
+        'The engine rendered the prompt as empty text.',
       );
     }
-    final last = await _scorer.detokenize([ids.last]);
-    if (!rendered.endsWith(last) ||
-        !_sameIds(await _scorer.tokenize(last), [ids.last])) {
-      throw DeciderUnsupportedException(
-        'The prompt\'s last token ${ids.last} does not round-trip as '
-        '${jsonEncode(last)}, so it cannot be prefilled again on its own.',
+    final ids = await _scorerCall(token, () => _scorer.tokenize(rendered));
+    final needed = ids.length + 2 + _section.scoredLengths.reduce(math.max);
+    if (needed > _model.maxTokens) {
+      throw ArgumentError.value(
+        state,
+        'input',
+        'renders to a prompt of ${ids.length} tokens; with its targets the '
+            'decision needs $needed, more than the model\'s context '
+            '(maxTokens ${_model.maxTokens}). It is never truncated: shorten '
+            'the input, or load the model with a larger maxTokens',
       );
     }
     final renderTime = watch.elapsed;
-    _stillWanted(token);
-    final run = await _scorer.score(
-      rendered,
-      _targets,
-      reprefill: mode == OptionScoringMode.once ? last : null,
-      cancelToken: token,
+    final run = await _scorerCall(
+      token,
+      () => _scorer.score(rendered, _targets, cancelToken: token),
     );
-    _stillWanted(token);
-    final sums = <double>[];
-    for (var j = 0; j < _targets.length; j++) {
-      final scores = j < run.tokenScores.length ? run.tokenScores[j] : null;
-      if (scores == null ||
-          scores.length != _section.scoredLengths[j] ||
-          scores.any((s) => !s.isFinite)) {
-        throw DeciderUnsupportedException(
-          'The engine returned no usable scores for the option '
-          '"${_section.listed[j].id}": $scores.',
-        );
-      }
-      sums.add(scores.fold(0.0, (a, s) => a + s));
-    }
+    final sums = _sums(run);
     return _answer(
       request,
       sums,
       encodeTime: renderTime + run.prefillTime,
       scoreTime: run.scoreTime,
     );
+  }
+
+  /// Each listed option's score, summed over its tokens, after checking that
+  /// the engine returned log-probabilities of the right shape.
+  List<double> _sums(OptionScoringRun run) {
+    if (run.tokenScores.length != _targets.length) {
+      throw DeciderUnsupportedException(
+        'The engine returned scores for ${run.tokenScores.length} targets, '
+        'and was asked for ${_targets.length}.',
+      );
+    }
+    final sums = <double>[];
+    for (var j = 0; j < _targets.length; j++) {
+      final scores = run.tokenScores[j];
+      final id = _section.listed[j].id;
+      if (scores.length != _section.scoredLengths[j]) {
+        throw DeciderUnsupportedException(
+          'The engine scored ${scores.length} tokens of the option "$id"; its '
+          'target has ${_section.scoredLengths[j]}.',
+        );
+      }
+      for (final s in scores) {
+        if (!(s <= _maxTokenScore)) {
+          throw DeciderUnsupportedException(
+            'The engine scored a token of the option "$id" $s: not a '
+            'log-probability, which is never above 0.',
+          );
+        }
+      }
+      sums.add(scores.fold(0.0, (a, s) => a + s));
+    }
+    final m = sums.reduce(math.max);
+    final lse = m + math.log(sums.fold(0.0, (a, s) => a + math.exp(s - m)));
+    if (!(lse <= _maxLogSumExp)) {
+      throw DeciderUnsupportedException(
+        'The options\' probabilities sum to ${math.exp(lse)}, above 1: the '
+        'engine does not return log-probabilities.',
+      );
+    }
+    return sums;
   }
 
   DeciderAnswer _answer(
@@ -798,27 +778,24 @@ final class OptionScoringDecider extends Decider {
     final s = [for (final id in ids) listedSums[_listedIndex[id]!]];
     final t = _section.temperature;
     var m = double.negativeInfinity;
-    var mt = double.negativeInfinity;
     for (final x in s) {
       m = math.max(m, x);
-      mt = math.max(mt, x / t);
     }
     var sum = 0.0;
     var sumT = 0.0;
     for (final x in s) {
       sum += math.exp(x - m);
-      sumT += math.exp(x / t - mt);
+      sumT += math.exp((x - m) / t);
     }
     final logSum = m + math.log(sum);
-    final scores = [for (final x in s) x - logSum];
-    final p = [for (final x in s) math.exp(x / t - mt) / sumT];
+    final p = [for (final x in s) math.exp((x - m) / t) / sumT];
+    // Ranked by the raw sums, so the first is the most probable option too.
     final order = List<int>.generate(n, (i) => i)
       ..sort((a, b) {
-        final byScore = scores[b].compareTo(scores[a]);
-        return byScore != 0 ? byScore : a.compareTo(b);
+        final bySum = s[b].compareTo(s[a]);
+        return bySum != 0 ? bySum : a.compareTo(b);
       });
     final top = order.first;
-    final pmax = p.reduce(math.max);
     final probabilities = {for (var i = 0; i < n; i++) ids[i]: p[i]};
     final type = _section.type;
     AbstainReason? reason;
@@ -831,22 +808,15 @@ final class OptionScoringDecider extends Decider {
         reason = AbstainReason.belowThreshold;
       }
     }
-    double? expectedLevel;
-    if (identical(type, DeciderQuestionType.score)) {
-      expectedLevel = 0;
-      for (var i = 0; i < n; i++) {
-        expectedLevel = expectedLevel! + p[i] * int.parse(ids[i]);
-      }
-    }
     return DeciderAnswer(
       choice: reason == null ? ids[top] : null,
       ranked: [
         for (final i in order.take(request.topK))
-          RankedOption(id: ids[i], score: scores[i], probability: p[i]),
+          RankedOption(id: ids[i], score: s[i] - logSum, probability: p[i]),
       ],
       scoreKind: ScoreKind.logprob,
-      margin: n >= 2 ? scores[order[0]] - scores[order[1]] : double.infinity,
-      confidence: n >= 2 ? deciderConfidence(pmax, n) : null,
+      margin: n >= 2 ? s[order[0]] - s[order[1]] : double.infinity,
+      confidence: n >= 2 ? deciderConfidence(p[top], n) : null,
       abstainReason: reason,
       probabilities: probabilities,
       provenance: DeciderProvenance(
@@ -859,10 +829,6 @@ final class OptionScoringDecider extends Decider {
         abstainSignalKind: AbstainSignalKind.topProbability,
       ),
       questionType: type,
-      noul: identical(type, DeciderQuestionType.noul)
-          ? probabilities['yes']
-          : null,
-      expectedLevel: expectedLevel,
       legend: identical(type, DeciderQuestionType.score)
           ? {for (final o in _section.options) o.id: o.description!}
           : null,

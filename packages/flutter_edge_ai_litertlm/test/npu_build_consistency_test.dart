@@ -86,11 +86,11 @@ void main() {
     }
   });
 
-  test('a vendor whose stack ships on request is opted into with the '
-      'user_define the hook reads, which the runtime names when it is off', () {
-    // The hook's vendor loop reads npuUserDefine(vendor); measured
-    // 2026-10-18 on the example's APK: 11 Qualcomm libraries with
-    // qualcomm_npu true, none with false.
+  test('a vendor whose stack ships on request names its user_define in the '
+      'refusal the runtime prints without it', () {
+    // This test does not run the hook. That the hook's vendor loop reads
+    // npuUserDefine(vendor) was measured 2026-10-18 on the example's APK:
+    // 11 Qualcomm libraries with qualcomm_npu true, none with false.
     for (final vendor in NpuVendor.values) {
       final define = npuUserDefine(vendor);
       final reason = npuNotBundledReason(vendor);

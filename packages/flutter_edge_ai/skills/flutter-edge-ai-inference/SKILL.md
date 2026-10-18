@@ -278,7 +278,7 @@ print(model.activeBackend); // what actually loaded
 | `preferredBackend` | Tried in order |
 | --- | --- |
 | `null` or `gpu` | GPU, then CPU |
-| `npu` | NPU, GPU, CPU on Windows, and on Qualcomm Android and Qualcomm Linux arm64 when the app sets `qualcomm_npu`; GPU, CPU everywhere else |
+| `npu` | GPU, then CPU: a generic bundle has no NPU graph, so the NPU is not tried (with `backendFallback: false`, a `LiteRtLmBundleException`) |
 | `cpu` | CPU only |
 | any, for a bundle compiled for an NPU | the NPU only: `null` and `npu` run there, `gpu` and `cpu` are refused |
 

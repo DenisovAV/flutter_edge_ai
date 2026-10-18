@@ -228,7 +228,8 @@ enum LiteRtLmBundleProblem {
   /// model on the GPU or the CPU, a text model or encoder whose
   /// `backend_constraint` excludes the backend, a text model or encoder asked
   /// for the NPU it is not compiled for — also when its `backend_constraint`
-  /// names the NPU, which then leaves a text model nothing to run on.
+  /// names the NPU; a text model whose constraint names only the NPU has
+  /// nothing to run on.
   wrongBackend,
 
   /// The text model, or an encoder the load turns on, is compiled for an NPU

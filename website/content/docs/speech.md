@@ -34,8 +34,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_speech: ^0.5.7
+  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai_speech: ^0.5.8
 ```
 
 ## Register the backend

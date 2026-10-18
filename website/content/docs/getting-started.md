@@ -83,7 +83,7 @@ Upgrading from 2.3: see [Migration](/docs/migration).
 
 - **2.3.2:** the active model keeps its LoRA across an app restart, and
   `ModelFileType.gguf` selects the optional [llama.cpp engine](llama.md),
-  `flutter_edge_ai_llama`, available from its contribution source until publication.
+  `flutter_edge_ai_llama`, on pub.dev since 0.0.1.
 - **EmbeddingGemma 2 on an Intel NPU** (`flutter_edge_ai_litertlm` 1.13.2): the
   Panther Lake bundles run on Windows x64 with
   `preferredBackend: PreferredBackend.npu`. See

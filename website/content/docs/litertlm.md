@@ -12,7 +12,7 @@ no engine by default — you opt in by registering `LiteRtLmEngine()`.) It runs
 JVM, no gRPC — and it is the **primary desktop engine** (macOS, Windows, Linux);
 [ONNX Runtime](/docs/onnx) also runs on desktop, and macOS and Windows can additionally
 use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
-**Native Assets** (SHA256-verified, from the `native-v0.18.0-e` GitHub release), so
+**Native Assets** (SHA256-verified, from the `native-v0.18.0-f` GitHub release), so
 there's no manual native setup.
 
 The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 from
@@ -162,8 +162,9 @@ with that Tensor generation and Android 16 or later when the app sets
 bundles `libLiteRtDispatch_GoogleTensor.so`, which we build from the pinned
 LiteRT source; Google's Tensor SDK terms cover that directory too. The runtime
 it drives, `libedgetpu_litert.so`, is part of the Pixel system image. Run so
-far on a Pixel 11 Pro (Tensor G6) with a debug build; a Tensor G5,
-EmbeddingGemma 2 and a release-signed build are not run yet.
+far on Tensor G6 Pixels with debug builds (Gemma 4 E2B text, images and audio;
+EmbeddingGemma 2 270m and 440m); a Tensor G5 and a release-signed build are not
+run yet.
 
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino

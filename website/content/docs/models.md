@@ -75,7 +75,7 @@ model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 `ModelFileType.builtIn` for OS-provided models. `ModelFileType.gguf` (core
 2.3.2) selects the optional [llama.cpp engine](llama.md),
-`flutter_edge_ai_llama`, currently available from the contribution source.
+`flutter_edge_ai_llama`.
 
 </Info>
 

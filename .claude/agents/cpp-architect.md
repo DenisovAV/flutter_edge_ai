@@ -56,8 +56,8 @@ a resolution already demonstrably works somewhere (Dart holds a `DynamicLibrary`
 that resolved dozens of symbols), decide there and pass the verdict down, rather
 than re-inferring from ambient scope.
 
-The fix, from the first native tag after `native-v0.18.0-e` (#453, #668; the
-tarballs shipped so far still probe): `stream_proxy_create2` takes the three
+The fix, in every archive since `native-v0.18.0-f` and required by the Dart
+client since litertlm 1.15.0 (#453, #668): `stream_proxy_create2` takes the three
 accessors from Dart, which resolves them on the library it drives, so the shim
 keeps no process-global state at all. The bare `dlsym(RTLD_DEFAULT, …)` probe in
 `stream_proxy_create` is the pattern that broke; if you are asked about runtime

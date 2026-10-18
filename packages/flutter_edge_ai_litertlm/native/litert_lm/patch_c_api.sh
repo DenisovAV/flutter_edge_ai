@@ -625,13 +625,18 @@ echo "  OK: section 15 anchors hold"
 # depends on the cancelled one and ends as cancelled too, so after "stop" the
 # conversation answers nothing (upstream documents it as unsupported, still so
 # on main). A session can undo that — RewindToCheckpoint restores the step and
-# the task dependencies — but the Conversation hides its session. The patch
-# saves a checkpoint right before each send's own prefill (after a thinking
-# refill, whose own rewind would otherwise erase it) and adds
-# Conversation::RewindCancelledTurn and
-# litert_lm_conversation_rewind_cancelled_turn (LITERT_LM_C_API_EXPORT, and
-# section 1's Windows .def): rewind to that checkpoint, then optionally
-# prefill the stopped exchange without decoding, so the model keeps it.
+# the task dependencies — but the Conversation hides its session. The patch:
+# - saves a checkpoint right before each send's own prefill (after a thinking
+#   refill, whose own rewind would otherwise erase it);
+# - records in the C wrapper how each send ended (completed, cancelled,
+#   failed), numbered so a late callback of an older send cannot overwrite it;
+# - adds litert_lm_conversation_rewind_cancelled_turn (LITERT_LM_C_API_EXPORT,
+#   and section 1's Windows .def): cancel whatever still runs, wait until every
+#   task has ended (Conversation::WaitUntilDone, backported from upstream main),
+#   and only then decide — completed: nothing to do; cancelled: rewind to the
+#   checkpoint and prefill the stopped exchange without decoding; anything
+#   else: the caller deletes the conversation. Deciding before the wait read a
+#   cancel that had not landed yet as "not cancelled" (#682 review).
 # The NPU executor rolls back one token at most, so the rewind fails there;
 # the Dart client does not call it on the NPU and rebuilds instead.
 #
@@ -645,23 +650,33 @@ elif git -C "$DIR" apply --reverse --check "$REWIND_PATCH" 2>/dev/null; then
   echo "  SKIP: cancelled-turn rewind already applied"
 else
   echo "  ERROR: $REWIND_PATCH does not apply to this LiteRT-LM revision —" >&2
-  echo "         runtime/conversation/conversation.{h,cc} or c/conversation.{h,cc}" >&2
-  echo "         moved; re-create the patch against it." >&2
+  echo "         runtime/conversation/conversation.{h,cc} or" >&2
+  echo "         c/conversation{.h,.cc,_internal.h} moved; re-create the patch." >&2
+  git -C "$DIR" apply --check "$REWIND_PATCH" >&2 || true
   exit 1
 fi
 rewind_fail() {
   echo "  ERROR: section 15: $1" >&2
   exit 1
 }
+grep -qF 'absl::Status RewindCancelledTurn(' \
+  "$DIR/runtime/conversation/conversation.h" ||
+  rewind_fail "Conversation::RewindCancelledTurn is not in the tree after applying"
 # The rewind un-poisons the session only because the checkpoint carries the
 # task dependencies back; without that every later task still ends cancelled.
 grep -qF 'last_task_ids_ = it->second.last_task_ids;' \
   "$DIR/runtime/core/session_advanced.cc" ||
   rewind_fail "SessionAdvanced::RewindToCheckpoint no longer restores last_task_ids_"
-# The CPU/GPU executor rolls back any number of steps by truncating its
-# processed tokens; the rewind depends on it.
-grep -qF 'ABSL_RETURN_IF_ERROR(RollBackProcessedTokens());' \
+# The wait must not open before the callbacks have run: the session is done
+# only once its active-task list is empty, and a task leaves it at its end
+# state, which is set after its callback.
+grep -qF 'session_lookup_.at(session_id)->active_tasks.empty();' \
+  "$DIR/runtime/framework/resource_management/threaded_execution_manager.cc" ||
+  rewind_fail "WaitUntilSessionDone no longer waits for the session's active tasks"
+# The CPU/GPU executor moves its step back by any number of tokens (the NPU
+# one does not, and is never asked to).
+grep -qF 'absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int new_step) {' \
   "$DIR/runtime/executor/llm_litert_compiled_model_executor.cc" ||
-  rewind_fail "the compiled-model executor no longer rolls back processed tokens"
+  rewind_fail "the compiled-model executor's SetCurrentStep moved"
 
 echo "Patch complete."

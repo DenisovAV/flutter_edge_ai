@@ -6,6 +6,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter/foundation.dart';
 
 import 'litert_lm_client.dart';
+import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
@@ -759,6 +760,9 @@ class FfiInferenceModelSession extends InferenceModelSession
 /// the same bound VoiceSession gives a stopped reply to drain.
 const _windDownTimeout = Duration(seconds: 5);
 
+/// How [LiteRtLmFfiClient.extractTextFromResponse] marks a thought chunk.
+const _thoughtPrefix = '<|channel>thought\n';
+
 /// The single-session lane's handle: one real native conversation, made to
 /// answer again after a turn is stopped.
 ///
@@ -822,6 +826,10 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// its message. Null when the next recovery must rebuild instead.
   Map<String, Object?>? _stoppedReply;
 
+  /// Why a conversation that can rewind is rebuilt instead, for the warning
+  /// release builds print when that loses earlier images and audio.
+  String? _rebuildBecause;
+
   /// True while the conversation is being rewound or rebuilt. Nothing is
   /// generating then, and a native cancel would abort the rewind's prefill.
   bool _recovering = false;
@@ -858,52 +866,65 @@ class RecoveringConversationHandle implements ConversationHandle {
     }
   }
 
+  /// The recovery in progress. A turn that starts meanwhile waits for it, and
+  /// its wind-down bound does not run out while a long rewind (an audio clip
+  /// re-encoded on a phone CPU) still uses the conversation.
+  Future<void>? _recovery;
+
   /// Makes the conversation answer again after a stopped turn: rewinds it when
   /// it can, and rebuilds it when it cannot or the rewind fails.
   Future<void> _recover() async {
     final reply = _stoppedReply;
+    final rebuildBecause = _rebuildBecause;
     _stoppedReply = null;
+    _rebuildBecause = null;
     _recovering = true;
     try {
       if (canRewind && reply != null) {
         StoppedTurnRewind? result;
-        Object? failure;
+        StoppedTurnRewindException? failure;
         try {
           result = await _live.rewindStoppedTurn(reply);
-        } catch (e) {
+        } on StoppedTurnRewindException catch (e) {
           failure = e;
         }
-        // close() ran during the rewind and left the conversation to us.
-        if (_closed) {
-          _live.close();
-          throw StateError('Conversation handle is closed');
+        if (_closed) throw StateError('Conversation handle is closed');
+        switch (result) {
+          case StoppedTurnRewind.rewound:
+            _stopped = false;
+            edgeAiLog(
+              '[FfiInferenceModel] rewound the conversation after a stopped '
+              'turn',
+            );
+            return;
+          case StoppedTurnRewind.notCancelled:
+            _stopped = false;
+            edgeAiLog(
+              '[FfiInferenceModel] the stopped turn had ended natively before '
+              'the stop; the conversation is kept as it is',
+            );
+            return;
+          case StoppedTurnRewind.unsupported:
+          case null:
+            break;
         }
-        if (result == StoppedTurnRewind.rewound) {
-          _stopped = false;
-          edgeAiLog(
-            '[FfiInferenceModel] rewound the conversation after a stopped turn',
-          );
-          return;
-        }
-        if (result == StoppedTurnRewind.notCancelled) {
-          _stopped = false;
-          edgeAiLog(
-            '[FfiInferenceModel] the stopped turn had already finished; the '
-            'conversation is kept as it is',
-          );
-          return;
-        }
-        // Printed in release builds too: the rebuild keeps the text of earlier
-        // turns only. An unsupported rewind (an older libLiteRtLm) is not a
-        // failure and rebuilds quietly.
+        // Printed in release builds too. An unsupported rewind (an older
+        // libLiteRtLm) is not a failure and rebuilds quietly.
         if (failure != null) {
           // ignore: avoid_print
           print(
             '[flutter_edge_ai_litertlm] could not rewind the conversation '
-            'after a stopped turn; rebuilding it, without the images and audio '
-            'of earlier turns: $failure',
+            'after a stopped turn ($failure); rebuilding it'
+            '${_historyHasMedia ? ', without the images and audio of earlier '
+                      'turns' : ''}',
           );
         }
+      } else if (canRewind && rebuildBecause != null && _historyHasMedia) {
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_litertlm] rebuilding the conversation, without '
+          'the images and audio of earlier turns: $rebuildBecause',
+        );
       }
       await _rebuild();
     } finally {
@@ -920,20 +941,28 @@ class RecoveringConversationHandle implements ConversationHandle {
     required bool raw,
   }) async* {
     if (_closed) throw StateError('Conversation handle is closed');
-    // A turn that starts while a stopped one is still winding down — which
-    // VoiceSession does after a bounded drain — waits for its `finally`, or
-    // the rebuild would replay a history that is missing the stopped exchange.
-    // Bounded: a consumer that pauses the stopped stream and never resumes it
-    // would otherwise block every later turn. Past the bound the stopped turn
-    // is treated as having damaged the conversation, and the rebuild goes
-    // ahead without its exchange rather than not at all.
-    if (_stopRequested) {
+    if (_inFlight) {
+      // A recovery cannot be cut short (native bounds it); wait for it.
+      final recovery = _recovery;
+      if (recovery != null) await recovery.catchError((Object _) {});
+      // A turn that starts while the previous one is still winding down — a
+      // stopped one, or one whose subscription was cancelled without waiting —
+      // waits for its `finally`: how it ended decides whether this one
+      // recovers first, and a rebuild must replay its exchange. Bounded: a
+      // consumer that pauses the stream and never resumes it would otherwise
+      // block every later turn. Past the bound the previous turn is treated as
+      // having damaged the conversation, and it is rebuilt without its
+      // exchange rather than not at all.
       await _turnDone?.timeout(
         windDownTimeout,
         onTimeout: () {
           _stopped = true;
+          _stoppedReply = null;
+          _rebuildBecause =
+              'the previous turn did not wind down within '
+              '${windDownTimeout.inSeconds}s';
           edgeAiLog(
-            '[FfiInferenceModel] a stopped turn did not wind down within '
+            '[FfiInferenceModel] the previous turn did not wind down within '
             '${windDownTimeout.inSeconds}s (is its stream paused?); rebuilding '
             'without it',
           );
@@ -944,48 +973,68 @@ class RecoveringConversationHandle implements ConversationHandle {
     _turnDone = done.future;
     _inFlight = true;
     _stopRequested = false;
-    final text = StringBuffer();
+    // What the reply showed: thought chunks are left out, as native leaves a
+    // finished turn's thoughts out of the context.
+    final visible = StringBuffer();
     final rawReply = StringBuffer();
     var sent = false;
     var finished = false;
     var failed = false;
+    var poisoned = false;
     try {
-      if (_stopped) await _recover();
+      if (_stopped) {
+        final recovery = _recovery = _recover();
+        try {
+          await recovery;
+        } finally {
+          if (identical(_recovery, recovery)) _recovery = null;
+        }
+      }
       // Stopped while the conversation was being recovered: nothing has
       // reached the model, so there is nothing to generate and nothing to
       // record.
       if (_stopRequested) return;
       sent = true;
       await for (final chunk in send(_live)) {
-        if (raw) {
-          text.write(LiteRtLmFfiClient.extractTextFromResponse(chunk));
-          rawReply.write(chunk);
-        } else {
-          text.write(chunk);
-        }
+        final text = raw
+            ? LiteRtLmFfiClient.extractTextFromResponse(chunk)
+            : chunk;
+        if (!text.startsWith(_thoughtPrefix)) visible.write(text);
+        if (raw) rawReply.write(chunk);
         yield chunk;
       }
       finished = true;
+    } on LiteRtLmTurnCancelledException {
+      // Native cancelled a turn nobody stopped: an earlier cancel poisoned the
+      // conversation. The model saw nothing of this turn; the next one rebuilds.
+      poisoned = true;
+      rethrow;
     } catch (_) {
       // A failed turn is not a stopped one: rebuilding would replay the same
       // context into the same failure.
       failed = true;
       rethrow;
     } finally {
-      _inFlight = false;
-      if (sent) {
-        final reply = _VirtualConversationHandle._assistantTurn(
-          text.toString(),
-          rawReply.toString(),
-        );
+      // A turn that winds down after the next has started (past its bound)
+      // leaves the shared state to that one.
+      final latest = identical(_turnDone, done.future);
+      if (latest) _inFlight = false;
+      if (poisoned) {
+        if (latest) {
+          _stopped = true;
+          _stoppedReply = null;
+          _rebuildBecause = 'native cancelled a turn that was not stopped';
+        }
+      } else if (sent) {
         // Stopped by cancelGeneration, or abandoned mid-turn — which cancels
         // native the same way — leaves the conversation answering nothing.
-        if (_stopRequested || (!finished && !failed)) {
-          _stopped = true;
-          // Only the latest turn can be rewound: one that winds down after the
-          // next has started is rebuilt from the history instead.
-          _stoppedReply = identical(_turnDone, done.future) ? reply : null;
-        }
+        final stopped = _stopRequested || (!finished && !failed);
+        if (stopped && latest) _stopped = true;
+        final reply = _VirtualConversationHandle._assistantTurn(
+          visible.toString(),
+          rawReply.toString(),
+        );
+        if (stopped && latest) _stoppedReply = reply;
         // The message reached the model either way, so it belongs in the
         // history a rebuild replays — with whatever of the reply was produced.
         _history
@@ -1081,9 +1130,8 @@ class RecoveringConversationHandle implements ConversationHandle {
     if (_closed) return;
     _closed = true;
     _history.clear();
-    // A rewind in progress still uses the live conversation; the recovery
-    // closes it when the rewind returns.
-    if (_recovering) return;
+    // The native handle waits for an operation still running on it (a rewind,
+    // a generation) before it deletes the conversation.
     _live.close();
   }
 }

@@ -434,18 +434,28 @@ rewind_fail=0
 for d in "$align_tmp"/litertlm-*; do
   [[ -d "$d" ]] || continue
   if ! python3 - "$(dirname "$0")" "$d" "$(basename "$d")" <<'PYEOF_REWIND'
+import os
+import struct
 import sys
 sys.path.insert(0, sys.argv[1])
-from check_embedding_exports import exports, find_main_library
+from check_embedding_exports import FormatError, exports, find_main_library
 symbol = "litert_lm_conversation_rewind_cancelled_turn"
+label = sys.argv[3]
 libraries = find_main_library(sys.argv[2])
 if len(libraries) != 1:
-    print(f"  [FAIL] {sys.argv[3]} — expected one main library, found {libraries}")
+    print(f"  [FAIL] {label} — expected one main library, found {libraries}")
     sys.exit(1)
-if symbol not in exports(libraries[0]):
-    print(f"  [FAIL] {sys.argv[3]} — does not export {symbol}")
+library = libraries[0]
+shown = os.path.relpath(library, sys.argv[2])
+try:
+    names = exports(library)
+except (FormatError, struct.error, ValueError, IndexError) as e:
+    print(f"  [FAIL] {label} — cannot read the exports of {shown}: {e}")
     sys.exit(1)
-print(f"  [ok]   {sys.argv[3]} — exports {symbol}")
+if symbol not in names:
+    print(f"  [FAIL] {label} — {shown} does not export {symbol}")
+    sys.exit(1)
+print(f"  [ok]   {label} — {shown} exports {symbol}")
 PYEOF_REWIND
   then
     rewind_fail=1

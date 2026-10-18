@@ -14,6 +14,7 @@ import 'package:mutex/mutex.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
+import 'native_turns.dart';
 import 'npu_vendor_host.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
@@ -96,8 +97,9 @@ enum StoppedTurnRewind {
   /// into its context, and answers again.
   rewound,
 
-  /// The turn had finished before the stop reached native, so nothing was
-  /// cancelled: the conversation answers as it is and holds the whole turn.
+  /// Native's last send was not cancelled — it had ended by itself before the
+  /// stop reached it — so nothing changed and the conversation answers as it
+  /// is.
   notCancelled,
 
   /// This conversation cannot rewind: the loaded libLiteRtLm predates
@@ -105,20 +107,48 @@ enum StoppedTurnRewind {
   unsupported,
 }
 
-/// The native rewind of a stopped turn failed. [code] is the absl status code
-/// `litert_lm_conversation_rewind_cancelled_turn` returned: 5 (NOT_FOUND, the
-/// turn was cancelled before its own prefill) and 12 (UNIMPLEMENTED) changed
-/// nothing, any other code left the conversation unusable. Either way the
-/// caller rebuilds it.
-class StoppedTurnRewindException implements Exception {
-  StoppedTurnRewindException(this.code, this.message);
+/// How native's last send ended, as `litert_lm_conversation_rewind_cancelled_turn`
+/// reports it after waiting for that send (`LiteRtLmTurnEnd` in the patched
+/// `c/conversation.h`).
+enum NativeLastTurnEnd { none, completed, cancelled, failed, running }
+
+/// What `litert_lm_conversation_rewind_cancelled_turn` returning [code], with
+/// the last send having ended as [lastTurnEnd] (a `LiteRtLmTurnEnd`), means:
+/// 0 is a usable conversation — rewound if that send was cancelled, untouched
+/// otherwise — and any other code a conversation to rebuild.
+@visibleForTesting
+StoppedTurnRewind stoppedTurnRewindOutcome(
+  int code,
+  int lastTurnEnd,
+  String? message,
+) {
+  final end = lastTurnEnd >= 0 && lastTurnEnd < NativeLastTurnEnd.values.length
+      ? NativeLastTurnEnd.values[lastTurnEnd]
+      : null;
+  if (code != 0) {
+    throw StoppedTurnRewindException(code, message, lastTurnEnd: end);
+  }
+  return end == NativeLastTurnEnd.cancelled
+      ? StoppedTurnRewind.rewound
+      : StoppedTurnRewind.notCancelled;
+}
+
+/// The stopped turn could not be rewound, so the conversation must be
+/// rebuilt. [code] is the absl status code native returned (-1 when the call
+/// itself failed), [lastTurnEnd] how native's last send had ended.
+final class StoppedTurnRewindException implements Exception {
+  const StoppedTurnRewindException(this.code, this.message, {this.lastTurnEnd});
 
   final int code;
   final String? message;
+  final NativeLastTurnEnd? lastTurnEnd;
 
   @override
-  String toString() =>
-      'StoppedTurnRewindException(code $code): ${message ?? 'no message'}';
+  String toString() {
+    final end = lastTurnEnd == null ? '' : ', last turn ${lastTurnEnd!.name}';
+    return 'StoppedTurnRewindException(code $code$end): '
+        '${message ?? 'no message'}';
+  }
 }
 
 /// Per-conversation operations a session needs from the FFI layer.
@@ -217,17 +247,25 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     }
   }
 
-  /// The last message sent on this conversation and its `extra_context`,
-  /// exactly as native received them, so [rewindStoppedTurn] can put a stopped
-  /// turn back. Replaced by every send; dropped by a rewind.
+  /// The last message sent on this conversation and its `extra_context`, as
+  /// handed to native, so [rewindStoppedTurn] can put a stopped turn back. It
+  /// can hold megabytes of base64 media, so it is kept only while it may be
+  /// needed: dropped when native ends the send by itself, and by a rewind.
+  /// Null after a send that ended by itself, which needs no rewind.
   ({String messageJson, String? extraContext})? _lastSend;
 
   Stream<String> _send(String messageJson, String? extraContext) {
-    _lastSend = (messageJson: messageJson, extraContext: extraContext);
+    final record = (messageJson: messageJson, extraContext: extraContext);
+    _lastSend = _client._hasTurnRewind ? record : null;
     return _client._sendMessageStreamRawOn(
       _conversation!,
       messageJson,
       extraContext: extraContext,
+      onEnded: (how) {
+        if (how == NativeTurnEnd.completed && identical(_lastSend, record)) {
+          _lastSend = null;
+        }
+      },
     );
   }
 
@@ -276,7 +314,9 @@ class LiteRtLmConversationHandle implements ConversationHandle {
 
   Future<String> sendMessage(String messageJson, {String? extraContext}) {
     _assertOpen();
-    _lastSend = (messageJson: messageJson, extraContext: extraContext);
+    // Synchronous: it cannot be stopped half-way, so there is nothing to
+    // rewind after it.
+    _lastSend = null;
     return _client._sendMessageOn(
       _conversation!,
       messageJson,
@@ -301,33 +341,22 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
     Map<String, Object?> partialReply,
-  ) {
+  ) async {
     _assertOpen();
+    if (!_client._hasTurnRewind) return StoppedTurnRewind.unsupported;
     final last = _lastSend;
-    if (last == null) {
-      throw StateError('No turn was sent on this conversation to rewind');
-    }
+    // The last send ended by itself (or nothing was sent): nothing to rewind.
+    if (last == null) return StoppedTurnRewind.notCancelled;
+    // The sent message is spliced in as text: it can carry megabytes of base64
+    // media, and decoding it only to encode it again buys nothing.
+    final exchangeJson = '[${last.messageJson},${jsonEncode(partialReply)}]';
     _lastSend = null;
-    _rewinding = true;
-    return _client
-        ._rewindStoppedTurnOn(
-          _conversation!,
-          // The sent message is spliced in as text: it can carry megabytes of
-          // base64 media, and decoding it only to encode it again buys nothing.
-          exchangeJson: '[${last.messageJson},${jsonEncode(partialReply)}]',
-          extraContext: last.extraContext,
-        )
-        .whenComplete(() {
-          _rewinding = false;
-          if (_closeAfterRewind) close();
-        });
+    return _client._rewindStoppedTurnOn(
+      _conversation!,
+      exchangeJson: exchangeJson,
+      extraContext: last.extraContext,
+    );
   }
-
-  /// A rewind is running on another thread and still uses the conversation.
-  bool _rewinding = false;
-
-  /// [close] was called during a rewind; the rewind closes when it returns.
-  bool _closeAfterRewind = false;
 
   @override
   SessionMetrics getSessionMetrics() {
@@ -337,22 +366,16 @@ class LiteRtLmConversationHandle implements ConversationHandle {
 
   @override
   void close() {
-    if (_conversation == null) return;
-    if (_rewinding) {
-      _closeAfterRewind = true;
-      return;
-    }
-    // Cancel any in-flight native decode before deleting: conversation_delete
-    // blocks in ~SessionBasic → ThreadPool::WaitUntilDone until the generation
-    // drains naturally, which under GPU throttle is tens of seconds and ANRs
-    // the platform thread (#364). Cancelling first collapses the drain to
-    // milliseconds. `_cancelOn` is lock-free so it can interrupt a generation
-    // that holds `_nativeMutex`. The virtual-session path already does this in
-    // `releaseVirtualConversation`; this brings the single-session path in line.
-    _client._cancelOn(_conversation!);
-    _client._deleteConversation(_conversation!);
+    final conv = _conversation;
+    if (conv == null) return;
     _conversation = null;
+    _lastSend = null;
     _client._handles.remove(this);
+    // An operation still running on the conversation (a generation, a rewind)
+    // is cancelled, and the delete waits for its native end: deleting under a
+    // running prefill crashes (LiteRT-LM #3771), and an uncancelled delete
+    // blocks the platform thread until the generation drains (#364).
+    _client._turns.release(conv);
   }
 }
 
@@ -391,11 +414,13 @@ Future<int> _createConversationOffMainIsolate({
 }
 
 /// Calls `litert_lm_conversation_rewind_cancelled_turn` on a spawned isolate,
-/// for the reason given at [_createConversationOffMainIsolate]: it returns only
-/// when the prefill of the stopped exchange is done. Returns null on success,
-/// otherwise the status code and LiteRT-LM's last error, which is thread-local
-/// and so is read on the same isolate.
-Future<({int code, String? message})?> _rewindCancelledTurnOffMainIsolate({
+/// for the reason given at [_createConversationOffMainIsolate]: it waits until
+/// the stopped send has ended and then prefills the stopped exchange. Returns
+/// the status code, how native's last send ended (a `LiteRtLmTurnEnd`) and,
+/// on failure, LiteRT-LM's last error, which is thread-local and so is read on
+/// the same isolate.
+Future<({int code, int lastTurnEnd, String? message})>
+_rewindCancelledTurnOffMainIsolate({
   required int conversationAddr,
   required String exchangeJson,
   String? extraContext,
@@ -407,30 +432,46 @@ Future<({int code, String? message})?> _rewindCancelledTurnOffMainIsolate({
     final lib = openLiteRtLmLibrary();
     final rewind = lib
         .lookupFunction<
-          Int32 Function(Pointer, Pointer<Utf8>, Pointer<Utf8>),
-          int Function(Pointer, Pointer<Utf8>, Pointer<Utf8>)
+          Int32 Function(
+            Pointer,
+            Pointer<Utf8>,
+            Pointer<Utf8>,
+            Pointer,
+            Pointer<Int32>,
+          ),
+          int Function(
+            Pointer,
+            Pointer<Utf8>,
+            Pointer<Utf8>,
+            Pointer,
+            Pointer<Int32>,
+          )
         >('litert_lm_conversation_rewind_cancelled_turn');
     final exchange = exchangeJson.toNativeUtf8();
     final extra = extraContext?.toNativeUtf8() ?? nullptr;
+    final lastTurnEnd = malloc<Int32>()..value = 0;
     try {
       final code = rewind(
         Pointer.fromAddress(conversationAddr),
         exchange,
         extra,
+        // The stopped send was given no optional args either.
+        nullptr,
+        lastTurnEnd,
       );
-      if (code == 0) return null;
       String? message;
-      if (lib.providesSymbol('litert_lm_get_last_error_message')) {
+      if (code != 0 && lib.providesSymbol('litert_lm_get_last_error_message')) {
         final ptr = lib
             .lookupFunction<Pointer<Char> Function(), Pointer<Char> Function()>(
               'litert_lm_get_last_error_message',
             )();
         if (ptr != nullptr) message = _decodeNativeString(ptr);
       }
-      return (code: code, message: message);
+      return (code: code, lastTurnEnd: lastTurnEnd.value, message: message);
     } finally {
       malloc.free(exchange);
       if (extra != nullptr) malloc.free(extra);
+      malloc.free(lastTurnEnd);
     }
   });
 }
@@ -523,7 +564,9 @@ class LiteRtLmFfiClient {
   /// [shutdown] may proceed the moment it returns.
   Future<T> _guardCreate<T>(Future<T> Function() body) async {
     if (_isShuttingDown) {
-      throw StateError('Client is shutting down; cannot create a conversation');
+      throw StateError(
+        'Client is shutting down; cannot create or rewind a conversation',
+      );
     }
     _enterCreate();
     try {
@@ -1618,25 +1661,23 @@ class LiteRtLmFfiClient {
   }
 
   /// Send a raw JSON message on the given conversation and get a streaming
-  /// response. Holds [_nativeMutex] for the whole generation so concurrent
-  /// conversations don't race inside liblitert_lm; releases on completion or
-  /// error.
+  /// response. Holds [_nativeMutex] until native has ended the generation —
+  /// not until the consumer stops listening — so the next native call on this
+  /// engine never runs under it. [onEnded] hears how native ended it.
   Stream<String> _sendMessageStreamRawOn(
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
-  }) async* {
-    await _nativeMutex.acquire();
-    try {
-      yield* _doSendMessageStreamRawOn(
-        conv,
-        messageJson,
-        extraContext: extraContext,
-      );
-    } finally {
-      _nativeMutex.release();
-    }
-  }
+    void Function(NativeTurnEnd how)? onEnded,
+  }) => heldUntilNativeEnd(_nativeMutex, () {
+    final send = _doSendMessageStreamRawOn(
+      conv,
+      messageJson,
+      extraContext: extraContext,
+    );
+    if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
+    return send;
+  });
 
   /// The single native conversation currently materialized for the
   /// virtual-session multiplexer. The LiteRT-LM engine allows only ONE live
@@ -1686,11 +1727,12 @@ class LiteRtLmFfiClient {
     String? extraContext,
     int? maxOutputTokens,
   }) {
-    // StreamController (not async*) so the mutex release is tied to the
-    // controller lifecycle — it fires on done, error, AND consumer cancel /
-    // abandon. An async* generator's finally only runs when the consumer
-    // drains the stream, so an abandoned stream would hold the mutex forever
-    // and deadlock every other session.
+    // StreamController (not async*) so the mutex release is tied to the native
+    // turn's end — done, error, or a cancel that native has finished — and not
+    // to the consumer. An async* generator's finally only runs when the
+    // consumer drains the stream, so an abandoned stream would hold the mutex
+    // forever and deadlock every other session; releasing at the consumer's
+    // cancel instead lets the next turn start under a task still running.
     final controller = StreamController<String>();
     var mutexHeld = false;
     StreamSubscription<String>? inner;
@@ -1772,20 +1814,22 @@ class LiteRtLmFfiClient {
           if (!controller.isClosed) await controller.close();
           return;
         }
-        inner =
-            _doSendMessageStreamRawOn(
-              _virtualConv!,
-              messageJson,
-              extraContext: extraContext,
-            ).listen(
-              controller.add,
-              onError: controller.addError,
-              onDone: () async {
-                await releaseAndCleanup();
-                if (!controller.isClosed) await controller.close();
-              },
-              cancelOnError: false,
-            );
+        final send = _doSendMessageStreamRawOn(
+          _virtualConv!,
+          messageJson,
+          extraContext: extraContext,
+        );
+        // The lock goes when native has ended the turn, not when the consumer
+        // stops listening: until then the conversation is still in use.
+        unawaited(send.turn.ended.whenComplete(releaseAndCleanup));
+        inner = send.stream.listen(
+          controller.add,
+          onError: controller.addError,
+          onDone: () {
+            if (!controller.isClosed) controller.close();
+          },
+          cancelOnError: false,
+        );
       } catch (e, st) {
         controller.addError(e, st);
         await releaseAndCleanup();
@@ -1811,8 +1855,9 @@ class LiteRtLmFfiClient {
       // to-be-reused `_virtualConv`. A genuine mid-flight cancel still holds the
       // mutex, so `mutexHeld` is true and the cancel fires.
       if (mutexHeld) cancelVirtualTurn(conversationToken);
+      // Waits, bounded, for native's end; the lock is released at that end.
+      // Without a running turn, onListen releases it when it sees the cancel.
       await inner?.cancel();
-      await releaseAndCleanup();
     };
 
     return controller.stream;
@@ -1864,7 +1909,10 @@ class LiteRtLmFfiClient {
     }
   }
 
-  Stream<String> _doSendMessageStreamRawOn(
+  /// Starts one native streamed send on [conv]; the returned stream is fed by
+  /// its callbacks and its turn ends when native posts the end. The caller
+  /// holds [_nativeMutex] until then.
+  NativeTurnStream<Pointer<LiteRtLmConversation>> _doSendMessageStreamRawOn(
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
@@ -1872,7 +1920,9 @@ class LiteRtLmFfiClient {
     _assertInitialized();
     final b = _bindings!;
 
-    final controller = StreamController<String>();
+    // Registered right before the native call below; the callback cannot run
+    // before that call.
+    late final NativeTurnStream<Pointer<LiteRtLmConversation>> send;
 
     final messagePtr = messageJson.toNativeUtf8();
     final extraPtr = extraContext != null
@@ -1896,12 +1946,12 @@ class LiteRtLmFfiClient {
         // stopGeneration() (and any other caller-initiated cancel) surfaces
         // here as a CANCELLED error from native. That's not an error from
         // the API consumer's perspective — the stream just stops cleanly
-        // at whatever token was last delivered.
+        // at whatever token was last delivered. A CANCELLED nobody asked for
+        // is: the turn depended on an earlier cancelled one.
         if (error.startsWith('CANCELLED')) {
-          controller.close();
+          send.cancelled();
         } else {
-          controller.addError(Exception('Stream error: $error'));
-          controller.close();
+          send.failed(Exception('Stream error: $error'));
         }
         callable.close();
         calloc.free(messagePtr);
@@ -1912,13 +1962,11 @@ class LiteRtLmFfiClient {
       if (chunk != nullptr && chunk.address != 0) {
         final text = chunk.cast<Utf8>().toDartString();
         _proxyFreeString!(chunk); // free strdup'd string
-        if (text.isNotEmpty) {
-          controller.add(text);
-        }
+        send.chunk(text);
       }
 
       if (isFinal != 0) {
-        controller.close();
+        send.finished();
         callable.close();
         calloc.free(messagePtr);
         if (extraPtr != nullptr) calloc.free(extraPtr);
@@ -1981,6 +2029,7 @@ class LiteRtLmFfiClient {
       );
     }
 
+    send = NativeTurnStream(_turns, conv);
     final result = b.litert_lm_conversation_send_message_stream(
       conv,
       messagePtr.cast(),
@@ -1994,27 +2043,18 @@ class LiteRtLmFfiClient {
     if (result == 0) _noteGeneration(conv);
 
     if (result != 0) {
-      controller.addError(
-        Exception('Failed to start streaming (code: $result)'),
-      );
-      controller.close();
+      send.failed(Exception('Failed to start streaming (code: $result)'));
       callable.close();
       calloc.free(messagePtr);
       if (extraPtr != nullptr) calloc.free(extraPtr);
     }
 
-    // Consumer abandoned the stream (subscription.cancel) without calling
-    // stopGeneration(). Tell native to stop sampling so the GPU isn't left
-    // generating an orphaned response: otherwise the next close()/inference
-    // can stall on a still-busy shared GPU conversation — observed on
-    // Windows Intel iGPU as a hang on session.close() that cascades the whole
-    // gate (macOS/Linux mask it by finishing the orphaned generation fast).
-    // The native cancel surfaces as a CANCELLED error in the callback above,
-    // which closes the controller cleanly. Idempotent on an already-finished
-    // generation, so it's safe even if the stream completed concurrently.
-    controller.onCancel = () => _cancelOn(conv);
-
-    return controller.stream;
+    // A consumer that abandons the stream (subscription.cancel) without
+    // calling stopGeneration() still stops native: NativeTurnStream cancels it
+    // and waits, bounded, for the end. Otherwise the GPU is left generating an
+    // orphaned response, and the next close()/inference stalls on a still-busy
+    // shared conversation (a hang on session.close() on a Windows Intel iGPU).
+    return send;
   }
 
   /// Legacy: streaming raw on the implicit [_legacyHandle] conversation.
@@ -2090,8 +2130,19 @@ class LiteRtLmFfiClient {
     return _legacyHandle!.sendMessage(messageJson, extraContext: extraContext);
   }
 
-  /// Cancel ongoing generation on the given conversation.
-  void _cancelOn(Pointer<LiteRtLmConversation> conv) {
+  /// The native operation running on each conversation (a streamed send or a
+  /// rewind): a conversation is deleted, and [_nativeMutex] handed to the next
+  /// operation, only once the one that runs has ended natively.
+  late final _turns = NativeTurns<Pointer<LiteRtLmConversation>>(
+    cancelNative: _cancelNative,
+    deleteNative: _deleteConversation,
+  );
+
+  /// Cancel ongoing generation on the given conversation, marking it as asked
+  /// for, so its cancelled end closes the stream cleanly.
+  void _cancelOn(Pointer<LiteRtLmConversation> conv) => _turns.cancel(conv);
+
+  void _cancelNative(Pointer<LiteRtLmConversation> conv) {
     // #379: never cancel a conversation that has already been freed. The
     // raw-stream and virtual-turn onCancel hooks can fire after model/handle/
     // engine teardown deleted the conversation; dereferencing the dangling
@@ -2104,10 +2155,13 @@ class LiteRtLmFfiClient {
     }
   }
 
-  /// Rewinds [conv] after a cancelled send and prefills [exchangeJson], a JSON
-  /// array of messages, in its place (`patch_c_api.sh` section 15). Holds
-  /// [_nativeMutex] like a send, and holds [shutdown] off like a create: the
-  /// native call runs on another thread until the prefill is done.
+  /// Makes [conv] usable after a stopped send (`patch_c_api.sh` section 15):
+  /// native waits until that send has ended, then rewinds it and prefills
+  /// [exchangeJson], a JSON array of messages, in its place — or changes
+  /// nothing when the send had ended by itself. Holds [_nativeMutex] like a
+  /// send and holds [shutdown] off like a create, and registers as the
+  /// conversation's running operation, so a close meanwhile waits for it.
+  /// Throws [StoppedTurnRewindException] when the conversation must be rebuilt.
   Future<StoppedTurnRewind> _rewindStoppedTurnOn(
     Pointer<LiteRtLmConversation> conv, {
     required String exchangeJson,
@@ -2120,17 +2174,30 @@ class LiteRtLmFfiClient {
         if (_isShuttingDown || !_liveConvs.contains(conv)) {
           throw StateError('Conversation was closed before it was rewound');
         }
-        final failure = await _rewindCancelledTurnOffMainIsolate(
-          conversationAddr: conv.address,
-          exchangeJson: exchangeJson,
-          extraContext: extraContext,
-        );
-        // FAILED_PRECONDITION: the last send was not cancelled.
-        if (failure?.code == 9) return StoppedTurnRewind.notCancelled;
-        if (failure != null) {
-          throw StoppedTurnRewindException(failure.code, failure.message);
+        final turn = _turns.begin(conv);
+        var how = NativeTurnEnd.failed;
+        try {
+          final ({int code, int lastTurnEnd, String? message}) result;
+          try {
+            result = await _rewindCancelledTurnOffMainIsolate(
+              conversationAddr: conv.address,
+              exchangeJson: exchangeJson,
+              extraContext: extraContext,
+            );
+          } catch (e) {
+            throw StoppedTurnRewindException(-1, 'the call failed: $e');
+          }
+          final outcome = stoppedTurnRewindOutcome(
+            result.code,
+            result.lastTurnEnd,
+            result.message,
+          );
+          how = NativeTurnEnd.completed;
+          return outcome;
+        } finally {
+          // Before the lock goes: a close that came meanwhile deletes here.
+          _turns.end(conv, turn, how);
         }
-        return StoppedTurnRewind.rewound;
       } finally {
         _nativeMutex.release();
       }
@@ -2147,7 +2214,9 @@ class LiteRtLmFfiClient {
   void _deleteConversation(Pointer<LiteRtLmConversation> conv) {
     // Drop liveness first so any onCancel that races this teardown no-ops in
     // [_cancelOn] rather than dereferencing the pointer we are about to free.
-    _liveConvs.remove(conv);
+    // A conversation that is not live was deleted already: deleting it again
+    // would free it twice.
+    if (!_liveConvs.remove(conv)) return;
     _conversationSampling.remove(conv);
     if (_bindings != null) {
       _bindings!.litert_lm_conversation_delete(conv);
@@ -2187,18 +2256,18 @@ class LiteRtLmFfiClient {
     _handles.clear();
     _legacyHandle = null;
 
-    // Tear down the shared virtual-session conversation too. Cancel any
-    // in-flight virtual turn first: like handle.close(), an uncancelled
-    // conversation_delete blocks in ~SessionBasic → ThreadPool::WaitUntilDone
-    // draining the live generation (the #364 ANR). Safe post-#379 — vc is still
-    // in _liveConvs here, so _cancelOn reaches native rather than no-oping.
+    // Tear down the shared virtual-session conversation too. A turn still
+    // running on it is cancelled and the delete waits for its end, as for the
+    // handles above.
     final vc = _virtualConv;
     if (vc != null) {
-      _cancelOn(vc);
-      _deleteConversation(vc);
+      _turns.release(vc);
       _virtualConv = null;
       _virtualActiveToken = null;
     }
+    // A conversation released while an operation ran on it is deleted when
+    // that operation ends; the engine must outlive both.
+    await _turns.allEnded();
 
     if (_engine != null && _engine != nullptr && _bindings != null) {
       _bindings!.litert_lm_engine_delete(_engine!);

@@ -799,6 +799,7 @@ The bundle has **three** consumers — LLM inference (LiteRT-LM C API), embeddin
 | Suite | What it covers |
 |---|---|
 | `litertlm_ffi_test.dart` (full) | CPU + GPU text/streaming/vision/audio/thinking, chat, multi-session (several `engine_create` per process), embeddings (`Embedding non-blocking (#299)`) |
+| `litertlm_stop_rewind_test.dart` | `patch_c_api.sh` §15: a stopped turn is rewound, not rebuilt — images, audio, thinking, stop by `stopGeneration()` and by a cancelled subscription. Once per backend (`--dart-define=REWIND_BACKEND=gpu`); every row must log `rewound`, never `rebuilt`. The Dart side falls back to a quiet text rebuild on a library without the export, so this is the check that §15 reached the platform; skip it only on an NPU-only device |
 | `stt_moonshine_test.dart` | STT through the LiteRT C API (~104 MB model from HF) |
 | `tts_smoke_test.dart` | Matcha TTS; compares against a golden (`rms 0.0781`, error < 1e-5 on every platform in v0.17.0) |
 | `qwen3_tts_test.dart` | only when Qwen3 code changed (~1 GB download); macOS is enough |

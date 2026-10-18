@@ -155,7 +155,7 @@ await for (final token in session.getResponseAsync()) {
 }
 ```
 
-To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On `.litertlm` on Android, iOS and desktop the chat keeps working after a stop, but images and audio from earlier turns are no longer visible to the model — re-send an image if the next question is about it. Every `flutter_edge_ai_litertlm` release includes this behavior; the legacy `flutter_gemma_litertlm` package needs 1.8.1 or later.
+To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On `.litertlm` on Android, iOS and desktop the chat keeps working after a stop — whether the app called `stopGeneration()` or cancelled its subscription. With `flutter_edge_ai_litertlm` releases after 1.14.0 it is rewound to before the stopped turn, which is put back with its partial reply, so the model still sees images and audio from earlier turns. With 1.14.0 and earlier, and on the NPU, it is rebuilt from text instead, and those are gone — re-send an image there if the next question is about it. The legacy `flutter_gemma_litertlm` package needs 1.8.1 or later for a stopped chat to answer again at all.
 
 ## Multi-turn chat
 

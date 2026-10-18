@@ -193,10 +193,11 @@ await for (final event in session.ask('', audioBytes: wav)) {
 - **Text and image.** The text may be empty or add to the recording, and an
   image can go in the same `ask`. Tool results later in the turn carry no media.
 - **Native only.** No web engine takes audio input.
-- **A stopped turn forgets the recordings.** After a cancelled subscription, a
-  `.litertlm` chat rebuilds its conversation from the turns' text: the model
-  keeps its replies, but the recordings of earlier turns are gone from its
-  context.
+- **A stopped turn keeps the recordings (`flutter_edge_ai_litertlm` after
+  1.14.0).** After a cancelled subscription, a `.litertlm` chat is rewound to
+  before the stopped turn and keeps the recordings of earlier turns. With
+  1.14.0 and earlier, and on the NPU, it rebuilds its conversation from the
+  turns' text, and they are gone from its context.
 
 ## When the model answers nothing
 

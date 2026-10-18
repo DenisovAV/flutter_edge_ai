@@ -152,6 +152,7 @@ Anything at or near the current macOS release means the flag was dropped. Rebuil
 10b. **App Store ITMS-90432 fix** — rewrite `gpu_registry.cc` dlopen to `@executable_path/...framework/<X>` on Apple. **iOS-critical.** Plus `patches/litert_gpu_registry_apple.patch` (since native-v0.18.0-b), added to the `litert` archive as `patches=`: on Apple our framework is the ONLY GPU accelerator tried, and the `RTLD_DEFAULT` fallback is off — see "coexisting LiteRT runtimes" below.
 11. minizip/zlib mirrored off the flaky zlib.net
 15. **Windows Intel NPU** — `patches/windows_no_fd_model_loading.patch`: `.litertlm` sections load buffer-backed, never through a C runtime descriptor (LiteRT-LM #4023). Without it every AOT NPU bundle ends `engine_create` in `libLiteRt.dll` (regression #20 below). The section also fails when a new `CreateFromFd` caller appears in `runtime/` or `c/`.
+16. **Stopped-turn rewind** — `patches/conversation_rewind_cancelled_turn.patch`: a checkpoint before each send's own prefill, each send's end recorded in the C wrapper, and `litert_lm_conversation_rewind_cancelled_turn`, which cancels, waits for the session's tasks, then rewinds a cancelled turn and prefills it back. Without it the Dart client rebuilds a stopped chat from text and loses earlier images and audio; `verify_tarball_manifest.sh` refuses a tarball without its export and contract.
 
 §10a (sampler_factory.cc) is **deliberately NOT patched** — `libLiteRtTopKMetalSampler.dylib` has 3-of-7 broken exports on Apple (#2073). Patching it surfaces a NULL-vtable crash. Leave the basename dlopen so `sampler_factory.cc` falls back to CPU sampler. Revisit when Google fixes #2073.
 
@@ -799,6 +800,7 @@ The bundle has **three** consumers — LLM inference (LiteRT-LM C API), embeddin
 | Suite | What it covers |
 |---|---|
 | `litertlm_ffi_test.dart` (full) | CPU + GPU text/streaming/vision/audio/thinking, chat, multi-session (several `engine_create` per process), embeddings (`Embedding non-blocking (#299)`) |
+| `litertlm_stop_rewind_test.dart` | `patch_c_api.sh` §16: a stopped turn is rewound, not rebuilt — images, audio, thinking, stop by `stopGeneration()` and by a cancelled subscription. Once per backend (`--dart-define=REWIND_BACKEND=gpu`); every row must log `rewound`, never `rebuilt`. The Dart side falls back to a quiet text rebuild on a library without the export, so this is the check that §15 reached the platform; skip it only on an NPU-only device |
 | `stt_moonshine_test.dart` | STT through the LiteRT C API (~104 MB model from HF) |
 | `tts_smoke_test.dart` | Matcha TTS; compares against a golden (`rms 0.0781`, error < 1e-5 on every platform in v0.17.0) |
 | `qwen3_tts_test.dart` | only when Qwen3 code changed (~1 GB download); macOS is enough |

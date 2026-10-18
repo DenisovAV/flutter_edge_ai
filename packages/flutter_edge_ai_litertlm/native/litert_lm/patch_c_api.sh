@@ -5,6 +5,8 @@
 # 2. set_use_hw_masking_for_npu setter (Intel LunarLake/PantherLake NPU)
 # 3. GPU smooth-UI knobs — gpu_context_low_priority + kernel_batch_size (#364)
 # 4. gpu_registry.cc dlopen rewrite for App-Store-safe framework paths (Apple)
+# 16. litert_lm_conversation_rewind_cancelled_turn: a stopped turn is rewound
+#     instead of leaving the conversation poisoned
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -67,7 +69,7 @@ LDSEOF
   # client resolves them with GetProcAddress on this DLL and hands them to
   # stream_proxy_create2, which refuses to build a proxy without all three, so a
   # tree that stopped exporting them should fail the link, not ship a client that
-  # throws on the first send.
+  # throws on the first send. Section 16's rewind is named for the same reason.
   cat > "$DIR/c/windows_exports.def" << 'DEFEOF'
 LIBRARY "LiteRtLm"
 EXPORTS
@@ -92,6 +94,7 @@ EXPORTS
   litert_lm_conversation_create
   litert_lm_conversation_delete
   litert_lm_conversation_get_benchmark_info
+  litert_lm_conversation_rewind_cancelled_turn
   litert_lm_conversation_send_message
   litert_lm_conversation_send_message_stream
   litert_lm_embedding_response_get_input_length
@@ -630,5 +633,70 @@ nofd_callers="$(grep -rlE 'CreateFromFd\(|LiteRtCreateModelFromFd\(' --include='
   exit 1
 }
 echo "  OK: section 15 anchors hold"
+
+# ── 16. Rewind a cancelled conversation turn ──
+# Conversation::CancelProcess leaves the session poisoned: every later task
+# depends on the cancelled one and ends as cancelled too, so after "stop" the
+# conversation answers nothing (upstream documents it as unsupported, still so
+# on main). A session can undo that — RewindToCheckpoint restores the step and
+# the task dependencies — but the Conversation hides its session. The patch:
+# - saves a checkpoint right before each send's own prefill (after a thinking
+#   refill, whose own rewind would otherwise erase it);
+# - records in the C wrapper how each send ended (completed, cancelled,
+#   failed), numbered so a late callback of an older send cannot overwrite it;
+# - adds litert_lm_conversation_rewind_cancelled_turn (LITERT_LM_C_API_EXPORT,
+#   and section 1's Windows .def): cancel whatever still runs, wait until every
+#   task has ended (Conversation::WaitUntilDone, backported from upstream main),
+#   and only then decide — completed: nothing to do; cancelled: rewind to the
+#   checkpoint and prefill the stopped exchange without decoding; anything
+#   else: the caller deletes the conversation. Deciding before the wait read a
+#   cancel that had not landed yet as "not cancelled" (#682 review).
+# The NPU executor rolls back one token at most, so the rewind fails there;
+# the Dart client does not call it on the NPU and rebuilds instead.
+#
+# A real diff, applied like section 11, plus anchors on what it relies on: a
+# moved upstream line fails the build here, not a user's next turn.
+REWIND_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/conversation_rewind_cancelled_turn.patch"
+if git -C "$DIR" apply --check "$REWIND_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$REWIND_PATCH"
+  echo "  OK: a cancelled conversation turn can be rewound"
+elif git -C "$DIR" apply --reverse --check "$REWIND_PATCH" 2>/dev/null; then
+  echo "  SKIP: cancelled-turn rewind already applied"
+else
+  echo "  ERROR: $REWIND_PATCH does not apply to this LiteRT-LM revision —" >&2
+  echo "         runtime/conversation/conversation.{h,cc} or" >&2
+  echo "         c/conversation{.h,.cc,_internal.h} moved (re-create the patch)," >&2
+  echo "         or the tree carries an older version of it (start from a clean" >&2
+  echo "         checkout)." >&2
+  git -C "$DIR" apply --check "$REWIND_PATCH" >&2 || true
+  exit 1
+fi
+rewind_fail() {
+  echo "  ERROR: section 16: $1" >&2
+  exit 1
+}
+grep -qF 'absl::Status RewindCancelledTurn(' \
+  "$DIR/runtime/conversation/conversation.h" ||
+  rewind_fail "Conversation::RewindCancelledTurn is not in the tree after applying"
+# The rewind un-poisons the session only because the checkpoint carries the
+# task dependencies back; without that every later task still ends cancelled.
+grep -qF 'last_task_ids_ = it->second.last_task_ids;' \
+  "$DIR/runtime/core/session_advanced.cc" ||
+  rewind_fail "SessionAdvanced::RewindToCheckpoint no longer restores last_task_ids_"
+# The wait must not open before the callbacks have run: Conversation's
+# WaitUntilDone is the session's, which waits for its active-task list to
+# empty, and a task leaves it at its end state, which is set after its
+# callback.
+grep -qF 'return execution_manager_lock->WaitUntilSessionDone(' \
+  "$DIR/runtime/core/session_advanced.h" ||
+  rewind_fail "SessionAdvanced::WaitUntilDone no longer waits for the session's tasks"
+grep -qF 'session_lookup_.at(session_id)->active_tasks.empty();' \
+  "$DIR/runtime/framework/resource_management/threaded_execution_manager.cc" ||
+  rewind_fail "WaitUntilSessionDone no longer waits for the session's active tasks"
+# The CPU/GPU executor moves its step back by any number of tokens (the NPU
+# one does not, and is never asked to).
+grep -qF 'absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int new_step) {' \
+  "$DIR/runtime/executor/llm_litert_compiled_model_executor.cc" ||
+  rewind_fail "the compiled-model executor's SetCurrentStep moved"
 
 echo "Patch complete."

@@ -1,7 +1,7 @@
 # Platform support
 
 The connector provides GGUF inference through llamadart on Android, iOS, macOS,
-Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and the SDK typed-overflow patch (target 0.15.1; pending publication).
+Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and published llamadart 0.15.1 with typed overflow reporting.
 A passing build does not qualify every device, model or accelerator.
 
 | Feature | Native | Web |
@@ -12,7 +12,7 @@ A passing build does not qualify every device, model or accelerator.
 | Tools and thinking | Compatible model/template required | Compatible model/template/grammar required |
 | Images and audio | Compatible app-owned projector required | Compatible projector and bridge capabilities required |
 | LoRA | Installed adapter loads with the model; temporary session overrides are serialized | This connector does not wire Web adapters; it rejects installed or session adapters |
-| GGUF embeddings | Native EmbeddingGemma 2 text profile; prerequisites pending | Web unavailable |
+| GGUF embeddings | Native EmbeddingGemma 2 text profile; hosted core release pending | Web unavailable |
 | OPFS stream model handles | Not applicable | Unsupported; use cacheApi or network URLs |
 | NPU, separate encoder backends, LiteRT activation/MTP and MediaPipe LoRA ranks | Unsupported by this connector | Unsupported |
 
@@ -88,8 +88,8 @@ configuration consistent or split the workspaces.
 Qualification uses a workspace containing core, this connector and one app
 member, with root hook settings and a companion declared only in the app.
 The prior published SDK/companion pair is **0.15.0 / 0.15.0**. This draft
-targets SDK **0.15.1** with companion **0.15.0**, pending release and hosted
-qualification. The
+uses published SDK **0.15.1** with companion **0.15.0**. Source qualification
+uses the stacked core 2.5.0; hosted qualification awaits that core release. The
 [contribution PR](https://github.com/DenisovAV/flutter_edge_ai/pull/628) records
 the previous 0.13.1 / 0.13.0 qualification; upgrading the pins does not carry
 that qualification forward automatically.
@@ -146,4 +146,4 @@ or absent model execution fails. Optional capability fixtures have their own
 
 GGUF embedding scope and independent qualification are tracked in the
 [embedding guide](embeddings.md). The inference evidence above does not qualify
-embedding models or the unpublished SDK patch.
+embedding models or hosted core 2.5.0 resolution.

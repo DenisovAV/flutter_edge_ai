@@ -12,9 +12,9 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 **Unreleased:** this package is available from the source repository.
 Use the checked-in example today; a pub.dev install command will follow release.
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**,
-the forthcoming llamadart typed-overflow patch (target **0.15.1**) and Apple
-companion **0.15.0**. This draft cannot resolve from hosted dependencies until
-the prerequisites are published. Connector CI uses Flutter
+published llamadart **0.15.1** with typed overflow reporting and Apple
+companion **0.15.0**. Standalone hosted resolution requires publication of
+core 2.5.0. Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
 [the embedding guide](doc/embeddings.md); media and Web embeddings are deferred.
 
@@ -113,10 +113,9 @@ only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-The candidate constraint targets the next typed-overflow patch, provisionally
-0.15.1. Confirm its published archive and matching companion before release;
-local source qualification is not hosted artifact qualification.
-SDK 0.15.0 uses companion 0.15.0; companion patches are versioned independently
+The SDK constraint is bounded to published patch 0.15.1. Core 2.5.0 still
+needs publication; source qualification is not hosted artifact qualification.
+This candidate uses SDK 0.15.1 with companion 0.15.0; companion patches are versioned independently
 within the SDK minor.
 Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
 For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting

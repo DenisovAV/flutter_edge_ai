@@ -81,8 +81,9 @@ jobs:
             qualification_root="$(cygpath -u "$RUNNER_TEMP")/gguf-source-qualification"
           fi
           cd "$qualification_root/packages/flutter_edge_ai_llama"
+          flutter_executable="$(python -c 'import shutil; print(shutil.which("flutter"))')"
           if [[ "$RUNNER_OS" == Linux ]]; then
-            xvfb-run -a python tool/verify_embeddings.py --model-path embedding.gguf --backend cpu --device "$GGUF_DEVICE"
+            xvfb-run -a python tool/verify_embeddings.py --model-path embedding.gguf --backend cpu --device "$GGUF_DEVICE" --flutter "$flutter_executable"
           else
-            python tool/verify_embeddings.py --model-path embedding.gguf --backend cpu --device "$GGUF_DEVICE"
+            python tool/verify_embeddings.py --model-path embedding.gguf --backend cpu --device "$GGUF_DEVICE" --flutter "$flutter_executable"
           fi

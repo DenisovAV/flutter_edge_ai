@@ -67,5 +67,7 @@ failure output, and a recovered launch emits a CI warning; the passing attempt m
 
 The independent pinned-model runner and prerequisites are in
 [embeddings.md](embeddings.md). Run both CPU and GPU profiles on a qualified
-desktop host. Draft local SDK overrides are development evidence only; hosted
-package and minimum-SDK gates must pass after both dependencies are published.
+desktop host. The separate source-qualification workflow covers packaged
+Linux/Windows CPU embeddings and Flutter 3.44 resolution against the stacked core
+and published SDK. Its temporary core path override is source evidence only;
+hosted package and minimum-SDK gates must pass after core 2.5.0 is published.

@@ -1,12 +1,13 @@
 # GGUF text embeddings
 
 This draft adds `LlamaEmbeddingBackend` to the existing llama engine package.
-It requires the core 2.5.0 embedding SPI and the next llamadart patch's typed
-native overflow error. The core foundation is [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
+It requires the core 2.5.0 embedding SPI and published llamadart 0.15.1 with
+typed native overflow reporting. The core foundation is [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
 the typed SDK error is [llamadart #1201](https://github.com/leehack/llamadart/pull/1201).
-Those releases are prerequisites; the manifest's
-`>=0.15.1 <0.15.2` bound is a proposed release target, not a published or
-hosted-qualified SDK pin. Do not use a dependency override in production.
+The SDK release is available; core 2.5.0 remains a publication prerequisite.
+The manifest bounds the published SDK to `>=0.15.1 <0.15.2`. Source-core
+qualification does not qualify standalone hosted resolution. Do not use a
+dependency override in production.
 
 `flutter_edge_ai_embeddings` remains a tokenizer implementation package. GGUF
 carries its own tokenizer; it needs no dependency on that package. Core owns
@@ -60,9 +61,11 @@ NPU, image/audio input and Web embeddings are refused. Browser registration does
 not claim GGUF embedding files, so an unsupported install can fail its pre-check.
 Inference remains independently available on the package's existing platforms.
 
-Local candidate evidence uses the pinned fixture in `tool/embedding_model.json`,
-macOS arm64 CPU and Metal, and the local typed-overflow SDK branch. Hosted package
-qualification, Linux/Windows and mobile embedding execution remain release gates.
+Source qualification uses the pinned fixture in `tool/embedding_model.json`,
+published llamadart 0.15.1 and the stacked core. The contribution PR records
+per-platform execution results; the dedicated source CI covers Linux/Windows CPU
+embeddings and Flutter 3.44 resolution. Hosted package qualification remains a
+release gate until core 2.5.0 is published.
 Other EG2 quantizations need their own numerical qualification.
 
 ## RAG identity and lifecycle
@@ -80,11 +83,12 @@ API in this adapter.
 
 ## Reproducible qualification
 
-For source-only development before publication, temporarily override `llamadart`
-to the #1201 checkout in the workspace root's `pubspec_overrides.yaml`. Append the
-same override to the example's existing checkout-only override file, retaining
-its core path entry, then run `flutter pub get`. Remove only these temporary SDK
-overrides after qualification; never commit them or use them as hosted evidence.
+Before core publication, use the stacked #685 checkout through the monorepo
+workspace and the example's existing checkout-only core path override. Resolve
+llamadart normally from pub.dev; no SDK override is needed. Source CI stages core,
+the adapter and the app in a temporary directory and retains only that core path
+override. The existing hosted package and minimum-SDK gates remain unchanged and
+require the published core; source results never replace them.
 
 After the prerequisite sources or releases resolve, from the package directory:
 

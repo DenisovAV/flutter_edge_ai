@@ -1,5 +1,5 @@
 // A stopped turn is rewound in place (flutter_edge_ai_litertlm
-// `patch_c_api.sh` section 15): the next turn runs on the same conversation,
+// `patch_c_api.sh` section 16): the next turn runs on the same conversation,
 // which keeps every earlier turn — images and audio included — and the
 // stopped exchange itself. Before it, the conversation was rebuilt from a
 // text-only history and forgot earlier media.
@@ -8,7 +8,7 @@
 // subscription (awaited or not) with the next message sent right away — the
 // path that once left a chat answering nothing (#682 review).
 //
-// Needs a libLiteRtLm with section 15: a local prebuilt from `build_macos.sh`
+// Needs a libLiteRtLm with section 16: a local prebuilt from `build_macos.sh`
 // (`build_ios.sh` on iOS) until a native release carries it. Gemma 4 E2B:
 // macOS in the example's container Documents (see litertlm_ffi_test.dart);
 // iOS via `--dart-define=IOS_TEST_DOCS_DIR=<host dir>` on the simulator or the

@@ -427,7 +427,7 @@ fi
 
 echo
 echo "==> Checking every libLiteRtLm exports the stopped-turn rewind"
-# patch_c_api.sh section 15. A library without it still answers after a stop:
+# patch_c_api.sh section 16. A library without it still answers after a stop:
 # RecoveringConversationHandle rebuilds the conversation from text instead,
 # so that platform alone would silently lose earlier images and audio.
 rewind_fail=0
@@ -472,7 +472,7 @@ PYEOF_REWIND
 done
 if [[ $rewind_fail -eq 1 ]]; then
   echo
-  echo "❌ REWIND EXPORT CHECK FAILED — patch_c_api.sh section 15 did not reach"
+  echo "❌ REWIND EXPORT CHECK FAILED — patch_c_api.sh section 16 did not reach"
   echo "   that library. Rebuild it from a patched tree."
   exit 1
 fi

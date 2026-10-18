@@ -103,7 +103,7 @@ enum StoppedTurnRewind {
   notCancelled,
 
   /// This conversation cannot rewind: the loaded libLiteRtLm predates
-  /// `patch_c_api.sh` section 15. Nothing was changed.
+  /// `patch_c_api.sh` section 16. Nothing was changed.
   unsupported,
 }
 
@@ -2198,7 +2198,7 @@ class LiteRtLmFfiClient {
     }
   }
 
-  /// Makes [conv] usable after a stopped send (`patch_c_api.sh` section 15):
+  /// Makes [conv] usable after a stopped send (`patch_c_api.sh` section 16):
   /// native waits until that send has ended, then rewinds it and prefills
   /// [exchangeJson], a JSON array of messages, in its place — or changes
   /// nothing when the send had ended by itself. Holds [_nativeMutex] like a

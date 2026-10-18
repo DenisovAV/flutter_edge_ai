@@ -4,7 +4,7 @@
  
  namespace {
  
-+// flutter_edge_ai (patch_c_api.sh section 15): numbers a send and marks it
++// flutter_edge_ai (patch_c_api.sh section 16): numbers a send and marks it
 +// running; EndTurn records how it ended unless a later send has begun.
 +uint64_t BeginTurn(LiteRtLmConversation* conversation) {
 +  std::lock_guard<std::mutex> lock(conversation->turn_mutex);
@@ -140,7 +140,7 @@
  LITERT_LM_C_API_EXPORT
  void litert_lm_conversation_cancel_process(LiteRtLmConversation* conversation);
  
-+// flutter_edge_ai (patch_c_api.sh section 15): how the last send on a
++// flutter_edge_ai (patch_c_api.sh section 16): how the last send on a
 +// conversation ended.
 +typedef enum {
 +  kLiteRtLmTurnEndNone = 0,       // nothing was sent, or it was rewound
@@ -150,7 +150,7 @@
 +  kLiteRtLmTurnEndRunning = 4,    // had not ended when the wait timed out
 +} LiteRtLmTurnEnd;
 +
-+// flutter_edge_ai (patch_c_api.sh section 15). Makes a conversation whose last
++// flutter_edge_ai (patch_c_api.sh section 16). Makes a conversation whose last
 +// send was stopped usable again, without deleting it. It cancels whatever of
 +// that send still runs and waits, up to 10 minutes, until every task of the
 +// conversation has ended and its callbacks have run; never call it from a
@@ -194,7 +194,7 @@
  };
  
  struct LiteRtLmConversation {
-+  // flutter_edge_ai (patch_c_api.sh section 15): how the last send ended, a
++  // flutter_edge_ai (patch_c_api.sh section 16): how the last send ended, a
 +  // LiteRtLmTurnEnd, written by that send's own callback. turn_seq numbers the
 +  // sends, so a late callback of an earlier send cannot overwrite it. Declared
 +  // before `conversation`, whose destructor waits for the callbacks that write
@@ -211,7 +211,7 @@
      "channel_content_checkpoint";
  constexpr absl::string_view kStartContentCheckpoint =
      "start_content_checkpoint";
-+// flutter_edge_ai section 15: the step before a send's own prefill.
++// flutter_edge_ai section 16: the step before a send's own prefill.
 +constexpr absl::string_view kTurnStartCheckpoint =
 +    "flutter_edge_ai_turn_start_checkpoint";
  
@@ -221,7 +221,7 @@
    {
      absl::MutexLock lock(history_mutex_);  // NOLINT
      prev_is_appending_message = is_appending_message_;
-+    // flutter_edge_ai section 15: a new send ends the previous turn's chance
++    // flutter_edge_ai section 16: a new send ends the previous turn's chance
 +    // to be rewound.
 +    turn_checkpoint_saved_ = false;
 +    turn_checkpoint_error_ = absl::OkStatus();
@@ -233,7 +233,7 @@
        history_.pop_back();
      }
      is_appending_message_ = prev_is_appending_message;
-+    last_turn_cancelled_ = true;  // flutter_edge_ai section 15
++    last_turn_cancelled_ = true;  // flutter_edge_ai section 16
    };
  
    if (!config_.enable_rewinding() && was_history_empty) {
@@ -241,7 +241,7 @@
                        internal_callback, decode_config,
                        optional_args =
                            std::move(optional_args)]() -> absl::Status {
-+    // flutter_edge_ai section 15: the step RewindCancelledTurn() returns to,
++    // flutter_edge_ai section 16: the step RewindCancelledTurn() returns to,
 +    // taken after any refill, so the refill's own rewind cannot erase it. Not
 +    // fatal: a turn without it runs as before and cannot be rewound.
 +    if (absl::Status saved = session_->SaveCheckpoint(kTurnStartCheckpoint);
@@ -375,11 +375,11 @@
    void CancelProcess();
  
 +  // Waits until every task of the session has ended, its callbacks included.
-+  // flutter_edge_ai (patch_c_api.sh section 15): upstream added the same method
++  // flutter_edge_ai (patch_c_api.sh section 16): upstream added the same method
 +  // after the v0.18.0 pin; drop this copy at the next pin bump.
 +  absl::Status WaitUntilDone() { return session_->WaitUntilDone(); }
 +
-+  // flutter_edge_ai (patch_c_api.sh section 15). Rewinds a conversation whose
++  // flutter_edge_ai (patch_c_api.sh section 16). Rewinds a conversation whose
 +  // last SendMessageAsync was cancelled (CancelProcess, CancelGroup, or the
 +  // token limit with return_error_on_max_tokens_reached) to the step right
 +  // before that send's own prefill. This also restores the task dependencies
@@ -408,7 +408,7 @@
        std::vector<std::unique_ptr<Engine::Session::TaskController>>>
        task_controllers_ ABSL_GUARDED_BY(task_controllers_mutex_);
  
-+  // flutter_edge_ai section 15: what RewindCancelledTurn() returns to, declared
++  // flutter_edge_ai section 16: what RewindCancelledTurn() returns to, declared
 +  // before session_ so it outlives the callbacks ~session_ waits for. Cleared
 +  // at the start of every send; set when that send's own prefill is scheduled,
 +  // with checkpoint_message_index_ and

@@ -5,7 +5,7 @@
 # 2. set_use_hw_masking_for_npu setter (Intel LunarLake/PantherLake NPU)
 # 3. GPU smooth-UI knobs — gpu_context_low_priority + kernel_batch_size (#364)
 # 4. gpu_registry.cc dlopen rewrite for App-Store-safe framework paths (Apple)
-# 15. litert_lm_conversation_rewind_cancelled_turn: a stopped turn is rewound
+# 16. litert_lm_conversation_rewind_cancelled_turn: a stopped turn is rewound
 #     instead of leaving the conversation poisoned
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
@@ -69,7 +69,7 @@ LDSEOF
   # client resolves them with GetProcAddress on this DLL and hands them to
   # stream_proxy_create2, which refuses to build a proxy without all three, so a
   # tree that stopped exporting them should fail the link, not ship a client that
-  # throws on the first send. Section 15's rewind is named for the same reason.
+  # throws on the first send. Section 16's rewind is named for the same reason.
   cat > "$DIR/c/windows_exports.def" << 'DEFEOF'
 LIBRARY "LiteRtLm"
 EXPORTS
@@ -620,7 +620,7 @@ nofd_callers="$(grep -rlE 'CreateFromFd\(|LiteRtCreateModelFromFd\(' --include='
 }
 echo "  OK: section 15 anchors hold"
 
-# ── 15. Rewind a cancelled conversation turn ──
+# ── 16. Rewind a cancelled conversation turn ──
 # Conversation::CancelProcess leaves the session poisoned: every later task
 # depends on the cancelled one and ends as cancelled too, so after "stop" the
 # conversation answers nothing (upstream documents it as unsupported, still so
@@ -658,7 +658,7 @@ else
   exit 1
 fi
 rewind_fail() {
-  echo "  ERROR: section 15: $1" >&2
+  echo "  ERROR: section 16: $1" >&2
   exit 1
 }
 grep -qF 'absl::Status RewindCancelledTurn(' \

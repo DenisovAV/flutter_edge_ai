@@ -206,10 +206,11 @@ await chat.addQueryChunk(toolMessage);
 final followUp = await chat.generateChatResponse();
 ```
 
-No bundled engine gives calls ids or reads `toolCallId` today: a result is
-paired with its call by `toolName`, in order. Ids come from the callers —
-genai `callId`s and Genkit `ref`s — and stay in the history for engines that
-read them.
+Only `flutter_edge_ai_llama` gives calls ids and reads `toolCallId`: pass it
+there when two calls share a name and their results go back out of order. The
+`.litertlm`, MediaPipe, ONNX and built-in AI engines give none and pair a
+result with its call by `toolName`, in order. genai `callId`s and Genkit
+`ref`s carry theirs, and they stay in the history.
 
 ### Or drive the whole loop in one call (recommended)
 

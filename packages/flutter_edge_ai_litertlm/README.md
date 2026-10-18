@@ -924,8 +924,8 @@ an optional system library. An app can set both opt-ins: the bundle's stamp
 picks the vendor, and LiteRT gets a directory with that vendor's libraries only.
 
 Run on a Pixel 11 Pro and a Pixel 11 (Tensor G6) with debug builds: Gemma 4
-E2B text, images and audio on the NPU, and EmbeddingGemma 2 270m (vectors match
-the CPU bundle's, cosine 0.999 or more) and 440m with an image. Not run yet: a
+E2B text, images and audio on the NPU, and EmbeddingGemma 2 270m and 440m (text
+and an image). Not run yet: a
 Tensor G5 and a release-signed build. On one Pixel the EdgeTPU service logged
 that the app is not on its allowlist; that did not stop the debug run.
 
@@ -1115,16 +1115,16 @@ Cause: a conversation whose generation is cancelled mid-reply stays unusable
 in the native runtime.
 
 Fix: every `flutter_edge_ai_litertlm` release answers again after a stop.
-Releases after 1.14.0 rewind the conversation to before the stopped turn and
+Since 1.15.0, releases rewind the conversation to before the stopped turn and
 put that turn back: the message, with its images and audio, and whatever the
 reply had produced, so the model keeps the whole chat, media included. This
 works the same whether the app called `stopGeneration()` or cancelled its
 subscription to the reply. 1.14.0 and earlier, and the NPU in every release
 (its executor cannot rewind), run the next turn instead on a fresh conversation
 that replays the history as text, so images and audio from earlier turns are
-gone; send them again if the next question is about them. A release after
-1.14.0 also falls back to that replay when a rewind fails, and says so in the
-log (release builds too).
+gone; send them again if the next question is about them. 1.15.0 and later
+also fall back to that replay when a rewind fails, and say so in the log
+(release builds too).
 
 ### Google Play rejects the app over 16 KB page sizes (fixed in `flutter_gemma_litertlm` 1.8.0)
 

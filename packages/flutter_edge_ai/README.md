@@ -24,7 +24,7 @@ runtimes and stores your app uses.
 
 ## Features
 
-- **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
+- **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, llama.cpp (`.gguf`), and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
 - **Multimodal:** image and audio input on the models that support it.
 - **Function calling** and **thinking mode** on the models that support them.
 - **CPU, GPU and NPU** backends — Qualcomm on Android and Linux arm64 and
@@ -60,11 +60,14 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 | LiteRT-LM (`.litertlm`) | ✅ | ✅ | ⚠️ preview ¹ | ✅ | ✅ | ✅ |
 | MediaPipe (`.task`) | ✅ | ✅ ² | ✅ | — | — | — |
 | ONNX Runtime | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| llama.cpp (`.gguf`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ³ |
 | Built-in AI | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
 ¹ Web `.litertlm` takes text input only — an image or audio message throws `UnsupportedError`; function calling and thinking work.
 
 ² CPU only: a GPU `.task` does not load on iOS; use a `.litertlm` for the iOS GPU.
+
+³ Through llamadart; CI covers the CPU lifecycle — see its [qualification matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md).
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux

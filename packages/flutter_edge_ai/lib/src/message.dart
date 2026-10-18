@@ -42,8 +42,9 @@ class Message {
   final List<FunctionCallResponse> toolCalls;
 
   /// The [FunctionCallResponse.id] a [MessageType.toolResponse] answers, or
-  /// null when its call had none; ignored on any other type. No bundled engine
-  /// reads it yet: a result is paired with its call by [toolName], in order.
+  /// null when its call had none; ignored on any other type. Only
+  /// `flutter_edge_ai_llama` reads it; the other engines pair a result with its
+  /// call by [toolName], in order.
   final String? toolCallId;
 
   bool get hasImage => imageBytes != null || images.isNotEmpty;
@@ -146,8 +147,8 @@ class Message {
   }
 
   /// A tool result. [toolCallId] names the call it answers when that call had
-  /// an id. No bundled engine reads it yet: the result is paired with its call
-  /// by [toolName], in order.
+  /// an id. Only `flutter_edge_ai_llama` reads it; the other engines pair the
+  /// result with its call by [toolName], in order.
   factory Message.toolResponse({
     required String toolName,
     required Map<String, dynamic> response,

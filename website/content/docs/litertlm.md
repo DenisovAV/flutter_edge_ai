@@ -27,7 +27,7 @@ EmbeddingGemma 1 / Gecko
 
 | Platform | Support |
 |----------|---------|
-| Android | ✅ FFI (GPU via OpenCL, NPU on Qualcomm — opt-in via `qualcomm_npu`) |
+| Android | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — opt-in via `qualcomm_npu` / `google_tensor_npu`) |
 | iOS | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in via `qualcomm_npu`) |
 | Windows | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
@@ -104,7 +104,7 @@ Pick the accelerator with `preferredBackend:` on `getActiveModel`:
 |---------|-------|
 | `cpu` | All native platforms |
 | `gpu` | OpenCL (Android), Metal (Apple), DirectX 12 / WebGPU (Windows), Vulkan / WebGPU (Linux); on web the runtime picks WebGPU or WASM itself and `preferredBackend` is not applied |
-| `npu` | Qualcomm on Android and on Linux arm64 (opt-in, `.litertlm`), and Windows (Intel LunarLake / PantherLake) |
+| `npu` | Qualcomm on Android and on Linux arm64, Google Tensor G5/G6 on Android (both opt-in, `.litertlm`), and Windows (Intel LunarLake / PantherLake) |
 
 GPU is the right default, but it is not uniformly faster: on Android the win is
 in **prefill**, and decode can be slower than CPU. One measured pair — Galaxy S26,
@@ -130,7 +130,9 @@ applies it (it arrived in `flutter_gemma_litertlm` 1.8.3; older versions ignore 
 GPU](/docs/troubleshooting#wrong-numbers-on-gpu).
 
 Windows NPU ships the Intel dispatch stack — `LiteRtDispatch.dll` + the OpenVino
-runtime + TBB — inside the Windows native archive.
+runtime + TBB — inside the Windows native archive. LLMs load on it from
+`flutter_edge_ai_litertlm` 1.15.0; 1.7.0 through 1.14.0 failed the load or ended
+the process (`0xC0000409`, LiteRT-LM#4023).
 
 **Android NPU is opt-in.** Qualcomm licenses its QNN runtime for redistribution
 inside an application only, so the package carries just LiteRT's dispatch
@@ -186,11 +188,15 @@ x64 build ignores the flag.
 **EmbeddingGemma 2 on the NPU** uses the same flag on Qualcomm Android and
 Linux arm64, with the per-SoC bundles, and never falls back: see
 [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-on-a-qualcomm-npu).
+Google Tensor G5/G6 bundles (270m, 440m) take `google_tensor_npu: true` instead
+(from 1.15.0): see
+[EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
 On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
 **For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
-those work on both vendors. The **Gemma 3** family does not, and it fails
+those work on Qualcomm, Intel and Google Tensor G6. The **Gemma 3** family
+does not on Qualcomm or Intel (Tensor not measured), and it fails
 silently — the model answers from the first prefill chunk alone, fluently,
 with no error and nothing in the log:
 
@@ -253,8 +259,8 @@ excludes — the GPU for the published Gemma 4 and Gemma 3n audio encoders,
 which declare cpu — is refused. `model.activeVisionBackend` and
 `model.activeAudioBackend` report the choice (null for a bundle without that
 encoder). A refusal is a `LiteRtLmBundleException` whose `problem`
-says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a Google Tensor or
-MediaTek bundle, or a Qualcomm one on Windows), thrown before any engine
+says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a MediaTek bundle,
+a Qualcomm one on Windows or a Google Tensor one off Android), thrown before any engine
 exists. The device's SoC is not read up front: a bundle built for another
 Qualcomm SoC fails at engine create, and the error names the SoC it was built
 for.

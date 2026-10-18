@@ -22,7 +22,7 @@ only the engines, stores and features your app uses — see
 - **Platform Support:** Compatible with iOS, Android, Web, macOS, Windows, and Linux.
 - **Desktop Support:** Native desktop apps with GPU acceleration via LiteRT-LM, called directly from Dart through `dart:ffi` — no JVM/JRE bundling. See [Desktop Support](/docs/desktop).
 - **Built-in / System AI:** Use the OS's own on-device model, no download — Gemini Nano (Android + Chrome), Apple Foundation Models (iOS/macOS) and Windows AI Foundry. See [Built-in AI](/docs/builtin-ai).
-- **Pluggable Engines:** Opt-in engine packages — LiteRT-LM, MediaPipe, ONNX Runtime, built-in OS AI — registered via `FlutterEdgeAi.initialize(...)`. See [Packages](/docs/packages).
+- **Pluggable Engines:** Opt-in engine packages — LiteRT-LM, MediaPipe, ONNX Runtime, llama.cpp (GGUF), built-in OS AI — registered via `FlutterEdgeAi.initialize(...)`. See [Packages](/docs/packages).
 - **Multimodal Support:** Text + image input with vision models (the Vision column on [Models](/docs/models)), including Gemini Nano on Android through built-in AI. See [Multimodal](/docs/multimodal).
 - **Audio Input:** Record and send audio messages with Gemma 4 and Gemma3n models (Android, iOS device, Desktop).
 - **Function Calling:** Let models call external functions and integrate with other services. See [Function Calling](/docs/function-calling).
@@ -31,9 +31,9 @@ only the engines, stores and features your app uses — see
 - **Thinking Mode:** View the reasoning process of thinking models — see [Thinking Mode](/docs/thinking-mode).
 - **Stop Generation:** Cancel text generation mid-process on Android, iOS, Web, and Desktop.
 - **Backend Switching:** Choose CPU or GPU where supported, plus NPU for
-  `.litertlm` on Qualcomm Android devices and Qualcomm Linux arm64 boards
-  (opt-in, see [LiteRT-LM](/docs/litertlm)) and on Intel LunarLake/PantherLake
-  Windows PCs.
+  `.litertlm` on Qualcomm Android devices, Qualcomm Linux arm64 boards and
+  Google Tensor G5/G6 Pixels (opt-in, see [LiteRT-LM](/docs/litertlm)) and on
+  Intel LunarLake/PantherLake Windows PCs.
 - **LoRA (MediaPipe `.task`):** Efficient fine-tuning and integration of LoRA (Low-Rank Adaptation) weights.
 - **Enhanced Downloads:** Smart retry logic with exponential backoff and automatic restart of interrupted downloads.
 - **Android Foreground Service:** opt in with `foreground: true` for large downloads to bypass the 9-minute timeout.
@@ -76,6 +76,16 @@ only the engines, stores and features your app uses — see
 - **Genkit 0.10.0** (`genkit_flutter_edge_ai`): tool `ref`s travel as call ids
   both ways; it requires `flutter_edge_ai` 2.4.0. See
   [Genkit](/docs/genkit#tool-calls).
+- **2.4.1 / `flutter_edge_ai_litertlm` 1.15.0:** Google Tensor G5/G6 NPUs on
+  Pixels, opt-in with `google_tensor_npu: true`; a stopped turn is rewound in
+  place, so the chat keeps earlier images and audio; the Intel NPU on Windows
+  loads its model again; a raw Gemma 4 tool call runs with typed arguments or
+  not at all. See [LiteRT-LM](/docs/litertlm).
+- **Agent skills 0.4.0** (`flutter_edge_ai_agent`, breaking):
+  `schedule_notification` runs only with `NativeIntentExecutor(notifications:)`.
+  See [Migration](/docs/migration).
+- **llama.cpp engine** (`flutter_edge_ai_llama` 0.0.1): GGUF models, on
+  pub.dev. See [llama.cpp](/docs/llama).
 
 Upgrading from 2.3: see [Migration](/docs/migration).
 

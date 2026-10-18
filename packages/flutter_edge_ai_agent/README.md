@@ -224,7 +224,7 @@ A session built without `supportAudio: true` fails the stream with an
 `ArgumentError`, as do empty bytes; nothing reaches the chat history. Audio
 input is native-only. After a stopped turn (a cancelled subscription) a
 `.litertlm` chat keeps the recordings of earlier turns with
-`flutter_edge_ai_litertlm` releases after 1.14.0. With 1.14.0 and earlier, and
+`flutter_edge_ai_litertlm` 1.15.0 and later. With 1.14.0 and earlier, and
 on the NPU, it is rebuilt from text and they are gone from its context.
 
 ## When the model answers nothing

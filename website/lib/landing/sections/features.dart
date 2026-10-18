@@ -57,7 +57,7 @@ const _features = [
     icon: '⚡',
     title: 'Hardware Acceleration',
     desc:
-        'CPU/GPU on every native target and WebGPU on the web, plus NPUs: Qualcomm (Android, Linux arm64) and Intel (Windows)',
+        'CPU/GPU on every native target and WebGPU on the web, plus NPUs: Qualcomm (Android, Linux arm64), Google Tensor (Android) and Intel (Windows)',
     accent: Brand.orange,
   ),
   _FeatureData(
@@ -75,7 +75,7 @@ const _features = [
   _FeatureData(
     icon: '📦',
     title: 'Opt-in Packages',
-    desc: 'Core + 13 opt-in packages — agent skills, speech, RAG, Genkit & more; ship only what you use',
+    desc: 'Core + 14 opt-in packages — agent skills, speech, RAG, Genkit & more; ship only what you use',
     accent: Brand.green,
   ),
   _FeatureData(

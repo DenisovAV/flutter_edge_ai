@@ -133,7 +133,7 @@ supported OS versions and advanced model/media/LoRA combinations still need qual
 App Store submission and mixed Apple workspace configurations are unvalidated.
 Web installation buffers a byte array; use models below about 2 GB and avoid streaming OPFS mode. See the
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
-for setup, capability limits and publication gates.
+for setup, capability limits and qualification.
 
 With llamadart 0.13.1, adding `flutter_edge_ai_litertlm` keeps the SDK on
 llama.cpp automatically. Retain the root `[llama_cpp]` selection as defence in

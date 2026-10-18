@@ -46,7 +46,8 @@ void main() {
       final thinking = await model.openChat(
         enableThinking: true,
         temperature: 0,
-        maxOutputTokens: 256,
+        // Leave room for reasoning before the visible answer.
+        maxOutputTokens: 1024,
       );
       await thinking.addQuery(
         edge.Message.text(text: 'What is 2 + 3?', isUser: true),

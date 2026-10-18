@@ -24,7 +24,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_edge_ai: ^2.4.0
-  llamadart: '>=0.13.1 <0.13.2'
+  llamadart: '>=0.15.0 <0.15.1'
 
 dev_dependencies:
   shared_preferences: ^2.5.2

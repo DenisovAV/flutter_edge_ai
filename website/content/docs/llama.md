@@ -1,19 +1,21 @@
 ---
 title: llama.cpp
-description: Run local GGUF chat models with Flutter Edge AI and llamadart.
+description: Run local GGUF chat and native EmbeddingGemma 2 text embeddings with Flutter Edge AI.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
 
 `flutter_edge_ai_llama` is an **unreleased contribution** providing an optional
-inference engine powered by
+inference and native text-embedding engine powered by
 [llamadart](https://pub.dev/packages/llamadart). The adapter registers through
 core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the development package
 
-The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.4.0+**. Connector CI uses Flutter 3.47.1 for reproducible checks. From the repository root:
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+** and the forthcoming llamadart typed-overflow patch
+(target 0.15.1). Both prerequisite releases must be published before this draft
+resolves from hosted dependencies. Connector CI uses Flutter 3.47.1 for reproducible checks. From the repository root:
 
 ```
 cd packages/flutter_edge_ai_llama/example
@@ -113,8 +115,12 @@ member's companion. Keep companion choices consistent across app members using
 llamadart; ambiguous or mixed Flutter/Dart setups warn and retain hook-bundled assets.
 See the [workspace setup and qualification scope](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md#apple-workspaces).
 
-GGUF embeddings are deferred to a separate contribution against core's new
-embedding SPI.
+Native EmbeddingGemma 2 GGUF text embeddings register through core's embedding
+SPI as `LlamaEmbeddingBackend` in this same engine package. The dedicated
+`flutter_edge_ai_embeddings` package remains tokenizer-only: GGUF carries its
+own tokenizer. This draft needs the core 2.5.0 SPI and SDK typed-overflow patch.
+See the [embedding design and qualification](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/embeddings.md).
+Media and Web embeddings remain unavailable in the initial profile.
 
 ## Capabilities and qualification
 

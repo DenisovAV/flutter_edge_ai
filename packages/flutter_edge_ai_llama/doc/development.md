@@ -18,7 +18,7 @@ python3 tool/verify.py device --device <device-id> --model-url <model-url>
 ```
 
 The package gate copies the standalone package, removes workspace resolution,
-and validates hosted core 2.4.0+ without a development override. It does not publish.
+and validates hosted core 2.5.0+ without a development override. It does not publish.
 Required native, packaged-device and Web model lanes inspect Flutter's JSON test
 report and require their real-model test to complete successfully, without skipping.
 
@@ -62,3 +62,10 @@ callable functions and the bootstrap actually selects the local pinned assets.
 The iOS CI lane streams the JSON report, bounds each attempt to ten minutes,
 and reboots/retries only a pre-test startup failure once. Both attempts retain
 failure output, and a recovered launch emits a CI warning; the passing attempt must execute the required model test.
+
+## GGUF text embeddings
+
+The independent pinned-model runner and prerequisites are in
+[embeddings.md](embeddings.md). Run both CPU and GPU profiles on a qualified
+desktop host. Draft local SDK overrides are development evidence only; hosted
+package and minimum-SDK gates must pass after both dependencies are published.

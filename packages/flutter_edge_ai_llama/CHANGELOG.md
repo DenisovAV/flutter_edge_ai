@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add native EmbeddingGemma 2 GGUF text embeddings through core's embedding SPI.
+
 ## 0.0.1
 
 - Add llama.cpp-powered GGUF inference through llamadart.

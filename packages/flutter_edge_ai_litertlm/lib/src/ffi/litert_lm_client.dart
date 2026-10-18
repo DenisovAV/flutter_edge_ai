@@ -9,13 +9,13 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:mutex/mutex.dart';
 
-import '../npu_stacks.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
+import 'native_turns.dart';
+import 'npu_vendor_host.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
@@ -91,6 +91,85 @@ String _decodeNativeString(Pointer<Char> ptr, {int maxBytes = 64 * 1024}) {
   return utf8.decode(bytes.asTypedList(length), allowMalformed: true);
 }
 
+/// What [ConversationHandle.rewindStoppedTurn] did.
+enum StoppedTurnRewind {
+  /// The conversation is back before the stopped turn, with that turn put back
+  /// into its context, and answers again.
+  rewound,
+
+  /// Native's last send was not cancelled — it had ended by itself before the
+  /// stop reached it — so nothing changed and the conversation answers as it
+  /// is.
+  notCancelled,
+
+  /// This conversation cannot rewind: the loaded libLiteRtLm predates
+  /// `patch_c_api.sh` section 16. Nothing was changed.
+  unsupported,
+}
+
+/// How native's last send ended, as `litert_lm_conversation_rewind_cancelled_turn`
+/// reports it after waiting for that send (`LiteRtLmTurnEnd` in the patched
+/// `c/conversation.h`).
+enum NativeLastTurnEnd { none, completed, cancelled, failed, running }
+
+/// What `litert_lm_conversation_rewind_cancelled_turn` returning [code], with
+/// the last send having ended as [lastTurnEnd] (a `LiteRtLmTurnEnd`; -1 when
+/// native wrote none), means: 0 with that send cancelled is a rewind, 0 with it
+/// completed (or none sent) an untouched conversation. Anything else — any
+/// non-zero code, or 0 with an end that native never pairs with it, as a
+/// library built before the contract would give — is a conversation to
+/// rebuild.
+@visibleForTesting
+StoppedTurnRewind stoppedTurnRewindOutcome(
+  int code,
+  int lastTurnEnd,
+  String? message,
+) {
+  final end = lastTurnEnd >= 0 && lastTurnEnd < NativeLastTurnEnd.values.length
+      ? NativeLastTurnEnd.values[lastTurnEnd]
+      : null;
+  if (code == 0) {
+    switch (end) {
+      case NativeLastTurnEnd.cancelled:
+        return StoppedTurnRewind.rewound;
+      case NativeLastTurnEnd.none:
+      case NativeLastTurnEnd.completed:
+        return StoppedTurnRewind.notCancelled;
+      case NativeLastTurnEnd.failed:
+      case NativeLastTurnEnd.running:
+      case null:
+        throw StoppedTurnRewindException(
+          0,
+          'native reported success with last turn end $lastTurnEnd',
+          lastTurnEnd: end,
+        );
+    }
+  }
+  throw StoppedTurnRewindException(
+    code,
+    message,
+    lastTurnEnd: end ?? NativeLastTurnEnd.running,
+  );
+}
+
+/// The stopped turn could not be rewound, so the conversation must be
+/// rebuilt. [code] is the absl status code native returned (-1 when the call
+/// itself failed), [lastTurnEnd] how native's last send had ended.
+final class StoppedTurnRewindException implements Exception {
+  const StoppedTurnRewindException(this.code, this.message, {this.lastTurnEnd});
+
+  final int code;
+  final String? message;
+  final NativeLastTurnEnd? lastTurnEnd;
+
+  @override
+  String toString() {
+    final end = lastTurnEnd == null ? '' : ', last turn ${lastTurnEnd!.name}';
+    return 'StoppedTurnRewindException(code $code$end): '
+        '${message ?? 'no message'}';
+  }
+}
+
 /// Per-conversation operations a session needs from the FFI layer.
 ///
 /// [LiteRtLmConversationHandle] is the real implementation backed by a
@@ -126,6 +205,17 @@ abstract class ConversationHandle {
   Stream<String> chatRawMessage(String messageJson, {bool enableThinking});
 
   void cancelGeneration();
+
+  /// Makes the conversation answer again after [cancelGeneration] stopped its
+  /// last turn: rewinds to before that turn, then puts the turn back — the
+  /// message exactly as it was sent, media included, followed by
+  /// [partialReply] — without generating, so the model keeps the exchange.
+  ///
+  /// [StoppedTurnRewind.unsupported] when this conversation cannot rewind;
+  /// throws [StoppedTurnRewindException] when the native rewind failed.
+  Future<StoppedTurnRewind> rewindStoppedTurn(
+    Map<String, Object?> partialReply,
+  );
 
   SessionMetrics getSessionMetrics();
 
@@ -176,24 +266,44 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     }
   }
 
+  /// The last message sent on this conversation and its `extra_context`, as
+  /// handed to native, so [rewindStoppedTurn] can put a stopped turn back. It
+  /// can hold megabytes of base64 media, so it is kept only while it may be
+  /// needed: dropped when native ends the send by itself, and by a rewind.
+  /// Null after a send that ended by itself, which needs no rewind.
+  ({String messageJson, String? extraContext})? _lastSend;
+
+  Stream<String> _send(String messageJson, String? extraContext) {
+    final record = (messageJson: messageJson, extraContext: extraContext);
+    _lastSend = _client._hasTurnRewind ? record : null;
+    return _client._sendMessageStreamRawOn(
+      _conversation!,
+      messageJson,
+      extraContext: extraContext,
+      onEnded: (how) {
+        // Kept only after a cancelled send, the one a rewind puts back.
+        if (how != NativeTurnEnd.cancelled && identical(_lastSend, record)) {
+          _lastSend = null;
+        }
+      },
+    );
+  }
+
   @override
   Stream<String> chat(
     String text, {
     List<Uint8List>? imageBytes,
     Uint8List? audioBytes,
     bool enableThinking = false,
-  }) {
-    _assertOpen();
-    return _client._chatOn(
-      _conversation!,
-      text,
-      imageBytes: imageBytes,
-      audioBytes: audioBytes,
-      order: _multimodalOrder,
-      enableThinking: enableThinking,
-    );
-  }
+  }) => chatRaw(
+    text,
+    imageBytes: imageBytes,
+    audioBytes: audioBytes,
+    enableThinking: enableThinking,
+  ).map(LiteRtLmFfiClient.extractTextFromResponse);
 
+  /// Same as [chat] but yields raw SDK JSON chunks, so a caller can read the
+  /// structured `tool_calls` field.
   @override
   Stream<String> chatRaw(
     String text, {
@@ -202,13 +312,14 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     bool enableThinking = false,
   }) {
     _assertOpen();
-    return _client._chatRawOn(
-      _conversation!,
-      text,
-      imageBytes: imageBytes,
-      audioBytes: audioBytes,
-      order: _multimodalOrder,
-      enableThinking: enableThinking,
+    return _send(
+      LiteRtLmFfiClient.buildMessageJson(
+        text,
+        imagesBytes: imageBytes,
+        audioBytes: audioBytes,
+        order: _multimodalOrder,
+      ),
+      thinkingExtraContext(enableThinking),
     );
   }
 
@@ -218,15 +329,14 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     bool enableThinking = false,
   }) {
     _assertOpen();
-    return _client._sendMessageStreamRawOn(
-      _conversation!,
-      messageJson,
-      extraContext: thinkingExtraContext(enableThinking),
-    );
+    return _send(messageJson, thinkingExtraContext(enableThinking));
   }
 
   Future<String> sendMessage(String messageJson, {String? extraContext}) {
     _assertOpen();
+    // Synchronous: it cannot be stopped half-way, so there is nothing to
+    // rewind after it.
+    _lastSend = null;
     return _client._sendMessageOn(
       _conversation!,
       messageJson,
@@ -239,17 +349,33 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     String? extraContext,
   }) {
     _assertOpen();
-    return _client._sendMessageStreamRawOn(
-      _conversation!,
-      messageJson,
-      extraContext: extraContext,
-    );
+    return _send(messageJson, extraContext);
   }
 
   @override
   void cancelGeneration() {
     if (_conversation == null) return;
     _client._cancelOn(_conversation!);
+  }
+
+  @override
+  Future<StoppedTurnRewind> rewindStoppedTurn(
+    Map<String, Object?> partialReply,
+  ) async {
+    _assertOpen();
+    if (!_client._hasTurnRewind) return StoppedTurnRewind.unsupported;
+    final last = _lastSend;
+    // The last send ended by itself (or nothing was sent): nothing to rewind.
+    if (last == null) return StoppedTurnRewind.notCancelled;
+    // The sent message is spliced in as text: it can carry megabytes of base64
+    // media, and decoding it only to encode it again buys nothing.
+    final exchangeJson = '[${last.messageJson},${jsonEncode(partialReply)}]';
+    _lastSend = null;
+    return _client._rewindStoppedTurnOn(
+      _conversation!,
+      exchangeJson: exchangeJson,
+      extraContext: last.extraContext,
+    );
   }
 
   @override
@@ -260,18 +386,16 @@ class LiteRtLmConversationHandle implements ConversationHandle {
 
   @override
   void close() {
-    if (_conversation == null) return;
-    // Cancel any in-flight native decode before deleting: conversation_delete
-    // blocks in ~SessionBasic → ThreadPool::WaitUntilDone until the generation
-    // drains naturally, which under GPU throttle is tens of seconds and ANRs
-    // the platform thread (#364). Cancelling first collapses the drain to
-    // milliseconds. `_cancelOn` is lock-free so it can interrupt a generation
-    // that holds `_nativeMutex`. The virtual-session path already does this in
-    // `releaseVirtualConversation`; this brings the single-session path in line.
-    _client._cancelOn(_conversation!);
-    _client._deleteConversation(_conversation!);
+    final conv = _conversation;
+    if (conv == null) return;
     _conversation = null;
+    _lastSend = null;
     _client._handles.remove(this);
+    // An operation still running on the conversation (a generation, a rewind)
+    // is cancelled, and the delete waits for its native end: deleting under a
+    // running prefill crashes (LiteRT-LM #3771), and an uncancelled delete
+    // blocks the platform thread until the generation drains (#364).
+    _client._turns.release(conv);
   }
 }
 
@@ -306,6 +430,71 @@ Future<int> _createConversationOffMainIsolate({
       Pointer.fromAddress(engineAddr),
       Pointer.fromAddress(configAddr),
     ).address;
+  });
+}
+
+/// Calls `litert_lm_conversation_rewind_cancelled_turn` on a spawned isolate,
+/// for the reason given at [_createConversationOffMainIsolate]: it waits until
+/// the stopped send has ended and then prefills the stopped exchange. Returns
+/// the status code, how native's last send ended (a `LiteRtLmTurnEnd`) and,
+/// on failure, LiteRT-LM's last error, which is thread-local and so is read on
+/// the same isolate.
+Future<({int code, int lastTurnEnd, String? message})>
+_rewindCancelledTurnOffMainIsolate({
+  required int conversationAddr,
+  required String exchangeJson,
+  String? extraContext,
+}) {
+  final isolateLogLevel = edgeAiLogLevel;
+  return Isolate.run(() {
+    edgeAiLogLevel = isolateLogLevel;
+    // Plain open, as above: only called on a client with a loaded engine.
+    final lib = openLiteRtLmLibrary();
+    final rewind = lib
+        .lookupFunction<
+          Int32 Function(
+            Pointer,
+            Pointer<Utf8>,
+            Pointer<Utf8>,
+            Pointer,
+            Pointer<Int32>,
+          ),
+          int Function(
+            Pointer,
+            Pointer<Utf8>,
+            Pointer<Utf8>,
+            Pointer,
+            Pointer<Int32>,
+          )
+        >('litert_lm_conversation_rewind_cancelled_turn');
+    final exchange = exchangeJson.toNativeUtf8();
+    final extra = extraContext?.toNativeUtf8() ?? nullptr;
+    // -1 until native writes it: a library that never does is not taken for
+    // one that reported "nothing was sent".
+    final lastTurnEnd = malloc<Int32>()..value = -1;
+    try {
+      final code = rewind(
+        Pointer.fromAddress(conversationAddr),
+        exchange,
+        extra,
+        // The stopped send was given no optional args either.
+        nullptr,
+        lastTurnEnd,
+      );
+      String? message;
+      if (code != 0 && lib.providesSymbol('litert_lm_get_last_error_message')) {
+        final ptr = lib
+            .lookupFunction<Pointer<Char> Function(), Pointer<Char> Function()>(
+              'litert_lm_get_last_error_message',
+            )();
+        if (ptr != nullptr) message = _decodeNativeString(ptr);
+      }
+      return (code: code, lastTurnEnd: lastTurnEnd.value, message: message);
+    } finally {
+      malloc.free(exchange);
+      if (extra != nullptr) malloc.free(extra);
+      malloc.free(lastTurnEnd);
+    }
   });
 }
 
@@ -354,6 +543,11 @@ class LiteRtLmFfiClient {
   Pointer<Void> _chunkGetError = nullptr;
   Pointer<Void> _chunkIsFinal = nullptr;
   List<String> _missingChunkAccessors = const [];
+
+  /// The loaded libLiteRtLm exports
+  /// `litert_lm_conversation_rewind_cancelled_turn` (`patch_c_api.sh` section
+  /// 15); false on one built before it.
+  bool _hasTurnRewind = false;
   _ProxyFreeStringDart? _proxyFreeString;
   Pointer<LiteRtLmEngine>? _engine;
   bool _isInitialized = false;
@@ -364,13 +558,16 @@ class LiteRtLmFfiClient {
   /// params — it must never gate what we send again.
   String? _backend;
 
-  /// Conversation creates currently suspended across an `await`.
+  /// Conversation creates, and rewinds of a stopped turn, currently suspended
+  /// across an `await`.
   ///
-  /// `litert_lm_conversation_create` runs on a spawned isolate, so the calling
-  /// isolate's event loop is free for the duration — long enough for [shutdown]
-  /// to run `litert_lm_engine_delete` while native code is still dereferencing
-  /// the engine pointer. [shutdown] waits for this to reach zero, and creates
-  /// re-check [_isShuttingDown] before publishing anything.
+  /// `litert_lm_conversation_create` and
+  /// `litert_lm_conversation_rewind_cancelled_turn` run on a spawned isolate,
+  /// so the calling isolate's event loop is free for the duration — long
+  /// enough for [shutdown] to delete the conversation or run
+  /// `litert_lm_engine_delete` while native code is still dereferencing them.
+  /// [shutdown] waits for this to reach zero before it closes anything, and
+  /// creates re-check [_isShuttingDown] before publishing anything.
   int _createsInFlight = 0;
   Completer<void>? _createsQuiescent;
   bool _isShuttingDown = false;
@@ -389,7 +586,9 @@ class LiteRtLmFfiClient {
   /// [shutdown] may proceed the moment it returns.
   Future<T> _guardCreate<T>(Future<T> Function() body) async {
     if (_isShuttingDown) {
-      throw StateError('Client is shutting down; cannot create a conversation');
+      throw StateError(
+        'Client is shutting down; cannot create or rewind a conversation',
+      );
     }
     _enterCreate();
     try {
@@ -698,6 +897,9 @@ class LiteRtLmFfiClient {
     _bindings = LiteRtLmBindings(lib);
     _proxyLib = proxyLib;
     _resolveChunkAccessors(proxyLib, lib);
+    _hasTurnRewind = lib.providesSymbol(
+      'litert_lm_conversation_rewind_cancelled_turn',
+    );
     _proxyCreate = proxyLib
         .lookupFunction<_ProxyCreateNative, _ProxyCreateDart>(
           'stream_proxy_create',
@@ -750,6 +952,11 @@ class LiteRtLmFfiClient {
   ///
   /// [activationDataType] is the C API's number (see
   /// `activationDataTypeWireValue`); null leaves the engine's own choice.
+  ///
+  /// [npuDispatch] is what an `npu` [backend] hands LiteRT-LM: the dispatch
+  /// directory of the vendor `chooseNpuVendor` chose, prepared by the caller,
+  /// and whether that vendor turns the HW mask update path off. Required for
+  /// `npu`: the client never picks a vendor itself.
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
@@ -762,7 +969,11 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? activationDataType,
+    NpuDispatch? npuDispatch,
   }) async {
+    if (backend == 'npu' && npuDispatch == null) {
+      throw ArgumentError.notNull('npuDispatch');
+    }
     final initSw = Stopwatch()..start();
     _ensureBindings();
     _backend = backend;
@@ -796,15 +1007,7 @@ class LiteRtLmFfiClient {
     final audioBackendPtr = enableAudio ? audioBackend.toNativeUtf8() : nullptr;
 
     try {
-      // Asked before the settings exist: a missing NPU stack is an expected
-      // fallback, and throwing after settings_create would leak the settings.
-      final npuDispatchDir = backend != 'npu'
-          ? null
-          : Platform.isAndroid
-          ? await prepareAndroidNpuDispatchDir()
-          : Platform.isLinux
-          ? prepareLinuxNpuDispatchDir()
-          : null;
+      final npuDispatchDir = backend == 'npu' ? npuDispatch!.dir : null;
 
       // The bundle's own sampler: the container header and its LlmMetadata
       // section, a few KB read before the engine exists. A bad or unreadable
@@ -877,27 +1080,11 @@ class LiteRtLmFfiClient {
         );
       }
 
-      // Windows NPU: point LiteRT at the directory containing
-      // `LiteRtDispatch.dll` and disable HW mask update path. Native Assets
-      // bundles both DLLs next to the executable, so resolvedExecutable.parent
-      // is the right path. Without `dispatch_lib_dir` LiteRT reads
-      // uninitialized env-option memory and engine_create crashes; without
-      // `use_hw_masking_for_npu(false)` LiteRT sets up the kWH HW mask method
-      // which Intel preview NPU (LunarLake/PantherLake) doesn't fully support
-      // → CFG check failure 0xc0000409 (per Matt Kreileder's Intel NPU
-      // pipeline instructions).
-      if (Platform.isWindows && backend == 'npu') {
-        final exeDir = File(Platform.resolvedExecutable).parent.path;
-        final dirPtr = exeDir.toNativeUtf8();
-        b.litert_lm_engine_settings_set_litert_dispatch_lib_dir(
-          settings,
-          dirPtr.cast(),
-        );
-        calloc.free(dirPtr);
+      // The vendor decides (`npuDisablesHwMasking`): Intel turns the HW mask
+      // update path off.
+      if (backend == 'npu' && npuDispatch!.disableHwMasking) {
         b.litert_lm_engine_settings_set_use_hw_masking_for_npu(settings, false);
-        edgeAiLog(
-          '[LiteRtLmFfi] NPU Windows: dispatch_lib_dir=$exeDir, use_hw_masking_for_npu=false',
-        );
+        edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=false');
       }
 
       if (npuDispatchDir != null) {
@@ -1350,7 +1537,8 @@ class LiteRtLmFfiClient {
       // shutdown may now be queued behind us — in which case this conversation
       // must not escape. The engine is still alive here, so deleting is safe.
       if (_isShuttingDown || _engine == null) {
-        if (conv != nullptr) _deleteConversation(conv);
+        // Not published yet (not in _liveConvs), so delete it directly.
+        if (conv != nullptr) b.litert_lm_conversation_delete(conv);
         throw StateError('Client shut down while creating a conversation');
       }
     } finally {
@@ -1463,55 +1651,6 @@ class LiteRtLmFfiClient {
   static String extractTextFromResponse(String jsonStr) =>
       SdkTextExtractor.extractTextFromResponse(jsonStr);
 
-  /// Send a message and get streaming response as plain text chunks on the
-  /// given conversation. Supports multiple images via `imageBytes` list.
-  Stream<String> _chatOn(
-    Pointer<LiteRtLmConversation> conv,
-    String text, {
-    List<Uint8List>? imageBytes,
-    Uint8List? audioBytes,
-    required MultimodalOrder order,
-    bool enableThinking = false,
-  }) {
-    final messageJson = buildMessageJson(
-      text,
-      imagesBytes: imageBytes,
-      audioBytes: audioBytes,
-      order: order,
-    );
-    final extraContext = thinkingExtraContext(enableThinking);
-    return _sendMessageStreamRawOn(
-      conv,
-      messageJson,
-      extraContext: extraContext,
-    ).map(extractTextFromResponse);
-  }
-
-  /// Same as [_chatOn] but yields raw SDK JSON chunks without
-  /// `extractTextFromResponse` mapping. Required by Gemma 4 path so callers
-  /// can read the structured `tool_calls` field via [extractToolCalls].
-  Stream<String> _chatRawOn(
-    Pointer<LiteRtLmConversation> conv,
-    String text, {
-    List<Uint8List>? imageBytes,
-    Uint8List? audioBytes,
-    required MultimodalOrder order,
-    bool enableThinking = false,
-  }) {
-    final messageJson = buildMessageJson(
-      text,
-      imagesBytes: imageBytes,
-      audioBytes: audioBytes,
-      order: order,
-    );
-    final extraContext = thinkingExtraContext(enableThinking);
-    return _sendMessageStreamRawOn(
-      conv,
-      messageJson,
-      extraContext: extraContext,
-    );
-  }
-
   /// Legacy: streaming chat on the implicit [_legacyHandle] conversation.
   Stream<String> chat(
     String text, {
@@ -1545,25 +1684,23 @@ class LiteRtLmFfiClient {
   }
 
   /// Send a raw JSON message on the given conversation and get a streaming
-  /// response. Holds [_nativeMutex] for the whole generation so concurrent
-  /// conversations don't race inside liblitert_lm; releases on completion or
-  /// error.
+  /// response. Holds [_nativeMutex] until native has ended the generation —
+  /// not until the consumer stops listening — so the next native call on this
+  /// engine never runs under it. [onEnded] hears how native ended it.
   Stream<String> _sendMessageStreamRawOn(
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
-  }) async* {
-    await _nativeMutex.acquire();
-    try {
-      yield* _doSendMessageStreamRawOn(
-        conv,
-        messageJson,
-        extraContext: extraContext,
-      );
-    } finally {
-      _nativeMutex.release();
-    }
-  }
+    void Function(NativeTurnEnd how)? onEnded,
+  }) => heldUntilNativeEnd(_nativeMutex, () {
+    final send = _doSendMessageStreamRawOn(
+      conv,
+      messageJson,
+      extraContext: extraContext,
+    );
+    if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
+    return send;
+  });
 
   /// The single native conversation currently materialized for the
   /// virtual-session multiplexer. The LiteRT-LM engine allows only ONE live
@@ -1613,11 +1750,12 @@ class LiteRtLmFfiClient {
     String? extraContext,
     int? maxOutputTokens,
   }) {
-    // StreamController (not async*) so the mutex release is tied to the
-    // controller lifecycle — it fires on done, error, AND consumer cancel /
-    // abandon. An async* generator's finally only runs when the consumer
-    // drains the stream, so an abandoned stream would hold the mutex forever
-    // and deadlock every other session.
+    // StreamController (not async*) so the mutex release is tied to the native
+    // turn's end — done, error, or a cancel that native has finished — and not
+    // to the consumer. An async* generator's finally only runs when the
+    // consumer drains the stream, so an abandoned stream would hold the mutex
+    // forever and deadlock every other session; releasing at the consumer's
+    // cancel instead lets the next turn start under a task still running.
     final controller = StreamController<String>();
     var mutexHeld = false;
     StreamSubscription<String>? inner;
@@ -1699,20 +1837,29 @@ class LiteRtLmFfiClient {
           if (!controller.isClosed) await controller.close();
           return;
         }
-        inner =
-            _doSendMessageStreamRawOn(
-              _virtualConv!,
-              messageJson,
-              extraContext: extraContext,
-            ).listen(
-              controller.add,
-              onError: controller.addError,
-              onDone: () async {
-                await releaseAndCleanup();
-                if (!controller.isClosed) await controller.close();
-              },
-              cancelOnError: false,
-            );
+        final send = _doSendMessageStreamRawOn(
+          _virtualConv!,
+          messageJson,
+          extraContext: extraContext,
+        );
+        // The lock goes when native has ended the turn, not when the consumer
+        // stops listening: until then the conversation is still in use.
+        unawaited(send.turn.ended.whenComplete(releaseAndCleanup));
+        inner = send.stream.listen(
+          controller.add,
+          onError: (Object e, StackTrace st) {
+            // Native cancelled a turn nobody stopped: the conversation is
+            // poisoned, so the next turn rebuilds it.
+            if (e is LiteRtLmTurnCancelledException) {
+              _virtualConvStopped = true;
+            }
+            controller.addError(e, st);
+          },
+          onDone: () {
+            if (!controller.isClosed) controller.close();
+          },
+          cancelOnError: false,
+        );
       } catch (e, st) {
         controller.addError(e, st);
         await releaseAndCleanup();
@@ -1732,14 +1879,14 @@ class LiteRtLmFfiClient {
       //
       // Guard on `mutexHeld`: onCancel also fires as implicit teardown after a
       // stream completes normally (Dart delivers `done` by cancelling the
-      // subscription). On that path the inner stream's onDone has already run
-      // `releaseAndCleanup()`, which clears `mutexHeld` synchronously — so
-      // `mutexHeld` is false here and we skip cancelling a just-finished, about-
-      // to-be-reused `_virtualConv`. A genuine mid-flight cancel still holds the
-      // mutex, so `mutexHeld` is true and the cancel fires.
+      // subscription). By then native has ended the turn and
+      // `releaseAndCleanup()` has cleared `mutexHeld`, so we skip cancelling a
+      // just-finished, about-to-be-reused `_virtualConv`. A genuine mid-flight
+      // cancel comes before native's end, with `mutexHeld` still true.
       if (mutexHeld) cancelVirtualTurn(conversationToken);
+      // Waits, bounded, for native's end; the lock is released at that end.
+      // Without a running turn, onListen releases it when it sees the cancel.
       await inner?.cancel();
-      await releaseAndCleanup();
     };
 
     return controller.stream;
@@ -1791,73 +1938,95 @@ class LiteRtLmFfiClient {
     }
   }
 
-  Stream<String> _doSendMessageStreamRawOn(
+  /// Starts one native streamed send on [conv]; the returned stream is fed by
+  /// its callbacks and its turn ends when native posts the end. The caller
+  /// holds [_nativeMutex] until then.
+  NativeTurnStream<Pointer<LiteRtLmConversation>> _doSendMessageStreamRawOn(
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
   }) {
     _assertInitialized();
     final b = _bindings!;
+    // Queued behind an operation whose end deleted it (a close meanwhile).
+    if (!_liveConvs.contains(conv)) {
+      throw StateError('Conversation was closed before the message was sent');
+    }
 
-    final controller = StreamController<String>();
+    // Registered before anything native is allocated; every path below either
+    // starts the send or ends this turn.
+    final send = NativeTurnStream(_turns, conv);
 
     final messagePtr = messageJson.toNativeUtf8();
     final extraPtr = extraContext != null
         ? extraContext.toNativeUtf8()
         : nullptr;
 
-    // NativeCallable.listener is thread-safe — the callback can be
-    // invoked from the native background thread that LiteRT-LM uses
-    // for streaming, and Dart will marshal it to the right isolate.
-    // Dart callback — receives heap-copied strings from proxy
     late final NativeCallable<_StreamCallbackNative> callable;
-    callable = NativeCallable<_StreamCallbackNative>.listener((
-      Pointer<Void> data,
-      Pointer<Char> chunk,
-      int isFinal,
-      Pointer<Char> errorMsg,
-    ) {
+
+    void releaseNative() {
+      callable.close();
+      calloc.free(messagePtr);
+      if (extraPtr != nullptr) calloc.free(extraPtr);
+    }
+
+    void onChunk(Pointer<Char> chunk, int isFinal, Pointer<Char> errorMsg) {
       if (errorMsg != nullptr && errorMsg.address != 0) {
         final error = _decodeNativeString(errorMsg);
         _proxyFreeString!(errorMsg); // free strdup'd string
         // stopGeneration() (and any other caller-initiated cancel) surfaces
         // here as a CANCELLED error from native. That's not an error from
         // the API consumer's perspective — the stream just stops cleanly
-        // at whatever token was last delivered.
+        // at whatever token was last delivered. A CANCELLED nobody asked for
+        // is: the turn depended on an earlier cancelled one.
         if (error.startsWith('CANCELLED')) {
-          controller.close();
+          send.cancelled();
         } else {
-          controller.addError(Exception('Stream error: $error'));
-          controller.close();
+          send.failed(Exception('Stream error: $error'));
         }
-        callable.close();
-        calloc.free(messagePtr);
-        if (extraPtr != nullptr) calloc.free(extraPtr);
+        releaseNative();
         return;
       }
 
       if (chunk != nullptr && chunk.address != 0) {
-        final text = chunk.cast<Utf8>().toDartString();
+        final text = _decodeNativeString(chunk);
         _proxyFreeString!(chunk); // free strdup'd string
-        if (text.isNotEmpty) {
-          controller.add(text);
-        }
+        send.chunk(text);
       }
 
       if (isFinal != 0) {
-        controller.close();
-        callable.close();
-        calloc.free(messagePtr);
-        if (extraPtr != nullptr) calloc.free(extraPtr);
+        send.finished();
+        releaseNative();
+      }
+    }
+
+    // NativeCallable.listener is thread-safe — the callback can be
+    // invoked from the native background thread that LiteRT-LM uses
+    // for streaming, and Dart will marshal it to the right isolate.
+    // Dart callback — receives heap-copied strings from proxy
+    callable = NativeCallable<_StreamCallbackNative>.listener((
+      Pointer<Void> data,
+      Pointer<Char> chunk,
+      int isFinal,
+      Pointer<Char> errorMsg,
+    ) {
+      // A throw here would leave the turn — and the engine lock — running
+      // forever; end it as failed instead.
+      try {
+        onChunk(chunk, isFinal, errorMsg);
+      } catch (e) {
+        if (!send.turn.hasEnded) {
+          send.failed(e);
+          releaseNative();
+        }
       }
     });
 
     // Create proxy that strdup's strings before forwarding to Dart callback
     final create2 = _proxyCreate2;
     if (create2 != null && _missingChunkAccessors.isNotEmpty) {
-      callable.close();
-      calloc.free(messagePtr);
-      if (extraPtr != nullptr) calloc.free(extraPtr);
+      releaseNative();
+      send.failed(StateError('no stream-chunk accessors'));
       throw StateError(
         'libLiteRtLm does not export ${_missingChunkAccessors.join(', ')}, so '
         'no generation was started: without the stream-chunk accessors the '
@@ -1884,9 +2053,8 @@ class LiteRtLmFfiClient {
     // StreamProxy never returns NULL, so this fires only with `stream_proxy_create2`
     // (an allocation failure, or an argument the checks above already rule out).
     if (proxyData == nullptr || proxyFn == nullptr) {
-      callable.close();
-      calloc.free(messagePtr);
-      if (extraPtr != nullptr) calloc.free(extraPtr);
+      releaseNative();
+      send.failed(StateError('no stream proxy'));
       throw StateError(
         'stream_proxy_create2 returned null, so no generation was started '
         '(an allocation failure in StreamProxy). See #453.',
@@ -1899,9 +2067,8 @@ class LiteRtLmFfiClient {
     // the native call returns; the callback fires synchronously inside.
     final optionalArgs = b.litert_lm_conversation_optional_args_create();
     if (optionalArgs == nullptr) {
-      calloc.free(messagePtr);
-      if (extraPtr != nullptr) calloc.free(extraPtr);
-      callable.close();
+      releaseNative();
+      send.failed(StateError('no optional args'));
       throw StateError(
         'litert_lm_conversation_optional_args_create returned null — '
         'native libLiteRtLm.dylib initialization failure',
@@ -1921,27 +2088,16 @@ class LiteRtLmFfiClient {
     if (result == 0) _noteGeneration(conv);
 
     if (result != 0) {
-      controller.addError(
-        Exception('Failed to start streaming (code: $result)'),
-      );
-      controller.close();
-      callable.close();
-      calloc.free(messagePtr);
-      if (extraPtr != nullptr) calloc.free(extraPtr);
+      send.failed(Exception('Failed to start streaming (code: $result)'));
+      releaseNative();
     }
 
-    // Consumer abandoned the stream (subscription.cancel) without calling
-    // stopGeneration(). Tell native to stop sampling so the GPU isn't left
-    // generating an orphaned response: otherwise the next close()/inference
-    // can stall on a still-busy shared GPU conversation — observed on
-    // Windows Intel iGPU as a hang on session.close() that cascades the whole
-    // gate (macOS/Linux mask it by finishing the orphaned generation fast).
-    // The native cancel surfaces as a CANCELLED error in the callback above,
-    // which closes the controller cleanly. Idempotent on an already-finished
-    // generation, so it's safe even if the stream completed concurrently.
-    controller.onCancel = () => _cancelOn(conv);
-
-    return controller.stream;
+    // A consumer that abandons the stream (subscription.cancel) without
+    // calling stopGeneration() still stops native: NativeTurnStream cancels it
+    // and waits, bounded, for the end. Otherwise the GPU is left generating an
+    // orphaned response, and the next close()/inference stalls on a still-busy
+    // shared conversation (a hang on session.close() on a Windows Intel iGPU).
+    return send;
   }
 
   /// Legacy: streaming raw on the implicit [_legacyHandle] conversation.
@@ -2017,8 +2173,19 @@ class LiteRtLmFfiClient {
     return _legacyHandle!.sendMessage(messageJson, extraContext: extraContext);
   }
 
-  /// Cancel ongoing generation on the given conversation.
-  void _cancelOn(Pointer<LiteRtLmConversation> conv) {
+  /// The native operation running on each conversation (a streamed send or a
+  /// rewind): a conversation is deleted, and [_nativeMutex] handed to the next
+  /// operation, only once the one that runs has ended natively.
+  late final _turns = NativeTurns<Pointer<LiteRtLmConversation>>(
+    cancelNative: _cancelNative,
+    deleteNative: _deleteConversation,
+  );
+
+  /// Cancel ongoing generation on the given conversation, marking it as asked
+  /// for, so its cancelled end closes the stream cleanly.
+  void _cancelOn(Pointer<LiteRtLmConversation> conv) => _turns.cancel(conv);
+
+  void _cancelNative(Pointer<LiteRtLmConversation> conv) {
     // #379: never cancel a conversation that has already been freed. The
     // raw-stream and virtual-turn onCancel hooks can fire after model/handle/
     // engine teardown deleted the conversation; dereferencing the dangling
@@ -2031,6 +2198,61 @@ class LiteRtLmFfiClient {
     }
   }
 
+  /// Makes [conv] usable after a stopped send (`patch_c_api.sh` section 16):
+  /// native waits until that send has ended, then rewinds it and prefills
+  /// [exchangeJson], a JSON array of messages, in its place — or changes
+  /// nothing when the send had ended by itself. Holds [_nativeMutex] like a
+  /// send and holds [shutdown] off like a create, and registers as the
+  /// conversation's running operation, so a close meanwhile waits for it.
+  /// Throws [StoppedTurnRewindException] when the conversation must be rebuilt.
+  Future<StoppedTurnRewind> _rewindStoppedTurnOn(
+    Pointer<LiteRtLmConversation> conv, {
+    required String exchangeJson,
+    String? extraContext,
+  }) async {
+    if (!_hasTurnRewind) return StoppedTurnRewind.unsupported;
+    return _guardCreate(() async {
+      await _nativeMutex.acquire();
+      try {
+        if (_isShuttingDown || !_liveConvs.contains(conv)) {
+          throw StateError('Conversation was closed before it was rewound');
+        }
+        final turn = _turns.begin(conv);
+        var how = NativeTurnEnd.failed;
+        try {
+          final ({int code, int lastTurnEnd, String? message}) result;
+          try {
+            result = await _rewindCancelledTurnOffMainIsolate(
+              conversationAddr: conv.address,
+              exchangeJson: exchangeJson,
+              extraContext: extraContext,
+            );
+          } on Exception catch (e, st) {
+            // The call itself failed (an isolate that could not start); the
+            // conversation's state is unknown, so it is rebuilt. An Error is a
+            // bug and keeps its own type and stack.
+            Error.throwWithStackTrace(
+              StoppedTurnRewindException(-1, 'the call failed: $e'),
+              st,
+            );
+          }
+          final outcome = stoppedTurnRewindOutcome(
+            result.code,
+            result.lastTurnEnd,
+            result.message,
+          );
+          how = NativeTurnEnd.completed;
+          return outcome;
+        } finally {
+          // Before the lock goes: a close that came meanwhile deletes here.
+          _turns.end(conv, turn, how);
+        }
+      } finally {
+        _nativeMutex.release();
+      }
+    });
+  }
+
   /// Legacy: cancel on the implicit [_legacyHandle] conversation.
   void cancelGeneration() {
     _legacyHandle?.cancelGeneration();
@@ -2041,7 +2263,12 @@ class LiteRtLmFfiClient {
   void _deleteConversation(Pointer<LiteRtLmConversation> conv) {
     // Drop liveness first so any onCancel that races this teardown no-ops in
     // [_cancelOn] rather than dereferencing the pointer we are about to free.
-    _liveConvs.remove(conv);
+    // A conversation that is not live was deleted already: deleting it again
+    // would free it twice. No path should get here; debug builds say so.
+    if (!_liveConvs.remove(conv)) {
+      assert(false, 'conversation $conv deleted twice');
+      return;
+    }
     _conversationSampling.remove(conv);
     if (_bindings != null) {
       _bindings!.litert_lm_conversation_delete(conv);
@@ -2081,18 +2308,29 @@ class LiteRtLmFfiClient {
     _handles.clear();
     _legacyHandle = null;
 
-    // Tear down the shared virtual-session conversation too. Cancel any
-    // in-flight virtual turn first: like handle.close(), an uncancelled
-    // conversation_delete blocks in ~SessionBasic → ThreadPool::WaitUntilDone
-    // draining the live generation (the #364 ANR). Safe post-#379 — vc is still
-    // in _liveConvs here, so _cancelOn reaches native rather than no-oping.
+    // Tear down the shared virtual-session conversation too. A turn still
+    // running on it is cancelled and the delete waits for its end, as for the
+    // handles above.
     final vc = _virtualConv;
     if (vc != null) {
-      _cancelOn(vc);
-      _deleteConversation(vc);
+      _turns.release(vc);
       _virtualConv = null;
       _virtualActiveToken = null;
     }
+    // A conversation released while an operation ran on it is deleted when
+    // that operation ends; the engine must outlive both. Said out loud when it
+    // takes long: nothing else would show why shutdown does not return.
+    await _turns.allEnded().timeout(
+      const Duration(seconds: 10),
+      onTimeout: () async {
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_litertlm] shutdown is waiting for a native '
+          'generation that has not ended after 10 s',
+        );
+        await _turns.allEnded();
+      },
+    );
 
     if (_engine != null && _engine != nullptr && _bindings != null) {
       _bindings!.litert_lm_engine_delete(_engine!);
@@ -2299,83 +2537,3 @@ String _activationName(int value) => switch (value) {
   3 => 'int8',
   _ => 'type $value',
 };
-
-/// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Android —
-/// for the LLM engine and the EmbeddingGemma 2 embedding pass alike (the pass
-/// asks from `LiteRtEmbeddingBackend.describe()`, on the caller's isolate:
-/// this goes through a platform channel, which core's worker cannot reach).
-///
-/// LiteRT opendir()-scans it for libLiteRtDispatch_*.so and the QNN libraries,
-/// so they must exist as files. The core plugin returns a directory holding
-/// exactly the stack this build bundled — nativeLibraryDir when the installer
-/// extracted them, else a copy taken from the base APK or its config split (a
-/// Play install). The list comes from here because the build decides it.
-Future<String> prepareAndroidNpuDispatchDir() async {
-  const bundledChannel = MethodChannel('flutter_gemma_bundled');
-  final String? dir;
-  try {
-    dir = await bundledChannel.invokeMethod<String>('prepareNpuDispatchDir', {
-      'libs': [for (final n in qualcommNpuLibs) androidLibFileName(n)],
-    });
-  } on MissingPluginException {
-    throw const NpuDispatchUnavailableException(
-      'the installed flutter_edge_ai has no prepareNpuDispatchDir; '
-      'update flutter_edge_ai to the version flutter_edge_ai_litertlm '
-      'requires',
-    );
-  } on PlatformException catch (e) {
-    throw NpuDispatchUnavailableException(
-      'the Qualcomm NPU libraries could not be prepared '
-      '(${e.code}: ${e.message})',
-    );
-  }
-  if (dir == null) {
-    throw const NpuDispatchUnavailableException(
-      'prepareNpuDispatchDir returned no directory',
-    );
-  }
-  return dir;
-}
-
-/// Returns the directory to hand LiteRT as `dispatch_lib_dir` on Linux arm64,
-/// after loading what QNN cannot find on its own. Shared with the
-/// EmbeddingGemma 2 pass; the libraries it loads are process-wide, so loading
-/// them from the caller's isolate serves the embedding worker too.
-///
-/// Native Assets puts the whole stack in the bundle's `lib/`. From there the
-/// dispatch loads libQnnHtp and libQnnSystem by full path, and prepends the
-/// directory to `ADSP_LIBRARY_PATH` so FastRPC finds the Skels (fastrpc appends
-/// the system DSP paths itself). One step it cannot do: libQnnHtp opens its
-/// Hexagon Stub by bare name and has no RPATH, so glibc searches
-/// LD_LIBRARY_PATH and the system — never the app — and LD_LIBRARY_PATH cannot
-/// change after the process started. A library already loaded under that
-/// SONAME is matched first, so the Stubs are loaded here by full path, after
-/// the libcdsprpc.so shim they NEED.
-String prepareLinuxNpuDispatchDir() {
-  final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
-  final missing = [
-    for (final n in qualcommNpuLibsLinux)
-      if (!File('$libDir/${androidLibFileName(n)}').existsSync())
-        androidLibFileName(n),
-  ];
-  if (missing.isNotEmpty) {
-    throw NpuDispatchUnavailableException(
-      'the Qualcomm NPU stack is not in $libDir (missing ${missing.join(', ')}); '
-      'build the app with hooks.user_defines.flutter_edge_ai_litertlm.'
-      '$qualcommNpuUserDefine: true',
-    );
-  }
-  for (final n in [
-    cdsprpcShimLib,
-    for (final lib in qairtLinuxLibs)
-      if (lib.endsWith('Stub')) lib,
-  ]) {
-    final path = '$libDir/${androidLibFileName(n)}';
-    try {
-      DynamicLibrary.open(path);
-    } on Object catch (e) {
-      throw NpuDispatchUnavailableException('$path did not load: $e');
-    }
-  }
-  return libDir;
-}

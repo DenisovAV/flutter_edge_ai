@@ -14,6 +14,13 @@
              libcdsprpc.so from the vendor partition when
              libLiteRtDispatch_Qualcomm.so is loaded. -->
         <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
+        <!-- Google Tensor dispatch late-binds the Pixel system runtime. Optional
+             so non-Tensor devices install normally. -->
+        <uses-native-library android:name="libedgetpu_litert.so" android:required="false"/>
+        <!-- Declared because Google's litert-npu-runtime-google-tensor AAR and
+             LiteRT's own Kotlin manifest declare it too. Not measured as needed:
+             a Tensor G6 run worked without it. -->
+        <uses-native-library android:name="libedgetpu_util.so" android:required="false"/>
         <!-- Required for the GPU backend on Android 12+: the LiteRT-LM OpenCL
              loader (v0.13.x) uses libvndksupport.so's android_load_sphal_library()
              to dlopen the vendor OpenCL ICD from the app's linker namespace.

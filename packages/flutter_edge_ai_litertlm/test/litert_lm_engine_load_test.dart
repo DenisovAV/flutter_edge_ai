@@ -16,6 +16,9 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show LiteRtLmFfiClient;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
+    show NpuDispatch;
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuVendor;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
@@ -30,14 +33,16 @@ class _FakeHost extends LiteRtLmEngineHost {
   _FakeHost({
     this.os = 'macos',
     this.abiName = 'macos_arm64',
-    this.stack = const NpuStackCheck.bundled(),
+    NpuStackCheck stack = const NpuStackCheck.bundled(),
+    this.stacks = const {},
     this.npuShips = false,
     this.failures = const {},
-  });
+  }) : stackCheck = stack;
 
   final String os;
   final String abiName;
-  final NpuStackCheck stack;
+  final NpuStackCheck stackCheck;
+  final Map<NpuVendor, NpuStackCheck> stacks;
   final bool npuShips;
 
   /// The error each backend's create throws; a backend not here succeeds.
@@ -46,6 +51,15 @@ class _FakeHost extends LiteRtLmEngineHost {
   final attempts = <_Attempt>[];
   int stackChecks = 0;
   int npuProbes = 0;
+
+  /// Every vendor whose stack or device was asked about, in order.
+  final askedVendors = <NpuVendor>[];
+
+  /// The vendor whose dispatch directory each NPU attempt prepared.
+  final preparedFor = <NpuVendor>[];
+
+  /// The NPU dispatch handed to each attempt, in order (null for gpu/cpu).
+  final npuDispatches = <NpuDispatch?>[];
 
   @override
   Future<String> cacheDir() async => Directory.systemTemp.path;
@@ -57,19 +71,24 @@ class _FakeHost extends LiteRtLmEngineHost {
   String get abi => abiName;
 
   @override
-  Future<NpuStackCheck> qualcommNpuStack() async {
+  Future<NpuStackCheck> stack(NpuVendor vendor) async {
     stackChecks++;
-    return stack;
+    askedVendors.add(vendor);
+    return stacks[vendor] ?? stackCheck;
   }
 
   @override
-  bool get npuDispatchShips {
+  String? unreachable(NpuVendor vendor) {
     npuProbes++;
-    return npuShips;
+    askedVendors.add(vendor);
+    return npuShips ? null : 'the fake host has no NPU';
   }
 
   @override
-  String get npuUnavailableReason => 'the fake host has no NPU';
+  Future<String> prepareDispatchDir(NpuVendor vendor) async {
+    preparedFor.add(vendor);
+    return '/fake/npu/${vendor.name}';
+  }
 
   @override
   Future<void> initializeClient(
@@ -85,12 +104,14 @@ class _FakeHost extends LiteRtLmEngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    required NpuDispatch? npuDispatch,
   }) async {
     attempts.add((
       backend: backend,
       visionBackend: visionBackend,
       audioBackend: audioBackend,
     ));
+    npuDispatches.add(npuDispatch);
     if (failures[backend] case final error?) throw error;
   }
 }
@@ -165,6 +186,12 @@ void main() {
   String write(String name, List<int> bytes) =>
       (File('${root.path}/$name')..writeAsBytesSync(bytes)).path;
 
+  // A file the bundle reader cannot read (a `.task` zip): the rules that need
+  // no file apply, the NPU among them. A generic `.litertlm` that was read is
+  // never tried on the NPU (it has no NPU graph).
+  String writeUnread(String name) =>
+      write(name, [0x50, 0x4b, 3, 4, ...List.filled(60, 0)]);
+
   Future<InferenceModel> load(
     String path, {
     PreferredBackend? preferredBackend,
@@ -198,6 +225,13 @@ void main() {
     return printed;
   }
 
+  /// The release-visible warnings among [printed]: a debug-only notice, such
+  /// as an unreadable file's, is not one.
+  List<String> warnings(List<String> printed) => [
+    for (final line in printed)
+      if (line.startsWith('[flutter_edge_ai] WARNING')) line,
+  ];
+
   test(
     "the plan's text backends are the ones the client is asked for",
     () async {
@@ -209,12 +243,234 @@ void main() {
     },
   );
 
+  test(
+    'an NPU attempt gets the dispatch of the vendor its bundle is stamped '
+    'for, and an unreadable file that of the vendor this host reaches',
+    () async {
+      host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
+      debugLiteRtLmEngineHost = host;
+      final stamped = await load(
+        write('sm8750.litertlm', _bundle(textStamp: ('Qualcomm', 'SM8750'))),
+      );
+      expect(host.attempts.map((a) => a.backend), ['npu']);
+      expect(host.askedVendors, [NpuVendor.qualcomm, NpuVendor.qualcomm]);
+      expect(host.preparedFor, [NpuVendor.qualcomm]);
+      expect(host.npuDispatches.single, (
+        dir: '/fake/npu/qualcomm',
+        disableHwMasking: false,
+      ));
+      await stamped.close();
+
+      host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
+      debugLiteRtLmEngineHost = host;
+      final unread = await load(
+        writeUnread('unread.task'),
+        preferredBackend: PreferredBackend.npu,
+      );
+      expect(host.attempts.map((a) => a.backend), ['npu']);
+      expect(host.preparedFor, [NpuVendor.qualcomm]);
+      await unread.close();
+    },
+  );
+
+  test(
+    'Tensor G5/G6 bundles expose only Google dispatch and never fall back',
+    () async {
+      for (final soc in ['Tensor_G5', 'Tensor_G6']) {
+        host = _FakeHost(
+          os: 'android',
+          abiName: 'android_arm64',
+          npuShips: true,
+          failures: const {
+            'npu': LiteRtLmEngineCreateException('Google NPU create failed'),
+          },
+        );
+        debugLiteRtLmEngineHost = host;
+
+        await expectLater(
+          load(write('$soc.litertlm', _bundle(textStamp: ('Google', soc)))),
+          throwsA(
+            isA<BackendInitException>().having(
+              (e) => e.attempts.length,
+              'attempts',
+              1,
+            ),
+          ),
+        );
+        expect(host.attempts.map((a) => a.backend), ['npu'], reason: soc);
+        expect(host.askedVendors, [
+          NpuVendor.googleTensor,
+          NpuVendor.googleTensor,
+        ], reason: soc);
+        expect(host.preparedFor, [NpuVendor.googleTensor], reason: soc);
+        expect(host.npuDispatches.single, (
+          dir: '/fake/npu/googleTensor',
+          disableHwMasking: false,
+        ));
+      }
+    },
+  );
+
+  test('Windows x64: the Intel stack is checked before the NPU is tried, and '
+      'an Intel attempt turns the HW mask update path off', () async {
+    host = _FakeHost(os: 'windows', abiName: 'windows_x64', npuShips: true);
+    debugLiteRtLmEngineHost = host;
+    final path = writeUnread('unread.task');
+    final model = await load(path, preferredBackend: PreferredBackend.npu);
+    expect(host.attempts.map((a) => a.backend), ['npu']);
+    expect(host.askedVendors, [NpuVendor.intel, NpuVendor.intel]);
+    expect(host.npuDispatches.single, (
+      dir: '/fake/npu/intel',
+      disableHwMasking: true,
+    ));
+    await model.close();
+
+    const missing = r'LiteRtDispatch.dll is not beside the executable (C:\app)';
+    host = _FakeHost(
+      os: 'windows',
+      abiName: 'windows_x64',
+      npuShips: true,
+      stack: const NpuStackCheck.missing(missing),
+    );
+    debugLiteRtLmEngineHost = host;
+    late InferenceModel fallback;
+    final printed = await printedBy(() async {
+      fallback = await load(path, preferredBackend: PreferredBackend.npu);
+    });
+    expect(host.attempts.map((a) => a.backend), ['gpu']);
+    expect(host.npuProbes, 0, reason: 'the build is asked before the device');
+    expect(host.preparedFor, isEmpty);
+    expect(warnings(printed), [
+      contains('npu was requested, but $missing — trying gpu -> cpu'),
+    ]);
+    await fallback.close();
+  });
+
+  test('an app without the opt-in stack is told so, word for word, and the '
+      'device is not probed', () async {
+    const notEnabled = 'this app was built without the Qualcomm NPU stack';
+    host = _FakeHost(
+      os: 'android',
+      abiName: 'android_arm64',
+      npuShips: true,
+      stack: const NpuStackCheck.missing(notEnabled),
+      stacks: const {
+        NpuVendor.googleTensor: NpuStackCheck.missing(
+          'this app was built without the Google Tensor NPU bridge',
+        ),
+      },
+    );
+    debugLiteRtLmEngineHost = host;
+    late InferenceModel model;
+    final printed = await printedBy(() async {
+      model = await load(
+        writeUnread('generic.task'),
+        preferredBackend: PreferredBackend.npu,
+      );
+    });
+    expect(host.attempts.map((a) => a.backend), ['gpu']);
+    expect(host.npuProbes, 0);
+    // Both Android vendors are opt-in: the notice names each one's reason.
+    expect(warnings(printed), [
+      allOf(
+        contains('npu was requested, but $notEnabled'),
+        contains('without the Google Tensor NPU bridge'),
+        contains('— trying gpu -> cpu'),
+      ),
+    ]);
+    await model.close();
+  });
+
+  test('a host no vendor runs on drops the NPU naming its ABI, with nothing '
+      'asked', () async {
+    for (final (os, abi) in [
+      ('macos', 'macos_arm64'),
+      ('linux', 'linux_x64'),
+      ('android', 'android_x64'),
+      ('windows', 'windows_arm64'),
+    ]) {
+      host = _FakeHost(os: os, abiName: abi, npuShips: true);
+      debugLiteRtLmEngineHost = host;
+      late InferenceModel model;
+      final printed = await printedBy(() async {
+        model = await load(
+          writeUnread('unread_$abi.task'),
+          preferredBackend: PreferredBackend.npu,
+        );
+      });
+      expect(host.attempts.map((a) => a.backend), ['gpu'], reason: abi);
+      expect(host.npuDispatches, [null], reason: abi);
+      expect(host.askedVendors, isEmpty, reason: abi);
+      expect(warnings(printed), [
+        contains('npu was requested, but no NPU dispatch stack ships for $abi'),
+      ], reason: abi);
+      await model.close();
+    }
+  });
+
+  test(
+    'an encoder compiled for an NPU this host has no dispatch for is '
+    'refused for what it is, not for the host, and nothing is probed',
+    () async {
+      host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
+      debugLiteRtLmEngineHost = host;
+      final path = write(
+        'vision_mt6991.litertlm',
+        // The vision encoder runs on the NPU by its stamp, so the load asks
+        // for the NPU, and the reachability question would come first without
+        // the vendor check.
+        _bundle(visionStamp: ('MediaTek', 'MT6991')),
+      );
+
+      for (final (preferredBackend, backendFallback) in [
+        (null, false),
+        (null, true),
+        (PreferredBackend.npu, true),
+      ]) {
+        await expectLater(
+          load(
+            path,
+            preferredBackend: preferredBackend,
+            supportImage: true,
+            backendFallback: backendFallback,
+          ),
+          throwsA(
+            isA<LiteRtLmBundleException>()
+                .having(
+                  (e) => e.problem,
+                  'problem',
+                  LiteRtLmBundleProblem.unsupportedNpu,
+                )
+                .having(
+                  (e) => e.message,
+                  'message',
+                  allOf(
+                    contains(
+                      "vision encoder is compiled for the MediaTek "
+                      'MT6991 NPU',
+                    ),
+                    contains('load it without supportImage'),
+                  ),
+                ),
+          ),
+          reason: '$preferredBackend, backendFallback: $backendFallback',
+        );
+      }
+      expect(host.stackChecks, 0, reason: 'no stack of a foreign vendor');
+      expect(host.npuProbes, 0, reason: 'no probe answers for another vendor');
+      expect(host.attempts, isEmpty);
+    },
+  );
+
   test("the plan's encoder backends reach the client and the model", () async {
     // An encoder on the NPU runs only with a text model on the NPU.
     host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
     debugLiteRtLmEngineHost = host;
     final model = await load(
-      write('enc.litertlm', _bundle(text: 'npu', vision: 'gpu', audio: 'npu')),
+      write(
+        'enc.litertlm',
+        _bundle(textStamp: ('Qualcomm', 'SM8750'), vision: 'gpu', audio: 'npu'),
+      ),
       supportImage: true,
       supportAudio: true,
     );
@@ -391,8 +647,8 @@ void main() {
     }
   });
 
-  test('a text model that declares only the NPU asks for the app\'s NPU '
-      'stack before any NPU probe', () async {
+  test('a text model compiled for the NPU asks for the app\'s NPU stack '
+      'before any NPU probe', () async {
     host = _FakeHost(
       os: 'android',
       abiName: 'android_arm64',
@@ -403,7 +659,7 @@ void main() {
     debugLiteRtLmEngineHost = host;
 
     await expectLater(
-      load(write('npu.litertlm', _bundle(text: 'npu'))),
+      load(write('npu.litertlm', _bundle(textStamp: ('Qualcomm', 'SM8750')))),
       throwsA(
         isA<BackendInitException>().having(
           (e) => e.lastAttempt.error,

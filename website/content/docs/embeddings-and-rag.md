@@ -18,11 +18,26 @@ RAG can borrow the active core embedder, use an application-provided
 **RagEmbedder**, or run entirely on precomputed vectors. It does not require an
 inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
+## Custom embedding providers (core 2.5.0)
+
+Core accepts self-contained `.gguf` files without a separate tokenizer when a
+registered backend can serve them. The GGUF adapter is still unreleased.
+`flutter_edge_ai_embeddings` supplies tokenizers; engine packages own runtime
+passes, and core hosts, caches and closes those passes.
+
+Backend authors can override `EmbeddingBackendProvider.cacheBackend(requested)`
+to distinguish CPU, GPU and automatic selection. Return the request unchanged,
+including null, when those requests can select different runtimes. The default
+preserves existing providers' CPU/NPU cache rule. Report the loaded accelerator
+through `EmbeddingPassInfo.activeBackend`; leave the descriptor's answer null
+when it cannot be known before load. `EmbeddingModel.maxInputTokens` includes
+the loaded context and batch limits.
+
 ## Packages
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.4.0
+  flutter_edge_ai: ^2.5.0
   flutter_edge_ai_litertlm: ^1.14.0
   flutter_edge_ai_embeddings: ^2.3.0 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.0

@@ -85,9 +85,11 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
+import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
 import '../ffi/litert_lm_embedding_bindings.dart';
 import '../ffi/litert_lm_library.dart';
 import '../ffi/sigprof_mask.dart';
+import '../npu_stacks.dart' show NpuVendor;
 import 'embedding_parts.dart';
 import 'litert_lm_embedding_common.dart';
 import 'litertlm_container_io.dart';
@@ -207,10 +209,20 @@ EmbeddingPass buildLiteRtLmEmbeddingPass(LiteRtLmEmbeddingConfig config) =>
 /// NPU — a QNN runtime without this Hexagon version's Skel, or on Windows a PC
 /// without an Intel NPU or its driver.
 @visibleForTesting
-String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) => target.isIntel
-    ? 'on another SoC, or on a PC without an Intel NPU or its driver'
-    : 'on another SoC, or with a QNN runtime that has no Skel for this '
-          "device's Hexagon version";
+String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) =>
+    switch (npuVendorOf(target)) {
+      NpuVendor.intel =>
+        'on another SoC, or on a PC without an Intel NPU or its driver',
+      NpuVendor.qualcomm =>
+        'on another SoC, or with a QNN runtime that has no Skel for this '
+            "device's Hexagon version",
+      NpuVendor.googleTensor =>
+        'on another Tensor generation (G5 and G6 bundles are not '
+            'interchangeable), or without a compatible Pixel system runtime',
+      // The placement refuses a bundle of a vendor with no dispatch here
+      // before any probe embed.
+      null => throw StateError('$target: no NPU vendor of this package'),
+    };
 
 /// Every C function the pass calls. A `libLiteRtLm` that exports fewer is
 /// refused at load by [checkLiteRtLmEmbeddingSymbols], by name, instead of

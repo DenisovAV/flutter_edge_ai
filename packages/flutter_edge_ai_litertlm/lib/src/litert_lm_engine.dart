@@ -10,6 +10,7 @@ import 'bundle/litertlm_load_plan.dart';
 import 'ffi/backend_preference.dart';
 import 'ffi/ffi_inference_model.dart';
 import 'ffi/litert_lm_client.dart';
+import 'ffi/npu_vendor_host.dart';
 import 'litert_lm_engine_host.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
@@ -188,28 +189,28 @@ class LiteRtLmEngine
           preferredAudioBackend: config.preferredAudioBackend,
         );
 
-    // Qualcomm npu (Android, Linux arm64) is opt-in per app. Ask the build
-    // before the hardware: an app that did not bundle the stack must not even
-    // dlopen a vendor library. When the manifest cannot say (no binding in a
-    // background isolate), the attempt itself checks the libraries before
-    // anything is loaded — core's prepareNpuDispatchDir on Android, the
-    // preload in LiteRtLmFfiClient on Linux.
-    bool? npuAvailable;
-    String? npuUnavailableBecause;
-    if (npuMayRun &&
-        (host.operatingSystem == 'android' ||
-            host.operatingSystem == 'linux')) {
-      final stack = await host.qualcommNpuStack();
-      if (!stack.known) {
-        edgeAiLog(
-          '[LiteRtLmEngine] ${stack.reason}; trying npu, the platform side '
-          'checks the libraries',
-        );
-      } else if (!stack.bundled) {
-        npuAvailable = false;
-        npuUnavailableBecause = stack.reason;
-      }
-    }
+    // Whose NPU a load that tries it runs on, decided once, before the plan
+    // and before any engine (`chooseNpuVendor`, the rule the EmbeddingGemma 2
+    // placement follows too): the vendor the bundle is compiled for, else the
+    // first vendor of this host whose stack the build carries and whose device
+    // answers. Asked only when the NPU is one of the backends the load tries:
+    // on Android it opens a vendor library.
+    final npu = npuMayRun
+        ? await chooseNpuVendor(
+            target: liteRtLmLoadNpuTarget(
+              path: config.modelPath,
+              bundle: bundle,
+              supportImage: config.supportImage,
+              supportAudio: config.supportAudio,
+              abi: host.abi,
+            ),
+            host: host,
+          )
+        : null;
+    String npuRefusal() => switch (npu) {
+      NpuRefused(:final reason) => reason,
+      _ => npuNoVendorReason(host.abi),
+    };
 
     // FunctionGemma bundles converted before litetune 0.1.4 declare no
     // activation type and, at the FP16 a GPU defaults to, answer with `<pad>`
@@ -263,9 +264,8 @@ class LiteRtLmEngine
       supportAudio: config.supportAudio,
       preferredVisionBackend: config.preferredVisionBackend,
       preferredAudioBackend: config.preferredAudioBackend,
-      npuAvailable: () => npuAvailable ?? host.npuDispatchShips,
-      npuUnavailableReason: () =>
-          npuUnavailableBecause ?? host.npuUnavailableReason,
+      npuAvailable: () => npu is NpuChosen,
+      npuUnavailableReason: npuRefusal,
       abi: host.abi,
     );
 
@@ -273,8 +273,7 @@ class LiteRtLmEngine
       preferredBackend: config.preferredBackend,
       logTag: '[LiteRtLmEngine]',
       createClient: host.createClient,
-      npuDispatchAvailable: npuAvailable,
-      npuUnavailableBecause: npuUnavailableBecause,
+      npuUnavailableBecause: npu is NpuRefused ? npu.reason : null,
       backends: plan.textBackends,
       droppedBecause: plan.dropped,
       initializeClient: (client, backend) => _oneNpuInitAtATime(
@@ -296,6 +295,20 @@ class LiteRtLmEngine
             config.maxTokens,
             preferredBackend: backend,
           );
+          // The NPU attempt's dispatch, prepared inside the attempt: a stack
+          // that cannot be prepared (NpuDispatchUnavailableException) is a
+          // failed attempt, which the fallback order then handles.
+          final npuDispatch = backend != PreferredBackend.npu
+              ? null
+              : switch (npu) {
+                  NpuChosen(:final vendor) => (
+                    dir: await host.prepareDispatchDir(vendor),
+                    disableHwMasking: npuDisablesHwMasking(vendor),
+                  ),
+                  _ => throw StateError(
+                    'an npu attempt without a chosen NPU vendor',
+                  ),
+                };
           try {
             await host.initializeClient(
               client,
@@ -310,6 +323,7 @@ class LiteRtLmEngine
               audioBackend: args.audioBackend,
               enableSpeculativeDecoding: config.enableSpeculativeDecoding,
               activationDataType: args.activationDataType,
+              npuDispatch: npuDispatch,
             );
           } on LiteRtLmEngineCreateException catch (e, stackTrace) {
             final target = plan.npuTarget;

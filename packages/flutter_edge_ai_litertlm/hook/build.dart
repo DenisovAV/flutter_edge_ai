@@ -163,8 +163,13 @@ class _NativeBundle {
       }
     }
     if (os == OS.android) {
-      for (final a in androidExtraLibs) {
-        yield _dylibFileName(os, a);
+      // Every vendor stack that runs on Android, from the table (Qualcomm's is
+      // androidExtraLibs).
+      for (final vendor in NpuVendor.values) {
+        if (!vendor.abis.any((abi) => abi.startsWith('android_'))) continue;
+        for (final name in npuStackLibs(vendor, 'android')) {
+          yield _dylibFileName(os, name);
+        }
       }
     }
     if (os == OS.linux) {
@@ -362,32 +367,9 @@ final _litertlmBundle = _NativeBundle(
     // DXC runtime
     'dxil',
     'dxcompiler',
-    // Intel NPU dispatch (~102 MB, only enables PreferredBackend.npu on
-    // LunarLake/PantherLake — model still loads on CPU/GPU without it).
-    //
-    // THIS LIST AND THE WORKFLOW'S `$ovWanted` ARE ONE SET IN TWO PLACES.
-    // The tarball is what CI assembles; this is what becomes a CodeAsset and
-    // lands next to the app binary. A name present there and absent here
-    // extracts to the cache and is never shipped — which is exactly how
-    // openvino_intel_npu_compiler(.dll/_loader.dll) went missing at v0.16.0:
-    // 78.8 MB of the stack, allow-listed and `throw`-guarded in CI, silently
-    // not bundled, so openvino_intel_npu_plugin could not resolve its compiler
-    // and backend=npu stayed broken in the release that set out to fix it.
-    // Change one, change the other.
-    'LiteRtDispatch',
-    'openvino',
-    'openvino_intel_npu_plugin',
-    'openvino_intel_npu_compiler',
-    'openvino_intel_npu_compiler_loader',
-    'openvino_tensorflow_lite_frontend',
-    // Release TBB only. The debug variants were being registered into user
-    // apps — 1.8 MB of parallel debug builds sitting beside the release set,
-    // which is the mis-binding hazard the workflow's allow-list exists to
-    // avoid, reintroduced one layer down.
-    'tbb12',
-    'tbbbind_2_5',
-    'tbbmalloc',
-    'tbbmalloc_proxy',
+    // Intel NPU stack (NpuVendor.intel), in every Windows x64 build. ONE SET
+    // WITH THE WINDOWS WORKFLOW'S `$ovWanted`: see intelNpuLibs.
+    ...intelNpuLibs,
   ],
   // Android NPU: Qualcomm dispatch bridge + QNN HTP runtime + per-SoC Stubs.
   //
@@ -399,19 +381,7 @@ final _litertlmBundle = _NativeBundle(
   //
   // sm8550=V73, sm8650=V75, sm8750=V79, sm8850=V81.
   // Stub libs are the CPU-side bridge; Skel libs run on Hexagon DSP via FastRPC.
-  androidExtraLibs: [
-    'LiteRtDispatch_Qualcomm',
-    'QnnHtp',
-    'QnnSystem',
-    'QnnHtpV73Stub',
-    'QnnHtpV73Skel',
-    'QnnHtpV75Stub',
-    'QnnHtpV75Skel',
-    'QnnHtpV79Stub',
-    'QnnHtpV79Skel',
-    'QnnHtpV81Stub',
-    'QnnHtpV81Skel',
-  ],
+  androidExtraLibs: qualcommNpuLibs,
   // Linux arm64 NPU: the Qualcomm dispatch (built from the LiteRT pin, like
   // Android's) and our libcdsprpc.so shim. The QNN runtime comes from
   // Qualcomm's QAIRT SDK zip at build time — see _registerQualcommNpuLinux.
@@ -1010,22 +980,67 @@ Future<void> _processBundle({
     }
   }
 
-  // Android and Linux arm64: the Qualcomm NPU stack, for apps that opted in.
-  if (os == OS.android && bundle.androidExtraLibs.isNotEmpty) {
-    await _registerQualcommNpu(
-      input: input,
-      output: output,
-      prebuiltDir: prebuiltDir,
-      stage: stage,
-    );
-  }
-  if (os == OS.linux && bundle.linuxExtraLibs.isNotEmpty) {
-    await _registerQualcommNpuLinux(
-      input: input,
-      output: output,
-      prebuiltDir: prebuiltDir,
-      stage: stage,
-    );
+  // The NPU stack of each vendor of this target (NpuVendor.abis), the same
+  // table the runtime chooses a vendor from. The ABI string is Abi.current()'s
+  // spelling, which code_assets' OS and Architecture names share.
+  //
+  // A vendor whose stack ships on request (npuUserDefine) is bundled when the
+  // app set the flag, never because the files are there: an older flat cache
+  // or a maintainer's prebuilt can hold them, and registering them on presence
+  // would put the vendor's libraries into an app that did not ask for them —
+  // and make NativeAssetsManifest.json, which the runtime gate reads, claim a
+  // stack the developer never enabled.
+  final targetAbi = '${os.name}_${input.config.code.targetArchitecture.name}';
+  for (final vendor in NpuVendor.values) {
+    if (!vendor.abis.any((abi) => abi.startsWith('${os.name}_'))) continue;
+    final define = npuUserDefine(vendor);
+    if (define != null &&
+        !readBoolUserDefine(input.userDefines[define], define)) {
+      continue;
+    }
+    if (!vendor.abis.contains(targetAbi)) {
+      // Set by an app that also builds this OS where the vendor has an NPU
+      // (Linux x64 next to Linux arm64): said, instead of failing the build.
+      if (define != null) {
+        stderr.writeln(
+          '[$_packageName] $define: no ${vendor.label} NPU on $targetAbi; '
+          'nothing to bundle there.',
+        );
+      }
+      continue;
+    }
+    switch (vendor) {
+      case NpuVendor.qualcomm when os == OS.android:
+        if (bundle.androidExtraLibs.isEmpty) break;
+        await _registerQualcommNpu(
+          input: input,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
+      case NpuVendor.qualcomm when os == OS.linux:
+        if (bundle.linuxExtraLibs.isEmpty) break;
+        await _registerQualcommNpuLinux(
+          input: input,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
+      case NpuVendor.qualcomm:
+        throw StateError('NpuVendor.qualcomm has no stack for $targetAbi');
+      case NpuVendor.googleTensor when os == OS.android:
+        _registerBundledNpuStack(
+          vendor: vendor,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
+      case NpuVendor.googleTensor:
+        throw StateError('NpuVendor.googleTensor has no stack for $targetAbi');
+      // In every Windows x64 build, through windowsExtraLibs above.
+      case NpuVendor.intel:
+        break;
+    }
   }
 
   // A bundle that skips its companions on this OS (see [skipCompanionsOn])
@@ -1063,29 +1078,50 @@ Future<void> _processBundle({
   }
 }
 
+/// Registers the Android stack of [vendor], for an app that set its opt-in
+/// (checked by the caller's vendor loop, from the table), from the native
+/// archive. A file missing there is a native release that does not carry the
+/// stack yet: the build fails rather than ship a flag that does nothing.
+void _registerBundledNpuStack({
+  required NpuVendor vendor,
+  required BuildOutputBuilder output,
+  required Uri prebuiltDir,
+  required Uri Function(Uri) stage,
+}) {
+  for (final name in npuStackLibs(vendor, 'android')) {
+    final fileName = _dylibFileName(OS.android, name);
+    final file = prebuiltDir.resolve(fileName);
+    if (!File.fromUri(file).existsSync()) {
+      throw StateError(
+        '[$_packageName] ${npuUserDefine(vendor)}: $fileName is not in this '
+        "release's Android native bundle; ${vendor.label} needs a "
+        '$_packageName release whose native bundle carries it. Remove '
+        '${npuUserDefine(vendor)} until then.',
+      );
+    }
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: 'src/native/$name',
+        linkMode: DynamicLoadingBundled(),
+        file: stage(file),
+      ),
+    );
+  }
+}
+
 // ============================================================================
 // Opt-in Qualcomm NPU stack (Android)
 // ============================================================================
 
-/// Registers the Android Qualcomm NPU stack when the app set `qualcomm_npu`.
-///
-/// Registration follows the flag, never file presence. An older flat cache or
-/// a maintainer's prebuilt can still hold these files, and registering them
-/// on presence would put Qualcomm's libraries into an app that did not ask
-/// for them — and make NativeAssetsManifest.json, which the runtime gate
-/// reads, claim a stack the developer never enabled.
+/// Registers the Android Qualcomm NPU stack, for an app that set
+/// `qualcomm_npu` (checked by the caller's vendor loop, from the table).
 Future<void> _registerQualcommNpu({
   required BuildInput input,
   required BuildOutputBuilder output,
   required Uri prebuiltDir,
   required Uri Function(Uri) stage,
 }) async {
-  final enabled = readBoolUserDefine(
-    input.userDefines[qualcommNpuUserDefine],
-    qualcommNpuUserDefine,
-  );
-  if (!enabled) return;
-
   void register(String name, Uri file) => output.assets.code.add(
     CodeAsset(
       package: _packageName,
@@ -1210,33 +1246,17 @@ Directory _qnnCacheRoot(BuildInput input, [String target = 'android_arm64']) {
   }
 }
 
-/// Registers the Linux arm64 Qualcomm NPU stack when the app set
-/// `qualcomm_npu`: our dispatch and libcdsprpc.so shim from the native
-/// bundle, Qualcomm's QNN runtime from the QAIRT SDK zip via the cache.
-///
-/// Registration follows the flag, never file presence — as on Android, and
-/// for the same two reasons. On linux_x64 the flag has nothing to bundle (no
-/// Qualcomm NPU there), and says so instead of failing an app that sets it
-/// for its Android or Linux arm64 builds.
+/// Registers the Linux arm64 Qualcomm NPU stack, for an app that set
+/// `qualcomm_npu` (checked by the caller's vendor loop, from the table, which
+/// also says on linux_x64 that there is nothing to bundle): our dispatch and
+/// libcdsprpc.so shim from the native bundle, Qualcomm's QNN runtime from the
+/// QAIRT SDK zip via the cache.
 Future<void> _registerQualcommNpuLinux({
   required BuildInput input,
   required BuildOutputBuilder output,
   required Uri prebuiltDir,
   required Uri Function(Uri) stage,
 }) async {
-  final enabled = readBoolUserDefine(
-    input.userDefines[qualcommNpuUserDefine],
-    qualcommNpuUserDefine,
-  );
-  if (!enabled) return;
-  if (input.config.code.targetArchitecture != Architecture.arm64) {
-    stderr.writeln(
-      '[$_packageName] qualcomm_npu: no Qualcomm NPU on linux_'
-      '${input.config.code.targetArchitecture.name}; nothing to bundle there.',
-    );
-    return;
-  }
-
   void register(String name, Uri file) => output.assets.code.add(
     CodeAsset(
       package: _packageName,

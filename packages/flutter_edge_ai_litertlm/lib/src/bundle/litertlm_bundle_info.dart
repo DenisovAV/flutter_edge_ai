@@ -10,6 +10,7 @@
 import 'dart:typed_data';
 
 import '../litertlm_flatbuffer.dart';
+import '../npu_stacks.dart' show NpuVendor;
 
 /// The SoC a `.litertlm` bundle's compiled sections target.
 final class LiteRtLmNpuTarget {
@@ -23,12 +24,12 @@ final class LiteRtLmNpuTarget {
   /// `PTL`, `Tensor_G5`.
   final String soc;
 
-  bool get isQualcomm => vendor.toLowerCase() == 'qualcomm';
+  bool get isQualcomm => npuVendorOf(this) == NpuVendor.qualcomm;
 
   /// Compiled by LiteRT's OpenVINO plugin for an Intel NPU: Google's
   /// `…_Intel_PTL` bundles are stamped `IntelOpenVINO` / `PTL` (read from the
   /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
-  bool get isIntel => vendor.toLowerCase() == 'intelopenvino';
+  bool get isIntel => npuVendorOf(this) == NpuVendor.intel;
 
   @override
   bool operator ==(Object other) =>
@@ -40,6 +41,12 @@ final class LiteRtLmNpuTarget {
   @override
   String toString() => '$vendor $soc';
 }
+
+/// The vendor this package dispatches a bundle stamped [target] to, or null
+/// when it has no dispatch for that vendor. Internal: not in the package's
+/// `show` list, so [NpuVendor] stays out of the public API.
+NpuVendor? npuVendorOf(LiteRtLmNpuTarget target) =>
+    NpuVendor.forStamp(target.vendor);
 
 /// One section of a `.litertlm` container.
 final class LiteRtLmSection {
@@ -219,17 +226,20 @@ enum LiteRtLmBundleProblem {
 
   /// The bundle cannot run on the backend that was asked for: an NPU-compiled
   /// model on the GPU or the CPU, a text model or encoder whose
-  /// `backend_constraint` excludes the backend, an encoder asked for the NPU
-  /// it is not compiled for.
+  /// `backend_constraint` excludes the backend, a text model or encoder asked
+  /// for the NPU it is not compiled for — also when its `backend_constraint`
+  /// names the NPU; a text model whose constraint names only the NPU has
+  /// nothing to run on.
   wrongBackend,
 
   /// The text model, or an encoder the load turns on, is compiled for an NPU
-  /// this package has no dispatch for on this platform (a Google Tensor or
-  /// MediaTek bundle, a Qualcomm bundle on Windows); or an encoder the load
-  /// turns on runs on the NPU while the text model is not tried on the NPU
-  /// alone: this package runs an encoder on the NPU only together with a text
-  /// model on the NPU (a bundle compiled for the NPU throughout). An encoder
-  /// that is off is not checked.
+  /// this package has no dispatch for on this platform (a MediaTek bundle, a
+  /// Qualcomm bundle on Windows, or a Google Tensor bundle off Android); the
+  /// sections the load turns on are compiled for two different NPUs (one load
+  /// runs one NPU's dispatch); or an encoder the load turns on runs on the NPU
+  /// while the text model is not tried on the NPU alone: this package runs an
+  /// encoder on the NPU only together with a text model on the NPU (a bundle
+  /// compiled for the NPU throughout). An encoder that is off is not checked.
   unsupportedNpu,
 }
 

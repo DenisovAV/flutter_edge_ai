@@ -141,14 +141,13 @@ void main() {
 
       test('$name: the fallback order as before', () {
         expect(plan(info: info).textBackends, [gpu, cpu]);
-        expect(plan(info: info, preferred: npu).textBackends, [npu, gpu, cpu]);
         expect(plan(info: info, preferred: gpu).textBackends, [gpu, cpu]);
         expect(plan(info: info, preferred: cpu).textBackends, [cpu]);
       });
 
       test('$name, strict: exactly one attempt, the GPU when none asked', () {
         expect(plan(info: info, fallback: false).textBackends, [gpu]);
-        for (final backend in PreferredBackend.values) {
+        for (final backend in [gpu, cpu]) {
           expect(
             plan(info: info, preferred: backend, fallback: false).textBackends,
             [backend],
@@ -157,8 +156,49 @@ void main() {
       });
     }
 
+    test('generic: never the NPU, for it has no NPU graph — dropped with the '
+        "file's reason, and nothing asked", () {
+      // Measured 2026-10-18 on a DDP Galaxy S24: on npu LiteRT-LM compiled
+      // nothing ("No compiler plugin found"), ran on the CPU and the engine
+      // reported npu.
+      final npuOnGeneric = plan(info: generic, preferred: npu);
+      expect(npuOnGeneric.textBackends, [gpu, cpu]);
+      expect(
+        npuOnGeneric.dropped[npu],
+        'model.litertlm is not compiled for an NPU (no section carries a '
+        'LiteRtStamp and there is no tf_lite_aux), so it cannot run on one: '
+        'LiteRT-LM would compile it on the device, which no NPU stack here '
+        'supports, and run it on the CPU',
+      );
+      expect(npuAsked, 0, reason: 'not a candidate, so not unreachable');
+    });
+
+    test('generic, strict: npu is refused before any engine, naming what to '
+        'install', () {
+      expect(
+        () => plan(info: generic, preferred: npu, fallback: false),
+        refused(
+          LiteRtLmBundleProblem.wrongBackend,
+          'model.litertlm is not compiled for an NPU (no section carries a '
+          'LiteRtStamp and there is no tf_lite_aux), so it cannot run on one: '
+          'LiteRT-LM would compile it on the device, which no NPU stack here '
+          'supports, and run it on the CPU. Load it with PreferredBackend.gpu '
+          "or .cpu, or omit preferredBackend; to run on the NPU, install the "
+          "bundle compiled for this device's NPU.",
+        ),
+      );
+      expect(npuAsked, 0);
+    });
+
+    test('unread: the NPU stays a candidate, as before', () {
+      expect(plan(info: null, preferred: npu).textBackends, [npu, gpu, cpu]);
+      expect(plan(info: null, preferred: npu, fallback: false).textBackends, [
+        npu,
+      ]);
+    });
+
     test('an NPU this device cannot reach is dropped with a fallback', () {
-      expect(plan(info: generic, preferred: npu, npuHere: false).textBackends, [
+      expect(plan(info: null, preferred: npu, npuHere: false).textBackends, [
         gpu,
         cpu,
       ]);
@@ -166,22 +206,18 @@ void main() {
 
     test('and refused at once without one: no engine is created', () {
       expect(
-        () => plan(
-          info: generic,
-          preferred: npu,
-          fallback: false,
-          npuHere: false,
-        ),
+        () => plan(info: null, preferred: npu, fallback: false, npuHere: false),
         npuUnreachable('no Qualcomm FastRPC'),
       );
     });
 
     test('the NPU is asked about only when it is one of the backends', () {
-      plan(info: generic);
-      plan(info: generic, preferred: gpu);
-      plan(info: generic, preferred: cpu);
-      expect(npuAsked, 0);
+      plan(info: null);
+      plan(info: null, preferred: gpu);
+      plan(info: null, preferred: cpu);
       plan(info: generic, preferred: npu);
+      expect(npuAsked, 0);
+      plan(info: null, preferred: npu);
       expect(npuAsked, 1);
     });
   });
@@ -235,10 +271,10 @@ void main() {
 
     test('nothing is reported when nothing the caller asked for is ruled '
         'out', () {
-      expect(plan(info: generic, preferred: npu).dropped, isEmpty);
+      expect(plan(info: null, preferred: npu).dropped, isEmpty);
       expect(plan(info: cpuOnly).dropped, isEmpty);
       expect(
-        plan(info: generic, preferred: npu, npuHere: false).dropped,
+        plan(info: null, preferred: npu, npuHere: false).dropped,
         isEmpty,
         reason:
             'an unreachable NPU is the host\'s reason, worded by the caller',
@@ -261,7 +297,8 @@ void main() {
       ).backends;
       expect(candidates(npuDeclared), [npu]);
       expect(candidates(generic), [gpu, cpu]);
-      expect(candidates(generic, npu), [npu, gpu, cpu]);
+      expect(candidates(generic, npu), [gpu, cpu]);
+      expect(candidates(null, npu), [npu, gpu, cpu]);
       expect(candidates(null), [gpu, cpu]);
       expect(plan(info: npuDeclared).textBackends, [npu]);
       expect(npuAsked, 1);
@@ -596,9 +633,9 @@ void main() {
         () => plan(info: visionSm8750, image: true, preferred: npu),
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
-          'would be tried on npu, then gpu, then cpu, not on the NPU alone',
+          'would be tried on gpu, then cpu, not on the NPU alone',
         ),
-        reason: 'the GPU and CPU attempts would get no NPU dispatch',
+        reason: 'a generic text model never runs on the NPU',
       );
       expect(
         () => plan(info: visionSm8750, image: true, visionBackend: npu),
@@ -615,17 +652,20 @@ void main() {
       );
     });
 
-    test('with the text model on the NPU alone it runs there, and the plan '
-        'names its SoC', () {
-      final p = plan(
-        info: visionSm8750,
-        image: true,
-        preferred: npu,
-        fallback: false,
+    test('nor with the text model asked onto the NPU alone: a generic text '
+        'model has no NPU graph, so it is refused for that', () {
+      expect(
+        () => plan(
+          info: visionSm8750,
+          image: true,
+          preferred: npu,
+          fallback: false,
+        ),
+        refused(
+          LiteRtLmBundleProblem.wrongBackend,
+          'model.litertlm is not compiled for an NPU',
+        ),
       );
-      expect(p.textBackends, [npu]);
-      expect(p.visionBackend, npu);
-      expect(p.npuTarget, sm8750);
     });
 
     test('an NPU this device cannot reach is refused with its reason, before '

@@ -335,12 +335,23 @@ List<PreferredBackend> _fallbackOrder(PreferredBackend requested) =>
     };
 
 /// The backends the text model can run on: the NPU only for a bundle compiled
-/// for one, else its `backend_constraint`, else any.
+/// for one, else its `backend_constraint`, else the GPU and the CPU.
+///
+/// Not the NPU for a bundle compiled for none. Without a `tf_lite_aux` section
+/// LiteRT-LM takes its on-device compiler-plugin path for `npu`
+/// (`llm_litert_compiled_model_executor_factory.cc`), no NPU stack here ships a
+/// compiler plugin, and LiteRT then falls through to the CPU while the engine
+/// reports `npu`. Measured 2026-10-18 on a DDP Galaxy S24 (SM8650) with the
+/// generic Gemma 3 1B: `activeBackend == npu`, "No compiler plugin found", no
+/// dispatch or QNN library mapped, the CPU's text at 28 tokens/s against 41 on
+/// an explicit CPU. A file that could not be read keeps every backend.
 Set<PreferredBackend> _textBackendsAllowed(LiteRtLmBundleInfo? bundle) {
   if (bundle == null) return PreferredBackend.values.toSet();
   if (bundle.isCompiledForNpu) return {PreferredBackend.npu};
   final declared = _backends(bundle.textModel?.backendConstraint);
-  return declared.isEmpty ? PreferredBackend.values.toSet() : declared;
+  return declared.isEmpty
+      ? const {PreferredBackend.gpu, PreferredBackend.cpu}
+      : declared;
 }
 
 /// The NPU the text model is compiled for: its own stamp, else the
@@ -368,17 +379,29 @@ String _wrongTextBackend(
         'preferredBackend; to run on the ${requested.name}, install the '
         'generic bundle of this model.';
   }
+  if (_backends(bundle.textModel?.backendConstraint).isEmpty) {
+    return '${_textRulesOut(path, bundle)}. Load it with '
+        'PreferredBackend.gpu or .cpu, or omit preferredBackend; to run on the '
+        "NPU, install the bundle compiled for this device's NPU.";
+  }
   return '${_textRulesOut(path, bundle)}, not on ${requested.name}. Load it '
       'with one of those, or omit preferredBackend.';
 }
 
 /// Why the file rules a backend out for its text model: it is compiled for an
-/// NPU, or it declares the backends it runs on.
+/// NPU, it declares the backends it runs on, or — the NPU only — it is
+/// compiled for none ([_textBackendsAllowed]).
 String _textRulesOut(String path, LiteRtLmBundleInfo bundle) {
   if (bundle.isCompiledForNpu) {
     final target = _textNpuTarget(bundle);
     return '$path is compiled for the ${target == null ? 'NPU' : '$target NPU'} '
         'and runs only there';
+  }
+  if (_backends(bundle.textModel?.backendConstraint).isEmpty) {
+    return '$path is not compiled for an NPU (no section carries a LiteRtStamp '
+        'and there is no tf_lite_aux), so it cannot run on one: LiteRT-LM '
+        'would compile it on the device, which no NPU stack here supports, and '
+        'run it on the CPU';
   }
   final declared = bundle.textModel!.backendConstraint!.join(', ');
   return '$path declares that its text model runs on $declared '

@@ -805,7 +805,7 @@ milliseconds for a 3 GB file) and decides from them:
 
 | The file | No `preferredBackend` | `preferredBackend` given |
 |---|---|---|
-| A generic bundle | GPU, then CPU | that backend, then the next (npu → gpu → cpu) |
+| A generic bundle | GPU, then CPU | `gpu` / `cpu`: that backend, then the next; `npu`: not tried, since the bundle has no NPU graph (GPU, then CPU, with a notice; refused with `backendFallback: false`) |
 | A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares are tried |
 | A bundle compiled for an NPU (a `tf_lite_aux` section or a text model with a `LiteRtStamp`, e.g. `…_qualcomm_sm8750.litertlm`) | the NPU | `npu`: the NPU; `gpu`/`cpu`: refused, they cannot run it |
 | A file shorter than its sections | refused: the download is incomplete | refused |
@@ -932,11 +932,13 @@ hooks:
 ```
 
 `qualcomm_npu_aar` is resolved against the pubspec that declares it and must be
-the same file as Maven's (same SHA-256). Without the flag, a request for
-`PreferredBackend.npu` with a generic bundle on Android falls back to GPU, then
-CPU, and the log says how to enable it; a bundle compiled for an NPU is refused
-with a `BackendInitException` whose one attempt says the same
-([Where a model runs](#where-a-model-runs)).
+the same file as Maven's (same SHA-256). Without the flag, a bundle compiled for
+an NPU is refused with a `BackendInitException` whose one attempt says how to
+enable it ([Where a model runs](#where-a-model-runs)). A generic bundle never
+runs on the NPU, with or without the flag: it has no NPU graph, and LiteRT-LM
+would compile it on the device, which no NPU stack here supports, and run it on
+the CPU while reporting `npu` (measured on a Galaxy S24). So `npu` falls back to
+GPU, then CPU, for it, and the log says why.
 
 **Linux arm64.** The same flag bundles the stack into Linux arm64 builds, for
 Qualcomm Linux boards with a Hexagon V68–V81 compute DSP (QCS6490, QCS8275,
@@ -957,10 +959,9 @@ hooks:
 
 On the board, Qualcomm's FastRPC library must be installed (`qcom-fastrpc1` on
 Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
-(`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing,
-`npu` with a generic bundle falls back to GPU, then CPU, and the log names what
-to fix; a bundle compiled for an NPU is refused with a `BackendInitException`
-that names it. Use the model compiled for your SoC, e.g.
+(`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing, a
+bundle compiled for an NPU is refused with a `BackendInitException` that names
+what to fix. Use the model compiled for your SoC, e.g.
 `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux x64 build ignores the
 flag.
 

@@ -184,6 +184,12 @@ void main() {
   String write(String name, List<int> bytes) =>
       (File('${root.path}/$name')..writeAsBytesSync(bytes)).path;
 
+  // A file the bundle reader cannot read (a `.task` zip): the rules that need
+  // no file apply, the NPU among them. A generic `.litertlm` that was read is
+  // never tried on the NPU (it has no NPU graph).
+  String writeUnread(String name) =>
+      write(name, [0x50, 0x4b, 3, 4, ...List.filled(60, 0)]);
+
   Future<InferenceModel> load(
     String path, {
     PreferredBackend? preferredBackend,
@@ -248,13 +254,13 @@ void main() {
 
       host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
       debugLiteRtLmEngineHost = host;
-      final generic = await load(
-        write('generic.litertlm', _bundle()),
+      final unread = await load(
+        writeUnread('unread.task'),
         preferredBackend: PreferredBackend.npu,
       );
       expect(host.attempts.map((a) => a.backend), ['npu']);
       expect(host.preparedFor, [NpuVendor.qualcomm]);
-      await generic.close();
+      await unread.close();
     },
   );
 
@@ -262,7 +268,7 @@ void main() {
       'an Intel attempt turns the HW mask update path off', () async {
     host = _FakeHost(os: 'windows', abiName: 'windows_x64', npuShips: true);
     debugLiteRtLmEngineHost = host;
-    final path = write('generic.litertlm', _bundle());
+    final path = writeUnread('unread.task');
     final model = await load(path, preferredBackend: PreferredBackend.npu);
     expect(host.attempts.map((a) => a.backend), ['npu']);
     expect(host.askedVendors, [NpuVendor.intel, NpuVendor.intel]);
@@ -288,8 +294,10 @@ void main() {
     expect(host.npuProbes, 0, reason: 'the build is asked before the device');
     expect(host.preparedFor, isEmpty);
     expect(
-      printed.single,
-      contains('npu was requested, but $missing — trying gpu -> cpu'),
+      printed,
+      anyElement(
+        contains('npu was requested, but $missing — trying gpu -> cpu'),
+      ),
     );
     await fallback.close();
   });
@@ -307,15 +315,17 @@ void main() {
     late InferenceModel model;
     final printed = await printedBy(() async {
       model = await load(
-        write('generic.litertlm', _bundle()),
+        writeUnread('unread.task'),
         preferredBackend: PreferredBackend.npu,
       );
     });
     expect(host.attempts.map((a) => a.backend), ['gpu']);
     expect(host.npuProbes, 0);
     expect(
-      printed.single,
-      contains('npu was requested, but $notEnabled — trying gpu -> cpu'),
+      printed,
+      anyElement(
+        contains('npu was requested, but $notEnabled — trying gpu -> cpu'),
+      ),
     );
     await model.close();
   });
@@ -333,7 +343,7 @@ void main() {
       late InferenceModel model;
       final printed = await printedBy(() async {
         model = await load(
-          write('generic_$abi.litertlm', _bundle()),
+          writeUnread('unread_$abi.task'),
           preferredBackend: PreferredBackend.npu,
         );
       });
@@ -341,8 +351,12 @@ void main() {
       expect(host.npuDispatches, [null], reason: abi);
       expect(host.askedVendors, isEmpty, reason: abi);
       expect(
-        printed.single,
-        contains('npu was requested, but no NPU dispatch stack ships for $abi'),
+        printed,
+        anyElement(
+          contains(
+            'npu was requested, but no NPU dispatch stack ships for $abi',
+          ),
+        ),
         reason: abi,
       );
       await model.close();
@@ -357,7 +371,9 @@ void main() {
       debugLiteRtLmEngineHost = host;
       final path = write(
         'vision_mt6991.litertlm',
-        _bundle(visionStamp: ('MediaTek', 'MT6991')),
+        // The text model declares the NPU, so the NPU is a text candidate and
+        // the reachability question would come first without the vendor check.
+        _bundle(text: 'npu', visionStamp: ('MediaTek', 'MT6991')),
       );
 
       for (final backendFallback in [false, true]) {

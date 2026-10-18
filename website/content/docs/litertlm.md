@@ -200,20 +200,18 @@ Both are tracked upstream in
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
 Because the safe context is a property of the compiled bundle, `maxTokens` is
 **not** clamped up to 1024 on the NPU attempt (it is on CPU and GPU — see below),
-so pass the `cache_length` the bundle was compiled for. Note that requesting
-`PreferredBackend.npu` for a generic bundle does not guarantee the NPU runs: if
-it fails to initialize, the engine falls back to GPU and then CPU (a bundle
-compiled for an NPU is never tried there — see below), and the floor applies
-again to those attempts — so a value chosen for an NPU bundle is raised to 1024
-on the fallback rather than crashing it. The NPU candidate is attempted only on
-Windows, on Android phones with Qualcomm FastRPC, and on Qualcomm Linux arm64
-boards that pass the FastRPC checks above — the last two only when the app sets
-`qualcomm_npu`; on other Android phones, macOS, other Linux machines and iOS it
-is skipped, because nothing there can run it — and on
-macOS the native runtime was measured accepting `npu` anyway, which made
-`activeBackend` report an NPU that does not exist on the machine. On Windows
-the check is per OS, so a PC without an Intel NPU still attempts it, and
-`activeBackend` can then report `npu` while the model runs elsewhere.
+so pass the `cache_length` the bundle was compiled for. Only a bundle compiled
+for an NPU runs on one. A generic bundle is never tried there: it has no NPU
+graph, and LiteRT-LM would compile it on the device, which no NPU stack here
+supports, and run it on the CPU while reporting `npu` (measured on a Galaxy
+S24), so `npu` falls back to GPU and then CPU for it, and the floor applies to
+those attempts. A bundle compiled for an NPU runs only on Windows, on Android
+phones with Qualcomm FastRPC, and on Qualcomm Linux arm64 boards that pass the
+FastRPC checks above — the last two only when the app sets `qualcomm_npu`;
+anywhere else it is refused, because nothing there can run it (on macOS the
+native runtime was measured accepting `npu` anyway, which made `activeBackend`
+report an NPU that does not exist on the machine). On Windows the check is per
+OS, so a PC without an Intel NPU still attempts it.
 
 </Warning>
 
@@ -225,7 +223,7 @@ milliseconds for a 3 GB file — and decides from them:
 
 | The file | No `preferredBackend` | `preferredBackend` given |
 |---|---|---|
-| A generic bundle | GPU, then CPU | that backend, then the next (npu → gpu → cpu) |
+| A generic bundle | GPU, then CPU | `gpu` / `cpu`: that backend, then the next; `npu`: not tried, since the bundle has no NPU graph (GPU, then CPU, with a notice; refused with `backendFallback: false`) |
 | A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares |
 | A bundle compiled for an NPU (`…_qualcomm_sm8750.litertlm`, …) | the NPU | `npu`: the NPU; `gpu` / `cpu`: refused |
 | A file shorter than its sections | refused: the download is incomplete | refused |

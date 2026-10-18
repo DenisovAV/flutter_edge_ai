@@ -151,10 +151,9 @@ download and 83 MB more installed, plus a copy of the same size made on the
 first NPU run, because the DSP loads them from files. Setting the flag accepts Qualcomm's AI
 Stack License; the hook prints where its `LICENSE.pdf` is. Offline or behind a
 mirror, add `qualcomm_npu_maven_url: <maven base URL>` or
-`qualcomm_npu_aar: <path to the same AAR>`. Without the flag, `npu` with a
-generic bundle on Android falls back to GPU, then CPU, and the log says how to
-enable it; a bundle compiled for an NPU is refused with a
-`BackendInitException` that says the same.
+`qualcomm_npu_aar: <path to the same AAR>`. Without the flag, a bundle
+compiled for an NPU is refused with a `BackendInitException` that says how to
+enable it; a generic bundle never runs on the NPU, flag or not.
 
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino
@@ -166,10 +165,9 @@ against a pinned SHA-256, and caches them; about 90 MB more installed. Offline,
 download the zip yourself and add `qualcomm_npu_qairt_zip: <path>`. On the
 board, Qualcomm's FastRPC library has to be present (`qcom-fastrpc1` on Ubuntu;
 Qualcomm's images ship it) and the user has to be in group `fastrpc`
-(`sudo usermod -aG fastrpc $USER`, then log in again). Without either, `npu`
-with a generic bundle falls back to GPU, then CPU, and the log names what is
-missing; a bundle compiled for an NPU is refused with a `BackendInitException`
-that names it. Use the bundle compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
+(`sudo usermod -aG fastrpc $USER`, then log in again). Without either, a bundle
+compiled for an NPU is refused with a `BackendInitException` that names what is
+missing. Use the bundle compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
 x64 build ignores the flag.
 
 <Warning>
@@ -202,8 +200,9 @@ Because the safe context is a property of the compiled bundle, `maxTokens` is
 **not** clamped up to 1024 on the NPU attempt (it is on CPU and GPU — see below),
 so pass the `cache_length` the bundle was compiled for. Only a bundle compiled
 for an NPU runs on one. A generic bundle is never tried there: it has no NPU
-graph, and LiteRT-LM would compile it on the device, which no NPU stack here
-supports, and run it on the CPU while reporting `npu` (measured on a Galaxy
+graph, and LiteRT would try to compile it on the device with a compiler
+plugin, which no NPU stack here ships, and run it on the CPU while reporting
+`npu` (measured on a Galaxy
 S24), so `npu` falls back to GPU and then CPU for it, and the floor applies to
 those attempts. A bundle compiled for an NPU runs only on Windows, on Android
 phones with Qualcomm FastRPC, and on Qualcomm Linux arm64 boards that pass the
@@ -224,9 +223,10 @@ milliseconds for a 3 GB file — and decides from them:
 | The file | No `preferredBackend` | `preferredBackend` given |
 |---|---|---|
 | A generic bundle | GPU, then CPU | `gpu` / `cpu`: that backend, then the next; `npu`: not tried, since the bundle has no NPU graph (GPU, then CPU, with a notice; refused with `backendFallback: false`) |
-| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares |
+| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares, the NPU only when the bundle is compiled for one (a file that declares only the NPU and is not is refused) |
 | A bundle compiled for an NPU (`…_qualcomm_sm8750.litertlm`, …) | the NPU | `npu`: the NPU; `gpu` / `cpu`: refused |
 | A file shorter than its sections | refused: the download is incomplete | refused |
+| A `.litertlm` the reader cannot read (a newer container version, a malformed header) | GPU, then CPU | the request, then the fallback order, `npu` included: the rules from before the reader |
 
 An encoder left unset (`preferredVisionBackend`, `preferredAudioBackend`) runs
 where the file says: its declared `backend_constraint` (CPU when that allows

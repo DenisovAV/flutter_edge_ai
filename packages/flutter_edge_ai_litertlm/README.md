@@ -778,13 +778,13 @@ which the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
-`PreferredBackend.npu` is attempted only on Windows, on Android devices with
-Qualcomm FastRPC (`libcdsprpc.so`) and on Qualcomm Linux arm64 boards, the last
-two when the app opted in (below); elsewhere a generic bundle falls back to GPU,
-then CPU, and prints why, and a bundle compiled for an NPU is refused
-([Where a model runs](#where-a-model-runs)). On Windows the check is per OS, so
-a PC without an Intel NPU can report `activeBackend == npu` while the model runs
-elsewhere.
+`PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
+only on Windows, on Android devices with Qualcomm FastRPC (`libcdsprpc.so`) and
+on Qualcomm Linux arm64 boards, the last two when the app opted in (below). A
+generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
+for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
+Windows has no device probe: a bundle compiled for the Intel NPU is not refused
+on a PC without one, and what LiteRT does then is not measured.
 
 Run a Gemma 4 bundle on the NPU: a Gemma 3 bundle drops every prefill chunk
 after the first, with no error, and answers from the start of the prompt alone
@@ -806,9 +806,10 @@ milliseconds for a 3 GB file) and decides from them:
 | The file | No `preferredBackend` | `preferredBackend` given |
 |---|---|---|
 | A generic bundle | GPU, then CPU | `gpu` / `cpu`: that backend, then the next; `npu`: not tried, since the bundle has no NPU graph (GPU, then CPU, with a notice; refused with `backendFallback: false`) |
-| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares are tried |
+| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares are tried, the NPU only when the bundle is compiled for one (a file that declares only the NPU and is not is refused) |
 | A bundle compiled for an NPU (a `tf_lite_aux` section or a text model with a `LiteRtStamp`, e.g. `…_qualcomm_sm8750.litertlm`) | the NPU | `npu`: the NPU; `gpu`/`cpu`: refused, they cannot run it |
 | A file shorter than its sections | refused: the download is incomplete | refused |
+| A `.litertlm` the reader cannot read (a newer container version, a malformed header) | GPU, then CPU | the request, then the fallback order, `npu` included: the rules from before the reader |
 
 An encoder you leave unset (`preferredVisionBackend`, `preferredAudioBackend`)
 runs where the file says: its declared `backend_constraint` (the CPU when that
@@ -935,9 +936,10 @@ hooks:
 the same file as Maven's (same SHA-256). Without the flag, a bundle compiled for
 an NPU is refused with a `BackendInitException` whose one attempt says how to
 enable it ([Where a model runs](#where-a-model-runs)). A generic bundle never
-runs on the NPU, with or without the flag: it has no NPU graph, and LiteRT-LM
-would compile it on the device, which no NPU stack here supports, and run it on
-the CPU while reporting `npu` (measured on a Galaxy S24). So `npu` falls back to
+runs on the NPU, with or without the flag: it has no NPU graph, and LiteRT
+would try to compile it on the device with a compiler plugin, which no NPU stack
+here ships, and run it on the CPU while reporting `npu` (measured on a Galaxy
+S24). So `npu` falls back to
 GPU, then CPU, for it, and the log says why.
 
 **Linux arm64.** The same flag bundles the stack into Linux arm64 builds, for

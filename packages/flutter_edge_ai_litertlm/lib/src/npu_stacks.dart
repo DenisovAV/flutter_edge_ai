@@ -27,14 +27,20 @@ library;
 /// `verify_tarball_manifest.sh` REQUIRED, its system libraries as
 /// `<uses-native-library>` in the core plugin's AndroidManifest.xml (the
 /// probe's dlopen fails in the app's namespace without them), the core version
-/// floor in this package's pubspec when core's side changes, the docs, and the
-/// example's catalog enum (`EmbeddingNpuVendor`).
+/// floor in this package's pubspec when core's side changes, the docs, the
+/// example's catalog enum (`EmbeddingNpuVendor`), and the load plan's
+/// assumption that no stack ships a LiteRT compiler plugin
+/// (`_textBackendsAllowed` in `litertlm_load_plan.dart`): a vendor that ships
+/// one makes a generic bundle's on-device compile real, and its plugin then
+/// belongs in [npuStackLibs].
 ///
 /// Declaration order is the order in which a load whose bundle names no vendor
 /// tries the vendors of its ABI; a device is expected to reach at most one.
-/// LiteRT's dispatch is process-global: the first NPU load fixes the vendor and
-/// the dispatch directory for every later NPU load in the process
-/// (`IsTheApiInitialized`, litert/runtime/dispatch/litert_dispatch.cc).
+/// LiteRT's dispatch is process-global: the first NPU load that initializes it
+/// fixes the vendor and the dispatch directory for every later NPU load in the
+/// process (`IsTheApiInitialized`, litert/runtime/dispatch/litert_dispatch.cc;
+/// a failed init fixes nothing). It is per copy of LiteRT: another plugin's
+/// `libLiteRt` (flutter_litert) keeps its own.
 enum NpuVendor {
   /// Qualcomm Hexagon through QNN, in apps that opt in with
   /// [qualcommNpuUserDefine].

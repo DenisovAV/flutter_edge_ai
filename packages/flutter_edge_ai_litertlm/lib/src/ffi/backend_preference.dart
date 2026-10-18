@@ -55,13 +55,14 @@ String? npuUnreachable(
       'NpuVendor.qualcomm has no device probe for $operatingSystem',
     ),
   },
-  // Windows has no probe yet, and that is known to be too coarse. Measured
-  // 2026-09-27 on a Windows Server VM with no NPU (Xeon + T4): a generic
-  // Gemma 4 E2B requested on npu passed `engine_create`, answered correctly
-  // and reported `npu` — faster than explicit cpu, so it ran somewhere else.
-  // Its positive arm can only be verified on Intel NPU silicon, and a probe
-  // guessed without that could switch off the NPU on the machines that have
-  // one.
+  // Windows has no probe yet. What a bundle compiled for the Intel NPU does on
+  // a PC without one is not measured. The run that once argued the check is
+  // too coarse (2026-09-27, a Windows Server VM with no NPU: a generic Gemma 4
+  // E2B on npu passed `engine_create` and reported `npu`) was a generic bundle
+  // on LiteRT-LM's compiler-plugin path, which runs it on the CPU, and such a
+  // bundle is no longer tried on the NPU. A probe can only be verified on
+  // Intel NPU silicon, and one guessed without it could switch off the NPU on
+  // the machines that have one.
   NpuVendor.intel => switch (operatingSystem) {
     'windows' => null,
     _ => throw StateError(

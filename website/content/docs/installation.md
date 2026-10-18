@@ -302,9 +302,9 @@ hooks:
 ```
 
 The build hook then fetches the runtime — from Maven Central for Android, from
-Qualcomm's QAIRT SDK for Linux arm64 boards. Without the flag `npu` with a
-generic bundle falls back to GPU, then CPU; a bundle compiled for an NPU is
-refused with a `BackendInitException` that says why. See
+Qualcomm's QAIRT SDK for Linux arm64 boards. Without the flag a bundle
+compiled for an NPU is refused with a `BackendInitException` that says why; a
+generic bundle never runs on the NPU, flag or not. See
 [LiteRT-LM](/docs/litertlm).
 
 **ProGuard/R8 (only if you use `flutter_edge_ai_mediapipe`):** the package ships

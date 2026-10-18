@@ -9,7 +9,8 @@ abstract base class EmbeddingPass
   method Future<EmbeddingPassInfo> load() abstract
 
 final class EmbeddingPassInfo
-  constructor const EmbeddingPassInfo({required int dimension, Set<EmbeddingModality> modalities = const {EmbeddingModality.text}, int? maxInputTokens, Set<EncodedMediaFormat> imageFormats = const {}, Set<EncodedMediaFormat> audioFormats = const {}, bool combinedInputs = false, int? visionTokensPerImage})
+  constructor const EmbeddingPassInfo({required int dimension, Set<EmbeddingModality> modalities = const {EmbeddingModality.text}, int? maxInputTokens, Set<EncodedMediaFormat> imageFormats = const {}, Set<EncodedMediaFormat> audioFormats = const {}, bool combinedInputs = false, int? visionTokensPerImage, PreferredBackend? activeBackend})
+  field final PreferredBackend? activeBackend
   field final Set<EncodedMediaFormat> audioFormats
   field final bool combinedInputs
   field final int dimension
@@ -55,6 +56,7 @@ abstract base class EmbeddingBackendProvider
   constructor const EmbeddingBackendProvider()
   getter String name abstract
   getter int priority
+  method PreferredBackend? cacheBackend(PreferredBackend? requested)
   method bool canHandle(EmbeddingModelSpec spec) abstract
   method Future<EmbeddingPassDescriptor<Object>> describe(EmbeddingModelSpec spec, RuntimeConfig config) abstract
 

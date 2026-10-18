@@ -112,7 +112,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     );
     return CommonEmbeddingModel._(
       running,
-      activeBackend: descriptor.activeBackend,
+      activeBackend: running.info.activeBackend ?? descriptor.activeBackend,
       engine: descriptor.engineTag,
       label: label,
       installedFiles: installedFiles,

@@ -84,6 +84,29 @@ void main() {
       );
     });
 
+    for (final filename in ['eg2.gguf', 'EG2.GGUF']) {
+      test('$filename installs alone, restores, and refuses a tokenizer', () {
+        final spec = _bundle(url: 'https://h/opaque', modelFilename: filename);
+        expect(spec.isSelfContained, isTrue);
+        expect(spec.files.single.filename, filename);
+        final record = ActiveEmbeddingIdentityRecord.fromSpec(spec);
+        expect(record.schemaVersion, 2);
+        expect(
+          ActiveEmbeddingIdentityRecord.tryDecode(record.encode())!.toSpec(),
+          spec,
+        );
+        expect(
+          () => EmbeddingModelSpec(
+            name: 'gguf',
+            modelSource: ModelSource.network('https://h/opaque'),
+            modelFilename: filename,
+            tokenizerSource: ModelSource.network('https://h/t.model'),
+          ),
+          throwsArgumentError,
+        );
+      });
+    }
+
     test('any other model without a tokenizer is refused', () {
       expect(
         () => EmbeddingModelSpec(

@@ -4,6 +4,7 @@
 // inside `EmbedderCache.serialize`, so resolving paths, deciding on reuse and
 // building stay one indivisible step on every platform.
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart'
@@ -18,7 +19,7 @@ import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 import 'common_embedding_model.dart';
-import 'embedder_backend_notice.dart' show noticeEmbedderNpuNotApplied;
+import 'embedder_backend_notice.dart';
 import 'embedder_cache.dart';
 import 'embedding_exceptions.dart';
 import 'embedding_modality.dart';
@@ -102,6 +103,29 @@ Future<EmbeddingModel> loadActiveEmbedder({
     '${tokenizerPath == null ? '' : ', tokenizer: $tokenizerPath'}',
   );
 
+  final backends = EmbeddingRegistry.instance;
+  final backend = backends.findFor(active);
+  if (backend == null) {
+    throw StateError(
+      backends.hasAny
+          ? 'No registered embedding backend can run '
+                '${active.files.first.filename}. Registered backends: '
+                '${backends.registered.map((b) => b.name).join(', ')}.'
+          : 'No embedding backend registered. Add flutter_edge_ai_litertlm '
+                'to pubspec.yaml and pass LiteRtEmbeddingBackend() in '
+                'embeddingBackends: of FlutterEdgeAi.initialize(...).',
+    );
+  }
+  // These notices describe legacy providers only. GPU-capable providers
+  // preserve the request and report their actual accelerator after loading.
+  if (backend.cacheBackend(PreferredBackend.gpu) == PreferredBackend.cpu) {
+    if (kIsWeb) {
+      noticeWebEmbedderBackendIgnored(preferredBackend);
+    } else {
+      noticeEmbedderBackendIgnored(preferredBackend);
+    }
+  }
+
   // Steps 2–3: the cache decides — reuse, or what to build (widened media) —
   // and, for a build, the backend describes the pass BEFORE the cached
   // embedder is closed. A request the backend refuses (media an engine has no
@@ -113,7 +137,8 @@ Future<EmbeddingModel> loadActiveEmbedder({
   final requested = ActiveEmbedderParams(
     modelPath: modelPath,
     tokenizerPath: tokenizerPath,
-    preferredBackend: preferredBackend,
+    preferredBackend: backend.cacheBackend(preferredBackend),
+    normalizeBackend: false,
     media: {
       if (supportImage) EmbeddingModality.image,
       if (supportAudio) EmbeddingModality.audio,
@@ -130,7 +155,20 @@ Future<EmbeddingModel> loadActiveEmbedder({
           'installed. Install it again with `FlutterEdgeAi.installEmbedder()`.',
         );
       }
-      described = await _describe(active, build, preferredBackend);
+      final config = RuntimeConfig(
+        maxTokens: 0,
+        modelPath: build.modelPath,
+        tokenizerPath: build.tokenizerPath,
+        preferredBackend: preferredBackend,
+        supportImage: build.media.contains(EmbeddingModality.image),
+        supportAudio: build.media.contains(EmbeddingModality.audio),
+      );
+      described = await _asLoadFailure(
+        backend.name,
+        'could not describe a pass for',
+        build.modelPath,
+        () => backend.describe(active, config),
+      );
     },
   );
   final reused = decision.reuse;
@@ -184,44 +222,6 @@ Future<EmbeddingModel> loadActiveEmbedder({
     cache.invalidate();
     rethrow;
   }
-}
-
-/// Finds the backend for [spec] and has it describe the pass for [build]
-/// ([preferredBackend] is the raw request, which [build] does not keep):
-/// nothing loaded, nothing closed. Refusals surface here, before any isolate
-/// exists.
-Future<EmbeddingPassDescriptor<Object>> _describe(
-  EmbeddingModelSpec spec,
-  ActiveEmbedderParams build,
-  PreferredBackend? preferredBackend,
-) async {
-  final backends = EmbeddingRegistry.instance;
-  final backend = backends.findFor(spec);
-  if (backend == null) {
-    throw StateError(
-      backends.hasAny
-          ? 'No registered embedding backend can run '
-                '${spec.files.first.filename}. Registered backends: '
-                '${backends.registered.map((b) => b.name).join(', ')}.'
-          : 'No embedding backend registered. Add flutter_edge_ai_litertlm '
-                'to pubspec.yaml and pass LiteRtEmbeddingBackend() in '
-                'embeddingBackends: of FlutterEdgeAi.initialize(...).',
-    );
-  }
-  final config = RuntimeConfig(
-    maxTokens: 0,
-    modelPath: build.modelPath,
-    tokenizerPath: build.tokenizerPath,
-    preferredBackend: preferredBackend,
-    supportImage: build.media.contains(EmbeddingModality.image),
-    supportAudio: build.media.contains(EmbeddingModality.audio),
-  );
-  return _asLoadFailure(
-    backend.name,
-    'could not describe a pass for',
-    build.modelPath,
-    () => backend.describe(spec, config),
-  );
 }
 
 /// Runs a backend's [step]; anything it throws other than an

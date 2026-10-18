@@ -57,7 +57,13 @@ final class EmbeddingPassInfo {
     this.audioFormats = const {},
     this.combinedInputs = false,
     this.visionTokensPerImage,
+    this.activeBackend,
   });
+
+  /// Accelerator reported by the loaded runtime. When null, core retains
+  /// the descriptor's answer, preserving providers that know it in advance.
+  /// A provider that cannot know until load should set the descriptor to null.
+  final PreferredBackend? activeBackend;
 
   /// Length of every vector [EmbeddingPass.embed] returns. Must be > 0.
   final int dimension;
@@ -94,7 +100,7 @@ final class EmbeddingPassInfo {
       'EmbeddingPassInfo(dimension: $dimension, modalities: $modalities, '
       'maxInputTokens: $maxInputTokens, imageFormats: $imageFormats, '
       'audioFormats: $audioFormats, combinedInputs: $combinedInputs, '
-      'visionTokensPerImage: $visionTokensPerImage)';
+      'visionTokensPerImage: $visionTokensPerImage, activeBackend: $activeBackend)';
 }
 
 /// Everything core needs to build an engine's [EmbeddingPass], with the

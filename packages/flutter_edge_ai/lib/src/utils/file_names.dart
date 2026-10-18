@@ -24,6 +24,12 @@ bool isLiteRtLmFilename(String filename) {
   return true;
 }
 
+/// Internal install predicate: these containers include their own tokenizer.
+/// The resolved install filename decides, including an explicit filename for
+/// an opaque URL. This does not select an embedding backend.
+bool isSelfContainedEmbeddingFilename(String filename) =>
+    isLiteRtLmFilename(filename) || filename.toLowerCase().endsWith('.gguf');
+
 /// A filesystem-safe, single-segment directory name for a directory model
 /// (ORT-GenAI) installed from the Hugging Face repo [repo], optionally from its
 /// execution-provider subfolder [variant].

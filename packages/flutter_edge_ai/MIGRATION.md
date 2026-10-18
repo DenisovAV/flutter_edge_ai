@@ -1,3 +1,15 @@
+## 2.5.0 — self-contained embedding engines
+
+Embedding specs now accept `.gguf` without a separate tokenizer. Declare an
+explicit `.gguf` install filename when the source URL has no extension. Existing
+`.litertlm` and model/tokenizer pairs keep their identity schemas and behavior.
+
+Engine authors can override `EmbeddingBackendProvider.cacheBackend(requested)`
+to distinguish CPU, GPU and automatic selection. The default retains the previous
+CPU/NPU cache rule. Return the actual accelerator from
+`EmbeddingPassInfo(activeBackend:)` once loaded; null retains the descriptor's
+answer. These additions do not change existing provider implementations.
+
 # Migration guide
 
 ## `flutter_edge_ai_agent` 0.4.0: `schedule_notification` is opt-in

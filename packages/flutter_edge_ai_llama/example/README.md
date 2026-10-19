@@ -26,7 +26,7 @@ check; larger compatible instruction-tuned GGUFs can produce better answers.
 
 Use `flutter devices` to find an Android/iOS device ID. For Linux/Windows,
 replace `macos` with `linux`/`windows` on that host. Apple SwiftPM is already
-configured. Deployment floors: iOS 16.4, macOS 14, Android API 24.
+configured. Deployment floors: iOS 16.4, macOS 14, Android API 28.
 Android/Linux/Windows package CPU libraries; Apple can use CPU/Metal depending
 on the loaded runtime. The backend badge reports what the runtime exposes.
 

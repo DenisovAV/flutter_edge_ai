@@ -110,9 +110,10 @@ class _ChatPageState extends State<ChatPage> {
         // And the switch that turns the machinery on. `tools` without this is
         // the quiet failure worth knowing about: `InferenceChat` logs
         // "Model does not support function calls, but tools were provided.
-        // Tools will be ignored", never renders the declarations, and the
-        // model answers every question out of its own head — fluently, and
-        // with arithmetic it made up.
+        // Tools will be ignored", but on a `.litertlm` the declarations still
+        // reach LiteRT-LM and the model may still call. Nothing reads the
+        // call: it lands in the bubble as raw `tool_calls` JSON, and
+        // `runMultiply` never runs.
         supportsFunctionCalls: true,
         maxOutputTokens: 256,
       );

@@ -64,9 +64,12 @@ engine or store fails to compile against 2.3.0.
 
 </Warning>
 
-**flutter_edge_ai_sqlite** needs Flutter 3.47 or later. On Web, embeddings
-and SQLite RAG need files copied into your app's **web/** — the LiteRT.js loader
-and **rag/sqlite3.wasm**; see [Installation → Web](/docs/installation#web).
+**flutter_edge_ai_sqlite** needs Flutter 3.47 or later. On Web, `.tflite`
+embeddings and SQLite RAG need files copied into your app's **web/** — the
+LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
+`@litert-lm/core` module script, with its **window.EmbeddingEngine** line, in
+`web/index.html`; see
+[Installation → Web](/docs/installation#web).
 
 ## Embedding models
 
@@ -122,9 +125,12 @@ final vector = await embedder.embed(
   `web/index.html` ([Installation](/docs/installation#web)).
 - **Text on every bundle, images on the 440m and the 740m, audio on the
   740m.** On the 270m, **getActiveEmbedder(supportImage: true)** throws
-  **EmbeddingLoadException** naming the 440m bundle, and on the 270m and the
-  440m **supportAudio: true** throws naming the 740m — read from the bundle's
-  own header before any engine or cache is made, on the Web too.
+  **EmbeddingLoadException** naming the 440m bundle — natively from the
+  bundle's model info before any engine or cache is made; on the Web the
+  engine create refuses it, and the message suggests the 440m.
+  On the 270m and the 440m **supportAudio: true** throws naming the 740m —
+  read from the bundle's own header before any engine or cache is made, on
+  the Web too.
 - **At most 1024 tokens per input**, task prefix, BOS and EOS included
   (**maxInputTokens** is 1024). Keep chunks at 512 tokens or fewer: memory
   grows with the input length — on an M4 Pro Mac about +170 MB at 128 tokens,
@@ -259,7 +265,8 @@ the Web, where the browser decodes (CanvasKit or skwasm) on the page itself.
   **EmbeddingEngineException** (native code 3; on the Web the message carries
   the runtime's reason) and the embedder keeps working.
   One image per vector, unless you send several as one combined input
-  (natively, litertlm 1.13.1; [below](#embeddinggemma-2-audio-and-combined-inputs)).
+  (natively from litertlm 1.13.1, on the Web from 1.13.2;
+  [below](#embeddinggemma-2-audio-and-combined-inputs)).
 - **Vision budget:** 140 tokens per image by default, the closest to the
   reference model (min cos 0.985 on our test images).
   **LiteRtEmbeddingBackend(visionTokensPerImage: 70)** — what the model card
@@ -500,7 +507,8 @@ EmbeddingGemma 2 per-SoC bundles, which run on a Qualcomm NPU
 ([above](#embeddinggemma-2-on-an-intel-npu)). On Web the `.tflite` and ONNX
 paths try WebGPU and can fall back to WASM; EmbeddingGemma 2 runs on WebGPU
 only, with no fallback. **preferredBackend** reaches the embedder only as
-**npu** for the per-SoC bundles; otherwise it is not applied. Inspect
+**npu** for the per-SoC bundles; **npu** on a generic EmbeddingGemma 2 bundle
+throws **EmbeddingLoadException**, and any other request is not applied. Inspect
 **EmbeddingModel.activeBackend** when the selected backend matters.
 
 ## Embedding API
@@ -530,9 +538,12 @@ print('${embedder.dimension} dimensions, up to ${embedder.maxInputTokens} tokens
   included — is never truncated: it fails with
   **EmbeddingInputTooLongException**. A null **maxInputTokens** means the
   loaded pass cannot establish an effective limit; it does not mean unlimited.
-- Every error arrives as a failed future and is an **EmbeddingException**: a
-  closed model gives **EmbedderClosedException**, a model that cannot load
-  **EmbeddingLoadException**.
+- Every error of **embed** and **embedAll** arrives as a failed future and is
+  an **EmbeddingException**: a closed model gives **EmbedderClosedException**.
+  **getActiveEmbedder()** fails with **EmbeddingLoadException** for a model
+  that cannot load, and with **StateError** when no embedder is installed or
+  no registered backend can run it. An **EmbeddingInput** with no part or
+  empty bytes throws **ArgumentError** when it is built.
 - **generateEmbedding**, **generateEmbeddings** and **getDimension** still
   compile as deprecated forwarders and are removed in 2.5.0.
 
@@ -765,7 +776,7 @@ The shutdown order is therefore:
 ```dart
 await index.flush();
 await index.dispose();
-await FlutterEdgeAi.dispose(); // or dispose the custom embedder
+await embedder.close(); // the EmbeddingModel from getActiveEmbedder(), or your custom embedder
 ```
 
 Keep one app-owned index per persistent location. Make opening single-flight and

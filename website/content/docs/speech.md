@@ -65,7 +65,7 @@ await FlutterEdgeAi.installStt()
       'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite',
     )
     .tokenizerFromNetwork(
-      'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
+      'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
     )
     .ofType(SttModelType.moonshine)
     .install();
@@ -168,13 +168,15 @@ codec-LM (`litert-community/Qwen3-TTS-12Hz-0.6B-Base`, ~1.9 GB) that speaks 10
 languages plus `'auto'` detection, picked with `getActiveTts(language:)`. Unlike
 STT, the language is fixed when the synthesizer is created — `synthesize()` takes
 no language — and `getActiveTts` returns a singleton, so asking it for a different
-language throws `StateError` until you `close()` the current one. Same
+language throws `StateError` until you `close()` the current one (Matcha and
+Inflect ignore the language, but this check applies to them too). Same
 install/synthesize API as Matcha, but heavier: CPU-only, 24 kHz output, RTF≈3
 (~3 s of compute per 1 s of audio), and needs a 6 GB-RAM-class device.
 
 ```dart
+// A pinned revision: the repo's main branch has moved these files to legacy/.
 await FlutterEdgeAi.installTts()
-    .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/')
+    .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/')
     .ofType(TtsModelType.qwen3)
     .install();
 
@@ -280,6 +282,11 @@ await for (final event in session.runTurn(pcm16kMono)) {
   }
 }
 ```
+
+A failed stage — transcribe, generate or synthesize — arrives as a stream
+error, so the `await for` throws: wrap it in `try`/`catch`. `VoiceErrorEvent`
+is reserved in this release and never emitted; its `case` is there because the
+switch must be exhaustive.
 
 `VoiceSession` owns no microphone or player — the app captures and plays PCM
 itself, same as the STT/TTS sections above. For barge-in, call

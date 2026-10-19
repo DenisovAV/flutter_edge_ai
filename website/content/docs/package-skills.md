@@ -47,14 +47,18 @@ them for the assistant it detects in the project:
 | any other | `generic` | `.agents/skills/` |
 
 Detection looks for the assistant's directory in the project root. When there is
-none yet, the CLI stops with *Could not auto-detect agent* — name the assistant:
+none yet, the CLI asks which assistants to install for (*Unable to auto-detect
+agent. Please select one or more*); it stops with *Could not auto-detect agent
+and none selected* only without a terminal or when you select nothing. To skip
+the question, name the assistant with `--agent` (or the `SKILLS_AGENT`
+environment variable):
 
 ```
 dart run skills@ get --all --agent claude
 ```
 
 Copilot is never auto-detected, because `.github/` serves many other purposes,
-so it always needs `--agent copilot`. `--all` installs everything without
+so it needs `--agent copilot`, or picking it when the CLI asks. `--all` installs everything without
 asking; `--skill <name>` installs only the skills you name, and can be repeated. The CLI records what it
 installed in `.config/dart_skills/skills_config.json`.
 

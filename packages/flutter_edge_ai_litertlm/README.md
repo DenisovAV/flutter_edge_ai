@@ -276,9 +276,11 @@ final vector = await embedder.embed(
   740m.** Natively all from 1.13.1; on the web text and images from 1.13.1,
   audio and combined inputs from 1.13.2. On the 270m,
   `getActiveEmbedder(supportImage: true)` fails with `EmbeddingLoadException`
-  naming the 440m bundle, and on the 270m and the 440m `supportAudio: true`
-  fails naming the 740m — read from the bundle's own header before any engine
-  or cache is made, on the web too (a few KB of the installed file).
+  naming the 440m bundle — natively from the bundle's ModelInfo before any
+  engine or cache is made, on the web when `EmbeddingEngine.create` refuses it.
+  On the 270m and the 440m `supportAudio: true` fails naming the 740m — read
+  from the bundle's own header before any engine or cache is made, on the web
+  too (a few KB of the installed file).
 - **At most 1024 tokens per input**, task prefix, BOS and EOS included
   (`maxInputTokens == 1024`). Keep chunks at 512 tokens or fewer: memory grows
   with the input length (on an M4 Pro Mac about +170 MB at 128 tokens, +340 MB
@@ -676,7 +678,7 @@ version in `LiteRtWebRuntime.pinnedVersion`.
 
 ### The WASM runtime
 
-LiteRT.js loads a WASM runtime at the first embedding call —
+LiteRT.js loads a WASM runtime when the embedder loads (`getActiveEmbedder()`) —
 `litert_wasm_internal.js`, or `litert_wasm_compat_internal.js` on a browser
 without relaxed SIMD, each with a ~9 MB `.wasm` beside it. Since
 `flutter_gemma_litertlm` 1.8.0 they come from the pinned `@litertjs/core` build on jsDelivr by default — nothing to
@@ -684,7 +686,7 @@ install, and nothing this package has to carry into every native-only app.
 
 To serve them yourself (offline, an air-gapped deploy, or a CSP that forbids
 third-party script), copy `node_modules/@litertjs/core/wasm/` into your app's
-`web/wasm/` and point the package at it before the first embedding:
+`web/wasm/` and point the package at it before the first embedder loads:
 
 ```dart
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -695,7 +697,7 @@ LiteRtWebRuntime.wasmPath = '/wasm/';
 Those files come from `@litertjs/core` — `npm i @litertjs/core@2.5.3` in a
 scratch directory, then copy its `wasm/`.
 
-Set the prefix before the first embedding — the runtime is loaded once and
+Set the prefix before the first `getActiveEmbedder()` — the runtime is loaded once and
 cached, so a later assignment is ignored. LiteRT.js inserts the separator when
 it joins the prefix with the file name, so the trailing slash above is
 convention, not a requirement; the value is root-absolute, and an app served
@@ -704,7 +706,7 @@ under a base href other than `/` needs `/my-app/wasm/` or a full URL.
 Pin `@litertjs/core` to `LiteRtWebRuntime.pinnedVersion` if you vendor it. The
 runtime and this package's `web/litert.js` are two halves of one release —
 `litert.js` calls that release's WASM entry points by name — and a mismatch
-fails at the first embedding with something that does not mention versions at
+fails when the embedder loads with something that does not mention versions at
 all: a runtime older than the glue gives
 `Cannot read properties of undefined (reading 'create')`.
 
@@ -782,7 +784,8 @@ which the first model load fails with
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
-only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later, on
+only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later (not a
+`BP2A` build), on
 Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux
 arm64 boards; the Tensor and Qualcomm paths only in apps that opted in (below). A
 generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
@@ -1065,18 +1068,20 @@ precision.
 
 ### `Qwen3-0.6B.litertlm` fails to load
 
-Symptom: since 1.7.0 the engine fails to create for `Qwen3-0.6B.litertlm` from
+Symptom: the engine fails to create for `Qwen3-0.6B.litertlm` from
 [litert-community/Qwen3-0.6B](https://huggingface.co/litert-community/Qwen3-0.6B),
 with `piece must not include null character` in the native error.
 
-Cause: the SentencePiece version in LiteRT-LM since v0.17.0 rejects one piece
-of that bundle's tokenizer
+Cause: the SentencePiece version in LiteRT-LM since v0.17.0 (this package's
+1.7.0) rejects one piece of that bundle's old tokenizer
 ([LiteRT-LM #3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865)).
-Only this file is affected; Qwen3 0.6B itself works.
+On 2026-10-13 at 15:53 UTC the repository replaced the tokenizer
+([e6687177](https://huggingface.co/litert-community/Qwen3-0.6B/commit/e6687177)); the file downloaded since loads (measured on macOS with
+1.15.0). A copy downloaded earlier keeps the old tokenizer under the same name.
 
-Fix: install `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from the same
-repository instead (measured working on `native-v0.18.0-e`). See
-[#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659).
+Fix: uninstall the model and install it again, or install
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from the same repository (measured
+working on `native-v0.18.0-e`). See [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659).
 
 ### Linux: any tool call aborts the app (fixed in 1.11.1)
 

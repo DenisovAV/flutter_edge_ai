@@ -24,7 +24,7 @@ const _models = [
   _ModelData(
     name: 'Gemma 4 E2B',
     bestFor: 'Next-gen multimodal — text, image & audio',
-    size: '2.4 GB',
+    size: '2.6 GB',
     fc: true,
     thinking: true,
     vision: true,
@@ -32,7 +32,7 @@ const _models = [
   _ModelData(
     name: 'Gemma 4 E4B',
     bestFor: 'Next-gen multimodal — higher capacity',
-    size: '4.3 GB',
+    size: '3.7 GB',
     fc: true,
     thinking: true,
     vision: true,
@@ -40,14 +40,14 @@ const _models = [
   _ModelData(
     name: 'Gemma3n E2B/E4B',
     bestFor: 'Multimodal chat — image & audio; function calling on E4B .litertlm',
-    size: '3–6 GB',
+    size: '3.1–4.9 GB',
     fc: true,
     vision: true,
   ),
   _ModelData(
     name: 'FastVLM 0.5B',
     bestFor: 'Fast vision-language on desktop',
-    size: '0.5 GB',
+    size: '1.2 GB',
     vision: true,
   ),
   _ModelData(
@@ -95,7 +95,7 @@ const _models = [
   _ModelData(
     name: 'SmolLM 135M',
     bestFor: 'Ultra-compact for edge devices',
-    size: '135 MB',
+    size: '167 MB',
   ),
 ];
 

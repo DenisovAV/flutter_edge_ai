@@ -48,8 +48,10 @@ See [Agent → Setup](/docs/agent#setup).
 | `EmbeddingModel.getDimension()` | `dimension` |
 | `InferenceModelSpec.fromLegacyUrl(name:, modelUrl:, loraUrl:)` | `InferenceModelSpec(name: …, modelSource: …, loraSource: …, modelType: …)` |
 
-The removed embedding methods embedded as `TaskType.retrievalQuery`; pass it to
-keep their vectors. For `fromLegacyUrl`, use the `ModelSource` that matches the
+The removed embedding methods embedded as `TaskType.retrievalQuery` unless
+given a `taskType:`; pass the same task to keep their vectors.
+`genkit_flutter_edge_ai` 0.9.0 and older call `generateEmbeddings` and do not
+compile against 2.5.0: upgrade it to 0.9.1 or later. For `fromLegacyUrl`, use the `ModelSource` that matches the
 URL: `ModelSource.network(url)` for `http(s)://`, `ModelSource.asset(path)` for
 `asset://` or a bare path, `ModelSource.bundled(name)` for `native://`,
 `ModelSource.file(path)` for `file://`. The factory defaulted to

@@ -508,8 +508,8 @@ print('${embedder.dimension} dimensions, up to ${embedder.maxInputTokens} tokens
 - Every error arrives as a failed future and is an **EmbeddingException**: a
   closed model gives **EmbedderClosedException**, a model that cannot load
   **EmbeddingLoadException**.
-- **generateEmbedding**, **generateEmbeddings** and **getDimension** still
-  compile as deprecated forwarders and are removed in 2.5.0.
+- **generateEmbedding**, **generateEmbeddings** and **getDimension** were
+  removed in 2.5.0; see [Migration](/docs/migration).
 
 ## RAG with the active core embedder
 

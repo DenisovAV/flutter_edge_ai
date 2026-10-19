@@ -1,9 +1,5 @@
-// EmbeddingModel's defaulted members and its deprecated forwarders (R5 §2.1):
-// what a test fake gets for free, and that the 2.1 methods are exactly the new
-// ones under their old names.
-
-// The forwarders are deprecated; calling them is what this file tests.
-// ignore_for_file: deprecated_member_use_from_same_package
+// EmbeddingModel's defaulted members (R5 §2.1): what a test fake gets for
+// free.
 
 import 'dart:async';
 

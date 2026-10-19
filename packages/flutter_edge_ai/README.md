@@ -24,10 +24,11 @@ runtimes and stores your app uses.
 
 ## Features
 
-- **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
+- **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, llama.cpp (`.gguf`), and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
 - **Multimodal:** image and audio input on the models that support it.
 - **Function calling** and **thinking mode** on the models that support them.
-- **CPU, GPU and NPU** backends — Qualcomm NPU on Android and Linux arm64 (opt-in), Intel NPU on Windows.
+- **CPU, GPU and NPU** backends — Qualcomm on Android and Linux arm64 and
+  Google Tensor on Android (both opt-in), and Intel on Windows.
 - **Embeddings and on-device RAG:** text, image and audio embeddings (EmbeddingGemma 2 and 1, Gecko, ONNX models — [models](https://flutteredge.ai/docs/models)) with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.
@@ -42,7 +43,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 |---|---|
 | Run any `.litertlm` model, and LiteRT embeddings | [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm) |
 | Run `.task` / `.bin` models (MediaPipe; mobile and web; maintenance-only upstream, prefer `.litertlm`) | [`flutter_edge_ai_mediapipe`](https://pub.dev/packages/flutter_edge_ai_mediapipe) |
-| Run GGUF models through llama.cpp (unreleased contribution) | [`flutter_edge_ai_llama`](https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_llama) |
+| Run GGUF models through llama.cpp | [`flutter_edge_ai_llama`](https://pub.dev/packages/flutter_edge_ai_llama) |
 | Run ONNX models — text generation and embeddings | [`flutter_edge_ai_onnx`](https://pub.dev/packages/flutter_edge_ai_onnx) |
 | Use the model built into the OS or browser | [`flutter_edge_ai_builtin_ai`](https://pub.dev/packages/flutter_edge_ai_builtin_ai) |
 | Tokenizers for text embeddings (needed for `.tflite` / `.onnx` embedders; an EmbeddingGemma 2 `.litertlm` carries its own) | [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) |
@@ -59,11 +60,14 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 | LiteRT-LM (`.litertlm`) | ✅ | ✅ | ⚠️ preview ¹ | ✅ | ✅ | ✅ |
 | MediaPipe (`.task`) | ✅ | ✅ ² | ✅ | — | — | — |
 | ONNX Runtime | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| llama.cpp (`.gguf`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ³ |
 | Built-in AI | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
 ¹ Web `.litertlm` takes text input only — an image or audio message throws `UnsupportedError`; function calling and thinking work.
 
 ² CPU only: a GPU `.task` does not load on iOS; use a `.litertlm` for the iOS GPU.
+
+³ Through llamadart; CI covers the CPU lifecycle — see its [qualification matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md).
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
@@ -74,8 +78,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_litertlm: ^1.14.0   # or any other engine from the table
+  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai_litertlm: ^1.15.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with

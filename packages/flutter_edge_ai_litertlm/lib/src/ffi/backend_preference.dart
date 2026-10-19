@@ -7,18 +7,14 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../litert_lm_load_errors.dart';
+import '../npu_stacks.dart';
 
 export '../litert_lm_load_errors.dart'
     show BackendInitAttemptFailure, BackendInitException;
 
-/// Whether this host ships an NPU dispatch stack at all.
-///
-/// Three can: Android and Linux arm64 carry the Qualcomm QNN stack and Windows
-/// carries Intel's (`LiteRtDispatch.dll` + OpenVino + TBB). Nothing ships for
-/// macOS or iOS. On Android and Linux the stack is opt-in per app
-/// (`qualcomm_npu`), so `LiteRtLmEngine.createModel` first asks
-/// NativeAssetsManifest.json whether this build bundled it and only then lets
-/// this probe decide.
+/// Why this device cannot run [vendor]'s NPU stack on [operatingSystem], or
+/// null when it can — the vendor's device probe, through [probes], worded for
+/// the person who has to fix it.
 ///
 /// This gate exists because `backend: "npu"` is a string the native runtime
 /// accepts WITHOUT complaint on a host that cannot honour it. Since
@@ -28,25 +24,98 @@ export '../litert_lm_load_errors.dart'
 /// `InferenceModel.activeBackend` promises to "reflect any fallback the plugin
 /// performed internally", so that was a false report: a benchmark asking for
 /// NPU attributed its CPU or GPU numbers to an NPU the machine does not have.
+/// Hosts with no vendor at all never get here ([npuNoVendorReason]).
 ///
-/// Windows is still gated per OS, and that is known to be too coarse.
-/// Measured 2026-09-27 on a Windows Server VM with no NPU (Xeon + T4): a
-/// generic Gemma 4 E2B requested on npu passed `engine_create`, answered
-/// correctly and reported `npu` — faster than explicit cpu, so it ran
-/// somewhere else. Android got a hardware probe ([_androidHasFastRpc]);
-/// Windows has none yet because its positive arm can only be verified on
-/// Intel NPU silicon, and a probe guessed without that could switch off the
-/// NPU on the machines that have one.
-bool get hostShipsNpuDispatch {
-  final os = Platform.operatingSystem;
-  // `&&`, so the probe runs on Android only. As a plain argument it was
-  // evaluated on every host that asked for npu: a dlopen of a Qualcomm library
-  // on macOS, Linux and iOS, and on Windows a LoadLibrary that walks PATH.
-  return npuDispatchShipsFor(
-    os,
-    androidHasFastRpc: os == 'android' && _androidHasFastRpc,
-    linuxHasQualcommNpu: os == 'linux' && _linuxHasQualcommNpu,
-  );
+/// Each vendor names its probe per operating system, and an operating system
+/// it has no probe for is a programming error: [NpuVendor.abis] decides where
+/// a vendor is asked about at all, so a host added there without a probe here
+/// fails at once instead of borrowing another platform's answer.
+///
+/// Split from the probes ([NpuProbes]) because `Platform.operatingSystem` has
+/// no override seam — `dart:io`'s `IOOverrides` covers files, directories and
+/// sockets, not the platform — so the Android and Windows arms are otherwise
+/// unreachable from a `flutter test` run on a Mac.
+String? npuUnreachable(
+  NpuVendor vendor,
+  String operatingSystem,
+  NpuProbes probes,
+) => switch (vendor) {
+  NpuVendor.qualcomm => switch (operatingSystem) {
+    'android' => switch (probes.androidFastRpc()) {
+      null => null,
+      final error =>
+        'this device has no Qualcomm FastRPC ($qualcommAndroidFastRpcLib did '
+            'not open: $error), so the bundled NPU stack cannot run here',
+    },
+    'linux' => switch (probes.linuxQualcommNpu()) {
+      null => null,
+      final error => 'the bundled Qualcomm NPU stack cannot run here: $error',
+    },
+    _ => throw StateError(
+      'NpuVendor.qualcomm has no device probe for $operatingSystem',
+    ),
+  },
+  NpuVendor.googleTensor => switch (operatingSystem) {
+    'android' => switch (probes.androidGoogleTensorRuntime()) {
+      null => null,
+      final error => 'the Google Tensor NPU cannot run here: $error',
+    },
+    _ => throw StateError(
+      'NpuVendor.googleTensor has no device probe for $operatingSystem',
+    ),
+  },
+  // Windows has no probe yet. What a bundle compiled for the Intel NPU does on
+  // a PC without one is not measured. The run that once argued the check is
+  // too coarse (2026-09-27, a Windows Server VM with no NPU: a generic Gemma 4
+  // E2B on npu passed `engine_create` and reported `npu`) was a generic bundle
+  // on LiteRT-LM's compiler-plugin path, which runs it on the CPU, and such a
+  // bundle is no longer tried on the NPU. A probe can only be verified on
+  // Intel NPU silicon, and one guessed without it could switch off the NPU on
+  // the machines that have one.
+  NpuVendor.intel => switch (operatingSystem) {
+    'windows' => null,
+    _ => throw StateError(
+      'NpuVendor.intel has no device probe for $operatingSystem',
+    ),
+  },
+};
+
+/// Why no NPU is on offer on [abi]: no vendor this package dispatches to runs
+/// there ([NpuVendor.forAbi] is empty).
+String npuNoVendorReason(String abi) => 'no NPU dispatch stack ships for $abi';
+
+/// Each vendor's device probe: null when it passes, else why not. One member
+/// per probe, so a vendor whose probe is added to [npuUnreachable] is a
+/// compile error in every implementation until it answers.
+abstract interface class NpuProbes {
+  /// Whether Qualcomm's FastRPC bridge resolves in this Android process: null
+  /// when `libcdsprpc.so` opens, else the dlopen error.
+  String? androidFastRpc();
+
+  /// Whether the Pixel system's LiteRT Edge TPU runtime resolves in this
+  /// Android process: null when it opens, else the dlopen error.
+  String? androidGoogleTensorRuntime();
+
+  /// Whether this Linux machine can run the Qualcomm NPU stack: null when it
+  /// can, else why not.
+  String? linuxQualcommNpu();
+}
+
+/// The probes of this process, each run once per isolate: the answer cannot
+/// change within a process.
+const NpuProbes platformNpuProbes = _PlatformNpuProbes();
+
+final class _PlatformNpuProbes implements NpuProbes {
+  const _PlatformNpuProbes();
+
+  @override
+  String? androidFastRpc() => _androidFastRpcError;
+
+  @override
+  String? androidGoogleTensorRuntime() => _androidGoogleTensorRuntimeError;
+
+  @override
+  String? linuxQualcommNpu() => _linuxQualcommNpuError;
 }
 
 /// Whether the FastRPC probe has run in this isolate. Lets a test prove it did
@@ -54,33 +123,15 @@ bool get hostShipsNpuDispatch {
 @visibleForTesting
 bool get fastRpcProbed => _fastRpcProbe != null;
 
-/// The rule behind [hostShipsNpuDispatch], as a pure function.
-///
-/// Split out because `Platform.operatingSystem` has no override seam — `dart:io`'s
-/// `IOOverrides` covers files, directories and sockets, not the platform — so the
-/// Android and Windows arms are otherwise unreachable from a `flutter test` run
-/// on a Mac, and a test can only restate the implementation back at itself.
-bool npuDispatchShipsFor(
-  String operatingSystem, {
-  required bool androidHasFastRpc,
-  bool linuxHasQualcommNpu = false,
-}) => switch (operatingSystem) {
-  'windows' => true, // Per OS, knowingly too coarse — see hostShipsNpuDispatch.
-  'android' => androidHasFastRpc,
-  'linux' => linuxHasQualcommNpu,
-  _ => false,
-};
-
 /// Whether the Linux probe has run in this isolate; see [fastRpcProbed].
 @visibleForTesting
 bool get linuxNpuProbed => _linuxNpuProbe != null;
 
-bool? _linuxNpuProbe;
+/// The Linux probe's answer: null when it passed, else why not.
+(String?,)? _linuxNpuProbe;
 
-/// Why the Linux probe failed, worded for the person who has to fix it.
-String? _linuxNpuProbeError;
-
-/// Whether this Linux machine can run the Qualcomm NPU stack.
+/// Whether this Linux machine can run the Qualcomm NPU stack: null when it
+/// can, else why not, worded for the person who has to fix it.
 ///
 /// The stack is built for arm64 only, and on arm64 most machines (a Raspberry
 /// Pi, a Jetson, a cloud VM) have no Hexagon DSP. Three things must hold, and
@@ -93,119 +144,157 @@ String? _linuxNpuProbeError;
 ///
 /// The device files are opened read-only and closed at once: that maps no
 /// memory and opens no DSP session. Probed once per isolate.
-bool get _linuxHasQualcommNpu => _linuxNpuProbe ??= () {
-  if (Abi.current() != Abi.linuxArm64) {
-    _linuxNpuProbeError =
-        'the Qualcomm NPU stack is built for linux_arm64 only, and this is '
-        '${Abi.current()}';
-    return false;
-  }
-  for (final node in const ['/dev/fastrpc-cdsp', '/dev/dma_heap/system']) {
-    try {
-      File(node).openSync().closeSync();
-    } on FileSystemException catch (e) {
-      final errno = e.osError?.errorCode;
-      if (errno == 2 && node == '/dev/fastrpc-cdsp') {
-        _linuxNpuProbeError =
-            'this machine has no Qualcomm compute DSP ($node does not exist)';
-        return false;
-      }
-      if (errno == 2) continue; // An older kernel without DMA-BUF heaps.
-      _linuxNpuProbeError = errno == 13
-          ? '$node is not accessible to this user. Add the user to group '
-                'fastrpc (sudo usermod -aG fastrpc \$USER) and log in again'
-          : '$node could not be opened: $e';
-      return false;
+String? get _linuxQualcommNpuError => (_linuxNpuProbe ??= (
+  () {
+    if (Abi.current() != Abi.linuxArm64) {
+      return 'the Qualcomm NPU stack is built for linux_arm64 only, and this is '
+          '${Abi.current()}';
     }
-  }
-  try {
-    DynamicLibrary.open('libcdsprpc.so.1');
-  } on Object catch (e) {
-    _linuxNpuProbeError =
-        "Qualcomm's FastRPC library libcdsprpc.so.1 did not open ($e); on "
-        'Ubuntu it comes with the qcom-fastrpc1 package';
-    return false;
-  }
-  return true;
-}();
+    for (final node in const ['/dev/fastrpc-cdsp', '/dev/dma_heap/system']) {
+      try {
+        File(node).openSync().closeSync();
+      } on FileSystemException catch (e) {
+        final errno = e.osError?.errorCode;
+        if (errno == 2 && node == '/dev/fastrpc-cdsp') {
+          return 'this machine has no Qualcomm compute DSP ($node does not exist)';
+        }
+        if (errno == 2) continue; // An older kernel without DMA-BUF heaps.
+        return errno == 13
+            ? '$node is not accessible to this user. Add the user to group '
+                  'fastrpc (sudo usermod -aG fastrpc \$USER) and log in again'
+            : '$node could not be opened: $e';
+      }
+    }
+    try {
+      DynamicLibrary.open('libcdsprpc.so.1');
+    } on Object catch (e) {
+      return "Qualcomm's FastRPC library libcdsprpc.so.1 did not open ($e); on "
+          'Ubuntu it comes with the qcom-fastrpc1 package';
+    }
+    return null;
+  }(),
+)).$1;
 
-bool? _fastRpcProbe;
+/// The FastRPC probe's answer: null when it passed, else the dlopen error.
+(String?,)? _fastRpcProbe;
 
-/// Why the probe failed, kept for the notice: "no Hexagon DSP" and "the library
-/// is not visible to this app's linker namespace" are different answers, and
-/// only the error text tells them apart.
-String? _fastRpcProbeError;
-
-/// Whether Qualcomm's FastRPC bridge resolves in this process.
+/// Whether Qualcomm's FastRPC bridge resolves in this process: null when it
+/// does, else the dlopen error, kept for the notice: "no Hexagon DSP" and "the
+/// library is not visible to this app's linker namespace" are different
+/// answers, and only the error text tells them apart.
 ///
-/// The OS is the wrong granularity on Android. The Qualcomm stack ships in every
-/// `android_arm64` build, so a Tensor, Exynos or Dimensity phone has all eleven
-/// libraries in its APK and no Hexagon DSP to run them on. Offering `npu` there
-/// costs a 55.1 MiB zip extraction out of the APK into `codeCacheDir` — measured
-/// on the native-v0.17.1 bundle, of which 44 MiB is the four per-SoC Skels — and
-/// that extraction runs on the platform thread inside a `MethodChannel` handler,
-/// so it stalls input dispatch and the Choreographer. `codeCacheDir` is
-/// cache-class storage, so "Clear cache" and every app
-/// upgrade make it happen again.
+/// The OS is the wrong granularity on Android. An app that opts in to the
+/// Qualcomm stack ships all of it in every `android_arm64` build, so a Tensor,
+/// Exynos or Dimensity phone has the libraries in its APK and no Hexagon DSP
+/// to run them on. Offering `npu` there costs a 55.1 MiB zip extraction out of
+/// the APK into `codeCacheDir` — measured on the native-v0.17.1 bundle, of
+/// which 44 MiB is the four per-SoC Skels. `codeCacheDir` is cache-class
+/// storage, so "Clear cache" and every app upgrade make it happen again.
 ///
 /// `libcdsprpc.so` is the precondition for the chain: the per-SoC `QnnHtp*Stub`
 /// libraries carry it as a `DT_NEEDED`, and the core plugin's manifest declares
 /// it `required="false"` so it resolves in the app's namespace where it exists.
-/// So one `dlopen` answers whether there is a Hexagon DSP at all, before the
-/// gate lets anything reach the channel that does the extracting. Necessary,
-/// not sufficient: a Snapdragon whose Hexagon version has no Skel in the bundle
+/// So one `dlopen` answers whether there is a Hexagon DSP at all, before
+/// anything reaches the channel that does the extracting. Necessary, not
+/// sufficient: a Snapdragon whose Hexagon version has no Skel in the bundle
 /// (only V73/V75/V79/V81 ship) passes this probe too.
-///
-/// Probed once: the answer cannot change within a process.
-bool get _androidHasFastRpc => _fastRpcProbe ??= () {
-  try {
-    DynamicLibrary.open('libcdsprpc.so');
-    return true;
-  } on Object catch (e) {
-    _fastRpcProbeError = '$e';
-    return false;
-  }
-}();
+String? get _androidFastRpcError => (_fastRpcProbe ??= (
+  () {
+    try {
+      DynamicLibrary.open(qualcommAndroidFastRpcLib);
+      return null;
+    } on Object catch (e) {
+      return '$e';
+    }
+  }(),
+)).$1;
 
-/// Why npu is not on offer here, worded per platform.
+/// The Google Tensor probe's answer: null when it passed, else why not.
+(String?,)? _googleTensorProbe;
+
+/// Whether this device can run the Google Tensor NPU
+/// ([googleTensorDeviceRefusal]) and the Pixel system's LiteRT Edge TPU
+/// runtime resolves in this process: null when both hold. The core Android
+/// manifest declares the runtime's soname as optional, which opens it to this
+/// app's linker namespace without blocking installs elsewhere.
+String? get _androidGoogleTensorRuntimeError => (_googleTensorProbe ??= (
+  () {
+    final refusal = googleTensorDeviceRefusal(_androidProperty);
+    if (refusal != null) return refusal;
+    try {
+      DynamicLibrary.open(googleTensorSystemRuntime);
+      return null;
+    } on Object catch (e) {
+      return 'the Google Tensor system runtime $googleTensorSystemRuntime did '
+          'not open: $e';
+    }
+  }(),
+)).$1;
+
+/// Why a device whose system properties [property] reads cannot run the
+/// Google Tensor NPU, or null when it can.
 ///
-/// Android is its own case: the stack DOES ship there, in every arm64 build —
-/// what is missing is the device's FastRPC. Saying "no NPU dispatch stack ships
-/// for android" and then "NPU is available on Android" in one line was the
-/// shape this replaced.
+/// LiteRT's own check (`isGoogleTensorDevice` in
+/// litert/kotlin/.../AcceleratorProvider.kt at the pin): Android 16 (API 36)
+/// or later, a build ID that does not start with BP2A ("the only Android 16
+/// build ID that does not support NPU"), and a Google SoC. Asked before the
+/// runtime is opened, so a device the dispatch cannot run on is told so
+/// instead of failing inside it. Which Tensor generation a bundle is compiled
+/// for is not checked here: LiteRT refuses a mismatch at engine_create.
 @visibleForTesting
-String npuUnavailableReason(String operatingSystem, {String? fastRpcError}) =>
-    switch (operatingSystem) {
-      'android' =>
-        'this device has no Qualcomm FastRPC (libcdsprpc.so did not open'
-            '${fastRpcError == null ? '' : ': $fastRpcError'}), so the bundled '
-            'NPU stack cannot run here',
-      'linux' =>
-        'the bundled Qualcomm NPU stack cannot run here: '
-            '${fastRpcError ?? 'this machine has no Qualcomm NPU'}',
-      _ => 'no NPU dispatch stack ships for $operatingSystem',
-    };
+String? googleTensorDeviceRefusal(String? Function(String key) property) {
+  final sdk = int.tryParse(property('ro.build.version.sdk') ?? '');
+  if (sdk == null || sdk < 36) {
+    return 'Android API ${sdk ?? '(unknown)'}: the Google Tensor NPU needs '
+        'Android 16 (API 36) or later';
+  }
+  final buildId = property('ro.build.id') ?? '';
+  if (buildId.startsWith('BP2A')) {
+    return 'build $buildId: LiteRT does not run the Google Tensor NPU on BP2A '
+        'builds';
+  }
+  final manufacturer = property('ro.soc.manufacturer') ?? '';
+  final model = property('ro.soc.model') ?? '';
+  final hardware = property('ro.hardware') ?? '';
+  if (manufacturer.toLowerCase() != 'google' &&
+      !model.toLowerCase().contains('tensor') &&
+      !hardware.toLowerCase().contains('tensor')) {
+    return 'this is not a Google Tensor SoC ($manufacturer $model)';
+  }
+  return null;
+}
 
-/// Why this host cannot run its NPU stack, from the probe [hostShipsNpuDispatch]
-/// ran (read it after that getter). For the EmbeddingGemma 2 refusal, which
-/// words the same reason as the LLM path's fallback notice.
-String get hostNpuUnavailableReason => npuUnavailableReason(
-  Platform.operatingSystem,
-  fastRpcError: Platform.isLinux ? _linuxNpuProbeError : _fastRpcProbeError,
-);
+/// An Android system property ([key]) through `getprop`, or null when it
+/// cannot be read. Synchronous and asked once per probe.
+String? _androidProperty(String key) {
+  try {
+    final result = Process.runSync('getprop', [key]);
+    return result.exitCode == 0 ? '${result.stdout}'.trim() : null;
+  } on Object {
+    return null;
+  }
+}
 
-/// The backends to try, in order, for a [preferredBackend] request.
-///
-/// [npuDispatchAvailable] overrides [hostShipsNpuDispatch] — tests need both
-/// answers, and a platform-dependent default cannot give them one.
+/// Where [vendor]'s NPU runs, for the notice that the NPU was not tried.
+String _whereNpuRuns(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm =>
+    'Qualcomm Android and Qualcomm Linux arm64 (in apps built with '
+        'hooks.user_defines.flutter_edge_ai_litertlm.$qualcommNpuUserDefine: '
+        'true)',
+  NpuVendor.googleTensor => 'Google Tensor G5/G6 Android devices',
+  NpuVendor.intel => 'on Windows (Intel LunarLake/PantherLake)',
+};
+
+/// The backends to try, in order, for a [preferredBackend] request, the NPU
+/// only when [npuAvailable].
 List<PreferredBackend> ffiBackendFallbackOrder(
   PreferredBackend? preferredBackend, {
-  bool? npuDispatchAvailable,
+  required bool npuAvailable,
 }) => switch (preferredBackend) {
   PreferredBackend.npu => [
     // Offered only where a dispatch stack exists. Dropping it here is what
     // makes the reported `activeBackend` true on the other four platforms.
-    if (npuDispatchAvailable ?? hostShipsNpuDispatch) PreferredBackend.npu,
+    if (npuAvailable) PreferredBackend.npu,
     PreferredBackend.gpu,
     PreferredBackend.cpu,
   ],
@@ -256,24 +345,18 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   // synchronously. Awaiting covers both, so a failed backend is fully released
   // before the next one allocates an engine.
   required FutureOr<void> Function(T client) shutdownClient,
-  bool? npuDispatchAvailable,
-  // Why npu is off when the caller decided so from something this file cannot
-  // see — on Android, the build not bundling the opt-in Qualcomm stack.
+  // Why npu is off when it is not tried: the build's stack or the device's
+  // probe (`chooseNpuVendor`); null words it from the host ([npuNoVendorReason]).
   String? npuUnavailableBecause,
-  // The backends to try, when the caller decided them (the LLM engine does,
-  // from the bundle: `planLiteRtLmLoad`); otherwise [ffiBackendFallbackOrder].
-  List<PreferredBackend>? backends,
+  // The backends to try, in order: what the caller decided (the LLM engine
+  // does, from the bundle: `planLiteRtLmLoad`), or [ffiBackendFallbackOrder].
+  required List<PreferredBackend> backends,
   // Why the caller left a backend of the request out of [backends] — the
   // model file rules it out (`LiteRtLmLoadPlan.dropped`). The notice below
   // says that instead of a reason about the host.
   Map<PreferredBackend, String> droppedBecause = const {},
 }) async {
   final attempts = <BackendInitAttemptFailure>[];
-  backends ??= ffiBackendFallbackOrder(
-    preferredBackend,
-    npuDispatchAvailable: npuDispatchAvailable,
-  );
-
   if (backends.isEmpty) {
     throw StateError('No FFI backend candidates are available.');
   }
@@ -302,20 +385,12 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
   } else if (preferredBackend == PreferredBackend.npu &&
       !backends.contains(PreferredBackend.npu)) {
     final reason =
-        npuUnavailableBecause ??
-        npuUnavailableReason(
-          Platform.operatingSystem,
-          fastRpcError: Platform.isLinux
-              ? _linuxNpuProbeError
-              : _fastRpcProbeError,
-        );
+        npuUnavailableBecause ?? npuNoVendorReason('${Abi.current()}');
     // ignore: avoid_print
     print(
       '[flutter_edge_ai] WARNING: $logTag npu was requested, but $reason — '
       'trying ${backends.map(ffiBackendWireName).join(" -> ")} instead. NPU '
-      'runs on Qualcomm Android and Qualcomm Linux arm64 (in apps built with '
-      'hooks.user_defines.flutter_edge_ai_litertlm.qualcomm_npu: true) and '
-      'on Windows (Intel LunarLake/PantherLake). '
+      'runs on ${npuSentenceList(NpuVendor.values.map(_whereNpuRuns))}. '
       'InferenceModel.activeBackend names what actually ran.',
     );
   }

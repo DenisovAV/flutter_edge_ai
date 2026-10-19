@@ -152,6 +152,7 @@ Anything at or near the current macOS release means the flag was dropped. Rebuil
 10b. **App Store ITMS-90432 fix** — rewrite `gpu_registry.cc` dlopen to `@executable_path/...framework/<X>` on Apple. **iOS-critical.** Plus `patches/litert_gpu_registry_apple.patch` (since native-v0.18.0-b), added to the `litert` archive as `patches=`: on Apple our framework is the ONLY GPU accelerator tried, and the `RTLD_DEFAULT` fallback is off — see "coexisting LiteRT runtimes" below.
 11. minizip/zlib mirrored off the flaky zlib.net
 15. **Windows Intel NPU** — `patches/windows_no_fd_model_loading.patch`: `.litertlm` sections load buffer-backed, never through a C runtime descriptor (LiteRT-LM #4023). Without it every AOT NPU bundle ends `engine_create` in `libLiteRt.dll` (regression #20 below). The section also fails when a new `CreateFromFd` caller appears in `runtime/` or `c/`.
+16. **Stopped-turn rewind** — `patches/conversation_rewind_cancelled_turn.patch`: a checkpoint before each send's own prefill, each send's end recorded in the C wrapper, and `litert_lm_conversation_rewind_cancelled_turn`, which cancels, waits for the session's tasks, then rewinds a cancelled turn and prefills it back. Without it the Dart client rebuilds a stopped chat from text and loses earlier images and audio; `verify_tarball_manifest.sh` refuses a tarball without its export and contract.
 
 §10a (sampler_factory.cc) is **deliberately NOT patched** — `libLiteRtTopKMetalSampler.dylib` has 3-of-7 broken exports on Apple (#2073). Patching it surfaces a NULL-vtable crash. Leave the basename dlopen so `sampler_factory.cc` falls back to CPU sampler. Revisit when Google fixes #2073.
 
@@ -732,6 +733,9 @@ The NPU group **skips** (and counts as passed) when its model file is absent, so
 | v0.16.0 | ✅ 23/23, Snapdragon 8 Elite, 2026-08-15 | ⚠️ not recorded (Intel's demo app on native-v0.16.0: NPU works, ~61 tok/s, 2026-10-16) |
 | v0.17.0 | ⏳ pending | ❌ `engine_create`: `Failed to load model from fd` — regression #20, Lunar Lake 258V, 2026-10-16 |
 | v0.18.0 | ✅ 24/24, Snapdragon 8 Elite Gen 5 (SM8850, HTP V81, QDC), 2026-10-08 — AAB split install, QNN 2.50.0 from Maven via `qualcomm_npu`, `engine_create` 429 ms, greedy run1 == run2 | ❌ native-v0.18.0-e: `0xC0000409` at the first NPU `engine_create` (regression #20). ✅ with §15, CI run 38917181364: NPU 3 passed + 2 skipped (vision, audio), rest 22/22, Lunar Lake 258V, 2026-10-16 — `engine_create` 0.9–1.1 s, 58.4 tok/s, greedy run1 == run2 |
+| v0.18.0-f | ✅ Android: ffi NPU group and NPU media (towers on CPU) pass, 5 NPU `engine_create`s, Galaxy S25 Ultra (SM8750, HTP V79, DDP `pa3q-35`), 2026-10-18. Linux QCS8275 not re-run: its dispatch and shim are byte-identical to -e | ✅ NPU group +3 ~2 (vision, audio: no Windows towers bundle), full file +25 ~2, Lunar Lake 258V, 2026-10-18 — `engine_create` 0.8–1.1 s, ~61 chunks/s, greedy run1 == run2, no `0xC0000409` (CI DLLs byte-identical in the app) |
+
+Google Tensor (since native-v0.18.0-f, behind `google_tensor_npu`): ✅ Pixel 11 (Tensor G6, Android 17 `CD1A.260714.001.A9`, DDP `cubs-37`), debug build, 2026-10-18 — Gemma 4 E2B G6 on the NPU (`gpu` refused before any engine, greedy x2 equal), `npu_all_towers_test` with `NPU_STRICT_ONLY=true` (text, image and audio on the NPU), EmbeddingGemma 2 270m and 440m G6 on the NPU; the dispatch dir held only `libLiteRtDispatch_GoogleTensor.so` with both dispatches in the APK. Not run: a Tensor G5, a release-signed build. Google's Tensor SDK terms forbid publishing Tensor benchmarks, so record no Tensor speeds here.
 
 Both are slow, awkward, and easy to skip. Skipping them is what shipped the two frozen dispatch libraries described above.
 
@@ -799,6 +803,7 @@ The bundle has **three** consumers — LLM inference (LiteRT-LM C API), embeddin
 | Suite | What it covers |
 |---|---|
 | `litertlm_ffi_test.dart` (full) | CPU + GPU text/streaming/vision/audio/thinking, chat, multi-session (several `engine_create` per process), embeddings (`Embedding non-blocking (#299)`) |
+| `litertlm_stop_rewind_test.dart` | `patch_c_api.sh` §16: a stopped turn is rewound, not rebuilt — images, audio, thinking, stop by `stopGeneration()` and by a cancelled subscription. Once per backend (`--dart-define=REWIND_BACKEND=gpu`); every row must log `rewound`, never `rebuilt`. The Dart side falls back to a quiet text rebuild on a library without the export, so this is the check that §15 reached the platform; skip it only on an NPU-only device |
 | `stt_moonshine_test.dart` | STT through the LiteRT C API (~104 MB model from HF) |
 | `tts_smoke_test.dart` | Matcha TTS; compares against a golden (`rms 0.0781`, error < 1e-5 on every platform in v0.17.0) |
 | `qwen3_tts_test.dart` | only when Qwen3 code changed (~1 GB download); macOS is enough |

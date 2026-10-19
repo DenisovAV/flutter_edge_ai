@@ -173,8 +173,10 @@ class AgentLoop {
   /// bare PCM samples. Audio is native-only: LiteRT-LM on the web throws
   /// `UnsupportedError`, which ends the returned stream, and MediaPipe's web
   /// `.task` files have no audio encoder. After a stopped turn (a cancelled
-  /// subscription), a `.litertlm` chat rebuilds its conversation from the turns'
-  /// text, so the recordings of earlier turns are gone from its context.
+  /// subscription), a `.litertlm` chat keeps the recordings of earlier turns
+  /// with `flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and
+  /// earlier, and on the NPU, it rebuilds its conversation from the turns'
+  /// text and they are gone.
   ///
   /// PRECONDITION, as for images: [chat] must have been created with
   /// `supportAudio: true` (see [AgentSession.fromModel]). Without it the FFI

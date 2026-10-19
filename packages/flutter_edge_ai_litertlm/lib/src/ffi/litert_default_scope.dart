@@ -33,10 +33,11 @@
 // why preventing the bad order is sufficient: a later RTLD_LOCAL open does not
 // demote an already-global soinfo.
 //
-// Source that is not in a tarball yet makes the probe unnecessary: with
-// `stream_proxy_create2` the client resolves the chunk accessors on the library
-// it drives and passes them in (#453). This check stays for the shipped shim,
-// and goes when the pin moves to a native tag that carries `create2`.
+// `stream_proxy_create2` makes the probe unnecessary: the client resolves the
+// chunk accessors on the library it drives and passes them in (#453), and it
+// is required since the pin moved to native-v0.18.0-f. This check stays until
+// a device run shows that a plain open is equivalent for the LLM, embedding and
+// speech entry points; nothing else is known to need the default scope.
 //
 // Both entry points go through this file, and both functions here do the raw
 // `DynamicLibrary.open` themselves. That is deliberate: the original bug was a

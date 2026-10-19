@@ -15,6 +15,8 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuVendor;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
@@ -429,8 +431,9 @@ void main() {
               contains(
                 Abi.current() == Abi.windowsX64
                     ? 'runs Intel NPU bundles only'
-                    : 'Qualcomm Android and Qualcomm Linux arm64, and on Intel '
-                          'NPUs with Windows x64, only',
+                    : 'Qualcomm Android and Qualcomm Linux arm64, and on Google '
+                          'Tensor G5/G6 Android devices, and on Intel NPUs with '
+                          'Windows x64, only',
               ),
               contains('${Abi.current()}'),
             ),
@@ -724,16 +727,19 @@ final class _QualcommAndroid implements LiteRtLmNpuHost {
   @override
   String get abi => 'android_arm64';
   @override
-  Future<NpuStackCheck> qualcommStack() async => const NpuStackCheck.bundled();
+  Future<NpuStackCheck> stack(NpuVendor vendor) async => switch (vendor) {
+    NpuVendor.qualcomm => const NpuStackCheck.bundled(),
+    NpuVendor.googleTensor => throw StateError(
+      'this fake is specifically a Qualcomm Android phone',
+    ),
+    NpuVendor.intel => throw StateError(
+      'an Android host has no Intel stack to ask about',
+    ),
+  };
   @override
-  Future<NpuStackCheck> intelStack() =>
-      throw StateError('an Android host has no Intel stack to ask about');
+  String? unreachable(NpuVendor vendor) => null;
   @override
-  bool get hasNpu => true;
-  @override
-  String get noNpuReason => '';
-  @override
-  Future<String> prepareDispatchDir() async {
+  Future<String> prepareDispatchDir(NpuVendor vendor) async {
     prepared = true;
     return '/data/app/npu';
   }
@@ -746,14 +752,18 @@ final class _IntelWindows implements LiteRtLmNpuHost {
   @override
   String get abi => 'windows_x64';
   @override
-  Future<NpuStackCheck> qualcommStack() =>
-      throw StateError('a Windows host has no Qualcomm stack to ask about');
+  Future<NpuStackCheck> stack(NpuVendor vendor) async => switch (vendor) {
+    NpuVendor.intel => const NpuStackCheck.bundled(),
+    NpuVendor.qualcomm => throw StateError(
+      'a Windows host has no Qualcomm stack to ask about',
+    ),
+    NpuVendor.googleTensor => throw StateError(
+      'a Windows host has no Google Tensor stack to ask about',
+    ),
+  };
   @override
-  Future<NpuStackCheck> intelStack() async => const NpuStackCheck.bundled();
+  String? unreachable(NpuVendor vendor) =>
+      vendor == NpuVendor.intel ? null : 'not this host';
   @override
-  bool get hasNpu => throw StateError('Windows has no NPU probe');
-  @override
-  String get noNpuReason => '';
-  @override
-  Future<String> prepareDispatchDir() async => r'C:\Apps\demo';
+  Future<String> prepareDispatchDir(NpuVendor vendor) async => r'C:\Apps\demo';
 }

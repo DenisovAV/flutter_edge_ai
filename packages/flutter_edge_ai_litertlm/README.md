@@ -42,13 +42,13 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.4.0`,
-`flutter_edge_ai_litertlm: ^1.14.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.4.1`,
+`flutter_edge_ai_litertlm: ^1.15.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -200,7 +200,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -521,8 +521,9 @@ final note = await embedder.embed(
   web query finds the clips embedded natively.
 
 `EmbeddingModel.activeBackend` is `cpu` on native and `gpu` for EmbeddingGemma
-2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Qualcomm
-NPU ([below](#embeddinggemma-2-on-a-qualcomm-npu)) or an Intel one
+2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Google
+Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), Qualcomm NPU
+([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
@@ -562,10 +563,12 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
   VENTUNO Q). Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
   MT6991/MT6993 and Intel PTL builds; the Qualcomm ones load here but are not
-  verified by us, Intel PTL runs on Windows
-  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and
-  the others are refused (no dispatch for them ships). What a bundle is
-  compiled for is read from the bundle itself, not from its name.
+  verified by us, Tensor G5/G6 runs on matching Pixels in apps built with
+  `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), the
+  G6 270m and 440m run on a Pixel 11, Intel PTL runs on Windows
+  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek is
+  refused (no dispatch for it ships). What a bundle is compiled for is read
+  from the bundle itself, not from its name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
   SM8650 (Galaxy S24): a text in about 9 ms (53 ms on its CPU), an image in
   about 0.31 s, the 270m loaded in 0.85 s. Against the CPU bundle, the cosine is
@@ -764,13 +767,13 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL, NPU on Qualcomm — opt-in, below) |
+| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — both opt-in, below) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.18.0-e`, LiteRT-LM v0.18.0) is fetched at build
+The native library (`native-v0.18.0-f`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and on macOS a `post_install` block in `macos/Podfile`, without
@@ -778,13 +781,14 @@ which the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
-`PreferredBackend.npu` is attempted only on Windows, on Android devices with
-Qualcomm FastRPC (`libcdsprpc.so`) and on Qualcomm Linux arm64 boards, the last
-two when the app opted in (below); elsewhere a generic bundle falls back to GPU,
-then CPU, and prints why, and a bundle compiled for an NPU is refused
-([Where a model runs](#where-a-model-runs)). On Windows the check is per OS, so
-a PC without an Intel NPU can report `activeBackend == npu` while the model runs
-elsewhere.
+`PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
+only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later, on
+Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux
+arm64 boards; the Tensor and Qualcomm paths only in apps that opted in (below). A
+generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
+for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
+Windows has no device probe: a bundle compiled for the Intel NPU is not refused
+on a PC without one, and what LiteRT does then is not measured.
 
 Run a Gemma 4 bundle on the NPU: a Gemma 3 bundle drops every prefill chunk
 after the first, with no error, and answers from the start of the prompt alone
@@ -805,10 +809,11 @@ milliseconds for a 3 GB file) and decides from them:
 
 | The file | No `preferredBackend` | `preferredBackend` given |
 |---|---|---|
-| A generic bundle | GPU, then CPU | that backend, then the next (npu → gpu → cpu) |
-| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares are tried |
+| A generic bundle | GPU, then CPU | `gpu` / `cpu`: that backend, then the next; `npu`: not tried, since the bundle has no NPU graph (GPU, then CPU, with a notice; refused with `backendFallback: false`) |
+| A text model declaring `backend_constraint` | the first of GPU, CPU it allows | only the backends it declares are tried, the NPU only when the bundle is compiled for one (a file that declares only the NPU and is not is refused) |
 | A bundle compiled for an NPU (a `tf_lite_aux` section or a text model with a `LiteRtStamp`, e.g. `…_qualcomm_sm8750.litertlm`) | the NPU | `npu`: the NPU; `gpu`/`cpu`: refused, they cannot run it |
 | A file shorter than its sections | refused: the download is incomplete | refused |
+| A `.litertlm` the reader cannot read (a newer container version, a malformed header) | GPU, then CPU | the request, then the fallback order, `npu` included: the rules from before the reader |
 
 An encoder you leave unset (`preferredVisionBackend`, `preferredAudioBackend`)
 runs where the file says: its declared `backend_constraint` (the CPU when that
@@ -832,8 +837,9 @@ chosen, and are null for a bundle without that encoder.
 A refusal is a `LiteRtLmBundleException` with a `problem`
 (`incomplete`, `wrongBackend`, `unsupportedNpu` for a text model, or an encoder
 the load turns on, compiled for an NPU this package has no dispatch for here —
-Google Tensor, MediaTek, or a Qualcomm bundle on Windows — or for an NPU
-encoder next to a text model that is not on the NPU) and a message that says
+MediaTek, a Qualcomm bundle on Windows, or a Google Tensor bundle off Android —
+or for an NPU encoder next to a text model that is not on the NPU) and a
+message that says
 what to do; no engine is created. An NPU bundle, or an encoder the load turns
 on that runs on the NPU, on a device whose NPU cannot be reached fails the same
 way as a strict load (below), at once, and is never tried on the GPU. The SoC
@@ -878,7 +884,7 @@ throws `UnsupportedError` on the web):
 final info = await readLiteRtLmBundleInfo(path);
 info.isComplete;               // false for a download that stopped early
 info.isCompiledForNpu;         // runs on the NPU only
-info.npuTarget;                // e.g. Qualcomm SM8750, or null
+info.npuTarget;                // e.g. Qualcomm SM8750 / Google Tensor_G5
 info.visionEncoder?.npuTarget; // null: the encoder is not compiled
 info.audioEncoder?.backendConstraint; // e.g. ['cpu']
 info.hasMtpDrafter;            // can decode speculatively
@@ -890,6 +896,38 @@ for (final section in info.sections) {
 It reads the header and a few hundred bytes per compiled section, never the
 weights. A file that is not a `.litertlm` container, of another container
 version, or with an unreadable header throws `LiteRtLmBundleException`.
+
+### Google Tensor NPU on Android (opt-in)
+
+A bundle compiled for a Tensor NPU (`…_Google_Tensor_G5.litertlm`,
+`…_Google_Tensor_G6.litertlm`; its `LiteRtStamp` names `Google`, the file name
+is not read) runs on the NPU of a Pixel with that Tensor generation and Android
+16 or later, not a BP2A build: LiteRT's own requirement, checked before any
+engine. The load is NPU-only: a device that cannot run it is refused, never
+moved to the GPU or the CPU.
+
+The dispatch is opt-in, as Qualcomm's is:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      google_tensor_npu: true
+```
+
+With it the build bundles `libLiteRtDispatch_GoogleTensor.so`, which we build
+from the pinned LiteRT source (`litert/vendors/google_tensor/dispatch`; Google's
+Tensor SDK terms, `TERMS_OF_USE.md` in that directory, cover it besides its
+sources' own licence headers). The runtime it drives, `libedgetpu_litert.so`, is
+part of the Pixel system image, is never redistributed, and core declares it as
+an optional system library. An app can set both opt-ins: the bundle's stamp
+picks the vendor, and LiteRT gets a directory with that vendor's libraries only.
+
+Run on a Pixel 11 Pro and a Pixel 11 (Tensor G6) with debug builds: Gemma 4
+E2B text, images and audio on the NPU, and EmbeddingGemma 2 270m and 440m (text
+and an image). Not run yet: a
+Tensor G5 and a release-signed build. On one Pixel the EdgeTPU service logged
+that the app is not on its allowlist; that did not stop the debug run.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 
@@ -932,11 +970,14 @@ hooks:
 ```
 
 `qualcomm_npu_aar` is resolved against the pubspec that declares it and must be
-the same file as Maven's (same SHA-256). Without the flag, a request for
-`PreferredBackend.npu` with a generic bundle on Android falls back to GPU, then
-CPU, and the log says how to enable it; a bundle compiled for an NPU is refused
-with a `BackendInitException` whose one attempt says the same
-([Where a model runs](#where-a-model-runs)).
+the same file as Maven's (same SHA-256). Without the flag, a bundle compiled for
+an NPU is refused with a `BackendInitException` whose one attempt says how to
+enable it ([Where a model runs](#where-a-model-runs)). A generic bundle never
+runs on the NPU, with or without the flag: it has no NPU graph, and LiteRT
+would try to compile it on the device with a compiler plugin, which no NPU stack
+here ships, and run it on the CPU while reporting `npu` (measured on a Galaxy
+S24). So `npu` falls back to
+GPU, then CPU, for it, and the log says why.
 
 **Linux arm64.** The same flag bundles the stack into Linux arm64 builds, for
 Qualcomm Linux boards with a Hexagon V68–V81 compute DSP (QCS6490, QCS8275,
@@ -957,10 +998,9 @@ hooks:
 
 On the board, Qualcomm's FastRPC library must be installed (`qcom-fastrpc1` on
 Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
-(`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing,
-`npu` with a generic bundle falls back to GPU, then CPU, and the log names what
-to fix; a bundle compiled for an NPU is refused with a `BackendInitException`
-that names it. Use the model compiled for your SoC, e.g.
+(`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing, a
+bundle compiled for an NPU is refused with a `BackendInitException` that names
+what to fix. Use the model compiled for your SoC, e.g.
 `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux x64 build ignores the
 flag.
 
@@ -1074,10 +1114,17 @@ entry.)
 Cause: a conversation whose generation is cancelled mid-reply stays unusable
 in the native runtime.
 
-Fix: every `flutter_edge_ai_litertlm` release has it. The first turn after a
-stop runs on a fresh conversation that replays the chat's history, including whatever the stopped
-reply had produced. That history is replayed as text: images and audio sent in
-earlier turns are not, so after a stop the model can no longer see them.
+Fix: every `flutter_edge_ai_litertlm` release answers again after a stop.
+Since 1.15.0, releases rewind the conversation to before the stopped turn and
+put that turn back: the message, with its images and audio, and whatever the
+reply had produced, so the model keeps the whole chat, media included. This
+works the same whether the app called `stopGeneration()` or cancelled its
+subscription to the reply. 1.14.0 and earlier, and the NPU in every release
+(its executor cannot rewind), run the next turn instead on a fresh conversation
+that replays the history as text, so images and audio from earlier turns are
+gone; send them again if the next question is about them. 1.15.0 and later
+also fall back to that replay when a rewind fails, and say so in the log
+(release builds too).
 
 ### Google Play rejects the app over 16 KB page sizes (fixed in `flutter_gemma_litertlm` 1.8.0)
 

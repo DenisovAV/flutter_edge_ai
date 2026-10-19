@@ -242,19 +242,20 @@ that model to `PreferredBackend.cpu` / `.gpu`. Upstream:
 
 Note that `maxTokens` is **not** clamped up to 1024 on the NPU attempt the way
 it is on CPU and GPU — the safe context is baked into the compiled bundle, so
-pass the `cache_length` it was built for. If the NPU fails to initialize, a
-generic bundle falls back to GPU and then CPU (a bundle compiled for an NPU is
-never tried there), and the floor applies to those attempts, so the fallback is
-clamped rather than crashed.
+pass the `cache_length` it was built for. A generic bundle is never tried on
+the NPU (it has no NPU graph: LiteRT-LM would run it on the CPU and report
+`npu`), and a bundle compiled for an NPU never runs on the GPU or CPU, so the
+floor applies only to the GPU and CPU attempts of a generic bundle.
 
 **`PreferredBackend.npu` on Android falls back to GPU, or an NPU bundle fails
 to load, after an upgrade.** From `flutter_edge_ai_litertlm` 1.10.0 the
 Qualcomm QNN runtime is not part of the package; the app opts in with
 `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:` in
-its pubspec — see [LiteRT-LM](/docs/litertlm). Without it a generic bundle
-falls back to GPU, then CPU, and the log names the reason; a bundle compiled
-for an NPU is refused with a `BackendInitException` whose
-`NpuDispatchUnavailableException` names it. If it says the stack is not enabled although the flag is
+its pubspec — see [LiteRT-LM](/docs/litertlm). Without it a bundle compiled for
+an NPU is refused with a `BackendInitException` whose
+`NpuDispatchUnavailableException` names it. A generic bundle never runs on the
+NPU, with or without the flag: it has no NPU graph, so `npu` falls back to GPU,
+then CPU, for it, and the log says so. If it says the stack is not enabled although the flag is
 set, the flag is in the wrong pubspec: in a pub workspace only the workspace
 root's `user_defines` count. If the build fails fetching `qnn-runtime`, the
 machine cannot reach Maven Central; set `qualcomm_npu_maven_url` to a mirror or
@@ -262,8 +263,8 @@ machine cannot reach Maven Central; set `qualcomm_npu_maven_url` to a mirror or
 
 **`PreferredBackend.npu` on a Qualcomm Linux board falls back to GPU, or an NPU
 bundle fails to load.** The same `qualcomm_npu: true` covers Linux arm64
-builds. The log for a generic bundle, or the `BackendInitException` for a
-bundle compiled for an NPU, names which of these is missing:
+builds. The `BackendInitException` for a bundle compiled for an NPU names
+which of these is missing:
 - The build did not bundle the stack — the flag is not set, or not in the
   workspace root's pubspec.
 - `/dev/fastrpc-cdsp` does not exist — the board exposes no compute DSP.
@@ -277,6 +278,18 @@ If the build fails reading the QAIRT SDK, the machine cannot reach
 `qualcomm_npu_qairt_zip` to its path. Do not set `DSP_LIBRARY_PATH`: FastRPC
 prefers it over `ADSP_LIBRARY_PATH`, which is where the bundled Skels are
 announced.
+
+**A Google Tensor bundle fails to load.** The `BackendInitException` names the
+cause: the app does not set `google_tensor_npu: true` (in a pub workspace, at the
+root); the device runs Android below 16 (API 36) or a BP2A build; it is not a
+Tensor SoC; or the Pixel's `libedgetpu_litert.so` did not open. A G5 bundle on a
+G6 Pixel, or the reverse, is refused by LiteRT when the engine is created. It
+never falls back to the GPU or the CPU.
+
+**`PreferredBackend.npu` on Windows fails at load or the process ends with
+`0xC0000409`.** Every release from `flutter_gemma_litertlm` 1.7.0
+(`native-v0.17.0`) through `flutter_edge_ai_litertlm` 1.14.0 has this bug in its
+Intel NPU load (LiteRT-LM#4023); upgrade to 1.15.0.
 
 **`PreferredBackend.npu` is unavailable on a recent Snapdragon.** SoC coverage is
 the runtime's, not ours: Snapdragon 8 Gen 5 (**SM8845** — OnePlus 15R, iQOO 15R

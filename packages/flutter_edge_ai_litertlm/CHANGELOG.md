@@ -1,3 +1,11 @@
+## 1.15.0
+- Google Tensor NPU on Android, opt-in with `google_tensor_npu: true` (#670).
+- A stopped turn is rewound in place, so the chat keeps earlier images and audio (#682).
+- Intel NPU on Windows loads its model again (LiteRT-LM #4023, #679).
+- `npu` on a bundle compiled for no NPU runs on the GPU, then the CPU, instead of reporting `npu` (#683).
+- Streaming reads each chunk through accessors resolved on the loaded library (#453).
+- Native bundle `native-v0.18.0-f`; require `flutter_edge_ai` ^2.4.1.
+
 ## 1.14.0
 - **Behaviour change:** Gemma 4 gets its audio after the text; `getActiveModel(multimodalOrder:)` changes it.
 - EmbeddingGemma 2 reports its image token budget, so image-fitted deciders are bound to it.

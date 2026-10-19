@@ -8,6 +8,8 @@ import 'package:jaspr/server.dart';
 import 'package:fluttergemma_website/codelabs/codelabs_page.dart'
     as _codelabs_page;
 import 'package:fluttergemma_website/components/clicker.dart' as _clicker;
+import 'package:fluttergemma_website/contributors/contributors_page.dart'
+    as _contributors_page;
 import 'package:fluttergemma_website/landing/sections/cta_section.dart'
     as _cta_section;
 import 'package:fluttergemma_website/landing/sections/examples.dart'
@@ -32,6 +34,7 @@ import 'package:fluttergemma_website/landing/sections/why_on_device.dart'
     as _why_on_device;
 import 'package:fluttergemma_website/landing/landing_page.dart'
     as _landing_page;
+import 'package:fluttergemma_website/theme/docs_fixes.dart' as _docs_fixes;
 import 'package:jaspr_content/components/_internal/code_block_copy_button.dart'
     as _code_block_copy_button;
 import 'package:jaspr_content/components/_internal/zoomable_image.dart'
@@ -85,8 +88,10 @@ ServerOptions get defaultServerOptions => ServerOptions(
     ),
   },
   styles: () => [
+    ..._docs_fixes.docsFixes,
     ..._codelabs_page.CodelabsPage.styles,
     ..._clicker.ClickerState.styles,
+    ..._contributors_page.ContributorsPage.styles,
     ..._landing_page.LandingPage.styles,
     ..._cta_section.CtaSection.styles,
     ..._examples.Examples.styles,

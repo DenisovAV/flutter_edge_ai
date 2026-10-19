@@ -21,6 +21,7 @@ import 'package:jaspr_router/jaspr_router.dart';
 
 import 'codelabs/codelabs_page.dart';
 import 'components/clicker.dart';
+import 'contributors/contributors_page.dart';
 import 'landing/landing_page.dart';
 import 'seo.dart';
 import 'theme/brand.dart';
@@ -53,6 +54,21 @@ const Map<String, Object?> _codelabsCollectionSchema = {
   'name': 'flutter_edge_ai Codelabs',
   'description': _codelabsDescription,
   'url': '$kSiteOrigin/codelabs',
+};
+
+const String _contributorsDescription =
+    'The maintainers of Flutter Edge AI, the part of the project each one '
+    'looks after, and everyone whose work landed in the repository.';
+
+/// JSON-LD for `/contributors`, for the same reason as
+/// [_codelabsCollectionSchema]: without it the route would publish the
+/// site-wide `SoftwareApplication` schema under a second URL.
+const Map<String, Object?> _contributorsPageSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'AboutPage',
+  'name': 'Flutter Edge AI Contributors',
+  'description': _contributorsDescription,
+  'url': '$kSiteOrigin/contributors',
 };
 
 void main() {
@@ -253,6 +269,21 @@ void main() {
                 structuredData: _codelabsCollectionSchema,
               ),
               body: const CodelabsPage(),
+            ),
+          ),
+          Route(
+            path: '/contributors',
+            builder: (context, state) => Document(
+              title: 'Contributors — Flutter Edge AI',
+              lang: 'en',
+              meta: const {'description': _contributorsDescription},
+              head: seoHead(
+                title: 'Contributors — Flutter Edge AI',
+                description: _contributorsDescription,
+                path: '/contributors',
+                structuredData: _contributorsPageSchema,
+              ),
+              body: const ContributorsPage(),
             ),
           ),
           for (final group in routes) ...group,

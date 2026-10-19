@@ -27,10 +27,11 @@ Future<void> main() async {
     // ...and the tokenizer comes from somewhere else on purpose. Which
     // tokenizer a model needs is a property of the MODEL, not of the engine:
     // EmbeddingGemma wants SentencePiece whether LiteRT or ONNX Runtime runs
-    // it. Leave this out and the first embedding fails with an
-    // EmbeddingLoadException naming the package to add — it will never
-    // quietly tokenize with the wrong convention and hand you vectors from
-    // the wrong point in the space.
+    // it. Leave this out and, on a native platform, getActiveEmbedder()
+    // throws an EmbeddingLoadException naming the package to add (the web
+    // tokenizes inside LiteRT.js and never asks) — it will never quietly
+    // tokenize with the wrong convention and hand you vectors from the wrong
+    // point in the space.
     embeddingTokenizers: [GemmaEmbeddingTokenizers()],
     huggingFaceToken: hfToken.isEmpty ? null : hfToken,
     // OPFS streaming. On web the model is 2.0 GB, right on the ~2 GB blob

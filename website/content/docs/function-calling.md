@@ -19,8 +19,10 @@ A call takes one of two paths, chosen from `modelType` and the file type:
 - **The runtime's own tool path** — **Gemma 4** (E2B, E4B) and **FunctionGemma
   270M** on a `.litertlm`: the declarations reach LiteRT-LM as structured data
   and the calls come back parsed (see
-  [Who renders the declarations](#who-renders-the-declarations)).
-- **Prompt-based** — every other model installed with
+  [Who renders the declarations](#who-renders-the-declarations)). A `.gguf`
+  through [llama.cpp](/docs/llama) takes this path too, when the model's chat
+  template supports tools.
+- **Prompt-based** — every other model, in a chat created with
   `supportsFunctionCalls: true` (except Gemma 4, which needs a `.litertlm` — see
   [Platform support](#platform-support)): the chat writes the tools into the
   prompt and parses the calls back out of the text. For example:
@@ -29,8 +31,8 @@ A call takes one of two paths, chosen from `modelType` and the file type:
   - **FunctionGemma 270M** as a MediaPipe `.task`.
   - **DeepSeek R1** — function calling + thinking mode.
   - **Qwen 2.5 0.5B / 1.5B** (`.task`) and **Qwen3 0.6B** (`.litertlm` — use
-    `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`; `Qwen3-0.6B.litertlm` no longer
-    loads, [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
+    `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`, or `Qwen3-0.6B.litertlm`
+    downloaded after 2026-10-13, 15:53 UTC, [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
   - **Phi-4 Mini**.
   - The [Built-in AI](#built-in-ai-os-models) OS models.
 
@@ -52,8 +54,14 @@ See [Models](/docs/models) for which models declare function calling.
 <Info>
 
 If you pass `tools` with `supportsFunctionCalls: false`, the chat logs a warning
-and does not inject them — the model still works normally for text generation.
-Pass `supportsFunctionCalls: true` for models that support it.
+(debug builds only), does not write them into the prompt and does not parse
+calls out of the reply — the model still works normally for text generation.
+Gemma 4 and FunctionGemma on a `.litertlm` are the exception: there the
+declarations still reach LiteRT-LM, though the chat still does not parse the
+calls. A `.gguf` model is the other: its tools are on unless
+`supportsFunctionCalls` is `false`, and `false` drops them with no warning.
+Pass `supportsFunctionCalls: true` to `createChat` / `openChat` for models that
+support it.
 
 </Info>
 

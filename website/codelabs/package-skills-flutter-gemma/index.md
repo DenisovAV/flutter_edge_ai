@@ -88,7 +88,7 @@ cd ~/edge_ai_skills
 
 The reason is the repository you just cloned. It has skills of its own, for the
 people who maintain `flutter_edge_ai` — `release`, `build-native`, `review-pr` and
-two more, in `.claude/skills/` at its root — and some assistants look further up
+three more, in `.claude/skills/` at its root — and some assistants look further up
 than the folder you open. Claude Code loads project skills from the directory a
 session starts in **and from every parent up to the repository root**, so a
 session started inside the clone would offer your assistant instructions for
@@ -146,9 +146,10 @@ assistants above read it the same way, in three stages:
 3. **Execution.** It follows the instructions while it does the task.
 
 Stage 2 runs entirely on the description, so `flutter_edge_ai`'s skills describe
-tasks and symptoms rather than APIs — *"offline chat, running Gemma…"*, *"a reply
-comes back empty"*. Eight ship in the package, one per area: inference, function
-calling, RAG, speech, MediaPipe, ONNX, built-in AI and memory diagnostics.
+tasks and symptoms rather than APIs — *"offline chat, running an LLM
+locally…"*, *"a reply comes back empty"*. Nine ship in the package, one per
+area: inference, function calling, RAG, speech, MediaPipe, ONNX, built-in AI,
+memory diagnostics and decisions.
 
 ### Install them
 
@@ -491,7 +492,7 @@ it without a model: `flutter test` there runs it.
 ```dart
 await for (final chunk in chat.generateChatResponseWithTools(
   onToolCall: _runTool,
-  onMaxToolTurns: () => _insertNote('Stopped after 8 tool calls.'),
+  onMaxToolTurns: () => _insertNote('Stopped after 8 tool turns.'),
 )) {
   if (chunk is TextResponse) {
     buffer.write(chunk.token);
@@ -543,9 +544,9 @@ matches what was installed. Look for it before you reach for `--all`, because
 without asking.** Rules of your own are safer in a skill of your own than inside
 an installed one.
 
-The other eight say `Update available` although nothing changed: version 1.0.1 of
-the CLI reports that for every Claude Code skill, even straight after installing
-it. The same untouched install in `.agents/skills/` prints
+The other eight say `Update available` although nothing changed: versions 1.0.1
+to 1.0.4 of the CLI report that for every Claude Code skill, even straight after
+installing it. The same untouched install in `.agents/skills/` prints
 `All skills are up to date.`
 
 Two more commands worth knowing:

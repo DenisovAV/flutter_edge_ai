@@ -149,7 +149,8 @@ class RagStore {
     await index.flush();
   }
 
-  /// Dispose this before FlutterEdgeAi.dispose(), whose embedder the index borrows.
+  /// Dispose this before FlutterEdgeAi.dispose(): the index borrows core's
+  /// active embedder, which that call does not close.
   Future<void> dispose() => _disposing ??= _disposeOnce();
 
   Future<void> _disposeOnce() async {

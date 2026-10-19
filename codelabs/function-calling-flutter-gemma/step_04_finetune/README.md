@@ -9,9 +9,10 @@ tools.json    the four declarations, the same ones lib/tools.dart holds
 raw.jsonl     90 prompt -> tool-call rows to train and score on
 ```
 
-The commands below are verified against **litetune 0.4.3**, the current PyPI
-release: run end to end on 2026-10-12 with 0.4.1, and no CLI option they use
-changed in 0.4.2 or 0.4.3. It pins LiteRT-LM 0.18.0 for
+The commands below are verified against **litetune 0.4.3**, the release this
+codelab was written against: run end to end on 2026-10-12 with 0.4.1, and no CLI
+option they use changed in 0.4.2 or 0.4.3; 0.5.x has not been checked against
+them. It pins LiteRT-LM 0.18.0 for
 verification and the matching 0.18.0 builder for conversion. The project source
 is also available on [GitHub](https://github.com/DenisovAV/litetune).
 

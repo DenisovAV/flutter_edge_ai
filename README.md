@@ -27,6 +27,7 @@ or [Getting started](https://flutteredge.ai/docs/getting-started).
 | **Engines** | | |
 | [`flutter_edge_ai_litertlm`](packages/flutter_edge_ai_litertlm/README.md) | LiteRT-LM (`.litertlm`) through `dart:ffi` on the five native platforms plus web; CPU, GPU and NPU; the LiteRT embedding backend. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_litertlm) · [site](https://flutteredge.ai/docs/litertlm) |
 | [`flutter_edge_ai_mediapipe`](packages/flutter_edge_ai_mediapipe/README.md) | MediaPipe (`.task`) on Android, iOS and web. Google's LLM Inference API is maintenance-only; new apps should use `.litertlm`. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_mediapipe) · [site](https://flutteredge.ai/docs/mediapipe) |
+| [`flutter_edge_ai_llama`](packages/flutter_edge_ai_llama/README.md) | llama.cpp (`.gguf`) through llamadart on Android, iOS, macOS, Windows, Linux and web; native LoRA. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_llama) · [site](https://flutteredge.ai/docs/llama) |
 | [`flutter_edge_ai_onnx`](packages/flutter_edge_ai_onnx/README.md) | ONNX Runtime: GenAI inference and embeddings natively, Transformers.js and onnxruntime-web on web. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_onnx) · [site](https://flutteredge.ai/docs/onnx) |
 | [`flutter_edge_ai_builtin_ai`](packages/flutter_edge_ai_builtin_ai/README.md) | The OS model, nothing to download: Gemini Nano (Android), Apple Foundation Models (iOS, macOS), Windows AI Foundry, the browser Prompt API. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_builtin_ai) · [site](https://flutteredge.ai/docs/builtin-ai) |
 | **Embeddings and RAG** | | |
@@ -71,7 +72,7 @@ Everyone else who has contributed, and more about each maintainer:
 More: [Migration guide](packages/flutter_edge_ai/MIGRATION.md) ·
 [Desktop support](packages/flutter_edge_ai/DESKTOP_SUPPORT.md) ·
 [Contributing](packages/flutter_edge_ai/CONTRIBUTING.md).
-The family shipped as `flutter_gemma*` up to core 1.11.3; those names stay
+The family shipped as `flutter_gemma*` up to core 1.11.4; those names stay
 published as they are.
 
 ## License

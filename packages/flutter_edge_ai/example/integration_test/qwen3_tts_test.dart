@@ -31,8 +31,10 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     show LiteRtTtsBackend;
 
+// Pinned for the same reason as the example's TtsModel.qwen3: the repo's main
+// no longer has these files at its root.
 const _modelUrl =
-    'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/';
+    'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/';
 const _text = 'Hello from on device text to speech.';
 
 double _rms(Uint8List pcm) {

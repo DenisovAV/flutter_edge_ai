@@ -16,9 +16,11 @@ enum TtsModel {
     ttsModelType: TtsModelType.matcha,
     isSupported: true,
   ),
+  // Pinned: on 2026-10-16 the repo moved these files under legacy/ and its
+  // main now holds only .litertlm builds, so resolve/main/ returns 404.
   qwen3(
     baseUrl:
-        'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/',
+        'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/',
     displayName: 'Qwen3-TTS 0.6B (11 languages)',
     size: '~1.9GB',
     ttsModelType: TtsModelType.qwen3,

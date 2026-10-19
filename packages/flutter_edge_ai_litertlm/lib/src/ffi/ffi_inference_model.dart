@@ -101,28 +101,61 @@ base class FfiInferenceModel extends InferenceModel
   }
 
   /// The self-check, once per model; a check that failed runs again next
-  /// time (it may have failed on a model that was closing).
+  /// time (it may have failed on a model that was closing). Its runs belong
+  /// to [scorer]: closing that scorer stops them, and another scorer waiting
+  /// on the same check then runs it again for itself.
   Future<LiteRtLmScoringMode> _scoringModeFor(
     _LiteRtLmOptionScorer scorer,
     List<String> targets,
+  ) async {
+    while (true) {
+      final known = _scoringCheck;
+      if (known == null) return _runScoringCheck(scorer, targets);
+      try {
+        return await known;
+      } on StateError {
+        // Stopped by the scorer that ran it, or by this model's close: run
+        // it again unless this scorer or the model is the one closed.
+        scorer._client;
+      }
+    }
+  }
+
+  Future<LiteRtLmScoringMode> _runScoringCheck(
+    _LiteRtLmOptionScorer scorer,
+    List<String> targets,
   ) {
-    final known = _scoringCheck;
-    if (known != null) return known;
+    List<double> single(OptionScoringRun run, List<String> tokens) => [
+      for (var i = 0; i < tokens.length; i++)
+        if (run.tokenScores[i].length == 1)
+          run.tokenScores[i].single
+        else
+          throw DeciderUnsupportedException(
+            'The self-check\'s one-token target "${tokens[i]}" scored '
+            '${run.tokenScores[i].length} tokens.',
+          ),
+    ];
     final check = liteRtLmScoringSelfCheck(
       targets: targets,
       tokenize: scorer.tokenize,
       detokenize: scorer.detokenize,
-      scoreOneToken: (prompt, token) async {
-        final run = await scorer._client.scoreTargets(prompt, [token]);
-        final scores = run.tokenScores.single;
-        if (scores.length != 1) {
-          throw DeciderUnsupportedException(
-            'The self-check\'s one-token target "$token" scored '
-            '${scores.length} tokens.',
-          );
-        }
-        return scores.single;
-      },
+      scoreOneToken: (prompt, token) async => single(
+        await scorer._client.scoreTargets(prompt, [
+          token,
+        ], stops: scorer._stops),
+        [token],
+      ).single,
+      scoreInMode: (mode, prompt, tokens) async => single(
+        await scorer._client.scoreTargets(
+          prompt,
+          tokens,
+          reprefill: mode == LiteRtLmScoringMode.once
+              ? await scorer._reprefillFor(prompt)
+              : null,
+          stops: scorer._stops,
+        ),
+        tokens,
+      ),
     );
     _scoringCheck = check;
     return check.then(
@@ -1486,6 +1519,10 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
   final FfiInferenceModel _model;
   bool _closed = false;
 
+  /// The stop flags of this scorer's native runs, its share of the self-check
+  /// included: [close] stops them.
+  final ScoringStops _stops = ScoringStops();
+
   LiteRtLmFfiClient get _client {
     if (_closed) throw StateError('The option scorer is closed.');
     if (_model.isClosed) throw StateError('The model is closed.');
@@ -1513,37 +1550,45 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
     CancelToken? cancelToken,
   }) async {
     final mode = await _model._scoringModeFor(this, targets);
-    String? reprefill;
-    if (mode == LiteRtLmScoringMode.once) {
-      // The session adds BOS itself, so a prompt that starts with its text
-      // would carry two.
-      if (prompt.startsWith('<bos>')) {
-        throw const DeciderUnsupportedException(
-          'The rendered prompt starts with <bos>, which the scoring session '
-          'adds itself.',
-        );
-      }
-      final ids = await tokenize(prompt);
-      final last = await detokenize([ids.last]);
-      final back = await tokenize(last);
-      if (!prompt.endsWith(last) ||
-          back.length != 1 ||
-          back.single != ids.last) {
-        throw DeciderUnsupportedException(
-          'The prompt\'s last token ${ids.last} does not round-trip as '
-          '"$last", so it cannot be prefilled again on its own.',
-        );
-      }
-      reprefill = last;
+    // The session adds BOS itself, in either mode, so a prompt that starts
+    // with its text would carry two.
+    if (prompt.startsWith('<bos>')) {
+      throw const DeciderUnsupportedException(
+        'The rendered prompt starts with <bos>, which the scoring session '
+        'adds itself.',
+      );
     }
     return _client.scoreTargets(
       prompt,
       targets,
-      reprefill: reprefill,
+      reprefill: mode == LiteRtLmScoringMode.once
+          ? await _reprefillFor(prompt)
+          : null,
       cancelToken: cancelToken,
+      stops: _stops,
     );
   }
 
+  /// The text of [prompt]'s last token, which mode `once` prefills again.
+  Future<String> _reprefillFor(String prompt) async {
+    final ids = await tokenize(prompt);
+    final last = await detokenize([ids.last]);
+    final back = await tokenize(last);
+    if (!prompt.endsWith(last) || back.length != 1 || back.single != ids.last) {
+      throw DeciderUnsupportedException(
+        'The prompt\'s last token ${ids.last} does not round-trip as '
+        '"$last", so it cannot be prefilled again on its own.',
+      );
+    }
+    return last;
+  }
+
+  /// Also stops this scorer's native runs in flight — a decision's, or the
+  /// self-check it started — at their next check, so a closed decider does
+  /// not keep the engine busy scoring options nobody will read.
   @override
-  Future<void> close() async => _closed = true;
+  Future<void> close() async {
+    _closed = true;
+    _stops.stopAll();
+  }
 }

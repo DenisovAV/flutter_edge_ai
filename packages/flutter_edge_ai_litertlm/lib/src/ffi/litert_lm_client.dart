@@ -2517,9 +2517,12 @@ class LiteRtLmFfiClient {
   /// isolate, under [_nativeMutex], so it runs between turns of any
   /// conversation on this engine; [shutdown] waits for it.
   ///
-  /// [cancelToken] and [shutdown] stop the run before its prefill or between
-  /// targets: a cancel fails it with `DeciderCancelledException`, a shutdown
-  /// with [StateError].
+  /// [cancelToken], [stops] and [shutdown] stop the run before its prefill or
+  /// between targets: a cancel fails it with `DeciderCancelledException`, a
+  /// stop of [stops] (its scorer closed) and a shutdown with [StateError]. A
+  /// cancel while the run still waits for [_nativeMutex] — behind a chat turn,
+  /// which holds it until the turn ends — fails it at once; the run then
+  /// never starts.
   // The decider SPI is @experimental.
   // ignore: experimental_member_use
   Future<OptionScoringRun> scoreTargets(
@@ -2527,47 +2530,85 @@ class LiteRtLmFfiClient {
     List<String> targets, {
     String? reprefill,
     CancelToken? cancelToken,
-  }) => _guardCreate(
-    () => _nativeMutex.protect(() async {
-      final engine = _engine;
-      if (_isShuttingDown || engine == null || engine == nullptr) {
-        throw StateError('The LiteRT-LM engine is not loaded.');
-      }
-      if (cancelToken?.isCancelled ?? false) {
-        // ignore: experimental_member_use
-        throw const DeciderCancelledException('The decision was cancelled.');
-      }
-      final stop = calloc<Int32>();
-      _scoringStops.add(stop);
-      var running = true;
-      if (cancelToken != null) {
-        unawaited(
-          cancelToken.whenCancelled.then((_) {
-            if (running) stop.value = 1;
-          }),
-        );
-      }
-      try {
-        return await scoreTargetsOffMainIsolate(
-          engineAddr: engine.address,
-          prompt: prompt,
-          targets: targets,
-          stopFlagAddr: stop.address,
-          reprefill: reprefill,
-        );
-        // ignore: experimental_member_use
-      } on DeciderCancelledException {
-        if (_isShuttingDown && !(cancelToken?.isCancelled ?? false)) {
-          throw StateError('The model was closed while it scored options.');
+    ScoringStops? stops,
+  }) {
+    final run = _guardCreate(
+      () => _nativeMutex.protect(() async {
+        final engine = _engine;
+        if (_isShuttingDown || engine == null || engine == nullptr) {
+          throw StateError('The LiteRT-LM engine is not loaded.');
         }
-        rethrow;
-      } finally {
-        running = false;
-        _scoringStops.remove(stop);
-        calloc.free(stop);
-      }
-    }),
-  );
+        if (cancelToken?.isCancelled ?? false) {
+          // ignore: experimental_member_use
+          throw const DeciderCancelledException('The decision was cancelled.');
+        }
+        if (stops?.isStopped ?? false) {
+          throw StateError('The option scorer is closed.');
+        }
+        final stop = calloc<Int32>();
+        _scoringStops.add(stop);
+        stops?._flags.add(stop);
+        var running = true;
+        if (cancelToken != null) {
+          unawaited(
+            cancelToken.whenCancelled.then((_) {
+              if (running) stop.value = 1;
+            }),
+          );
+        }
+        try {
+          return await scoreTargetsOffMainIsolate(
+            engineAddr: engine.address,
+            prompt: prompt,
+            targets: targets,
+            stopFlagAddr: stop.address,
+            reprefill: reprefill,
+          );
+          // ignore: experimental_member_use
+        } on DeciderCancelledException {
+          if (cancelToken?.isCancelled ?? false) rethrow;
+          if (_isShuttingDown) {
+            throw StateError('The model was closed while it scored options.');
+          }
+          if (stops?.isStopped ?? false) {
+            throw StateError('The option scorer was closed while it scored.');
+          }
+          rethrow;
+        } finally {
+          running = false;
+          _scoringStops.remove(stop);
+          stops?._flags.remove(stop);
+          calloc.free(stop);
+        }
+      }),
+    );
+    if (cancelToken == null) return run;
+    // Answer a cancel now even while the run waits for the mutex; the run
+    // itself then fails at its first check, and nobody reads that.
+    // ignore: experimental_member_use
+    final cancelled = Completer<OptionScoringRun>();
+    unawaited(
+      cancelToken.whenCancelled.then((_) {
+        if (!cancelled.isCompleted) {
+          cancelled.completeError(
+            // ignore: experimental_member_use
+            const DeciderCancelledException('The decision was cancelled.'),
+          );
+        }
+      }),
+    );
+    unawaited(
+      run.then(
+        (value) {
+          if (!cancelled.isCompleted) cancelled.complete(value);
+        },
+        onError: (Object e, StackTrace st) {
+          if (!cancelled.isCompleted) cancelled.completeError(e, st);
+        },
+      ),
+    );
+    return cancelled.future;
+  }
 
   /// Get session metrics from the given conversation including token usage.
   /// Returns empty SessionMetrics if benchmark unavailable.
@@ -2677,3 +2718,23 @@ String _activationName(int value) => switch (value) {
   3 => 'int8',
   _ => 'type $value',
 };
+
+/// The stop flags of one owner's scoring runs — an option scorer's — so that
+/// closing it stops what it has in flight and refuses what it starts later.
+/// Main isolate only: the flags are set and freed there.
+final class ScoringStops {
+  final Set<Pointer<Int32>> _flags = {};
+  bool _stopped = false;
+
+  /// Whether [stopAll] ran.
+  bool get isStopped => _stopped;
+
+  /// Stops every run in flight at its next check and every later run before
+  /// it starts.
+  void stopAll() {
+    _stopped = true;
+    for (final flag in _flags) {
+      flag.value = 1;
+    }
+  }
+}

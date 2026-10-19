@@ -34,10 +34,22 @@ final class _Engine {
   final Map<int, String> pieces = {37918: 'sad', 3672: 'joy', 21867: 'love'};
 
   /// The score of one token after one prompt; the call count is passed so a
-  /// script can vary between repeats.
+  /// script can vary between repeats. The control prompt, which differs
+  /// early, scores differently, as on every engine.
   double Function(String prompt, String token, int call) score =
-      (prompt, token, call) => -1.5;
+      (prompt, token, call) =>
+          prompt == liteRtLmSelfCheckControlPrompt ? -1.7 : -1.5;
   int calls = 0;
+
+  /// The scores of one run of [tokens] after [prompt] in [mode]: by default
+  /// each as it scores alone, which is what an exact rewind gives.
+  List<double> Function(
+    LiteRtLmScoringMode mode,
+    String prompt,
+    List<String> tokens,
+  )
+  inMode = (mode, prompt, tokens) => [for (final _ in tokens) -1.5];
+  final runs = <List<String>>[];
 
   Future<LiteRtLmScoringMode> check([
     List<String> targets = const ['sad', 'joy', 'love'],
@@ -46,6 +58,10 @@ final class _Engine {
     tokenize: (text) async => tokens[text] ?? const [],
     detokenize: (ids) async => ids.map((id) => pieces[id] ?? '?').join(),
     scoreOneToken: (prompt, token) async => score(prompt, token, calls++),
+    scoreInMode: (mode, prompt, tokens) async {
+      runs.add(tokens);
+      return inMode(mode, prompt, tokens);
+    },
   );
 }
 
@@ -63,8 +79,17 @@ void main() {
     () async {
       final engine = _Engine();
       expect(await engine.check(), LiteRtLmScoringMode.once);
-      // Three probes, two repeats, two prompts.
-      expect(engine.calls, 12);
+      // Three probes, two repeats, two prompts, and the control prompt.
+      expect(engine.calls, 15);
+      // Then the mode as a decision uses it: each probe alone, all three in
+      // one run, and in the other order.
+      expect(engine.runs, [
+        ['sad'],
+        ['joy'],
+        ['love'],
+        ['sad', 'joy', 'love'],
+        ['love', 'joy', 'sad'],
+      ]);
     },
   );
 
@@ -131,6 +156,51 @@ void main() {
     final engine = _Engine()..tokens['fear'] = [143355];
     engine.pieces[143355] = 'fear';
     await engine.check(['sad', 'joy', 'love', 'fear']);
-    expect(engine.calls, 12);
+    expect(engine.calls, 15);
   });
+
+  test('a prompt that differs early but scores the same is refused: the '
+      'scores do not see the prompt', () async {
+    final engine = _Engine()..score = (prompt, token, call) => -1.5;
+    await expectLater(engine.check(), _refusing('do not see the prompt'));
+    expect(engine.runs, isEmpty);
+  });
+
+  test('a target scored after a rewind that differs from alone is refused, '
+      'whichever mode was picked', () async {
+    for (final plain in [false, true]) {
+      final engine = _Engine()
+        ..inMode = (mode, prompt, tokens) => [
+          for (var i = 0; i < tokens.length; i++) i == 0 ? -1.5 : -1.6,
+        ];
+      if (plain) {
+        engine.score = (prompt, token, _) =>
+            prompt == liteRtLmSelfCheckPrompt ? -1.5 : -2.0;
+      }
+      await expectLater(engine.check(), _refusing('rewinding'));
+    }
+  });
+
+  test('the other order alone differing is refused too', () async {
+    final engine = _Engine()
+      ..inMode = (mode, prompt, tokens) => [
+        for (final t in tokens)
+          tokens.first == 'love' && t == 'sad' ? -1.9 : -1.5,
+      ];
+    await expectLater(engine.check(), _refusing('rewinding'));
+  });
+
+  test(
+    'one probe is run twice in one run, so a rewind is still checked',
+    () async {
+      final engine = _Engine();
+      expect(await engine.check(['sad']), LiteRtLmScoringMode.once);
+      expect(engine.runs, [
+        ['sad'],
+        ['sad'],
+        ['sad', 'sad'],
+        ['sad', 'sad'],
+      ]);
+    },
+  );
 }

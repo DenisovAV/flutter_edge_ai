@@ -371,6 +371,17 @@ Future<Decider> createOptionScoringDecider(
   );
   throwIfDeciderCancelled(cancelToken);
   final scorer = await model.openOptionScorer();
+  // A cancel while the engine prepares (LiteRT-LM's self-check is a dozen
+  // native runs) closes the scorer, which stops them; the scorer's StateError
+  // then reads as the cancel it is.
+  var creating = true;
+  if (cancelToken != null) {
+    unawaited(
+      cancelToken.whenCancelled.then((_) {
+        if (creating) unawaited(scorer.close().catchError((Object _) {}));
+      }),
+    );
+  }
   try {
     final targets = await optionTargets(scorer, section);
     throwIfDeciderCancelled(cancelToken);
@@ -392,6 +403,7 @@ Future<Decider> createOptionScoringDecider(
       );
     }
     throwIfDeciderCancelled(cancelToken);
+    creating = false;
     return OptionScoringDecider._(
       model,
       scorer,
@@ -400,6 +412,7 @@ Future<Decider> createOptionScoringDecider(
       targets.texts,
     );
   } catch (e, st) {
+    creating = false;
     try {
       await scorer.close();
     } on Object catch (closeError) {
@@ -410,6 +423,9 @@ Future<Decider> createOptionScoringDecider(
         '[flutter_edge_ai] closing the option scorer after a failed '
         'createDecider failed too: $closeError',
       );
+    }
+    if (e is StateError && (cancelToken?.isCancelled ?? false)) {
+      throw const DeciderCancelledException('The decision was cancelled.');
     }
     Error.throwWithStackTrace(e, st);
   }
@@ -660,8 +676,19 @@ final class OptionScoringDecider extends Decider {
     }
   }
 
+  /// The decision running now, or the last one; the next waits for it.
+  Future<void> _lane = Future<void>.value();
+
+  /// One decision at a time: [OptionScorer] promises its engine one call at a
+  /// time, and two `choose` calls left unawaited would interleave theirs.
   @override
-  Future<DeciderAnswer> decide(DeciderRequest request) async {
+  Future<DeciderAnswer> decide(DeciderRequest request) {
+    final answer = _lane.then((_) => _decide(request));
+    _lane = answer.then<void>((_) {}, onError: (Object _) {});
+    return answer;
+  }
+
+  Future<DeciderAnswer> _decide(DeciderRequest request) async {
     if (isClosed) {
       throw StateError(
         _closing != null

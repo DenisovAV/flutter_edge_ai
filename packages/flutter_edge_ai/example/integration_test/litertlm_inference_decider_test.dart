@@ -193,6 +193,19 @@ void main() {
     );
     // ignore: avoid_print
     print('[decider] packs: ${packs.map(_name).toList()}');
+    // One pack alone would leave the other question types unchecked while
+    // the suite stays green.
+    final types = {
+      for (final pack in packs)
+        (((_goldenOf(pack)['provenance'] as Map)['section'] as Map)['payload']
+                as Map)['type']
+            as String,
+    };
+    expect(
+      types,
+      containsAll(['choice', 'noul', 'score']),
+      reason: 'stage a golden pack of each question type in ${_packsDir.path}',
+    );
   });
 
   for (final pack in packs) {
@@ -771,6 +784,43 @@ void main() {
       expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
       await scorer.close();
     }, skip: skip);
+
+    test(
+      'closing the scorer stops its long run and frees the engine',
+      () async {
+        final m = await model();
+        final scorer = await (m as OptionScoringModel).openOptionScorer();
+        final targets = [
+          for (final o in _listedOptions(trained))
+            '${o.id}${trained['terminator']}',
+        ];
+        final many = List.generate(300, (i) => targets[i % targets.length]);
+        final rendered = await scorer.renderUserMessage('a state to score');
+        await scorer.prepare(targets);
+        final watch = Stopwatch()..start();
+        final run = expectLater(
+          scorer.score(rendered, many),
+          throwsA(isA<StateError>()),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await scorer.close();
+        await run;
+        final stopped = watch.elapsedMilliseconds;
+        // The engine is free again: another scorer's one-target run starts now.
+        final next = await m.openOptionScorer();
+        await next.prepare(targets);
+        final one = await next.score(rendered, [targets.first]);
+        // ignore: avoid_print
+        print(
+          '[decider] closing the scorer at 100 ms ended its 300-target run at '
+          '$stopped ms',
+        );
+        expect(stopped, lessThan(3000));
+        expect(one.tokenScores.single, isNotEmpty);
+        await next.close();
+      },
+      skip: skip,
+    );
 
     test('a model without a decision section is refused', () async {
       final path = '$_documents/functiongemma-270M-it.litertlm';

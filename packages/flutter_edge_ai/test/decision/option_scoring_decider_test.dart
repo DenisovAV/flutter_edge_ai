@@ -17,6 +17,8 @@ import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/src/decision/embedding_decider.dart'
+    show deciderConfidence;
 import 'package:flutter_edge_ai/src/decision/option_scoring_decider.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -100,7 +102,11 @@ final class _Scorer extends OptionScorer {
   Completer<void>? tokenizeGate;
 
   int scoreCalls = 0;
+  int renderCalls = 0;
   int prepareCalls = 0;
+
+  /// When set, `prepare` waits for it, then fails if the scorer was closed.
+  Completer<void>? prepareGate;
   List<String>? prepared;
   String? lastPrompt;
   List<String>? lastTargets;
@@ -136,6 +142,7 @@ final class _Scorer extends OptionScorer {
   @override
   Future<String> renderUserMessage(String content) async {
     _open();
+    renderCalls++;
     return '<start_of_turn>user\n$content<end_of_turn>\n<start_of_turn>model\n';
   }
 
@@ -143,6 +150,10 @@ final class _Scorer extends OptionScorer {
   Future<void> prepare(List<String> targets) async {
     prepareCalls++;
     prepared = targets;
+    if (prepareGate case final gate?) {
+      await gate.future;
+      _open();
+    }
     if (prepareError case final error?) throw error;
   }
 
@@ -169,9 +180,10 @@ final class _Scorer extends OptionScorer {
 }
 
 final class _Model extends InferenceModel with OptionScoringModel {
-  _Model(this.payload, this.scorer, {this.context = 1024});
+  _Model(this.payload, this.scorer, {this.context = 1024, this.readError});
 
   final String? payload;
+  final Object? readError;
   final _Scorer scorer;
   final int context;
   bool closedModel = false;
@@ -183,7 +195,10 @@ final class _Model extends InferenceModel with OptionScoringModel {
   bool get isClosed => closedModel;
 
   @override
-  Future<String?> readDecisionSection() async => payload;
+  Future<String?> readDecisionSection() async {
+    if (readError case final error?) throw error;
+    return payload;
+  }
 
   @override
   Future<OptionScorer> openOptionScorer() async => scorer;
@@ -1035,6 +1050,266 @@ void main() {
         d.choose(DeciderInput(EmbeddingInput.text('hello'))),
         throwsStateError,
       );
+    });
+  });
+
+  group('the answer, computed by hand', () {
+    // refund_status and refund_policy are three tokens each, cancel and the
+    // none option one: the multi-token sums, a temperature other than 1, a
+    // none option and a threshold, which the golden pack (one token per
+    // option, no none option) does not reach.
+    const t = 1.7;
+    const below = 0.6;
+    Future<(Decider, _Scorer)> decider({int context = 1024}) async {
+      final s =
+          _Scorer({
+              1: 'refund',
+              2: '_',
+              3: 'status',
+              4: 'policy',
+              5: 'cancel',
+              6: 'none_of_these',
+              106: '<end_of_turn>',
+            })
+            ..spell('refund_status<end_of_turn>', [1, 2, 3, 106])
+            ..spell('refund_policy<end_of_turn>', [1, 2, 4, 106])
+            ..spell('cancel<end_of_turn>', [5, 106])
+            ..spell('none_of_these<end_of_turn>', [6, 106])
+            ..spell('refund_status', [1, 2, 3])
+            ..spell('refund_policy', [1, 2, 4])
+            ..spell('cancel', [5])
+            ..spell('none_of_these', [6])
+            ..spell('refund', [1]);
+      final payload = {
+        'contract_version': 1,
+        'type': 'choice',
+        'question': 'What does the customer want?',
+        'options': [
+          {'id': 'refund_status', 'description': null},
+          {'id': 'refund_policy', 'description': null},
+          {'id': 'cancel', 'description': null},
+        ],
+        'none_option': 'none_of_these',
+        'scoring': 'unique_prefix',
+        'terminator': '<end_of_turn>',
+        'scored_lengths': [3, 3, 1, 1],
+        'temperature': t,
+        'abstain_rule': 'error_budget',
+        'abstain_below': below,
+      };
+      final d = await _Model(jsonEncode(payload), s, context: context)
+          .createDecider(
+            question: 'What does the customer want?',
+            options: [
+              DeciderOption('cancel'),
+              DeciderOption('refund_status'),
+              DeciderOption('refund_policy'),
+            ],
+            calibration: const InferenceDeciderCalibration.fromModel(),
+          );
+      return (d, s);
+    }
+
+    Future<DeciderAnswer> choose(
+      Decider d,
+      _Scorer s,
+      Map<String, List<double>> scores, {
+      int? topK,
+    }) {
+      s.optionScores = scores;
+      return d.choose(
+        DeciderInput(EmbeddingInput.text('a state')),
+        topK: topK ?? d.options.length,
+      );
+    }
+
+    test(
+      'probabilities, scores, margin and confidence from the token sums',
+      () async {
+        final (d, s) = await decider();
+        final a = await choose(d, s, {
+          'refund_status': [-0.2, -0.1, -0.3],
+          'refund_policy': [-0.2, -0.1, -1.5],
+          'cancel': [-2.5],
+          'none_of_these': [-3.0],
+        });
+        final sums = {
+          'refund_status': -0.6,
+          'refund_policy': -1.8,
+          'cancel': -2.5,
+          'none_of_these': -3.0,
+        };
+        final zT = sums.values.fold(0.0, (z, x) => z + math.exp(x / t));
+        final z1 = sums.values.fold(0.0, (z, x) => z + math.exp(x));
+        for (final e in sums.entries) {
+          expect(
+            a.probabilities![e.key],
+            closeTo(math.exp(e.value / t) / zT, 1e-12),
+          );
+        }
+        expect(a.ranked.map((r) => r.id), [
+          'refund_status',
+          'refund_policy',
+          'cancel',
+          'none_of_these',
+        ]);
+        for (final r in a.ranked) {
+          expect(r.score, closeTo(sums[r.id]! - math.log(z1), 1e-12));
+        }
+        expect(a.margin, closeTo(-0.6 - -1.8, 1e-12));
+        final top = a.probabilities!['refund_status']!;
+        expect(top, lessThan(below));
+        expect(a.abstainReason, AbstainReason.belowThreshold);
+        expect(a.confidence, closeTo(deciderConfidence(top, 4), 1e-12));
+      },
+    );
+
+    test('topK keeps the best options only', () async {
+      final (d, s) = await decider();
+      final a = await choose(d, s, {
+        'refund_status': [-0.2, -0.1, -0.3],
+        'refund_policy': [-0.2, -0.1, -1.5],
+        'cancel': [-2.5],
+        'none_of_these': [-3.0],
+      }, topK: 2);
+      expect(a.ranked.map((r) => r.id), ['refund_status', 'refund_policy']);
+    });
+
+    test('a winning none option abstains noneOption even below the '
+        'threshold', () async {
+      final (d, s) = await decider();
+      final a = await choose(d, s, {
+        'refund_status': [-1.0, -1.0, -1.0],
+        'refund_policy': [-1.5, -1.5, -1.5],
+        'cancel': [-2.0],
+        'none_of_these': [-0.6],
+      });
+      expect(a.ranked.first.id, 'none_of_these');
+      expect(a.probabilities!['none_of_these'], lessThan(below));
+      expect(a.abstainReason, AbstainReason.noneOption);
+    });
+
+    test('a tie goes to the option the app listed first', () async {
+      final (d, s) = await decider();
+      final a = await choose(d, s, {
+        'refund_status': [-0.5, -0.5, -0.5],
+        'refund_policy': [-1.0, -1.0, -1.0],
+        'cancel': [-1.5],
+        'none_of_these': [-3.0],
+      });
+      // The app listed cancel before refund_status.
+      expect(a.ranked.take(2).map((r) => r.id), ['cancel', 'refund_status']);
+    });
+
+    test(
+      'the context check counts BOS and one token prefilled again',
+      () async {
+        // A 10-token prompt, its BOS, the longest target (3), one more: 15.
+        await expectLater(
+          decider(context: 14),
+          throwsA(isA<DeciderUnsupportedException>()),
+        );
+        final (d, s) = await decider(context: 15);
+        final scores = {
+          'refund_status': [-0.2, -0.1, -0.3],
+          'refund_policy': [-0.2, -0.1, -1.5],
+          'cancel': [-2.5],
+          'none_of_these': [-3.0],
+        };
+        await choose(d, s, scores);
+        s.promptLength = 11;
+        await expectLater(choose(d, s, scores), throwsArgumentError);
+      },
+    );
+  });
+
+  group('creation, cancelled and refused', () {
+    test(
+      'a decision that cannot be read is refused, not a FormatException',
+      () async {
+        final golden = _golden();
+        final payload = golden['payload'] as Map<String, Object?>;
+        await expectLater(
+          _Model(
+            null,
+            _emotionScorer(),
+            readError: const FormatException('a decision stored twice'),
+          ).createDecider(
+            question: payload['question'] as String,
+            options: _optionsOf(payload),
+            calibration: const InferenceDeciderCalibration.fromModel(),
+          ),
+          throwsA(
+            isA<DeciderUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('a decision stored twice'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('a cancel while the engine prepares closes its scorer at once and '
+        'fails as cancelled', () async {
+      final golden = _golden();
+      final payload = golden['payload'] as Map<String, Object?>;
+      final scorer = _emotionScorer()..prepareGate = Completer<void>();
+      final token = CancelToken();
+      final created = _Model(golden['payload_text'] as String, scorer)
+          .createDecider(
+            question: payload['question'] as String,
+            options: _optionsOf(payload),
+            calibration: const InferenceDeciderCalibration.fromModel(),
+            cancelToken: token,
+          );
+      await pumpEventQueue();
+      expect(scorer.prepareCalls, 1);
+      token.cancel();
+      await pumpEventQueue();
+      expect(scorer.closed, isTrue, reason: 'the engine is told to stop');
+      scorer.prepareGate!.complete();
+      await expectLater(created, throwsA(isA<DeciderCancelledException>()));
+    });
+
+    test('a cancel right after prepare fails as cancelled and closes the '
+        'scorer', () async {
+      final golden = _golden();
+      final payload = golden['payload'] as Map<String, Object?>;
+      final scorer = _emotionScorer()..prepareGate = Completer<void>();
+      final token = CancelToken();
+      final created = _Model(golden['payload_text'] as String, scorer)
+          .createDecider(
+            question: payload['question'] as String,
+            options: _optionsOf(payload),
+            calibration: const InferenceDeciderCalibration.fromModel(),
+            cancelToken: token,
+          );
+      await pumpEventQueue();
+      // Prepare finishes, then the token is cancelled before the next step.
+      scorer.prepareGate!.complete();
+      token.cancel();
+      await expectLater(created, throwsA(isA<DeciderCancelledException>()));
+      expect(scorer.closed, isTrue);
+    });
+
+    test('two choose calls left unawaited run one after the other', () async {
+      final (decider, scorer) = await _emotionDecider();
+      final gate = Completer<void>();
+      scorer.tokenizeGate = gate;
+      final rendersBefore = scorer.renderCalls;
+      final first = decider.choose(DeciderInput(EmbeddingInput.text('one')));
+      final second = decider.choose(DeciderInput(EmbeddingInput.text('two')));
+      await pumpEventQueue();
+      expect(
+        scorer.renderCalls - rendersBefore,
+        1,
+        reason: 'the second waits for the first',
+      );
+      gate.complete();
+      await Future.wait([first, second]);
+      expect(scorer.renderCalls - rendersBefore, 2);
+      expect(scorer.scoreCalls, 2);
     });
   });
 

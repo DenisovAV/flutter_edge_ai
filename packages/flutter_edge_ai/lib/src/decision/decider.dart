@@ -142,7 +142,7 @@ abstract base class Decider {
   /// Whether [choose] can no longer answer: [close] was called, or its model
   /// is closed — for an embedding decider, closed with no replacement core
   /// serves in its place (a model `getActiveEmbedder` did not build); for a
-  /// language-model decider, closed at all. A decider on a model
+  /// language-model decider, closed at all. An embedding decider on a model
   /// core replaced is not closed: its next [choose] takes the replacement.
   bool get isClosed;
 
@@ -475,8 +475,8 @@ final class DeciderProvenance {
   final DeciderMethod method;
 
   /// The calibration kind: `none`, `crossFit`, `minSimilarity` or `labelled`
-  /// for an embedding decider; `none` or `supplied` (values fitted offline,
-  /// for one model and one question) for an inference decider.
+  /// for an embedding decider; `supplied` (values fitted offline, for one
+  /// model and one question) for an inference decider.
   final String calibration;
 
   /// The embedding space an embedding decider works in: the model's
@@ -487,7 +487,7 @@ final class DeciderProvenance {
 
   /// Time spent on the input once: its embedding (shared by
   /// `Decider.chooseAll`'s answers over one embedding), or an inference
-  /// decider's prompt prefill.
+  /// decider's prompt render and prefill.
   final Duration encodeTime;
 
   /// Time spent scoring the candidates.
@@ -499,8 +499,7 @@ final class DeciderProvenance {
 
   /// The value compared with [threshold], of the kind [abstainSignalKind]
   /// names; reported even when there is no threshold. Null when there was no
-  /// candidate, and when the decider has no such signal (an uncalibrated
-  /// inference decider).
+  /// candidate.
   final double? abstainSignal;
 
   /// What [abstainSignal] is; null exactly when it is null.

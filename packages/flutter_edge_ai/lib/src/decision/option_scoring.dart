@@ -27,7 +27,8 @@ base mixin OptionScoringModel on InferenceModel {
   ///
   /// Throws [FormatException] when the file's decision cannot be read: a
   /// container the engine does not understand, a decision stored twice or
-  /// in another form.
+  /// in another form; core turns it into `DeciderUnsupportedException`. An
+  /// engine that cannot read its file at all may throw that directly.
   Future<String?> readDecisionSection();
 
   /// The engine's scoring calls, for one decider. Fails with
@@ -38,8 +39,9 @@ base mixin OptionScoringModel on InferenceModel {
 }
 
 /// An engine's calls for scoring options, on one loaded model. Core makes
-/// one call at a time on a scorer; every call runs on the model's own
-/// engine, ordered with its other native work.
+/// one call at a time on a scorer (a decider runs its decisions one after
+/// another); every call runs on the model's own engine, ordered with its
+/// other native work.
 ///
 /// An `abstract base class`, so that a member added in a later release
 /// reaches every engine with its default body. Extend it.
@@ -83,6 +85,11 @@ abstract base class OptionScorer {
   });
 
   /// Releases what the scorer holds. The model stays open. Idempotent.
+  ///
+  /// Core also calls it to cancel: when a `createDecider` is cancelled while
+  /// [prepare] runs, and when the app closes the decider while [score] runs.
+  /// An engine should stop its native work for this scorer then; the calls
+  /// in flight may fail with [StateError], which core reports as the cancel.
   Future<void> close();
 }
 

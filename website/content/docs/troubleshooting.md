@@ -222,10 +222,14 @@ backend. Since LiteRT-LM v0.17.0
 (`flutter_gemma_litertlm` 1.7.0) the runtime rejects a piece in that bundle's
 SentencePiece tokenizer (`piece must not include null character` — on Android
 only in logcat); upstream
-[LiteRT-LM#3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865). Use
-`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from the same repo instead, installed
-the same way (`ModelType.qwen3`, `ModelFileType.litertlm`). See
-[#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659).
+[LiteRT-LM#3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865). On
+2026-10-13 the repo replaced the file's tokenizer
+([e6687177](https://huggingface.co/litert-community/Qwen3-0.6B/commit/e6687177)), and the file downloaded since loads (measured on macOS with
+`flutter_edge_ai_litertlm` 1.15.0). A copy downloaded before that date keeps the
+old tokenizer and the same name, and the installer does not fetch a file it
+already has: uninstall the model and install it again. Or use
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from the same repo, installed the
+same way (`ModelType.qwen3`, `ModelFileType.litertlm`). See [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659).
 
 ## NPU
 

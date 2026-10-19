@@ -802,8 +802,8 @@ core API is the entry point to everything else the plugin does:
   them and shows how to check what it writes
 * **swap the model** — change one constant; most `.litertlm` files from
   [litert-community](https://huggingface.co/litert-community) work the same
-  way on native platforms (`Qwen3-0.6B.litertlm` does not load — take
-  `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`; a per-SoC NPU bundle loads only
+  way on native platforms (a `Qwen3-0.6B.litertlm` downloaded before
+  2026-10-13 does not load — download it again; a per-SoC NPU bundle loads only
   on its NPU) — on the web, only a file exported for the browser engine does
 * **run a different engine** — the OS built-in model (Gemini Nano, Apple
   Foundation Models) needs no download at all:

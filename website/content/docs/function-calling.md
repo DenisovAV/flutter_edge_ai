@@ -29,8 +29,8 @@ A call takes one of two paths, chosen from `modelType` and the file type:
   - **FunctionGemma 270M** as a MediaPipe `.task`.
   - **DeepSeek R1** — function calling + thinking mode.
   - **Qwen 2.5 0.5B / 1.5B** (`.task`) and **Qwen3 0.6B** (`.litertlm` — use
-    `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`; `Qwen3-0.6B.litertlm` no longer
-    loads, [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
+    `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`, or `Qwen3-0.6B.litertlm`
+    downloaded since 2026-10-13, [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
   - **Phi-4 Mini**.
   - The [Built-in AI](#built-in-ai-os-models) OS models.
 

@@ -275,10 +275,12 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 | [Apple Foundation Models](/docs/builtin-ai) (built-in) | system | ✅ macOS | ✅ iOS | ❌ | — |
 | [Phi Silica](/docs/builtin-ai) (built-in) | system | ✅ Windows | ❌ | ❌ | — |
 
-¹ Install `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from that repo:
-`Qwen3-0.6B.litertlm` fails to load since `flutter_edge_ai_litertlm` 1.7.0
-([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659), upstream
-[LiteRT-LM #3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865)).
+¹ `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` (345 MB) from that repo is the
+catalog's file. `Qwen3-0.6B.litertlm` (614 MB) failed to load from
+`flutter_edge_ai_litertlm` 1.7.0 until the repo replaced its tokenizer on
+2026-10-13 ([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659), upstream
+[LiteRT-LM #3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865)); a
+copy downloaded before that date still fails — uninstall it and install it again.
 Both are native exports, so neither runs on web.
 
 ² On web, Qwen 2.5 0.5B runs as the ONNX build from `onnx-community`, through

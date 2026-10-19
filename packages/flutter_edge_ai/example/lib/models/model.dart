@@ -451,9 +451,10 @@ enum Model implements InferenceModelInterface {
 
   // === OTHER MODELS ===
 
-  // Qwen3 0.6B (LiteRT-LM format for web/desktop). The dynamic INT4 bundle,
-  // measured loading on native-v0.18.0-e (#659); the repo's
-  // Qwen3-0.6B.litertlm did not load there.
+  // Qwen3 0.6B (LiteRT-LM format for web/desktop). The dynamic INT4 bundle
+  // (345 MB), measured loading on native-v0.18.0-e (#659). The repo's
+  // Qwen3-0.6B.litertlm (614 MB) loads again since its tokenizer was replaced
+  // on 2026-10-13.
   qwen3_0_6B(
     baseUrl:
         'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',

@@ -1067,18 +1067,20 @@ precision.
 
 ### `Qwen3-0.6B.litertlm` fails to load
 
-Symptom: since 1.7.0 the engine fails to create for `Qwen3-0.6B.litertlm` from
+Symptom: the engine fails to create for `Qwen3-0.6B.litertlm` from
 [litert-community/Qwen3-0.6B](https://huggingface.co/litert-community/Qwen3-0.6B),
 with `piece must not include null character` in the native error.
 
-Cause: the SentencePiece version in LiteRT-LM since v0.17.0 rejects one piece
-of that bundle's tokenizer
+Cause: the SentencePiece version in LiteRT-LM since v0.17.0 (this package's
+1.7.0) rejects one piece of that bundle's old tokenizer
 ([LiteRT-LM #3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865)).
-Only this file is affected; Qwen3 0.6B itself works.
+On 2026-10-13 the repository replaced the tokenizer
+([e6687177](https://huggingface.co/litert-community/Qwen3-0.6B/commit/e6687177)); the file downloaded since loads (measured on macOS with
+1.15.0). A copy downloaded earlier keeps the old tokenizer under the same name.
 
-Fix: install `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from the same
-repository instead (measured working on `native-v0.18.0-e`). See
-[#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659).
+Fix: uninstall the model and install it again, or install
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from the same repository (measured
+working on `native-v0.18.0-e`). See [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659).
 
 ### Linux: any tool call aborts the app (fixed in 1.11.1)
 

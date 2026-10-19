@@ -175,7 +175,6 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     bool supportImage = false,
     bool supportAudio = false,
   }) {
-
     // Serialised, so that resolving paths, comparing them and constructing the
     // model are one step — which is what stops two concurrent first callers from
     // each building one, the defect this shell actually had. On web the pass

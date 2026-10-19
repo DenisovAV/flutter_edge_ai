@@ -60,9 +60,10 @@ final class EmbeddingPassInfo {
     this.activeBackend,
   });
 
-  /// Accelerator reported by the loaded runtime. When null, core retains
-  /// the descriptor's answer, preserving providers that know it in advance.
-  /// A provider that cannot know until load should set the descriptor to null.
+  /// Accelerator reported by the loaded runtime, authoritative after load.
+  /// A provider advertising GPU through honouredBackends must supply this;
+  /// core refuses a missing answer rather than guessing from the descriptor.
+  /// Providers using the legacy default retain descriptor fallback.
   final PreferredBackend? activeBackend;
 
   /// Length of every vector [EmbeddingPass.embed] returns. Must be > 0.
@@ -128,9 +129,10 @@ final class EmbeddingPassDescriptor<C extends Object> {
   /// The engine's configuration, handed to the factory.
   final C config;
 
-  /// The backend the pass really runs on, surfaced as
-  /// `EmbeddingModel.activeBackend`. Null means "unknown" — never read it as
-  /// CPU.
+  /// Pre-load placement claim. The pass's loaded activeBackend takes
+  /// precedence. Retained as fallback for providers using the legacy default;
+  /// a provider advertising GPU must report placement from load instead.
+  /// Null means unknown, never CPU.
   final PreferredBackend? activeBackend;
 
   final EmbeddingPass Function(C config) _factory;

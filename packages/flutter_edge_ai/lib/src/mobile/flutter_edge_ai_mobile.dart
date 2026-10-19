@@ -240,7 +240,6 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     bool supportImage = false,
     bool supportAudio = false,
   }) {
-
     // Serialised, because resolving paths, comparing them against the cached
     // embedder and building are three steps with awaits between them: run
     // interleaved, two callers both finish deciding before either records a

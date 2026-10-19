@@ -49,7 +49,7 @@ See [Agent → Setup](/docs/agent#setup).
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai: ^2.4.0
   flutter_edge_ai_litertlm: ^1.14.0
   flutter_edge_ai_agent: ^0.3.0       # if you use it
   genkit_flutter_edge_ai: ^0.10.0     # if you use it

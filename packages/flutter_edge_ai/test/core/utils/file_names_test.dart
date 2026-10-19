@@ -1,5 +1,5 @@
-import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
+import 'package:flutter_edge_ai/src/utils/file_names.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -27,6 +27,13 @@ void main() {
       // A trailing non-ASCII code unit is never part of the suffix.
       expect(isLiteRtLmFilename('model.litertlm\u212A'), isFalse);
     });
+  });
+
+  test('self-contained GGUF suffix folds ASCII only', () {
+    expect(isSelfContainedEmbeddingFilename('model.GgUf'), isTrue);
+    expect(isSelfContainedEmbeddingFilename('model.gguf.part'), isFalse);
+    expect(isSelfContainedEmbeddingFilename('model.gg\uFF35f'), isFalse);
+    expect(isSelfContainedEmbeddingFilename('model.gguf\u212A'), isFalse);
   });
 
   group('sanitizeHfDirName', () {

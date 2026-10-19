@@ -34,8 +34,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_speech: ^0.5.7
+  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai_speech: ^0.5.8
 ```
 
 ## Register the backend
@@ -355,7 +355,7 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
   empty `VoiceTurnCompleteEvent` without asking the model, as an empty
   transcript does. The recognizer is still required, and `runTurn` still uses
   it.
-- **Barge-in keeps the recordings (`flutter_edge_ai_litertlm` after 1.14.0).**
+- **Barge-in keeps the recordings (`flutter_edge_ai_litertlm` 1.15.0).**
   After an interrupted reply, a `.litertlm` chat is rewound to before the
   stopped turn and keeps what was said in earlier audio turns. With 1.14.0 and
   earlier, and on the NPU, it rebuilds its conversation from the turns' text,

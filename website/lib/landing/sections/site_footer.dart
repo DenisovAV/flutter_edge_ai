@@ -195,6 +195,9 @@ class SiteFooter extends StatelessComponent {
                   ),
                 ]),
                 li([
+                  a(href: '/contributors', classes: 'footer-link', [Component.text('Contributors')]),
+                ]),
+                li([
                   a(
                     href: 'https://deepwiki.com/DenisovAV/flutter_edge_ai',
                     classes: 'footer-link',

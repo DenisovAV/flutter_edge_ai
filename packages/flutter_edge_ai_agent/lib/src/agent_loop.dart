@@ -174,7 +174,7 @@ class AgentLoop {
   /// `UnsupportedError`, which ends the returned stream, and MediaPipe's web
   /// `.task` files have no audio encoder. After a stopped turn (a cancelled
   /// subscription), a `.litertlm` chat keeps the recordings of earlier turns
-  /// with `flutter_edge_ai_litertlm` releases after 1.14.0; with 1.14.0 and
+  /// with `flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and
   /// earlier, and on the NPU, it rebuilds its conversation from the turns'
   /// text and they are gone.
   ///

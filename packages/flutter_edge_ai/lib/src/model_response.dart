@@ -29,8 +29,8 @@ class FunctionCallResponse extends ModelResponse {
   final Map<String, dynamic> args;
 
   /// The id the engine or the caller gave this call, or null when there is
-  /// none. No bundled engine gives one today; genai `callId`s and Genkit
-  /// `ref`s do. A tool result names it through
+  /// none. `flutter_edge_ai_llama` gives one; genai `callId`s and Genkit
+  /// `ref`s do too. A tool result names it through
   /// `Message.toolResponse(toolCallId:)`. Expected to be unique within one
   /// turn, but not checked; it may repeat across turns.
   final String? id;

@@ -36,15 +36,15 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Keep this explicit selection as defence in depth. llamadart 0.13.1 automatically
+Keep this explicit selection as defence in depth. llamadart 0.15.0 automatically
 omits its LiteRT-LM when this connector or `flutter_edge_ai_litertlm` is present;
 explicitly selecting both LiteRT-LM owners fails the native build. Core itself includes no inference
-runtime. With llamadart 0.13.1, Vulkan is included by default on supported Android,
+runtime. With llamadart 0.15.0, Vulkan is included by default on supported Android,
 Linux and Windows targets. Android auto selection uses CPU; Linux/Windows use
 Vulkan where available. The demo explicitly selects CPU-only bundles on those
 platforms; apps choose backend packaging in their own hook settings.
 
-Apple applications add `llamadart_llama_cpp_flutter: 0.13.0` directly and enable
+Apple applications add `llamadart_llama_cpp_flutter: 0.15.0` directly and enable
 Flutter SwiftPM. Use iOS 16.4+ and macOS 14+. iOS applications enable the
 extended-virtual-addressing and increased-memory-limit entitlements; the example
 includes both. Do not apply those kernel entitlements on macOS. The published
@@ -58,7 +58,7 @@ CI lane or qualification of the new SDK pair on phones.
 Oldest-device compatibility still requires device testing.
 
 The Apple metadata fix in [native #110](https://github.com/leehack/llamadart-native/issues/110)
-is included in companion 0.13.0 (native v0.6.0-3). App Store submission remains
+is included in companion 0.15.0 (native v0.7.0-1). App Store submission remains
 unvalidated. Apple workspace setup is covered below.
 
 Windows x64's first CPU-only build still downloads the full approximately 737 MB
@@ -68,11 +68,11 @@ Splitting that download belongs to [llamadart #812](https://github.com/leehack/l
 
 ## Apple workspaces
 
-With llamadart 0.13.1, the hook discovers the Flutter app member and validates its
+With llamadart 0.15.0, the hook discovers the Flutter app member and validates its
 Apple companion. The old workspace-root discovery problem is fixed; the hook
 uses the SwiftPM runtime rather than embedding another llama.cpp framework.
 
-1. Add `llamadart_llama_cpp_flutter: 0.13.0` directly to the app member's
+1. Add `llamadart_llama_cpp_flutter: 0.15.0` directly to the app member's
    `dependencies`, alongside this connector.
 2. Set `llamadart_native_runtimes: [llama_cpp]` under `hooks.user_defines.llamadart`
    in the workspace root. Enable Flutter SwiftPM and keep the deployment targets
@@ -87,9 +87,10 @@ configuration consistent or split the workspaces.
 
 Qualification uses a workspace containing core, this connector and one app
 member, with root hook settings and a companion declared only in the app.
-The tested SDK/companion pair is **0.13.1 / 0.13.0**. Dated release-build,
-framework-layout and CPU lifecycle results are recorded in the
-[contribution PR](https://github.com/DenisovAV/flutter_edge_ai/pull/628).
+The configured SDK/companion pair is **0.15.0 / 0.15.0**. The
+[contribution PR](https://github.com/DenisovAV/flutter_edge_ai/pull/628) records
+the previous 0.13.1 / 0.13.0 qualification; upgrading the pins does not carry
+that qualification forward automatically.
 This does not qualify App Store submission, physical iOS devices, oldest OS
 versions or mixed LiteRT-LM/CocoaPods packaging.
 
@@ -104,10 +105,15 @@ while importing. Projector storage remains app-owned.
 
 ## Qualification
 
-The required CI baseline covers the builds and runtime lanes below. Passing that
-baseline qualifies the tested CPU fixture and lifecycle, not every combination in
-the support matrix. Dated devices, models, commands and results are recorded in the
-[contribution PR](https://github.com/DenisovAV/flutter_edge_ai/pull/628).
+The required CI baseline covers the builds and runtime lanes below. The 0.15.0
+upgrade passed local contracts and hosted-package validation, Android arm64
+emulator/iOS arm64 simulator/macOS CPU lifecycle, macOS Metal generation,
+selected native tools/thinking/image/audio fixtures and Web worker/Wasm inference.
+Android, iOS (unsigned), macOS and Web release builds passed; the Android APK
+passed ABI, native dependency and 16 KB alignment checks. Linux/Windows and the
+Flutter 3.44 minimum SDK are separate required CI lanes. These checks
+qualify the selected fixtures and lifecycle, not every combination in the support
+matrix.
 
 | Platform | Automated baseline | Additional qualification needed |
 | --- | --- | --- |
@@ -119,9 +125,9 @@ the support matrix. Dated devices, models, commands and results are recorded in 
 | Web | Wasm build and real worker/Wasm generation | Hardware WebGPU, advanced model/browser combinations |
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
-package minimum. Runtime pins are llamadart 0.13.1, native artifacts v0.6.0-3,
-Apple companion 0.13.0 and connector-pinned Web assets v0.1.59. Validate SDK
-upgrades with the matching companion; its patch version may differ. Web assets are checksum-verified. llamadart 0.13.1 verifies llama.cpp archive SHA-256 digests before extraction
+package minimum. Runtime pins are llamadart 0.15.0, native artifacts v0.7.0-1,
+Apple companion 0.15.0 and connector-pinned Web assets v0.1.65. Validate SDK
+upgrades with the matching companion; its patch version may differ. Web assets are checksum-verified. llamadart 0.15.0 verifies llama.cpp archive SHA-256 digests before extraction
 ([#1039](https://github.com/leehack/llamadart/pull/1039)); SwiftPM verifies its
 companion archives. Existing extracted native caches and explicit local runtime
 paths retain the SDK's documented trust policy.

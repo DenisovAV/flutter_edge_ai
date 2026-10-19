@@ -27,7 +27,7 @@ that uses them gets the analyzer warning `experimental_member_use`. Add
 ```
 dependencies:
   flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_litertlm: ^1.15.0 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite); option scoring
+  flutter_edge_ai_litertlm: ^1.16.0 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite); option scoring
 ```
 
 Any embedding model works: `EmbeddingModel.createDecider` is implemented once in
@@ -454,7 +454,7 @@ option `choose` gains in a later release reaches `decide` as a new field of
 `InferenceModel.createDecider(question:, options:, calibration:)` is the other
 kind of decider: a small LLM trained on one question and its options lists
 them in a prompt and scores each option's id as its reply
-(`DeciderMethod.optionScoring`). `flutter_edge_ai_litertlm` 1.15.0 implements
+(`DeciderMethod.optionScoring`). `flutter_edge_ai_litertlm` 1.16.0 implements
 it for `.litertlm` models on the CPU backend, on native platforms; on the web
 `createDecider` throws `DeciderUnsupportedException`.
 

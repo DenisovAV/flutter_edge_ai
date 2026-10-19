@@ -335,7 +335,7 @@ packages:
       path: "../../flutter_edge_ai_speech"
       relative: true
     source: path
-    version: "0.5.7"
+    version: "0.5.8"
   flutter_edge_ai_sqlite:
     dependency: "direct main"
     description:

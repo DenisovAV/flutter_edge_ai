@@ -81,9 +81,14 @@ when the app opts in with `qualcomm_npu: true` — see
 
 **Windows NPU.** `PreferredBackend.npu` on Windows requires **Intel
 LunarLake/PantherLake** silicon — the Windows native archive ships
-`LiteRtDispatch.dll` + the OpenVino runtime + TBB to drive it. On any other
-Windows hardware the NPU backend is unavailable; use `PreferredBackend.gpu` or
-`.cpu`.
+`LiteRtDispatch.dll` + the OpenVino runtime + TBB to drive it. Other Windows
+hardware has no NPU to run on: use `PreferredBackend.gpu` or `.cpu`. The load
+does not check for one — a bundle compiled for the Intel NPU is not refused on a
+PC without it, and what LiteRT does then is not measured. LLMs on the Intel NPU
+need `flutter_edge_ai_litertlm` 1.15.0: every release from
+`flutter_gemma_litertlm` 1.7.0 (`native-v0.17.0`) through 1.14.0 failed the load
+or ended the process with `0xC0000409`
+([LiteRT-LM#4023](https://github.com/google-ai-edge/LiteRT-LM/issues/4023)).
 
 Run **Gemma 4** there. On the Intel NPU a Gemma 3 bundle loses every prefill
 chunk after the first — the reply is fluent, answers from the opening of your

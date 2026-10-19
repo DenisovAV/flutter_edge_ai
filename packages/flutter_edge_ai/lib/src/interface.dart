@@ -544,7 +544,7 @@ abstract class InferenceModel {
   /// (`@nonVirtual`); an engine supplies the scoring through
   /// `OptionScoringModel` (`package:flutter_edge_ai/engine.dart`), not by
   /// overriding this. `flutter_edge_ai_litertlm` scores on the CPU from
-  /// 1.15.0, natively (measured on macOS). Use
+  /// 1.16.0, natively (measured on macOS). Use
   /// `EmbeddingModel.createDecider` for a model that was not trained on the
   /// decision. `implements` does not inherit this body: such a class has to
   /// declare the method, and should fail it with

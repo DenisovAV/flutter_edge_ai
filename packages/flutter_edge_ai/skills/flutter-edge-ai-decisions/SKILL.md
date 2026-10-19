@@ -17,7 +17,7 @@ CI that fails on warnings fail.
    embedding backend. `InferenceModel.createDecider(question:, options:,
    calibration:)` needs a small LLM TRAINED on that one decision (a `.litertlm`
    tuned by LiteTune, which writes the decision into the file), on the CPU,
-   natively (`flutter_edge_ai_litertlm` 1.15.0); any other model, and every
+   natively (`flutter_edge_ai_litertlm` 1.16.0); any other model, and every
    model on the web, throws `DeciderUnsupportedException`. Both return a `Decider` whose `DeciderAnswer` reads the same, so code
    that reads answers (choice, ranked, abstainReason, provenance) needs no
    change when one replaces the other; check `decider.capabilities`

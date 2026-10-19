@@ -123,6 +123,30 @@ enum Model implements InferenceModelInterface {
     isThinking: true,
   ),
 
+  // Gemma 4 E2B compiled for the Google Tensor G6 NPU (PreferredBackend.npu):
+  // a Pixel with Tensor G6 and Android 16 or later, in an app built with
+  // `google_tensor_npu: true` (this one is). Listed on Android only. Run on a
+  // Pixel 11 with a debug build: text, images and audio on the NPU, context
+  // 1024. Source: litert-community/gemma-4-E2B-it-litert-lm.
+  gemma4_E2B_google_tensor_G6(
+    baseUrl:
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G6.litertlm',
+    filename: 'gemma-4-E2B-it_Google_Tensor_G6.litertlm',
+    displayName: 'Gemma 4 E2B IT (Google Tensor G6 NPU)',
+    size: '3.31GB',
+    licenseUrl: '',
+    needsAuth: false,
+    preferredBackend: PreferredBackend.npu,
+    modelType: ModelType.gemma4,
+    fileType: ModelFileType.litertlm,
+    temperature: 1.0,
+    topK: 64,
+    topP: 0.95,
+    supportImage: true,
+    supportAudio: true,
+    maxTokens: 1024,
+  ),
+
   // Gemma 4 E2B/E4B — WEB-ONLY MediaPipe (.task) builds, right below their
   // LiteRT-LM twins. HuggingFace only ships a `-web.task` for Gemma 4 (no
   // mobile/desktop .task — those are .litertlm only, see the *_litertlm

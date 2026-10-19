@@ -8,6 +8,12 @@
 //   flutter test integration_test/builtin_ai_test.dart -d <device-id> \
 //     --dart-define=EXPECT_UNAVAILABLE=true
 //
+// It calls the same APIs as the app, in the same order, but does not drive
+// the UI: the widget tests cover the app's own error handling. On Android a
+// downloadable phone starts the AICore download here and waits up to 10
+// minutes; keep the screen on (`adb shell svc power stayon true`), since only
+// the app in the foreground may use the model.
+//
 // There is no web command: `flutter drive -d chrome` starts a temporary
 // profile, where Chrome has no model and starts no download without a tap.
 import 'package:flutter/foundation.dart';
@@ -75,8 +81,12 @@ void main() {
       debugPrint('[built-in] answer: $answer');
       expect(answer.toString().trim(), isNotEmpty);
     } finally {
-      await session?.close();
-      await model.close();
+      // A failing session close must not leave the model open.
+      try {
+        await session?.close();
+      } finally {
+        await model.close();
+      }
     }
   }, timeout: const Timeout(Duration(minutes: 15)));
 }

@@ -15,67 +15,63 @@ class BuiltInAiApp extends StatelessWidget {
   const BuiltInAiApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Built-in AI',
-      theme: ThemeData(colorSchemeSeed: Colors.deepPurple),
-      home: const BuiltInAiPage(),
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Built-in AI',
+    theme: ThemeData(colorSchemeSeed: Colors.deepPurple),
+    home: const BuiltInAiPage(),
+  );
 }
 
-/// The shell every later step fills in.
-///
-/// There is no model yet, so the composer is disabled — the app runs, it just
-/// has nothing to answer with.
+/// The page every later step fills in: a device status card, then a composer
+/// that stays disabled until there is a model.
 class BuiltInAiPage extends StatelessWidget {
   const BuiltInAiPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Built-in AI')),
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  'The engine is registered.\n'
-                  'Next, ask the operating system whether its model is ready.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyLarge,
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Device status',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      // Step 2 asks the device and shows its answer here.
+                      const Text(
+                        'The engine is registered. Next, ask the device '
+                        'whether its model is ready.',
+                        key: Key('status'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: TextField(
-                      enabled: false,
-                      decoration: InputDecoration(
-                        hintText: 'Ask something',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filled(
-                    onPressed: null,
-                    icon: const Icon(Icons.send),
-                  ),
-                ],
+              const SizedBox(height: 16),
+              // Step 3 opens a model and enables the composer.
+              const TextField(
+                enabled: false,
+                decoration: InputDecoration(
+                  labelText: 'Prompt',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
+              const SizedBox(height: 12),
+              const FilledButton(onPressed: null, child: Text('Ask')),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

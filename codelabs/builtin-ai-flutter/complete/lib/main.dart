@@ -21,18 +21,19 @@ class BuiltInAiApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'Built-in AI',
     theme: ThemeData(colorSchemeSeed: Colors.deepPurple),
-    home: const PromptPage(),
+    home: const BuiltInAiPage(),
   );
 }
 
-class PromptPage extends StatefulWidget {
-  const PromptPage({super.key});
+class BuiltInAiPage extends StatefulWidget {
+  const BuiltInAiPage({super.key});
 
   @override
-  State<PromptPage> createState() => _PromptPageState();
+  State<BuiltInAiPage> createState() => _BuiltInAiPageState();
 }
 
-class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
+class _BuiltInAiPageState extends State<BuiltInAiPage>
+    with WidgetsBindingObserver {
   final _prompt = TextEditingController(text: 'Explain on-device AI simply.');
   BuiltInAiAvailability? _availability;
   InferenceModel? _model;
@@ -41,6 +42,9 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
   String _answer = '';
   bool _busy = false;
   bool _preparing = false;
+
+  /// Ends the answer being streamed; null while nothing streams.
+  Future<void> Function()? _stop;
 
   /// Numbers each availability probe, so one that returns late (a probe can
   /// take up to 20 seconds) cannot overwrite a newer answer.
@@ -65,7 +69,8 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
     if (mounted && probe == _probe) _showStatus(status);
   }
 
-  /// A new status replaces whatever error described the old one.
+  /// Only a probe writes the card. A new status replaces whatever error
+  /// described the old one.
   void _showStatus(BuiltInAiAvailability status) {
     setState(() {
       if (status != _availability) _error = null;
@@ -73,17 +78,11 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
     });
   }
 
-  /// The OS refused: show the status it gave, then ask again.
-  void _showUnavailable(BuiltInAiUnavailableException error) {
-    if (!mounted) return;
-    _probe++;
-    _showStatus(error.status);
-    if (error.status.isTransient) {
-      // Still downloadable, so the download did not start: on the web, Chrome
-      // starts it only from a tap. The status alone would not say so.
-      setState(() => _error = 'The download did not start: ${error.message}');
-    }
-    unawaited(_checkAvailability());
+  /// An action failed: ask the device again, then say what failed, so the new
+  /// status cannot wipe the message.
+  Future<void> _failed(String message) async {
+    await _checkAvailability();
+    if (mounted) setState(() => _error = message);
   }
 
   // Keep this call directly attached to the tap for the web user-gesture gate.
@@ -93,24 +92,29 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
       _progress = null;
       _preparing = true;
     });
+    String? failure;
     try {
       await BuiltInAi.ensureReady(
         onProgress: (percent) {
           if (mounted) setState(() => _progress = percent);
         },
       );
+      // ensureReady returns only once the model is available, so it answers
+      // like a probe.
+      _probe++;
+      if (mounted) _showStatus(BuiltInAiAvailability.available);
     } on BuiltInAiUnavailableException catch (error) {
-      _showUnavailable(error);
+      failure = error.status == BuiltInAiAvailability.downloadable
+          // Still downloadable, so the download never started: on the web,
+          // Chrome starts it only from a tap.
+          ? 'The download did not start. Choose Prepare again.'
+          : 'Preparing stopped: the device reported the model as unavailable.';
     } on TimeoutException {
-      if (mounted) {
-        setState(
-          () => _error =
-              'The model is still not ready after 10 minutes. The OS keeps '
-              'preparing it in the background: check again later.',
-        );
-      }
+      failure =
+          'The model is still not ready after 10 minutes. The download may '
+          'still be running: check again later.';
     } catch (error, stackTrace) {
-      if (mounted) setState(() => _error = 'Could not prepare: $error');
+      failure = 'Could not prepare: $error';
       _report(error, stackTrace, 'while preparing the built-in AI model');
     } finally {
       if (mounted) {
@@ -118,9 +122,9 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
           _preparing = false;
           _progress = null;
         });
-        await _checkAvailability();
       }
     }
+    if (failure != null) await _failed(failure);
   }
 
   Future<void> _start() async {
@@ -133,33 +137,38 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
       _busy = true;
       _error = null;
     });
-    InferenceModel? model;
+    String? failure;
     try {
       await FlutterEdgeAi.installModel(
         modelType: spec.modelType,
         fileType: ModelFileType.builtIn,
       ).fromBundled(spec.name).install();
-      model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
+      final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
       if (!mounted) {
         await model.close();
         return;
       }
       setState(() => _model = model);
-    } on BuiltInAiUnavailableException catch (error) {
-      _showUnavailable(error);
+    } on BuiltInAiUnavailableException {
+      // The status changed since the last probe; the probe shows the new one.
+      failure = 'Could not start: the model is no longer ready.';
     } catch (error, stackTrace) {
-      await model?.close();
-      if (mounted) setState(() => _error = 'Could not start: $error');
+      failure = 'Could not start: $error';
       _report(error, stackTrace, 'while opening the built-in AI model');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+    if (failure != null) await _failed(failure);
   }
 
   Future<void> _ask() async {
     final model = _model;
+    if (model == null || _busy) return;
     final text = _prompt.text.trim();
-    if (model == null || text.isEmpty || _busy) return;
+    if (text.isEmpty) {
+      setState(() => _error = 'Type a question first.');
+      return;
+    }
 
     setState(() {
       _busy = true;
@@ -168,35 +177,56 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
     });
 
     InferenceModelSession? session;
+    String? failure;
     try {
       // A fresh session makes each Ask independent and prevents invisible
       // history from filling the model's context window.
       session = await model.createSession();
       await session.addQueryChunk(Message.text(text: text, isUser: true));
       final answer = StringBuffer();
-      await for (final chunk in session.getResponseAsync()) {
-        answer.write(chunk);
-        if (mounted) setState(() => _answer = answer.toString());
-      }
-      if (mounted && answer.toString().trim().isEmpty) {
+      final finished = Completer<void>();
+      final subscription = session.getResponseAsync().listen(
+        (chunk) {
+          answer.write(chunk);
+          if (mounted) setState(() => _answer = answer.toString());
+        },
+        onError: finished.completeError,
+        onDone: finished.complete,
+        cancelOnError: true,
+      );
+      final streaming = session;
+      var stopped = false;
+      _stop = () async {
+        stopped = true;
+        await subscription.cancel();
+        if (!finished.isCompleted) finished.complete();
+        try {
+          // Cancelling only stops listening; this stops the model decoding.
+          await streaming.stopGeneration();
+        } catch (error, stackTrace) {
+          _report(error, stackTrace, 'while stopping the answer');
+        }
+      };
+      if (mounted) setState(() {});
+      await finished.future;
+      if (mounted && !stopped && answer.toString().trim().isEmpty) {
         setState(
-          () => _error = 'The model returned an empty answer. Try again.',
+          () => _error =
+              'The model returned an empty answer. Rephrase the question and '
+              'ask again.',
         );
       }
-    } on BuiltInAiUnavailableException catch (error) {
-      if (mounted) setState(() => _answer = '');
-      _showUnavailable(error);
+    } on BuiltInAiUnavailableException {
+      failure = 'The model is no longer ready.';
     } catch (error, stackTrace) {
-      // A refusal, a full context or Android's foreground-only rule fails the
-      // same way again, so show what the OS said instead of "try again".
-      if (mounted) {
-        setState(() {
-          _answer = '';
-          _error = 'The request failed: $error';
-        });
-      }
+      // On Apple a model that went away arrives here too, so the card is
+      // checked again. Android lets only the app in the foreground generate,
+      // and some errors are a quota that clears after a wait, so show what
+      // the OS said.
+      failure = 'The request failed: $error';
       _report(error, stackTrace, 'while generating an answer');
     } finally {
+      _stop = null;
       if (session != null) {
         try {
           await session.close();
@@ -204,8 +234,14 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
           _report(error, stackTrace, 'while closing the built-in AI session');
         }
       }
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          if (failure != null) _answer = '';
+        });
+      }
     }
+    if (failure != null) await _failed(failure);
   }
 
   @override
@@ -230,9 +266,11 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
     final unsupported = BuiltInAiModels.forCurrentPlatform == null;
     final ready = status == BuiltInAiAvailability.available;
     final working = _busy || _preparing;
+    final canAsk = _model != null && ready && !working;
+    final stop = _stop;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My first OS-model prompt')),
+      appBar: AppBar(title: const Text('Built-in AI')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 640),
@@ -254,7 +292,7 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
                         unsupported
                             ? 'This platform has no built-in AI model.'
                             : status == null
-                            ? 'Checking the operating system…'
+                            ? 'Checking the device…'
                             : statusMessage(status),
                         key: const Key('status'),
                       ),
@@ -269,7 +307,7 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
                         const SizedBox(height: 8),
                         Text(
                           _progress == null
-                              ? 'Preparing the OS model…'
+                              ? 'Preparing the model…'
                               : 'Preparing: $_progress%',
                         ),
                       ],
@@ -297,22 +335,23 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
                   ),
                 ),
               ),
-              if (_model != null && ready) ...[
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _prompt,
-                  enabled: !_busy,
-                  decoration: const InputDecoration(
-                    labelText: 'Prompt',
-                    border: OutlineInputBorder(),
-                  ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _prompt,
+                enabled: canAsk,
+                decoration: const InputDecoration(
+                  labelText: 'Prompt',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(height: 12),
+              ),
+              const SizedBox(height: 12),
+              if (stop != null)
+                OutlinedButton(onPressed: stop, child: const Text('Stop'))
+              else
                 FilledButton(
-                  onPressed: _busy ? null : _ask,
+                  onPressed: canAsk ? _ask : null,
                   child: const Text('Ask'),
                 ),
-              ],
               if (_busy) ...[
                 const SizedBox(height: 16),
                 const LinearProgressIndicator(),
@@ -325,7 +364,7 @@ class _PromptPageState extends State<PromptPage> with WidgetsBindingObserver {
                 const SizedBox(height: 24),
                 Text('Answer', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
-                SelectableText(_answer),
+                SelectableText(_answer, key: const Key('answer')),
               ],
             ],
           ),
@@ -354,12 +393,13 @@ String get prepareLabel => _host == _Host.apple
     : 'Prepare built-in AI (downloads several GB)';
 
 /// One status means different things on different platforms, so each
-/// platform gets its own remedy.
+/// platform gets its own remedy. The web and Android never report
+/// `unavailableOsTooOld` or `unavailableDisabled`.
 String statusMessage(BuiltInAiAvailability status) => switch ((status, _host)) {
   (BuiltInAiAvailability.available, _) => 'Built-in AI is ready.',
   (BuiltInAiAvailability.downloadable, _Host.web) =>
-    'Chrome has to download its model once, several GB. '
-        'Choose Prepare to start.',
+    'Chrome has to download its model once, several GB, over an unmetered '
+        'connection. Choose Prepare to start.',
   (BuiltInAiAvailability.downloadable, _) =>
     'The OS has to download its model once, several GB; Wi-Fi is best. '
         'Choose Prepare to start.',
@@ -372,20 +412,19 @@ String statusMessage(BuiltInAiAvailability status) => switch ((status, _host)) {
   (BuiltInAiAvailability.downloading, _) =>
     'The OS is downloading its model. Choose Prepare to wait for it.',
   (BuiltInAiAvailability.unavailableDeviceUnsupported, _Host.web) =>
-    'This browser has no Prompt API. Open the page in desktop Chrome 148 '
-        'or newer.',
+    'This browser has no Prompt API. Open the page at localhost or over '
+        'HTTPS in desktop Chrome 148 or newer.',
   (BuiltInAiAvailability.unavailableDeviceUnsupported, _Host.android) =>
     "AICore reports Gemini Nano as unavailable: this phone is not on Google's "
-        'Prompt API device list, or AICore has not finished setting it up. '
-        'On a listed phone, stay online and check again later.',
+        'Prompt API device list, its bootloader is unlocked, or AICore has '
+        'not finished setting it up. On a listed phone, stay online and check '
+        'again later.',
   (BuiltInAiAvailability.unavailableDeviceUnsupported, _Host.apple) =>
     'This device does not support Apple Intelligence.',
   (BuiltInAiAvailability.unavailableDeviceUnsupported, _) =>
     'This device has no built-in AI model.',
   (BuiltInAiAvailability.unavailableOsTooOld, _Host.apple) =>
     'Built-in AI needs iOS or macOS 26, and an app built with Xcode 26.',
-  (BuiltInAiAvailability.unavailableOsTooOld, _Host.web) =>
-    'Update Chrome to use the Prompt API.',
   (BuiltInAiAvailability.unavailableOsTooOld, _) =>
     'Update the operating system to use built-in AI.',
   (BuiltInAiAvailability.unavailableDisabled, _Host.apple) =>
@@ -394,17 +433,23 @@ String statusMessage(BuiltInAiAvailability status) => switch ((status, _host)) {
     'Built-in AI is turned off in the system settings. Turn it on, then '
         'check again.',
   (BuiltInAiAvailability.unavailableOther, _Host.web) =>
-    'Chrome cannot run its model on this computer. It needs 22 GB of free '
-        'disk, and a GPU with more than 4 GB of VRAM or 16 GB of RAM and '
-        '4 CPU cores.',
+    'Chrome cannot run its model here. Check that on-device AI is on in '
+        'Chrome Settings → System and not turned off by the '
+        'GenAILocalFoundationalModelSettings policy. Otherwise this computer '
+        'is below the floor: 22 GB of free disk, and a GPU with more than '
+        '4 GB of VRAM or 16 GB of RAM and 4 CPU cores.',
   (BuiltInAiAvailability.unavailableOther, _Host.android) =>
-    'Google AICore is missing or out of date, or this is an emulator. '
-        'Update AICore from the Play Store, then check again.',
+    'Google AICore is missing, out of date or not set up yet, or this is an '
+        'emulator. Update AICore from the Play Store, then reinstall this '
+        'app. On a phone set up recently, AICore can need minutes to hours, '
+        'and a restart can help: check again later.',
   (BuiltInAiAvailability.unavailableOther, _Host.windows) =>
-    'Phi Silica needs a packaged app with package identity, which '
-        '`flutter run` does not give it.',
+    'Phi Silica needs a packaged app with package identity and the '
+        'systemAIModels capability, the Windows App Runtime and, on the '
+        'stable channel, a Limited Access Feature token. flutter run gives '
+        'it none of these.',
   (BuiltInAiAvailability.unavailableOther, _) =>
-    'Built-in AI could not be reached. The debug console says why.',
+    'Built-in AI could not be reached. Check again in a moment.',
 };
 
 void _report(Object error, StackTrace stackTrace, String context) {

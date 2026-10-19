@@ -44,6 +44,8 @@ dev_dependencies:
     sdk: flutter
   # FakeLocalAiHost stands in for the OS model in widget tests.
   flutter_local_ai: ^0.2.1
+  # Core keeps the installed model in preferences; tests mock them.
+  shared_preferences: ^2.5.0
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

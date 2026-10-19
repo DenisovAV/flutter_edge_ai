@@ -33,6 +33,22 @@ passed today moves to tomorrow at the same wall-clock time, across a clock
 change too. The mail and SMS intents write a space as `%20` instead of `+`.
 See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
 
+## flutter_edge_ai 2.5.0: the members deprecated for 2.5.0 are removed
+
+| Removed | Use |
+|---|---|
+| `EmbeddingModel.generateEmbedding(t)` | `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)` |
+| `EmbeddingModel.generateEmbeddings(ts)` | `embedAll([for (final t in ts) EmbeddingInput.text(t)], taskType: TaskType.retrievalQuery)` |
+| `EmbeddingModel.getDimension()` | `dimension` |
+| `InferenceModelSpec.fromLegacyUrl(name:, modelUrl:, loraUrl:)` | `InferenceModelSpec(name: …, modelSource: …, loraSource: …, modelType: …)` |
+
+The removed embedding methods embedded as `TaskType.retrievalQuery`; pass it to
+keep their vectors. For `fromLegacyUrl`, use the `ModelSource` that matches the
+URL: `ModelSource.network(url)` for `http(s)://`, `ModelSource.asset(path)` for
+`asset://` or a bare path, `ModelSource.bundled(name)` for `native://`,
+`ModelSource.file(path)` for `file://`. The factory defaulted to
+`modelType: ModelType.general`.
+
 ## flutter_edge_ai 2.4.0 / flutter_edge_ai_litertlm 1.14.0: backends follow the model file
 
 > Upgrade these together: `flutter_edge_ai` 2.4.0, `flutter_edge_ai_litertlm`
@@ -134,7 +150,7 @@ dependencies:
 ### Embeddings
 
 `EmbeddingModel` takes an `EmbeddingInput` and a required `TaskType`. The three
-old methods still compile as deprecated forwarders and are removed in 2.5.0.
+old methods stayed as deprecated forwarders until 2.5.0 removed them.
 
 | Before (2.2) | After (2.3) |
 |---|---|
@@ -224,7 +240,7 @@ tokenizer packages; it re-exports the app library), `engine_io.dart`,
 | `EmbeddingModelSpec.fromLegacyUrl` | `EmbeddingModelSpec(name: …, modelSource: ModelSource.network(url), tokenizerSource: ModelSource.network(tokenizerUrl))` |
 | `MobileModelManager`/`WebModelManager.currentActiveModel`, `SmartDownloader.isHuggingFaceUrl` | these classes are internal now; read `FlutterEdgeAi.activeModelSpec` / `activeEmbedderSpec` |
 
-`InferenceModelSpec.fromLegacyUrl` is deprecated and removed in 2.5.0. Build
+`InferenceModelSpec.fromLegacyUrl` was deprecated here and removed in 2.5.0. Build
 the spec with the `ModelSource` that matches the URL:
 `ModelSource.network(url)` for `http(s)://`, `ModelSource.asset(path)` for
 `asset://` or a bare path, `ModelSource.bundled(name)` for `native://`,

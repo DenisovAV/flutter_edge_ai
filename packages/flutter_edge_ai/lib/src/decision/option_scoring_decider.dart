@@ -371,14 +371,26 @@ Future<Decider> createOptionScoringDecider(
   );
   throwIfDeciderCancelled(cancelToken);
   final scorer = await model.openOptionScorer();
-  // A cancel while the engine prepares (LiteRT-LM's self-check is a dozen
-  // native runs) closes the scorer, which stops them; the scorer's StateError
-  // then reads as the cancel it is.
+  // A cancel while the engine prepares (LiteRT-LM's self-check is a couple
+  // of dozen native runs) closes the scorer, which stops the runs this scorer
+  // started; the StateError a closed scorer then throws reads as the cancel
+  // it is. Only that one: a failure from before the cancel stays a failure.
   var creating = true;
+  var closedByCancel = false;
   if (cancelToken != null) {
     unawaited(
       cancelToken.whenCancelled.then((_) {
-        if (creating) unawaited(scorer.close().catchError((Object _) {}));
+        if (!creating) return;
+        closedByCancel = true;
+        unawaited(
+          scorer.close().catchError((Object e) {
+            // ignore: avoid_print
+            print(
+              '[flutter_edge_ai] closing the option scorer on a cancelled '
+              'createDecider failed: $e',
+            );
+          }),
+        );
       }),
     );
   }
@@ -413,6 +425,7 @@ Future<Decider> createOptionScoringDecider(
     );
   } catch (e, st) {
     creating = false;
+    final cancelled = e is StateError && closedByCancel;
     try {
       await scorer.close();
     } on Object catch (closeError) {
@@ -424,7 +437,7 @@ Future<Decider> createOptionScoringDecider(
         'createDecider failed too: $closeError',
       );
     }
-    if (e is StateError && (cancelToken?.isCancelled ?? false)) {
+    if (cancelled) {
       throw const DeciderCancelledException('The decision was cancelled.');
     }
     Error.throwWithStackTrace(e, st);
@@ -680,15 +693,47 @@ final class OptionScoringDecider extends Decider {
   Future<void> _lane = Future<void>.value();
 
   /// One decision at a time: [OptionScorer] promises its engine one call at a
-  /// time, and two `choose` calls left unawaited would interleave theirs.
+  /// time, and two `choose` calls left unawaited would interleave theirs. A
+  /// cancel still answers at once while the decision waits its turn; a
+  /// decision that was waiting when [close] came fails as cancelled, as the
+  /// running one does.
   @override
   Future<DeciderAnswer> decide(DeciderRequest request) {
-    final answer = _lane.then((_) => _decide(request));
+    final queuedOpen = _closing == null;
+    final answer = _lane.then((_) => _decide(request, queuedOpen: queuedOpen));
     _lane = answer.then<void>((_) {}, onError: (Object _) {});
-    return answer;
+    final token = request.cancelToken;
+    if (token == null) return answer;
+    final out = Completer<DeciderAnswer>();
+    unawaited(
+      token.whenCancelled.then((_) {
+        if (!out.isCompleted) {
+          out.completeError(
+            const DeciderCancelledException('The decision was cancelled.'),
+          );
+        }
+      }),
+    );
+    unawaited(
+      answer.then(
+        (value) {
+          if (!out.isCompleted) out.complete(value);
+        },
+        onError: (Object e, StackTrace st) {
+          if (!out.isCompleted) out.completeError(e, st);
+        },
+      ),
+    );
+    return out.future;
   }
 
-  Future<DeciderAnswer> _decide(DeciderRequest request) async {
+  Future<DeciderAnswer> _decide(
+    DeciderRequest request, {
+    required bool queuedOpen,
+  }) async {
+    if (_closing != null && queuedOpen) {
+      throw const DeciderCancelledException('The decider was closed.');
+    }
     if (isClosed) {
       throw StateError(
         _closing != null

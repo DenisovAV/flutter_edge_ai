@@ -10,6 +10,10 @@ final _user =
     '${liteRtLmSelfCheckPrompt.substring(0, liteRtLmSelfCheckPrompt.length - 6)}'
     'user\n';
 
+/// Each probe's own score, so that a mix-up between the targets of a run and
+/// the scores of their runs alone is visible.
+const _base = {'sad': -1.2, 'joy': -2.3, 'love': -0.9};
+
 /// A tokenizer for the emotion pack's first three targets and the pair.
 final class _Engine {
   final Map<String, List<int>> tokens = {
@@ -38,7 +42,8 @@ final class _Engine {
   /// early, scores differently, as on every engine.
   double Function(String prompt, String token, int call) score =
       (prompt, token, call) =>
-          prompt == liteRtLmSelfCheckControlPrompt ? -1.7 : -1.5;
+          (_base[token] ?? -1.5) -
+          (prompt == liteRtLmSelfCheckControlPrompt ? 0.2 : 0);
   int calls = 0;
 
   /// The scores of one run of [tokens] after [prompt] in [mode]: by default
@@ -48,8 +53,9 @@ final class _Engine {
     String prompt,
     List<String> tokens,
   )
-  inMode = (mode, prompt, tokens) => [for (final _ in tokens) -1.5];
+  inMode = (mode, prompt, tokens) => [for (final t in tokens) _base[t] ?? -1.5];
   final runs = <List<String>>[];
+  final modes = <(LiteRtLmScoringMode, String)>[];
 
   Future<LiteRtLmScoringMode> check([
     List<String> targets = const ['sad', 'joy', 'love'],
@@ -60,6 +66,7 @@ final class _Engine {
     scoreOneToken: (prompt, token) async => score(prompt, token, calls++),
     scoreInMode: (mode, prompt, tokens) async {
       runs.add(tokens);
+      modes.add((mode, prompt));
       return inMode(mode, prompt, tokens);
     },
   );
@@ -93,11 +100,24 @@ void main() {
     },
   );
 
-  test('different scores pick plain (an engine with the #3561 fix)', () async {
+  test('different scores pick plain (an engine with the #3561 fix), and the '
+      'runs that check it are plain, after the pair\'s prompt', () async {
     final engine = _Engine()
       ..score = (prompt, token, _) =>
           prompt == liteRtLmSelfCheckPrompt ? -1.5 : -2.0;
     expect(await engine.check(), LiteRtLmScoringMode.plain);
+    expect(engine.modes, isNotEmpty);
+    for (final (mode, prompt) in engine.modes) {
+      expect(mode, LiteRtLmScoringMode.plain);
+      expect(prompt, liteRtLmSelfCheckPrompt);
+    }
+  });
+
+  test('a control score that is not a log-probability is refused', () async {
+    final engine = _Engine()
+      ..score = (prompt, token, _) =>
+          prompt == liteRtLmSelfCheckControlPrompt ? double.nan : -1.5;
+    await expectLater(engine.check(), _refusing('control'));
   });
 
   test('a mix of identical and different scores is refused', () async {

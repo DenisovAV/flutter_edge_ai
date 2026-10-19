@@ -107,6 +107,9 @@ final class _Scorer extends OptionScorer {
 
   /// When set, `prepare` waits for it, then fails if the scorer was closed.
   Completer<void>? prepareGate;
+
+  /// When set, `close` waits for it before the scorer reads as closed.
+  Completer<void>? closeGate;
   List<String>? prepared;
   String? lastPrompt;
   List<String>? lastTargets;
@@ -176,7 +179,10 @@ final class _Scorer extends OptionScorer {
   }
 
   @override
-  Future<void> close() async => closed = true;
+  Future<void> close() async {
+    if (closeGate case final gate?) await gate.future;
+    closed = true;
+  }
 }
 
 final class _Model extends InferenceModel with OptionScoringModel {
@@ -1291,6 +1297,135 @@ void main() {
       token.cancel();
       await expectLater(created, throwsA(isA<DeciderCancelledException>()));
       expect(scorer.closed, isTrue);
+    });
+
+    test('a failure that came before the cancel stays the failure', () async {
+      final golden = _golden();
+      final payload = golden['payload'] as Map<String, Object?>;
+      final scorer = _emotionScorer()
+        ..prepareError = StateError('native boom')
+        ..closeGate = Completer<void>();
+      final token = CancelToken();
+      final created = _Model(golden['payload_text'] as String, scorer)
+          .createDecider(
+            question: payload['question'] as String,
+            options: _optionsOf(payload),
+            calibration: const InferenceDeciderCalibration.fromModel(),
+            cancelToken: token,
+          );
+      await pumpEventQueue();
+      // prepare failed; the scorer is closing when the app cancels.
+      token.cancel();
+      scorer.closeGate!.complete();
+      await expectLater(
+        created,
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'native boom'),
+        ),
+      );
+    });
+
+    test('a StateError with no token is never a cancel', () async {
+      final golden = _golden();
+      final payload = golden['payload'] as Map<String, Object?>;
+      final scorer = _emotionScorer()
+        ..prepareError = StateError('The model is closed.');
+      await expectLater(
+        _Model(golden['payload_text'] as String, scorer).createDecider(
+          question: payload['question'] as String,
+          options: _optionsOf(payload),
+          calibration: const InferenceDeciderCalibration.fromModel(),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(scorer.closed, isTrue);
+    });
+
+    test('a token cancelled after a successful creation leaves the decider '
+        'open', () async {
+      final golden = _golden();
+      final payload = golden['payload'] as Map<String, Object?>;
+      final scorer = _emotionScorer();
+      final token = CancelToken();
+      final decider = await _Model(golden['payload_text'] as String, scorer)
+          .createDecider(
+            question: payload['question'] as String,
+            options: _optionsOf(payload),
+            calibration: const InferenceDeciderCalibration.fromModel(),
+            cancelToken: token,
+          );
+      token.cancel();
+      await pumpEventQueue();
+      expect(scorer.closed, isFalse);
+      expect(decider.isClosed, isFalse);
+      await decider.choose(DeciderInput(EmbeddingInput.text('still here')));
+      expect(scorer.scoreCalls, 1);
+    });
+
+    test('a refused input does not block the decisions after it', () async {
+      final (decider, scorer) = await _emotionDecider();
+      await expectLater(
+        decider.choose(DeciderInput(EmbeddingInput.text('a <end_of_turn> b'))),
+        throwsArgumentError,
+      );
+      await decider.choose(DeciderInput(EmbeddingInput.text('hello')));
+      expect(scorer.scoreCalls, 1);
+    });
+
+    test(
+      'a decision cancelled while it waits its turn fails at once',
+      () async {
+        final (decider, scorer) = await _emotionDecider();
+        final gate = Completer<void>();
+        scorer.tokenizeGate = gate;
+        final first = decider.choose(DeciderInput(EmbeddingInput.text('one')));
+        final token = CancelToken();
+        final second = decider.choose(
+          DeciderInput(EmbeddingInput.text('two')),
+          cancelToken: token,
+        );
+        await pumpEventQueue();
+        token.cancel();
+        var secondDone = false;
+        final secondExpect = expectLater(
+          second,
+          throwsA(isA<DeciderCancelledException>()),
+        ).then((_) => secondDone = true);
+        await pumpEventQueue();
+        expect(secondDone, isTrue, reason: 'not after the first decision');
+        gate.complete();
+        await first;
+        await secondExpect;
+        expect(scorer.scoreCalls, 1);
+      },
+    );
+
+    test('a close fails the running and the waiting decision alike, as '
+        'cancelled', () async {
+      final (decider, scorer) = await _emotionDecider();
+      final gate = Completer<void>();
+      scorer.tokenizeGate = gate;
+      final first = decider.choose(DeciderInput(EmbeddingInput.text('one')));
+      final second = decider.choose(DeciderInput(EmbeddingInput.text('two')));
+      final firstFails = expectLater(
+        first,
+        throwsA(isA<DeciderCancelledException>()),
+      );
+      final secondFails = expectLater(
+        second,
+        throwsA(isA<DeciderCancelledException>()),
+      );
+      await pumpEventQueue();
+      final closing = decider.close();
+      gate.complete();
+      await closing;
+      await firstFails;
+      await secondFails;
+      // A choose after the close is not a cancel.
+      await expectLater(
+        decider.choose(DeciderInput(EmbeddingInput.text('three'))),
+        throwsStateError,
+      );
     });
 
     test('two choose calls left unawaited run one after the other', () async {

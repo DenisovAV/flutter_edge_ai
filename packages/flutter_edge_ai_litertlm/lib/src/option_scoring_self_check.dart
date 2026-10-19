@@ -128,6 +128,12 @@ Future<LiteRtLmScoringMode> liteRtLmScoringSelfCheck({
       diffs.add((first[repeat] - second[repeat]).abs());
     }
     final control = await scoreOneToken(liteRtLmSelfCheckControlPrompt, z);
+    if (!(control <= 1e-4)) {
+      throw DeciderUnsupportedException(
+        'The scoring self-check scored "$z" $control after its control '
+        'prompt: not a log-probability.',
+      );
+    }
     if (control != first[0]) controlDiffers = true;
   }
   // Without this, "identical" below would also be what an engine gives

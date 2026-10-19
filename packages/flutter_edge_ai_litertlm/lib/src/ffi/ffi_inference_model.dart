@@ -113,9 +113,10 @@ base class FfiInferenceModel extends InferenceModel
       if (known == null) return _runScoringCheck(scorer, targets);
       try {
         return await known;
-      } on StateError {
+      } on ScoringStoppedError {
         // Stopped by the scorer that ran it, or by this model's close: run
-        // it again unless this scorer or the model is the one closed.
+        // it again unless this scorer or the model is the one closed. A
+        // native failure is not retried here: it reaches this caller.
         scorer._client;
       }
     }
@@ -145,17 +146,28 @@ base class FfiInferenceModel extends InferenceModel
         ], stops: scorer._stops),
         [token],
       ).single,
-      scoreInMode: (mode, prompt, tokens) async => single(
-        await scorer._client.scoreTargets(
-          prompt,
+      scoreInMode: (mode, prompt, tokens) async {
+        final client = scorer._client;
+        String? reprefill;
+        if (mode == LiteRtLmScoringMode.once) {
+          try {
+            reprefill = await scorer._reprefillFor(prompt);
+          } on DeciderUnsupportedException catch (e) {
+            throw DeciderUnsupportedException(
+              'The scoring self-check\'s own prompt: ${e.message}',
+            );
+          }
+        }
+        return single(
+          await client.scoreTargets(
+            prompt,
+            tokens,
+            reprefill: reprefill,
+            stops: scorer._stops,
+          ),
           tokens,
-          reprefill: mode == LiteRtLmScoringMode.once
-              ? await scorer._reprefillFor(prompt)
-              : null,
-          stops: scorer._stops,
-        ),
-        tokens,
-      ),
+        );
+      },
     );
     _scoringCheck = check;
     return check.then(

@@ -2543,11 +2543,11 @@ class LiteRtLmFfiClient {
           throw const DeciderCancelledException('The decision was cancelled.');
         }
         if (stops?.isStopped ?? false) {
-          throw StateError('The option scorer is closed.');
+          throw ScoringStoppedError('The option scorer is closed.');
         }
         final stop = calloc<Int32>();
         _scoringStops.add(stop);
-        stops?._flags.add(stop);
+        stops?.track(stop);
         var running = true;
         if (cancelToken != null) {
           unawaited(
@@ -2568,16 +2568,20 @@ class LiteRtLmFfiClient {
         } on DeciderCancelledException {
           if (cancelToken?.isCancelled ?? false) rethrow;
           if (_isShuttingDown) {
-            throw StateError('The model was closed while it scored options.');
+            throw ScoringStoppedError(
+              'The model was closed while it scored options.',
+            );
           }
           if (stops?.isStopped ?? false) {
-            throw StateError('The option scorer was closed while it scored.');
+            throw ScoringStoppedError(
+              'The option scorer was closed while it scored.',
+            );
           }
           rethrow;
         } finally {
           running = false;
           _scoringStops.remove(stop);
-          stops?._flags.remove(stop);
+          stops?.untrack(stop);
           calloc.free(stop);
         }
       }),
@@ -2603,7 +2607,19 @@ class LiteRtLmFfiClient {
           if (!cancelled.isCompleted) cancelled.complete(value);
         },
         onError: (Object e, StackTrace st) {
-          if (!cancelled.isCompleted) cancelled.completeError(e, st);
+          if (!cancelled.isCompleted) {
+            cancelled.completeError(e, st);
+            // ignore: experimental_member_use
+          } else if (e is! DeciderCancelledException &&
+              e is! ScoringStoppedError) {
+            // The caller already has its cancel; a run that then failed for
+            // a reason of its own is still said, release builds included.
+            // ignore: avoid_print
+            print(
+              '[flutter_edge_ai] a scoring run cancelled by its caller then '
+              'failed: $e',
+            );
+          }
         },
       ),
     );
@@ -2719,6 +2735,13 @@ String _activationName(int value) => switch (value) {
   _ => 'type $value',
 };
 
+/// A scoring run stopped on purpose — its scorer or its model closed — as
+/// opposed to a native call that failed (a plain [StateError]). Main isolate
+/// only, like [ScoringStops].
+final class ScoringStoppedError extends StateError {
+  ScoringStoppedError(super.message);
+}
+
 /// The stop flags of one owner's scoring runs — an option scorer's — so that
 /// closing it stops what it has in flight and refuses what it starts later.
 /// Main isolate only: the flags are set and freed there.
@@ -2728,6 +2751,16 @@ final class ScoringStops {
 
   /// Whether [stopAll] ran.
   bool get isStopped => _stopped;
+
+  /// Adds a run's flag, set at once if [stopAll] already ran.
+  void track(Pointer<Int32> flag) {
+    if (_stopped) flag.value = 1;
+    _flags.add(flag);
+  }
+
+  /// Removes a run's flag; call it before freeing the flag, so [stopAll]
+  /// never writes to freed memory.
+  void untrack(Pointer<Int32> flag) => _flags.remove(flag);
 
   /// Stops every run in flight at its next check and every later run before
   /// it starts.

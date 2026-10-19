@@ -79,16 +79,21 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 
 ## Add it to your app
 
+Published version 0.0.1 uses llamadart 0.13.1. This source branch qualifies
+llamadart 0.15.0 for the next adapter release; use a path dependency on this
+checkout until that release is published. Adjust the path for your app:
+
 ```
 dependencies:
   flutter_edge_ai: ^2.4.1
-  flutter_edge_ai_llama: ^0.0.1
+  flutter_edge_ai_llama:
+    path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
 ```
 
 Core 2.4.0+ supplies the typed tool history used by this connector.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
-`llamadart_llama_cpp_flutter: 0.13.0` SwiftPM companion.
+`llamadart_llama_cpp_flutter: 0.15.0` SwiftPM companion.
 
 ## Select llama.cpp only
 
@@ -101,15 +106,15 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Dependency settings do not propagate. llamadart 0.13.1 chooses llama.cpp only
+Dependency settings do not propagate. llamadart 0.15.0 chooses llama.cpp only
 when this connector or Flutter Edge AI LiteRT-LM is in the app graph. Keep the
 explicit selection as defence in depth; selecting both LiteRT-LM owners is rejected. The monorepo configures llama.cpp for its own workspace tests; that
 does not suppress another engine package's independently owned runtime.
-Apple Flutter apps add `llamadart_llama_cpp_flutter 0.13.0` directly and enable
+Apple Flutter apps add `llamadart_llama_cpp_flutter 0.15.0` directly and enable
 SwiftPM, as in this package's example. To keep an app llama.cpp only, omit the
 separate LiteRT-LM engine and companion dependencies.
 
-For an Apple workspace app on SDK 0.13.1, declare the companion directly in the
+For an Apple workspace app on SDK 0.15.0, declare the companion directly in the
 app member and put hook settings at the workspace root. Run `flutter pub get`
 from the root, then build from the app directory. The hook now discovers the
 member's companion. Keep companion choices consistent across app members using
@@ -135,7 +140,7 @@ Web installation buffers a byte array; use models below about 2 GB and avoid str
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
 for setup, capability limits and qualification.
 
-With llamadart 0.13.1, adding `flutter_edge_ai_litertlm` keeps the SDK on
+With llamadart 0.15.0, adding `flutter_edge_ai_litertlm` keeps the SDK on
 llama.cpp automatically. Retain the root `[llama_cpp]` selection as defence in
 depth; explicitly selecting both LiteRT-LM owners fails with an actionable error.
 On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is required too. The LiteRT-LM macOS CocoaPods

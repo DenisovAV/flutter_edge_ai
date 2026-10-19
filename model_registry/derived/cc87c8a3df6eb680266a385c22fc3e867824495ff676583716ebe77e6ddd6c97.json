@@ -1,0 +1,76 @@
+{
+  "container_version": "1.5.0",
+  "size": 1202913280,
+  "npu_target": "MediaTek/mt6993",
+  "llm_metadata_max_num_tokens": 4096,
+  "kv_cache_length": 4096,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_v_26": [
+        1,
+        8,
+        128,
+        4096
+      ],
+      "kv_cache_v_3": [
+        1,
+        8,
+        128,
+        4096
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_v_26": [
+        1,
+        8,
+        128,
+        4096
+      ],
+      "kv_cache_v_3": [
+        1,
+        8,
+        128,
+        4096
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "ODML team"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 156
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 159233760,
+      "items": {
+        "model_type": "tf_lite_embedder",
+        "model_version": "1.0.1"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_aux",
+      "length": 123392,
+      "items": {
+        "model_type": "tf_lite_aux"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 1040845244,
+      "npu_target": "MediaTek/mt6993",
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 2648577
+    }
+  ]
+}

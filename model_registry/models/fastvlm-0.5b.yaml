@@ -1,0 +1,62 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: fastvlm-0.5b
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: FastVLM 0.5B
+family: fastvlm
+arch_class: vision-language
+license: apple-amlr
+license_url: https://huggingface.co/litert-community/FastVLM-0.5B
+model_type: general
+capabilities:
+  image: true
+  audio: false
+  function_calls: false
+  thinking: false
+runtime:
+  max_tokens: 2048
+  preferred_backend: gpu
+variants:
+- slug: generic
+  file_type: litertlm
+  file:
+    repo: litert-community/FastVLM-0.5B
+    revision: 460013246392191f8532e45e518576bb6513eace
+    path: FastVLM-0.5B.litertlm
+    sha256: ccba1e8bfa0bab78345f5d009fdffd20bd8c907cf39b4bc632e391b0a96f3b18
+    size: 1156342768
+    install_filename: FastVLM-0.5B.litertlm
+  example:
+  - fastVLM_0_5B
+- slug: npu-sm8750
+  file_type: litertlm
+  file:
+    repo: litert-community/FastVLM-0.5B
+    revision: 460013246392191f8532e45e518576bb6513eace
+    path: FastVLM-0.5B.qualcomm.sm8750.litertlm
+    sha256: bb3625f0d887927b01a6f8a3444580514b6165e09a8eb1af276cc14ed22d783e
+    size: 943226880
+    install_filename: FastVLM-0.5B.qualcomm.sm8750.litertlm
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  fixed_max_tokens: 1280
+  runtime:
+    preferred_backend: npu
+- slug: npu-sm8850
+  file_type: litertlm
+  file:
+    repo: litert-community/FastVLM-0.5B
+    revision: 460013246392191f8532e45e518576bb6513eace
+    path: FastVLM-0.5B.qualcomm.sm8850.litertlm
+    sha256: 0eb6860d5c3800dc02c86515a54387f0d8289e5096db291ff6e4a993e312b482
+    size: 942374912
+    install_filename: FastVLM-0.5B.qualcomm.sm8850.litertlm
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  fixed_max_tokens: 1280
+  runtime:
+    preferred_backend: npu

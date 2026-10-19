@@ -1,0 +1,906 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: embeddinggemma-300m
+kind: embedder
+package: flutter_edge_ai_litertlm
+display_name: EmbeddingGemma 300M
+family: embeddinggemma
+arch_class: encoder
+license: gemma
+license_url: https://ai.google.dev/gemma/terms
+modalities:
+- text
+variants:
+- slug: seq256
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 29888fcee3216acadc7e844906e5fe0d79a61875
+    path: embeddinggemma-300M_seq256_mixed-precision.tflite
+    sha256: 37115ef7bff76cd37dd86abe503ff511b1032bf85fc624a85c49c84899e92bc5
+    size: 179131736
+    install_filename: embeddinggemma-300M_seq256_mixed-precision__rev-29888fcee321.tflite
+    gated: auto
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 29888fcee3216acadc7e844906e5fe0d79a61875
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256__sentencepiece__rev-29888fcee321.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 256
+  example:
+  - embeddingGemma256
+- slug: seq256-npu-mt6991
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq256_mixed-precision.mediatek.mt6991.tflite
+    sha256: 066e924697e81230f527e9d09ef2c8052a788de44cdf1854c599b03e0956020b
+    size: 187654076
+    install_filename: embeddinggemma-300M_seq256_mixed-precision.mediatek.mt6991__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256-mt6991__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6991
+  dimension: 768
+  max_input_tokens: 256
+  preferred_backend: npu
+- slug: seq256-npu-mt6993
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq256_mixed-precision.mediatek.mt6993.tflite
+    sha256: dfcef4645e74e6587cdb57a3b68e96eb2eb974ee8d49279d1c95fadaef01271e
+    size: 176160768
+    install_filename: embeddinggemma-300M_seq256_mixed-precision.mediatek.mt6993__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256-mt6993__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6993
+  dimension: 768
+  max_input_tokens: 256
+  preferred_backend: npu
+- slug: seq256-npu-sm8550
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8550.tflite
+    sha256: d2e7f905fbf04fe5ba9137be75bd60dae368878ee1910698a9d3f805c8ad6641
+    size: 184412704
+    install_filename: embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8550__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8550
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256-sm8550__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8550
+  dimension: 768
+  max_input_tokens: 256
+  preferred_backend: npu
+- slug: seq256-npu-sm8650
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8650.tflite
+    sha256: f58530f8a729f5de2407ea0beacd15034ed803c82842f4254b22eea5ca4d57c4
+    size: 184400416
+    install_filename: embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8650__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8650
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256-sm8650__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8650
+  dimension: 768
+  max_input_tokens: 256
+  preferred_backend: npu
+- slug: seq256-npu-sm8750
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8750.tflite
+    sha256: b55c394309b349de5c917666b953f9364c4b248cd1cecff22d4fbb42bac4c67f
+    size: 181676576
+    install_filename: embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8750__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256-sm8750__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8750
+  dimension: 768
+  max_input_tokens: 256
+  preferred_backend: npu
+- slug: seq256-npu-sm8850
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8850.tflite
+    sha256: 134ae8fccbf1c390a35b685771aa18704ac83569a06284285a3a42ef343bf209
+    size: 181987872
+    install_filename: embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8850__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256-sm8850__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8850
+  dimension: 768
+  max_input_tokens: 256
+  preferred_backend: npu
+- slug: seq256-npu-tensor-g5
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq256_mixed-precision.google.tensor_g5.tflite
+    sha256: e49a10b5769296953906fd4b7d75805a2d8729d4cd3a2c53c887390332da3ace
+    size: 191474704
+    install_filename: embeddinggemma-300M_seq256_mixed-precision.google.tensor_g5__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G5
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256-tensor-g5__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g5
+  dimension: 768
+  max_input_tokens: 256
+  preferred_backend: npu
+- slug: seq256-npu-tensor-g6
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq256_mixed-precision.google.tensor_g6.tflite
+    sha256: 3ed0bdc4aa284dd1ba07cc5591744e681880a6d773fa799fbc92fe7e6314c7ce
+    size: 201284320
+    install_filename: embeddinggemma-300M_seq256_mixed-precision.google.tensor_g6__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G6
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq256-tensor-g6__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g6
+  dimension: 768
+  max_input_tokens: 256
+  preferred_backend: npu
+- slug: seq512
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 29888fcee3216acadc7e844906e5fe0d79a61875
+    path: embeddinggemma-300M_seq512_mixed-precision.tflite
+    sha256: ad09e81557203cb0e177abf9bf8727dfe138a7d394aa0f70f0b2ed16432e121a
+    size: 179132472
+    install_filename: embeddinggemma-300M_seq512_mixed-precision__rev-29888fcee321.tflite
+    gated: auto
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 29888fcee3216acadc7e844906e5fe0d79a61875
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512__sentencepiece__rev-29888fcee321.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 512
+  example:
+  - embeddingGemma512
+- slug: seq512-npu-mt6991
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq512_mixed-precision.mediatek.mt6991.tflite
+    sha256: 7776785538a594d77fc72d22e5a8d3548a8b616e99897b5b7040b8dc211d0767
+    size: 187803028
+    install_filename: embeddinggemma-300M_seq512_mixed-precision.mediatek.mt6991__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512-mt6991__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6991
+  dimension: 768
+  max_input_tokens: 512
+  preferred_backend: npu
+- slug: seq512-npu-mt6993
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq512_mixed-precision.mediatek.mt6993.tflite
+    sha256: 8ae9ffccdd1ff29e019b872297476d0be9c21f30911e162246f1059f16ddf24e
+    size: 183543612
+    install_filename: embeddinggemma-300M_seq512_mixed-precision.mediatek.mt6993__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512-mt6993__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6993
+  dimension: 768
+  max_input_tokens: 512
+  preferred_backend: npu
+- slug: seq512-npu-sm8550
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8550.tflite
+    sha256: a47e4f049a29b55ffdfad0ab78dc4a3d43608829350568253c30501e7d6053ef
+    size: 190290464
+    install_filename: embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8550__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8550
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512-sm8550__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8550
+  dimension: 768
+  max_input_tokens: 512
+  preferred_backend: npu
+- slug: seq512-npu-sm8650
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8650.tflite
+    sha256: 412bb42e65bbcab91158ebf514ba5597a6e7312076fba0c07c8278948398779e
+    size: 190294560
+    install_filename: embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8650__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8650
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512-sm8650__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8650
+  dimension: 768
+  max_input_tokens: 512
+  preferred_backend: npu
+- slug: seq512-npu-sm8750
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8750.tflite
+    sha256: d9ccceaa73ab38f5b72bdf48fb370fd84c06c28e9b05aa1d5a91c3f03b2ae217
+    size: 184363552
+    install_filename: embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8750__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512-sm8750__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8750
+  dimension: 768
+  max_input_tokens: 512
+  preferred_backend: npu
+- slug: seq512-npu-sm8850
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8850.tflite
+    sha256: d25c0e6e7eeb0fdec75ee4e06cb67ce5a193c4fcc0dd1eb87eaafa0c75bf7700
+    size: 184474144
+    install_filename: embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8850__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512-sm8850__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8850
+  dimension: 768
+  max_input_tokens: 512
+  preferred_backend: npu
+- slug: seq512-npu-tensor-g5
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq512_mixed-precision.google.tensor_g5.tflite
+    sha256: de396c28f9af37977fae920eca8bb571c876ce34c845326a8151a7bc60097f86
+    size: 191971472
+    install_filename: embeddinggemma-300M_seq512_mixed-precision.google.tensor_g5__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G5
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512-tensor-g5__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g5
+  dimension: 768
+  max_input_tokens: 512
+  preferred_backend: npu
+- slug: seq512-npu-tensor-g6
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq512_mixed-precision.google.tensor_g6.tflite
+    sha256: 8b4a7b805dfc7b44ce4713cb0236e823ed9ebb902842d1da0a0ed0aa333f14e1
+    size: 201824480
+    install_filename: embeddinggemma-300M_seq512_mixed-precision.google.tensor_g6__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G6
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq512-tensor-g6__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g6
+  dimension: 768
+  max_input_tokens: 512
+  preferred_backend: npu
+- slug: seq1024
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 29888fcee3216acadc7e844906e5fe0d79a61875
+    path: embeddinggemma-300M_seq1024_mixed-precision.tflite
+    sha256: 8b0b8bbd0aa95f9f747c25a6c87cd05a8286933282660f6a50da877662917e31
+    size: 183329528
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision__rev-29888fcee321.tflite
+    gated: auto
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 29888fcee3216acadc7e844906e5fe0d79a61875
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024__sentencepiece__rev-29888fcee321.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 1024
+  example:
+  - embeddingGemma1024
+- slug: seq1024-npu-mt6991
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq1024_mixed-precision.mediatek.mt6991.tflite
+    sha256: 2cedc201332ba6562448cd2d4ab624840c0e2b1076a7d10909c1fc5e13e2dc49
+    size: 187525992
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision.mediatek.mt6991__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024-mt6991__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6991
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: seq1024-npu-mt6993
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq1024_mixed-precision.mediatek.mt6993.tflite
+    sha256: 1dfa2b1d37ff4a59e5e42d3d27d133fb721dbfd2d9c88801a21442ef4cd4cc0e
+    size: 185540768
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision.mediatek.mt6993__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024-mt6993__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6993
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: seq1024-npu-sm8550
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8550.tflite
+    sha256: 74cfad70f31d3759e9a6ada6c4f31d601f245e6bb957391e56b2fa7c38e5dd68
+    size: 195254816
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8550__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8550
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024-sm8550__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8550
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: seq1024-npu-sm8650
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8650.tflite
+    sha256: acdb80aa131e0c1d45379aa9eb29459cc5d2d49280e7b0f67de1d81dbccf7283
+    size: 195361312
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8650__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8650
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024-sm8650__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8650
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: seq1024-npu-sm8750
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8750.tflite
+    sha256: 3c68b9887a0148f25443e6287a6f9ada838ada89dddf6de36830a943becd5ca8
+    size: 195271200
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8750__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024-sm8750__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8750
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: seq1024-npu-sm8850
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8850.tflite
+    sha256: e57de03a0b531a8a4ad850a0d11cf3c9dca81f7902217c3df356082194817df5
+    size: 198740512
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8850__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024-sm8850__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8850
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: seq1024-npu-tensor-g5
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq1024_mixed-precision.google.tensor_g5.tflite
+    sha256: e3aeec6a721366c360478856501c895ce0e6e8b91b7e0168359f4b25a7d6c6a5
+    size: 201603664
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision.google.tensor_g5__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G5
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024-tensor-g5__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g5
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: seq1024-npu-tensor-g6
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq1024_mixed-precision.google.tensor_g6.tflite
+    sha256: 8469a099d33bc5c5335bc99e5dea1c028d81e0e5615917fd1f3006f78bf5ae2e
+    size: 209530336
+    install_filename: embeddinggemma-300M_seq1024_mixed-precision.google.tensor_g6__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G6
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq1024-tensor-g6__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g6
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: seq2048
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 29888fcee3216acadc7e844906e5fe0d79a61875
+    path: embeddinggemma-300M_seq2048_mixed-precision.tflite
+    sha256: d39b0bb3346bfb4f884f3bbce3196b261895aeece7e7ac02ffb44ed6e0f39381
+    size: 195912440
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision__rev-29888fcee321.tflite
+    gated: auto
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 29888fcee3216acadc7e844906e5fe0d79a61875
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048__sentencepiece__rev-29888fcee321.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 2048
+  example:
+  - embeddingGemma2048
+- slug: seq2048-npu-mt6991
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq2048_mixed-precision.mediatek.mt6991.tflite
+    sha256: dc56fcfd305fea2a3daaec82bff772a9de3f746a8b7bf216fa015e8b2d9c6785
+    size: 194214772
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision.mediatek.mt6991__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048-mt6991__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6991
+  dimension: 768
+  max_input_tokens: 2048
+  preferred_backend: npu
+- slug: seq2048-npu-mt6993
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq2048_mixed-precision.mediatek.mt6993.tflite
+    sha256: 64c5e51d918e8047850dd1d4debcf81ec4e6985d9ae5cbc0a17521de45b5f59b
+    size: 192133828
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision.mediatek.mt6993__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048-mt6993__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6993
+  dimension: 768
+  max_input_tokens: 2048
+  preferred_backend: npu
+- slug: seq2048-npu-sm8550
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8550.tflite
+    sha256: 15d5d5dca08ccc7f026bdeb3983b4a0856b527654cad5c7e72027ae5edfbc0e7
+    size: 244877856
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8550__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8550
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048-sm8550__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8550
+  dimension: 768
+  max_input_tokens: 2048
+  preferred_backend: npu
+- slug: seq2048-npu-sm8650
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8650.tflite
+    sha256: 3665698c5b632f621d85e2b4b6d135fadd0a92365a1b4e510afbc6dbcca4a870
+    size: 244771360
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8650__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8650
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048-sm8650__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8650
+  dimension: 768
+  max_input_tokens: 2048
+  preferred_backend: npu
+- slug: seq2048-npu-sm8750
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8750.tflite
+    sha256: 21e814671507b5a1a1748b2200275d6c7f9fdf0e8fcdb42d84f5c3164a712d92
+    size: 219793952
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8750__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048-sm8750__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8750
+  dimension: 768
+  max_input_tokens: 2048
+  preferred_backend: npu
+- slug: seq2048-npu-sm8850
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8850.tflite
+    sha256: 7172747e73500528d2f61de8df43609ff6344eb61b9e9e1f40acd9e0e38cbb55
+    size: 221776416
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8850__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048-sm8850__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8850
+  dimension: 768
+  max_input_tokens: 2048
+  preferred_backend: npu
+- slug: seq2048-npu-tensor-g5
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq2048_mixed-precision.google.tensor_g5.tflite
+    sha256: e659122c0ab3d02075a9e624efd7c8919a8f2e9dbc2d7284f41cb437e675f060
+    size: 247708816
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision.google.tensor_g5__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G5
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048-tensor-g5__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g5
+  dimension: 768
+  max_input_tokens: 2048
+  preferred_backend: npu
+- slug: seq2048-npu-tensor-g6
+  file_type: tflite
+  file:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: embeddinggemma-300M_seq2048_mixed-precision.google.tensor_g6.tflite
+    sha256: 83500348f3ddeb82df1b6cacda879d49a2de83ac45d94738e6659cbf4c88d756
+    size: 252056544
+    install_filename: embeddinggemma-300M_seq2048_mixed-precision.google.tensor_g6__rev-459f1d37fec9.tflite
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G6
+  tokenizer:
+    repo: litert-community/embeddinggemma-300m
+    revision: 459f1d37fec9635eb1730ebdbc219bfc3226c8e7
+    path: sentencepiece.model
+    sha256: d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7
+    size: 4683319
+    install_filename: embeddinggemma-300m-seq2048-tensor-g6__sentencepiece__rev-459f1d37fec9.model
+    gated: auto
+  rag_profile_id: embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g6
+  dimension: 768
+  max_input_tokens: 2048
+  preferred_backend: npu

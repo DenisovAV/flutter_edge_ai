@@ -1,0 +1,74 @@
+{
+  "container_version": "1.6.0",
+  "size": 3125204208,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": 4096,
+  "kv_cache_length": 4096,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        4,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        4,
+        4096,
+        128
+      ]
+    },
+    "prefill_256": {
+      "kv_cache_k_0": [
+        1,
+        4,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        4,
+        4096,
+        128
+      ]
+    },
+    "prefill_16": {
+      "kv_cache_k_0": [
+        1,
+        4,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        4,
+        4096,
+        128
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "ODML",
+    "uuid": "4c07bfc3-204f-491d-9992-4b49681713f3",
+    "creation_timestamp": "2026-10-05T06:07:30.325003+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 3318
+    },
+    {
+      "data_type": "HF_Tokenizer_Zlib",
+      "length": 2608153
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 3122550000,
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    }
+  ]
+}

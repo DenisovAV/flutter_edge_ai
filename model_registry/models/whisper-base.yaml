@@ -1,0 +1,47 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: whisper-base
+kind: stt
+package: flutter_edge_ai_speech
+display_name: Whisper Base
+family: whisper
+arch_class: speech-recognition
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+stt_type: whisper
+variants:
+- slug: f32
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-base
+    revision: ba2c613646edc2b72f5a51fa0b5b0b322e436101
+    path: whisper_base_30s_f32.tflite
+    sha256: 83f90febae74f6db2b671d792ce844f93de5dfa6d6743cdba8c7a208c8dd708a
+    size: 290082636
+    install_filename: whisper_base_30s_f32.tflite
+  tokenizer:
+    repo: openai/whisper-base
+    revision: e37978b90ca9030d5170a5c07aadb050351a65bb
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: i8
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-base
+    revision: ba2c613646edc2b72f5a51fa0b5b0b322e436101
+    path: whisper_base_30s_i8.tflite
+    sha256: f6943d9d293138850b729e074057956c664891c57837692b1bac4608c4506cd1
+    size: 77012960
+    install_filename: whisper_base_30s_i8.tflite
+  tokenizer:
+    repo: openai/whisper-base
+    revision: e37978b90ca9030d5170a5c07aadb050351a65bb
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+  example:
+  - whisperBaseInt8

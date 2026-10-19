@@ -1,0 +1,46 @@
+{
+  "container_version": "1.7.0",
+  "size": 385925120,
+  "npu_target": "MediaTek/mt6993",
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "author": "The ODML Authors",
+    "uuid": "0999598e-aca1-48cd-a477-43d954f99fbf",
+    "creation_timestamp": "2026-09-29T18:54:00.018403+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 124
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 3149080,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 310910316,
+      "npu_target": "MediaTek/mt6993",
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteWeights",
+      "model_type": "tf_lite_embedder",
+      "length": 67108864,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    }
+  ]
+}

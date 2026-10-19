@@ -1,0 +1,38 @@
+{
+  "container_version": "1.7.0",
+  "size": 199532256,
+  "npu_target": "Google/Tensor_G6",
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "author": "The ODML Authors",
+    "uuid": "0c15f04e-7355-4714-92ca-df3ecc8dd517",
+    "creation_timestamp": "2026-09-30T05:50:00.593941+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 18
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 70257824,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 124526304,
+      "npu_target": "Google/Tensor_G6",
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    }
+  ]
+}

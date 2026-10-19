@@ -1,0 +1,98 @@
+{
+  "container_version": "1.5.0",
+  "size": 1156342768,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": 1280,
+  "kv_cache_length": 1280,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        1280,
+        64
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        1280,
+        64
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        1280,
+        64
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        1280,
+        64
+      ]
+    },
+    "prefill_280": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        1280,
+        64
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        1280,
+        64
+      ]
+    }
+  },
+  "system_metadata": {
+    "author": "The ODML Authors",
+    "uuid": "d8eb7cd9-8b4d-4535-bbc2-2c521df90291",
+    "creation_timestamp": "2026-06-03T02:10:06.042115+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 1146
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 2647644
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 137960232,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 510243600,
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 491203696,
+      "items": {
+        "model_type": "tf_lite_vision_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "length": 14230512,
+      "items": {
+        "model_type": "tf_lite_vision_adapter"
+      }
+    }
+  ]
+}

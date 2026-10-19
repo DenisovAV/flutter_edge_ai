@@ -1,0 +1,41 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: smollm3-3b
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: SmolLM3 3B
+family: smollm3
+arch_class: dense
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+model_type: general
+capabilities:
+  image: false
+  audio: false
+  function_calls: false
+  thinking: true
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: q4-block32-ekv4096
+  file_type: litertlm
+  file:
+    repo: litert-community/SmolLM3-3B
+    revision: 7621a4f099a00b0518e0a6e7c5628af08ab4184e
+    path: SmolLM3-3B_q4_block32_ekv4096.litertlm
+    sha256: bdd7eb05b6764fb5a5173bdbdd59354a26f66e4c20b040f0d3da3532071d18f6
+    size: 2004633520
+    install_filename: SmolLM3-3B_q4_block32_ekv4096.litertlm
+  example:
+  - smolLM3_3B
+- slug: default
+  file_type: litertlm
+  file:
+    repo: litert-community/SmolLM3-3B
+    revision: 7621a4f099a00b0518e0a6e7c5628af08ab4184e
+    path: SmolLM3-3B.litertlm
+    sha256: c1c6c635194745456d03ba3a851b9ebf3a2714218ce35d930d9eb93f7cf97e20
+    size: 3125204208
+    install_filename: SmolLM3-3B.litertlm

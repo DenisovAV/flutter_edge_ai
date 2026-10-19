@@ -1,0 +1,170 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: gemma-4-e2b-it
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Gemma 4 E2B
+family: gemma4
+arch_class: matformer-ple
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+model_type: gemma4
+capabilities:
+  image: true
+  audio: true
+  function_calls: true
+  thinking: true
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: generic
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it.litertlm
+    sha256: 181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c
+    size: 2588147712
+    install_filename: gemma-4-E2B-it.litertlm
+  example:
+  - gemma4_E2B_litertlm
+- slug: gpu
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it-gpu.litertlm
+    sha256: a53a59001894c58e6bdb5b9b227709f91a2e3e556baa7d85acf9c55402ba5cf5
+    size: 2008432640
+    install_filename: gemma-4-E2B-it-gpu.litertlm
+- slug: web
+  file_type: litertlm
+  web_bundle: true
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it-web.litertlm
+    sha256: 3a08e8d94e23b814ae5414469c370c503813949acb8ceaa17e4ebf8a35af35b5
+    size: 2008432640
+    install_filename: gemma-4-E2B-it-web.litertlm
+  capabilities:
+    image: false
+    audio: false
+    function_calls: true
+    thinking: false
+  example:
+  - gemma4_E2B_litertlm
+- slug: npu-tensor-g5
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it_Google_Tensor_G5.litertlm
+    sha256: af1082986639ecde7db95d91be6fe54f8b6b458104734c5bafc204e69d6852dc
+    size: 3113545589
+    install_filename: gemma-4-E2B-it_Google_Tensor_G5.litertlm
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G5
+  fixed_max_tokens: 4096
+  runtime:
+    preferred_backend: npu
+- slug: npu-tensor-g6
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it_Google_Tensor_G6.litertlm
+    sha256: f86c7c19c736e9307267946edef58b0a45494a9127036d54d90dd6b7617c95b7
+    size: 3313938293
+    install_filename: gemma-4-E2B-it_Google_Tensor_G6.litertlm
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G6
+  fixed_max_tokens: 4096
+  capabilities:
+    image: true
+    audio: true
+    function_calls: false
+    thinking: false
+  runtime:
+    max_tokens: 1024
+    preferred_backend: npu
+  example:
+  - gemma4_E2B_google_tensor_G6
+- slug: npu-lnl
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it_intel_LNL.litertlm
+    sha256: dacc900381bdc837696fc5deb1f3b7dbfe0854295dc3934564e1841086ab0383
+    size: 2960506880
+    install_filename: gemma-4-E2B-it_intel_LNL.litertlm
+  npu:
+    vendor: intel
+    soc: LNL
+  fixed_max_tokens: 4096
+  capabilities:
+    image: false
+    audio: false
+    function_calls: false
+    thinking: true
+  runtime:
+    preferred_backend: npu
+  example:
+  - gemma4_E2B_intel_LNL
+- slug: npu-ptl
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it_intel_PTL.litertlm
+    sha256: 8c0877f721ff0c057a007b330bbf9f6ec4d0278e730f88db95f2252372c701e8
+    size: 2948333568
+    install_filename: gemma-4-E2B-it_intel_PTL.litertlm
+  npu:
+    vendor: intel
+    soc: PTL
+  fixed_max_tokens: 4096
+  capabilities:
+    image: false
+    audio: false
+    function_calls: false
+    thinking: true
+  runtime:
+    preferred_backend: npu
+  example:
+  - gemma4_E2B_intel_PTL
+- slug: npu-qcs8275
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it_qualcomm_qcs8275.litertlm
+    sha256: ebc103e548e76a34b8114a1dc1dd6d33a893c38add108d8bae8165b51f320f02
+    size: 3294593024
+    install_filename: gemma-4-E2B-it_qualcomm_qcs8275.litertlm
+  npu:
+    vendor: qualcomm
+    soc: QCS8275
+  fixed_max_tokens: 4096
+  runtime:
+    preferred_backend: npu
+- slug: npu-sm8750
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-4-E2B-it-litert-lm
+    revision: b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1
+    path: gemma-4-E2B-it_qualcomm_sm8750.litertlm
+    sha256: 41dd675fbe735b6029012b5576a5716bac614fd8156de0128db4c9dff3cebd4e
+    size: 3016294400
+    install_filename: gemma-4-E2B-it_qualcomm_sm8750.litertlm
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  fixed_max_tokens: 4096
+  runtime:
+    preferred_backend: npu

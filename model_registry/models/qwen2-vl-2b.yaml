@@ -1,0 +1,32 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: qwen2-vl-2b
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Qwen2-VL 2B
+family: qwen2-vl
+arch_class: vision-language
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+model_type: general
+capabilities:
+  image: true
+  audio: false
+  function_calls: false
+  thinking: false
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: generic
+  file_type: litertlm
+  file:
+    repo: litert-community/Qwen2-VL-2B
+    revision: 98723e7d59acce5f56befd5c25164510e1fe790a
+    path: Qwen2-VL-2B.litertlm
+    sha256: cf481776bcb16fe539a38c924a67fc213bb5ee55e6fa600729f060e64849066b
+    size: 1783424544
+    install_filename: Qwen2-VL-2B.litertlm
+  example:
+  - qwen2VL_2B

@@ -51,8 +51,8 @@ Which package you need for which task, and how they fit together:
 | Maintainer | Looks after |
 |---|---|
 | Sasha Denisov ([@DenisovAV](https://github.com/DenisovAV)) | Lead maintainer: the core API, the engines, the native builds and every release |
-| Francesco Vezzani ([@kekko7072](https://github.com/kekko7072)) | [`flutter_edge_ai_builtin_ai`](packages/flutter_edge_ai_builtin_ai/README.md) and the [`flutter_local_ai`](https://pub.dev/packages/flutter_local_ai) plugin under it |
 | Jhin Lee ([@leehack](https://github.com/leehack)) | [`flutter_edge_ai_llama`](packages/flutter_edge_ai_llama/README.md) |
+| Francesco Vezzani ([@kekko7072](https://github.com/kekko7072)) | [`flutter_edge_ai_builtin_ai`](packages/flutter_edge_ai_builtin_ai/README.md) |
 | Samarthsinh Vala ([@samarthsinh2660](https://github.com/samarthsinh2660)) | [`flutter_edge_ai_diagnostics`](packages/flutter_edge_ai_diagnostics/README.md) |
 | Daisuke Majima ([@john-rocky](https://github.com/john-rocky)) | The Hugging Face integration: installing a model straight from its repository |
 

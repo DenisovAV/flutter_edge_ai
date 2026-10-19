@@ -74,21 +74,6 @@ const maintainers = <Maintainer>[
     website: 'https://sashadenisov.dev',
   ),
   Maintainer(
-    name: 'Francesco Vezzani',
-    login: 'kekko7072',
-    githubId: 32552589,
-    packages: ['flutter_edge_ai_builtin_ai', 'flutter_local_ai'],
-    about:
-        'Italy · Tomorrow Tech · mechatronic engineering at the University of '
-        'Padua',
-    blurb:
-        'Runs the models the operating system ships: Gemini Nano on Android '
-        'and in Chrome, Apple Foundation Models on iOS and macOS, Phi Silica '
-        'on Windows. The package sits on flutter_local_ai, his own plugin, '
-        'which owns every native layer.',
-    website: 'https://vezz.io',
-  ),
-  Maintainer(
     name: 'Jhin Lee',
     login: 'leehack',
     githubId: 1233094,
@@ -101,6 +86,21 @@ const maintainers = <Maintainer>[
         'llamadart, the llama.cpp package he maintains. One of the '
         "project's earliest contributors.",
     website: 'https://leehack.com',
+  ),
+  Maintainer(
+    name: 'Francesco Vezzani',
+    login: 'kekko7072',
+    githubId: 32552589,
+    packages: ['flutter_edge_ai_builtin_ai'],
+    about:
+        'Italy · Tomorrow Tech · mechatronic engineering at the University of '
+        'Padua',
+    blurb:
+        'Runs the models the operating system ships: Gemini Nano on Android '
+        'and in Chrome, Apple Foundation Models on iOS and macOS, Phi Silica '
+        'on Windows. The package sits on flutter_local_ai, his own plugin, '
+        'which owns every native layer.',
+    website: 'https://vezz.io',
   ),
   Maintainer(
     name: 'Samarthsinh Vala',

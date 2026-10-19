@@ -95,14 +95,14 @@ const maintainers = <Maintainer>[
     githubId: 32552589,
     packages: ['flutter_edge_ai_builtin_ai'],
     about:
-        'Italy · Tomorrow Tech · mechatronic engineering at the University of '
-        'Padua',
+        'Italy · Tomorrow Tech (amperry) · Computer Engineer Master at '
+        'University of Padua',
     blurb:
         'Runs the models the operating system ships: Gemini Nano on Android '
         'and in Chrome, Apple Foundation Models on iOS and macOS, Phi Silica '
         'on Windows. The package sits on flutter_local_ai, his own plugin, '
         'which owns every native layer.',
-    website: 'https://vezz.io',
+    website: 'https://vezz.io?utm=docs-flutter-edge-ai',
   ),
   Maintainer(
     name: 'Samarthsinh Vala',

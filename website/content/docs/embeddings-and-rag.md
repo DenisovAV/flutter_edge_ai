@@ -29,12 +29,15 @@ passes, and core hosts, caches and closes those passes.
 
 Backend authors declare supported explicit requests through
 `EmbeddingBackendProvider.honouredBackends(spec)`. Core computes cache identity:
-automatic requests reuse the current embedder for the same installed model,
+automatic requests reuse only a non-NPU embedder for the same installed model,
 explicit NPU requests retain their own key, and automatic builds of GPU-capable
 providers are recorded under the loaded accelerator. GPU-capable providers must
 report it through `EmbeddingPassInfo.activeBackend`; a descriptor alone is not
 proof of placement. Existing providers retain their fixed descriptor fallback.
-Supported explicit requests that fall back produce a release-visible WARNING.
+Repeated explicit CPU/GPU requests reuse their originating model, including a
+fallback, until a rebuild is needed or it is closed. Reporting providers print
+one release-visible WARNING per new fallback load, including an NPU request;
+reuse does not repeat it.
 `EmbeddingModel.maxInputTokens` is the effective loaded context/single-pass batch
 limit, including task prefixes and special tokens; null means unknown, not
 unlimited. A GGUF pass configured with a 1024-token micro-batch cannot accept a

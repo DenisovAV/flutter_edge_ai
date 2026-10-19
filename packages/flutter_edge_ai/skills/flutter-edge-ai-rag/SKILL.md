@@ -157,11 +157,14 @@ backend ships yet. `flutter_edge_ai_embeddings` remains the tokenizer package;
 runtime passes belong to their engine packages.
 
 Providers declare explicit accelerator capabilities with `honouredBackends(spec)`;
-core computes the cache key. Automatic requests reuse the current embedder for
-the same installed model, while NPU requests always retain a separate key.
+core computes the cache key. Automatic requests reuse only a non-NPU embedder
+for the same installed model, while NPU requests always retain a separate key.
+Repeated explicit CPU/GPU requests reuse their originating fallback until a
+rebuild is needed or the model is closed.
 GPU-capable providers must report their actual loaded accelerator through
 `EmbeddingPassInfo.activeBackend`; legacy fixed descriptors remain compatible.
-Supported explicit requests that fall back print a release-visible WARNING.
+Reporting providers print one release-visible WARNING per new fallback load,
+including an NPU request; reuse does not repeat it.
 `EmbeddingModel.maxInputTokens` is the effective loaded context/single-pass batch
 capacity, including task prefixes and special tokens. A GGUF profile configured
 with a 1024-token micro-batch cannot embed a longer chunk even if the file names

@@ -386,7 +386,7 @@ void main() {
       );
 
       test(
-        '${shell.name}: automatic reuses NPU; explicit CPU/GPU are refused',
+        '${shell.name}: automatic refuses warm and cold NPU-only bundles like explicit CPU/GPU',
         () async {
           // A per-SoC bundle's rule: it runs on the NPU or not at all.
           final backend = _NpuOnlyBackend();
@@ -398,7 +398,10 @@ void main() {
             preferredBackend: PreferredBackend.npu,
           );
           expect(npu.activeBackend, PreferredBackend.npu);
-          expect(await plugin.createEmbeddingModel(), same(npu));
+          await expectLater(
+            plugin.createEmbeddingModel(),
+            throwsA(isA<EmbeddingLoadException>()),
+          );
           for (final other in [PreferredBackend.cpu, PreferredBackend.gpu]) {
             await expectLater(
               plugin.createEmbeddingModel(preferredBackend: other),
@@ -408,6 +411,7 @@ void main() {
           }
           expect(backend.described, [
             PreferredBackend.npu,
+            null,
             PreferredBackend.cpu,
             PreferredBackend.gpu,
           ]);
@@ -416,8 +420,14 @@ void main() {
             preferredBackend: PreferredBackend.npu,
           );
           expect(again, same(npu), reason: 'the NPU embedder still serves npu');
-          expect(backend.described, hasLength(3));
+          expect(backend.described, hasLength(4));
           await npu.close();
+          await expectLater(
+            plugin.createEmbeddingModel(),
+            throwsA(isA<EmbeddingLoadException>()),
+          );
+          expect(backend.described.last, isNull);
+          expect(plugin.initializedEmbeddingModel, isNull);
         },
       );
     }

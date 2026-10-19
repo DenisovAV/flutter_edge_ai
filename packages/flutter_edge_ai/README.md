@@ -383,7 +383,10 @@ a separate tokenizer. No GGUF embedding backend ships yet; execution requires
 an engine package that supports the file. Providers declare capabilities with
 `EmbeddingBackendProvider.honouredBackends(spec)` and report the loaded
 accelerator through `EmbeddingPassInfo.activeBackend`. Automatic requests reuse
-the current embedder for the same model. Core keeps ownership of
+the current non-NPU embedder for the same model. Repeated explicit CPU/GPU
+requests reuse the model they loaded, including a fallback, until a rebuild is
+needed or the model is closed; the fallback warning is printed once per load.
+Core keeps ownership of
 the model cache, worker and close lifecycle. Existing providers keep their
 CPU/NPU cache behavior.
 

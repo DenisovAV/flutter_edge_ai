@@ -11,8 +11,11 @@ yet; a separate engine package is required to execute these files.
 
 Engine authors declare explicit accelerator capabilities through
 `EmbeddingBackendProvider.honouredBackends(spec)`; core computes cache identity.
-Automatic requests reuse the current embedder for the same installed model and
-media, and explicit NPU requests always retain a separate key. GPU-capable
+Automatic requests reuse only a non-NPU embedder for the same installed model
+and media; explicit NPU requests always retain a separate key. Repeated explicit
+CPU/GPU requests reuse their originating model, including a fallback, until a
+rebuild is needed or the model is closed. A fallback warning is printed once per
+new load, including reporting-provider NPU fallbacks. GPU-capable
 providers must report the loaded accelerator in `EmbeddingPassInfo.activeBackend`.
 Existing providers using the default capability set retain descriptor fallback,
 including the fixed WebGPU-only LiteRT-LM path.

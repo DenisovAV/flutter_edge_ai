@@ -671,13 +671,17 @@ class FlutterEdgeAi {
   ///   reused when it covers the request; otherwise it is rebuilt with the
   ///   UNION of what it had and what is asked, so declarations only widen.
   /// - [preferredBackend]: explicit accelerator preference. Providers declare
-  ///   what they honour for the installed spec. Automatic (null) reuses the
-  ///   current embedder for that model and media; an explicit supported switch
-  ///   replaces it. NPU requests always keep a separate cache identity, since
-  ///   NPU vectors need not match CPU/GPU vectors. Existing CPU-only providers
-  ///   ignore GPU with a once-only diagnostic; legacy web runtimes choose
-  ///   their own placement. GPU-capable providers report the loaded backend
-  ///   and print a release-visible warning if an explicit request falls back.
+  ///   what they honour for the installed spec. Automatic (null) reuses a
+  ///   current non-NPU embedder for that model and media. A repeated explicit
+  ///   CPU/GPU request reuses the model it loaded, including a fallback; it
+  ///   does not retry the accelerator until a rebuild is needed or the model
+  ///   is closed. An explicit switch otherwise replaces it. NPU requests keep
+  ///   a separate cache identity and automatic requests never borrow an NPU
+  ///   entry, since NPU vectors need not match CPU/GPU vectors. Existing
+  ///   CPU-only providers ignore GPU with a once-only diagnostic; legacy web
+  ///   runtimes choose their own placement. GPU-capable providers report the
+  ///   loaded backend and print one release-visible warning when a new
+  ///   explicit load falls back, including an NPU request; reuse is quiet.
   ///   Read [EmbeddingModel.activeBackend] for the actual placement; null is
   ///   unknown, not CPU. Provider constructors own any strict fallback policy.
   ///

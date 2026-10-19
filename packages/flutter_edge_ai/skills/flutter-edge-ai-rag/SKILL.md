@@ -859,7 +859,7 @@ final index = await rag.openVectors(
   profile: EmbeddingProfile(id: 'embedding-pipeline-v1', dimension: 768),
 );
 await index.dispose();
-await FlutterEdgeAi.dispose();
+await FlutterEdgeAi.dispose(); // resets core's registries; closes no model
 ```
 
 ## Moving from flutter_edge_ai_rag 1.0 to 1.1

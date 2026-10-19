@@ -65,9 +65,9 @@ class RuntimeConfig {
   /// CPU, because the vision encoder's `STABLEHLO_COMPOSITE` ops fail to
   /// prepare on the Metal/WebGPU delegates (LiteRT-LM#2461) — and reports its
   /// choice in `InferenceModel.activeVisionBackend`. Set one only where the
-  /// section allows it (`readLiteRtLmBundleInfo(path).visionEncoder` in
-  /// `flutter_edge_ai_litertlm` shows its `backend_constraint`); a backend it
-  /// excludes is refused before the model loads. Ignored by the MediaPipe
+  /// section allows it (`(await readLiteRtLmBundleInfo(path)).visionEncoder`
+  /// in `flutter_edge_ai_litertlm` shows its `backend_constraint`); a backend
+  /// it excludes is refused before the model loads. Ignored by the MediaPipe
   /// engine (whole-model backend, no per-encoder split).
   final PreferredBackend? preferredVisionBackend;
 
@@ -77,8 +77,8 @@ class RuntimeConfig {
   /// one only where the section allows it: the published Gemma 4 and Gemma 3n
   /// audio encoders declare `backend_constraint` cpu, so
   /// `PreferredBackend.gpu` is refused for them
-  /// (`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint` shows
-  /// it). Ignored by MediaPipe.
+  /// (`(await readLiteRtLmBundleInfo(path)).audioEncoder?.backendConstraint`
+  /// shows it). Ignored by MediaPipe.
   final PreferredBackend? preferredAudioBackend;
 
   /// Inference: whether the model is created with vision. Embedders: the

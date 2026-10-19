@@ -82,7 +82,8 @@ flutter run
 ```
 
 You get a chat screen with the composer disabled and a line saying there is no
-model yet. That is the whole app — one file, no plugin, nothing to configure:
+model yet. That is the whole app — one Dart file, no plugin, nothing to
+configure (its `web/` already holds two scripts Step 2 explains):
 
 ```dart
 class ChatPage extends StatelessWidget {
@@ -115,8 +116,9 @@ Two packages, not one, and the reason matters.
 the registry. It ships no inference runtime at all. `flutter_edge_ai_litertlm`
 is one such runtime — the LiteRT-LM engine, which reads `.litertlm` files on
 Android, iOS, desktop and the web. There are others (MediaPipe for `.task`, ONNX
-Runtime, the OS built-in models), and you take only the one you need, because
-each drags in native binaries you would otherwise ship for nothing.
+Runtime, llama.cpp for `.gguf`, the OS built-in models), and you take only the
+one you need, because each drags in native binaries you would otherwise ship for
+nothing.
 
 On the web, "reads `.litertlm` files" comes with a catch this codelab's model
 choice is built around: the browser engine (`@litert-lm/core`) only runs a
@@ -246,8 +248,8 @@ that one changes only your machine, not your teammates' or CI.
 build of the runtime, so a Snapdragon-X machine is out. Nothing needs installing:
 nothing in the bundle needs a C++ runtime the machine does not already have.
 
-**Linux** — nothing in the app either. glibc 2.34 or newer, which means Ubuntu
-22.04+, Debian 12+ or RHEL 9+. Building a Flutter Linux app at all also wants
+**Linux** — nothing in the app either. glibc 2.34 or newer and GCC 12's
+libstdc++, which means Ubuntu 22.04+, Debian 12+ or RHEL 10+. Building a Flutter Linux app at all also wants
 `clang cmake ninja-build libgtk-3-dev lld`, and `flutter doctor` names whichever
 of those you are missing. The GPU backend reaches Vulkan through Dawn, so it
 wants a working vendor driver: Mesa's `llvmpipe` software fallback caps
@@ -259,7 +261,8 @@ arm loads the runtime from a CDN, and that ES module assigns no window globals �
 module scripts are deferred, so Dart would reach the engine before the
 constructor exists. `web/index.html` publishes a promise instead, and Dart
 awaits it. Every step app from this one on carries it in `<head>`, followed by
-the two scripts the plugin's own web storage needs:
+the two scripts the plugin's own web storage needs — those two, and their tags,
+are already in the starter's `web/`:
 
 ```html
 <script type="module">
@@ -277,6 +280,7 @@ window.litertLmReady = (async () => {
   <script src="opfs_helper.js"></script>
 ```
 
+The step apps already have both files, so this is for an app of your own:
 `cache_api.js` and `opfs_helper.js` are not a pub.dev asset — copy them out of
 the `flutter_edge_ai` package pub already resolved on your machine. Find where
 that is:
@@ -698,8 +702,8 @@ is exactly that segment. One typo apart and the check is answering about a file
 that was never written.
 
 What that costs you is not bandwidth. `install()` is idempotent: it looks up
-the name it is about to write, sees the model already there, logs *skipping
-download* and returns in milliseconds. So the bytes are still fetched exactly
+the name it is about to write, sees the model already there, logs *Already
+installed* and returns in milliseconds. So the bytes are still fetched exactly
 once — what breaks is the gate. It answers "no" forever, so the app opens on
 the download screen every launch, the "download" finishes instantly, the gate
 is asked again, still answers "no", and you land straight back on the download
@@ -796,10 +800,11 @@ core API is the entry point to everything else the plugin does:
   skills your assistant reads; the
   [Package Skills codelab](/codelabs/package-skills-flutter-gemma) installs
   them and shows how to check what it writes
-* **swap the model** — change one constant; `.litertlm` files from
-  [litert-community](https://huggingface.co/litert-community) all work the same
-  way on native platforms — on the web, only a file exported for the browser
-  engine does
+* **swap the model** — change one constant; most `.litertlm` files from
+  [litert-community](https://huggingface.co/litert-community) work the same
+  way on native platforms (a `Qwen3-0.6B.litertlm` downloaded before
+  2026-10-13, 15:53 UTC does not load — uninstall it and install it again; a
+  per-SoC NPU bundle loads only on its NPU) — on the web, only a file exported for the browser engine does
 * **run a different engine** — the OS built-in model (Gemini Nano, Apple
   Foundation Models) needs no download at all:
   [Inference Engines](/codelabs/inference-engines-flutter-gemma)

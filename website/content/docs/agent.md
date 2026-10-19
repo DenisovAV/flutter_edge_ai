@@ -63,7 +63,7 @@ execution mechanisms:
 |---|---|:-:|:-:|:-:|:-:|:-:|:-:|
 | **text-only** | A persona / instruction the model follows directly | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
 | **MCP** | Calls remote MCP tools over Streamable HTTP | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
-| **native-intent** | Opens an OS surface (mail, SMS, calendar, notification) | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
+| **native-intent** | Opens an OS surface (mail, SMS, calendar, notification) | ✅ | ✅ | ✅⁴ | ✅⁴ | ❌³ | ✅⁴ |
 | **JS** | Runs the skill's JavaScript in a sandboxed headless webview | ✅ | ✅ | ✅ | ✅¹ | ❌³ | ❌² |
 
 ¹ Windows JS skills need the
@@ -71,7 +71,9 @@ execution mechanisms:
 (pre-installed on Windows 11). ² Linux has no embeddable webview, so JS skills
 return an `ErrorResult`; text / native-intent / MCP skills work on Linux.
 ³ Not supported on Web — never verified end-to-end, and the example app
-disables it (see the note below).
+disables it (see the note below). ⁴ Only Android and iOS open the OS calendar
+editor; macOS, Windows and Linux open a Google Calendar event page in the
+browser, and Linux cannot schedule a notification.
 
 JS skills run in a headless, sandboxed webview. To grant a secure context (so
 skills using `crypto.subtle` and other secure-context Web APIs work), the package
@@ -284,7 +286,7 @@ text-only mechanisms (write your own `SKILL.md` for MCP):
 | `query-wikipedia` | JS (data) | Summarize a Wikipedia topic |
 | `interactive-map` | JS (webview) | Show a location on an embedded map |
 | `send-email` | intent | Open the OS mail composer |
-| `create-calendar-event` | intent | Open the calendar event editor |
+| `create-calendar-event` | intent | Open the calendar event editor (on desktop, a Google Calendar page) |
 | `get-current-time` | intent | Report the current local date and time |
 | `kitchen-adventure` | text-only | A text-adventure dungeon-master persona |
 
@@ -323,7 +325,8 @@ asks for the answer from the skill's instructions. This works only with
 `NativeIntentExecutor` (or with no intent executor at all): an intent executor
 of your own has its errors reach the model unchanged.
 
-JS skills additionally ship `scripts/index.html` exposing
+JS skills additionally ship a script in `scripts/` — `index.html`, unless the
+body names another (`scriptName: query.html`) — exposing
 `window.ai_edge_gallery_get_result(data, secret)` returning a JSON string
 (`{ result | image | webview | error }`). Secrets are injected as the JS
 `secret` argument and **never** placed in the model prompt.
@@ -333,7 +336,9 @@ JS skills additionally ship `scripts/index.html` exposing
 `NativeIntentExecutor` runs six built-in intents (`send_email`, `send_text`,
 `create_calendar_event`, `read_calendar_events`, `schedule_notification`,
 `get_current_date_and_time`); `schedule_notification` runs only once the app
-turns it on (see [Setup](#setup)). Add your own through `handlers:`; the
+turns it on (see [Setup](#setup)), and the built-in `read_calendar_events`
+reads no calendar: it answers with an error that asks for a handler of your
+own. Add your own through `handlers:`; the
 built-ins keep running next to them. `validators:` checks an intent's parameters before
 its handler runs: null when they are valid, otherwise the reason, which goes
 back to the model.

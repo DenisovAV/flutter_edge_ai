@@ -143,7 +143,7 @@ void main() async {
 | `inferenceEngines: [LlamaEngineProvider()]` | `flutter_edge_ai_llama` | `.gguf` models via llama.cpp, `ModelFileType.gguf` (mobile + desktop + web) — [llama.cpp](/docs/llama) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | embeddings: EmbeddingGemma 2 `.litertlm` (text, images, audio; native and WebGPU) and `.tflite` models |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
-| `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by both embedding backends above for `.tflite` and `.onnx` models; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
+| `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by both embedding backends above for `.tflite` and `.onnx` models — on the web for `.onnx` only, since LiteRT.js tokenizes `.tflite` in the browser; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |
 
@@ -181,11 +181,13 @@ Complete platform-specific setup before running a model.
 ### iOS
 
 Required by any engine package: `flutter_edge_ai_litertlm`, `flutter_edge_ai_mediapipe`,
-`flutter_edge_ai_onnx`, `flutter_edge_ai_builtin_ai` and/or `flutter_edge_ai_speech`.
+`flutter_edge_ai_onnx`, `flutter_edge_ai_llama`, `flutter_edge_ai_builtin_ai` and/or
+`flutter_edge_ai_speech`.
 
 **Set the minimum iOS version to 15.0** — or **16.0** if your app depends on
-`flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI. Core, `flutter_edge_ai_litertlm`
-and embeddings build from 15.0. (`flutter_gemma` before 1.6.4 declared
+`flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI, and **16.4** with
+`flutter_edge_ai_llama`, whose llama.cpp companion needs it. Core,
+`flutter_edge_ai_litertlm` and embeddings build from 15.0. (`flutter_gemma` before 1.6.4 declared
 16.0.)
 
 `flutter_edge_ai_builtin_ai` no longer sets an Apple floor of its own — since 0.3.0
@@ -539,7 +541,8 @@ web-compatible builds.
 Desktop is served **primarily** by **`flutter_edge_ai_litertlm`** (`.litertlm`
 files), whose native library is fetched at build time by the
 package's Native-Assets hook (no manual download/bundling). **`flutter_edge_ai_onnx`**
-([ONNX Runtime](/docs/onnx)) also runs on all three desktop OSes
+([ONNX Runtime](/docs/onnx)) and **`flutter_edge_ai_llama`**
+([llama.cpp](/docs/llama), `.gguf`) also run on all three desktop OSes
 (macOS/Windows/Linux), and the OS built-in model is available via
 **`flutter_edge_ai_builtin_ai`** on **macOS** ([Apple Foundation
 Models](/docs/builtin-ai)) and on **Windows** ([AI Foundry](/docs/builtin-ai) —

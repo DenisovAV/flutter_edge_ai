@@ -31,7 +31,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
     filename: 'gemma-4-E2B-it.litertlm',
     displayName: 'Gemma 4 E2B IT',
-    size: '2.4GB',
+    size: '2.6GB',
     licenseUrl: '',
     needsAuth: false,
     preferredBackend: PreferredBackend.gpu,
@@ -297,7 +297,7 @@ enum Model implements InferenceModelInterface {
     supportsFunctionCalls: false,
   ),
 
-  // LFM2.5 230M (int4, 168 MB), from a repo that is not gated, so it installs
+  // LFM2.5 230M (int4, 177 MB), from a repo that is not gated, so it installs
   // with no HuggingFace token. LiquidAI's lfm2 architecture, a ShortConv /
   // attention hybrid (14 layers: 8 conv + 6 GQA) rather than a plain
   // transformer, which is what makes it viable on low-end hardware.
@@ -324,7 +324,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm',
     filename: 'LFM2.5-230M_int4.litertlm',
     displayName: 'LFM2.5 230M (int4)',
-    size: '0.17GB',
+    size: '177MB',
     licenseUrl: 'https://huggingface.co/litert-community/LFM2.5-230M',
     needsAuth: false,
     preferredBackend: PreferredBackend.gpu,
@@ -451,14 +451,12 @@ enum Model implements InferenceModelInterface {
 
   // === OTHER MODELS ===
 
-  // Qwen3 0.6B (LiteRT-LM format for web/desktop). The dynamic INT4 bundle
-  // (345 MB), measured loading on native-v0.18.0-e (#659). The repo's
-  // Qwen3-0.6B.litertlm (614 MB) loads again since its tokenizer was replaced
-  // on 2026-10-13.
+  // Qwen3 0.6B (LiteRT-LM, native only: the repo has no web export). The
+  // dynamic INT4 bundle (345 MB), measured loading on native-v0.18.0-e (#659).
+  // The repo's Qwen3-0.6B.litertlm (614 MB) loads again since its tokenizer
+  // was replaced on 2026-10-13.
   qwen3_0_6B(
     baseUrl:
-        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
-    webUrl:
         'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
     desktopUrl:
         'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
@@ -718,8 +716,6 @@ enum Model implements InferenceModelInterface {
   phi4_mini(
     baseUrl:
         'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task',
-    webUrl:
-        'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm',
     desktopUrl:
         'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm',
     filename: 'Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task',
@@ -738,12 +734,11 @@ enum Model implements InferenceModelInterface {
 
   // === FUNCTIONGEMMA MODELS ===
 
-  // FunctionGemma 270M IT (LiteRT-LM) — used to probe tool-calling support on
-  // the @litert-lm/core web path; small enough to validate end-to-end quickly.
+  // FunctionGemma 270M IT (LiteRT-LM, native only: a native export does not
+  // run on the web engine); small enough to validate tool calls end-to-end
+  // quickly.
   functionGemma_270M_litertlm(
     baseUrl:
-        'https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm',
-    webUrl:
         'https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm',
     desktopUrl:
         'https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm',

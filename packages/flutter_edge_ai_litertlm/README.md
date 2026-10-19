@@ -784,7 +784,8 @@ which the first model load fails with
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
-only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later, on
+only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later (not a
+`BP2A` build), on
 Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux
 arm64 boards; the Tensor and Qualcomm paths only in apps that opted in (below). A
 generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
@@ -1074,7 +1075,7 @@ with `piece must not include null character` in the native error.
 Cause: the SentencePiece version in LiteRT-LM since v0.17.0 (this package's
 1.7.0) rejects one piece of that bundle's old tokenizer
 ([LiteRT-LM #3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865)).
-On 2026-10-13 the repository replaced the tokenizer
+On 2026-10-13 at 15:53 UTC the repository replaced the tokenizer
 ([e6687177](https://huggingface.co/litert-community/Qwen3-0.6B/commit/e6687177)); the file downloaded since loads (measured on macOS with
 1.15.0). A copy downloaded earlier keeps the old tokenizer under the same name.
 

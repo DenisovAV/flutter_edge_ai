@@ -114,7 +114,9 @@ final canOpen = rag.canOpen(spec);
 ```
 
 **Model features are flags you set**: `supportImage` and `supportAudio` on
-`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `createChat`.
+`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `createChat`
+(a MediaPipe chat on Android or iOS also needs `supportImage: true` on
+`createChat`, or the image is dropped).
 ONNX and Built-in AI, and LiteRT-LM on web, throw `UnsupportedError` for image
 or audio input they cannot take.
 

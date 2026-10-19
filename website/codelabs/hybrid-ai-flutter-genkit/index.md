@@ -864,6 +864,11 @@ class AiEngine {
   bool cloudReady = false;
   bool localReady = false;
 
+  /// Why the embedding model did not install, or null. The chat screen reads
+  /// it before it starts RAG: an app that ran before still has its old
+  /// embedder active, and RAG must not quietly run on that one.
+  String? embedderError;
+
   // CostStrategy demo signal: the app counts cloud calls against a small cap.
   int cloudCallsSpent = 0;
   int budgetCap = 3;
@@ -969,7 +974,8 @@ class AiEngine {
             : const [],
         // A backend carries no tokenizer: which one a model needs is a
         // property of the model, so the app registers it. Without this the
-        // first embedding fails, and the error names the package to add.
+        // embedder fails to load on Android, iOS and desktop, and the error
+        // names the package to add.
         embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
       );
 
@@ -1015,7 +1021,8 @@ class AiEngine {
             )
             .install();
       } catch (e) {
-        debugPrint('⚠️ AiEngine: embedder install failed, RAG disabled — $e');
+        debugPrint('⚠️ AiEngine: embedder install failed — $e');
+        embedderError = '$e';
       }
     }
 
@@ -1556,7 +1563,7 @@ litert.js   litert_embeddings.js   sentencepiece.js   tensorflow.js
 They come from `flutter_edge_ai_litertlm/web/`. The bundle moved there in the
 legacy `flutter_gemma_litertlm` 1.8.0 release and remains owned by the current
 package. Take them from the version your app resolves: 1.13.0 changed the
-bundle's API, and a copy from an older release fails the first embedding with
+bundle's API, and a copy from an older release fails `getActiveEmbedder()` with
 an error that names the file. Then load the entry point in `web/index.html`:
 
 ```html
@@ -1587,8 +1594,8 @@ The web never asks for it: LiteRT.js tokenizes in the browser, with the
 ### Install the embedding model
 
 This already runs inside `AiEngine.initialize()`, in the optional block after
-the LLM install, on every platform. A failure disables RAG and never touches
-the chat:
+the LLM install, on every platform. A failure is kept in `embedderError`, which
+turns RAG off with the reason shown, and never touches the chat:
 
 ```dart
 await FlutterEdgeAi.installEmbedder()
@@ -1690,6 +1697,12 @@ Duration: 20
 it takes both from `AiEngine`, the same way `_sendMessage` does:
 
 ```dart
+// Without this check RAG would start on whatever embedder an earlier run left
+// active, and its errors would hide the install failure.
+final installError = _engine.embedderError;
+if (installError != null) {
+  throw StateError('embedder install failed: $installError');
+}
 final rag = RagService(
   ai: _engine.ai,
   embedderName: _engine.embedderName,
@@ -1703,9 +1716,10 @@ _ragService = rag;
 _ragReady = true;
 ```
 
-That block runs on every platform. If `RagService.initialize()` throws — a
-missing JS file on web, a failed embedder install on native — the catch records
-the reason instead of swallowing it:
+That block runs on every platform. If the embedder did not install —
+`AiEngine` keeps that error in `embedderError` — or `RagService.initialize()`
+throws, a missing JS file on web for one, the catch records the reason instead
+of swallowing it:
 
 ```dart
 } catch (e) {

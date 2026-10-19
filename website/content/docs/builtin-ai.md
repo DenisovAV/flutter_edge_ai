@@ -200,10 +200,11 @@ There is **no CDN `<script>` tag** — the Chrome Prompt API is a browser global
 - **Chrome:** Chrome 148+ ships the Prompt API to web pages — no origin-trial
   token and no `chrome://flags` entry. Floor: desktop Chrome on Windows,
   macOS 13+, Linux or ChromeOS Plus; 22 GB free disk; a GPU with more than
-  4 GB VRAM, or 16 GB RAM and 4 CPU cores. Chrome does not expose sampling
-  parameters to web pages — `temperature` and `topK` are for Chrome Extensions
-  only ([Prompt API docs](https://developer.chrome.com/docs/ai/prompt-api)) —
-  so do not rely on a session's sampling settings on the web.
+  4 GB VRAM, or 16 GB RAM and 4 CPU cores. Chrome ignores sampling parameters
+  on web pages — `temperature` and `topK` work in Chrome Extensions only
+  ([Prompt API docs](https://developer.chrome.com/docs/ai/prompt-api)); a page
+  gets a deprecation warning and Chrome's own sampling — so do not rely on a
+  session's sampling settings on the web.
 - **Microsoft Edge:** open `edge://flags`, enable **Prompt API for on-device
   language model** and restart. The model is Phi-4-mini, not Gemini Nano, and
   needs Windows 10/11 or macOS 13.3+, 20 GB free disk and 5.5 GB VRAM; it

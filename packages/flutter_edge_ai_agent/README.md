@@ -22,7 +22,7 @@ unmodified, and their JavaScript skills run as-is (the
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | **text-only** | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
 | **MCP** (Streamable HTTP) | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
-| **native-intent** | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
+| **native-intent** | ✅ | ✅ | ✅⁴ | ✅⁴ | ❌³ | ✅⁴ |
 | **JS** (webview) | ✅ | ✅ | ✅ | ✅¹ | ❌³ | ❌² |
 
 ¹ Windows JS skills need the [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
@@ -32,6 +32,9 @@ unmodified, and their JavaScript skills run as-is (the
 (`isAvailable` is false). text / native-intent / MCP skills work on Linux.
 ³ Not supported on Web — never verified end-to-end, and the example app
 disables it (see the note below).
+⁴ Only Android and iOS open the OS calendar editor; macOS, Windows and Linux
+open a Google Calendar event page in the browser, and Linux cannot schedule a
+notification.
 
 JS skills run in a headless, sandboxed webview. To grant a secure context (so
 skills using `crypto.subtle` and other secure-context Web APIs work), the
@@ -90,7 +93,7 @@ text-only mechanisms (write your own `SKILL.md` for MCP):
 | `query-wikipedia` | JS (data) | Summarize a Wikipedia topic |
 | `interactive-map` | JS (webview) | Show a location on an embedded map |
 | `send-email` | intent | Open the OS mail composer |
-| `create-calendar-event` | intent | Open the calendar event editor |
+| `create-calendar-event` | intent | Open the calendar event editor (on desktop, a Google Calendar page) |
 | `get-current-time` | intent | Report the current local date and time |
 | `kitchen-adventure` | text-only | A text-adventure dungeon-master persona |
 
@@ -357,7 +360,9 @@ filename, and honouring one would let it name any file under `scripts/`.
 `NativeIntentExecutor` runs six built-in intents (`send_email`, `send_text`,
 `create_calendar_event`, `read_calendar_events`, `schedule_notification`,
 `get_current_date_and_time`); `schedule_notification` runs only once the app
-turns it on (see [Setup](#setup)). An app adds its own through `handlers:`; the
+turns it on (see [Setup](#setup)), and the built-in `read_calendar_events`
+reads no calendar: it answers with an error that asks for a handler of your
+own. An app adds its own through `handlers:`; the
 built-ins keep running next to them. `validators:` checks an intent's
 parameters before its handler runs: return null when they are valid,
 otherwise the reason, which goes back to the model.

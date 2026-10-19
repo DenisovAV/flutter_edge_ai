@@ -21,7 +21,8 @@ dependencies:
   it is refused with a `LiteRtLmBundleException` (`wrongBackend`). To run on
   the NPU, install the bundle compiled for it.
 - Google Tensor G5/G6 bundles run on the NPU of a Pixel with that Tensor
-  generation and Android 16 or later. It is opt-in, as Qualcomm's is:
+  generation and Android 16 or later (not a `BP2A` build). It is opt-in, as
+  Qualcomm's is:
   `google_tensor_npu: true` in the same `user_defines` block. Without it such
   a bundle fails with a `BackendInitException` that says how to enable it.
 
@@ -224,7 +225,7 @@ tokenizer packages; it re-exports the app library), `engine_io.dart`,
 | `ModelThinkingFilter` through `package:flutter_edge_ai/core/extensions.dart` | the app library |
 | `EmbeddingForwardPass`, `ForwardPassDescriptor`, `EmbeddingForwardPassFactory`, `CommonEmbeddingModel.create`, `EmbeddingBackendProvider.createModel` | `EmbeddingPass`, `EmbeddingPassInfo`, `EmbeddingPassDescriptor<C>`, `TokenEmbeddingPass` (if you tokenize in Dart) and `EmbeddingBackendProvider.describe()`, which returns `EmbeddingPassDescriptor(engineTag:, factory:, config:, activeBackend:)`. Core builds, hosts and closes the model. |
 | `CommonEmbeddingModel.inputSequenceLength`, `.outputDimension` | `EmbeddingModel.maxInputTokens`, `.dimension` |
-| `class MyBackend implements EmbeddingBackendProvider` | `extends EmbeddingBackendProvider` (an `abstract base class`) |
+| `class MyBackend implements EmbeddingBackendProvider` | `final class MyBackend extends EmbeddingBackendProvider` (an `abstract base class`) |
 | `flutter_edge_ai_embeddings` re-exported core's seam types | it exports only `GemmaEmbeddingTokenizers`; import the seam types from `engine.dart`. A SigLIP input over 63 tokens throws instead of truncating. |
 | onnx `OnnxEmbeddingForwardPass` | `OnnxEmbeddingPass` with `OnnxEmbeddingConfig`; it extends `TokenEmbeddingPass` |
 | litertlm `WebEmbeddingModel` (`web_embedding_model.dart`) | removed: `FlutterEdgeAi.getActiveEmbedder()` |
@@ -925,7 +926,7 @@ final hits = await index.search(query: EmbeddingInput.text(query), topK: 5);
 
 // Shutdown order: the index borrows its embedder.
 await index.dispose();
-await FlutterEdgeAi.dispose();
+await FlutterEdgeAi.dispose(); // resets core's registries; closes no model
 ```
 
 ## What you'll see if you forget step 2

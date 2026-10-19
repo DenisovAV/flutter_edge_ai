@@ -26,8 +26,8 @@ flutter_edge_ai sends `enable_thinking: false` and appends ` /no_think` to each
 text message — the only off switch for a bundle whose template ignores the flag.
 Use `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from
 [litert-community/Qwen3-0.6B](https://huggingface.co/litert-community/Qwen3-0.6B),
-or `Qwen3-0.6B.litertlm` from the same repo downloaded since 2026-10-13, when
-the repo replaced its tokenizer: a copy downloaded before that date does not
+or `Qwen3-0.6B.litertlm` from the same repo downloaded after the repo replaced
+its tokenizer (2026-10-13, 15:53 UTC): a copy downloaded before that does not
 load ([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
 
 Enable it with `enableThinking: true` and the matching `ModelType`. See

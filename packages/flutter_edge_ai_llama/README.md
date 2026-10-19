@@ -107,9 +107,7 @@ root. Dependency settings do not propagate. llamadart 0.15.0 selects llama.cpp
 only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph.
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
-actionable collision error. On Apple the llama.cpp companion is recommended too:
-without it llamadart 0.15.0's hook bundles its own Apple dylibs, which carry no
-Apple privacy manifest and are not the qualified setup.
+actionable collision error. On Apple the llama.cpp companion is required too.
 The connector constrains llamadart to the selected 0.15.0 patch; update that
 constraint only after validating it with the matching Apple companion.
 SDK 0.15.0 uses companion 0.15.0; companion patches are versioned independently

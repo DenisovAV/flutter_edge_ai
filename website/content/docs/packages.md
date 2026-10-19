@@ -77,7 +77,8 @@ is on the [Capabilities](/docs/capabilities) page.
 
 Desktop is served **primarily** by [`flutter_edge_ai_litertlm`](/docs/litertlm)
 (`.litertlm`). [`flutter_edge_ai_onnx`](/docs/onnx) also runs
-on macOS arm64, Windows x64 and Linux x64, and the OS built-in model is
+on macOS arm64, Windows x64 and Linux x64, [`flutter_edge_ai_llama`](/docs/llama)
+(`.gguf`) on all three desktops, and the OS built-in model is
 available via [`flutter_edge_ai_builtin_ai`](/docs/builtin-ai) on **macOS** (Apple
 Foundation Models) and on **Windows** (AI Foundry — nothing to configure to
 build: `flutter_local_ai` resolves the Windows App SDK projection itself; running

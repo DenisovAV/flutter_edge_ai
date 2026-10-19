@@ -51,8 +51,8 @@ if (spec == null) {
   try {
     // The first await in the tap handler: on web the browser starts the
     // download only inside a user gesture, so nothing slow may run before it.
-    // onProgress reports real percentages on web only: ML Kit gives no byte
-    // total on Android, and Apple downloads nothing — ensureReady just waits.
+    // onProgress reports real percentages on Android and the web; Apple
+    // downloads nothing and reports none — ensureReady just waits.
     await BuiltInAi.ensureReady(onProgress: (int percent) => print('$percent%'));
     await FlutterEdgeAi.installModel(
       modelType: ModelType.general,
@@ -87,7 +87,7 @@ final usable = availability == BuiltInAiAvailability.available ||
 
 | State | Meaning |
 | --- | --- |
-| `BuiltInAiAvailability.unavailableDeviceUnsupported` | the hardware cannot run it — and on web, that the browser exposes no Prompt API at all, including desktop Chrome before 148 with the flag off |
+| `BuiltInAiAvailability.unavailableDeviceUnsupported` | the hardware cannot run it — and on web, that the browser exposes no Prompt API at all, including desktop Chrome before 148 with neither the flag nor an origin-trial token |
 | `BuiltInAiAvailability.unavailableOsTooOld` | an OS update would enable it; on Apple the floor is OS 26 |
 | `BuiltInAiAvailability.unavailableDisabled` | the user can turn it on in system settings (Apple Intelligence on Apple devices) |
 | `BuiltInAiAvailability.unavailableOther` | anything else: a probe that timed out after 20 seconds, or Chrome's reasonless "unavailable", which in practice is its disk and VRAM floor — worth asking again later |
@@ -110,7 +110,7 @@ There is no script to add: the Prompt API is part of the browser.
 
 - Chrome — since Chrome 148 the Prompt API is available to ordinary web pages: no origin-trial token and no `chrome://flags` entry.
 - Microsoft Edge — enable `edge://flags` → "Prompt API for on-device language model" and restart. Both browsers use `BuiltInAiModels.chromePromptApi`, which is what `forCurrentPlatform` returns on web: the spec names the API, and the browser picks the model.
-- Sampling — on web, `topP` and `maxOutputTokens` are ignored (warned once); on web pages Chrome does not expose `temperature` and `topK` either: they are for Chrome Extensions only.
+- Sampling — on web, `topP` and `maxOutputTokens` are ignored (warned once); on web pages Chrome ignores `temperature` and `topK` too (they work in Chrome Extensions only) and logs a deprecation warning, so a `topK: 1` there is not greedy.
 
 ## Trade-offs
 

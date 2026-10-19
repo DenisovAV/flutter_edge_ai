@@ -167,8 +167,9 @@ Audio input, LoRA, and `loraPath` throw `UnsupportedError` — the OS models exp
 `enableThinking` is accepted for API parity and ignored, with a one-time log warning.
 
 An unset `temperature` or `topK` is sent as `0.8` or `1`, `flutter_local_ai`'s own defaults, so
-the OS model decodes greedily unless you pass a `topK` above 1; Windows applies `topP` only alongside
-one. `temperature: 0` is greedy whatever `topK` comes with it. A `temperature` or `topP` without
+the OS model decodes greedily unless you pass a `topK` above 1 — on Android, Apple and Windows; a
+Chrome web page ignores both and samples with Chrome's own settings. Windows applies `topP` only
+alongside one. `temperature: 0` is greedy whatever `topK` comes with it. A `temperature` or `topP` without
 `topK`, an ignored `topP`, and any `randomSeed` are each reported once, in release builds too.
 
 "Prompt-based" function calling means tool definitions are woven into the prompt (by core
@@ -253,8 +254,9 @@ itself exposes; there is nothing to load.
 `BuiltInAi.availability()` reports `unavailableDeviceUnsupported` on any browser/version where the
 feature isn't on — always probe before creating a model rather than assuming it's available.
 
-On web pages Chrome does not expose the numeric sampling parameters (`temperature`, `topK`): they
-are for Chrome Extensions only. Chrome fixes sampling when a session is created, and its `tools`
+On web pages Chrome ignores the numeric sampling parameters (`temperature`, `topK`) and logs a
+deprecation warning: they work in Chrome Extensions only, and a page's session samples with
+Chrome's own settings. Its `tools`
 option is behind an experimental flag and does not route reliably, so tool declarations are never
 handed to it natively.
 
@@ -272,7 +274,7 @@ reason attached.
 | `available` | Ready to use now. | — | — |
 | `downloadable` | Feature exists but isn't downloaded yet. | Call `BuiltInAi.ensureReady()` — it triggers the download and reports progress via `onProgress`. | On Web, call it from a user gesture; it reports a *real* percentage from the browser's `downloadprogress` event. |
 | `downloading` | A download is already in progress. | Call `BuiltInAi.ensureReady()` and wait; it polls until ready or the `timeout` elapses. | Same on Web. |
-| `unavailableDeviceUnsupported` | This device/browser doesn't have AICore (Android), Apple Intelligence hardware (Apple), a configured App SDK (Windows), or the Prompt API (Web) — and always on Linux, which has no OS model. | Fall back to a bundled model — the device can't run the built-in one. | Also returned when `'LanguageModel' in self` is `false` — wrong browser, wrong platform, or the feature isn't enabled (see [Web setup](#web-setup)). |
+| `unavailableDeviceUnsupported` | This device/browser doesn't have AICore (Android), Apple Intelligence hardware (Apple), a configured App SDK (Windows), or the Prompt API (Web) — and always on Linux, which has no OS model. | Fall back to a bundled model — the device can't run the built-in one. | Also returned when `'LanguageModel' in self` is `false` — wrong browser, wrong platform, Chrome before 148, or Edge without its flag (see [Web setup](#web-setup)). |
 | `unavailableOsTooOld` | The OS version is below what the built-in model requires. | Prompt the user to update the OS, or fall back to a bundled model. | Never returned on Web. |
 | `unavailableDisabled` | The feature exists but is turned off. | Ask the user to enable it: Apple Intelligence in **Settings → Apple Intelligence & Siri** (iOS/macOS), or the Windows AI feature in Windows Settings. | Only Apple and Windows report it. ML Kit has no "switched off" state, so Android folds this into `unavailableOther`; Chrome folds it into `unavailableDeviceUnsupported`/`unavailableOther`. |
 | `unavailableOther` | Unclassified failure — including a probe that timed out, and an unpackaged Windows app. | Fall back to a bundled model; check device/console logs for detail. | Chrome's `'unavailable'` maps here — the browser doesn't report *why* (disk floor, VRAM). |

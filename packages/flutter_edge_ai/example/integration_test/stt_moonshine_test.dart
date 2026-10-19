@@ -18,7 +18,7 @@ import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 const _modelUrl =
     'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite';
 const _tokenizerUrl =
-    'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json';
+    'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json';
 const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
 /// WAV data chunk starts after the 44-byte canonical PCM header.

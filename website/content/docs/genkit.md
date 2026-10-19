@@ -488,7 +488,9 @@ reason it does not know as `FinishReason.other`. Treat every finish other than
 await for (final chunk in stream) { /* ... */ }
 final result = await stream.onResult;
 final reason = result.finishReason;
-if (reason != FinishReason.stop &&
+if (reason == FinishReason.interrupted) {
+  // Answer the interrupts with a follow-up generate(..., interruptRespond: ...).
+} else if (reason != FinishReason.stop &&
     reason != FinishReason.length &&
     reason != FinishReason.unknown) {
   throw result.cause ??

@@ -42,7 +42,8 @@ engine or store fails to compile against 2.3.0.
 **flutter_edge_ai_sqlite** needs Flutter 3.47 or later. On Web, `.tflite`
 embeddings and SQLite RAG need files copied into your app's **web/** — the
 LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
-**window.EmbeddingEngine** line in `web/index.html`; see
+`@litert-lm/core` module script, with its **window.EmbeddingEngine** line, in
+`web/index.html`; see
 [Installation → Web](/docs/installation#web).
 
 ## Embedding models
@@ -750,7 +751,7 @@ The shutdown order is therefore:
 ```dart
 await index.flush();
 await index.dispose();
-await embedder.close(); // the EmbeddingModel; or dispose the custom embedder
+await embedder.close(); // the EmbeddingModel from getActiveEmbedder(), or your custom embedder
 ```
 
 Keep one app-owned index per persistent location. Make opening single-flight and

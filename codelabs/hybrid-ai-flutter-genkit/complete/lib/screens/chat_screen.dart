@@ -27,9 +27,10 @@ class _ChatScreenState extends State<ChatScreen> {
   String _statusMessage = 'Initializing...';
 
   bool _ragReady = false;
-  // Set when RagService.initialize() throws — a missing JS file on web, a
-  // failed embedder install on native. Read by the banner in build() so RAG
-  // shows as unavailable, not silently absent.
+  // Set when RAG cannot start: the embedder did not install
+  // (AiEngine.embedderError), or RagService.initialize() threw — a missing JS
+  // file on web, for one. Read by the banner in build() so RAG shows as
+  // unavailable, not silently absent.
   String? _ragUnavailableReason;
 
   late final AiEngine _engine;
@@ -75,6 +76,12 @@ class _ChatScreenState extends State<ChatScreen> {
       // failure still surfaces through the banner below rather than leaving
       // RAG silently off.
       try {
+        // Without this check RAG would start on whatever embedder an earlier
+        // run left active, and its errors would hide the install failure.
+        final installError = _engine.embedderError;
+        if (installError != null) {
+          throw StateError('embedder install failed: $installError');
+        }
         if (mounted) setState(() => _statusMessage = 'Setting up RAG...');
         final rag = RagService(
           ai: _engine.ai,

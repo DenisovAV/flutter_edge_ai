@@ -90,9 +90,8 @@ final class EmbeddingDeciderCalibration {
   /// both methods. The error on the answered ones was measured with
   /// [DeciderMethod.linear] only: ≤ 0.6 % there, and 6.0 % at 150 options
   /// with 5 examples, over a 5 % budget (use
-  /// [EmbeddingDeciderCalibration.fromLabelled] there). The default
-  /// [DeciderMethod.centroid] is less accurate, so its error on answered
-  /// requests is higher; it was not measured.
+  /// [EmbeddingDeciderCalibration.fromLabelled] there). For the default
+  /// [DeciderMethod.centroid] it was not measured, and may be higher.
   ///
   /// Needs at least two inputs (description plus examples) per option; a
   /// zero-shot option set takes [EmbeddingDeciderCalibration.minSimilarity]

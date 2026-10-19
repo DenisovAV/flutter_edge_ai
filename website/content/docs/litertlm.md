@@ -38,8 +38,10 @@ EmbeddingGemma 1 / Gecko
 > parses `<think>` tags from any model that emits them. Only the dedicated
 > `-web.litertlm` exports load (Gemma 4 and Gemma 3n today): a native `.litertlm`
 > installs on web and then fails at the first generation. Native platforms add
-> vision and audio. LoRA is not supported on any `.litertlm` path (it throws
-> `UnsupportedError`) — it works only with MediaPipe `.task` models. On web you
+> vision and audio. LoRA is not supported on any `.litertlm` path: a session
+> `loraPath` throws `UnsupportedError`, and an adapter installed with
+> `withLora…` is not applied. Use a MediaPipe `.task` model, or natively a
+> `.gguf` through [llama.cpp](/docs/llama). On web you
 > also need the JS handshake in `web/index.html` (see [Web setup](#web-setup)).
 
 ## Setup
@@ -159,7 +161,8 @@ enable it; a generic bundle never runs on the NPU, flag or not.
 
 **Google Tensor has its own flag.** A bundle compiled for a Tensor NPU
 (`…_Google_Tensor_G5.litertlm`, `…_Google_Tensor_G6.litertlm`) runs on a Pixel
-with that Tensor generation and Android 16 or later when the app sets
+with that Tensor generation and Android 16 or later (not a `BP2A` build,
+which LiteRT does not run the NPU on) when the app sets
 `google_tensor_npu: true` in the same `user_defines` block. The build then
 bundles `libLiteRtDispatch_GoogleTensor.so`, which we build from the pinned
 LiteRT source; Google's Tensor SDK terms cover that directory too. The runtime
@@ -224,7 +227,7 @@ S24), so `npu` falls back to GPU and then CPU for it, and the floor applies to
 those attempts. A bundle compiled for an NPU runs only on Windows, on Android
 phones with Qualcomm FastRPC, on Qualcomm Linux arm64 boards that pass the
 FastRPC checks above, and on Google Tensor G5/G6 Pixels with Android 16 or
-later — the last three only when the app sets `qualcomm_npu` or
+later, not a `BP2A` build — the last three only when the app sets `qualcomm_npu` or
 `google_tensor_npu`;
 anywhere else it is refused, because nothing there can run it (on macOS the
 native runtime was measured accepting `npu` anyway, which made `activeBackend`

@@ -1,5 +1,33 @@
 # Migration guide
 
+## flutter_edge_ai 2.4.1 / flutter_edge_ai_litertlm 1.15.0: `npu` on a generic bundle runs on the GPU or the CPU
+
+```yaml
+dependencies:
+  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai_litertlm: ^1.15.0
+```
+
+Only apps that pass `PreferredBackend.npu` with a generic `.litertlm` — one
+compiled for no NPU: no `tf_lite_aux` section and no `LiteRtStamp` on its text
+model — need to act. Where 1.14.0 tried such a bundle on the NPU, LiteRT ran it
+on the CPU while `activeBackend` said `npu`. 1.15.0 never tries the NPU for it
+([Where a model runs](https://pub.dev/packages/flutter_edge_ai_litertlm#where-a-model-runs)):
+
+- `npu` falls back to the GPU, then the CPU: the log says why, and
+  `activeBackend` names the backend that ran.
+- With `LiteRtLmEngine(backendFallback: false)` the load is refused with a
+  `LiteRtLmBundleException` (`wrongBackend`). Ask for `gpu` or `cpu`, or
+  install the bundle compiled for your device's NPU.
+
+A `.litertlm` the reader cannot read keeps the old rules.
+
+Google Tensor G5/G6 bundles run on the NPU of a Pixel with that Tensor
+generation and Android 16 or later (not a `BP2A` build). It is opt-in, as
+Qualcomm's is: `google_tensor_npu: true` in the same `user_defines` block.
+Without it such a bundle fails with a `BackendInitException` that says how to
+enable it.
+
 ## `flutter_edge_ai_agent` 0.4.0: `schedule_notification` is opt-in
 
 ```yaml
@@ -32,28 +60,6 @@ refused before it runs when its date is partial (a `day` without `year` and
 passed today moves to tomorrow at the same wall-clock time, across a clock
 change too. The mail and SMS intents write a space as `%20` instead of `+`.
 See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
-
-## flutter_edge_ai_litertlm 1.15.0: `npu` on a generic bundle runs on the GPU or the CPU
-
-```yaml
-dependencies:
-  flutter_edge_ai: ^2.4.1
-  flutter_edge_ai_litertlm: ^1.15.0
-```
-
-Only apps that pass `PreferredBackend.npu` with a generic `.litertlm` — one
-compiled for no NPU: no `tf_lite_aux` section and no `LiteRtStamp` on its text
-model — need to act. Where 1.14.0 tried such a bundle on the NPU, LiteRT ran it
-on the CPU while `activeBackend` said `npu`. 1.15.0 never tries the NPU for it
-([Where a model runs](https://pub.dev/packages/flutter_edge_ai_litertlm#where-a-model-runs)):
-
-- `npu` falls back to the GPU, then the CPU: the log says why, and
-  `activeBackend` names the backend that ran.
-- With `LiteRtLmEngine(backendFallback: false)` the load is refused with a
-  `LiteRtLmBundleException` (`wrongBackend`). Ask for `gpu` or `cpu`, or
-  install the bundle compiled for your device's NPU.
-
-A `.litertlm` the reader cannot read keeps the old rules.
 
 ## flutter_edge_ai 2.4.0 / flutter_edge_ai_litertlm 1.14.0: backends follow the model file
 
@@ -222,7 +228,7 @@ tokenizer packages; it re-exports the app library), `engine_io.dart`,
 | `ModelThinkingFilter` through `package:flutter_edge_ai/core/extensions.dart` | the app library |
 | `EmbeddingForwardPass`, `ForwardPassDescriptor`, `EmbeddingForwardPassFactory`, `CommonEmbeddingModel.create`, `EmbeddingBackendProvider.createModel` | `EmbeddingPass`, `EmbeddingPassInfo`, `EmbeddingPassDescriptor<C>`, `TokenEmbeddingPass` (if you tokenize in Dart) and `EmbeddingBackendProvider.describe()`, which returns `EmbeddingPassDescriptor(engineTag:, factory:, config:, activeBackend:)`. Core builds, hosts and closes the model. |
 | `CommonEmbeddingModel.inputSequenceLength`, `.outputDimension` | `EmbeddingModel.maxInputTokens`, `.dimension` |
-| `class MyBackend implements EmbeddingBackendProvider` | `extends EmbeddingBackendProvider` (an `abstract base class`) |
+| `class MyBackend implements EmbeddingBackendProvider` | `final class MyBackend extends EmbeddingBackendProvider` (an `abstract base class`) |
 | `flutter_edge_ai_embeddings` re-exported core's seam types | it exports only `GemmaEmbeddingTokenizers`; import the seam types from `engine.dart`. A SigLIP input over 63 tokens throws instead of truncating. |
 | onnx `OnnxEmbeddingForwardPass` | `OnnxEmbeddingPass` with `OnnxEmbeddingConfig`; it extends `TokenEmbeddingPass` |
 | litertlm `WebEmbeddingModel` (`web_embedding_model.dart`) | removed: `FlutterEdgeAi.getActiveEmbedder()` |

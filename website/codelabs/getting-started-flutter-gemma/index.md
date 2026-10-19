@@ -803,8 +803,8 @@ core API is the entry point to everything else the plugin does:
 * **swap the model** — change one constant; most `.litertlm` files from
   [litert-community](https://huggingface.co/litert-community) work the same
   way on native platforms (a `Qwen3-0.6B.litertlm` downloaded before
-  2026-10-13 does not load — download it again; a per-SoC NPU bundle loads only
-  on its NPU) — on the web, only a file exported for the browser engine does
+  2026-10-13, 15:53 UTC does not load — uninstall it and install it again; a
+  per-SoC NPU bundle loads only on its NPU) — on the web, only a file exported for the browser engine does
 * **run a different engine** — the OS built-in model (Gemini Nano, Apple
   Foundation Models) needs no download at all:
   [Inference Engines](/codelabs/inference-engines-flutter-gemma)

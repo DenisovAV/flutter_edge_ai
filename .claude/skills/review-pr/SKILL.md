@@ -212,8 +212,8 @@ CHECKLIST
 2. MANIFEST: the `<uses-native-library>` entries (libOpenCL.so, -car, -pixel,
    libvndksupport.so, libcdsprpc.so) live in the CORE plugin manifest and merge
    into consumer apps. libvndksupport is load-bearing for the OpenCL ICD on
-   Android 12+ (#324) — removing it degrades GPU to WebGPU and can hard-freeze
-   Mali.
+   Android 12+ (#324) — without it OpenCL fails to load, and OpenCL is the only
+   Android GPU path (no WebGPU library ships for Android since native-v0.18.0).
 3. minSdk: `.litertlm` needs 30 (API-30-only Bionic symbols, #265); builtin_ai
    needs 26; core declares 24. A change to any floor must be consistent with what
    the code actually dlopens.

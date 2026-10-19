@@ -716,8 +716,9 @@ its own handle: the one `RagStore` that Step 3 created in `main()` — with Step
 concurrent callers join it. The chat asks lazily, so on any run after the corpus
 was indexed the first question is grounded without visiting the recipes page;
 before the embedder exists, `search()` returns nothing and opens nothing. At
-shutdown the app disposes the index before the core runtime whose active
-embedder it borrows:
+shutdown the app disposes the index first — it borrows core's active embedder —
+and then calls `FlutterEdgeAi.dispose()`, which resets core's registries and
+closes no model:
 
 ```dart
 await widget.ragStore.dispose();

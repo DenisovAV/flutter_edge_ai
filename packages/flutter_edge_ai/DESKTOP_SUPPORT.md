@@ -88,7 +88,7 @@ For mobile platforms see the main [README](README.md).
 - **Flutter** ≥ 3.44.0
 - **Dart SDK** ≥ 3.12.0
 - **macOS**: 11+ (Apple Silicon, arm64); 12.0 with `flutter_edge_ai_builtin_ai`, 14.0 with `flutter_edge_ai_llama`
-- **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed since `flutter_gemma_litertlm` 1.7.1 (see below).
+- **Windows**: 10/11 64-bit. LiteRT-LM needs no Visual C++ Redistributable since `flutter_gemma_litertlm` 1.7.1 (see below); `flutter_edge_ai_llama` does — llamadart needs the matching Visual C++ runtime.
 - **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 10+)
 - **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
@@ -165,7 +165,9 @@ block. Without it the companion dylibs are never bundled, and
 directly — fails to load on every backend, CPU included. Flutter 3.44+ uses
 Swift Package Manager by default, so a new app has no `macos/Podfile` until
 its `pubspec.yaml` sets `enable-swift-package-manager: false` under
-`flutter: config:` (same README section).
+`flutter: config:` (same README section). `flutter_edge_ai_llama` needs Swift
+Package Manager on, so this setup is not qualified together with it: use
+separate apps.
 
 **Entitlements** in both `macos/Runner/DebugProfile.entitlements` and
 `Release.entitlements`, beside the `com.apple.security.app-sandbox` key that

@@ -38,8 +38,8 @@ CI that fails on warnings fail.
    your model file and prompt — never a guessed value.
    With ~5 examples per option among many options the cross-fit's error on
    answered requests can exceed a 5 % budget (CLINC150, 150 options: 6.0 %
-   with `DeciderMethod.linear`; higher, and not measured, with the default
-   centroid);
+   with `DeciderMethod.linear`; not measured, and possibly higher, with the
+   default centroid);
    there, calibrate with `fromLabelled` on held-out requests. It sees only
    requests that belong to an option, so check that its threshold still
    refuses the ones that fit none. An audio request against text options
@@ -267,11 +267,14 @@ backend cannot tell WebGPU from WASM: pass `embedderId:` to both
 backend, when the model reports none). It replaces the installed-file check.
 
 A decider of your own (or a test fake) is a `final class … extends Decider`
-(`base` or `sealed` also works; `Decider` is `abstract base`, so a plain
-`class` or `implements Decider` does not compile outside core) and implements
+(or `base`; `Decider` is `abstract base`, so a plain `class` does not compile,
+and `implements Decider` does not compile outside core) and implements
 `decide(DeciderRequest request)` with `capabilities`, `options`, `isClosed`
 and `close()`; `toArtifact()` defaults to throwing
-`DeciderUnsupportedException`. Do not override `choose`: it is core's
+`DeciderUnsupportedException`. Core does not check `isClosed` for you:
+`decide` throws `StateError` once the decider is closed, and fails with
+`DeciderCancelledException` when `close()` lands while it runs. Do not
+override `choose`: it is core's
 (`@nonVirtual`), checks the request against `capabilities` (`among`, context,
 input modalities, `topK`, the cancel token) and then calls `decide` with the
 candidates as option ids. An input modality the decider does not take is a

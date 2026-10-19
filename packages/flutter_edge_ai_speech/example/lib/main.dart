@@ -37,7 +37,7 @@ import 'audio_converter.dart';
 const _sttModelUrl =
     'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite';
 const _sttTokenizerUrl =
-    'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json';
+    'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json';
 const _llmUrl =
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
 const _llmFileName = 'gemma-4-E2B-it.litertlm';

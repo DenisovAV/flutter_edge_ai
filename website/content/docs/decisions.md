@@ -26,8 +26,8 @@ that uses them gets the analyzer warning `experimental_member_use`. Add
 dependencies:
   flutter_edge_ai: ^2.4.1
   flutter_edge_ai_litertlm: ^1.15.0 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite)
-  # flutter_edge_ai_embeddings: ^2.3.0 # EmbeddingGemma 1 only: its tokenizer,
-  #   registered with embeddingTokenizers: [GemmaEmbeddingTokenizers()]
+  # flutter_edge_ai_embeddings: ^2.3.0 # for a .tflite or ONNX embedder (EmbeddingGemma 1,
+  #   Gecko, ...): its tokenizer, registered with embeddingTokenizers: [GemmaEmbeddingTokenizers()]
 ```
 
 Any embedding model works: `EmbeddingModel.createDecider` is implemented once in
@@ -435,10 +435,13 @@ cancelled by then never loads the model again; one cancelled while the model
 loads has its answer dropped), and when the embedding returns: an embedding
 already sent is not interrupted, and its vector is dropped.
 
-A decider of your own, or a test fake, `extends Decider` (an abstract base
-class) and implements `decide(DeciderRequest request)`, `capabilities`,
-`options`, `isClosed` and `close()`; `toArtifact()` defaults to throwing
-`DeciderUnsupportedException`. `choose` is core's and cannot be overridden:
+A decider of your own, or a test fake, is a `final class … extends Decider`
+(`Decider` is an abstract base class) and implements
+`decide(DeciderRequest request)`, `capabilities`, `options`, `isClosed` and
+`close()`; `toArtifact()` defaults to throwing `DeciderUnsupportedException`.
+Core does not check `isClosed` for you: `decide`
+throws `StateError` once the decider is closed, and fails with
+`DeciderCancelledException` when `close()` lands while it runs. `choose` is core's (`@nonVirtual`; do not override it):
 it checks every request against `capabilities` — `among` without
 `supportsAmong`, context without `supportsContext`, an input modality not in
 `modalities` (each a `DeciderUnsupportedException`), unknown `among` ids, a

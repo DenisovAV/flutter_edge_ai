@@ -49,7 +49,7 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 | `flutter_edge_ai_onnx` | `OnnxEngine()`, `OnnxEmbeddingBackend()` | ONNX models and embeddings |
 | `flutter_edge_ai_llama` | `LlamaEngineProvider()` | `.gguf` models through llama.cpp |
 | `flutter_edge_ai_builtin_ai` | `BuiltInAiEngine()` | the OS's own model (Gemini Nano, Apple Foundation Models, Phi Silica) or the browser's Prompt API (Chrome, Edge) |
-| `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | tokenizers for `.tflite` and `.onnx` text embeddings (an EmbeddingGemma 2 `.litertlm` needs none) |
+| `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | tokenizers for `.tflite` and `.onnx` text embeddings (on the web, `.onnx` only; an EmbeddingGemma 2 `.litertlm` needs none) |
 
 ```yaml
 # pubspec.yaml (your app)

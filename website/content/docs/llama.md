@@ -13,7 +13,7 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the example
 
-The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+** and the forthcoming llamadart typed-overflow patch
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+** and published llamadart **0.15.1** with typed overflow reporting
 (target 0.15.1). Both prerequisite releases must be published before this draft
 resolves from hosted dependencies. Connector CI uses Flutter 3.47.1 for reproducible checks. From the repository root:
 
@@ -118,7 +118,7 @@ See the [workspace setup and qualification scope](https://github.com/DenisovAV/f
 Native EmbeddingGemma 2 GGUF text embeddings register through core's embedding
 SPI as `LlamaEmbeddingBackend` in this same engine package. The dedicated
 `flutter_edge_ai_embeddings` package remains tokenizer-only: GGUF carries its
-own tokenizer. This draft needs the core 2.5.0 SPI and SDK typed-overflow patch.
+own tokenizer. This draft needs the core 2.5.0 SPI and published llamadart 0.15.1.
 See the [embedding design and qualification](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/embeddings.md).
 Media and Web embeddings remain unavailable in the initial profile.
 

@@ -7,6 +7,7 @@
 // a failed NPU create.
 
 import 'dart:async';
+import 'dart:math' show max;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -62,6 +63,10 @@ class _FakeHost extends LiteRtLmEngineHost {
   final npuDispatches = <NpuDispatch?>[];
   final nativeLogLevels = <LiteRtLmLogLevel?>[];
 
+  /// Creates running at this moment, and the most there ever were.
+  int creating = 0;
+  int mostCreatingAtOnce = 0;
+
   @override
   Future<String> cacheDir() async => Directory.systemTemp.path;
 
@@ -109,6 +114,10 @@ class _FakeHost extends LiteRtLmEngineHost {
     LiteRtLmLogLevel? nativeLogLevel,
   }) async {
     nativeLogLevels.add(nativeLogLevel);
+    mostCreatingAtOnce = max(mostCreatingAtOnce, ++creating);
+    // A create takes time; another one started meanwhile would overlap it.
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    creating--;
     attempts.add((
       backend: backend,
       visionBackend: visionBackend,
@@ -242,6 +251,20 @@ void main() {
 
   test('LiteRtLmEngine keeps several models open (MultiModelEngine)', () {
     expect(const LiteRtLmEngine(), isA<MultiModelEngine>());
+  });
+
+  test('engine creates run one at a time, on every backend', () async {
+    final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));
+    final models = await Future.wait([
+      load(path, preferredBackend: PreferredBackend.gpu),
+      load(path, preferredBackend: PreferredBackend.cpu),
+      load(path, preferredBackend: PreferredBackend.gpu),
+    ]);
+    expect(host.attempts, hasLength(3));
+    expect(host.mostCreatingAtOnce, 1);
+    for (final model in models) {
+      await model.close();
+    }
   });
 
   test('nativeLogLevel reaches every attempt; unset stays null', () async {

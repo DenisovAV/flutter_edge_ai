@@ -493,25 +493,28 @@ class FlutterEdgeAi {
   /// never cached, a [getActiveModel] rebuild never touches it, and closing it
   /// leaves every other model open. Close it with [InferenceModel.close] when
   /// done: the plugin has no memory policy, and each open model holds its own
-  /// weights and context window.
+  /// weights and context window. On iOS a process past its memory limit is
+  /// killed, with no exception to catch.
   ///
-  /// [spec] must be installed. Register a file without making it the active
-  /// model with `installModel(…).fromFile(path).install(activate: false)`, and
-  /// pass the returned `InferenceInstallation.spec`.
+  /// [spec] must be the installed model, as `install()` returned it. Register
+  /// a file without making it the active model with
+  /// `installModel(…).fromFile(path).install(activate: false)`. Uninstalling
+  /// a model does not close the models opened on it.
   ///
   /// The engine that runs [spec] must implement [MultiModelEngine]
   /// (`LiteRtLmEngine` does); otherwise this throws [UnsupportedError] before
-  /// anything is loaded. Every open model in a process shares LiteRT-LM's
-  /// process-wide environment and the engine cache directory
-  /// [getActiveModel] uses. A model's sampler is fixed by its first
-  /// generation (LiteRT-LM#2080), so sessions sharing one model should use
-  /// the same sampling.
+  /// anything is loaded. Open models share the engine cache directory
+  /// [getActiveModel] uses, the native libraries the process loaded and the
+  /// engine's process-wide settings (LiteRT-LM's log level). A model's sampler
+  /// is fixed by its first generation (LiteRT-LM#2080), so sessions sharing
+  /// one model should use the same sampling.
   ///
   /// The parameters mean what they mean on [getActiveModel], with the same
   /// precedence over [defaults].
   ///
   /// Throws [UnsupportedError] on web and for an engine without
-  /// [MultiModelEngine], and an `Exception` when [spec] is not installed.
+  /// [MultiModelEngine], [StateError] when no registered engine can run
+  /// [spec], and an `Exception` when [spec] is not the installed model.
   static Future<InferenceModel> openModel(
     InferenceModelSpec spec, {
     ModelRuntimeDefaults? defaults,

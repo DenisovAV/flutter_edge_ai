@@ -18,6 +18,8 @@ import '../domain/platform_types.dart';
 import '../model.dart';
 import '../domain/model_source.dart';
 import '../registry/engine_registry.dart';
+import '../model_management/install_rule.dart' show requireInstalledAsSpecified;
+import '../registry/inference_engine_provider.dart';
 import '../registry/multi_model_engine.dart';
 import '../registry/stt_registry.dart';
 import '../registry/stt_backend_provider.dart';
@@ -214,16 +216,23 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     InferenceModelSpec spec,
     ActiveModelParams params,
   ) async {
-    requireMultiModelEngine(spec);
-    return _buildModel(spec, params, active: false);
+    // The engine checked is the engine that builds: the registry is asked
+    // once, before the awaits of the install checks.
+    final engine = requireMultiModelEngine(spec);
+    if (spec.fileType != ModelFileType.builtIn) {
+      await requireInstalledAsSpecified(spec);
+    }
+    return _buildModel(spec, params, active: false, engine: engine);
   }
 
   /// Builds a model for [spec]: the cached active model ([active]) or one the
-  /// caller owns (`FlutterEdgeAi.openModel`).
+  /// caller owns (`FlutterEdgeAi.openModel`), with [engine] when the caller
+  /// already chose it, else the registry's.
   Future<InferenceModel> _buildModel(
     InferenceModelSpec spec,
     ActiveModelParams params, {
     required bool active,
+    InferenceEngineProvider? engine,
   }) async {
     final isBuiltIn = spec.fileType == ModelFileType.builtIn;
 
@@ -262,7 +271,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     // below fires. Desktop is litertlm-only; a `.task` request would simply
     // find no matching engine.
     final config = runtimeConfigFor(params, modelPath: modelPath);
-    final engine = EngineRegistry.instance.findFor(spec);
+    engine ??= EngineRegistry.instance.findFor(spec);
     if (engine == null) throw noInferenceEngineError(spec);
     final activationDataType = params.activationDataType;
     if (activationDataType != null && spec.fileType != ModelFileType.litertlm) {

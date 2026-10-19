@@ -217,12 +217,18 @@ void main() {
         final active = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
         final gate = (active as _FakeInferenceModel).closeGate =
             Completer<void>();
+        addTearDown(() {
+          if (!gate.isCompleted) gate.complete();
+        });
         // The rebuild closes the active model and waits for that close.
         final rebuilding = FlutterEdgeAi.getActiveModel(maxTokens: 2048);
         await pumpEventQueue();
         expect(engine.built, hasLength(1));
 
-        final opened = await FlutterEdgeAi.openModel(spec);
+        // A wait on the close would never end: the gate opens only below.
+        final opened = await FlutterEdgeAi.openModel(
+          spec,
+        ).timeout(const Duration(seconds: 5));
         expect(engine.built, hasLength(2));
         expect(gate.isCompleted, isFalse);
 
@@ -231,6 +237,61 @@ void main() {
         expect(engine.built, hasLength(3));
         await opened.close();
         await rebuilt.close();
+      },
+    );
+
+    test('$label: install(activate: false) refuses to replace a file the '
+        'active model reads', () async {
+      final engine = _MultiEngine();
+      final active = await useShell(engine);
+
+      // Same file name, another source: installing it would repoint the
+      // active model's record.
+      await expectLater(
+        FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
+            .fromNetwork('https://mirror.example.com/model.bin')
+            .install(activate: false),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('the active model model reads'),
+          ),
+        ),
+      );
+      expect(FlutterEdgeAi.activeModelSpec?.name, active.name);
+      // The same source again is not a replacement.
+      final same = await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+      ).fromNetwork('https://example.com/model.bin').install(activate: false);
+      final model = await FlutterEdgeAi.openModel(same.spec);
+      await model.close();
+    });
+
+    test(
+      '$label: a spec built by hand under an installed name is refused',
+      () async {
+        final engine = _MultiEngine();
+        await useShell(engine);
+        final elsewhere = File('${fakeDocuments.path}/model.bin')
+          ..writeAsBytesSync(_fakeBundleBytes);
+        final handMade = InferenceModelSpec(
+          name: 'model',
+          modelSource: ModelSource.file(elsewhere.path),
+          modelType: ModelType.gemmaIt,
+        );
+
+        await expectLater(
+          FlutterEdgeAi.openModel(handMade),
+          throwsA(
+            isA<Exception>().having(
+              (e) => '$e',
+              'message',
+              contains('not installed from the source its spec names'),
+            ),
+          ),
+        );
+        expect(engine.built, isEmpty);
       },
     );
 

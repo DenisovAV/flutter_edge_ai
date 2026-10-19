@@ -27,6 +27,7 @@ import '../model_management/utils/local_file.dart';
 import '../model_management/utils/download_temp_reclaim.dart';
 import '../utils/file_name_utils.dart';
 import '../registry/engine_registry.dart';
+import '../registry/inference_engine_provider.dart';
 import '../registry/multi_model_engine.dart';
 import '../registry/stt_registry.dart';
 import '../registry/tts_registry.dart';
@@ -208,16 +209,23 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     InferenceModelSpec spec,
     ActiveModelParams params,
   ) async {
-    requireMultiModelEngine(spec);
-    return _buildModel(spec, params, active: false);
+    // The engine checked is the engine that builds: the registry is asked
+    // once, before the awaits of the install checks.
+    final engine = requireMultiModelEngine(spec);
+    if (spec.fileType != ModelFileType.builtIn) {
+      await requireInstalledAsSpecified(spec);
+    }
+    return _buildModel(spec, params, active: false, engine: engine);
   }
 
   /// Builds a model for [spec]: the cached active model ([active]) or one the
-  /// caller owns (`FlutterEdgeAi.openModel`).
+  /// caller owns (`FlutterEdgeAi.openModel`), with [engine] when the caller
+  /// already chose it, else the registry's.
   Future<InferenceModel> _buildModel(
     InferenceModelSpec spec,
     ActiveModelParams params, {
     required bool active,
+    InferenceEngineProvider? engine,
   }) async {
     // The pre-build checks THROW rather than settle anything themselves:
     // the cache's one catch resets its state for every failure (#170),
@@ -265,7 +273,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     // model path (preamble above) + owns the singleton lifecycle centrally
     // (track + reset on close); the selected engine builds the model.
     final config = runtimeConfigFor(params, modelPath: modelPath);
-    final engine = EngineRegistry.instance.findFor(spec);
+    engine ??= EngineRegistry.instance.findFor(spec);
     if (engine == null) throw noInferenceEngineError(spec);
     final activationDataType = params.activationDataType;
     if (activationDataType != null && spec.fileType != ModelFileType.litertlm) {

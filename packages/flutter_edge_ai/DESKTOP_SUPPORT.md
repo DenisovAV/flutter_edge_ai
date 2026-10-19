@@ -258,7 +258,7 @@ common runtime issues.
 
 ### One model, many sessions
 
-The recommended (and only well-supported) pattern is:
+The recommended pattern for one model is:
 
 ```dart
 // At app startup, ONCE:
@@ -282,34 +282,63 @@ Sessions are cheap to create/destroy. The expensive part is `engine_create`
 (2–10 s depending on backend and model size), which happens once when the
 model is first opened.
 
-### Why not "one model per chat"?
+### Swapping the active model
 
-Upstream LiteRT-LM keeps `LiteRtEnvironment` as a **process singleton** for
-GPU paths (see comment in `runtime/core/engine_impl.cc` referencing `b/454383477`).
-Once the env is initialized with the first model's settings — `cache_dir`,
-backend, capabilities — those become process-fixed. Trying to recreate the
-engine with different settings results in conflicts in the GPU stack
-(notably a `wgpu::Instance already set` from the WebGpu sampler binary on
-Linux/Windows).
+`getActiveModel` reuses the same `InferenceModel` while the requested
+parameters match. To swap models at runtime, call `model.close()` first, then
+`getActiveModel(...)` again with the new active model's spec. On Linux the
+plugin does not preload LiteRT-LM's WebGPU sampler, whose process-wide
+`wgpu::Instance` rejects a second engine (`wgpu::Instance already set`); the
+sampler factory falls back to a CPU sampler instead. On macOS per-token
+sampling already runs on CPU. Windows preloads the GPU sampler (see Known
+Limitations below), so a model swap on Windows GPU is unverified.
 
-The plugin avoids this by:
+### Several models at once
 
-1. Reusing the same `InferenceModel` whenever requested params match (the cache behind `getActiveModel`).
-2. Disabling GPU sampler preload on Linux so the upstream sampler factory falls back to a CPU sampler — eliminates the `wgpu::Instance` conflict and re-enables runtime model swap on Linux GPU.
+`getActiveModel` gives the one active model: cached, and rebuilt (the previous
+one closed) when a runtime parameter or the active model changes. To hold
+several models at once, such as one file on CPU and on GPU, or two files, use
+`FlutterEdgeAi.openModel` (`flutter_edge_ai` 2.5.0) with an engine that
+supports it: `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0) on Android,
+iOS and desktop.
 
-If you do need to swap models at runtime, call `model.close()` first, then
-`getActiveModel(...)` again with the new active model's spec. On Linux, this
-works thanks to the CPU-sampler fallback above; on macOS it works because
-per-token sampling already runs on CPU there. Windows preloads the GPU sampler
-(see Known Limitations below), so a model swap on Windows GPU is unverified.
+```dart
+final spec = (await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm,
+).fromFile(path).install(activate: false)).spec;
 
-To hold several models at once (one file on CPU and GPU, or two files), use
-`FlutterEdgeAi.openModel(spec, …)` (`flutter_edge_ai` 2.5.0) with
-`LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0), on a spec installed with
-`install(activate: false)`. Each opened model holds its own weights and KV
-cache, shares LiteRT-LM's process-wide environment and the engine cache
-directory with every other model, and is closed by the caller; the plugin has
-no memory policy. Two GPU engines in one process are not verified on Linux.
+final cpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.cpu);
+final gpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.gpu);
+// ... generate on either ...
+await gpu.close();
+await cpu.close();
+```
+
+- Each open model holds its own weights and KV cache, and the caller closes
+  it: the plugin has no memory policy. On iOS a process past its memory limit
+  is killed, with no exception to catch; read
+  `FlutterEdgeAiDiagnostics.memorySnapshot()` (`flutter_edge_ai_diagnostics`)
+  before opening another model.
+- The models share the engine cache directory `getActiveModel` uses (the
+  cache files of one model file serve every engine on it), the native
+  libraries the process loaded, and LiteRT-LM's log level. Engine creations
+  run one at a time; generation on open models does not wait for them.
+- An opened model is never cached: a `getActiveModel` rebuild leaves it open,
+  and closing it leaves the active model alone. Uninstalling a model does not
+  close the models opened on it.
+- `install(activate: false)` registers the file without making it the active
+  model, and `openModel` takes the spec it returns. A model is its file name
+  without the extension, so two files with the same name are one model; an
+  `activate: false` install that would replace the active model's file throws
+  a `StateError`.
+- Measured on macOS (Apple silicon): CPU and GPU engines on one file, two GPU
+  engines, and both created at the same time on an empty cache. On Windows
+  Lunar Lake, CPU, GPU and NPU engines ran together in the Intel NPU demo
+  (LiteRT-LM clients on `native-v0.18.0-f`). Not measured: Android, iOS,
+  Linux, and two GPU engines on Windows, which preloads LiteRT-LM's WebGPU
+  sampler: it keeps one `wgpu::Instance` per process, and a second one fails
+  with `wgpu::Instance already set`.
 
 ### Switching backend (CPU ↔ GPU)
 

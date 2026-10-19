@@ -10,9 +10,11 @@ import 'package:meta/meta.dart' show internal;
 /// be open side by side, which `FlutterEdgeAi.openModel` requires.
 ///
 /// An engine that implements this allows its `createModel` to run again while
-/// models it built earlier are still open, and those models are independent:
-/// closing one leaves the others working. Each holds its own weights and
-/// context, and the caller decides how many fit in memory.
+/// models it built earlier are still open, and to be called again before an
+/// earlier call has returned (it serialises what must be serialised), and
+/// those models are independent: closing one leaves the others working. Each
+/// holds its own weights and context, and the caller decides how many fit in
+/// memory.
 ///
 /// Kept separate from `InferenceEngineProvider` for the reason
 /// `HuggingFaceResolverSource` is: engines `implements` the provider, so a new

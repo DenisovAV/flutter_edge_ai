@@ -16,6 +16,7 @@
 ///     --dart-define=ORDER=cpu,npu,gpu --dart-define=NPU_MODEL=...
 ///
 /// Everything that can fail is inside the test body (AGENTS.md Rule 6b).
+/// Step 3 makes Gemma 4 E2B the example app's persisted active model.
 import 'dart:io';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -105,61 +106,76 @@ void main() {
       ],
     );
     final order = _order.split(',').map((s) => s.trim()).toList();
+    expect(
+      !order.contains('npu') || _npuModel.isNotEmpty,
+      isTrue,
+      reason: 'ORDER names npu: pass --dart-define=NPU_MODEL=<NPU bundle>',
+    );
     final e2b = await _register(path: _localPath(_gemma4File), url: _gemma4Url);
     final npuSpec = order.contains('npu')
         ? await _register(path: _npuModel, url: _npuModel)
         : null;
     final activeBefore = FlutterEdgeAi.activeModelSpec?.name;
 
-    // 1. Open every backend, keeping all of them.
-    final opened = <String, InferenceModel>{};
-    for (final name in order) {
-      final model = await FlutterEdgeAi.openModel(
-        name == 'npu' ? npuSpec! : e2b,
-        maxTokens: name == 'npu' ? 4096 : _maxTokens,
-        preferredBackend: _backend(name),
+    Future<InferenceModel> open(String name) => FlutterEdgeAi.openModel(
+      name == 'npu' ? npuSpec! : e2b,
+      maxTokens: name == 'npu' ? 4096 : _maxTokens,
+      preferredBackend: _backend(name),
+    );
+
+    // Every model this test opens, closed at the end even when an expect
+    // fails midway (close() is idempotent).
+    final everything = <InferenceModel>[];
+    try {
+      // 1. Open every backend in ORDER (a backend may repeat), keeping all.
+      final opened = <(String, InferenceModel)>[];
+      for (final name in order) {
+        final model = await open(name);
+        everything.add(model);
+        expect(model.activeBackend, _backend(name));
+        opened.add((name, model));
+      }
+      expect(FlutterEdgeAi.activeModelSpec?.name, activeBefore);
+      expect(FlutterEdgeAiPlugin.instance.initializedModel, isNull);
+
+      // 2. Generate on each while all are open, then on the first again:
+      //    creating the later engines must not break the earlier one.
+      for (final (name, model) in opened) {
+        await _generate(name, model);
+      }
+      await _generate('${order.first} again', opened.first.$2);
+
+      // 3. The active model, next to the opened ones. This makes the file
+      //    the example app's persisted active model.
+      await _register(
+        path: _localPath(_gemma4File),
+        url: _gemma4Url,
+        activate: true,
       );
-      expect(model.activeBackend, _backend(name));
-      opened[name] = model;
+      final active = await FlutterEdgeAi.getActiveModel(
+        maxTokens: _maxTokens,
+        preferredBackend: PreferredBackend.cpu,
+      );
+      everything.add(active);
+      await _generate('active', active);
+      await _generate(order.last, opened.last.$2);
+
+      // 4. Close the opened ones in reverse order; the active model stays.
+      for (final (_, model) in opened.reversed) {
+        await model.close();
+      }
+      expect(FlutterEdgeAiPlugin.instance.initializedModel, same(active));
+      await _generate('active after closes', active);
+
+      // 5. Open the first and the last backend again, at the same time.
+      final again = await Future.wait([open(order.first), open(order.last)]);
+      everything.addAll(again);
+      await _generate('${order.first} reopened', again.first);
+      await _generate('${order.last} reopened', again.last);
+    } finally {
+      for (final model in everything.reversed) {
+        await model.close();
+      }
     }
-    expect(FlutterEdgeAi.activeModelSpec?.name, activeBefore);
-    expect(FlutterEdgeAiPlugin.instance.initializedModel, isNull);
-
-    // 2. Generate on each while all are open, then on the first again:
-    //    creating the later engines must not break the earlier one.
-    for (final name in order) {
-      await _generate(name, opened[name]!);
-    }
-    await _generate('${order.first} again', opened[order.first]!);
-
-    // 3. The active model, next to the opened ones.
-    await _register(
-      path: _localPath(_gemma4File),
-      url: _gemma4Url,
-      activate: true,
-    );
-    final active = await FlutterEdgeAi.getActiveModel(
-      maxTokens: _maxTokens,
-      preferredBackend: PreferredBackend.cpu,
-    );
-    await _generate('active', active);
-    await _generate(order.last, opened[order.last]!);
-
-    // 4. Close the opened ones in reverse order; the active model stays.
-    for (final name in order.reversed) {
-      await opened.remove(name)!.close();
-    }
-    expect(FlutterEdgeAiPlugin.instance.initializedModel, same(active));
-    await _generate('active after closes', active);
-
-    // 5. Open the first backend again.
-    final again = await FlutterEdgeAi.openModel(
-      order.first == 'npu' ? npuSpec! : e2b,
-      maxTokens: order.first == 'npu' ? 4096 : _maxTokens,
-      preferredBackend: _backend(order.first),
-    );
-    await _generate('${order.first} reopened', again);
-    await again.close();
-    await active.close();
   }, timeout: const Timeout(Duration(minutes: 15)));
 }

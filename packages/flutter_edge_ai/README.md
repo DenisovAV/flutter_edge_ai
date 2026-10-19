@@ -310,6 +310,13 @@ and closes the previous handle. A model is closed from the moment its
 finish, then builds a new model. With no model installed it throws
 `NoActiveModelError`, a `StateError`.
 
+To keep several models loaded at once, such as one file on CPU and GPU, open
+them with `FlutterEdgeAi.openModel(spec, …)` on a spec from
+`installModel(…).install(activate: false)`, with `LiteRtLmEngine`
+(`flutter_edge_ai_litertlm` 1.16.0) on Android, iOS and desktop. Each call
+builds a model the app owns and closes; see
+[Desktop → Several models at once](https://flutteredge.ai/docs/desktop#several-models-at-once).
+
 Sampling left unset comes from the model: the sampler a native `.litertlm` file
 ships, else the defaults its family publishes (`SamplingParams.forModelType`),
 else `topK: 40`. Pass `topK: 1` for greedy decoding. What each engine reads,

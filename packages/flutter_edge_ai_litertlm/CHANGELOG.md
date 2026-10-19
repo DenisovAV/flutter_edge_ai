@@ -1,5 +1,6 @@
 ## 1.16.0
-- Several open models at once (`FlutterEdgeAi.openModel`); `LiteRtLmEngine(nativeLogLevel:)`; require `flutter_edge_ai` ^2.5.0.
+- Several open models at once (`FlutterEdgeAi.openModel`); require `flutter_edge_ai` ^2.5.0.
+- `LiteRtLmEngine(nativeLogLevel:)` sets LiteRT-LM's native log level.
 
 ## 1.15.0
 - Google Tensor NPU on Android, opt-in with `google_tensor_npu: true` (#670).

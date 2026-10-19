@@ -560,12 +560,12 @@ with exactly one of:
 * `error` — what went wrong, which the model reads too
 
 The package tells a JS skill from a text-only one by its instructions: they
-have to say `run_js`. A `SKILL.md` that names the tool `runSkill` instead —
-the name the steps under a reply show — loads as text-only, and its script
-never runs.
+have to name the tool, in any case — `run_js`, `runJs`, or `runSkill`, the
+name the steps under a reply show. A `SKILL.md` that names none of them loads
+as text-only, and its script never runs.
 
-The name is the one Google's AI Edge Gallery uses, so its skills run here
-unmodified.
+The name `run_js` is the one Google's AI Edge Gallery uses, so its skills run
+here unmodified.
 
 ### The skill
 
@@ -801,12 +801,12 @@ bubble — when the device is online, since its library comes from a CDN.
 
 A JS skill can also need an API key — a weather service, say. Its `SKILL.md`
 declares `require-secret: true` under `metadata`. The app stores the key with
-`SecretStore.set(skillName, key)` (`SecretEditorDialog` asks the user for it)
-and passes the store to `AgentSession.fromModel(secretStore: ...)`; the agent
-hands the key to your function as `secret`. It never goes into the prompt. In
-0.3.0 it does go into the page the loopback server sends to the webview, and
-that server does not check who asks while the skill runs: treat such a key as
-one another app on the same device could read.
+`set(skillName, key)` on a `SecretStore` (`SecretEditorDialog` asks the user
+for it) and passes that store to `AgentSession.fromModel(secretStore: ...)`;
+the agent hands the key to your function as `secret`. It never goes into the
+prompt. Through 0.4.0 it does go into the page the loopback server sends to
+the webview, and that server does not check who asks while the skill runs:
+treat such a key as one another app on the same device could read.
 
 ## Step 5: Skills on a server, with MCP
 Duration: 5

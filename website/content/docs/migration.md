@@ -1,10 +1,32 @@
 ---
 title: Migration
-description: Upgrade to flutter_edge_ai_agent 0.4 (notifications are opt-in), Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to flutter_edge_ai_litertlm 1.15 (npu on a generic bundle runs on the GPU, opt-in Google Tensor NPU), flutter_edge_ai_agent 0.4 (notifications are opt-in), Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai 2.4.1 / flutter_edge_ai_litertlm 1.15.0: `npu` on a generic bundle runs on the GPU
+
+```
+dependencies:
+  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai_litertlm: ^1.15.0   # requires flutter_edge_ai 2.4.1
+```
+
+- `PreferredBackend.npu` on a bundle compiled for no NPU (a generic one) is
+  never tried on the NPU: where the NPU was reachable, LiteRT ran such a
+  bundle on the CPU while `activeBackend` reported `npu`. It runs on the GPU,
+  then the CPU, with a notice; with `LiteRtLmEngine(backendFallback: false)`
+  it is refused with a `LiteRtLmBundleException` (`wrongBackend`). To run on
+  the NPU, install the bundle compiled for it.
+- Google Tensor G5/G6 bundles run on the NPU of a Pixel with that Tensor
+  generation and Android 16 or later (not a `BP2A` build). It is opt-in, as
+  Qualcomm's is:
+  `google_tensor_npu: true` in the same `user_defines` block. Without it such
+  a bundle fails with a `BackendInitException` that says how to enable it.
+
+See [where a model runs](/docs/litertlm#where-a-model-runs).
 
 ## `flutter_edge_ai_agent` 0.4.0: `schedule_notification` is opt-in
 
@@ -153,7 +175,7 @@ old methods still compile as deprecated forwarders and are removed in 2.5.0.
 | `getActiveEmbedder({preferredBackend})` | adds `supportImage` and `supportAudio`: declare media at load. Media sent to a model that did not declare them throws. |
 | `FlutterEdgeAiPlugin.createEmbeddingModel(modelPath:, tokenizerPath:)` | the explicit paths are gone. Install the files with `installEmbedder().modelFromFile(…)` (and `tokenizerFromFile(…)` unless it is a `.litertlm`), then call `getActiveEmbedder()`. |
 | `EmbeddingModelSpec(tokenizerSource:)` was required | `tokenizerSource` is null for a `.litertlm` embedder; check `spec.isSelfContained`. `spec.files` has one entry then. |
-| `installEmbedder()` without a tokenizer always threw | a `.litertlm` installs alone; a tokenizer for a `.litertlm` is an `ArgumentError` before any download, and a model no registered backend can run on this platform is an `UnsupportedError` before any download. |
+| `installEmbedder()` without a tokenizer always threw | a `.litertlm` installs alone; a tokenizer for a `.litertlm` is an `ArgumentError` before any download, and, once an embedding backend is registered, a model none of them can run on this platform is an `UnsupportedError` before any download (with none registered the install goes ahead). |
 
 New and additive: `EmbeddingInput.image`/`.audio`, `EmbeddingModality`,
 `EncodedMediaFormat`, `sniffEncodedMediaFormat`, `EmbeddingModel.modalities`,
@@ -203,7 +225,7 @@ tokenizer packages; it re-exports the app library), `engine_io.dart`,
 | `ModelThinkingFilter` through `package:flutter_edge_ai/core/extensions.dart` | the app library |
 | `EmbeddingForwardPass`, `ForwardPassDescriptor`, `EmbeddingForwardPassFactory`, `CommonEmbeddingModel.create`, `EmbeddingBackendProvider.createModel` | `EmbeddingPass`, `EmbeddingPassInfo`, `EmbeddingPassDescriptor<C>`, `TokenEmbeddingPass` (if you tokenize in Dart) and `EmbeddingBackendProvider.describe()`, which returns `EmbeddingPassDescriptor(engineTag:, factory:, config:, activeBackend:)`. Core builds, hosts and closes the model. |
 | `CommonEmbeddingModel.inputSequenceLength`, `.outputDimension` | `EmbeddingModel.maxInputTokens`, `.dimension` |
-| `class MyBackend implements EmbeddingBackendProvider` | `extends EmbeddingBackendProvider` (an `abstract base class`) |
+| `class MyBackend implements EmbeddingBackendProvider` | `final class MyBackend extends EmbeddingBackendProvider` (an `abstract base class`) |
 | `flutter_edge_ai_embeddings` re-exported core's seam types | it exports only `GemmaEmbeddingTokenizers`; import the seam types from `engine.dart`. A SigLIP input over 63 tokens throws instead of truncating. |
 | onnx `OnnxEmbeddingForwardPass` | `OnnxEmbeddingPass` with `OnnxEmbeddingConfig`; it extends `TokenEmbeddingPass` |
 | litertlm `WebEmbeddingModel` (`web_embedding_model.dart`) | removed: `FlutterEdgeAi.getActiveEmbedder()` |
@@ -303,7 +325,7 @@ A rename with no `dart fix` rule, so the compiler finds every call site:
 - `ModelRuntimeDefaults.isThinking` is `thinkingDeclared` — what the model's
   manifest declares, which you pass on as
   `enableThinking: r.runtime.thinkingDeclared ?? false`.
-- `genkit_flutter_edge_ai` 0.7: the `isThinking` model option is
+- `genkit_flutter_edge_ai` 0.7.1: the `isThinking` model option is
   `enableThinking`.
 
 Requires `flutter_edge_ai_litertlm` 1.9.0 or later, which sends the flag to the
@@ -516,9 +538,11 @@ that release; RAG later changed in 2.0 as documented above.
 
 1. Add the opt-in packages for the formats/features you use (see table below).
 2. Call `await FlutterEdgeAi.initialize(inferenceEngines: [...], ...)` once in `main()`, passing the engines/backends from the packages you added.
-3. Then apply the 2.0–2.3 sections above: RAG moved to `flutter_edge_ai_rag`
+3. Then apply the 2.0–2.4 sections above: RAG moved to `flutter_edge_ai_rag`
    (2.0), `isThinking` became `enableThinking` (2.1), sampling defaults come
-   from the model (2.2), and the embedding API changed (2.3).
+   from the model (2.2), the embedding API changed (2.3), backends follow the
+   `.litertlm` file (2.4, litertlm 1.14 and 1.15), and, if you use the agent,
+   `schedule_notification` is opt-in (`flutter_edge_ai_agent` 0.4).
 
 ## 1. pubspec.yaml
 
@@ -529,12 +553,12 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**After (current 2.3 set):**
+**After (current 2.4 set):**
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.3.2                 # core — always required
-  flutter_edge_ai_litertlm: ^1.13.2       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai: ^2.4.1                 # core — always required
+  flutter_edge_ai_litertlm: ^1.15.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.2.2       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.0      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
   flutter_edge_ai_rag: ^1.1.0             # add for on-device RAG (RagIndex) + one store below
@@ -568,9 +592,11 @@ file type.
 > iOS/macOS, Windows AI Foundry on Windows), `flutter_edge_ai_speech` (STT, TTS
 > and a voice loop), `flutter_edge_ai_diagnostics` (memory a model costs, read
 > from the OS),
-> and `flutter_edge_ai_onnx` (ONNX Runtime — ORT-GenAI text generation +
+> `flutter_edge_ai_onnx` (ONNX Runtime — ORT-GenAI text generation +
 > plain-ORT embeddings via `dart:ffi` on native, + Web via Transformers.js /
-> onnxruntime-web). Add any of them only if you want that feature. See
+> onnxruntime-web), and `flutter_edge_ai_llama` (GGUF chat models through
+> llama.cpp, via llamadart; see [llama.cpp](/docs/llama)). Add any of them only
+> if you want that feature. See
 > [Getting Started](/docs/getting-started).
 
 ## Breaking: embeddings 2.0.0 — `LiteRtEmbeddingBackend` moved
@@ -827,6 +853,7 @@ void main() {
 own provider registry and own the returned index separately.
 
 ```dart
+import 'package:flutter/widgets.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -899,7 +926,7 @@ final hits = await index.search(query: EmbeddingInput.text(query), topK: 5);
 
 // Shutdown order: the index borrows its embedder.
 await index.dispose();
-await FlutterEdgeAi.dispose();
+await FlutterEdgeAi.dispose(); // resets core's registries; closes no model
 ```
 
 ## What you'll see if you forget step 2

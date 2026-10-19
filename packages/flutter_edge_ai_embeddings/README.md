@@ -81,7 +81,8 @@ LiteRT.js, and it belongs with the package named after it. See
 
 This package has no web assets of its own: on web its tokenizers run only for
 backends that tokenize in Dart (WordPiece), while the LiteRT web arm tokenizes
-inside `sentencepiece.js`.
+a `.tflite` model inside `sentencepiece.js` and an EmbeddingGemma 2 `.litertlm`
+inside `@litert-lm/core`.
 
 ## Platforms
 
@@ -191,20 +192,23 @@ prefixes either; making that configurable belongs with the profile selector.
 ## Building a new engine backend
 
 Everything below comes from `package:flutter_edge_ai/engine.dart`. Write
-`class MyBackend extends EmbeddingBackendProvider` whose `describe(spec,
-config)` returns an `EmbeddingPassDescriptor(engineTag:, factory:, config:,
-activeBackend:)`: a sendable `config` and a top-level `factory` that builds
-your pass from it. Core builds, hosts and closes the model; `describe` only
-says what to run.
+`final class MyBackend extends EmbeddingBackendProvider` with a `name`, a
+`canHandle(spec)` and a `describe(spec, config)` that returns an
+`EmbeddingPassDescriptor(engineTag:, factory:, config:, activeBackend:)`: a
+sendable `config` and a top-level `factory` that builds your pass from it.
+Core builds, hosts and closes the model; `describe` only says what to run.
 
-A pass that tokenizes in Dart extends `TokenEmbeddingPass`: implement
+A pass that tokenizes in Dart is a `final class … extends TokenEmbeddingPass`:
+pass `tokenizerPath:` and `tokenizerFactory:` to its constructor (in
+`describe()`, take the factory from
+`EmbeddingTokenizerRegistry.instance.resolveFor(spec)`), implement
 `openGraph()` (returning a `TokenPassGraph` with the dimension,
 `maxInputTokens` and output contract), `runTokens()` and `closeGraph()`, and
-it tokenizes with the factory core resolved, applies the task prefix and
-refuses over-long input for you. Declare `EmbeddingOutputContract.pooledFinal`
+it tokenizes, applies the task prefix and refuses over-long input for you. Declare `EmbeddingOutputContract.pooledFinal`
 if your graph already returns the final embedding, or `.tokenLevel` if it
 returns raw per-token hidden states for `meanPoolAndNormalize` to pool. Any
-other engine implements `EmbeddingPass` (`load`/`embed`/`close`) directly.
+other engine's pass is a `final class … extends EmbeddingPass`
+(`load`/`embed`/`close`) directly.
 
 `activeBackend` is required — the backend your pass really runs on, or `null`
 when unknown. It is what `EmbeddingModel.activeBackend` reports to the app.
@@ -219,8 +223,9 @@ worked examples.
 
 `flutter_edge_ai_litertlm` is the sole owner of the shared native library and
 bundles it via its build hook. A stale Native-Assets cache after a native
-version bump can leave the library unbundled, surfacing as an opaque `dlopen`
-"no such file" on the first embedding call. Fix with a clean rebuild:
+version bump can leave the library unbundled, surfacing at `getActiveEmbedder()`
+as an `EmbeddingLoadException` around an opaque `dlopen` "no such file". Fix
+with a clean rebuild:
 
 ```bash
 flutter clean

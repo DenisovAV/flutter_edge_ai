@@ -40,7 +40,7 @@ dependencies:
   # The .litertlm inference engine. Engines are opt-in — core
   # registers none, so this package must be added explicitly.
   flutter_edge_ai_litertlm: ^1.13.0
-  # The tokenizers an embedding backend needs. Since flutter_edge_ai 1.9.0 a
+  # The tokenizers an embedding backend needs. Since flutter_gemma 1.9.0 a
   # backend no longer carries one — which tokenizer a model wants is a
   # property of the model, so the app registers it (see main.dart).
   flutter_edge_ai_embeddings: ^2.3.0

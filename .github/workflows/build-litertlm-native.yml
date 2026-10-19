@@ -31,8 +31,8 @@ jobs:
     name: Linux x86_64
     if: ${{ !inputs.qualcomm_dispatch_linux_only }}
     # Pin to ubuntu-22.04 (glibc 2.35) for broader compatibility. Our
-    # libLiteRtLm.so ends up needing only GLIBC_2.34, which works on
-    # Ubuntu 22.04+ / Debian 12+ / RHEL 9+.
+    # libLiteRtLm.so ends up needing GLIBC_2.34 and GLIBCXX_3.4.30 (GCC 12
+    # libstdc++), which works on Ubuntu 22.04+ / Debian 12+ / RHEL 10+.
     # Google prebuilt companions (libLiteRt.so etc.) only require 2.26-2.27.
     runs-on: ubuntu-22.04
     timeout-minutes: 60

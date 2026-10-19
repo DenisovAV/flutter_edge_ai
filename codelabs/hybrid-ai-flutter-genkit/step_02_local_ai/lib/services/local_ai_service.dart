@@ -67,9 +67,9 @@ class LocalAIService implements AIService {
         .install();
 
     // No installEmbedder() call here: this app never computes an embedding
-    // (RagService doesn't exist until Step 6, by which point this whole
+    // (RagService doesn't exist until Step 5, by which point this whole
     // file is retired — see Step 4) and initialize() registers no embedding
-    // backend either, so downloading the ~300 MB model here would just be
+    // backend either, so downloading the ~190 MB model here would just be
     // wasted bandwidth. embedderName/embedders below stay purely
     // declarative, ready for Step 4's AiEngine to actually install it.
 

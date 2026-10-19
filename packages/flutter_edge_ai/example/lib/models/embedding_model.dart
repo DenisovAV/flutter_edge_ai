@@ -415,7 +415,7 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     tokenizerFilename:
         'gecko-110m-en-seq64__sentencepiece__rev-61a0d0c2cdc9.model',
     displayName: 'Gecko (seq=64)',
-    size: '110MB',
+    size: '112MB',
     dimension: 768, // Fixed embedding dimension for Gecko-110m
     maxSeqLen: 64,
     needsAuth: false,
@@ -449,7 +449,7 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     tokenizerFilename:
         'gecko-110m-en-seq512__sentencepiece__rev-61a0d0c2cdc9.model',
     displayName: 'Gecko (seq=512)',
-    size: '116MB',
+    size: '120MB',
     dimension: 768, // Fixed embedding dimension for Gecko-110m
     maxSeqLen: 512,
     needsAuth: false,

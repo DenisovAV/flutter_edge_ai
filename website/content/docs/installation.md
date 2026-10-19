@@ -140,9 +140,10 @@ void main() async {
 | `inferenceEngines: [MediaPipeEngine()]` | `flutter_edge_ai_mediapipe` | `.task` / `.bin` (mobile + web) |
 | `inferenceEngines: [OnnxEngine()]` | `flutter_edge_ai_onnx` | ONNX models — ORT-GenAI (FFI: macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64) or Transformers.js (Web) |
 | `inferenceEngines: [BuiltInAiEngine()]` | `flutter_edge_ai_builtin_ai` | the OS model, `ModelFileType.builtIn` (Android, iOS, macOS, Windows, Web) |
+| `inferenceEngines: [LlamaEngineProvider()]` | `flutter_edge_ai_llama` | `.gguf` models via llama.cpp, `ModelFileType.gguf` (mobile + desktop + web) — [llama.cpp](/docs/llama) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | embeddings: EmbeddingGemma 2 `.litertlm` (text, images, audio; native and WebGPU) and `.tflite` models |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
-| `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by both embedding backends above for `.tflite` and `.onnx` models; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
+| `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by both embedding backends above for `.tflite` and `.onnx` models — on the web for `.onnx` only, since LiteRT.js tokenizes `.tflite` in the browser; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |
 
@@ -180,11 +181,13 @@ Complete platform-specific setup before running a model.
 ### iOS
 
 Required by any engine package: `flutter_edge_ai_litertlm`, `flutter_edge_ai_mediapipe`,
-`flutter_edge_ai_onnx`, `flutter_edge_ai_builtin_ai` and/or `flutter_edge_ai_speech`.
+`flutter_edge_ai_onnx`, `flutter_edge_ai_llama`, `flutter_edge_ai_builtin_ai` and/or
+`flutter_edge_ai_speech`.
 
 **Set the minimum iOS version to 15.0** — or **16.0** if your app depends on
-`flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI. Core, `flutter_edge_ai_litertlm`
-and embeddings build from 15.0. (`flutter_gemma` before 1.6.4 declared
+`flutter_edge_ai_mediapipe`, which needs MediaPipe GenAI, and **16.4** with
+`flutter_edge_ai_llama`, whose llama.cpp companion needs it. Core,
+`flutter_edge_ai_litertlm` and embeddings build from 15.0. (`flutter_gemma` before 1.6.4 declared
 16.0.)
 
 `flutter_edge_ai_builtin_ai` no longer sets an Apple floor of its own — since 0.3.0
@@ -280,8 +283,9 @@ Gradle plugin carries KGP.
 own manifest declares the OpenCL, FastRPC and Google Tensor runtime namespace entries and the manifest
 merger folds them into your app. These
 are what your merged manifest must contain if you pin or audit it — note
-`libvndksupport.so`: without it the OpenCL ICD load is denied on Android 12+, the
-engine falls back to WebGPU, and some Mali drivers hard-freeze (#324).
+`libvndksupport.so`: without it the OpenCL ICD load is denied on Android 12+, and
+OpenCL is the only GPU path on Android (no WebGPU libraries ship there since
+native-v0.18.0).
 
 ```
 <uses-native-library android:name="libvndksupport.so" android:required="false"/>
@@ -317,7 +321,8 @@ generic bundle never runs on the NPU, flag or not. See
 (`flutter_edge_ai_litertlm` 1.15.0). The build then bundles the Tensor
 dispatch, built from LiteRT and covered by Google's Tensor SDK terms; the
 runtime it drives is part of the Pixel system image. It runs on a Pixel with
-that Tensor generation and Android 16 or later. See [LiteRT-LM](/docs/litertlm).
+that Tensor generation and Android 16 or later, except on a build whose ID
+starts with `BP2A`, which LiteRT does not run the NPU on. See [LiteRT-LM](/docs/litertlm).
 
 **ProGuard/R8 (only if you use `flutter_edge_ai_mediapipe`):** the package ships
 its own consumer ProGuard rules, so a release build needs no rules in your app
@@ -509,7 +514,7 @@ script above.
 The WASM runtime underneath comes from a pinned CDN copy by default
 (`flutter_edge_ai_litertlm`) — nothing else to install. To serve it
 yourself, copy `node_modules/@litertjs/core/wasm/` into `web/wasm/` and set
-`LiteRtWebRuntime.wasmPath = '/wasm/';` before the first embedding. See
+`LiteRtWebRuntime.wasmPath = '/wasm/';` before `getActiveEmbedder()`, which loads the runtime. See
 [`flutter_edge_ai_litertlm`'s embeddings on web](https://pub.dev/packages/flutter_edge_ai_litertlm#embeddings-on-web).
 
 **`flutter_edge_ai_sqlite`** (web RAG): no `<script>`. Copy the package's
@@ -534,9 +539,10 @@ web-compatible builds.
 ### Desktop (macOS, Windows, Linux)
 
 Desktop is served **primarily** by **`flutter_edge_ai_litertlm`** (`.litertlm`
-files) — the default engine, whose native library is fetched at build time by the
+files), whose native library is fetched at build time by the
 package's Native-Assets hook (no manual download/bundling). **`flutter_edge_ai_onnx`**
-([ONNX Runtime](/docs/onnx)) also runs on all three desktop OSes
+([ONNX Runtime](/docs/onnx)) and **`flutter_edge_ai_llama`**
+([llama.cpp](/docs/llama), `.gguf`) also run on all three desktop OSes
 (macOS/Windows/Linux), and the OS built-in model is available via
 **`flutter_edge_ai_builtin_ai`** on **macOS** ([Apple Foundation
 Models](/docs/builtin-ai)) and on **Windows** ([AI Foundry](/docs/builtin-ai) —

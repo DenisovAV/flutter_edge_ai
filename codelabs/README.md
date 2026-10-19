@@ -118,4 +118,12 @@ flutter test integration_test/smoke_test.dart -d <device-id> \
 
 cd codelabs/package-skills-flutter-gemma/complete
 flutter test integration_test/skills_test.dart -d <device-id>
+
+cd codelabs/builtin-ai-flutter/complete
+flutter test integration_test/builtin_ai_test.dart -d <device-id>
 ```
+
+The built-in AI suite downloads nothing itself: the OS owns the model. It
+fails unless the device reaches `available` (or can download the model);
+`--dart-define=EXPECT_UNAVAILABLE=true` checks the typed refusal on a device
+without built-in AI instead.

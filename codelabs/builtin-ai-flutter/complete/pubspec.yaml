@@ -42,6 +42,8 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+  # FakeLocalAiHost stands in for the OS model in widget tests.
+  flutter_local_ai: ^0.2.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

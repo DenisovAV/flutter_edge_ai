@@ -82,9 +82,10 @@ const maintainers = <Maintainer>[
         'Canada · full-stack developer at Unity · Google Developer Expert for '
         'Flutter · organizer of Flutter and GDG Montreal',
     blurb:
-        'Brings llama.cpp and GGUF models to Flutter Edge AI through '
-        'llamadart, the llama.cpp package he maintains. One of the '
-        "project's earliest contributors.",
+        'Created llamadart, which runs GGUF models through llama.cpp, and '
+        'LiteRT-LM models, in Dart and Flutter on Android, iOS, macOS, '
+        'Windows, Linux and the web. flutter_edge_ai_llama brings it to '
+        "Flutter Edge AI. One of the project's earliest contributors.",
     website: 'https://leehack.com',
   ),
   Maintainer(

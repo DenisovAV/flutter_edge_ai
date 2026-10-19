@@ -20,6 +20,7 @@ class NavBar extends StatelessComponent {
     // would 301 to `/codelabs` on every click.
     (text: 'Codelabs', href: '/codelabs', external: false, cta: false),
     (text: 'Models', href: '/docs/models', external: false, cta: false),
+    (text: 'Contributors', href: '/contributors', external: false, cta: false),
     (
       text: 'GitHub',
       href: 'https://github.com/DenisovAV/flutter_edge_ai',

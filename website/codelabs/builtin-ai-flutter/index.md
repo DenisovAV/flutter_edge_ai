@@ -300,7 +300,8 @@ Future<void> _prepare() async {
         // Still downloadable, so the download never started: on the web,
         // Chrome starts it only from a tap.
         ? 'The download did not start. Choose Prepare again.'
-        : 'Preparing stopped: the device reported the model as unavailable.';
+        : 'Preparing stopped: a status check failed. If the card still '
+              'offers Prepare, choose it to try again.';
   } on TimeoutException {
     failure =
         'The model is still not ready after 10 minutes. The download may '
@@ -331,14 +332,26 @@ once. It can fail three ways, and the app catches each one:
 * anything else, such as a download Android refused to start.
 
 Every failure goes through `_failed`, which asks the device again and only
-then shows what failed. In that order, the new status cannot wipe the message:
+then shows what failed. In that order, the new status cannot wipe the message.
+A probe can take up to 20 seconds, so `_rechecking` keeps the buttons off and
+a progress bar on until it returns (the page's `working` includes it):
 
 ```dart
+/// Set while a failed action waits for the probe that explains it.
+bool _rechecking = false;
+
 /// An action failed: ask the device again, then say what failed, so the new
 /// status cannot wipe the message.
 Future<void> _failed(String message) async {
+  // A probe can take up to 20 seconds; keep the buttons off meanwhile.
+  if (mounted) setState(() => _rechecking = true);
   await _checkAvailability();
-  if (mounted) setState(() => _error = message);
+  if (mounted) {
+    setState(() {
+      _rechecking = false;
+      _error = message;
+    });
+  }
 }
 ```
 
@@ -432,7 +445,15 @@ downloading again. `getActiveModel` then throws
 `BuiltInAiUnavailableException`, and `_failed` puts the new status on the card.
 
 The prompt field and **Ask** are enabled only while the model is open, the
-status is `available` and nothing else is running. If the reader turns Apple
+status is `available` and nothing else is running. In `build`:
+
+```dart
+final working = _busy || _preparing || _rechecking;
+final canAsk = _model != null && ready && !working;
+```
+
+The `TextField` takes `enabled: canAsk` and **Ask** takes
+`onPressed: canAsk ? _ask : null`. If the reader turns Apple
 Intelligence off while the app is open, the next resume disables them and the
 card shows **Check again**.
 
@@ -544,8 +565,18 @@ Run `step_03_first_prompt`, prepare the model if the card asks for it, tap
 ## Step 4: Stream the answer
 Duration: 8
 
-Open `complete`. Only `_ask` changes: it streams the answer, so the first
-words appear immediately, and it can be stopped:
+Open `complete`. `_ask` and the Ask button change: the answer streams, so
+the first words appear immediately, and a **Stop** button can end it.
+
+The page keeps how to stop the current answer in a new field, null while
+nothing streams:
+
+```dart
+/// Ends the answer being streamed; null while nothing streams.
+Future<void> Function()? _stop;
+```
+
+In `_ask`, the stream replaces `getResponse()`:
 
 ```dart
 final answer = StringBuffer();
@@ -583,10 +614,24 @@ Each string is the new chunk only. Append it; do not replace the accumulated
 answer with the latest chunk. If the stream fails halfway, the `catch` from
 Step 3 clears the partial answer.
 
-While `_stop` is set, the page shows **Stop** in place of **Ask**, and the
-`finally` from Step 3 sets it back to null (add `_stop = null;` as its first
-line). A model can keep generating for a long time; **Stop** keeps what has
-arrived, stops the model and closes the session as usual.
+The `finally` from Step 3 sets `_stop` back to null: add `_stop = null;` as
+its first line.
+
+In `build`, read the field once (`final stop = _stop;` next to `working`) and
+show **Stop** in place of **Ask** while it is set:
+
+```dart
+if (stop != null)
+  OutlinedButton(onPressed: stop, child: const Text('Stop'))
+else
+  FilledButton(
+    onPressed: canAsk ? _ask : null,
+    child: const Text('Ask'),
+  ),
+```
+
+A model can keep generating for a long time; **Stop** keeps what has arrived,
+stops the model and closes the session as usual.
 
 Run the `complete` app. It follows the whole built-in path, one tap per step:
 
@@ -603,8 +648,8 @@ The current platform chooses that implementation behind the same Dart API.
 ### Test it
 
 `complete/test/widget_test.dart` drives the app against a fake OS model
-(`FakeLocalAiHost` from `flutter_local_ai`): Prepare, Start, Ask, a failure
-halfway through an answer, Stop and a resume.
+(`FakeLocalAiHost` from `flutter_local_ai`): Prepare and its 10-minute
+timeout, Start, Ask, a failure halfway through an answer, Stop and a resume.
 
 `complete/integration_test/builtin_ai_test.dart` calls the same APIs as the
 app, in the same order, on a real device. It does not drive the UI, and it

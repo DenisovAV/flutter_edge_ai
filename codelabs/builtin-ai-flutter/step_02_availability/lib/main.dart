@@ -39,6 +39,9 @@ class _BuiltInAiPageState extends State<BuiltInAiPage>
   String? _error;
   bool _preparing = false;
 
+  /// Set while a failed action waits for the probe that explains it.
+  bool _rechecking = false;
+
   /// Numbers each availability probe, so one that returns late (a probe can
   /// take up to 20 seconds) cannot overwrite a newer answer.
   int _probe = 0;
@@ -74,8 +77,15 @@ class _BuiltInAiPageState extends State<BuiltInAiPage>
   /// An action failed: ask the device again, then say what failed, so the new
   /// status cannot wipe the message.
   Future<void> _failed(String message) async {
+    // A probe can take up to 20 seconds; keep the buttons off meanwhile.
+    if (mounted) setState(() => _rechecking = true);
     await _checkAvailability();
-    if (mounted) setState(() => _error = message);
+    if (mounted) {
+      setState(() {
+        _rechecking = false;
+        _error = message;
+      });
+    }
   }
 
   // Keep this call directly attached to the tap for the web user-gesture gate.
@@ -101,7 +111,8 @@ class _BuiltInAiPageState extends State<BuiltInAiPage>
           // Still downloadable, so the download never started: on the web,
           // Chrome starts it only from a tap.
           ? 'The download did not start. Choose Prepare again.'
-          : 'Preparing stopped: the device reported the model as unavailable.';
+          : 'Preparing stopped: a status check failed. If the card still '
+                'offers Prepare, choose it to try again.';
     } on TimeoutException {
       failure =
           'The model is still not ready after 10 minutes. The download may '
@@ -131,7 +142,7 @@ class _BuiltInAiPageState extends State<BuiltInAiPage>
     final status = _availability;
     final unsupported = BuiltInAiModels.forCurrentPlatform == null;
     final ready = status == BuiltInAiAvailability.available;
-    final working = _preparing;
+    final working = _preparing || _rechecking;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Built-in AI')),
@@ -205,6 +216,10 @@ class _BuiltInAiPageState extends State<BuiltInAiPage>
               ),
               const SizedBox(height: 12),
               const FilledButton(onPressed: null, child: Text('Ask')),
+              if (_rechecking) ...[
+                const SizedBox(height: 16),
+                const LinearProgressIndicator(),
+              ],
               if (_error case final error?) ...[
                 const SizedBox(height: 16),
                 Text(error, key: const Key('error')),

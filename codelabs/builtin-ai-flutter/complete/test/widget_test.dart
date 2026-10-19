@@ -139,6 +139,24 @@ void main() {
     expect(button('Check again'), findsOneWidget);
   });
 
+  testWidgets('a download that outlasts 10 minutes says so', (tester) async {
+    host.availability = BuiltInAiAvailability.downloading;
+    await tester.pumpWidget(const BuiltInAiApp());
+    await tester.pump();
+
+    await tester.tap(button(prepareLabel));
+    await tester.pump();
+    await tester.pump(const Duration(minutes: 10, seconds: 1));
+    await settle(tester);
+
+    expect(shownError(), startsWith('The model is still not ready'));
+    expect(
+      find.text(statusMessage(BuiltInAiAvailability.downloading)),
+      findsOneWidget,
+    );
+    expect(enabled(tester, prepareLabel), isTrue);
+  });
+
   testWidgets('a prepared model is shown as ready at once', (tester) async {
     host.availability = BuiltInAiAvailability.downloading;
     await tester.pumpWidget(const BuiltInAiApp());

@@ -21,15 +21,24 @@ typedef _EngineLoader =
 /// 1024-token input budget including the prefix and special tokens. Other GGUF
 /// architectures are refused at load rather than given Gemma prompts.
 ///
-/// CPU, GPU and automatic selection have distinct cache keys. NPU, media and
-/// Web embeddings are unavailable in this profile. Give GGUF its own RAG
+/// Automatic requests reuse the current embedder for the same model. Explicit
+/// CPU/GPU switches replace it. NPU, media and Web embeddings are unavailable
+/// in this profile. Give GGUF its own RAG
 /// profile ID; equal dimensions do not make it interchangeable with LiteRT.
 final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
   /// Creates the qualified native text embedding provider.
-  const LlamaEmbeddingBackend() : _loader = null;
+  /// With [backendFallback] true, an explicit GPU request may fall back to
+  /// CPU when GPU loading is unavailable. Core prints a release-visible
+  /// warning and activeBackend reports CPU. With false, exactly one load
+  /// attempt is allowed and a mismatch fails as EmbeddingLoadException.
+  /// Automatic selection accepts CPU or GPU; unknown placement is refused.
+  const LlamaEmbeddingBackend({this.backendFallback = true}) : _loader = null;
 
-  const LlamaEmbeddingBackend._(this._loader);
+  const LlamaEmbeddingBackend._(this._loader, {this.backendFallback = true});
   final _EngineLoader? _loader;
+
+  /// Whether an explicit GPU request may fall back to CPU.
+  final bool backendFallback;
 
   @override
   String get name => _engineTag;
@@ -39,10 +48,13 @@ final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
 
   @override
   bool canHandle(EmbeddingModelSpec spec) =>
-      !kIsWeb && spec.files.first.filename.toLowerCase().endsWith('.gguf');
+      !kIsWeb &&
+      spec.isSelfContained &&
+      !isLiteRtLmFilename(spec.files.first.filename);
 
   @override
-  PreferredBackend? cacheBackend(PreferredBackend? requested) => requested;
+  Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) =>
+      kIsWeb ? const {} : const {PreferredBackend.cpu, PreferredBackend.gpu};
 
   @override
   Future<EmbeddingPassDescriptor<Object>> describe(
@@ -85,17 +97,23 @@ final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
     return EmbeddingPassDescriptor<_PassConfig>(
       engineTag: _engineTag,
       factory: _buildPass,
-      config: _PassConfig(config.modelPath, config.preferredBackend, _loader),
+      config: _PassConfig(
+        config.modelPath,
+        config.preferredBackend,
+        _loader,
+        backendFallback,
+      ),
       activeBackend: null,
     );
   }
 }
 
 final class _PassConfig {
-  const _PassConfig(this.path, this.backend, this.loader);
+  const _PassConfig(this.path, this.backend, this.loader, this.backendFallback);
   final String path;
   final PreferredBackend? backend;
   final _EngineLoader? loader;
+  final bool backendFallback;
 }
 
 EmbeddingPass _buildPass(_PassConfig config) => _LlamaEmbeddingPass(config);
@@ -126,7 +144,20 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
           ? 0
           : llama.ModelParams.maxGpuLayers,
     );
-    final engine = await (_config.loader ?? _loadEngine)(_config.path, params);
+    final llama.LlamaEngine engine;
+    try {
+      engine = await _load(params);
+    } catch (error, stack) {
+      if (error is EmbeddingLoadException) rethrow;
+      Error.throwWithStackTrace(
+        EmbeddingLoadException(
+          'Could not load the GGUF embedding runtime.',
+          engine: _engineTag,
+          cause: error,
+        ),
+        stack,
+      );
+    }
     _engine = engine;
     if (engine.runtime != llama.LlamaRuntime.llamaCpp) {
       throw const EmbeddingLoadException(
@@ -156,10 +187,20 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
         engine: _engineTag,
       );
     }
-    final activeBackend = resolveBackend(
-      await engine.getBackendName(),
-      _config.backend,
-    );
+    final activeBackend = resolveBackend(await engine.getBackendName(), null);
+    if (activeBackend == null ||
+        (_config.backend == PreferredBackend.cpu &&
+            activeBackend != PreferredBackend.cpu) ||
+        (!_config.backendFallback &&
+            _config.backend != null &&
+            activeBackend != _config.backend)) {
+      throw EmbeddingLoadException(
+        'Could not verify the requested GGUF embedding placement: '
+        'requested ${_config.backend?.name ?? "automatic"}, '
+        'loaded ${activeBackend?.name ?? "unknown"}.',
+        engine: _engineTag,
+      );
+    }
     // The transformer width differs from the output projection (512 vs 768
     // for EG2). Probe the real output rather than guess from embedding_length.
     final probe = await engine.embed(
@@ -189,6 +230,30 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
       maxInputTokens: _contextTokens,
       activeBackend: activeBackend,
     );
+  }
+
+  Future<llama.LlamaEngine> _load(llama.ModelParams params) async {
+    // LlamaEngine.load is atomic: on failure it awaits disposal of the engine
+    // and backend. Test loaders have the same contract. A CPU retry therefore
+    // never overlaps a partial GPU engine. Model/metadata validation below is
+    // outside this retry boundary and is never retried.
+    final loader = _config.loader ?? _loadEngine;
+    try {
+      return await loader(_config.path, params);
+    } catch (error) {
+      final gpuUnavailable =
+          error is llama.LlamaUnsupportedException ||
+          error is llama.LlamaBackendInitializationException;
+      if (!_config.backendFallback ||
+          _config.backend != PreferredBackend.gpu ||
+          !gpuUnavailable) {
+        rethrow;
+      }
+      return loader(
+        _config.path,
+        params.copyWith(device: llama.ComputeDevice.cpu, gpuLayers: 0),
+      );
+    }
   }
 
   @override
@@ -239,4 +304,5 @@ Future<llama.LlamaEngine> _loadEngine(String path, llama.ModelParams params) =>
 @visibleForTesting
 LlamaEmbeddingBackend createLlamaEmbeddingBackendForTest({
   required Future<llama.LlamaEngine> Function(String, llama.ModelParams) loader,
-}) => LlamaEmbeddingBackend._(loader);
+  bool backendFallback = true,
+}) => LlamaEmbeddingBackend._(loader, backendFallback: backendFallback);

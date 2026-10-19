@@ -184,8 +184,8 @@ void main() {
         debugPrint('GGUF embedding CPU/Metal cosine=$parity');
         final automatic = await edge.FlutterEdgeAi.getActiveEmbedder();
         loaded = automatic;
-        expect(gpu.isClosed, isTrue);
-        expect(automatic, isNot(same(gpu)));
+        expect(gpu.isClosed, isFalse);
+        expect(automatic, same(gpu));
         _checkVector(
           await automatic.embed(
             edge.EmbeddingInput.text('Automatic backend.'),

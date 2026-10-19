@@ -24,14 +24,16 @@ RuntimeConfig _config({
 
 void main() {
   test(
-    'claims self-contained GGUF on native only and preserves request keys',
+    'claims self-contained GGUF and declares native CPU/GPU capabilities',
     () {
       const backend = LlamaEmbeddingBackend();
       expect(backend.canHandle(_spec('eg2.GGUF')), !kIsWeb);
       expect(backend.canHandle(_spec('eg2.litertlm')), isFalse);
-      for (final request in [null, ...PreferredBackend.values]) {
-        expect(backend.cacheBackend(request), request);
-      }
+      expect(
+        backend.honouredBackends(_spec('eg2.gguf')),
+        kIsWeb ? isEmpty : {PreferredBackend.cpu, PreferredBackend.gpu},
+      );
+      expect(backend.backendFallback, isTrue);
     },
   );
 
@@ -108,15 +110,23 @@ void main() {
       expect(engine.disposals, 1);
     });
 
-    test('unknown runtime accelerator stays unknown', () async {
-      engine.backendName = 'unreported';
-      expect((await (await pass()).load()).activeBackend, isNull);
-    });
+    test(
+      'unknown runtime accelerator fails instead of guessing placement',
+      () async {
+        engine.backendName = 'unreported';
+        await expectLater(
+          (await pass()).load(),
+          throwsA(isA<EmbeddingLoadException>()),
+        );
+      },
+    );
 
-    test('explicit GPU does not silently return CPU', () async {
-      await expectLater(
-        (await pass(request: PreferredBackend.gpu)).load(),
-        throwsUnsupportedError,
+    test('default GPU fallback reports the loaded CPU', () async {
+      expect(
+        (await (await pass(
+          request: PreferredBackend.gpu,
+        )).load()).activeBackend,
+        PreferredBackend.cpu,
       );
     });
 
@@ -152,6 +162,117 @@ void main() {
         ]);
       },
     );
+
+    test(
+      'strict GPU mismatch fails as a load exception and closes once',
+      () async {
+        final strict = createLlamaEmbeddingBackendForTest(
+          loader: (_, _) async => engine,
+          backendFallback: false,
+        );
+        final p = (await strict.describe(
+          _spec('eg2.gguf'),
+          _config(backend: PreferredBackend.gpu),
+        )).build();
+        await expectLater(p.load(), throwsA(isA<EmbeddingLoadException>()));
+        await p.close();
+        expect(engine.disposals, 1);
+      },
+    );
+
+    for (final strict in [false, true]) {
+      test(
+        'GPU unavailable: ${strict ? "strict makes one attempt" : "default retries CPU after cleanup"}',
+        () async {
+          final devices = <llama.ComputeDevice>[];
+          var cleanupFinished = false;
+          final candidate = createLlamaEmbeddingBackendForTest(
+            backendFallback: !strict,
+            loader: (_, params) async {
+              devices.add(params.device);
+              if (params.device == llama.ComputeDevice.gpu) {
+                await Future<void>.delayed(Duration.zero);
+                cleanupFinished = true; // atomic SDK load completed its cleanup
+                throw llama.LlamaUnsupportedException('GPU unavailable');
+              }
+              expect(cleanupFinished, isTrue);
+              expect(params.gpuLayers, 0);
+              return engine;
+            },
+          );
+          final p = (await candidate.describe(
+            _spec('eg2.gguf'),
+            _config(backend: PreferredBackend.gpu),
+          )).build();
+          if (strict) {
+            await expectLater(p.load(), throwsA(isA<EmbeddingLoadException>()));
+            expect(devices, [llama.ComputeDevice.gpu]);
+          } else {
+            expect((await p.load()).activeBackend, PreferredBackend.cpu);
+            expect(devices, [llama.ComputeDevice.gpu, llama.ComputeDevice.cpu]);
+          }
+          await p.close();
+        },
+      );
+    }
+
+    test('corrupt model load is not retried as GPU availability', () async {
+      var attempts = 0;
+      final cause = llama.LlamaModelException('invalid GGUF');
+      final candidate = createLlamaEmbeddingBackendForTest(
+        loader: (_, _) async {
+          attempts++;
+          throw cause;
+        },
+      );
+      final p = (await candidate.describe(
+        _spec('eg2.gguf'),
+        _config(backend: PreferredBackend.gpu),
+      )).build();
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.cause,
+            'cause',
+            same(cause),
+          ),
+        ),
+      );
+      expect(attempts, 1);
+      await p.close();
+    });
+
+    test('CPU retry failure is a load exception with its cause', () async {
+      var attempts = 0;
+      final cause = llama.LlamaBackendInitializationException(
+        'CPU unavailable',
+      );
+      final candidate = createLlamaEmbeddingBackendForTest(
+        loader: (_, _) async {
+          if (++attempts == 1) {
+            throw llama.LlamaUnsupportedException('GPU unavailable');
+          }
+          throw cause;
+        },
+      );
+      final p = (await candidate.describe(
+        _spec('eg2.gguf'),
+        _config(backend: PreferredBackend.gpu),
+      )).build();
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.cause,
+            'cause',
+            same(cause),
+          ),
+        ),
+      );
+      expect(attempts, 2);
+      await p.close();
+    });
 
     for (final scenario in [
       'architecture',

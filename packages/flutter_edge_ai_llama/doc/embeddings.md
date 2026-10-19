@@ -54,9 +54,14 @@ non-causal input fits one forward pass. Oversized input throws core's existing
 `EmbeddingInputTooLongException`, retaining the SDK's effective limit and exact
 count. It is never truncated; arbitrary inference errors remain engine errors.
 
-CPU, GPU and automatic requests have separate core cache keys. Actual backend
-reporting comes from the loaded SDK; unknown stays null. An explicit GPU request
-that loads CPU is refused. Other model architectures and pooling conventions,
+Automatic requests reuse the current embedder for the same installed model;
+explicit CPU/GPU switches replace it. The backend declares `{cpu, gpu}` through
+`honouredBackends(spec)` and reports actual loaded placement. Unknown placement
+is refused. By default an explicit GPU request can fall back to CPU with a
+release-visible core WARNING. Register `LlamaEmbeddingBackend(backendFallback:
+false)` for exactly one load attempt that fails with `EmbeddingLoadException`
+when the request cannot be verified. Model validation failures are never retried
+as GPU availability failures. Other model architectures and pooling conventions,
 NPU, image/audio input and Web embeddings are refused. Browser registration does
 not claim GGUF embedding files, so an unsupported install can fail its pre-check.
 Inference remains independently available on the package's existing platforms.

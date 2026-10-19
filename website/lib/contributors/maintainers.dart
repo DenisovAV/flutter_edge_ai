@@ -72,6 +72,7 @@ const maintainers = <Maintainer>[
         'fine-tunes a small model, converts it for LiteRT-LM and compares it '
         'with the model it came from.',
     website: 'https://sashadenisov.dev',
+    photo: '/images/contributors/denisovav-1.jpg',
   ),
   Maintainer(
     name: 'Jhin Lee',

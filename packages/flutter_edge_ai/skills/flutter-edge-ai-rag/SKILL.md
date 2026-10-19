@@ -151,17 +151,21 @@ import 'package:flutter_edge_ai/engine.dart';
 ```
 
 Core accepts self-contained `.gguf` embedding files without a separate
-tokenizer, but installation still requires a registered backend that can run
-the file. The GGUF adapter is unreleased. `flutter_edge_ai_embeddings` remains
-the tokenizer package; runtime passes belong to their engine packages.
+tokenizer. When backends are registered, installation requires one that can run
+the file; with none registered, installation can proceed. No GGUF embedding
+backend ships yet. `flutter_edge_ai_embeddings` remains the tokenizer package;
+runtime passes belong to their engine packages.
 
-An `EmbeddingBackendProvider` can override `cacheBackend(requested)` to return
-the request unchanged, including null for automatic selection, when it honors
-CPU/GPU selection. The default preserves existing CPU/NPU cache behavior.
-Report the actual accelerator in `EmbeddingPassInfo.activeBackend` after load;
-leave the descriptor's accelerator null if it cannot be known before load.
-`EmbeddingModel.maxInputTokens` is the effective loaded context/batch capacity.
-Core hosts, caches and closes the pass.
+Providers declare explicit accelerator capabilities with `honouredBackends(spec)`;
+core computes the cache key. Automatic requests reuse the current embedder for
+the same installed model, while NPU requests always retain a separate key.
+GPU-capable providers must report their actual loaded accelerator through
+`EmbeddingPassInfo.activeBackend`; legacy fixed descriptors remain compatible.
+Supported explicit requests that fall back print a release-visible WARNING.
+`EmbeddingModel.maxInputTokens` is the effective loaded context/single-pass batch
+capacity, including task prefixes and special tokens. A GGUF profile configured
+with a 1024-token micro-batch cannot embed a longer chunk even if the file names
+a larger context. Core hosts, caches and closes the pass.
 
 ## EmbeddingGemma 2 (one `.litertlm` file)
 
@@ -588,8 +592,8 @@ Chunk text below the embedder's input limit,
 EmbeddingGemma seq256 file above, task prefix, BOS and EOS included. A longer
 chunk or query is never truncated: `add` and `search` throw
 `EmbeddingInputTooLongException`, whose `maxInputTokens` and `actualTokens`
-say by how much. A null `maxInputTokens` means the model file declares no
-limit.
+say by how much. A null `maxInputTokens` means the loaded pass cannot establish
+an effective limit, not that input is unlimited.
 
 ## Image and audio documents
 

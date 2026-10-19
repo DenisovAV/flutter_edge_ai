@@ -12,23 +12,25 @@ const String _liteRtLmSuffix = '.litertlm';
 ///
 /// The one predicate core and engine packages use to tell a `.litertlm`
 /// bundle from any other model file.
-bool isLiteRtLmFilename(String filename) {
-  final start = filename.length - _liteRtLmSuffix.length;
-  if (start < 0) return false;
-  for (var i = 0; i < _liteRtLmSuffix.length; i++) {
-    var c = filename.codeUnitAt(start + i);
-    // ASCII 'A'..'Z' → 'a'..'z'; every other code unit compares as is.
-    if (c >= 0x41 && c <= 0x5A) c += 0x20;
-    if (c != _liteRtLmSuffix.codeUnitAt(i)) return false;
-  }
-  return true;
-}
+bool isLiteRtLmFilename(String filename) =>
+    _hasAsciiSuffix(filename, _liteRtLmSuffix);
 
 /// Internal install predicate: these containers include their own tokenizer.
 /// The resolved install filename decides, including an explicit filename for
 /// an opaque URL. This does not select an embedding backend.
 bool isSelfContainedEmbeddingFilename(String filename) =>
-    isLiteRtLmFilename(filename) || filename.toLowerCase().endsWith('.gguf');
+    isLiteRtLmFilename(filename) || _hasAsciiSuffix(filename, '.gguf');
+
+bool _hasAsciiSuffix(String filename, String suffix) {
+  final start = filename.length - suffix.length;
+  if (start < 0) return false;
+  for (var i = 0; i < suffix.length; i++) {
+    var c = filename.codeUnitAt(start + i);
+    if (c >= 0x41 && c <= 0x5A) c += 0x20;
+    if (c != suffix.codeUnitAt(i)) return false;
+  }
+  return true;
+}
 
 /// A filesystem-safe, single-segment directory name for a directory model
 /// (ORT-GenAI) installed from the Hugging Face repo [repo], optionally from its

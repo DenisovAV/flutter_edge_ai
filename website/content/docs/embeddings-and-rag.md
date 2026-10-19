@@ -20,24 +20,31 @@ inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
 ## Custom embedding providers (core 2.5.0)
 
-Core accepts self-contained `.gguf` files without a separate tokenizer when a
-registered backend can serve them. The GGUF adapter is still unreleased.
+Core accepts self-contained `.gguf` files without a separate tokenizer. When
+backends are registered, installation checks that one can serve the file; with
+none registered, installation can still proceed. No GGUF embedding backend ships
+yet; executing these files requires a supporting engine package.
 `flutter_edge_ai_embeddings` supplies tokenizers; engine packages own runtime
 passes, and core hosts, caches and closes those passes.
 
-Backend authors can override `EmbeddingBackendProvider.cacheBackend(requested)`
-to distinguish CPU, GPU and automatic selection. Return the request unchanged,
-including null, when those requests can select different runtimes. The default
-preserves existing providers' CPU/NPU cache rule. Report the loaded accelerator
-through `EmbeddingPassInfo.activeBackend`; leave the descriptor's answer null
-when it cannot be known before load. `EmbeddingModel.maxInputTokens` includes
-the loaded context and batch limits.
+Backend authors declare supported explicit requests through
+`EmbeddingBackendProvider.honouredBackends(spec)`. Core computes cache identity:
+automatic requests reuse the current embedder for the same installed model,
+explicit NPU requests retain their own key, and automatic builds of GPU-capable
+providers are recorded under the loaded accelerator. GPU-capable providers must
+report it through `EmbeddingPassInfo.activeBackend`; a descriptor alone is not
+proof of placement. Existing providers retain their fixed descriptor fallback.
+Supported explicit requests that fall back produce a release-visible WARNING.
+`EmbeddingModel.maxInputTokens` is the effective loaded context/single-pass batch
+limit, including task prefixes and special tokens; null means unknown, not
+unlimited. A GGUF pass configured with a 1024-token micro-batch cannot accept a
+larger chunk just because the model file declares a larger context.
 
 ## Packages
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai: ^2.4.1
   flutter_edge_ai_litertlm: ^1.15.0
   flutter_edge_ai_embeddings: ^2.3.0 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.0
@@ -519,7 +526,7 @@ print('${embedder.dimension} dimensions, up to ${embedder.maxInputTokens} tokens
 - An input longer than **maxInputTokens** — task prefix, BOS and EOS
   included — is never truncated: it fails with
   **EmbeddingInputTooLongException**. A null **maxInputTokens** means the
-  model file declares no limit.
+  loaded pass cannot establish an effective limit; it does not mean unlimited.
 - Every error arrives as a failed future and is an **EmbeddingException**: a
   closed model gives **EmbedderClosedException**, a model that cannot load
   **EmbeddingLoadException**.

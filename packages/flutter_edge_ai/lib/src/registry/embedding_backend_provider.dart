@@ -31,18 +31,21 @@ abstract base class EmbeddingBackendProvider {
   /// Whether this backend can serve [spec]. Probed by the registry.
   bool canHandle(EmbeddingModelSpec spec);
 
-  /// Normalises a requested accelerator for core's embedder cache.
+  /// Explicit accelerator requests this provider honours for [spec].
   ///
-  /// Pure and synchronous; no loading or platform I/O. Equal keys mean the
-  /// same pass can serve either request. The default preserves CPU-only
-  /// providers' reuse rule and keeps NPU vector spaces distinct. A provider
-  /// that honours CPU/GPU/automatic selection should return [requested]
-  /// unchanged, including null for automatic selection. This key describes
-  /// the request; report the loaded accelerator through EmbeddingPassInfo.
-  PreferredBackend? cacheBackend(PreferredBackend? requested) =>
-      requested == PreferredBackend.npu
-      ? PreferredBackend.npu
-      : PreferredBackend.cpu;
+  /// Pure and synchronous; no loading or platform I/O. Core calls this once
+  /// per request and owns cache identity. An unsupported non-NPU request uses
+  /// the legacy CPU key and receives a not-applied notice. NPU always has its
+  /// own key. Automatic requests reuse the current embedder for the same model.
+  ///
+  /// The default preserves existing CPU/NPU request handling. Override for
+  /// model-dependent capabilities, for example {cpu, gpu} for native GGUF.
+  /// A provider advertising GPU must report the actual loaded accelerator in
+  /// EmbeddingPassInfo.activeBackend; a descriptor alone is insufficient.
+  Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) => const {
+    PreferredBackend.cpu,
+    PreferredBackend.npu,
+  };
 
   /// A pure description of what to run for [spec] with [config].
   ///

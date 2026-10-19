@@ -56,9 +56,9 @@ abstract base class EmbeddingBackendProvider
   constructor const EmbeddingBackendProvider()
   getter String name abstract
   getter int priority
-  method PreferredBackend? cacheBackend(PreferredBackend? requested)
   method bool canHandle(EmbeddingModelSpec spec) abstract
   method Future<EmbeddingPassDescriptor<Object>> describe(EmbeddingModelSpec spec, RuntimeConfig config) abstract
+  method Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec)
 
 abstract base class EmbeddingModel
   getter PreferredBackend? activeBackend

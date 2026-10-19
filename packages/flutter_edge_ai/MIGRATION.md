@@ -1,16 +1,28 @@
-## 2.5.0 — self-contained embedding engines
-
-Embedding specs now accept `.gguf` without a separate tokenizer. Declare an
-explicit `.gguf` install filename when the source URL has no extension. Existing
-`.litertlm` and model/tokenizer pairs keep their identity schemas and behavior.
-
-Engine authors can override `EmbeddingBackendProvider.cacheBackend(requested)`
-to distinguish CPU, GPU and automatic selection. The default retains the previous
-CPU/NPU cache rule. Return the actual accelerator from
-`EmbeddingPassInfo(activeBackend:)` once loaded; null retains the descriptor's
-answer. These additions do not change existing provider implementations.
-
 # Migration guide
+
+## flutter_edge_ai 2.5.0: self-contained embedding providers
+
+Embedding specs accept `.gguf` without a separate tokenizer. For an opaque URL,
+use `modelFromNetwork(url, filename: 'model.gguf')`. Old `.gguf` plus tokenizer
+specs are now refused during installation and stored-identity restoration; no
+published backend produced those pairs. Other model/tokenizer pairs and existing
+`.litertlm` identity schemas keep their behavior. No GGUF embedding backend ships
+yet; a separate engine package is required to execute these files.
+
+Engine authors declare explicit accelerator capabilities through
+`EmbeddingBackendProvider.honouredBackends(spec)`; core computes cache identity.
+Automatic requests reuse the current embedder for the same installed model and
+media, and explicit NPU requests always retain a separate key. GPU-capable
+providers must report the loaded accelerator in `EmbeddingPassInfo.activeBackend`.
+Existing providers using the default capability set retain descriptor fallback,
+including the fixed WebGPU-only LiteRT-LM path.
+
+`maxInputTokens` is the effective limit accepted by the loaded pass, including
+context and single-pass batch limits, task prefixes and special tokens. A null
+limit means unknown, not unlimited. GGUF's configured 1024-token context and
+micro-batch can be smaller than a model file's theoretical limit; advertising
+that larger limit would let RAG choose chunks the runtime cannot execute.
+Existing providers' numeric limits do not change. Inputs are never truncated.
 
 ## `flutter_edge_ai_agent` 0.4.0: `schedule_notification` is opt-in
 

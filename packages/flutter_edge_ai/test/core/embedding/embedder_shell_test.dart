@@ -334,7 +334,11 @@ void main() {
           );
           expect(model.activeBackend, PreferredBackend.cpu);
           expect(
-            printed.where((l) => l.contains('npu is not applied')),
+            printed.where(
+              (l) =>
+                  l ==
+                  'ℹ️  preferredBackend npu is not applied: this embedder runs on cpu. Only EmbeddingGemma 2 per-SoC .litertlm bundles run on the NPU. Read EmbeddingModel.activeBackend for the backend in use — it is available in release builds, where this line is not.',
+            ),
             hasLength(1),
           );
           await model.close();
@@ -382,8 +386,7 @@ void main() {
       );
 
       test(
-        '${shell.name}: an NPU embedder is not handed to a request without '
-        'npu; the backend refuses it and the NPU embedder keeps serving',
+        '${shell.name}: automatic reuses NPU; explicit CPU/GPU are refused',
         () async {
           // A per-SoC bundle's rule: it runs on the NPU or not at all.
           final backend = _NpuOnlyBackend();
@@ -395,11 +398,8 @@ void main() {
             preferredBackend: PreferredBackend.npu,
           );
           expect(npu.activeBackend, PreferredBackend.npu);
-          for (final other in [
-            null,
-            PreferredBackend.cpu,
-            PreferredBackend.gpu,
-          ]) {
+          expect(await plugin.createEmbeddingModel(), same(npu));
+          for (final other in [PreferredBackend.cpu, PreferredBackend.gpu]) {
             await expectLater(
               plugin.createEmbeddingModel(preferredBackend: other),
               throwsA(isA<EmbeddingLoadException>()),
@@ -408,7 +408,6 @@ void main() {
           }
           expect(backend.described, [
             PreferredBackend.npu,
-            null,
             PreferredBackend.cpu,
             PreferredBackend.gpu,
           ]);
@@ -417,7 +416,7 @@ void main() {
             preferredBackend: PreferredBackend.npu,
           );
           expect(again, same(npu), reason: 'the NPU embedder still serves npu');
-          expect(backend.described, hasLength(4));
+          expect(backend.described, hasLength(3));
           await npu.close();
         },
       );

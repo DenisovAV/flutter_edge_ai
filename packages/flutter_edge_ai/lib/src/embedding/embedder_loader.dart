@@ -1,6 +1,6 @@
 // The one path every shell (mobile, desktop, web) builds the active embedder
 // through (R5 §4.2, §5.5). The shells keep only their platform wiring — the
-// manager they own, the cache they own, the debug notice — and call this
+// manager and cache they own — and call this
 // inside `EmbedderCache.serialize`, so resolving paths, deciding on reuse and
 // building stay one indivisible step on every platform.
 
@@ -116,15 +116,43 @@ Future<EmbeddingModel> loadActiveEmbedder({
                 'embeddingBackends: of FlutterEdgeAi.initialize(...).',
     );
   }
-  // These notices describe legacy providers only. GPU-capable providers
-  // preserve the request and report their actual accelerator after loading.
-  if (backend.cacheBackend(PreferredBackend.gpu) == PreferredBackend.cpu) {
+  final honoured = await _asLoadFailure(
+    backend.name,
+    'could not resolve accelerator capabilities for',
+    modelPath,
+    () async =>
+        Set<PreferredBackend>.unmodifiable(backend.honouredBackends(active)),
+  );
+  final reportsPlacement = honoured.contains(PreferredBackend.gpu);
+  // Preserve the existing native/web ignored-request notices for legacy
+  // providers. Accelerator-aware providers report any actual fallback below.
+  if (!reportsPlacement) {
     if (kIsWeb) {
       noticeWebEmbedderBackendIgnored(preferredBackend);
-    } else {
+    } else if (preferredBackend != null &&
+        !honoured.contains(preferredBackend)) {
       noticeEmbedderBackendIgnored(preferredBackend);
     }
   }
+
+  final cached = cache.params;
+  final automaticReuse =
+      preferredBackend == null &&
+      cached != null &&
+      cached.modelPath == modelPath &&
+      cached.tokenizerPath == tokenizerPath;
+  final key = preferredBackend == PreferredBackend.npu
+      ? PreferredBackend.npu
+      : automaticReuse
+      ? cached.activeBackend
+      : preferredBackend != null && honoured.contains(preferredBackend)
+      ? preferredBackend
+      : reportsPlacement && preferredBackend == null
+      ? null
+      : PreferredBackend.cpu;
+  // Media widening of an automatic request must preserve the accelerator
+  // already chosen, including NPU bundles that refuse an automatic load.
+  final buildBackend = automaticReuse ? cached.activeBackend : preferredBackend;
 
   // Steps 2–3: the cache decides — reuse, or what to build (widened media) —
   // and, for a build, the backend describes the pass BEFORE the cached
@@ -137,7 +165,7 @@ Future<EmbeddingModel> loadActiveEmbedder({
   final requested = ActiveEmbedderParams(
     modelPath: modelPath,
     tokenizerPath: tokenizerPath,
-    preferredBackend: backend.cacheBackend(preferredBackend),
+    preferredBackend: key,
     normalizeBackend: false,
     media: {
       if (supportImage) EmbeddingModality.image,
@@ -159,7 +187,7 @@ Future<EmbeddingModel> loadActiveEmbedder({
         maxTokens: 0,
         modelPath: build.modelPath,
         tokenizerPath: build.tokenizerPath,
-        preferredBackend: preferredBackend,
+        preferredBackend: buildBackend,
         supportImage: build.media.contains(EmbeddingModality.image),
         supportAudio: build.media.contains(EmbeddingModality.audio),
       );
@@ -174,6 +202,9 @@ Future<EmbeddingModel> loadActiveEmbedder({
   final reused = decision.reuse;
   if (reused != null) {
     noticeEmbedderNpuNotApplied(preferredBackend, reused.activeBackend);
+    if (reportsPlacement) {
+      noticeEmbedderBackendFallback(preferredBackend, reused.activeBackend);
+    }
     return reused;
   }
   final build = decision.build;
@@ -191,6 +222,7 @@ Future<EmbeddingModel> loadActiveEmbedder({
     final EmbeddingModel model = await CommonEmbeddingModel.start(
       descriptor,
       declaredMedia: build.media,
+      requireReportedBackend: reportsPlacement,
       label: modelPath,
       installedFiles: [
         for (final file in active.files)
@@ -213,8 +245,20 @@ Future<EmbeddingModel> loadActiveEmbedder({
 
     // Core owns the lifecycle: the cache tracks the model, forgets it when it
     // closes (identity-guarded) and records what it was built from.
-    await cache.adopt(model, build);
+    final recorded = reportsPlacement && key != PreferredBackend.npu
+        ? ActiveEmbedderParams(
+            modelPath: build.modelPath,
+            tokenizerPath: build.tokenizerPath,
+            preferredBackend: model.activeBackend,
+            normalizeBackend: false,
+            media: build.media,
+          )
+        : build;
+    await cache.adopt(model, recorded);
     noticeEmbedderNpuNotApplied(preferredBackend, model.activeBackend);
+    if (reportsPlacement) {
+      noticeEmbedderBackendFallback(preferredBackend, model.activeBackend);
+    }
     return model;
   } catch (_) {
     // FIX #170: leave no bookkeeping behind, so a retry is a fresh decision

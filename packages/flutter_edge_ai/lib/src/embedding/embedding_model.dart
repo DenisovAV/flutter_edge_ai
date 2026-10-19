@@ -41,7 +41,7 @@ abstract base class EmbeddingModel {
   /// Longest input in tokens — task prefix, BOS and EOS included — as the
   /// loaded engine can accept it, including any configured context or batch
   /// limit. Null when the engine cannot establish a limit. Longer inputs fail with `EmbeddingInputTooLongException`; they
-  /// are never truncated.
+  /// are never truncated. Null does not mean unlimited.
   int? get maxInputTokens => null;
 
   /// Backend this embedder actually uses, when known — the counterpart of
@@ -49,11 +49,13 @@ abstract base class EmbeddingModel {
   /// `getActiveEmbedder(preferredBackend:)` that survives a release build.
   ///
   /// Providers report the loaded accelerator. CPU-only LiteRT and ONNX
-  /// providers answer CPU; EmbeddingGemma 2 per-SoC `.litertlm` bundles can
+  /// providers answer CPU: LiteRT's int4 GPU delegate returns all-zero
+  /// vectors, and native ONNX uses no GPU execution provider.
+  /// EmbeddingGemma 2 per-SoC `.litertlm` bundles can
   /// answer NPU. GPU-capable providers can report GPU after loading.
   ///
   /// On web, EmbeddingGemma 2 `.litertlm` reports GPU or refuses to load.
-  /// A runtime that does not report its selection leaves this null. Treat
+  /// LiteRT.js and ONNX web do not report their selection and leave this null. Treat
   /// null as unknown, never as CPU.
   PreferredBackend? get activeBackend => null;
 

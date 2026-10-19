@@ -304,7 +304,7 @@ class ActiveModelParams {
 /// to `embed`, not a property of the model.
 @immutable
 class ActiveEmbedderParams {
-  /// Internal cache identity. The loader supplies the selected provider's
+  /// Internal cache identity. The loader supplies core's accelerator
   /// key with [normalizeBackend] false; direct legacy users keep the old
   /// CPU/NPU normalisation by default. Empty paths never identify a model.
   ActiveEmbedderParams({
@@ -342,20 +342,20 @@ class ActiveEmbedderParams {
   /// the model has a text tower, so it is never listed here.
   final Set<EmbeddingModality> media;
 
-  /// The provider-normalised request key, not the runtime's answer.
-  /// Null can represent automatic selection for a provider that honours it.
+  /// Core's accelerator key: the loaded backend for an accelerator-aware
+  /// provider, except that an NPU request always retains a distinct NPU key.
+  /// Null represents an automatic selection whose placement is not yet known.
   /// Read EmbeddingModel.activeBackend for the loaded accelerator.
   final PreferredBackend? activeBackend;
 
-  /// Legacy default; selected providers can supply a different cache key.
+  /// Legacy CPU/NPU normalisation for direct users of this value type.
   static PreferredBackend _resolvedBackend(PreferredBackend? requested) =>
       requested == PreferredBackend.npu
       ? PreferredBackend.npu
       : PreferredBackend.cpu;
 
   /// Name of the first field that differs from [other], or null when the cached
-  /// embedder can be reused. No normalisation step to forget: the constructor
-  /// already did it.
+  /// identity matches. Media coverage is checked separately by [canServe].
   String? firstDifference(ActiveEmbedderParams other) {
     if (modelPath != other.modelPath) return 'modelPath';
     if (tokenizerPath != other.tokenizerPath) return 'tokenizerPath';
@@ -383,8 +383,8 @@ class ActiveEmbedderParams {
   /// "ignored" here: whether it ran is the backend's answer, read from the
   /// built model's `activeBackend` (`noticeEmbedderNpuNotApplied`).
   ///
-  /// Derived from [_resolvedBackend] rather than repeating the constant, so
-  /// the fact still has exactly one site.
+  /// Only for legacy notices; provider capabilities and loaded placement
+  /// determine the shared loader's cache key.
   static bool isIgnoredBackend(PreferredBackend? requested) =>
       requested != null && _resolvedBackend(requested) != requested;
 
@@ -397,11 +397,8 @@ class ActiveEmbedderParams {
 
   /// The same three fields [firstDifference] compares, because `==` delegates
   /// to it — so a fourth field goes in BOTH places, not "both" of `==` and
-  /// [firstDifference]. And if [firstDifference] ever normalises its inputs, as
-  /// [ActiveModelParams.firstDifference] does, hash the normalised values too,
-  /// or two objects would compare equal with different hashes and break every
-  /// `Map` and `Set` holding them. This one is safe today only because it
-  /// normalises in the constructor instead.
+  /// [firstDifference]. Core resolves automatic reuse and capabilities before
+  /// comparing these values; equality itself does not choose an accelerator.
   @override
   int get hashCode => Object.hash(modelPath, tokenizerPath, activeBackend);
 }

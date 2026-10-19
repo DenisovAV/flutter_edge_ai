@@ -236,7 +236,6 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     bool supportImage = false,
     bool supportAudio = false,
   }) {
-
     // Serialised, because this shell resolves paths from preferences before it
     // can compare them — an await between "decide" and "record" that two
     // callers can both slip through. Moving that resolution earlier once

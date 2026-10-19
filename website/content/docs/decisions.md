@@ -28,6 +28,8 @@ that uses them gets the analyzer warning `experimental_member_use`. Add
 dependencies:
   flutter_edge_ai: ^2.5.0
   flutter_edge_ai_litertlm: ^1.16.0 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite); option scoring
+  # flutter_edge_ai_embeddings: ^2.3.0 # for a .tflite or ONNX embedder (EmbeddingGemma 1,
+  #   Gecko, ...): its tokenizer, registered with embeddingTokenizers: [GemmaEmbeddingTokenizers()]
 ```
 
 Any embedding model works: `EmbeddingModel.createDecider` is implemented once in
@@ -138,8 +140,8 @@ unless the decider was calibrated on held-out labelled requests
 (`EmbeddingDeciderCalibration.fromLabelled`), which fits a softmax temperature. One
 formula decodes every method's raw scores: `softmax(score / T)` over the
 candidates. `confidence` is Jev's spread measure, `(N · pmax − 1) / (N − 1)`:
-0 for a uniform distribution, 1 when one option takes everything. It is not an
-accuracy.
+0 for a uniform distribution, 1 when one option takes everything, and null
+with fewer than two candidates. It is not an accuracy.
 
 ## Calibration: when to say "none of these"
 
@@ -195,7 +197,7 @@ English, one-sentence requests.
 | 2–20 options, linear, cross-fit, 10 examples | 90–94 % of in-scope answered, ≤ 0.6 % error on them, 92–99 % of out-of-subset and 98–99.8 % of CLINC out-of-scope refused |
 | 150 options, linear, cross-fit, 5 / 10 / 30 examples | out-of-scope refused 89 / 90 / 94 %; error on answered 6.0 / 3.8 / 3.1 % |
 | Linear, fixed cosine 0.875, 2–20 options, 5–10 examples | about as good as the cross-fit for this file and prompt |
-| Tiny Island (the example app): 184 actions, centroid, 5 examples each; 144 held-out paraphrases (141 English, 3 German) and 30 out-of-scope requests; EmbeddingGemma 2 text 270m, macOS CPU | cross-fit: 93.8 % answered, 3.0 % error on them, 30 of 30 out-of-scope refused. `fromLabelled(maxError: 0.05)`, two folds: 98.6 / 100 % answered, 4.2 / 4.2 % error (6 of 143 answers wrong over both), 30 of 30 refused; `linear` gave the same answers and adds 15 s to the fit |
+| Tiny Island (the example app): 184 actions, centroid, a description and 4 examples each; 144 held-out paraphrases (141 English, 3 German) and 30 out-of-scope requests; EmbeddingGemma 2 text 270m, macOS CPU | cross-fit: 93.8 % answered, 3.0 % error on them, 30 of 30 out-of-scope refused. `fromLabelled(maxError: 0.05)`, two folds: 98.6 / 100 % answered, 4.2 / 4.2 % error (6 of 143 answers wrong over both), 30 of 30 refused; `linear` gave the same answers and adds 15 s to the fit |
 
 Which inputs are answered and refused depends only on the abstain signal and
 its threshold, the same for both methods; the error on the answered ones was
@@ -435,10 +437,13 @@ cancelled by then never loads the model again; one cancelled while the model
 loads has its answer dropped), and when the embedding returns: an embedding
 already sent is not interrupted, and its vector is dropped.
 
-A decider of your own, or a test fake, `extends Decider` (an abstract base
-class) and implements `decide(DeciderRequest request)`, `capabilities`,
-`options`, `isClosed` and `close()`; `toArtifact()` defaults to throwing
-`DeciderUnsupportedException`. `choose` is core's and cannot be overridden:
+A decider of your own, or a test fake, is a `final class … extends Decider`
+(`Decider` is an abstract base class) and implements
+`decide(DeciderRequest request)`, `capabilities`, `options`, `isClosed` and
+`close()`; `toArtifact()` defaults to throwing `DeciderUnsupportedException`.
+Core does not check `isClosed` for you: `decide`
+throws `StateError` once the decider is closed, and fails with
+`DeciderCancelledException` when `close()` lands while it runs. `choose` is core's (`@nonVirtual`; do not override it):
 it checks every request against `capabilities` — `among` without
 `supportsAmong`, context without `supportsContext`, an input modality not in
 `modalities` (each a `DeciderUnsupportedException`), unknown `among` ids, a
@@ -599,4 +604,6 @@ questions only: `noul` and `score` throw `ArgumentError`.
 | `createDecider`, `choose` or `chooseAll` cancelled; a `choose` running when its decider is closed | `DeciderCancelledException` |
 | A vector that is not finite or has the wrong length; an option whose inputs cancel out; `choose` after `close` | `StateError` |
 
-Every error arrives as a failed future.
+Every error of a method that returns a future arrives as a failed future;
+`toArtifact()`, the `DeciderOption` constructor, `DeciderOption.fromJevChoice`
+and the `DeciderAnswer` constructor throw synchronously.

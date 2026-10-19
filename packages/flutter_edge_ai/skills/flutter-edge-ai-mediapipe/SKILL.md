@@ -49,7 +49,7 @@ use_frameworks! :linkage => :static
 
 With Swift Package Manager, also set **iOS Deployment Target** to 16.0 on the Runner target in Xcode. This package ships no Swift package manifest, so the app gets an `ios/Podfile` either way.
 
-Core and the other engines build from iOS 15.0. If the app does not use `.task` models, leave this package out and stay on 15.
+Core and the other engines build from iOS 15.0, except `flutter_edge_ai_llama`, which needs 16.4. If the app does not use `.task` models, leave this package out and stay on 15.
 
 Large models also need **Extended Virtual Addressing**, **Increased Memory Limit** and **Increased Debugging Memory Limit**, added in Xcode under **Signing & Capabilities**, or the app is killed for memory.
 

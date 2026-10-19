@@ -775,8 +775,9 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
     _log('📋 Using Modern API with active inference model...');
 
     final startInit = DateTime.now();
-    final inferenceModel = await legacy.FlutterEdgeAiPlugin.instance
-        .createModel(modelType: legacy.ModelType.gemmaIt, maxTokens: 512);
+    final inferenceModel = await legacy.FlutterEdgeAi.getActiveModel(
+      maxTokens: 512,
+    );
     final initDuration = DateTime.now().difference(startInit);
     _log('✅ Model initialized in ${initDuration.inMilliseconds}ms');
 
@@ -1216,8 +1217,9 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
       _currentTestIndex++;
       _log('▶️  [$_currentTestIndex/$_totalTests]   ▶️ Run Inference');
       _log('  🔧 Creating model...');
-      final inferenceModel1 = await legacy.FlutterEdgeAiPlugin.instance
-          .createModel(modelType: legacy.ModelType.gemmaIt, maxTokens: 512);
+      final inferenceModel1 = await legacy.FlutterEdgeAi.getActiveModel(
+        maxTokens: 512,
+      );
       _log('  ✅ Model created');
       _log('  🔧 Creating session...');
       final session1 = await inferenceModel1.createSession();
@@ -1442,8 +1444,9 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
 
         _currentTestIndex++;
         _log('▶️  [$_currentTestIndex/$_totalTests]   ▶️ Run Inference');
-        final inferenceModel3 = await legacy.FlutterEdgeAiPlugin.instance
-            .createModel(modelType: legacy.ModelType.gemmaIt, maxTokens: 512);
+        final inferenceModel3 = await legacy.FlutterEdgeAi.getActiveModel(
+          maxTokens: 512,
+        );
         final session3 = await inferenceModel3.createSession();
         await session3.addQueryChunk(
           const legacy.Message(
@@ -1611,8 +1614,9 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
 
       _currentTestIndex++;
       _log('▶️  [$_currentTestIndex/$_totalTests]   ▶️ Run Inference');
-      final inferenceModel5 = await legacy.FlutterEdgeAiPlugin.instance
-          .createModel(modelType: legacy.ModelType.gemmaIt, maxTokens: 512);
+      final inferenceModel5 = await legacy.FlutterEdgeAi.getActiveModel(
+        maxTokens: 512,
+      );
       final session5 = await inferenceModel5.createSession();
       await session5.addQueryChunk(
         const legacy.Message(

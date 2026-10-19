@@ -29,6 +29,7 @@ export 'src/bundle/litertlm_bundle_reader_stub.dart'
     if (dart.library.ffi) 'src/bundle/litertlm_bundle_reader.dart'
     show readLiteRtLmBundleInfo;
 export 'src/litert_lm_load_errors.dart';
+export 'src/litert_lm_log_level.dart';
 
 // LiteRt interpreter FFI (arbitrary `.tflite` models) — used by
 // flutter_edge_ai_speech. `dart.library.ffi`-only;

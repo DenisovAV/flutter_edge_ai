@@ -12,6 +12,7 @@ import 'ffi/ffi_inference_model.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_vendor_host.dart';
 import 'litert_lm_engine_host.dart';
+import 'litert_lm_log_level.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 
@@ -113,10 +114,17 @@ encoderInitArgs(
 
 /// LiteRT-LM (.litertlm) inference engine. Pure factory: builds and returns a
 /// bare [InferenceModel]; core owns the singleton lifecycle and registers its
-/// reset via [InferenceModel.addCloseListener] (added in a later task).
+/// reset via [InferenceModel.addCloseListener].
+///
+/// A [MultiModelEngine]: the models it builds are independent, so
+/// `FlutterEdgeAi.openModel` can keep several open at once. NPU engine
+/// creations run one at a time across all of them.
 class LiteRtLmEngine
-    implements InferenceEngineProvider, HuggingFaceResolverSource {
-  const LiteRtLmEngine({this.backendFallback = true});
+    implements
+        InferenceEngineProvider,
+        HuggingFaceResolverSource,
+        MultiModelEngine {
+  const LiteRtLmEngine({this.backendFallback = true, this.nativeLogLevel});
 
   /// Whether a model that fails to load on its backend is tried on the next
   /// one: npu → gpu → cpu, gpu → cpu (the default).
@@ -134,6 +142,12 @@ class LiteRtLmEngine
   /// and the CPU cannot run it. The vision and audio encoders never fall back.
   /// `InferenceModel.activeBackend` names what ran in both modes.
   final bool backendFallback;
+
+  /// The minimum severity LiteRT-LM's native library writes to stderr; null
+  /// keeps LiteRT-LM's own default. Set before every engine this one creates,
+  /// on Android, iOS, macOS, Linux and Windows. The level is process-wide, so
+  /// engines with different values override each other.
+  final LiteRtLmLogLevel? nativeLogLevel;
 
   @override
   String get name => 'LiteRT-LM';
@@ -324,6 +338,7 @@ class LiteRtLmEngine
               enableSpeculativeDecoding: config.enableSpeculativeDecoding,
               activationDataType: args.activationDataType,
               npuDispatch: npuDispatch,
+              nativeLogLevel: nativeLogLevel,
             );
           } on LiteRtLmEngineCreateException catch (e, stackTrace) {
             final target = plan.npuTarget;

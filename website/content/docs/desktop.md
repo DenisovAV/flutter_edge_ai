@@ -379,18 +379,44 @@ Sessions are cheap to create/destroy. The expensive part is `engine_create`
 (2–10 s depending on backend and model size), which happens once when the model is
 first opened.
 
-### Why not "one model per chat"?
+### Several models at once
 
-Upstream LiteRT-LM keeps `LiteRtEnvironment` as a **process singleton** for GPU
-paths. Once the env is initialized with the first model's settings (`cache_dir`,
-backend, capabilities), those become process-fixed. Recreating the engine with
-different settings causes GPU-stack conflicts (notably `wgpu::Instance already set`
-from the WebGpu sampler binary on Linux/Windows).
+`getActiveModel` gives the one active model: cached, and rebuilt (the previous
+one closed) when a runtime parameter or the active model changes. To hold
+several models at once, such as one file on CPU and on GPU, or two files, use
+`FlutterEdgeAi.openModel` (`flutter_edge_ai` 2.5.0) with an engine that
+supports it: `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0), on mobile
+and desktop.
 
-`flutter_edge_ai_litertlm` avoids this by reusing the same `InferenceModel` when params match, and
-by disabling GPU sampler preload on Linux (CPU-sampler fallback) so runtime model
-swap works. To swap models at runtime, call `model.close()` first, then
-`getActiveModel(...)` again. Switching backend (CPU ↔ GPU) works the same way.
+```dart
+final spec = (await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm,
+).fromFile(path).install(activate: false)).spec;
+
+final cpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.cpu);
+final gpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.gpu);
+// ... generate on either ...
+await gpu.close();
+await cpu.close();
+```
+
+- Each open model holds its own weights and KV cache. The caller closes it:
+  the plugin has no memory policy, so two large models can exhaust RAM.
+- Every model in a process shares LiteRT-LM's process-wide environment
+  (`cache_dir` and the rest), and `openModel` uses the engine cache directory
+  `getActiveModel` uses.
+- An opened model is never cached: a `getActiveModel` rebuild leaves it open,
+  and closing it leaves the active model alone.
+- `install(activate: false)` registers the file without making it the active
+  model. Model ids are file basenames, so two files with the same name are one
+  model.
+- Linux: two GPU engines in one process are not verified. LiteRT-LM's WebGPU
+  sampler keeps a process-wide `wgpu::Instance` (`wgpu::Instance already set`
+  when the environment is created again with other settings).
+
+To swap the active model, call `model.close()` first, then
+`getActiveModel(...)` again. Switching its backend (CPU ↔ GPU) works the same way.
 
 ## Known limitations
 

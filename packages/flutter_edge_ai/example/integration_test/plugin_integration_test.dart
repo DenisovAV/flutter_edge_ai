@@ -14,10 +14,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('getPlatformVersion test', (tester) async {
-    final FlutterEdgeAiPlugin gemma = FlutterEdgeAiPlugin.instance;
-    final InferenceModel model = await gemma.createModel(
-      modelType: ModelType.general,
-    );
+    final InferenceModel model = await FlutterEdgeAi.getActiveModel();
     final InferenceModelSession session = await model.createSession();
     final String response = await session.getResponse();
     // The version string depends on the host platform running the test, so

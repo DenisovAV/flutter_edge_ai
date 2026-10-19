@@ -273,7 +273,15 @@ class InferenceInstallationBuilder {
   /// new file is active (or at the next start), never a file the app
   /// installed with `fromFile`; a download that would land on such a file
   /// throws a [ModelStorageException] instead.
-  Future<InferenceInstallation> install() async {
+  ///
+  /// With [activate] false the file is installed or registered as usual, but
+  /// it does not become the active model: `activeModelSpec` stays as it was,
+  /// and the returned [InferenceInstallation.spec] is what
+  /// `FlutterEdgeAi.openModel` takes. Copies an install replaced are then
+  /// released at the next start rather than now. Model ids are file
+  /// basenames ([InferenceInstallation.modelId]), so two files with the same
+  /// basename are one model.
+  Future<InferenceInstallation> install({bool activate = true}) async {
     // Check cancellation before starting
     _cancelToken?.throwIfCancelled();
 
@@ -340,6 +348,7 @@ class InferenceInstallationBuilder {
       if (r.files != null) {
         return _installDirectory(
           r,
+          activate: activate,
           modelType: resolvedModelType ?? _modelType,
           runtime: resolvedRuntime,
           notes: resolvedNotes,
@@ -378,7 +387,7 @@ class InferenceInstallationBuilder {
         fileType: _fileType,
       );
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      await activateInstalledModel(manager, spec);
+      if (activate) await activateInstalledModel(manager, spec);
       edgeAiLog('✅ Built-in model set as active: ${spec.name}');
       return InferenceInstallation(
         spec: spec,
@@ -410,7 +419,7 @@ class InferenceInstallationBuilder {
         fileType: _fileType,
       );
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      await activateInstalledModel(manager, spec);
+      if (activate) await activateInstalledModel(manager, spec);
       edgeAiLog(
         '✅ ONNX web model set as active (Transformers.js owns the weights): '
         '${spec.name}',
@@ -443,10 +452,15 @@ class InferenceInstallationBuilder {
 
     // AUTO-SET as active inference model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
-    await activateInstalledModel(manager, spec);
-    await release.run(manager, spec);
+    if (activate) {
+      await activateInstalledModel(manager, spec);
+      await release.run(manager, spec);
+    }
 
-    edgeAiLog('✅ Inference model installed and set as active: ${spec.name}');
+    edgeAiLog(
+      '✅ Inference model installed${activate ? ' and set as active' : ''}: '
+      '${spec.name}',
+    );
 
     return InferenceInstallation(
       spec: spec,
@@ -466,6 +480,7 @@ class InferenceInstallationBuilder {
   /// exactly that directory.
   Future<InferenceInstallation> _installDirectory(
     ResolvedHfModel r, {
+    required bool activate,
     required ModelType modelType,
     required ModelRuntimeDefaults? runtime,
     required List<String> notes,
@@ -600,9 +615,14 @@ class InferenceInstallationBuilder {
     );
 
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
-    await activateInstalledModel(manager, spec);
-    await release.run(manager, spec);
-    edgeAiLog('✅ ONNX directory model installed and set as active: $modelId');
+    if (activate) {
+      await activateInstalledModel(manager, spec);
+      await release.run(manager, spec);
+    }
+    edgeAiLog(
+      '✅ ONNX directory model installed${activate ? ' and set as active' : ''}: '
+      '$modelId',
+    );
 
     return InferenceInstallation(spec: spec, runtime: runtime, notes: notes);
   }

@@ -1,3 +1,6 @@
+## 2.5.0
+- `FlutterEdgeAi.openModel`: several caller-owned models at once; `FlutterEdgeAiPlugin.createModel` deprecated.
+
 ## 2.4.1
 - Android NPU: one vendor's dispatch per load; the manifest declares Google Tensor's runtime libraries.
 - Tool calls: a raw Gemma 4 call runs with typed arguments or not at all; one-chunk tagged calls parse.

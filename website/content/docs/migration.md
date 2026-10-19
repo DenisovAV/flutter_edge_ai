@@ -1,6 +1,6 @@
 ---
 title: Migration
-description: Upgrade to flutter_edge_ai_agent 0.4 (notifications are opt-in), Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to Flutter Edge AI 2.5 (openModel, createModel deprecated), flutter_edge_ai_agent 0.4 (notifications are opt-in), Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -38,6 +38,19 @@ refused before it runs when its date is partial (a `day` without `year` and
 passed today moves to tomorrow at the same wall-clock time, across a clock
 change too. The mail and SMS intents write a space as `%20` instead of `+`.
 See [Agent → Setup](/docs/agent#setup).
+
+## flutter_edge_ai 2.5.0: `FlutterEdgeAiPlugin.createModel` is deprecated
+
+`FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
+deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
+`modelType` and `fileType` and returned the active model, which is what
+`FlutterEdgeAi.getActiveModel()` returns. The two ways to get a model are on
+`FlutterEdgeAi`:
+
+| Before | After |
+|---|---|
+| `FlutterEdgeAiPlugin.instance.createModel(modelType: …, maxTokens: …)` | `FlutterEdgeAi.getActiveModel(maxTokens: …)` |
+| several models through `src/` imports | `FlutterEdgeAi.openModel(spec, …)` on a spec from `install(activate: false)`, with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0) |
 
 ## flutter_edge_ai 2.4.0 / flutter_edge_ai_litertlm 1.14.0: backends follow the model file
 

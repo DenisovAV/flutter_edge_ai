@@ -60,6 +60,7 @@ class _FakeHost extends LiteRtLmEngineHost {
 
   /// The NPU dispatch handed to each attempt, in order (null for gpu/cpu).
   final npuDispatches = <NpuDispatch?>[];
+  final nativeLogLevels = <LiteRtLmLogLevel?>[];
 
   @override
   Future<String> cacheDir() async => Directory.systemTemp.path;
@@ -105,7 +106,9 @@ class _FakeHost extends LiteRtLmEngineHost {
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
     required NpuDispatch? npuDispatch,
+    LiteRtLmLogLevel? nativeLogLevel,
   }) async {
+    nativeLogLevels.add(nativeLogLevel);
     attempts.add((
       backend: backend,
       visionBackend: visionBackend,
@@ -198,21 +201,26 @@ void main() {
     bool supportImage = false,
     bool supportAudio = false,
     bool backendFallback = true,
-  }) => LiteRtLmEngine(backendFallback: backendFallback).createModel(
-    InferenceModelSpec(
-      name: 'test',
-      modelSource: FileSource(path),
-      modelType: ModelType.gemmaIt,
-      fileType: ModelFileType.litertlm,
-    ),
-    RuntimeConfig(
-      maxTokens: 1024,
-      modelPath: path,
-      preferredBackend: preferredBackend,
-      supportImage: supportImage,
-      supportAudio: supportAudio,
-    ),
-  );
+    LiteRtLmLogLevel? nativeLogLevel,
+  }) =>
+      LiteRtLmEngine(
+        backendFallback: backendFallback,
+        nativeLogLevel: nativeLogLevel,
+      ).createModel(
+        InferenceModelSpec(
+          name: 'test',
+          modelSource: FileSource(path),
+          modelType: ModelType.gemmaIt,
+          fileType: ModelFileType.litertlm,
+        ),
+        RuntimeConfig(
+          maxTokens: 1024,
+          modelPath: path,
+          preferredBackend: preferredBackend,
+          supportImage: supportImage,
+          supportAudio: supportAudio,
+        ),
+      );
 
   Future<List<String>> printedBy(Future<void> Function() body) async {
     final printed = <String>[];
@@ -231,6 +239,19 @@ void main() {
     for (final line in printed)
       if (line.startsWith('[flutter_edge_ai] WARNING')) line,
   ];
+
+  test('LiteRtLmEngine keeps several models open (MultiModelEngine)', () {
+    expect(const LiteRtLmEngine(), isA<MultiModelEngine>());
+  });
+
+  test('nativeLogLevel reaches every attempt; unset stays null', () async {
+    final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));
+    final quiet = await load(path, nativeLogLevel: LiteRtLmLogLevel.silent);
+    final plain = await load(path);
+    expect(host.nativeLogLevels, [LiteRtLmLogLevel.silent, null]);
+    await quiet.close();
+    await plain.close();
+  });
 
   test(
     "the plan's text backends are the ones the client is asked for",

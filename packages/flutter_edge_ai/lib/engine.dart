@@ -17,6 +17,7 @@ export 'src/registry/embedding_tokenizer_registry.dart'
 export 'src/registry/skill_executor_registry.dart' show SkillExecutorRegistry;
 export 'src/registry/hugging_face_resolver_source.dart'
     show HuggingFaceResolverSource;
+export 'src/registry/multi_model_engine.dart' show MultiModelEngine;
 export 'src/registry/runtime_config.dart' show RuntimeConfig;
 
 // Lifecycle and logging.

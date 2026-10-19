@@ -14,6 +14,10 @@ import 'package:flutter_edge_ai/src/infrastructure/web_download_service_stub.dar
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_download_service.dart';
 import 'package:flutter_edge_ai/src/model.dart';
 import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
+import 'package:flutter_edge_ai/src/registry/multi_model_engine.dart'
+    show MultiModelEngine;
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart'
+    show ActiveModelParams;
 import 'package:flutter_edge_ai/src/registry/embedding_registry.dart';
 import 'package:flutter_edge_ai/src/registry/stt_registry.dart';
 import 'package:flutter_edge_ai/src/registry/tts_registry.dart';
@@ -454,26 +458,135 @@ class FlutterEdgeAi {
       );
     }
 
+    final merged = _mergeModelDefaults(
+      'getActiveModel',
+      defaults: defaults,
+      maxTokens: maxTokens,
+      preferredBackend: preferredBackend,
+      supportImage: supportImage,
+      supportAudio: supportAudio,
+    );
+
+    // Create InferenceModel using identity from spec + runtime params
+    return await FlutterEdgeAiPlugin.instance.obtainActiveModel(
+      modelType: activeSpec.modelType,
+      fileType: activeSpec.fileType,
+      maxTokens: merged.maxTokens,
+      preferredBackend: merged.preferredBackend,
+      preferredVisionBackend: preferredVisionBackend,
+      preferredAudioBackend: preferredAudioBackend,
+      supportImage: merged.supportImage,
+      supportAudio: merged.supportAudio,
+      maxNumImages: maxNumImages,
+      multimodalOrder: multimodalOrder,
+      enableSpeculativeDecoding: enableSpeculativeDecoding,
+      activationDataType: activationDataType,
+      maxConcurrentSessions: maxConcurrentSessions,
+    );
+  }
+
+  /// Opens a new model for [spec] that the caller owns, next to the active
+  /// model and to other opened ones. Mobile and desktop only.
+  ///
+  /// [getActiveModel] gives the one active model: cached, and rebuilt when a
+  /// parameter changes. [openModel] builds a new model on every call. It is
+  /// never cached, a [getActiveModel] rebuild never touches it, and closing it
+  /// leaves every other model open. Close it with [InferenceModel.close] when
+  /// done: the plugin has no memory policy, and each open model holds its own
+  /// weights and context window.
+  ///
+  /// [spec] must be installed. Register a file without making it the active
+  /// model with `installModel(…).fromFile(path).install(activate: false)`, and
+  /// pass the returned `InferenceInstallation.spec`.
+  ///
+  /// The engine that runs [spec] must implement [MultiModelEngine]
+  /// (`LiteRtLmEngine` does); otherwise this throws [UnsupportedError] before
+  /// anything is loaded. Every open model in a process shares LiteRT-LM's
+  /// process-wide environment and the engine cache directory
+  /// [getActiveModel] uses. A model's sampler is fixed by its first
+  /// generation (LiteRT-LM#2080), so sessions sharing one model should use
+  /// the same sampling.
+  ///
+  /// The parameters mean what they mean on [getActiveModel], with the same
+  /// precedence over [defaults].
+  ///
+  /// Throws [UnsupportedError] on web and for an engine without
+  /// [MultiModelEngine], and an `Exception` when [spec] is not installed.
+  static Future<InferenceModel> openModel(
+    InferenceModelSpec spec, {
+    ModelRuntimeDefaults? defaults,
+    int? maxTokens,
+    PreferredBackend? preferredBackend,
+    PreferredBackend? preferredVisionBackend,
+    PreferredBackend? preferredAudioBackend,
+    bool? supportImage,
+    bool? supportAudio,
+    int? maxNumImages,
+    MultimodalOrder? multimodalOrder,
+    bool? enableSpeculativeDecoding,
+    ActivationDataType? activationDataType,
+    int? maxConcurrentSessions,
+  }) async {
+    final merged = _mergeModelDefaults(
+      'openModel',
+      defaults: defaults,
+      maxTokens: maxTokens,
+      preferredBackend: preferredBackend,
+      supportImage: supportImage,
+      supportAudio: supportAudio,
+    );
+    return FlutterEdgeAiPlugin.instance.openModel(
+      spec,
+      ActiveModelParams(
+        maxTokens: merged.maxTokens,
+        preferredBackend: merged.preferredBackend,
+        preferredVisionBackend: preferredVisionBackend,
+        preferredAudioBackend: preferredAudioBackend,
+        supportImage: merged.supportImage,
+        supportAudio: merged.supportAudio,
+        maxNumImages: maxNumImages,
+        multimodalOrder:
+            multimodalOrder ?? MultimodalOrder.forModelType(spec.modelType),
+        enableSpeculativeDecoding: enableSpeculativeDecoding,
+        activationDataType: activationDataType,
+        maxConcurrentSessions: maxConcurrentSessions,
+      ),
+    );
+  }
+
+  /// The model-level values [getActiveModel] and [openModel] build with.
+  static ({
+    int maxTokens,
+    PreferredBackend? preferredBackend,
+    bool supportImage,
+    bool supportAudio,
+  })
+  _mergeModelDefaults(
+    String caller, {
+    required ModelRuntimeDefaults? defaults,
+    required int? maxTokens,
+    required PreferredBackend? preferredBackend,
+    required bool? supportImage,
+    required bool? supportAudio,
+  }) {
     // Merge precedence: explicit argument > manifest [defaults] > SDK default.
     // maxTokens keeps its historical 1024 fallback, so an omitted arg with no
     // defaults behaves exactly as before. The .litertlm engine still clamps
     // this value downstream (clampLitertlmContextTokens) — a manifest cannot
     // set a context window the engine rejects (guards #318).
-    final effMaxTokens = mergeRuntimeDefault(
-      maxTokens,
-      defaults?.maxTokens,
-      1024,
-    );
-    final effPreferredBackend = preferredBackend ?? defaults?.preferredBackend;
-    final effSupportImage = mergeRuntimeDefault(
-      supportImage,
-      defaults?.supportImage,
-      false,
-    );
-    final effSupportAudio = mergeRuntimeDefault(
-      supportAudio,
-      defaults?.supportAudio,
-      false,
+    final merged = (
+      maxTokens: mergeRuntimeDefault(maxTokens, defaults?.maxTokens, 1024),
+      preferredBackend: preferredBackend ?? defaults?.preferredBackend,
+      supportImage: mergeRuntimeDefault(
+        supportImage,
+        defaults?.supportImage,
+        false,
+      ),
+      supportAudio: mergeRuntimeDefault(
+        supportAudio,
+        defaults?.supportAudio,
+        false,
+      ),
     );
 
     // [defaults] also carries two SESSION-level fields (thinkingDeclared,
@@ -485,28 +598,12 @@ class FlutterEdgeAi {
         (defaults.thinkingDeclared != null ||
             defaults.minOutputTokens != null)) {
       edgeAiLog(
-        '[flutter_edge_ai] getActiveModel: manifest defaults carry session-level '
-        'fields (thinkingDeclared/minOutputTokens) that getActiveModel does not apply '
+        '[flutter_edge_ai] $caller: manifest defaults carry session-level '
+        'fields (thinkingDeclared/minOutputTokens) that $caller does not apply '
         '— forward them to createSession(enableThinking:, maxOutputTokens:).',
       );
     }
-
-    // Create InferenceModel using identity from spec + runtime params
-    return await FlutterEdgeAiPlugin.instance.createModel(
-      modelType: activeSpec.modelType,
-      fileType: activeSpec.fileType,
-      maxTokens: effMaxTokens,
-      preferredBackend: effPreferredBackend,
-      preferredVisionBackend: preferredVisionBackend,
-      preferredAudioBackend: preferredAudioBackend,
-      supportImage: effSupportImage,
-      supportAudio: effSupportAudio,
-      maxNumImages: maxNumImages,
-      multimodalOrder: multimodalOrder,
-      enableSpeculativeDecoding: enableSpeculativeDecoding,
-      activationDataType: activationDataType,
-      maxConcurrentSessions: maxConcurrentSessions,
-    );
+    return merged;
   }
 
   /// The Hugging Face resolvers contributed by [engines] that implement
@@ -530,7 +627,7 @@ class FlutterEdgeAi {
     return resolvers;
   }
 
-  /// Three-tier runtime-default merge used by [getActiveModel]: an explicit
+  /// Three-tier runtime-default merge used by [getActiveModel] and [openModel]: an explicit
   /// argument wins over a manifest [ModelRuntimeDefaults] value, which wins over
   /// the SDK default. Extracted so the precedence rule is stated — and tested —
   /// in one place.

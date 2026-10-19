@@ -60,6 +60,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   /// The embedder's params live in [_embedderCache]; STT still keeps its own.
   ({String? modelPath, String? tokenizerPath})? _lastSttPaths;
 
+  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
   @override
   Future<InferenceModel> createModel({
     required ModelType modelType,

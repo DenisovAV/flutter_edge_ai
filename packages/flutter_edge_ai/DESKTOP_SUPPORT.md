@@ -294,7 +294,7 @@ Linux/Windows).
 
 The plugin avoids this by:
 
-1. Reusing the same `InferenceModel` whenever requested params match (built-in singleton in `FlutterEdgeAiDesktop.createModel`).
+1. Reusing the same `InferenceModel` whenever requested params match (the cache behind `getActiveModel`).
 2. Disabling GPU sampler preload on Linux so the upstream sampler factory falls back to a CPU sampler — eliminates the `wgpu::Instance` conflict and re-enables runtime model swap on Linux GPU.
 
 If you do need to swap models at runtime, call `model.close()` first, then
@@ -302,6 +302,14 @@ If you do need to swap models at runtime, call `model.close()` first, then
 works thanks to the CPU-sampler fallback above; on macOS it works because
 per-token sampling already runs on CPU there. Windows preloads the GPU sampler
 (see Known Limitations below), so a model swap on Windows GPU is unverified.
+
+To hold several models at once (one file on CPU and GPU, or two files), use
+`FlutterEdgeAi.openModel(spec, …)` (`flutter_edge_ai` 2.5.0) with
+`LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0), on a spec installed with
+`install(activate: false)`. Each opened model holds its own weights and KV
+cache, shares LiteRT-LM's process-wide environment and the engine cache
+directory with every other model, and is closed by the caller; the plugin has
+no memory policy. Two GPU engines in one process are not verified on Linux.
 
 ### Switching backend (CPU ↔ GPU)
 

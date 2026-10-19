@@ -875,6 +875,17 @@ Use it when another backend would be wrong rather than slow: a benchmark, an
 NPU demo, or an app that would rather say so than load gigabytes again on the
 CPU. `activeBackend` names what ran either way. The encoders never fall back.
 
+**Several models at once.** `LiteRtLmEngine` is a `MultiModelEngine`, so
+`FlutterEdgeAi.openModel(spec, …)` (`flutter_edge_ai` 2.5.0) can keep several
+of its models open, such as one file on CPU and GPU. Each holds its own weights
+and KV cache, and the app closes it. See
+[Desktop → Several models at once](https://flutteredge.ai/docs/desktop#several-models-at-once).
+
+**Native log level.** `LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)`
+sets the minimum severity LiteRT-LM writes to stderr before each engine is
+created (`litert_lm_set_min_log_level`); `silent` turns it off, and null keeps
+LiteRT-LM's default. The level is process-wide.
+
 ### Inspecting a model file
 
 `readLiteRtLmBundleInfo(path)` returns what the planner reads (native only; it

@@ -1,3 +1,6 @@
+## 1.16.0
+- Several open models at once (`FlutterEdgeAi.openModel`); `LiteRtLmEngine(nativeLogLevel:)`; require `flutter_edge_ai` ^2.5.0.
+
 ## 1.15.0
 - Google Tensor NPU on Android, opt-in with `google_tensor_npu: true` (#670).
 - A stopped turn is rewound in place, so the chat keeps earlier images and audio (#682).

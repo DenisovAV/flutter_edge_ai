@@ -21,6 +21,7 @@ import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
 import '../thinking_context.dart';
 import '../litert_lm_load_errors.dart';
+import '../litert_lm_log_level.dart';
 
 export '../litert_lm_load_errors.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
@@ -947,10 +948,33 @@ class LiteRtLmFfiClient {
   /// [activationDataType] is the C API's number (see
   /// `activationDataTypeWireValue`); null leaves the engine's own choice.
   ///
+  /// [nativeLogLevel], when set, is applied with `litert_lm_set_min_log_level`
+  /// before the engine is created.
+  ///
   /// [npuDispatch] is what an `npu` [backend] hands LiteRT-LM: the dispatch
   /// directory of the vendor `chooseNpuVendor` chose, prepared by the caller,
   /// and whether that vendor turns the HW mask update path off. Required for
   /// `npu`: the client never picks a vendor itself.
+  /// The level the last client in this isolate set, to say when another one
+  /// replaces it: LiteRT-LM keeps one level for the whole process.
+  static LiteRtLmLogLevel? _nativeLogLevel;
+
+  static void _applyNativeLogLevel(
+    LiteRtLmBindings bindings,
+    LiteRtLmLogLevel level,
+  ) {
+    final previous = _nativeLogLevel;
+    if (previous == level) return;
+    if (previous != null) {
+      edgeAiLog(
+        '[LiteRtLmFfi] nativeLogLevel ${level.name} replaces ${previous.name} '
+        'for every LiteRT-LM engine in the process',
+      );
+    }
+    bindings.litert_lm_set_min_log_level(level.nativeValue);
+    _nativeLogLevel = level;
+  }
+
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
@@ -964,6 +988,7 @@ class LiteRtLmFfiClient {
     bool? enableSpeculativeDecoding,
     int? activationDataType,
     NpuDispatch? npuDispatch,
+    LiteRtLmLogLevel? nativeLogLevel,
   }) async {
     if (backend == 'npu' && npuDispatch == null) {
       throw ArgumentError.notNull('npuDispatch');
@@ -985,6 +1010,7 @@ class LiteRtLmFfiClient {
       );
     }
     final b = _bindings!;
+    if (nativeLogLevel != null) _applyNativeLogLevel(b, nativeLogLevel);
 
     // Create engine settings
     final modelPathPtr = modelPath.toNativeUtf8();

@@ -265,6 +265,8 @@ The `.litertlm` engine sends a Gemma 4 message as images, text, then audio, as t
 
 `getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working; `model.isClosed` says so from the moment `close()` starts, and a `getActiveModel` call made meanwhile waits for the close to finish before it builds the next model. With no model installed it throws `NoActiveModelError`, a `StateError`. Load it once, then create and close sessions per conversation.
 
+For several models loaded at once (one file on CPU and GPU, or two files), use `FlutterEdgeAi.openModel(spec, …)` (2.5.0, mobile and desktop) with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0); other engines throw `UnsupportedError`. Install the file with `install(activate: false)` and pass the returned `spec`. Every call builds a new model that the app closes: it is never cached, a `getActiveModel` rebuild leaves it open, and the plugin has no memory policy.
+
 ## Backends
 
 ```dart

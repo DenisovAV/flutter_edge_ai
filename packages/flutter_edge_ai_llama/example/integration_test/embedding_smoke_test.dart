@@ -61,10 +61,16 @@ void main() {
         expect(model.maxInputTokens, 1024);
         expect(model.modalities, {edge.EmbeddingModality.text});
         if (backend != null) expect(model.activeBackend, backend);
-        expect(
-          await edge.FlutterEdgeAi.getActiveEmbedder(preferredBackend: backend),
-          same(model),
-        );
+        for (var reuse = 0; reuse < 3; reuse++) {
+          expect(
+            await edge.FlutterEdgeAi.getActiveEmbedder(
+              preferredBackend: backend,
+            ),
+            same(model),
+          );
+          expect(await edge.FlutterEdgeAi.getActiveEmbedder(), same(model));
+          expect(model.isClosed, isFalse);
+        }
 
         final query = await model.embed(
           edge.EmbeddingInput.text('How can I brew a cup of coffee?'),

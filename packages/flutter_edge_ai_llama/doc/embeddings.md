@@ -54,11 +54,16 @@ non-causal input fits one forward pass. Oversized input throws core's existing
 `EmbeddingInputTooLongException`, retaining the SDK's effective limit and exact
 count. It is never truncated; arbitrary inference errors remain engine errors.
 
-Automatic requests reuse the current embedder for the same installed model;
-explicit CPU/GPU switches replace it. The backend declares `{cpu, gpu}` through
+Automatic requests reuse the current non-NPU embedder for the same installed
+model. Repeating the GPU request that loaded a CPU fallback reuses that open
+model, including across intervening CPU/automatic calls; it does not retry GPU
+until a rebuild is needed or the model is closed. A CPU model loaded by an
+unrelated CPU/automatic request does not suppress the first explicit GPU attempt.
+Other explicit CPU/GPU switches replace the current model. The backend declares `{cpu, gpu}` through
 `honouredBackends(spec)` and reports actual loaded placement. Unknown placement
 is refused. By default an explicit GPU request can fall back to CPU with a
-release-visible core WARNING. Register `LlamaEmbeddingBackend(backendFallback:
+release-visible core WARNING once when that fallback is loaded. Reuse does not
+repeat the warning. Register `LlamaEmbeddingBackend(backendFallback:
 false)` for exactly one load attempt that fails with `EmbeddingLoadException`
 when the request cannot be verified. Model validation failures are never retried
 as GPU availability failures. Other model architectures and pooling conventions,

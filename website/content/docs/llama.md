@@ -13,9 +13,10 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the example
 
-The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+** and published llamadart **0.15.1** with typed overflow reporting
-(target 0.15.1). Both prerequisite releases must be published before this draft
-resolves from hosted dependencies. Connector CI uses Flutter 3.47.1 for reproducible checks. From the repository root:
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+** and
+published llamadart **0.15.1** with typed overflow reporting. Standalone hosted
+resolution requires core 2.5.0 publication. Connector CI uses Flutter 3.47.1
+for reproducible checks. From the repository root:
 
 ```
 cd packages/flutter_edge_ai_llama/example

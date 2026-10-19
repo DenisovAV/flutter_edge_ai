@@ -36,11 +36,16 @@ abstract base class EmbeddingBackendProvider {
   /// Pure and synchronous; no loading or platform I/O. Core calls this once
   /// per request and owns cache identity. An unsupported non-NPU request uses
   /// the legacy CPU key and receives a not-applied notice. NPU always has its
-  /// own key. Automatic requests reuse the current embedder for the same model.
+  /// own key. Automatic requests reuse only non-NPU entries for the same model.
+  /// A repeated CPU/GPU request can reuse its originating successful fallback.
   ///
-  /// The default preserves existing CPU/NPU request handling. Override for
-  /// model-dependent capabilities, for example {cpu, gpu} for native GGUF.
-  /// A provider advertising GPU must report the actual loaded accelerator in
+  /// The default preserves existing CPU/NPU request handling. CPU and NPU
+  /// membership do not change key normalization: CPU uses the CPU key and an
+  /// explicit NPU request always reserves the NPU key. GPU membership opts
+  /// into GPU keys, mandatory loaded-placement reporting, actual-placement
+  /// recording for non-NPU requests and release-visible fallback warnings.
+  /// Override for model-dependent capabilities, e.g. {cpu, gpu} for native
+  /// GGUF. A provider advertising GPU must report the loaded accelerator in
   /// EmbeddingPassInfo.activeBackend; a descriptor alone is insufficient.
   Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) => const {
     PreferredBackend.cpu,

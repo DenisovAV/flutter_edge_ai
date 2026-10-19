@@ -136,22 +136,34 @@ Future<EmbeddingModel> loadActiveEmbedder({
   }
 
   final cached = cache.params;
-  final automaticReuse =
-      preferredBackend == null &&
+  final sameModel =
       cached != null &&
       cached.modelPath == modelPath &&
       cached.tokenizerPath == tokenizerPath;
+  // Both the reserved NPU identity and actual NPU placement require an
+  // explicit NPU request. Automatic selection must not depend on a warm NPU
+  // cache; an NPU-only bundle gets the same preflight refusal as a cold load.
+  final nonNpu =
+      sameModel &&
+      cached.activeBackend != PreferredBackend.npu &&
+      cache.model?.activeBackend != PreferredBackend.npu;
+  final automaticReuse = preferredBackend == null && nonNpu;
+  // Remember a successful fallback for its originating request. Do not turn
+  // an unrelated CPU load into a reason to skip the first GPU attempt.
+  final sameRequestReuse =
+      preferredBackend != null &&
+      preferredBackend != PreferredBackend.npu &&
+      nonNpu &&
+      cache.requestedBackend == preferredBackend;
   final key = preferredBackend == PreferredBackend.npu
       ? PreferredBackend.npu
-      : automaticReuse
+      : automaticReuse || sameRequestReuse
       ? cached.activeBackend
-      : preferredBackend != null && honoured.contains(preferredBackend)
-      ? preferredBackend
-      : reportsPlacement && preferredBackend == null
-      ? null
+      : reportsPlacement && preferredBackend == PreferredBackend.gpu
+      ? PreferredBackend.gpu
       : PreferredBackend.cpu;
-  // Media widening of an automatic request must preserve the accelerator
-  // already chosen, including NPU bundles that refuse an automatic load.
+  // Automatic media widening preserves a non-NPU accelerator already chosen.
+  // An explicit request that needs a new model tries that request again.
   final buildBackend = automaticReuse ? cached.activeBackend : preferredBackend;
 
   // Steps 2–3: the cache decides — reuse, or what to build (widened media) —
@@ -176,6 +188,9 @@ Future<EmbeddingModel> loadActiveEmbedder({
   final decision = await cache.reuseOrInvalidate(
     requested,
     label: active.name,
+    allowReuse:
+        preferredBackend != null ||
+        cache.model?.activeBackend != PreferredBackend.npu,
     prepare: (build) async {
       if (verifyInstalled && !await manager.isModelInstalled(active)) {
         throw StateError(
@@ -201,9 +216,8 @@ Future<EmbeddingModel> loadActiveEmbedder({
   );
   final reused = decision.reuse;
   if (reused != null) {
-    noticeEmbedderNpuNotApplied(preferredBackend, reused.activeBackend);
-    if (reportsPlacement) {
-      noticeEmbedderBackendFallback(preferredBackend, reused.activeBackend);
+    if (!reportsPlacement) {
+      noticeEmbedderNpuNotApplied(preferredBackend, reused.activeBackend);
     }
     return reused;
   }
@@ -254,10 +268,13 @@ Future<EmbeddingModel> loadActiveEmbedder({
             media: build.media,
           )
         : build;
-    await cache.adopt(model, recorded);
-    noticeEmbedderNpuNotApplied(preferredBackend, model.activeBackend);
+    await cache.adopt(model, recorded, requestedBackend: preferredBackend);
+    // Warn when a new fallback is established, once for this loaded model.
+    // Legacy providers retain their existing debug-only notice.
     if (reportsPlacement) {
       noticeEmbedderBackendFallback(preferredBackend, model.activeBackend);
+    } else {
+      noticeEmbedderNpuNotApplied(preferredBackend, model.activeBackend);
     }
     return model;
   } catch (_) {

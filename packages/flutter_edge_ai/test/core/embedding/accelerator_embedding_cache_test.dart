@@ -91,27 +91,36 @@ void main() {
     expect(provider.configs, hasLength(1));
   });
 
-  test('GPU fallback is loud with logging disabled and CPU reuses it', () async {
-    provider.loaded = PreferredBackend.cpu;
-    edgeAiLogLevel = EdgeAiLogLevel.none;
-    final lines = <String>[];
-    await runZoned(
-      () async {
-        final model = await load(backend: PreferredBackend.gpu);
-        expect(model.activeBackend, PreferredBackend.cpu);
-        expect(await load(backend: PreferredBackend.cpu), same(model));
-        expect(await load(), same(model));
-      },
-      zoneSpecification: ZoneSpecification(
-        print: (_, _, _, line) => lines.add(line),
-      ),
-    );
-    expect(lines, [
-      '[flutter_edge_ai] WARNING: embedding preferredBackend gpu '
-          'fell back to cpu. Read EmbeddingModel.activeBackend for the backend in use.',
-    ]);
-    expect(provider.configs, hasLength(1));
-  });
+  test(
+    'GPU fallback is reused for repeated GPU and CPU/automatic requests',
+    () async {
+      provider.loaded = PreferredBackend.cpu;
+      edgeAiLogLevel = EdgeAiLogLevel.none;
+      final lines = <String>[];
+      await runZoned(
+        () async {
+          final model = await load(backend: PreferredBackend.gpu);
+          expect(model.activeBackend, PreferredBackend.cpu);
+          expect(await load(backend: PreferredBackend.gpu), same(model));
+          expect(await load(backend: PreferredBackend.gpu), same(model));
+          expect(model.isClosed, isFalse);
+          expect(await load(backend: PreferredBackend.cpu), same(model));
+          expect(await load(), same(model));
+          expect(await load(backend: PreferredBackend.gpu), same(model));
+          expect(cache.requestedBackend, PreferredBackend.gpu);
+          expect(model.isClosed, isFalse);
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => lines.add(line),
+        ),
+      );
+      expect(lines, [
+        '[flutter_edge_ai] WARNING: embedding preferredBackend gpu '
+            'fell back to cpu. Read EmbeddingModel.activeBackend for the backend in use.',
+      ]);
+      expect(provider.configs, hasLength(1));
+    },
+  );
 
   test(
     'NPU requests keep a separate key even when capabilities claim CPU only',
@@ -123,14 +132,17 @@ void main() {
       expect(npu, isNot(same(cpu)));
       expect(cpu.isClosed, isTrue);
       expect(cache.params!.activeBackend, PreferredBackend.npu);
-      expect(await load(), same(npu));
+      final automatic = await load();
+      expect(automatic, isNot(same(npu)));
+      expect(npu.isClosed, isTrue);
+      expect(provider.configs.last.preferredBackend, isNull);
       final again = await load(backend: PreferredBackend.cpu);
-      expect(again, isNot(same(npu)));
+      expect(again, same(automatic));
       expect(provider.configs, hasLength(3));
     },
   );
 
-  for (final backend in [PreferredBackend.gpu, PreferredBackend.npu]) {
+  for (final backend in [PreferredBackend.gpu]) {
     test(
       'automatic media widening retains ${backend.name} key and placement',
       () async {
@@ -147,6 +159,149 @@ void main() {
       },
     );
   }
+
+  for (final initial in [null, PreferredBackend.cpu]) {
+    test(
+      '${initial?.name ?? "automatic"} CPU load does not suppress first GPU attempt',
+      () async {
+        provider.loaded = PreferredBackend.cpu;
+        final cpu = await load(backend: initial);
+        final fallback = await load(backend: PreferredBackend.gpu);
+        expect(fallback, isNot(same(cpu)));
+        expect(cpu.isClosed, isTrue);
+        expect(provider.configs.map((c) => c.preferredBackend), [
+          initial,
+          PreferredBackend.gpu,
+        ]);
+        expect(await load(backend: PreferredBackend.gpu), same(fallback));
+        expect(provider.configs, hasLength(2));
+      },
+    );
+  }
+
+  test(
+    'closing a fallback clears its originating request and retries GPU',
+    () async {
+      provider.loaded = PreferredBackend.cpu;
+      final fallback = await load(backend: PreferredBackend.gpu);
+      await fallback.close();
+      expect(cache.requestedBackend, isNull);
+      provider.loaded = PreferredBackend.gpu;
+      final gpu = await load(backend: PreferredBackend.gpu);
+      expect(gpu, isNot(same(fallback)));
+      expect(gpu.activeBackend, PreferredBackend.gpu);
+      expect(provider.configs, hasLength(2));
+    },
+  );
+
+  test(
+    'fallback media widening retries GPU and keeps the media union',
+    () async {
+      provider.loaded = PreferredBackend.cpu;
+      final fallback = await load(backend: PreferredBackend.gpu);
+      provider.loaded = PreferredBackend.gpu;
+      final widened = await load(backend: PreferredBackend.gpu, image: true);
+      expect(fallback.isClosed, isTrue);
+      expect(widened.activeBackend, PreferredBackend.gpu);
+      expect(widened.modalities, contains(EmbeddingModality.image));
+      expect(provider.configs.last.preferredBackend, PreferredBackend.gpu);
+      expect(await load(backend: PreferredBackend.gpu), same(widened));
+      expect(provider.configs, hasLength(2));
+    },
+  );
+
+  test(
+    'automatic selection loads CPU rather than borrowing a same-file NPU',
+    () async {
+      provider.loaded = PreferredBackend.npu;
+      final npu = await load(backend: PreferredBackend.npu);
+      provider.loaded = PreferredBackend.cpu;
+      final cpu = await load();
+      expect(cpu, isNot(same(npu)));
+      expect(npu.isClosed, isTrue);
+      expect(cpu.activeBackend, PreferredBackend.cpu);
+      expect(provider.configs.last.preferredBackend, isNull);
+      expect(cache.params!.activeBackend, PreferredBackend.cpu);
+      expect(await load(), same(cpu));
+      expect(provider.configs, hasLength(2));
+    },
+  );
+
+  test(
+    'automatic excludes actual NPU placement even under a legacy CPU key',
+    () async {
+      provider.capabilities = {PreferredBackend.cpu, PreferredBackend.npu};
+      provider.loaded = PreferredBackend.npu;
+      final npu = await load(backend: PreferredBackend.cpu);
+      expect(cache.params!.activeBackend, PreferredBackend.cpu);
+      provider.loaded = PreferredBackend.cpu;
+      final cpu = await load();
+      expect(cpu, isNot(same(npu)));
+      expect(cpu.activeBackend, PreferredBackend.cpu);
+      expect(npu.isClosed, isTrue);
+      expect(provider.configs, hasLength(2));
+    },
+  );
+
+  test(
+    'reporting provider NPU fallback warns once with debug logging disabled',
+    () async {
+      provider.loaded = PreferredBackend.cpu;
+      edgeAiLogLevel = EdgeAiLogLevel.none;
+      final lines = <String>[];
+      final debugLines = <String>[];
+      final original = debugPrint;
+      debugPrint = (String? line, {int? wrapWidth}) {
+        if (line != null) debugLines.add(line);
+      };
+      try {
+        await runZoned(
+          () async {
+            final fallback = await load(backend: PreferredBackend.npu);
+            expect(await load(backend: PreferredBackend.npu), same(fallback));
+          },
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, line) => lines.add(line),
+          ),
+        );
+      } finally {
+        debugPrint = original;
+      }
+      expect(lines, [
+        '[flutter_edge_ai] WARNING: embedding preferredBackend npu '
+            'fell back to cpu. Read EmbeddingModel.activeBackend for the backend in use.',
+      ]);
+      expect(debugLines, isEmpty);
+      expect(provider.configs, hasLength(1));
+    },
+  );
+
+  test(
+    'legacy placement keeps its CPU key and never emits new fallback warnings',
+    () async {
+      provider.capabilities = {PreferredBackend.cpu, PreferredBackend.npu};
+      provider.loaded = PreferredBackend.gpu;
+      provider.descriptorBackend = PreferredBackend.gpu;
+      edgeAiLogLevel = EdgeAiLogLevel.none;
+      final lines = <String>[];
+      await runZoned(
+        () async {
+          final model = await load(backend: PreferredBackend.cpu);
+          expect(model.activeBackend, PreferredBackend.gpu);
+          expect(cache.params!.activeBackend, PreferredBackend.cpu);
+          expect(await load(backend: PreferredBackend.cpu), same(model));
+          expect(await load(backend: PreferredBackend.gpu), same(model));
+          expect(await load(), same(model));
+          expect(model.isClosed, isFalse);
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => lines.add(line),
+        ),
+      );
+      expect(lines, isEmpty);
+      expect(provider.configs, hasLength(1));
+    },
+  );
 
   test(
     'capability hook throws once, wrapped with cause and before eviction',

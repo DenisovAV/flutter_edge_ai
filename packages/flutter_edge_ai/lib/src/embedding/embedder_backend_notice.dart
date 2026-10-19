@@ -77,16 +77,14 @@ void noticeWebEmbedderBackendIgnored(PreferredBackend? requested) {
   );
 }
 
-/// A supported explicit request loaded on a different accelerator. Unlike
+/// An explicit request loaded on a different accelerator. Called once after
+/// a new placement-reporting model is adopted, never on reuse. Unlike legacy
 /// ignored-request diagnostics, fallback must be visible in release builds.
 void noticeEmbedderBackendFallback(
   PreferredBackend? requested,
   PreferredBackend? active,
 ) {
-  if (requested == null ||
-      requested == active ||
-      requested == PreferredBackend.npu)
-    return;
+  if (requested == null || requested == active) return;
   // ignore: avoid_print
   print(
     '[flutter_edge_ai] WARNING: embedding preferredBackend ${requested.name} '

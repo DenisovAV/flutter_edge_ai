@@ -15,7 +15,7 @@ runtimes and stores your app uses.
   <img src="https://flutteredge.ai/images/readme-banner.png" alt="Flutter Edge AI — on-device LLMs in your Flutter app">
 </p>
 
-> **Formerly `flutter_gemma`.** Through 1.11.3 this package shipped as
+> **Formerly `flutter_gemma`.** Through 1.11.4 this package shipped as
 > `flutter_gemma`. Version 2.0 also moves RAG out of core into
 > `flutter_edge_ai_rag`, and 2.3.0 changes the embedding API. See the
 > [migration guide](MIGRATION.md).
@@ -32,7 +32,7 @@ runtimes and stores your app uses.
 - **Embeddings and on-device RAG:** text, image and audio embeddings (EmbeddingGemma 2 and 1, Gecko, ONNX models — [models](https://flutteredge.ai/docs/models)) with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.
-- **Model management:** installs from the network, assets, bundled files or local paths; Hugging Face installs in one call; retries, typed download errors, LoRA weights (MediaPipe `.task` models).
+- **Model management:** installs from the network, assets, bundled files or local paths; Hugging Face installs in one call; retries, typed download errors, LoRA weights (MediaPipe `.task` models, and GGUF models through llama.cpp on native platforms).
 - **Genkit** integration for on-device and hybrid cloud flows.
 
 ## Packages
@@ -60,7 +60,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 | LiteRT-LM (`.litertlm`) | ✅ | ✅ | ⚠️ preview ¹ | ✅ | ✅ | ✅ |
 | MediaPipe (`.task`) | ✅ | ✅ ² | ✅ | — | — | — |
 | ONNX Runtime | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| llama.cpp (`.gguf`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ ³ |
+| llama.cpp (`.gguf`) ³ | ✅ | ✅ ⁴ | ✅ | ✅ ⁴ | ✅ | ✅ |
 | Built-in AI | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
 ¹ Web `.litertlm` takes text input only — an image or audio message throws `UnsupportedError`; function calling and thinking work.
@@ -68,6 +68,8 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 ² CPU only: a GPU `.task` does not load on iOS; use a `.litertlm` for the iOS GPU.
 
 ³ Through llamadart; CI covers the CPU lifecycle — see its [qualification matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md).
+
+⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. The LiteRT-LM macOS setup below (CocoaPods, usually with Swift Package Manager off) is not qualified together with it: use separate apps. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
@@ -102,7 +104,8 @@ Then complete the platform setup below.
 ### iOS
 
 Set the deployment target to **15.0** (**16.0** if you use
-`flutter_edge_ai_mediapipe`) and link pods statically in `ios/Podfile`:
+`flutter_edge_ai_mediapipe`, **16.4** with `flutter_edge_ai_llama` ⁴) and link
+pods statically in `ios/Podfile`:
 
 ```ruby
 platform :ios, '15.0'
@@ -163,7 +166,8 @@ itself. A green build proves nothing: without the block the first model load
 fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If your app already has a `macos/Podfile` (another plugin
 needs CocoaPods), keep SPM on and just paste the block. Prefer the pubspec
 setting to `flutter config --no-enable-swift-package-manager`, which changes
-only your machine — not your teammates' or CI.
+only your machine — not your teammates' or CI. `flutter_edge_ai_llama` needs
+Swift Package Manager on instead (⁴).
 
 ```ruby
 post_install do |installer|
@@ -217,7 +221,7 @@ post_install do |installer|
         STAGER="${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh"
         if [ ! -f "${STAGER}" ]; then
           echo "[flutter_gemma] ERROR: ${STAGER} not found." >&2
-          echo "  flutter_gemma_litertlm 1.6.2+ installs it there from its build hook." >&2
+          echo "  flutter_edge_ai_litertlm installs it there from its build hook." >&2
           echo "  Upgrade the package, then: flutter clean && flutter pub get" >&2
           exit 1
         fi

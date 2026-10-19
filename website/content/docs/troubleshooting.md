@@ -324,7 +324,7 @@ if you hit it.
 ## Multimodal
 
 - Ensure the model has a vision (or audio) encoder — see [Multimodal](/docs/multimodal) and [Models](/docs/models).
-- Set `supportImage: true` (and `supportAudio: true` for audio) when creating the model.
+- Set `supportImage: true` (and `supportAudio: true` for audio) when creating the model. On MediaPipe (Android and iOS), pass `supportImage: true` to `createChat` as well, or the image is dropped.
 - Check device memory — multimodal models require more RAM.
 - **Image input crashes at model load on a GPU text backend (older releases).**
   On Metal (iOS/macOS) and WebGPU (Windows/Linux) the vision encoder's ops can't
@@ -335,7 +335,7 @@ if you hit it.
   follows the bundle: the section's `backend_constraint`, else the NPU it is
   compiled for, else CPU. Set `preferredVisionBackend`/`preferredAudioBackend`
   only where the section allows it
-  (`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint`, or
+  (`(await readLiteRtLmBundleInfo(path)).audioEncoder?.backendConstraint`, or
   `visionEncoder`); the published Gemma 4 and Gemma 3n audio encoders declare
   cpu, and a backend the section excludes is refused before the model loads.
   See [Multimodal](/docs/multimodal).
@@ -350,11 +350,15 @@ build for a platform, then cache it under `~/.cache/flutter_gemma/native/`
 1.3.0 — before that it shipped the loadables inside the package).
 
 - **The build fails with a download error or an HTTP status.** The first build of
-  each platform needs `github.com` reachable. In an air-gapped or proxied CI,
+  each platform needs `github.com` reachable; an Android build with
+  `flutter_edge_ai_onnx` also needs `repo1.maven.org`, and the `qualcomm_npu`
+  opt-in needs Maven Central (Android) or `softwarecenter.qualcomm.com` (Linux
+  arm64). In an air-gapped or proxied CI,
   copy the whole `flutter_gemma/native` cache directory from a machine that
   built the same package versions, including its hidden version-marker files —
-  a folder copied without them is discarded and fetched again. There is no
-  setting that points the build at archives you vendor yourself.
+  a folder copied without them is discarded and fetched again. Only the
+  Qualcomm NPU stack has settings that point the build at a copy you vendor
+  yourself (`qualcomm_npu_aar`, `qualcomm_npu_qairt_zip`; see [NPU](#npu)).
 - **The build fails with `CHECKSUM MISMATCH`.** The bytes served do not match
   what the package version was pinned to. Re-run once to rule out a corrupt
   transfer. If it persists, the release asset was replaced after publication —

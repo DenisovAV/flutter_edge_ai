@@ -85,7 +85,7 @@ post_install do |installer|
         STAGER="${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh"
         if [ ! -f "${STAGER}" ]; then
           echo "[flutter_gemma] ERROR: ${STAGER} not found." >&2
-          echo "  flutter_gemma_litertlm 1.6.2+ installs it there from its build hook." >&2
+          echo "  flutter_edge_ai_litertlm installs it there from its build hook." >&2
           echo "  Upgrade the package, then: flutter clean && flutter pub get" >&2
           exit 1
         fi

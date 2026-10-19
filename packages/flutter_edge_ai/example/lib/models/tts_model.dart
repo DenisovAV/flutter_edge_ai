@@ -17,8 +17,10 @@ enum TtsModel {
     isSupported: true,
   ),
   qwen3(
+    // Pinned: on main these files moved under legacy/ on 2026-10-16, so a
+    // resolve/main/ base answers 404 for every one of them.
     baseUrl:
-        'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/',
+        'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/',
     displayName: 'Qwen3-TTS 0.6B (11 languages)',
     size: '~1.9GB',
     ttsModelType: TtsModelType.qwen3,

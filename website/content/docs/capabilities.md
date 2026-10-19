@@ -27,7 +27,7 @@ should use LiteRT-LM (`.litertlm`). The packages are
 `flutter_edge_ai_onnx`, `flutter_edge_ai_mediapipe` and
 `flutter_edge_ai_builtin_ai`.
 
-So text generation has five interchangeable runtimes (the fifth is llama.cpp through `flutter_edge_ai_llama`, for GGUF models, text only here; see [llama.cpp](/docs/llama)), embeddings have two
+So text generation has five interchangeable runtimes (the fifth is llama.cpp through `flutter_edge_ai_llama`, for GGUF models, with image and audio input through a compatible GGUF projector; see [llama.cpp](/docs/llama)), embeddings have two
 (LiteRT and ONNX, both on every platform), and speech has one (LiteRT, on
 native platforms).
 
@@ -55,7 +55,7 @@ native platforms).
 | | LiteRT-LM | MediaPipe | ONNX | Built-in AI |
 |---|---|---|---|---|
 | **Vision** | ✅ Native | ✅ | — | ✅ Android |
-| **Audio** | ✅ Native | ✅ Mobile | — | — |
+| **Audio** | ✅ Native | — | — | — |
 | **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
 | **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
 
@@ -67,6 +67,9 @@ native platforms).
   the format.
 - **Gemma 4 function calling** needs LiteRT-LM (`.litertlm`). On MediaPipe and
   ONNX the tools do not reach a Gemma 4 model.
+- **Audio on MediaPipe**: the engine passes audio on Android and iOS, but the
+  `.task` files carry no audio encoder (Gemma 3n included); use a `.litertlm`
+  model for audio.
 - **Thinking.** *Tags*: models that write their reasoning between `<think>`
   tags (Qwen3, DeepSeek R1). Core parses the tags, so this works on any engine.
   *Full* adds Gemma 4's separate thinking channel, which needs LiteRT-LM

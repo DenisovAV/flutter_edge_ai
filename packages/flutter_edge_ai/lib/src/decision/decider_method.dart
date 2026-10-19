@@ -65,8 +65,8 @@ DeciderMethod? deciderMethodByName(String name) => switch (name) {
 /// The abstain signal of an embedding decider is the request's highest cosine
 /// to an option centroid (`AbstainSignalKind.topCosine`), not a softmax
 /// probability: with few options any request looks confident to a softmax
-/// (measured: it rejects 2.7–21.7 % of out-of-scope requests at 2–20
-/// options), while the cosine rejects 87–99 %.
+/// (measured: it rejects 2.9–18.4 % of out-of-subset requests at 2–20
+/// options), while the cross-fitted cosine rejects 92–99 %.
 @experimental
 @immutable
 final class EmbeddingDeciderCalibration {
@@ -84,11 +84,12 @@ final class EmbeddingDeciderCalibration {
   /// set to keep [keep] of those held-out scores.
   ///
   /// No labelled data needed. Measured with EmbeddingGemma 2 at 2–20 options
-  /// and 10 examples each: 90–94 % of in-scope requests answered and 87–99 %
-  /// of out-of-scope requests refused — which requests are answered depends
-  /// on the threshold alone, the same for both methods. The error on the
-  /// answered ones was measured with [DeciderMethod.linear] only: ≤ 0.8 %
-  /// there, and 6.8 % at 150 options with 5 examples, over a 5 % budget (use
+  /// and 10 examples each: 90–94 % of in-scope requests answered, 92–99 % of
+  /// out-of-subset and 98–99.8 % of CLINC150 out-of-scope requests refused —
+  /// which requests are answered depends on the threshold alone, the same for
+  /// both methods. The error on the answered ones was measured with
+  /// [DeciderMethod.linear] only: ≤ 0.6 % there, and 6.0 % at 150 options
+  /// with 5 examples, over a 5 % budget (use
   /// [EmbeddingDeciderCalibration.fromLabelled] there). The default
   /// [DeciderMethod.centroid] is less accurate, so its error on answered
   /// requests is higher; it was not measured.

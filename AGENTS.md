@@ -79,8 +79,8 @@
 | Gemma 3 270M | ❌ | ❌ | ❌ | Android, iOS, Web, Desktop |
 | FastVLM 0.5B | ❌ | ❌ | ✅ vision | Desktop (`.litertlm`) |
 | VibeVoice-ASR (BitNet) | ❌ | ❌ | audio in, transcript out (`ModelType.general`, audio encoder on CPU) | Android, macOS (measured) |
-| FunctionGemma 270M | ✅ | ❌ | ❌ | Android, iOS, Web, Desktop |
-| Phi-4 Mini | ✅ | ❌ | ❌ | Android, iOS, Web, Desktop |
+| FunctionGemma 270M | ✅ | ❌ | ❌ | Android, iOS, Desktop |
+| Phi-4 Mini | ✅ | ❌ | ❌ | Android, iOS, Desktop |
 | DeepSeek R1 | ✅ | ✅ | ❌ | Android, iOS |
 | Qwen3 0.6B ³ | ✅ | ✅ ² | ❌ | Android, iOS, Web, Desktop |
 | Qwen 2.5 (0.5B/1.5B) | ✅ | ❌ | ❌ | Android, iOS |

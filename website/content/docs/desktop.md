@@ -70,7 +70,7 @@ desktop. Any `.litertlm` model works; see [Models](/docs/models). (The
 | macOS | x86_64 | — | — | — | Not supported (Apple Silicon only) |
 | Windows | x86_64 | DirectX 12 (via Dawn/WebGPU) | ✅ | ✅ | Nothing to install |
 | Windows | arm64 | — | — | — | Not supported |
-| Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL 9+) |
+| Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, RHEL 10+; RHEL 9 ships GCC 11's older libstdc++) |
 | Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc requirement |
 
 Qualcomm Linux arm64 boards also run `PreferredBackend.npu` on the Hexagon DSP
@@ -106,7 +106,7 @@ see [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2
 - **Flutter** ≥ 3.44.0
 - **macOS**: Apple Silicon (arm64)
 - **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed (see below).
-- **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
+- **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 10+ — RHEL 9 ships GCC 11's libstdc++, which is too old)
 - **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
 No Java/JVM/JRE required.
@@ -241,7 +241,7 @@ post_install do |installer|
         STAGER="${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh"
         if [ ! -f "${STAGER}" ]; then
           echo "[flutter_gemma] ERROR: ${STAGER} not found." >&2
-          echo "  flutter_gemma_litertlm 1.6.2+ installs it there from its build hook." >&2
+          echo "  flutter_edge_ai_litertlm installs it there from its build hook." >&2
           echo "  Upgrade the package, then: flutter clean && flutter pub get" >&2
           exit 1
         fi
@@ -512,8 +512,9 @@ lifetime, because its integration tests run in the background.
 
 ### Model file not found
 
-On desktop the model is downloaded to the platform's standard "app support"
-directory (see [Troubleshooting → desktop storage](/docs/troubleshooting#desktop-storage-locations)). Use
+On desktop the model is downloaded to a `flutter_gemma/` folder in the
+platform's standard "app support" directory on macOS and Linux, and in
+`%LOCALAPPDATA%` on Windows (see [Troubleshooting → desktop storage](/docs/troubleshooting#desktop-storage-locations)). Use
 `FlutterEdgeAi.installModel(...).fromNetwork(...).install()` to download, or
 `.fromFile(absolutePath)` if you already have it locally.
 

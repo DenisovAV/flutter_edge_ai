@@ -13,9 +13,9 @@ Duration: 3
 ### What you'll build
 
 A recipe assistant that answers from *your* documents, with the network
-switched off at every step. It embeds a corpus with EmbeddingGemma, stores the
-vectors in sqlite-vec, retrieves the relevant ones for each question, and hands
-them to the on-device model as context.
+switched off once its models are downloaded. It embeds a corpus with
+EmbeddingGemma, stores the vectors in sqlite-vec, retrieves the relevant ones
+for each question, and hands them to the on-device model as context.
 
 By the end you will have an app that:
 
@@ -55,10 +55,12 @@ to make, and each step here is built around one of them:
 * About 0.8 GB free: the language model from the Getting Started codelab
   (0.6 GB) plus EmbeddingGemma (0.2 GB). On the web the language model is a
   different, larger build — about 2.2 GB in total
-* A free Hugging Face account with the Gemma licence accepted. Both models sit
-  behind the same gate, so one `--dart-define=HF_TOKEN=hf_...` covers both
+* A free Hugging Face account with the Gemma licence accepted. On native
+  platforms both models sit behind the same gate, so one
+  `--dart-define=HF_TOKEN=hf_...` covers both; on the web the language model
+  is ungated and only EmbeddingGemma needs it
 
-**Watch out:** This codelab continues [Getting Started with On-Device LLMs](/codelabs/getting-started-flutter-gemma). Its finished app **is** this one's starter, byte for byte — a CI check enforces it. If you have not done that codelab, `step_01_starter` still runs on its own; you will just be meeting the download-and-chat code for the first time.
+**Watch out:** This codelab continues [Getting Started with On-Device LLMs](/codelabs/getting-started-flutter-gemma). Its finished app **is** this one's starter — its `lib/` and `test/` byte for byte, a CI check enforces it. If you have not done that codelab, `step_01_starter` still runs on its own; you will just be meeting the download-and-chat code for the first time.
 
 ### Get the code
 
@@ -163,7 +165,7 @@ That registry change shipped in the legacy `flutter_gemma` 1.9.0 package and is
 part of the current `flutter_edge_ai`; the backend no longer carries a
 tokenizer, and the app says which families it has.
 
-**Watch out:** Leave `embeddingTokenizers` out and the first embedding fails with an `EmbeddingLoadException` naming the package to add. That is the design working: the alternative — falling back to one family and tokenizing with the wrong convention — returns vectors that are quietly the wrong point in the embedding space, and no test downstream can tell them from good ones.
+**Watch out:** Leave `embeddingTokenizers` out and, on Android, iOS and desktop, `getActiveEmbedder()` fails with an `EmbeddingLoadException` naming the package to add. (The web never asks: LiteRT.js tokenizes in the browser.) That is the design working: the alternative — falling back to one family and tokenizing with the wrong convention — returns vectors that are quietly the wrong point in the embedding space, and no test downstream can tell them from good ones.
 
 ### Pick an embedding model
 
@@ -357,13 +359,13 @@ the indexing, retrieval, filter, or grounding pipeline.
 | | `flutter_edge_ai_sqlite` | `flutter_edge_ai_qdrant` |
 |---|---|---|
 | Platforms | all six, **including web** | five — **no web** |
-| Search | exact KNN, always | exact below 10 000 points, approximate (HNSW) above |
-| Scaling | brute force, linear in N | wins on large corpora |
+| Search | exact KNN, always | exact below `fullScanThreshold` — 10 000 KB of vectors, about 3,300 at 768 dimensions — approximate (HNSW) above, where an HNSW index exists |
+| Scaling | brute force, linear in N | can use HNSW on large corpora |
 | `flush()` | no-op on native, drains IndexedDB on web | **required** — points stay in memory until it is called |
 | Schema timing | at table creation — a new filter field means re-creating and re-indexing | at write time — declare and re-index |
-| Field names | `^[A-Za-z][A-Za-z0-9_]*$` | free-form UTF-8, no `.` |
+| Field names | `^[A-Za-z][A-Za-z0-9_]*$`, and not `id`, `embedding`, `content`, `metadata`, `distance` or `k` | free-form UTF-8, no `.`, and not the store's own `__flutter_gemma_id`, `__flutter_gemma_content` or `__flutter_gemma_metadata` |
 
-**Good to know:** The precision row surprises people. qdrant's `fullScanThreshold` defaults to 10 000 points — below that it does a full scan and is exactly as precise as sqlite-vec. For a corpus that fits on a phone you are usually not choosing between exact and approximate at all; you are choosing between "runs in Chrome" and "grows better".
+**Good to know:** The precision row surprises people. qdrant's `fullScanThreshold` is a size, not a count: it defaults to 10 000 KB of vectors, about 3,300 vectors of 768 dimensions, and below that qdrant does a full scan and is exactly as precise as sqlite-vec. For a corpus under that size you are not choosing between exact and approximate at all; you are choosing between "runs in Chrome" and "grows better".
 
 The last row is the one that quietly decides the others: the portable set is
 sqlite's. If you might ever switch backends, stay inside it — which is why this
@@ -493,7 +495,7 @@ await (await _index()).search(
 The query is embedded for you, with `retrievalQuery` — the other half of Step
 2's asymmetry, handled.
 
-**Watch out:** `threshold` is not optional in spirit. Cosine similarity runs from −1 to 1, and without a threshold a search always returns `topK` rows however bad they are — which reads as "found something" to every caller downstream, including the model in Step 5.
+**Watch out:** `threshold` is not optional in spirit. Cosine similarity runs from −1 to 1, and the default `threshold` of 0.0 drops only rows that point away from the query: a search still returns `topK` rows however weakly they match — which reads as "found something" to every caller downstream, including the model in Step 5.
 
 ### The page
 
@@ -575,6 +577,11 @@ using a new schema-versioned location and re-indexing the corpus.
 **Watch out:** A `Filter` over a field that was never declared is **refused**: `search()` fails with an `ArgumentError` that lists the declared fields, because such a condition could never match. Declare what you might filter on, not only what you filter on today.
 
 ### Build a filter
+
+`buildFilter` below and the `filter:` argument of `RagStore.search()` already
+ship in `step_03_store`'s `lib/rag_store.dart`, unused until now. What this
+step changes is `main.dart` (the schema above) and `embed_page.dart` (the
+controls further down).
 
 ```dart
 Filter? buildFilter({
@@ -757,7 +764,8 @@ knows those vectors are vectors, and a prompt that keeps the answer honest.
   `providerId: 'qdrant'` in `VectorStoreSpec` — the provider's `id`; there is
   no `providerId` constant on it the way there is on
   `SqliteVectorStoreProvider`. The `RagIndex` calls stay the same. You give up
-  the web and gain HNSW on large corpora.
+  the web, for a store that can search an HNSW index instead of scanning
+  once a corpus outgrows `fullScanThreshold`.
 * **Bring your own corpus.** Nothing here is recipe-shaped except
   `recipes.dart`. Twelve constants become a folder of Markdown, and the only
   real design decision is what goes into `text` versus what becomes a filter
@@ -769,6 +777,6 @@ knows those vectors are vectors, and a prompt that keeps the answer honest.
 ### Reference
 
 * [Embeddings & RAG documentation](/docs/embeddings-and-rag) — the full filter
-  grammar, the store comparison, and the per-store `flush()` table
+  grammar, the store comparison, and what `flush()` does on each store
 * [flutter_edge_ai_sqlite on pub.dev](https://pub.dev/packages/flutter_edge_ai_sqlite)
 * [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)

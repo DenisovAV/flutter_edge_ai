@@ -115,6 +115,6 @@ String cleanedResponse = ModelThinkingFilter.cleanResponse(
 // - <think>...</think> (DeepSeek and the Qwen types); for DeepSeek, which
 //   starts inside its reasoning, everything up to the first </think>
 // and trims whitespace. Turn markers (<end_of_turn>, <|im_end|>) are stripped
-// only for .bin / .tflite files — on .task and .litertlm the runtime already
-// ends the turn.
+// only for .bin / .tflite and .gguf files — on .task and .litertlm the runtime
+// already ends the turn.
 ```

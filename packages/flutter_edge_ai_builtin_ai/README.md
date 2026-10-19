@@ -58,10 +58,10 @@ Every row is a property of the running device, OS and build — not of the packa
 
 | Platform | Built-in model | Runtime API | Devices & requirements |
 |----------|----------------|-------------|------------------------|
-| Android | Gemini Nano | ML Kit GenAI / AICore (`genai-prompt` 1.0.0-beta4) | Pixel 9+, Galaxy S25+. **`minSdk 26`** and **Kotlin 2.3.21** in your app (see [Android setup](#android-setup)). |
+| Android | Gemini Nano | ML Kit GenAI / AICore (`genai-prompt` 1.0.0-beta4) | Devices on [Google's Prompt API device list](https://developers.google.com/ml-kit/genai#prompt-device). **`minSdk 26`** and **Kotlin 2.3.21** in your app (see [Android setup](#android-setup)). |
 | iOS / macOS | Apple Foundation Models | FoundationModels framework | iPhone 15 Pro+, Apple Silicon Macs, Apple Intelligence enabled in **Settings → Apple Intelligence & Siri**. Inference needs **OS 26+** at runtime — below that the plugin reports `unavailableOsTooOld`, so you can still ship a fallback. The plugin itself builds from **iOS 13.0 / macOS 12.0**, so it links and runs on older OSes. |
 | Windows | Phi Silica | Windows AI Foundry (Windows App SDK 2.0+) | Windows 11 25H2+ on Copilot+ class hardware (or a supported GPU), in a packaged app. The build resolves the App SDK projection itself; a build that could not reports `unavailableDeviceUnsupported`. See [Windows setup](#windows-setup). |
-| Web | Gemini Nano (Chrome), Phi-4-mini (Edge) | **Prompt API** (`self.LanguageModel`) | Desktop Chrome / Chromium-Edge only — **not** Chrome-Android/iOS, **not** Firefox/Safari. ~22 GB free disk + a GPU with >4 GB VRAM (or a 16 GB-RAM CPU-only path). See [Web setup](#web-setup). |
+| Web | Gemini Nano (Chrome), Phi-4-mini (Edge) | **Prompt API** (`self.LanguageModel`) | Desktop Chrome / Chromium-Edge only (on ChromeOS, Chromebook Plus only) — **not** Chrome-Android/iOS, **not** Firefox/Safari. ~22 GB free disk + a GPU with >4 GB VRAM (or a CPU-only path with 16 GB RAM and 4+ cores). See [Web setup](#web-setup). |
 | Linux | — | — | No OS built-in model. `availability()` reports `unavailableDeviceUnsupported`; fall back to a downloaded model. |
 
 Vision (image input) requires **OS 27 plus an OS 27 SDK / Swift 6.4 compiler** on Apple platforms —
@@ -242,29 +242,21 @@ device validation.
 
 Unlike `flutter_edge_ai_litertlm`'s web arm, there is **no CDN `<script>` tag to add to
 `web/index.html`** — the Chrome Prompt API is a bare global (`self.LanguageModel`) the browser
-itself exposes; there is nothing to load. What you need instead is for the browser to have the
-feature **enabled**:
+itself exposes; there is nothing to load.
 
-- **Production**: register your origin for the [Prompt API origin
-  trial](https://developer.chrome.com/origintrials) and add the issued token to `web/index.html`:
-  ```html
-  <meta http-equiv="origin-trial" content="YOUR_TOKEN_HERE">
-  ```
-- **Local development**: enable `chrome://flags/#prompt-api-for-gemini-nano` in your own Chrome and
-  restart the browser.
+- **Chrome**: since **Chrome 148** the Prompt API is available to ordinary web pages — no
+  origin-trial token and no `chrome://flags` entry.
 - **Microsoft Edge**: open `edge://flags`, enable **Prompt API for on-device language model** and
   restart. The model is Phi-4-mini, not Gemini Nano; it downloads on first use. Verified on stable
   Edge 151 on macOS; Edge Dev 154–155 exposes the API but cannot run the model.
 
-⚠️ **Verify before you ship**: whether the Prompt API is still origin-trial/flag-gated on plain web
-pages, or has shipped in stable Chrome without a token, changes over time (it has been stable in
-*Chrome Extensions* since Chrome 138, but its status on ordinary web pages is the thing to check
-against the Chrome version your users actually run). `BuiltInAi.availability()` reports
-`unavailableDeviceUnsupported` on any browser/version where the feature isn't on — always probe
-before creating a model rather than assuming it's available.
+`BuiltInAi.availability()` reports `unavailableDeviceUnsupported` on any browser/version where the
+feature isn't on — always probe before creating a model rather than assuming it's available.
 
-Chrome fixes sampling when a session is created, and its `tools` option is behind an experimental
-flag and does not route reliably, so tool declarations are never handed to it natively.
+On web pages Chrome does not expose the numeric sampling parameters (`temperature`, `topK`): they
+are for Chrome Extensions only. Chrome fixes sampling when a session is created, and its `tools`
+option is behind an experimental flag and does not route reliably, so tool declarations are never
+handed to it natively.
 
 ## Troubleshooting
 

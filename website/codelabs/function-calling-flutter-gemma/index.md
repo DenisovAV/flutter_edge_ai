@@ -313,9 +313,10 @@ Two arguments on `createChat`:
         // And the switch that turns the machinery on. `tools` without this is
         // the quiet failure worth knowing about: `InferenceChat` logs
         // "Model does not support function calls, but tools were provided.
-        // Tools will be ignored", never renders the declarations, and the
-        // model answers every question out of its own head — fluently, and
-        // with arithmetic it made up.
+        // Tools will be ignored", but on a `.litertlm` the declarations still
+        // reach LiteRT-LM and the model may still call. Nothing reads the
+        // call: it lands in the bubble as raw `tool_calls` JSON, and
+        // `runMultiply` never runs.
         supportsFunctionCalls: true,
         maxOutputTokens: 256,
       );
@@ -598,9 +599,10 @@ It takes a Hugging Face checkpoint through LoRA fine-tuning, merges, exports to
 `.litertlm`, and bundles the result with metadata — five commands, because each
 stage fails differently and a single `run` would hide which one you are in.
 
-The commands below are verified against **litetune 0.4.3**, the current PyPI
-release: run end to end on 2026-10-12 with 0.4.1, and no CLI option they use
-changed in 0.4.2 or 0.4.3. It pins LiteRT-LM 0.18.0 for
+The commands below are verified against **litetune 0.4.3**, the release this
+codelab was written against: run end to end on 2026-10-12 with 0.4.1, and no CLI
+option they use changed in 0.4.2 or 0.4.3; 0.5.x has not been checked against
+them. It pins LiteRT-LM 0.18.0 for
 verification and the matching 0.18.0 builder for conversion. The source is
 available on [GitHub](https://github.com/DenisovAV/litetune).
 

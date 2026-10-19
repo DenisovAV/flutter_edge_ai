@@ -55,21 +55,24 @@ await FlutterEdgeAi.initialize(
 );
 
 // 2. Install the model (host app responsibility).
-await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
-    .fromAsset('assets/gemma-3-1b-it-int4.task')
-    .install();
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm, // the default, .task, routes to MediaPipe
+).fromNetwork(
+  // On web, install gemma-4-E2B-it-web.litertlm from the same repository.
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+).install();
 
-// For a .litertlm model pass fileType: ModelFileType.litertlm to
-// installModel(); it defaults to ModelFileType.task, which routes the model to
-// MediaPipe. FlutterEdgeAiModelConfig.fileType does not affect routing.
+// FlutterEdgeAiModelConfig.fileType does not affect routing; installModel's
+// fileType does.
 
 // 3. Create a Genkit instance with the plugin.
 final ai = Genkit(plugins: [
   GenkitFlutterEdgeAiPlugin(
     models: [
       FlutterEdgeAiModelConfig(
-        name: 'gemma-3-1b',
-        modelType: ModelType.gemmaIt,
+        name: 'gemma-4-e2b',
+        modelType: ModelType.gemma4,
       ),
     ],
     embedders: [
@@ -91,7 +94,7 @@ names — `dart fix --apply` renames them.
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Hello!',
 );
 final reason = response.finishReason;
@@ -115,12 +118,13 @@ empty line.
 
 ```dart
 final stream = ai.generateStream(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Write a short story.',
 );
 
+final reply = StringBuffer();
 await for (final chunk in stream) {
-  stdout.write(chunk.text);
+  reply.write(chunk.text); // update your UI as the reply grows
 }
 // A failure ends the stream normally; the result says what happened.
 final result = await stream.onResult; // check finishReason as above
@@ -152,8 +156,9 @@ Index with `retrievalDocument` and search with the default
 `retrievalQuery`. The embedder runs the model `installEmbedder()` made active,
 EmbeddingGemma 2 included; see [Embeddings & RAG](/docs/embeddings-and-rag). It
 takes text only: a document with no text part is an
-`INVALID_ARGUMENT`. Since 0.9.1 it resolves the active embedder again for
-every request, so it follows a model core replaced or closed in between.
+`INVALID_ARGUMENT`. Since 0.9.0 it resolves the active embedder again for
+every request, so it follows a model core replaced in between; since 0.9.1 a
+request that finds it closed resolves it again and is retried once.
 
 ### Configuration options
 
@@ -161,7 +166,7 @@ Pass `FlutterEdgeAiModelOptions` to tune inference:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,                // context window (input + output), not reply length
@@ -256,7 +261,7 @@ It returns the raw model text and Genkit's `extractJson` populates
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
 );
@@ -292,7 +297,7 @@ always keeping every system message and the most recent message:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Continue our conversation…',
   messages: longHistory,
   use: [trimContext(maxInputTokens: 800)],
@@ -345,6 +350,24 @@ ai.registry.register(smart);
 
 final response = await ai.generate(model: smart, prompt: 'Hello!');
 ```
+
+A branch is a `Model`, not the `ModelRef` that `flutterEdgeAi.model()` returns.
+Keep the `GenkitFlutterEdgeAiPlugin` you pass to `Genkit` and ask it for the
+`Model` by the name you configured (see [Setup](#setup)):
+
+```dart
+final edgeAi = GenkitFlutterEdgeAiPlugin(
+  models: [
+    FlutterEdgeAiModelConfig(name: 'gemma-4-e2b', modelType: ModelType.gemma4),
+  ],
+);
+final ai = Genkit(plugins: [edgeAi]); // and your cloud plugin
+
+final onDeviceModel = edgeAi.model('gemma-4-e2b'); // NOT_FOUND for a name not configured
+```
+
+A model of any plugin registered with `ai` can also be looked up by its ref's
+name: `await ai.registry.lookupAction(ActionType.model, ref.name) as Model`.
 
 ### Routing strategies
 
@@ -456,7 +479,10 @@ exception in `cause`; `ai.generateStream` ends normally with that result in
 A cloud branch can also stop on its own terms without any error:
 `genkit_google_genai` reports a safety block as `FinishReason.blocked` and a
 reason it does not know as `FinishReason.other`. Treat every finish other than
-`stop`, `length` and `unknown` as a failure:
+`stop`, `length` and `unknown` as a failure. The exception is
+`FinishReason.interrupted` when your tools interrupt (`ai.defineInterrupt`,
+`ToolResult.interrupt`): the generation waits for a follow-up `generate` with
+`interruptRespond`, so handle it before this check:
 
 ```dart
 await for (final chunk in stream) { /* ... */ }
@@ -492,6 +518,7 @@ final smart = cascadeModel(
   order: ['onDevice', 'cloud'],
   accept: (r) => r.text.trim().length > 20,
 );
+ai.registry.register(smart); // generate looks the model up by name
 
 final response = await ai.generate(model: smart, prompt: 'Explain quantum tunnelling.');
 ```

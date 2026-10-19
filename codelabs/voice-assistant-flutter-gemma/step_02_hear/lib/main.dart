@@ -28,9 +28,9 @@ Future<void> main() async {
     // `getActiveStt()` throws and names the package to add.
     sttBackends: [const LiteRtSttBackend()],
     huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
-    // OPFS streaming. On web the model is 2.0 GB, right on the ~2 GB blob
-    // ceiling the default `cacheApi` mode would have to buffer it into.
-    // The other platforms ignore this option.
+    // Kept from the starter, where it is OPFS streaming for the 2.0 GB web
+    // model. This app has no web target — speech needs dart:ffi — and the
+    // platforms it runs on ignore this option.
     webStorageMode: WebStorageMode.streaming,
   );
 

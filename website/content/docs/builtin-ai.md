@@ -17,10 +17,10 @@ want, and the platform owns the weights.
 
 | Platform | Built-in model | Runtime | Minimum devices |
 |----------|----------------|---------|-----------------|
-| Android | **Gemini Nano** | ML Kit GenAI / AICore | Pixel 9+, Galaxy S25+ (`minSdk 26`) |
+| Android | **Gemini Nano** | ML Kit GenAI / AICore | [Google's Prompt API device list](https://developers.google.com/ml-kit/genai#prompt-device) (`minSdk 26`) |
 | iOS / macOS | **Apple Foundation Models** (Apple Intelligence) | FoundationModels framework | iOS 26+ / macOS 26+ on iPhone 15 Pro+, Apple Silicon Macs — Apple Intelligence enabled |
 | Windows | **Phi Silica** | Windows AI Foundry (Windows App SDK) | Windows 11 25H2+ on a Copilot+ PC (or a supported GPU), in a packaged app |
-| Web | **Gemini Nano** in Chrome, **Phi-4-mini** in Edge | **Prompt API** (`self.LanguageModel`) | Desktop Chrome; Microsoft Edge with a flag (see [Web setup](#web-setup)) |
+| Web | **Gemini Nano** in Chrome, **Phi-4-mini** in Edge | **Prompt API** (`self.LanguageModel`) | Desktop Chrome 148+; Microsoft Edge with a flag (see [Web setup](#web-setup)) |
 
 > **Note:** in Chrome the Prompt API *is* Gemini Nano — the browser runs the same
 > on-device model, exposed through a JS API. Edge implements the same API with
@@ -184,7 +184,7 @@ final response = await session.getResponse();
   `SystemLanguageModel.tokenCount` is `@available(iOS 26.4, macOS 26.4)`, so the
   declaration is missing from earlier SDKs entirely — a build on Xcode 26.1
   cannot reference it, and a build on 26.4+ still falls back when running on an
-  older OS. Either way the count comes from core's `text.length / 4` estimate.
+  older OS. Either way the count comes from `flutter_local_ai`'s `text.length / 4` estimate.
 
 - **Windows and web are text-only.** `supportImage: true` there fails when the
   model is created, not when the first image is sent.
@@ -195,17 +195,15 @@ final response = await session.getResponse();
 ## Web setup
 
 There is **no CDN `<script>` tag** — the Chrome Prompt API is a browser global
-(`self.LanguageModel`). What it needs is the feature *enabled*:
+(`self.LanguageModel`). What it needs is a browser that ships it:
 
-- **Production:** register your origin for the [Prompt API origin
-  trial](https://developer.chrome.com/origintrials) and add the token to
-  `web/index.html`:
-  ```
-  <meta http-equiv="origin-trial" content="YOUR_TOKEN_HERE">
-  ```
-- **Local dev:** enable `chrome://flags/#prompt-api-for-gemini-nano` and restart
-  Chrome. Floor: desktop Chrome on Windows, macOS 13+, Linux or ChromeOS Plus;
-  22 GB free disk; a GPU with more than 4 GB VRAM, or 16 GB RAM and 4 CPU cores.
+- **Chrome:** Chrome 148+ ships the Prompt API to web pages — no origin-trial
+  token and no `chrome://flags` entry. Floor: desktop Chrome on Windows,
+  macOS 13+, Linux or ChromeOS Plus; 22 GB free disk; a GPU with more than
+  4 GB VRAM, or 16 GB RAM and 4 CPU cores. Chrome does not expose sampling
+  parameters to web pages — `temperature` and `topK` are for Chrome Extensions
+  only ([Prompt API docs](https://developer.chrome.com/docs/ai/prompt-api)) —
+  so do not rely on a session's sampling settings on the web.
 - **Microsoft Edge:** open `edge://flags`, enable **Prompt API for on-device
   language model** and restart. The model is Phi-4-mini, not Gemini Nano, and
   needs Windows 10/11 or macOS 13.3+, 20 GB free disk and 5.5 GB VRAM; it

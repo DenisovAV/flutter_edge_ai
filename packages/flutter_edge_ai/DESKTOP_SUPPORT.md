@@ -60,7 +60,8 @@ loading sequence differs per platform (handled in `litert_lm_client.dart`).
 >
 > The LiteRT-LM engine accepts only `.litertlm` files; MediaPipe `.bin` / `.task`
 > models used on web won't load on desktop. ONNX Runtime (`flutter_edge_ai_onnx`)
-> also runs on all three desktops, and built-in AI on macOS and Windows. See
+> and llama.cpp (`flutter_edge_ai_llama`, `.gguf`) also run on all three
+> desktops, and built-in AI on macOS and Windows. See
 > [litert-community on Hugging Face](https://huggingface.co/litert-community) for compatible `.litertlm` models.
 
 ---
@@ -73,8 +74,8 @@ loading sequence differs per platform (handled in `litert_lm_client.dart`).
 | macOS | x86_64 | — | — | — | Not supported (Apple Silicon only) |
 | Windows | x86_64 | DirectX 12 (via Dawn/WebGPU) | ✅ | ✅ | Nothing to install |
 | Windows | arm64 | — | — | — | Not supported |
-| Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL 9+) |
-| Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc requirement |
+| Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, RHEL 10+) |
+| Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc and libstdc++ requirement |
 
 > Qualcomm Linux arm64 boards also run `PreferredBackend.npu` on the Hexagon DSP when the app opts in with `qualcomm_npu: true` — see the [`flutter_edge_ai_litertlm` README](../flutter_edge_ai_litertlm/README.md).
 
@@ -86,9 +87,9 @@ For mobile platforms see the main [README](README.md).
 
 - **Flutter** ≥ 3.44.0
 - **Dart SDK** ≥ 3.12.0
-- **macOS**: 11+ (Apple Silicon, arm64); 12.0 with `flutter_edge_ai_builtin_ai`
+- **macOS**: 11+ (Apple Silicon, arm64); 12.0 with `flutter_edge_ai_builtin_ai`, 14.0 with `flutter_edge_ai_llama`
 - **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed since `flutter_gemma_litertlm` 1.7.1 (see below).
-- **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
+- **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 10+)
 - **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
 No Java/JVM/JRE required.
@@ -151,9 +152,9 @@ For the high-level chat API with history + thinking + tool calling, use
 
 ### macOS
 
-Native libs are fetched and bundled automatically via Native Assets. The
-**only manual step** is adding a `post_install` block to your app's
-`macos/Podfile` so the upstream companion dylibs get wrapped into
+Native libs are fetched and bundled automatically via Native Assets. Two
+steps are manual: the entitlements below, and a `post_install` block in your
+app's `macos/Podfile` so the upstream companion dylibs get wrapped into
 `.framework` bundles (and re-signed) inside `Contents/Frameworks/`, and
 `LiteRtLm.dylib`'s `LC_LOAD_DYLIB` reference is re-pointed at the new
 framework path (LiteRT-LM's `gpu_registry` resolves the Metal accelerator
@@ -161,7 +162,10 @@ through that framework). See the
 [macOS setup snippet in the README](README.md#macos) for the exact
 block. Without it the companion dylibs are never bundled, and
 `LiteRtLm.dylib` — which links `libGemmaModelConstraintProvider.dylib`
-directly — fails to load on every backend, CPU included.
+directly — fails to load on every backend, CPU included. Flutter 3.44+ uses
+Swift Package Manager by default, so a new app has no `macos/Podfile` until
+its `pubspec.yaml` sets `enable-swift-package-manager: false` under
+`flutter: config:` (same README section).
 
 **Entitlements** in both `macos/Runner/DebugProfile.entitlements` and
 `Release.entitlements`, beside the `com.apple.security.app-sandbox` key that
@@ -212,11 +216,12 @@ DLL and silently fall back to CPU. (Mirrors the Linux `RTLD_GLOBAL` pattern.)
 
 Your end-users need nothing installed. Since `flutter_gemma_litertlm` 1.7.1
 `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.18.0`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0-f`, 16 of its 24 DLLs import none.
 
-The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
+The other eight belong to the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
-Intel's three `openvino*` and four `tbb*`. Each imports some of `msvcp140`,
+three of Intel's five `openvino*` (the NPU compiler and its loader import none) and
+its four `tbb*`. Each imports some of `msvcp140`,
 `vcruntime140` and `vcruntime140_1` — the runtimes any Flutter Windows app already
 resolves — and none imports `vcruntime140_threads.dll`, the Visual Studio 2022 17.8
 one that used to make this document ask for a redistributable and that failed a Microsoft
@@ -382,11 +387,13 @@ never surfaces, because the first session already set the values you wanted.
 Reproducer: `flutter test integration_test/regression_bugs_test.dart` on any
 platform — `randomSeed=42` vs `randomSeed=99` at `temperature=1.0`.
 
-### Audio modality requires LiteRT-LM models
+### Audio modality requires LiteRT-LM or llama.cpp models
 
-Audio input only works with `.litertlm` models that include the audio adapter
-(Gemma 3n E2B/E4B, Gemma 4 E2B/E4B). MediaPipe `.task` models on web don't
-support audio.
+Audio input works with `.litertlm` models that include the audio adapter
+(Gemma 3n E2B/E4B, Gemma 4 E2B/E4B), and natively with a GGUF model through
+`flutter_edge_ai_llama` when the app supplies a compatible audio projector
+(`LlamaEngineProvider(projectorResolver:)`). MediaPipe `.task` models on web
+don't support audio.
 
 ### iOS Simulator: GPU disabled
 

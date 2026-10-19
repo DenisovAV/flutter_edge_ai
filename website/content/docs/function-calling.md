@@ -20,7 +20,7 @@ A call takes one of two paths, chosen from `modelType` and the file type:
   270M** on a `.litertlm`: the declarations reach LiteRT-LM as structured data
   and the calls come back parsed (see
   [Who renders the declarations](#who-renders-the-declarations)).
-- **Prompt-based** — every other model installed with
+- **Prompt-based** — every other model, in a chat created with
   `supportsFunctionCalls: true` (except Gemma 4, which needs a `.litertlm` — see
   [Platform support](#platform-support)): the chat writes the tools into the
   prompt and parses the calls back out of the text. For example:
@@ -52,8 +52,12 @@ See [Models](/docs/models) for which models declare function calling.
 <Info>
 
 If you pass `tools` with `supportsFunctionCalls: false`, the chat logs a warning
-and does not inject them — the model still works normally for text generation.
-Pass `supportsFunctionCalls: true` for models that support it.
+(debug builds only), does not write them into the prompt and does not parse
+calls out of the reply — the model still works normally for text generation.
+Gemma 4 and FunctionGemma on a `.litertlm` are the exception: there the
+declarations still reach LiteRT-LM, though the chat still does not parse the
+calls. Pass `supportsFunctionCalls: true` to `createChat` / `openChat` for
+models that support it.
 
 </Info>
 

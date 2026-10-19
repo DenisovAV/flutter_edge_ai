@@ -134,7 +134,8 @@ class CodelabsPage extends StatelessComponent {
       title: 'On-Device RAG in Flutter: Embeddings and Vector Search',
       blurb:
           'Embed your own documents with EmbeddingGemma, store the vectors in '
-          'sqlite-vec, and ground the answers — no network at any step.',
+          'sqlite-vec, and ground the answers — no network once the models '
+          'are downloaded.',
       duration: '60 min',
       level: 'Advanced',
       tags: ['embeddings', 'sqlite-vec', 'RAG'],

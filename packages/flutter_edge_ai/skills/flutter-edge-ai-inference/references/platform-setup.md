@@ -205,7 +205,7 @@ post_install do |installer|
         STAGER="${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh"
         if [ ! -f "${STAGER}" ]; then
           echo "[flutter_gemma] ERROR: ${STAGER} not found." >&2
-          echo "  flutter_gemma_litertlm 1.6.2+ installs it there from its build hook." >&2
+          echo "  flutter_edge_ai_litertlm installs it there from its build hook." >&2
           echo "  Upgrade the package, then: flutter clean && flutter pub get" >&2
           exit 1
         fi
@@ -287,7 +287,10 @@ Storage mode, set in `FlutterEdgeAi.initialize(webStorageMode: ...)`:
 The `.litertlm` web engine loads the web build of a model —
 `gemma-4-E2B-it-web.litertlm` (2.0 GB, so use `streaming`), not
 `gemma-4-E2B-it.litertlm`. It is text-only: an image or audio message throws
-`UnsupportedError`, and LoRA is not supported. Gemma 4 thinking works.
+`UnsupportedError`. LoRA is not supported on any `.litertlm` path, native
+included (a `loraPath` throws `UnsupportedError`): LoRA needs a MediaPipe
+`.task` model (flutter-edge-ai-mediapipe) or, natively, a `.gguf` model
+through `flutter_edge_ai_llama`. Gemma 4 thinking works.
 
 A `--dart-define` token is compiled into `main.dart.js`, where every visitor can
 read it. Serve web users a model from a repo that needs no token.

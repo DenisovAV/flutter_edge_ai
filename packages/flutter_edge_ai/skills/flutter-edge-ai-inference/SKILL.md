@@ -282,7 +282,7 @@ print(model.activeBackend); // what actually loaded
 | `cpu` | CPU only |
 | any, for a bundle compiled for an NPU | the NPU only: `null` and `npu` run there, `gpu` and `cpu` are refused |
 
-The rows are for a generic bundle. A text model that declares `backend_constraint` is tried only on the backends it allows (with `null`, the first of GPU, CPU it allows). With `LiteRtLmEngine(backendFallback: false)` (`flutter_edge_ai_litertlm` 1.14.0) only the first backend of a row is tried, and a failure throws `BackendInitException` with LiteRT-LM's own reason.
+The rows are for a generic bundle. A text model that declares `backend_constraint` is tried only on the backends it allows (with `null`, GPU then CPU, each only if it allows it). With `LiteRtLmEngine(backendFallback: false)` (`flutter_edge_ai_litertlm` 1.14.0) only the first backend of a row is tried, and a failure throws `BackendInitException` with LiteRT-LM's own reason.
 
 Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android), a Qualcomm Linux arm64 board, a Google Tensor G5/G6 Pixel (Android 16 or later), or Intel Lunar/Panther Lake (Windows), and a model compiled for that NPU; the Intel NPU needs `flutter_edge_ai_litertlm` 1.15.0 — 1.14.0, like every release since `native-v0.17.0`, fails its load or ends the process (`0xC0000409`); `PreferredBackend.cpu` never falls back. The iOS Simulator is CPU-only. On an iOS device a MediaPipe `.task` on the GPU is killed for memory while loading, before any fallback can run: pass `PreferredBackend.cpu` for it (flutter-edge-ai-mediapipe). On web, MediaPipe is GPU-only.
 

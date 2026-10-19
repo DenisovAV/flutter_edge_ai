@@ -276,9 +276,11 @@ final vector = await embedder.embed(
   740m.** Natively all from 1.13.1; on the web text and images from 1.13.1,
   audio and combined inputs from 1.13.2. On the 270m,
   `getActiveEmbedder(supportImage: true)` fails with `EmbeddingLoadException`
-  naming the 440m bundle, and on the 270m and the 440m `supportAudio: true`
-  fails naming the 740m — read from the bundle's own header before any engine
-  or cache is made, on the web too (a few KB of the installed file).
+  naming the 440m bundle — natively from the bundle's ModelInfo before any
+  engine or cache is made, on the web when `EmbeddingEngine.create` refuses it.
+  On the 270m and the 440m `supportAudio: true` fails naming the 740m — read
+  from the bundle's own header before any engine or cache is made, on the web
+  too (a few KB of the installed file).
 - **At most 1024 tokens per input**, task prefix, BOS and EOS included
   (`maxInputTokens == 1024`). Keep chunks at 512 tokens or fewer: memory grows
   with the input length (on an M4 Pro Mac about +170 MB at 128 tokens, +340 MB
@@ -676,7 +678,7 @@ version in `LiteRtWebRuntime.pinnedVersion`.
 
 ### The WASM runtime
 
-LiteRT.js loads a WASM runtime at the first embedding call —
+LiteRT.js loads a WASM runtime when the embedder loads (`getActiveEmbedder()`) —
 `litert_wasm_internal.js`, or `litert_wasm_compat_internal.js` on a browser
 without relaxed SIMD, each with a ~9 MB `.wasm` beside it. Since
 `flutter_gemma_litertlm` 1.8.0 they come from the pinned `@litertjs/core` build on jsDelivr by default — nothing to
@@ -684,7 +686,7 @@ install, and nothing this package has to carry into every native-only app.
 
 To serve them yourself (offline, an air-gapped deploy, or a CSP that forbids
 third-party script), copy `node_modules/@litertjs/core/wasm/` into your app's
-`web/wasm/` and point the package at it before the first embedding:
+`web/wasm/` and point the package at it before the first embedder loads:
 
 ```dart
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -695,7 +697,7 @@ LiteRtWebRuntime.wasmPath = '/wasm/';
 Those files come from `@litertjs/core` — `npm i @litertjs/core@2.5.3` in a
 scratch directory, then copy its `wasm/`.
 
-Set the prefix before the first embedding — the runtime is loaded once and
+Set the prefix before the first `getActiveEmbedder()` — the runtime is loaded once and
 cached, so a later assignment is ignored. LiteRT.js inserts the separator when
 it joins the prefix with the file name, so the trailing slash above is
 convention, not a requirement; the value is root-absolute, and an app served
@@ -704,7 +706,7 @@ under a base href other than `/` needs `/my-app/wasm/` or a full URL.
 Pin `@litertjs/core` to `LiteRtWebRuntime.pinnedVersion` if you vendor it. The
 runtime and this package's `web/litert.js` are two halves of one release —
 `litert.js` calls that release's WASM entry points by name — and a mismatch
-fails at the first embedding with something that does not mention versions at
+fails when the embedder loads with something that does not mention versions at
 all: a runtime older than the glue gives
 `Cannot read properties of undefined (reading 'create')`.
 

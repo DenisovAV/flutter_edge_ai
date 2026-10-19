@@ -70,8 +70,8 @@ WebView), verified on hardware. On web the skill runs in a sandboxed `<iframe>`.
 - Cross-platform UI: `AgentChatView`, adaptive `SkillManagerView` /
   `McpManagerView`, `McpToolCallPermissionDialog`, `SecretEditorDialog`,
   `SkillTesterView`, and the add-skill disclaimer.
-- **Bundled starter skills** (ported verbatim from Gallery, Apache-2.0) — see
-  below.
+- **Bundled starter skills** (seven ported from Gallery, Apache-2.0, some
+  modified, plus `get-current-time`, written here) — see below.
 
 ## Bundled starter skills
 
@@ -584,11 +584,17 @@ need declarations in the app:
 
 ## Third-party attribution
 
-The bundled starter skills (`calculate-hash`, `qr-code`, `query-wikipedia`,
-`interactive-map`, `send-email`, `create-calendar-event`, `get-current-time`,
+Seven of the bundled starter skills (`calculate-hash`, `qr-code`,
+`query-wikipedia`, `interactive-map`, `send-email`, `create-calendar-event`,
 `kitchen-adventure`) and the `SKILL.md` format are derived from
 [google-ai-edge/gallery](https://github.com/google-ai-edge/gallery), licensed
 under the [Apache License 2.0](https://github.com/google-ai-edge/gallery/blob/main/LICENSE).
+`send-email` and `kitchen-adventure` are unchanged. The four JS skills tell the
+model to pass their `skillName` to `run_js`; beyond that, `qr-code` waits for
+its CDN library to load, `query-wikipedia` validates the language code before
+building the request URL, and `create-calendar-event` asks the model for a
+relative `day_offset` and `hour` instead of ISO start and end times.
+`get-current-time` was written for this package.
 
 ## License
 

@@ -55,9 +55,8 @@ Load the model's `-web.task` build (e.g. `gemma3-1b-it-int4-web.task`); mobile `
 
 ## iOS setup
 
-**iOS needs a 16.0 minimum.** MediaPipe GenAI requires it, and this is the only
-flutter_edge_ai package that does — core, `flutter_edge_ai_litertlm`, built-in AI and
-embeddings build from 15.0 (#441).
+**iOS needs a 16.0 minimum.** MediaPipe GenAI requires it — core, `flutter_edge_ai_litertlm`,
+built-in AI and embeddings build from 15.0 (#441); `flutter_edge_ai_llama` needs 16.4.
 
 This package ships no `Package.swift`, so even an app on Swift Package Manager gets a
 `Podfile` for it. Set the floor in BOTH places: `platform :ios, '16.0'` in the `Podfile`,

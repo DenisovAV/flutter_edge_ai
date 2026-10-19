@@ -21,7 +21,7 @@ const _hfModelFile = kIsWeb
     : 'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
 const _modelType = kIsWeb ? ModelType.gemma4 : ModelType.gemmaIt;
 const _embeddingModelUrl =
-    'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq256_mixed-precision.tflite';
+    'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq1024_mixed-precision.tflite';
 const _tokenizerUrl =
     'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/sentencepiece.model';
 

@@ -16,9 +16,9 @@ use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time
 there's no manual native setup.
 
 The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 from
-one `.litertlm` bundle (native: text since 1.13.0, images from the 440m bundle
-since 1.13.1, audio and combined inputs from the 740m bundle; Web, on WebGPU:
-text and images since 1.13.1, audio and combined inputs since 1.13.2) and
+one `.litertlm` bundle (native: text since 1.13.0, images from the 440m and
+740m bundles since 1.13.1, audio and combined inputs from the 740m bundle;
+Web, on WebGPU: text and images since 1.13.1, audio and combined inputs since 1.13.2) and
 EmbeddingGemma 1 / Gecko
 `.tflite` models through the LiteRT C API (and LiteRT.js on web) — see
 [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).

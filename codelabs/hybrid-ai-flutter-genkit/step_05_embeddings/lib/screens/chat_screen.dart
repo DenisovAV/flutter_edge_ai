@@ -27,9 +27,9 @@ class _ChatScreenState extends State<ChatScreen> {
   String _statusMessage = 'Initializing...';
 
   bool _ragReady = false;
-  // Set on web only — on-device embeddings need LiteRT.js's WASM runtime,
-  // which no published package ships yet (see AiEngine.initialize). Read by
-  // the banner in build() so RAG shows as unavailable, not silently absent.
+  // Set when RagService.initialize() throws — a missing JS file on web, a
+  // failed embedder install on native. Read by the banner in build() so RAG
+  // shows as unavailable, not silently absent.
   String? _ragUnavailableReason;
 
   late final AiEngine _engine;
@@ -175,8 +175,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_attachedImage != null) {
         final mime = _attachedMime ?? 'image/jpeg';
         final dataUri = 'data:$mime;base64,${base64Encode(_attachedImage!)}';
-        // contentType MUST be set: the on-device plugin drops media without an
-        // image/* contentType, and CapabilityStrategy reads it to detect vision.
+        // Gemini, the on-device plugin and CapabilityStrategy all read the type
+        // from the data: URI as well; contentType states it outright.
         content.add(
           MediaPart(
             media: Media(contentType: mime, url: dataUri),

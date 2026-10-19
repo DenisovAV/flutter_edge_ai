@@ -75,7 +75,7 @@ model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 `ModelFileType.builtIn` for OS-provided models. `ModelFileType.gguf` (core
 2.3.2) selects the optional [llama.cpp engine](llama.md),
-`flutter_edge_ai_llama`, currently available from the contribution source.
+`flutter_edge_ai_llama`.
 
 </Info>
 
@@ -575,6 +575,9 @@ Linux arm64 with `preferredBackend: PreferredBackend.npu`; see
 From 1.13.2 the Intel Panther Lake bundles (`…_Intel_PTL.litertlm`, 317–752 MB)
 run on Windows x64 the same way; see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
+From 1.15.0 the Google Tensor G5/G6 bundles (`…_Google_Tensor_G6.litertlm`,
+200–513 MB) run on matching Pixels with `google_tensor_npu: true`; see
+[EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
 The Gecko and EmbeddingGemma 1 rows are a `.tflite` model plus a tokenizer
 file; the ONNX rows are an `.onnx` model plus its tokenizer file, run by
 `OnnxEmbeddingBackend` ([ONNX](/docs/onnx)). An ONNX model's input limit is its

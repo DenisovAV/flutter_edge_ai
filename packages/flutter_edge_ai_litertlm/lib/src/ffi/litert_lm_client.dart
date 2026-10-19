@@ -39,24 +39,11 @@ typedef _StreamCallbackNative =
       Pointer<Char> errorMsg,
     );
 
-/// stream_proxy_create: creates a proxy that strdup's strings before
-/// forwarding to the Dart callback (prevents use-after-free).
-typedef _ProxyCreateNative =
-    Pointer<Void> Function(
-      Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
-      Pointer<Void> dartData,
-      Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
-    );
-typedef _ProxyCreateDart =
-    Pointer<Void> Function(
-      Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
-      Pointer<Void> dartData,
-      Pointer<Pointer<NativeFunction<_StreamCallbackNative>>> outProxyFn,
-    );
-
-/// stream_proxy_create2: the same proxy, with the three stream-chunk accessors
-/// passed in by the caller (resolved on the libLiteRtLm it drives) instead of
-/// probed by the shim. Returns null, with the out-param null, when one is missing.
+/// stream_proxy_create2: creates a proxy that strdup's strings before
+/// forwarding to the Dart callback (prevents use-after-free), reading each
+/// chunk through the three stream-chunk accessors the caller resolved on the
+/// libLiteRtLm it drives. Returns null, with the out-param null, when one is
+/// missing.
 typedef _ProxyCreate2Native =
     Pointer<Void> Function(
       Pointer<NativeFunction<_StreamCallbackNative>> dartCallback,
@@ -534,10 +521,8 @@ class LiteRtLmFfiClient {
   // while function pointers obtained via lookupFunction are still in use.
   // ignore: unused_field
   DynamicLibrary? _proxyLib;
-  _ProxyCreateDart? _proxyCreate;
 
-  /// Set when the loaded StreamProxy exports `stream_proxy_create2`; then the
-  /// accessors below are what every stream is created with.
+  /// `stream_proxy_create2` and the accessors every stream is created with.
   _ProxyCreate2Dart? _proxyCreate2;
   Pointer<Void> _chunkGetText = nullptr;
   Pointer<Void> _chunkGetError = nullptr;
@@ -546,7 +531,7 @@ class LiteRtLmFfiClient {
 
   /// The loaded libLiteRtLm exports
   /// `litert_lm_conversation_rewind_cancelled_turn` (`patch_c_api.sh` section
-  /// 15); false on one built before it.
+  /// 16); false on one built before it.
   bool _hasTurnRewind = false;
   _ProxyFreeStringDart? _proxyFreeString;
   Pointer<LiteRtLmEngine>? _engine;
@@ -733,11 +718,22 @@ class LiteRtLmFfiClient {
   String? get nativeLogPath => _nativeLogPath;
 
   /// Resolves the three stream-chunk accessors on [lib], the libLiteRtLm this
-  /// client drives, for `stream_proxy_create2`. A StreamProxy without that export
-  /// probes for them itself and needs nothing here. A name the library does not
+  /// client drives, for `stream_proxy_create2`. A name the library does not
   /// export is kept, so the first send can say which one (#453).
+  ///
+  /// Throws [StateError] for a StreamProxy without `stream_proxy_create2`: the
+  /// older `stream_proxy_create` probed the accessors through the process's
+  /// default symbol scope, which could resolve them to nothing (#447), and the
+  /// pinned native bundle has carried `create2` since native-v0.18.0-f.
   void _resolveChunkAccessors(DynamicLibrary proxyLib, DynamicLibrary lib) {
-    if (!proxyLib.providesSymbol('stream_proxy_create2')) return;
+    if (!proxyLib.providesSymbol('stream_proxy_create2')) {
+      throw StateError(
+        'StreamProxy does not export stream_proxy_create2: this native bundle '
+        'predates native-v0.18.0-f, which this flutter_edge_ai_litertlm '
+        'release needs. A stale local prebuilt under native/litert_lm/prebuilt/ '
+        'or in the native cache is the usual cause (#453).',
+      );
+    }
     Pointer<Void> find(String name, List<String> missing) {
       if (!lib.providesSymbol(name)) {
         missing.add(name);
@@ -874,12 +870,14 @@ class LiteRtLmFfiClient {
         );
       }
       proxyLib = DynamicLibrary.open('libStreamProxy.so');
-      // Load LiteRtLm into the default search scope so the shipped (native
-      // -v0.18.0-e and earlier) stream_proxy's ABI probe can resolve the v0.15 chunk accessors through
-      // dlsym(RTLD_DEFAULT); Dart's DynamicLibrary.open uses RTLD_LOCAL, which
-      // hides them. A shim with `stream_proxy_create2` is handed the accessors
-      // instead and does not look. That probe is the ONLY verified consumer of ambient
-      // visibility here: measured on the shipped android_arm64 bundle, the GPU
+      // Load LiteRtLm into the default search scope, as every release since
+      // #447 has. Its one verified consumer was the StreamProxy of
+      // native-v0.18.0-e and earlier, whose ABI probe resolved the v0.15 chunk
+      // accessors through dlsym(RTLD_DEFAULT); Dart's DynamicLibrary.open uses
+      // RTLD_LOCAL, which hides them. stream_proxy_create2 (required since
+      // native-v0.18.0-f) is handed the accessors and does not look, so the
+      // default scope is kept only until a device run shows the plain open is
+      // equivalent for every entry point. Measured on the shipped android_arm64 bundle, the GPU
       // and OpenCL accelerators have zero undefined LiteRt* symbols, and the
       // TopK samplers resolve theirs through DT_NEEDED, not RTLD_DEFAULT.
       //
@@ -900,10 +898,6 @@ class LiteRtLmFfiClient {
     _hasTurnRewind = lib.providesSymbol(
       'litert_lm_conversation_rewind_cancelled_turn',
     );
-    _proxyCreate = proxyLib
-        .lookupFunction<_ProxyCreateNative, _ProxyCreateDart>(
-          'stream_proxy_create',
-        );
     _proxyFreeString = proxyLib
         .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
           'stream_proxy_free_string',
@@ -2023,8 +2017,8 @@ class LiteRtLmFfiClient {
     });
 
     // Create proxy that strdup's strings before forwarding to Dart callback
-    final create2 = _proxyCreate2;
-    if (create2 != null && _missingChunkAccessors.isNotEmpty) {
+    final create2 = _proxyCreate2!;
+    if (_missingChunkAccessors.isNotEmpty) {
       releaseNative();
       send.failed(StateError('no stream-chunk accessors'));
       throw StateError(
@@ -2035,23 +2029,20 @@ class LiteRtLmFfiClient {
       );
     }
     final outProxyFn = calloc<Pointer<NativeFunction<_StreamCallbackNative>>>();
-    final proxyData = create2 != null
-        ? create2(
-            callable.nativeFunction,
-            nullptr,
-            _chunkGetText,
-            _chunkGetError,
-            _chunkIsFinal,
-            outProxyFn,
-          )
-        : _proxyCreate!(callable.nativeFunction, nullptr, outProxyFn);
+    final proxyData = create2(
+      callable.nativeFunction,
+      nullptr,
+      _chunkGetText,
+      _chunkGetError,
+      _chunkIsFinal,
+      outProxyFn,
+    );
     final proxyFn = outProxyFn.value;
     calloc.free(outProxyFn);
 
     // NULL is the shim refusing to build a proxy: registering anything would
-    // hand LiteRT-LM a callback whose arguments it does not pass. The shipped
-    // StreamProxy never returns NULL, so this fires only with `stream_proxy_create2`
-    // (an allocation failure, or an argument the checks above already rule out).
+    // hand LiteRT-LM a callback whose arguments it does not pass. That is an
+    // allocation failure, or an argument the checks above already rule out.
     if (proxyData == nullptr || proxyFn == nullptr) {
       releaseNative();
       send.failed(StateError('no stream proxy'));

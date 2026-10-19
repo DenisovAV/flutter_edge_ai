@@ -59,9 +59,13 @@ Google Tensor takes its own flag in the same block, `google_tensor_npu: true`:
 the build then bundles the Tensor dispatch (built from LiteRT; the runtime,
 `libedgetpu_litert.so`, is part of the Pixel system image). A
 `…_Google_Tensor_G5.litertlm` or `…_Google_Tensor_G6.litertlm` bundle runs on a
-Pixel with that Tensor generation and Android 16 or later, not a BP2A build;
-elsewhere it is refused before any engine. Run so far on one Tensor G6 Pixel
-with a debug build.
+Pixel with that Tensor generation and Android 16 or later, not a BP2A build. A
+device outside that rule, or an app without the flag, is refused before any
+engine (a `BackendInitException` naming why); a Pixel of the other Tensor
+generation is refused by LiteRT when the engine is created. It never moves to
+the GPU or the CPU. Run so far on Tensor G6 Pixels with
+debug builds: Gemma 4 E2B text, images and audio, EmbeddingGemma 2 270m and
+440m.
 
 ## iOS
 

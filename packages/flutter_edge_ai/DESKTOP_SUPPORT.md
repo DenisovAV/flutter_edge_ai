@@ -43,7 +43,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.18.0-e`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.18.0-f`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
@@ -100,8 +100,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^2.4.0            # core
-  flutter_edge_ai_litertlm: ^1.14.0  # .litertlm engine
+  flutter_edge_ai: ^2.4.1            # core
+  flutter_edge_ai_litertlm: ^1.15.0  # .litertlm engine
 ```
 
 ```dart

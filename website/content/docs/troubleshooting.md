@@ -279,6 +279,18 @@ If the build fails reading the QAIRT SDK, the machine cannot reach
 prefers it over `ADSP_LIBRARY_PATH`, which is where the bundled Skels are
 announced.
 
+**A Google Tensor bundle fails to load.** The `BackendInitException` names the
+cause: the app does not set `google_tensor_npu: true` (in a pub workspace, at the
+root); the device runs Android below 16 (API 36) or a BP2A build; it is not a
+Tensor SoC; or the Pixel's `libedgetpu_litert.so` did not open. A G5 bundle on a
+G6 Pixel, or the reverse, is refused by LiteRT when the engine is created. It
+never falls back to the GPU or the CPU.
+
+**`PreferredBackend.npu` on Windows fails at load or the process ends with
+`0xC0000409`.** Every release from `flutter_gemma_litertlm` 1.7.0
+(`native-v0.17.0`) through `flutter_edge_ai_litertlm` 1.14.0 has this bug in its
+Intel NPU load (LiteRT-LM#4023); upgrade to 1.15.0.
+
 **`PreferredBackend.npu` is unavailable on a recent Snapdragon.** SoC coverage is
 the runtime's, not ours: Snapdragon 8 Gen 5 (**SM8845** — OnePlus 15R, iQOO 15R
 and the like) is not covered upstream, and a context compiled for SM8850 is

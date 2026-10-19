@@ -562,29 +562,29 @@
       }
     },
     "qwen3_0_6B": {
-      "baseUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-      "webUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-      "desktopUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+      "webUrl": null,
+      "desktopUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
       "hfRepo": null,
-      "filename": "Qwen3-0.6B.litertlm",
+      "filename": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "qwen3",
       "fileType": "litertlm",
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-        "iOS": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-        "macOS": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-        "windows": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-        "linux": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm"
+        "android": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "iOS": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "macOS": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "windows": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "linux": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm"
       },
       "installedId": {
-        "android": "Qwen3-0.6B.litertlm",
-        "iOS": "Qwen3-0.6B.litertlm",
-        "macOS": "Qwen3-0.6B.litertlm",
-        "windows": "Qwen3-0.6B.litertlm",
-        "linux": "Qwen3-0.6B.litertlm"
+        "android": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "iOS": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "macOS": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "windows": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "linux": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm"
       },
       "preferredBackend": {
         "android": "cpu",
@@ -959,7 +959,7 @@
     },
     "phi4_mini": {
       "baseUrl": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task",
-      "webUrl": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+      "webUrl": null,
       "desktopUrl": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
       "hfRepo": null,
       "filename": "Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task",
@@ -992,7 +992,7 @@
     },
     "functionGemma_270M_litertlm": {
       "baseUrl": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
-      "webUrl": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
+      "webUrl": null,
       "desktopUrl": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
       "hfRepo": null,
       "filename": "functiongemma-270M-it.litertlm",
@@ -1729,7 +1729,7 @@
   "SttModel": {
     "moonshineTiny": {
       "modelUrl": "https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite",
-      "tokenizerUrl": "https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json",
+      "tokenizerUrl": "https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json",
       "sttModelType": "moonshine",
       "needsAuth": false,
       "isSupported": true
@@ -1750,7 +1750,7 @@
     },
     "moonshineTinyInt8": {
       "modelUrl": "https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_i8.tflite",
-      "tokenizerUrl": "https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json",
+      "tokenizerUrl": "https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json",
       "sttModelType": "moonshine",
       "needsAuth": false,
       "isSupported": true
@@ -1777,7 +1777,7 @@
       "isSupported": true
     },
     "qwen3": {
-      "baseUrl": "https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/",
+      "baseUrl": "https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/",
       "ttsModelType": "qwen3",
       "isSupported": true
     },

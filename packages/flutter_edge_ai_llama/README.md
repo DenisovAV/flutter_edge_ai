@@ -9,8 +9,9 @@ Tools, thinking, images/audio and native LoRA require compatible models and
 runtimes. See [advanced usage](doc/advanced_usage.md) and the
 [platform qualification matrix](doc/platforms.md) for their limits.
 
-**Unreleased:** this package is available from the source repository.
-Use the checked-in example today; a pub.dev install command will follow release.
+Published version 0.0.1 provides inference with llamadart 0.13.1. This source
+branch adds the qualified SDK upgrade and native text embeddings for a future release.
+
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**,
 published llamadart **0.15.1** with typed overflow reporting and Apple
 companion **0.15.0**. Standalone hosted resolution requires publication of
@@ -86,10 +87,10 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-This draft requires core 2.5.0 and the typed-overflow SDK patch to be published
-before the following hosted dependency graph can resolve. Use the source
-workspace only for development until then. Replace the path below relative to
-your app's pubspec:
+This draft uses published llamadart 0.15.1 and requires core 2.5.0 to be
+published before standalone hosted resolution can pass. Use the source
+workspace for development until then. The future standalone setup is shown
+below; adjust the source path for your app:
 
 ```yaml
 dependencies:

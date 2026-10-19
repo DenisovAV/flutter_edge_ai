@@ -27,7 +27,7 @@ dependencies:
   genkit_flutter_edge_ai: ^0.10.0
   flutter_edge_ai: ^2.5.0
   # Add the inference engine(s) you need:
-  flutter_edge_ai_litertlm: ^1.14.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_litertlm: ^1.15.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.2.2  # .task / .bin models (mobile + web)
   # Optional — tokenizers for .tflite / .onnx embedding models (an EmbeddingGemma 2
   # .litertlm needs none; the backend is flutter_edge_ai_litertlm above):
@@ -240,7 +240,7 @@ final response = await ai.generate(
 Tool `ref`s travel as call ids both ways (`genkit_flutter_edge_ai` 0.10.0,
 which requires `flutter_edge_ai` ^2.4.0). A tool request's `ref` is the call's
 `FunctionCallResponse.id`, or `call_0`, `call_1`, … when the engine gives none
-(no bundled engine does yet), and never repeats within a turn. In the history
+(of the published engines only `flutter_edge_ai_llama` does), and never repeats within a turn. In the history
 the plugin sends back, a request's `ref` becomes its call's id
 (`Message.toolCall(calls:)`) and a tool response's `ref` its `toolCallId`.
 

@@ -42,13 +42,13 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.4.0`,
-`flutter_edge_ai_litertlm: ^1.14.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.4.1`,
+`flutter_edge_ai_litertlm: ^1.15.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -564,8 +564,8 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   VENTUNO Q). Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
   MT6991/MT6993 and Intel PTL builds; the Qualcomm ones load here but are not
   verified by us, Tensor G5/G6 runs on matching Pixels in apps built with
-  `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), not
-  yet run for EmbeddingGemma 2, Intel PTL runs on Windows
+  `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), the
+  G6 270m and 440m run on a Pixel 11, Intel PTL runs on Windows
   ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek is
   refused (no dispatch for it ships). What a bundle is compiled for is read
   from the bundle itself, not from its name.
@@ -773,7 +773,7 @@ Native platforms need no web setup.
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.18.0-e`, LiteRT-LM v0.18.0) is fetched at build
+The native library (`native-v0.18.0-f`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and on macOS a `post_install` block in `macos/Podfile`, without
@@ -923,10 +923,11 @@ part of the Pixel system image, is never redistributed, and core declares it as
 an optional system library. An app can set both opt-ins: the bundle's stamp
 picks the vendor, and LiteRT gets a directory with that vendor's libraries only.
 
-Run on a Pixel 11 Pro (Tensor G6) with a debug build: text, images and audio on
-the NPU. Not run yet: a Tensor G5, EmbeddingGemma 2, and a release-signed
-build. The Pixel's EdgeTPU service logs that an app is not on its allowlist;
-that did not stop the debug run.
+Run on a Pixel 11 Pro and a Pixel 11 (Tensor G6) with debug builds: Gemma 4
+E2B text, images and audio on the NPU, and EmbeddingGemma 2 270m and 440m (text
+and an image). Not run yet: a
+Tensor G5 and a release-signed build. On one Pixel the EdgeTPU service logged
+that the app is not on its allowlist; that did not stop the debug run.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 
@@ -1114,16 +1115,16 @@ Cause: a conversation whose generation is cancelled mid-reply stays unusable
 in the native runtime.
 
 Fix: every `flutter_edge_ai_litertlm` release answers again after a stop.
-Releases after 1.14.0 rewind the conversation to before the stopped turn and
+Since 1.15.0, releases rewind the conversation to before the stopped turn and
 put that turn back: the message, with its images and audio, and whatever the
 reply had produced, so the model keeps the whole chat, media included. This
 works the same whether the app called `stopGeneration()` or cancelled its
 subscription to the reply. 1.14.0 and earlier, and the NPU in every release
 (its executor cannot rewind), run the next turn instead on a fresh conversation
 that replays the history as text, so images and audio from earlier turns are
-gone; send them again if the next question is about them. A release after
-1.14.0 also falls back to that replay when a rewind fails, and says so in the
-log (release builds too).
+gone; send them again if the next question is about them. 1.15.0 and later
+also fall back to that replay when a rewind fails, and say so in the log
+(release builds too).
 
 ### Google Play rejects the app over 16 KB page sizes (fixed in `flutter_gemma_litertlm` 1.8.0)
 

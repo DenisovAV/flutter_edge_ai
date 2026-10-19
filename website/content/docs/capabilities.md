@@ -27,7 +27,7 @@ should use LiteRT-LM (`.litertlm`). The packages are
 `flutter_edge_ai_onnx`, `flutter_edge_ai_mediapipe` and
 `flutter_edge_ai_builtin_ai`.
 
-So text generation has four interchangeable runtimes, embeddings have two
+So text generation has five interchangeable runtimes (the fifth is llama.cpp through `flutter_edge_ai_llama`, for GGUF models, text only here; see [llama.cpp](/docs/llama)), embeddings have two
 (LiteRT and ONNX, both on every platform), and speech has one (LiteRT, on
 native platforms).
 

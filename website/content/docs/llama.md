@@ -6,12 +6,12 @@ meta:
     content: https://flutteredge.ai/images/og-image.png
 ---
 
-`flutter_edge_ai_llama` is an **unreleased contribution** providing an optional
+This source contribution extends `flutter_edge_ai_llama` with an optional
 inference and native text-embedding engine powered by
 [llamadart](https://pub.dev/packages/llamadart). The adapter registers through
 core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
-## Try the development package
+## Try the example
 
 The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+** and the forthcoming llamadart typed-overflow patch
 (target 0.15.1). Both prerequisite releases must be published before this draft
@@ -79,12 +79,12 @@ claim that type. Engine imports and Web URL resolution use core's public engine
 libraries. Core restores the paired LoRA after restart and refuses restoration
 if its adapter is missing; Web LoRA execution remains unsupported.
 
-## Add the development package
+## Add it to your app
 
-The package is not on pub.dev yet. Use the example or a path dependency on
-`packages/flutter_edge_ai_llama` in your clone. Core 2.4.0 supplies the typed tool
-history used by this connector. Core 2.4.0 is available on pub.dev. Hosted
-qualification never substitutes a core override.
+Published version 0.0.1 provides inference with llamadart 0.13.1. The SDK
+upgrade and GGUF embeddings in this source branch are pending release.
+Use the source workspace example with core 2.5.0 and published llamadart
+0.15.1; standalone hosted qualification requires core 2.5.0 publication.
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
 `llamadart_llama_cpp_flutter: 0.15.0` SwiftPM companion.
@@ -136,7 +136,7 @@ supported OS versions and advanced model/media/LoRA combinations still need qual
 App Store submission and mixed Apple workspace configurations are unvalidated.
 Web installation buffers a byte array; use models below about 2 GB and avoid streaming OPFS mode. See the
 [support matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md)
-for setup, capability limits and publication gates.
+for setup, capability limits and qualification.
 
 With llamadart 0.15.0, adding `flutter_edge_ai_litertlm` keeps the SDK on
 llama.cpp automatically. Retain the root `[llama_cpp]` selection as defence in

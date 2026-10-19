@@ -360,6 +360,50 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     npuVendor: EmbeddingNpuVendor.intel,
   ),
 
+  // EmbeddingGemma 2 compiled for the Google Tensor G6 NPU (Google's
+  // `…_Google_Tensor_G6` bundles, same repos and revisions; stamped Google).
+  // They run ONLY there — `getActiveEmbedder(preferredBackend:
+  // PreferredBackend.npu)` on a Pixel with Tensor G6 and Android 16 or later,
+  // in an app built with `google_tensor_npu: true` (this one is) — so the list
+  // shows them on Android only. Run on a Pixel 11 with a debug build. Their own
+  // profile id, the CPU text id plus `-npu-tensor_g6`; the 270m and the 440m
+  // carry byte-identical text towers (sha256 prefix 4130ab1123ab; the
+  // tokenizer and token-embedding sections match too), so they share it.
+  embeddingGemma2Text270mTensorG6(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Google_Tensor_G6.litertlm',
+    filename:
+        'embeddinggemma-2-text-270m_Google_Tensor_G6__rev-9be6e8b90982.litertlm',
+    displayName: 'EmbeddingGemma 2 Text (270M) · Google Tensor G6 NPU',
+    size: '200MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '4cd282395a7b611ec8dec95160cd31a1f471a7b1cde1fc71717aa539c2a29883',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6',
+    npuSoc: 'Tensor_G6',
+    npuVendor: EmbeddingNpuVendor.googleTensor,
+  ),
+
+  embeddingGemma2TextVision440mTensorG6(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Google_Tensor_G6.litertlm',
+    filename:
+        'embeddinggemma-2-text-vision-440m_Google_Tensor_G6__rev-e301f74d5551.litertlm',
+    displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Google Tensor G6 NPU',
+    size: '513MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '40e98aeed9ef08abfd91d5d309f64f4fa06195c513931e917bcf5ea41a910668',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6',
+    embedsImages: true,
+    npuSoc: 'Tensor_G6',
+    npuVendor: EmbeddingNpuVendor.googleTensor,
+  ),
+
   // Gecko-110m models (generate 768D embeddings)
   // Gecko 64 is the smallest and fastest model - ideal for short queries
   gecko64(
@@ -521,10 +565,14 @@ enum EmbeddingNpuVendor {
 
   /// Runs on Windows x64 (Panther Lake).
   intel,
+
+  /// Runs on Android arm64 (a Pixel with that Tensor generation).
+  googleTensor,
 }
 
 /// Whether this platform can run [vendor]'s per-SoC bundles at all: Qualcomm
-/// on Android and Linux (arm64), Intel on Windows (x64). On such a device
+/// on Android and Linux (arm64), Intel on Windows (x64), Google Tensor on
+/// Android (arm64). On such a device
 /// without that NPU they are listed and refused at load, with the reason.
 bool npuEmbeddersListedFor(EmbeddingNpuVendor vendor) =>
     !kIsWeb &&
@@ -534,6 +582,8 @@ bool npuEmbeddersListedFor(EmbeddingNpuVendor vendor) =>
             defaultTargetPlatform == TargetPlatform.linux,
       EmbeddingNpuVendor.intel =>
         defaultTargetPlatform == TargetPlatform.windows,
+      EmbeddingNpuVendor.googleTensor =>
+        defaultTargetPlatform == TargetPlatform.android,
     };
 
 /// The catalog models this platform lists.

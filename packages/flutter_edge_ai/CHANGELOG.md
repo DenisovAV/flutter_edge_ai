@@ -2,6 +2,7 @@
 - Self-contained GGUF embedders, provider-aware accelerator caching, and loaded backend reporting.
 
 ## 2.4.1
+- Android NPU: one vendor's dispatch per load; the manifest declares Google Tensor's runtime libraries.
 - Tool calls: a raw Gemma 4 call runs with typed arguments or not at all; one-chunk tagged calls parse.
 - `generateChatResponseWithTools`: a failed feed no longer masks the tool's error; unencodable results are answered.
 

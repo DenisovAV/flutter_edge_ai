@@ -593,7 +593,7 @@ what it had already said. Your next question is answered on top of that.
 **Good to know:** The interrupted-chat fix shipped in the legacy
 `flutter_gemma_litertlm` **1.8.1** package and is present in the current
 `flutter_edge_ai_litertlm`. Before that fix, a `.litertlm` chat stopped
-mid-reply answered every later message with nothing. Releases after 1.14.0
+mid-reply answered every later message with nothing. Since 1.15.0, releases
 rewind the conversation to before the stopped turn and put that turn back, so
 the model keeps the whole chat, including images and recordings from earlier
 turns. Earlier releases, and the NPU, rebuild the conversation from the chat's

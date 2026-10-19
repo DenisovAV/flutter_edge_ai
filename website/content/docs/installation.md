@@ -22,6 +22,7 @@ dependencies:
   flutter_edge_ai_mediapipe: latest_version    # .task / .bin models (MediaPipe; mobile + web)
   flutter_edge_ai_builtin_ai: latest_version   # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
   flutter_edge_ai_onnx: latest_version         # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
+  flutter_edge_ai_llama: latest_version        # .gguf models — llama.cpp through llamadart (see /docs/llama)
 
   # Optional — text-embedding tokenizer implementations (.tflite / .onnx models; an EmbeddingGemma 2 .litertlm needs none):
   flutter_edge_ai_embeddings: latest_version   # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
@@ -49,6 +50,7 @@ dependencies:
 | Run `.task` / `.bin` models on mobile and web (see [Models](/docs/models)); MediaPipe is maintenance-only, so prefer `.litertlm` in new apps | `flutter_edge_ai_mediapipe` |
 | Run the OS system model with no download (Gemini Nano / Apple FM / Windows AI Foundry / the browser Prompt API) | `flutter_edge_ai_builtin_ai` |
 | Run ONNX models — ORT-GenAI (native) or Transformers.js (Web) | `flutter_edge_ai_onnx` |
+| Run `.gguf` models (llama.cpp) | `flutter_edge_ai_llama` (see [setup](/docs/llama)) |
 | Generate text embeddings with EmbeddingGemma 2 (`.litertlm`) | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
 | Embed images with EmbeddingGemma 2 (the 440m or 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
 | Embed audio, or several parts in one vector, with EmbeddingGemma 2 (the 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) with `flutter_edge_ai` 2.3.1; 1.13.2 on Web |
@@ -275,7 +277,7 @@ host fails with `Could not find method kotlin()`. Add KGP to the host's root
 Gradle plugin carries KGP.
 
 **GPU and NPU (any engine): nothing to add to the manifest.** `flutter_edge_ai`'s
-own manifest declares the OpenCL and FastRPC namespace entries and the manifest
+own manifest declares the OpenCL, FastRPC and Google Tensor runtime namespace entries and the manifest
 merger folds them into your app. These
 are what your merged manifest must contain if you pin or audit it — note
 `libvndksupport.so`: without it the OpenCL ICD load is denied on Android 12+, the
@@ -287,6 +289,8 @@ engine falls back to WebGPU, and some Mali drivers hard-freeze (#324).
 <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
 <uses-native-library android:name="libOpenCL-pixel.so" android:required="false"/>
 <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
+<uses-native-library android:name="libedgetpu_litert.so" android:required="false"/>
+<uses-native-library android:name="libedgetpu_util.so" android:required="false"/>
 ```
 
 **Qualcomm NPU (opt-in).** `PreferredBackend.npu` needs Qualcomm's QNN runtime,
@@ -306,6 +310,14 @@ Qualcomm's QAIRT SDK for Linux arm64 boards. Without the flag a bundle
 compiled for an NPU is refused with a `BackendInitException` that says why; a
 generic bundle never runs on the NPU, flag or not. See
 [LiteRT-LM](/docs/litertlm).
+
+**Google Tensor NPU (opt-in).** A bundle compiled for a Tensor NPU
+(`…_Google_Tensor_G5.litertlm`, `…_Google_Tensor_G6.litertlm`) needs
+`google_tensor_npu: true` in the same `user_defines` block
+(`flutter_edge_ai_litertlm` 1.15.0). The build then bundles the Tensor
+dispatch, built from LiteRT and covered by Google's Tensor SDK terms; the
+runtime it drives is part of the Pixel system image. It runs on a Pixel with
+that Tensor generation and Android 16 or later. See [LiteRT-LM](/docs/litertlm).
 
 **ProGuard/R8 (only if you use `flutter_edge_ai_mediapipe`):** the package ships
 its own consumer ProGuard rules, so a release build needs no rules in your app

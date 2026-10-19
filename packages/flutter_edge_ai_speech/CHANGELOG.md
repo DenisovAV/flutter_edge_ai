@@ -1,3 +1,6 @@
+## 0.5.8
+- Docs: after a barge-in, earlier audio turns stay in context with `flutter_edge_ai_litertlm` 1.15.0.
+
 ## 0.5.7
 - `VoiceSession.runAudioTurn`: the model hears the recording, no speech-to-text.
 

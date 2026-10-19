@@ -172,9 +172,13 @@ language throws `StateError` until you `close()` the current one. Same
 install/synthesize API as Matcha, but heavier: CPU-only, 24 kHz output, RTF≈3
 (~3 s of compute per 1 s of audio), and needs a 6 GB-RAM-class device.
 
+The URL pins a revision. On 2026-10-16 the repository moved these files under
+`legacy/`, and its `main` now holds only `.litertlm` builds, which
+`flutter_edge_ai_speech` does not load, so `resolve/main/` returns 404.
+
 ```dart
 await FlutterEdgeAi.installTts()
-    .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/')
+    .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/')
     .ofType(TtsModelType.qwen3)
     .install();
 

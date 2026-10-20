@@ -1,3 +1,6 @@
+## 0.6.0
+- Windows ARM64: bundle the ORT and ORT-GenAI archives and enable both engines (hardware smoke test pending, #326).
+
 ## 0.5.9
 - README: which part of genai_config.json the engine reads.
 

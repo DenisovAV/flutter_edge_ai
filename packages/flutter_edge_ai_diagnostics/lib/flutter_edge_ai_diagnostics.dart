@@ -4,5 +4,6 @@ library;
 
 export 'src/diagnostics_stub.dart'
     if (dart.library.ffi) 'src/diagnostics_io.dart';
+export 'src/gpu_memory_reading.dart';
 export 'src/memory_read_exception.dart';
 export 'src/memory_snapshot.dart';

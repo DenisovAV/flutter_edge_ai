@@ -1018,7 +1018,7 @@ is never redistributed, and core declares its libraries as optional; a phone
 whose vendor does not expose them to apps is refused with the reason. An app
 can set this with the other opt-ins: the bundle's stamp picks the vendor.
 
-Not run on a MediaTek phone yet. Google publishes Gemma 3 1B (MT6989, MT6991,
+Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug build: Gemma 3 1B (`…_mt6989`) generates on the NPU. Not run yet: EmbeddingGemma 2 on an MT6991/MT6993 and a release-signed build. Google publishes Gemma 3 1B (MT6989, MT6991,
 MT6993), Gemma 3 270M (MT6991, MT6993), Qwen3 0.6B (MT6993) and EmbeddingGemma 2
 (MT6991, MT6993) bundles; Gemma 4 has none.
 

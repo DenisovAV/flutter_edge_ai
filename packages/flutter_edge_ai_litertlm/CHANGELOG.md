@@ -1,8 +1,11 @@
+## 1.17.0
+- MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).
+- Require `flutter_edge_ai` ^2.5.1.
+
 ## 1.16.0
 - `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.
 - Several open models at once (`FlutterEdgeAi.openModel`).
 - `LiteRtLmEngine(nativeLogLevel:)` sets LiteRT-LM's native log level.
-- MediaTek NPU on Android, opt-in with `mediatek_npu: true`; not run on a MediaTek phone yet.
 - Require `flutter_edge_ai` ^2.5.0.
 
 ## 1.15.0

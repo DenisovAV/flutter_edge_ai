@@ -1,3 +1,6 @@
+## 0.4.1
+- README: each intent's platforms; desktop calendar events open a Google Calendar page.
+
 ## 0.4.0
 - **Breaking**: `schedule_notification` needs `NativeIntentExecutor(notifications:)`; the agent never initializes the plugin.
 - Email and SMS intents write spaces as `%20`, not `+`; README lists each intent's platform declarations.

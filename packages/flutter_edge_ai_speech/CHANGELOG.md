@@ -1,3 +1,6 @@
+## 0.5.9
+- README: which engines default `supportAudio` from the model.
+
 ## 0.5.8
 - Docs: after a barge-in, earlier audio turns stay in context with `flutter_edge_ai_litertlm` 1.15.0.
 

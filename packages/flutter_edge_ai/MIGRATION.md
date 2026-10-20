@@ -1,6 +1,39 @@
 # Migration guide
 
-## flutter_edge_ai 2.5.0: self-contained embedding providers
+## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
+
+### Removed members
+
+| Removed | Use |
+|---|---|
+| `EmbeddingModel.generateEmbedding(t)` | `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)` |
+| `EmbeddingModel.generateEmbeddings(ts)` | `embedAll([for (final t in ts) EmbeddingInput.text(t)], taskType: TaskType.retrievalQuery)` |
+| `EmbeddingModel.getDimension()` | `dimension` |
+| `InferenceModelSpec.fromLegacyUrl(name:, modelUrl:, loraUrl:)` | `InferenceModelSpec(name: …, modelSource: …, loraSource: …, modelType: …)` |
+
+The removed embedding methods embedded as `TaskType.retrievalQuery` unless given
+a `taskType:`; pass the same task to keep their vectors.
+`genkit_flutter_edge_ai` 0.9.0 and older call `generateEmbeddings` and do not
+compile against 2.5.0: upgrade it to 0.9.1 or later. For `fromLegacyUrl`, use
+the `ModelSource` that matches the URL: `ModelSource.network(url)` for
+`http(s)://`, `ModelSource.asset(path)` for `asset://` or a bare path,
+`ModelSource.bundled(name)` for `native://`, `ModelSource.file(path)` for
+`file://`. The factory defaulted to `modelType: ModelType.general`.
+
+### `FlutterEdgeAiPlugin.createModel` is deprecated
+
+`FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
+deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
+`modelType` and `fileType` and returned the active model, which is what
+`FlutterEdgeAi.getActiveModel()` returns. The two ways to get a model are on
+`FlutterEdgeAi`:
+
+| Before | After |
+|---|---|
+| `FlutterEdgeAiPlugin.instance.createModel(modelType: …, maxTokens: …)` | `FlutterEdgeAi.getActiveModel(maxTokens: …)` |
+| several models through `src/` imports | `FlutterEdgeAi.openModel(spec, …)` on a spec from `install(activate: false)`, with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0) |
+
+### Embedding providers: `.gguf` without a tokenizer, accelerators
 
 Embedding specs accept `.gguf` without a separate tokenizer. For an opaque URL,
 use `modelFromNetwork(url, filename: 'model.gguf')`. Old `.gguf` plus tokenizer
@@ -87,39 +120,6 @@ refused before it runs when its date is partial (a `day` without `year` and
 passed today moves to tomorrow at the same wall-clock time, across a clock
 change too. The mail and SMS intents write a space as `%20` instead of `+`.
 See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
-
-## flutter_edge_ai 2.5.0: several open models, removed and deprecated members
-
-### Removed members
-
-| Removed | Use |
-|---|---|
-| `EmbeddingModel.generateEmbedding(t)` | `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)` |
-| `EmbeddingModel.generateEmbeddings(ts)` | `embedAll([for (final t in ts) EmbeddingInput.text(t)], taskType: TaskType.retrievalQuery)` |
-| `EmbeddingModel.getDimension()` | `dimension` |
-| `InferenceModelSpec.fromLegacyUrl(name:, modelUrl:, loraUrl:)` | `InferenceModelSpec(name: …, modelSource: …, loraSource: …, modelType: …)` |
-
-The removed embedding methods embedded as `TaskType.retrievalQuery` unless given
-a `taskType:`; pass the same task to keep their vectors.
-`genkit_flutter_edge_ai` 0.9.0 and older call `generateEmbeddings` and do not
-compile against 2.5.0: upgrade it to 0.9.1 or later. For `fromLegacyUrl`, use
-the `ModelSource` that matches the URL: `ModelSource.network(url)` for
-`http(s)://`, `ModelSource.asset(path)` for `asset://` or a bare path,
-`ModelSource.bundled(name)` for `native://`, `ModelSource.file(path)` for
-`file://`. The factory defaulted to `modelType: ModelType.general`.
-
-### `FlutterEdgeAiPlugin.createModel` is deprecated
-
-`FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
-deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
-`modelType` and `fileType` and returned the active model, which is what
-`FlutterEdgeAi.getActiveModel()` returns. The two ways to get a model are on
-`FlutterEdgeAi`:
-
-| Before | After |
-|---|---|
-| `FlutterEdgeAiPlugin.instance.createModel(modelType: …, maxTokens: …)` | `FlutterEdgeAi.getActiveModel(maxTokens: …)` |
-| several models through `src/` imports | `FlutterEdgeAi.openModel(spec, …)` on a spec from `install(activate: false)`, with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0) |
 
 ## flutter_edge_ai 2.4.0 / flutter_edge_ai_litertlm 1.14.0: backends follow the model file
 
@@ -652,16 +652,16 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**Current equivalents (2.4):**
+**Current equivalents (2.5):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.4.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.15.0       # .litertlm + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.2.2       # .task / .bin
-  flutter_edge_ai_embeddings: ^2.3.0      # tokenizer providers
-  flutter_edge_ai_rag: ^1.1.0             # RAG orchestration + contracts
-  flutter_edge_ai_qdrant: ^2.1.0          # native qdrant provider
-  flutter_edge_ai_sqlite: ^2.1.0          # sqlite-vec provider; needs Flutter 3.47
+  flutter_edge_ai: ^2.5.0                 # core — always required
+  flutter_edge_ai_litertlm: ^1.16.0       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.2.3       # .task / .bin
+  flutter_edge_ai_embeddings: ^2.3.2      # tokenizer providers
+  flutter_edge_ai_rag: ^1.1.2             # RAG orchestration + contracts
+  flutter_edge_ai_qdrant: ^2.1.1          # native qdrant provider
+  flutter_edge_ai_sqlite: ^2.1.1          # sqlite-vec provider; needs Flutter 3.47
 ```
 
 Pick by what you actually used in 0.16.x:

@@ -1,3 +1,6 @@
+## 2.1.1
+- README: the iOS simulator is arm64 only.
+
 ## 2.1.0
 - **Breaking:** the store persists the document modality (`VectorStoreBinding`); require `flutter_edge_ai_rag` ^1.1.0.
 

@@ -176,7 +176,7 @@ MediaTek SoC (Google publishes Gemma 3 1B for MT6989/MT6991/MT6993, Gemma 3
 270M for MT6991/MT6993, Qwen3 0.6B for MT6993 and EmbeddingGemma 2 for
 MT6991/MT6993; nothing for Gemma 4) runs on a phone with that SoC and Android
 12 or later when the app sets `mediatek_npu: true` in the same `user_defines`
-block (from flutter_edge_ai_litertlm 1.16.0). The build then fetches Google's
+block (from flutter_edge_ai_litertlm 1.17.0). The build then fetches Google's
 `litert-npu-runtime-mediatek` 2.3.0 AAR from Google Maven, checks its pinned
 checksum and bundles its `libLiteRtDispatch_MediaTek.so` (Apache 2.0, about
 330 KB). It is not in our release because building it needs MediaTek's
@@ -184,7 +184,7 @@ NeuroPilot SDK, whose licence lets it reach users only inside an app. The
 NeuroPilot runtime it drives is part of the phone; a phone whose vendor does
 not expose it to apps is refused with that reason. Offline, download the AAR
 and add `mediatek_npu_aar: <path>`; `mediatek_npu_maven_url` names a mirror.
-Not run on a MediaTek phone yet.
+Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug build: Gemma 3 1B (`…_mt6989`) generates on the NPU.
 
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino
@@ -209,7 +209,7 @@ Linux arm64, with the per-SoC bundles, and never falls back: see
 Google Tensor G5/G6 bundles (270m, 440m) take `google_tensor_npu: true` instead
 (from 1.15.0): see
 [EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
-MediaTek MT6991/MT6993 bundles take `mediatek_npu: true` (from 1.16.0; not run
+MediaTek MT6991/MT6993 bundles take `mediatek_npu: true` (from 1.17.0; not run
 on such a phone yet).
 On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).

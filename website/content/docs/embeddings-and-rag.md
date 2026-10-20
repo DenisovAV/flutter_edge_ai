@@ -47,12 +47,12 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.4.1
-  flutter_edge_ai_litertlm: ^1.15.0
-  flutter_edge_ai_embeddings: ^2.3.0 # tokenizers for .tflite / .onnx models
-  flutter_edge_ai_rag: ^1.1.0
-  flutter_edge_ai_sqlite: ^2.1.0 # all six platforms, including Web
-  # flutter_edge_ai_qdrant: ^2.1.0 # native alternative
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_litertlm: ^1.16.0
+  flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
+  flutter_edge_ai_rag: ^1.1.2
+  flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
+  # flutter_edge_ai_qdrant: ^2.1.1 # native alternative
 ```
 
 <Warning>
@@ -392,7 +392,8 @@ print(embedder.activeBackend); // PreferredBackend.npu
   not verified by us, Tensor G5/G6 runs on matching Pixels
   ([below](#embeddinggemma-2-on-a-google-tensor-npu)), Intel PTL runs on Windows
   ([below](#embeddinggemma-2-on-an-intel-npu)), and MediaTek MT6991/MT6993 load
-  in apps built with **mediatek_npu: true** (not run on such a phone yet). The
+  in apps built with **mediatek_npu: true** (not run on an MT6991/MT6993 phone
+  yet). The
   package reads what a bundle is compiled for from the bundle, not from its
   file name.
 - **Fast, and close to the CPU vectors, not equal to them.** On an SM8650

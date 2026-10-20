@@ -326,7 +326,7 @@ starts with `BP2A`, which LiteRT does not run the NPU on. See [LiteRT-LM](/docs/
 
 **MediaTek NPU (opt-in).** A bundle compiled for a MediaTek SoC
 (`…_MediaTek_MT6991.litertlm`, `…_mt6991.litertlm`) needs `mediatek_npu: true`
-in the same `user_defines` block (`flutter_edge_ai_litertlm` 1.16.0). The build
+in the same `user_defines` block (`flutter_edge_ai_litertlm` 1.17.0). The build
 then fetches Google's `litert-npu-runtime-mediatek` AAR from Google Maven and
 bundles its dispatch; the NeuroPilot runtime it drives is part of the phone.
 It runs on a phone with that SoC and Android 12 or later whose vendor exposes

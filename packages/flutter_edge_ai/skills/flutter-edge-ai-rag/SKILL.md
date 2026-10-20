@@ -151,7 +151,8 @@ import 'package:flutter_edge_ai/engine.dart';
 ```
 
 Core accepts self-contained `.gguf` embedding files without a separate
-tokenizer. When backends are registered, installation requires one that can run
+tokenizer. A `.gguf` carries its own tokenizer: adding a `tokenizerFrom…()` makes
+`install()` throw `ArgumentError`, as on a `.litertlm`. When backends are registered, installation requires one that can run
 the file; with none registered, installation can proceed. No GGUF embedding
 backend ships yet. `flutter_edge_ai_embeddings` remains the tokenizer package;
 runtime passes belong to their engine packages.
@@ -341,12 +342,13 @@ final npuIndex = await rag.open(
   build. Profile id: the CPU text id plus the SoC, e.g. `-npu-tensor_g6`,
   shared by the 270m and the 440m. Run on a Pixel 11 (Tensor G6) with a debug
   build; a Tensor G5 and a release-signed build are not run yet.
-- **MediaTek MT6991/MT6993 (Android arm64, `flutter_edge_ai_litertlm` 1.16.0).**
+- **MediaTek MT6991/MT6993 (Android arm64, `flutter_edge_ai_litertlm` 1.17.0).**
   `…_MediaTek_MT6991.litertlm` / `…_MediaTek_MT6993.litertlm` load the same way
   with `preferredBackend: PreferredBackend.npu`, in an app whose pubspec sets
   `mediatek_npu: true`, on a phone with that SoC, Android 12 or later, whose
   vendor exposes NeuroPilot to apps. Profile id: the CPU text id plus the SoC,
-  e.g. `-npu-mt6991`. Not run on a MediaTek phone yet.
+  e.g. `-npu-mt6991`. Not run on an MT6991/MT6993 phone yet; the LLM path
+  runs on an MT6989.
 
 ### EmbeddingGemma 2 images (440m; `flutter_edge_ai_litertlm` 1.13.1 native, 1.13.1 Web)
 

@@ -16,16 +16,19 @@
 // Run (DDP, see .claude/skills/ddp-device-test):
 //   run_instrumented.sh mtk integration_test/mediatek_npu_test.dart \
 //     MTK_MODEL=Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm MTK_MAX_TOKENS=1280
-// ignore_for_file: avoid_print, implementation_imports
+// ignore_for_file: avoid_print
 import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+// ignore: implementation_imports — asks the MediaTek device rule and probe the engine asks
 import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart'
     show mediaTekDeviceRefusal, platformNpuProbes;
+// ignore: implementation_imports — reads whether this build bundled the MediaTek dispatch
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart'
     show checkNpuStackInManifest;
+// ignore: implementation_imports — the NeuroPilot libraries the probe lists
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

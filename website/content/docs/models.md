@@ -580,7 +580,7 @@ run on Windows x64 the same way; see
 From 1.15.0 the Google Tensor G5/G6 bundles (`…_Google_Tensor_G6.litertlm`,
 166–658 MB) run on matching Pixels with `google_tensor_npu: true`; see
 [EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
-From 1.16.0 the MediaTek MT6991/MT6993 bundles (`…_MediaTek_MT6991.litertlm`)
+From 1.17.0 the MediaTek MT6991/MT6993 bundles (`…_MediaTek_MT6991.litertlm`)
 load on phones with that SoC with `mediatek_npu: true` (not run on such a phone
 yet); see [LiteRT-LM](/docs/litertlm).
 The Gecko and EmbeddingGemma 1 rows are a `.tflite` model plus a tokenizer

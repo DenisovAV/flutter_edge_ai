@@ -23,6 +23,7 @@ import 'package:flutter_edge_ai/engine_io.dart';
 import 'package:ffi/ffi.dart';
 
 import 'litert_default_scope.dart';
+import 'macos_load_error.dart';
 
 // ----- Opaque handle typedefs ------------------------------------------------
 
@@ -213,10 +214,13 @@ DynamicLibrary _openLiteRt() {
     // platforms; both LiteRtLm and LiteRt symbols are exported from the
     // same dylib. The `@executable_path/../Frameworks/...` path resolves
     // at runtime; outside an app bundle we fall back to a dev prebuilt.
-    const bundled = 'LiteRtLm.framework/LiteRtLm';
+    const bundled = macOSLiteRtLmFramework;
+    final Object bundledError;
     try {
       return DynamicLibrary.open(bundled);
-    } catch (_) {}
+    } catch (error) {
+      bundledError = error;
+    }
 
     // iOS always resolves the bundled framework; it has no dev checkout and no
     // ~/Library/Caches. Offering it macOS .dylib paths would make the failure
@@ -228,8 +232,14 @@ DynamicLibrary _openLiteRt() {
       );
     }
 
-    final tried = <String>[bundled];
-    for (final p in _devLiteRtLmCandidates()) {
+    // Inside an app, a copy from the build cache would be any version and
+    // would make an app that fails for its users work on the developer's Mac
+    // (#689), so only the macOS host test suites get here.
+    final tried = <String>[];
+    for (final p in macOSFallbackCandidates(
+      executable: Platform.resolvedExecutable,
+      devCandidates: _devLiteRtLmCandidates,
+    )) {
       tried.add(p);
       // Existence-check first so the message below can tell "no such file"
       // from "found it but it would not load"...
@@ -244,8 +254,8 @@ DynamicLibrary _openLiteRt() {
       }
     }
     throw UnsupportedError(
-      'LiteRtLm framework/dylib not found or would not load. Tried (cwd: '
-      '${Directory.current.path}): ${tried.join(", ")}',
+      '${macOSLoadErrorMessage(dyldErrorText(bundledError))}'
+      '${tried.isEmpty ? '' : '\nAlso tried (cwd: ${Directory.current.path}): ${tried.join(", ")}'}',
     );
   }
   if (Platform.isAndroid) {

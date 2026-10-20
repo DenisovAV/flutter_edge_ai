@@ -255,6 +255,11 @@ post_install do |installer|
 end
 ```
 
+From Flutter 3.50 a build with the setting off prints `Enabling Swift Package
+Manager will be required in a future version of Flutter.`; the setting still
+works. A route that needs no Podfile is tracked in
+[#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
+
 **Entitlements** — add to both `macos/Runner/DebugProfile.entitlements` and
 `Release.entitlements`:
 

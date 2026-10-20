@@ -87,6 +87,12 @@ silently do the other thing.
         apps, README, desktop.md and the inference skill's
         references/platform-setup.md; the script prints the count, do not hardcode
         one here) — RUN it, do not eyeball
+[ ] 1f-ter litertlm or speech in the release → macOS SwiftPM gate (#689): a fresh
+        `flutter create` app on the Flutter floor and on current stable, RUN, not
+        just built. SwiftPM default → `LiteRT-LM did not load on macOS` naming the
+        companions; SwiftPM off + the desktop.md post_install block → STT, LLM on
+        GPU and one tool call work. If flutter#193978 / #193975 have dated the
+        removal of the SwiftPM opt-out, reopen the #689 bridge decision first
 [ ] 1g  each changed satellite's flutter_edge_ai: floor >= the core version it now needs
 [ ] 2   versions bumped: pubspec + podspec (if any) + AGENTS.md Current-Version line
 [ ] 7   CHANGELOG: one short line per package, every published package

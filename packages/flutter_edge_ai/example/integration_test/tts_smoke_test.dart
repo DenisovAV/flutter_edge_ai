@@ -19,11 +19,16 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
-    show FlutterEdgeAi, PreferredBackend;
+    show FlutterEdgeAi, PreferredBackend, TtsModelType;
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     show LiteRtSpeechModels, LiteRtTtsBackend;
 
 import 'registry_evidence.dart';
+
+// A phone whose downloads crawl (a DDP phone reaches Hugging Face over
+// IPv6/NAT64 at a few KB/s) runs on a staged copy of the bundle, laid out like
+// the repository; the evidence then comes from its first file's sha256.
+const _bundleDir = String.fromEnvironment('TTS_BUNDLE_DIR');
 
 // Golden reference values (captured on macOS CPU).
 const _goldenSamples = 19456;
@@ -39,7 +44,14 @@ void main() {
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       final variant = LiteRtSpeechModels.matchaTts.bundle;
-      await FlutterEdgeAi.installFromCatalog(variant).install();
+      if (_bundleDir.isNotEmpty) {
+        await FlutterEdgeAi.installTts()
+            .fromFile(_bundleDir)
+            .ofType(TtsModelType.matcha)
+            .install();
+      } else {
+        await FlutterEdgeAi.installFromCatalog(variant).install();
+      }
 
       final synth = await FlutterEdgeAi.getActiveTts();
 
@@ -112,11 +124,19 @@ void main() {
           reason: 'RMS out of ±0.02 tolerance vs golden ($_goldenRms)',
         );
         // No preferredBackend: the synthesizer runs on the CPU.
-        recordCatalogEvidence(
-          variant,
-          backend: PreferredBackend.cpu,
-          check: 'synthesizes within the golden tolerance',
-        );
+        if (_bundleDir.isNotEmpty) {
+          await recordEvidence(
+            path: '$_bundleDir/${variant.files.first.installFilename}',
+            backend: PreferredBackend.cpu,
+            check: 'synthesizes within the golden tolerance',
+          );
+        } else {
+          recordCatalogEvidence(
+            variant,
+            backend: PreferredBackend.cpu,
+            check: 'synthesizes within the golden tolerance',
+          );
+        }
       } finally {
         await synth.close();
       }

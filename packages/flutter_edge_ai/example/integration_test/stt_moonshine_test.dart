@@ -20,6 +20,12 @@ import 'registry_evidence.dart';
 
 const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
+// A phone whose downloads crawl (a DDP phone reaches Hugging Face over
+// IPv6/NAT64 at a few KB/s) runs on staged copies of the same two files; the
+// evidence then comes from the model file's sha256.
+const _modelFile = String.fromEnvironment('STT_MODEL_FILE');
+const _tokenizerFile = String.fromEnvironment('STT_TOKENIZER_FILE');
+
 /// WAV data chunk starts after the 44-byte canonical PCM header.
 const _wavHeaderBytes = 44;
 
@@ -35,7 +41,15 @@ void main() {
     );
 
     final variant = LiteRtSpeechModels.moonshineTiny.f32;
-    await FlutterEdgeAi.installFromCatalog(variant).install();
+    if (_modelFile.isNotEmpty) {
+      await FlutterEdgeAi.installStt()
+          .modelFromFile(_modelFile)
+          .tokenizerFromFile(_tokenizerFile)
+          .ofType(SttModelType.moonshine)
+          .install();
+    } else {
+      await FlutterEdgeAi.installFromCatalog(variant).install();
+    }
 
     final recognizer = await FlutterEdgeAi.getActiveStt();
 
@@ -62,11 +76,19 @@ void main() {
     expect(low, contains('watch'), reason: 'got: "$transcript"');
     expect(low, contains('year'), reason: 'got: "$transcript"');
     // No preferredBackend: the recognizer runs on the CPU.
-    recordCatalogEvidence(
-      variant,
-      backend: PreferredBackend.cpu,
-      check: 'transcribes the bundled clip',
-    );
+    if (_modelFile.isNotEmpty) {
+      await recordEvidence(
+        path: _modelFile,
+        backend: PreferredBackend.cpu,
+        check: 'transcribes the bundled clip',
+      );
+    } else {
+      recordCatalogEvidence(
+        variant,
+        backend: PreferredBackend.cpu,
+        check: 'transcribes the bundled clip',
+      );
+    }
 
     await recognizer.close();
   }, timeout: const Timeout(Duration(minutes: 10)));

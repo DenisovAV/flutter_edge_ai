@@ -38,6 +38,9 @@ import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
+import 'package:flutter_edge_ai/src/api/catalog_installation_builder.dart';
+import 'package:flutter_edge_ai/src/catalog/model_catalog.dart';
+import 'package:flutter_edge_ai/src/catalog/registered_catalog.dart';
 
 /// Modern API facade for Flutter Edge AI
 ///
@@ -338,6 +341,42 @@ class FlutterEdgeAi {
   static TtsInstallationBuilder installTts() {
     return TtsInstallationBuilder();
   }
+
+  /// The models the packages passed to [initialize] offer, as one catalog.
+  ///
+  /// Each engine or backend that implements [ModelCatalogSource] adds its
+  /// catalog, so only models a registered package can run are listed. A model
+  /// two packages offer is one model; the variants of the package registered
+  /// first come first. Choose a variant with [CatalogModel.variantFor] and
+  /// install it with [installFromCatalog].
+  ///
+  /// Throws [StateError] before [initialize] and after [dispose].
+  static ModelCatalog get catalog {
+    // Throws the not-initialized StateError.
+    ServiceRegistry.instance;
+    return RegisteredCatalog([
+      ...EngineRegistry.instance.registered,
+      ...EmbeddingRegistry.instance.registered,
+      ...SttRegistry.instance.registered,
+      ...TtsRegistry.instance.registered,
+    ]);
+  }
+
+  /// Installs [variant] through the installer of its kind, with the model
+  /// type, file type, file names and profile the catalog records.
+  ///
+  /// ```dart
+  /// final variant = FlutterEdgeAi.catalog
+  ///     .byId('gemma-4-e2b-it')!
+  ///     .variantFor(backend: PreferredBackend.gpu)! as InferenceVariant;
+  /// await FlutterEdgeAi.installFromCatalog(variant).install();
+  /// final model = await FlutterEdgeAi.getActiveModel(
+  ///   defaults: variant.runtimeDefaults,
+  /// );
+  /// ```
+  static CatalogInstallationBuilder installFromCatalog(
+    CatalogVariant variant,
+  ) => CatalogInstallationBuilder(variant);
 
   /// Check if a model is installed
   ///

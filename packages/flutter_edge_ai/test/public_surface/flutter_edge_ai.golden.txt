@@ -8,6 +8,11 @@ AssetSource class final
 BundledSource class final
 CancelToken class
 CanceledError class final
+CatalogInstallException class final
+CatalogInstallation class final
+CatalogInstallationBuilder class final
+CatalogModel class abstract base
+CatalogVariant class sealed
 CorruptionAction enum
 CorruptionDetectionResult class
 Decider class abstract base experimental
@@ -32,6 +37,7 @@ DownloadProgress class
 EdgeAiLogLevel enum
 EmbedderCloseTimeoutException class final
 EmbedderClosedException class final
+EmbedderVariant class abstract base
 EmbeddingBackendProvider class abstract base
 EmbeddingCancelledException class final
 EmbeddingDeciderCalibration class final experimental
@@ -76,9 +82,13 @@ InferenceInstallationBuilder class
 InferenceModel class abstract
 InferenceModelSession class abstract
 InferenceModelSpec class
+InferenceVariant class abstract base
 MediaPosition enum
 Message class
 MessageType enum
+ModelArtifact class final
+ModelCatalog class abstract base
+ModelCatalogSource class abstract interface
 ModelFile class abstract
 ModelFileManager class abstract
 ModelFileType enum
@@ -98,6 +108,8 @@ NetworkError class final
 NetworkSource class final
 NoActiveModelError class
 NotFoundError class final
+NpuTarget class abstract base
+NpuVendor class final
 OrphanedFileInfo class
 ParallelFunctionCallResponse class
 PreferredBackend enum
@@ -123,6 +135,7 @@ SttInstallation class
 SttInstallationBuilder class
 SttModelSpec class
 SttModelType enum
+SttVariant class abstract base
 TaskType enum
 TextResponse class
 ThinkingResponse class
@@ -133,6 +146,7 @@ TtsInstallation class
 TtsInstallationBuilder class
 TtsModelSpec class
 TtsModelType enum
+TtsVariant class abstract base
 UnauthorizedError class final
 UnknownError class final
 UnsupportedEmbeddingCombinationException class final

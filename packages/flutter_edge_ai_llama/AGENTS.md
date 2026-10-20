@@ -1,7 +1,7 @@
 # llama.cpp adapter maintenance
 
 This draft adapts core 2.5.0+ through public engine libraries and published
-llamadart 0.15.1. Source qualification uses the stacked core; standalone hosted
+llamadart 0.15.1. Source qualification uses the merged core source; standalone hosted
 qualification still requires publication of core 2.5.0. Inference routes by declared type. LlamaEmbeddingBackend
 registers self-contained GGUF through core's embedding SPI; see doc/embeddings.md.
 

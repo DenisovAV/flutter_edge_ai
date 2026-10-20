@@ -81,7 +81,7 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_litertlm: ^1.15.0   # or any other engine from the table
+  flutter_edge_ai_litertlm: ^1.16.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -314,6 +314,13 @@ and closes the previous handle. A model is closed from the moment its
 finish, then builds a new model. With no model installed it throws
 `NoActiveModelError`, a `StateError`.
 
+To keep several models loaded at once, such as one file on CPU and GPU, open
+them with `FlutterEdgeAi.openModel(spec, …)` on a spec from
+`installModel(…).install(activate: false)`, with `LiteRtLmEngine`
+(`flutter_edge_ai_litertlm` 1.16.0) on Android, iOS and desktop. Each call
+builds a model the app owns and closes; see
+[Desktop → Several models at once](https://flutteredge.ai/docs/desktop#several-models-at-once).
+
 Sampling left unset comes from the model: the sampler a native `.litertlm` file
 ships, else the defaults its family publishes (`SamplingParams.forModelType`),
 else `topK: 40`. Pass `topK: 1` for greedy decoding. What each engine reads,
@@ -353,8 +360,13 @@ loaded onto an NPU bundle. Measured with EmbeddingGemma 2 on CLINC150 and
 HWU64, the numbers and their limits:
 [Decisions](https://flutteredge.ai/docs/decisions).
 `InferenceModel.createDecider(question:, options:, calibration:)` is the
-language-model kind, with answers of the same shape; no engine scores options
-in this release, so it throws `DeciderUnsupportedException`.
+language-model kind, with answers of the same shape: a small `.litertlm` tuned
+for the decision by LiteTune carries the question, options, temperature and
+threshold in the file; pass the question and the options, with
+`InferenceDeciderCalibration.fromModel()` for the rest. Each option's id is
+scored as the model's reply, on the CPU, natively (`flutter_edge_ai_litertlm`
+1.16.0). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
+(`answer.expectedLevel`) questions.
 
 ## Three things that fail quietly
 

@@ -877,8 +877,8 @@ void main() {
       DeciderOption('none'),
     ];
 
-    test('no engine scores options: after its checks it refuses, as a failed '
-        'future', () async {
+    test('a model whose engine does not score options: after its checks it '
+        'refuses, as a failed future', () async {
       for (final calibration in const [
         InferenceDeciderCalibration(
           temperature: 1.3,

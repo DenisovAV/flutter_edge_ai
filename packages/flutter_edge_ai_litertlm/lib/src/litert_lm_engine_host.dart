@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_stack_manifest.dart';
 import 'ffi/npu_vendor_host.dart';
+import 'litert_lm_log_level.dart';
 import 'npu_stacks.dart';
 
 /// What a native `.litertlm` LLM load reaches outside Dart. Its NPU answers
@@ -64,6 +65,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
     required NpuDispatch? npuDispatch,
+    LiteRtLmLogLevel? nativeLogLevel,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
@@ -77,6 +79,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     activationDataType: activationDataType,
     npuDispatch: npuDispatch,
+    nativeLogLevel: nativeLogLevel,
   );
 }
 

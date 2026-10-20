@@ -151,3 +151,11 @@ or absent model execution fails. Optional capability fixtures have their own
 GGUF embedding scope and independent qualification are tracked in the
 [embedding guide](embeddings.md). The inference evidence above does not qualify
 embedding models or hosted core 2.5.0 resolution.
+
+## Core 2.5.0 model ownership
+
+GGUF inference continues through `FlutterEdgeAi.getActiveModel()`. This provider
+does not opt into `MultiModelEngine`, so `FlutterEdgeAi.openModel()` refuses it
+before loading. Supporting several caller-owned models needs separate lifecycle
+qualification. The new core API does not change the active-model or embedding
+cache contracts qualified here.

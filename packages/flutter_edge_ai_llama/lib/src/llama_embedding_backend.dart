@@ -21,15 +21,16 @@ typedef _EngineLoader =
 /// 1024-token input budget including the prefix and special tokens. Other GGUF
 /// architectures are refused at load rather than given Gemma prompts.
 ///
-/// Automatic requests reuse the current embedder for the same model. Explicit
-/// CPU/GPU switches replace it. NPU, media and Web embeddings are unavailable
-/// in this profile. Give GGUF its own RAG
+/// Automatic requests reuse the current non-NPU embedder for the same model.
+/// Repeated explicit CPU/GPU requests reuse their originating model, including
+/// a fallback, until a rebuild is needed or it is closed. NPU, media and Web
+/// embeddings are unavailable in this profile. Give GGUF its own RAG
 /// profile ID; equal dimensions do not make it interchangeable with LiteRT.
 final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
   /// Creates the qualified native text embedding provider.
   /// With [backendFallback] true, an explicit GPU request may fall back to
-  /// CPU when GPU loading is unavailable. Core prints a release-visible
-  /// warning and activeBackend reports CPU. With false, exactly one load
+  /// CPU when GPU loading is unavailable. Core prints one release-visible
+  /// warning per new fallback load and activeBackend reports CPU. With false, exactly one load
   /// attempt is allowed and a mismatch fails as EmbeddingLoadException.
   /// Automatic selection accepts CPU or GPU; unknown placement is refused.
   const LlamaEmbeddingBackend({this.backendFallback = true}) : _loader = null;

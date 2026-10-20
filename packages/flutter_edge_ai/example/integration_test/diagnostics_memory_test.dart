@@ -6,12 +6,17 @@
 //
 // No setUp, on purpose (Rule 6b): anything that can fail sits inside the test
 // body, so a failure is reported as a failure.
+import 'dart:convert' show latin1;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
+import 'inference_test_helpers.dart' show registerTestEngines;
+import 'voice_test_helpers.dart' show stagedModelPath;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -55,6 +60,95 @@ void main() {
     } else if (Platform.isAndroid || !_isIosSimulator) {
       expect(snapshot.availableBytes, isNotNull);
       expect(snapshot.availableBytes, greaterThan(0));
+    }
+  }, skip: skip);
+
+  testWidgets('gpuMemory matches an independent sum of the kgsl-3d0 mappings', (
+    tester,
+  ) async {
+    if (!Platform.isAndroid) {
+      // ignore: experimental_member_use
+      expect(await FlutterEdgeAiDiagnostics.gpuMemory(), isNull);
+      return;
+    }
+    // Before any model: null exactly when the device has no GPU node (a Mali
+    // phone), a reading otherwise (zeros if nothing is mapped yet). The node is
+    // tested with existsSync: typeSync says notFound for it from an app.
+    // ignore: experimental_member_use
+    final early = await FlutterEdgeAiDiagnostics.gpuMemory();
+    final mapped = File(
+      '/proc/self/maps',
+    ).readAsStringSync(encoding: latin1).contains('kgsl-3d0');
+    expect(early != null, File('/dev/kgsl-3d0').existsSync() || mapped);
+
+    // A model on the GPU first, so the mapping is hundreds of MiB and a parser
+    // that drops a component falls far outside the bound. FunctionGemma 270M,
+    // staged as in litertlm_functiongemma_gpu_activation_test.dart.
+    await registerTestEngines();
+    final path = await stagedModelPath('functiongemma-270M-it.litertlm');
+    expect(path, isNotNull, reason: 'stage functiongemma-270M-it.litertlm');
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.functionGemma,
+      fileType: ModelFileType.litertlm,
+    ).fromFile(path!).install();
+    final model = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 1024,
+      preferredBackend: PreferredBackend.gpu,
+      activationDataType: ActivationDataType.float32,
+    );
+    try {
+      expect(model.activeBackend, PreferredBackend.gpu);
+      // ignore: experimental_member_use
+      final reading = await FlutterEdgeAiDiagnostics.gpuMemory();
+      // ignore: avoid_print
+      print('gpuMemory: $reading');
+
+      // The oracle does not use the package's parser: /proc/self/maps decides
+      // whether there is a mapping, and smaps is summed by hand per field.
+      final maps = File('/proc/self/maps').readAsStringSync(encoding: latin1);
+      expect(reading != null, maps.contains('kgsl-3d0'));
+      if (reading == null) return;
+      var dirtyKb = 0;
+      var cleanKb = 0;
+      var inKgsl = false;
+      for (final line in File(
+        '/proc/self/smaps',
+      ).readAsStringSync(encoding: latin1).split('\n')) {
+        if (line.isEmpty) continue;
+        final c = line.codeUnitAt(0);
+        if ((c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x66)) {
+          inKgsl = line.contains('kgsl-3d0');
+        } else if (inKgsl) {
+          final kb = int.tryParse(
+            line.split(RegExp(r'\s+')).elementAtOrNull(1) ?? '',
+          );
+          if (line.startsWith('Private_Dirty:')) dirtyKb += kb!;
+          if (line.startsWith('Private_Clean:') ||
+              line.startsWith('Shared_Clean:')) {
+            cleanKb += kb!;
+          }
+        }
+      }
+      // Two reads a moment apart with the model idle: within 1% and 64 KiB.
+      void near(int bytes, int expectedKb, String what) {
+        final slack = expectedKb * 1024 ~/ 100 + 64 * 1024;
+        expect(
+          (bytes - expectedKb * 1024).abs(),
+          lessThanOrEqualTo(slack),
+          reason: '$what: $bytes B vs $expectedKb kB',
+        );
+      }
+
+      near(reading.inAnonymousBytes, dirtyKb, 'inAnonymousBytes');
+      near(reading.inFileBackedBytes, cleanKb, 'inFileBackedBytes');
+      // A model on the GPU maps hundreds of MiB: a dropped component fails.
+      expect(
+        reading.inAnonymousBytes + reading.inFileBackedBytes,
+        greaterThan(100 * 1024 * 1024),
+      );
+      expect(reading.outsideSnapshotBytes, isNull);
+    } finally {
+      await model.close();
     }
   }, skip: skip);
 

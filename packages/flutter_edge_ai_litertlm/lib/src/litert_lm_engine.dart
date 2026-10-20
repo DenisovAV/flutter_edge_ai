@@ -9,9 +9,11 @@ import 'bundle/litertlm_bundle_reader.dart';
 import 'bundle/litertlm_load_plan.dart';
 import 'ffi/backend_preference.dart';
 import 'ffi/ffi_inference_model.dart';
+import 'litertlm_decision_section.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_vendor_host.dart';
 import 'litert_lm_engine_host.dart';
+import 'litert_lm_log_level.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 
@@ -113,10 +115,17 @@ encoderInitArgs(
 
 /// LiteRT-LM (.litertlm) inference engine. Pure factory: builds and returns a
 /// bare [InferenceModel]; core owns the singleton lifecycle and registers its
-/// reset via [InferenceModel.addCloseListener] (added in a later task).
+/// reset via [InferenceModel.addCloseListener].
+///
+/// A [MultiModelEngine]: the models it builds are independent, so
+/// `FlutterEdgeAi.openModel` can keep several open at once. Engine
+/// creations run one at a time across all of them.
 class LiteRtLmEngine
-    implements InferenceEngineProvider, HuggingFaceResolverSource {
-  const LiteRtLmEngine({this.backendFallback = true});
+    implements
+        InferenceEngineProvider,
+        HuggingFaceResolverSource,
+        MultiModelEngine {
+  const LiteRtLmEngine({this.backendFallback = true, this.nativeLogLevel});
 
   /// Whether a model that fails to load on its backend is tried on the next
   /// one: npu → gpu → cpu, gpu → cpu (the default).
@@ -134,6 +143,15 @@ class LiteRtLmEngine
   /// and the CPU cannot run it. The vision and audio encoders never fall back.
   /// `InferenceModel.activeBackend` names what ran in both modes.
   final bool backendFallback;
+
+  /// The minimum severity of LiteRT-LM's own native log, set before every
+  /// engine this one creates, on Android, iOS, macOS, Linux and Windows. The level is process-wide: engines with
+  /// different values override each other, and null leaves whatever level the
+  /// process has, LiteRT-LM's default until an engine sets one. Other native
+  /// loggers in the process (LiteRT's, the GPU and NPU drivers') are not
+  /// covered. Above `info`, debug builds lose the INFO lines from which a
+  /// failed create names the backend a model requires.
+  final LiteRtLmLogLevel? nativeLogLevel;
 
   @override
   String get name => 'LiteRT-LM';
@@ -276,74 +294,72 @@ class LiteRtLmEngine
       npuUnavailableBecause: npu is NpuRefused ? npu.reason : null,
       backends: plan.textBackends,
       droppedBecause: plan.dropped,
-      initializeClient: (client, backend) => _oneNpuInitAtATime(
-        backend,
-        () async {
-          final args = encoderInitArgs(
-            config,
-            backend,
-            gpuDefaultActivation: gpuDefaultActivation,
-            visionBackend: plan.visionBackend,
-            audioBackend: plan.audioBackend,
+      initializeClient: (client, backend) => _oneCreateAtATime(() async {
+        final args = encoderInitArgs(
+          config,
+          backend,
+          gpuDefaultActivation: gpuDefaultActivation,
+          visionBackend: plan.visionBackend,
+          audioBackend: plan.audioBackend,
+        );
+        // Per ATTEMPT, not per request: a requested NPU falls back npu -> gpu
+        // -> cpu (`ffiBackendFallbackOrder`), and the floor this skips exists
+        // for the two it falls back to. Computing it once from the REQUESTED
+        // backend would hand an unclamped NPU-sized context to the CPU engine
+        // that follows, which is the #318 crash.
+        final maxTokens = clampLitertlmContextTokens(
+          config.maxTokens,
+          preferredBackend: backend,
+        );
+        // The NPU attempt's dispatch, prepared inside the attempt: a stack
+        // that cannot be prepared (NpuDispatchUnavailableException) is a
+        // failed attempt, which the fallback order then handles.
+        final npuDispatch = backend != PreferredBackend.npu
+            ? null
+            : switch (npu) {
+                NpuChosen(:final vendor) => (
+                  dir: await host.prepareDispatchDir(vendor),
+                  disableHwMasking: npuDisablesHwMasking(vendor),
+                ),
+                _ => throw StateError(
+                  'an npu attempt without a chosen NPU vendor',
+                ),
+              };
+        try {
+          await host.initializeClient(
+            client,
+            modelPath: config.modelPath,
+            backend: args.backend,
+            maxTokens: maxTokens,
+            cacheDir: cacheDir,
+            enableVision: args.enableVision,
+            visionBackend: args.visionBackend,
+            maxNumImages: args.maxNumImages,
+            enableAudio: args.enableAudio,
+            audioBackend: args.audioBackend,
+            enableSpeculativeDecoding: config.enableSpeculativeDecoding,
+            activationDataType: args.activationDataType,
+            npuDispatch: npuDispatch,
+            nativeLogLevel: nativeLogLevel,
           );
-          // Per ATTEMPT, not per request: a requested NPU falls back npu -> gpu
-          // -> cpu (`ffiBackendFallbackOrder`), and the floor this skips exists
-          // for the two it falls back to. Computing it once from the REQUESTED
-          // backend would hand an unclamped NPU-sized context to the CPU engine
-          // that follows, which is the #318 crash.
-          final maxTokens = clampLitertlmContextTokens(
-            config.maxTokens,
-            preferredBackend: backend,
+        } on LiteRtLmEngineCreateException catch (e, stackTrace) {
+          final target = plan.npuTarget;
+          if (backend != PreferredBackend.npu || target == null) rethrow;
+          // The SoC of the device is not read before the load (nothing
+          // reports it reliably on every platform), so a bundle for another
+          // SoC fails here. Other causes fail here too, so the SoC is named
+          // as a possible cause, not the cause.
+          Error.throwWithStackTrace(
+            LiteRtLmEngineCreateException(
+              '${e.message}. The bundle is compiled for the $target NPU; if '
+              'this device is not a $target, that is the cause.',
+              nativeCode: e.nativeCode,
+              nativeMessage: e.nativeMessage,
+            ),
+            stackTrace,
           );
-          // The NPU attempt's dispatch, prepared inside the attempt: a stack
-          // that cannot be prepared (NpuDispatchUnavailableException) is a
-          // failed attempt, which the fallback order then handles.
-          final npuDispatch = backend != PreferredBackend.npu
-              ? null
-              : switch (npu) {
-                  NpuChosen(:final vendor) => (
-                    dir: await host.prepareDispatchDir(vendor),
-                    disableHwMasking: npuDisablesHwMasking(vendor),
-                  ),
-                  _ => throw StateError(
-                    'an npu attempt without a chosen NPU vendor',
-                  ),
-                };
-          try {
-            await host.initializeClient(
-              client,
-              modelPath: config.modelPath,
-              backend: args.backend,
-              maxTokens: maxTokens,
-              cacheDir: cacheDir,
-              enableVision: args.enableVision,
-              visionBackend: args.visionBackend,
-              maxNumImages: args.maxNumImages,
-              enableAudio: args.enableAudio,
-              audioBackend: args.audioBackend,
-              enableSpeculativeDecoding: config.enableSpeculativeDecoding,
-              activationDataType: args.activationDataType,
-              npuDispatch: npuDispatch,
-            );
-          } on LiteRtLmEngineCreateException catch (e, stackTrace) {
-            final target = plan.npuTarget;
-            if (backend != PreferredBackend.npu || target == null) rethrow;
-            // The SoC of the device is not read before the load (nothing
-            // reports it reliably on every platform), so a bundle for another
-            // SoC fails here. Other causes fail here too, so the SoC is named
-            // as a possible cause, not the cause.
-            Error.throwWithStackTrace(
-              LiteRtLmEngineCreateException(
-                '${e.message}. The bundle is compiled for the $target NPU; if '
-                'this device is not a $target, that is the cause.',
-                nativeCode: e.nativeCode,
-                nativeMessage: e.nativeMessage,
-              ),
-              stackTrace,
-            );
-          }
-        },
-      ),
+        }
+      }),
       shutdownClient: (client) => client.shutdown(),
     );
 
@@ -359,8 +375,12 @@ class LiteRtLmEngine
       );
     }
 
+    // Read with the model, so that a decider reads the file the engine
+    // loaded; a file without a decision costs one header read.
+    final decisionRead = await LitetuneDecisionRead.read(config.modelPath);
     return FfiInferenceModel(
       ffiClient: ffiRuntime.client,
+      decisionRead: decisionRead,
       // The value the engine was actually built with: the same rule, resolved
       // against the backend whose attempt succeeded rather than the requested
       // one, so a fallback to CPU reports the clamped context it really has.
@@ -398,20 +418,19 @@ class LiteRtLmEngine
     }
   }
 
-  static Future<void> _npuInitTail = Future.value();
+  static Future<void> _createTail = Future.value();
 
-  /// Runs NPU engine creations one at a time. The Qualcomm dispatch sets
-  /// `ADSP_LIBRARY_PATH` with a process-wide `setenv` while it initialises, so
-  /// two NPU engines created concurrently race over it. Other backends are not
-  /// serialised.
-  static Future<void> _oneNpuInitAtATime(
-    PreferredBackend backend,
-    Future<void> Function() body,
-  ) {
-    if (backend != PreferredBackend.npu) return body();
-    final previous = _npuInitTail;
+  /// Runs engine creations one at a time, on every backend; generation on
+  /// engines already created is not held. With `FlutterEdgeAi.openModel`
+  /// several engines can be created at once, and what a create touches is
+  /// process-wide: the Qualcomm dispatch sets `ADSP_LIBRARY_PATH` with
+  /// `setenv` while other drivers read the environment, and two engines on
+  /// one file write the same cache files in the engine cache directory.
+  /// A create is bound by reading the model, so queueing costs little.
+  static Future<void> _oneCreateAtATime(Future<void> Function() body) {
+    final previous = _createTail;
     final done = Completer<void>();
-    _npuInitTail = done.future;
+    _createTail = done.future;
     return previous.then((_) => body()).whenComplete(done.complete);
   }
 }

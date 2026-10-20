@@ -17,6 +17,7 @@ export 'src/registry/embedding_tokenizer_registry.dart'
 export 'src/registry/skill_executor_registry.dart' show SkillExecutorRegistry;
 export 'src/registry/hugging_face_resolver_source.dart'
     show HuggingFaceResolverSource;
+export 'src/registry/multi_model_engine.dart' show MultiModelEngine;
 export 'src/registry/runtime_config.dart' show RuntimeConfig;
 
 // Lifecycle and logging.
@@ -51,3 +52,7 @@ export 'src/embedding/forward_result.dart'
 export 'src/embedding/pooling.dart' show meanPoolAndNormalize;
 export 'src/embedding/tokenizer_adapter.dart'
     show EmbeddingTokenizer, EmbeddingTokenizerFactory, TokenizedInput;
+// What an engine implements so that InferenceModel.createDecider can score
+// options with it (core runs the decider itself).
+export 'src/decision/option_scoring.dart'
+    show OptionScorer, OptionScoringModel, OptionScoringRun;

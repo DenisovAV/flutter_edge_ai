@@ -42,13 +42,13 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.4.1`,
-`flutter_edge_ai_litertlm: ^1.15.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.5.0`,
+`flutter_edge_ai_litertlm: ^1.16.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -145,6 +145,41 @@ the chat had tools:
   before its prompt and 2.55 after it (20 empty and 13 runaway transcripts).
   That is why the order follows the model rather than changing for every
   model.
+
+## Deciders from a model trained on the decision
+
+A `.litertlm` tuned by [LiteTune](https://pypi.org/project/litetune/) 0.5.0 or
+later for one decision — a Choice, Noul (yes/no) or Score (a level) question —
+carries that decision in a `litetune.decision` section, and
+`InferenceModel.createDecider` reads it (core's experimental Decider API):
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  preferredBackend: PreferredBackend.cpu,
+);
+final decider = await model.createDecider(
+  question: 'Which emotion does the text express?',
+  options: [DeciderOption('sadness'), DeciderOption('joy'), /* … */],
+  calibration: const InferenceDeciderCalibration.fromModel(),
+);
+```
+
+`fromModel()` takes the temperature, threshold and none option from the file;
+another question or option set is refused with `ArgumentError`. LiteTune
+0.5.0's `bundle` prints only the `options:` part of the call. Each decision
+renders the prompt with the model's chat template, prefills it, and scores each
+option's shortest unique prefix as the model's reply through LiteRT-LM's
+session API (`run_text_scoring`, with a checkpoint and a rewind between
+options), on a background isolate and in turn with any chat on the same
+engine; a cancel stops it between two options, and so does closing the model.
+Native platforms, CPU only: the web, a model loaded on the GPU or the NPU, and
+a file without the section are refused with `DeciderUnsupportedException`; an
+input whose prompt does not fit `maxTokens` with `ArgumentError`. Measured on
+an Apple M4 Pro CPU with LiteTune's golden packs (google/gemma-3-270m-it,
+int8): 120–190 ms per decision, and the same top option as LiteTune's PyTorch
+reference on every row but near-ties. Android, iOS, Linux and Windows use the
+same C calls and are not measured yet. The answers, Noul and Score included:
+[Decisions](https://flutteredge.ai/docs/decisions#deciders-from-a-language-model).
 
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)
 
@@ -877,6 +912,20 @@ try {
 Use it when another backend would be wrong rather than slow: a benchmark, an
 NPU demo, or an app that would rather say so than load gigabytes again on the
 CPU. `activeBackend` names what ran either way. The encoders never fall back.
+
+**Several models at once.** On Android, iOS and desktop `LiteRtLmEngine` is a
+`MultiModelEngine` (the web engine is not), so `FlutterEdgeAi.openModel(spec, …)`
+(`flutter_edge_ai` 2.5.0) can keep several of its models open, such as one
+file on CPU and GPU. Each holds its own weights and KV cache, and the app
+closes it. Engine creations run one at a time. Measured on macOS only; see
+[Desktop → Several models at once](https://flutteredge.ai/docs/desktop#several-models-at-once).
+
+**Native log level.** `LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)`
+sets the minimum severity of LiteRT-LM's own native log before each engine
+is created (`litert_lm_set_min_log_level`). The level is
+process-wide; null leaves the level the process has, LiteRT-LM's default until
+an engine sets one. `silent` silences LiteRT-LM, not the other native loggers
+in the process.
 
 ### Inspecting a model file
 

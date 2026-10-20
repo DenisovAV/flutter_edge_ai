@@ -357,7 +357,7 @@ Install a vendor driver before running on GPU. For headless / server-side use,
 
 ### One model, many sessions
 
-The recommended (and only well-supported) pattern:
+The recommended pattern for one model:
 
 ```dart
 // At app startup, ONCE:
@@ -381,18 +381,55 @@ Sessions are cheap to create/destroy. The expensive part is `engine_create`
 (2–10 s depending on backend and model size), which happens once when the model is
 first opened.
 
-### Why not "one model per chat"?
+### Several models at once
 
-Upstream LiteRT-LM keeps `LiteRtEnvironment` as a **process singleton** for GPU
-paths. Once the env is initialized with the first model's settings (`cache_dir`,
-backend, capabilities), those become process-fixed. Recreating the engine with
-different settings causes GPU-stack conflicts (notably `wgpu::Instance already set`
-from the WebGpu sampler binary on Linux/Windows).
+`getActiveModel` gives the one active model: cached, and rebuilt (the previous
+one closed) when a runtime parameter or the active model changes. To hold
+several models at once, such as one file on CPU and on GPU, or two files, use
+`FlutterEdgeAi.openModel` (`flutter_edge_ai` 2.5.0) with an engine that
+supports it: `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0) on Android,
+iOS and desktop.
 
-`flutter_edge_ai_litertlm` avoids this by reusing the same `InferenceModel` when params match, and
-by disabling GPU sampler preload on Linux (CPU-sampler fallback) so runtime model
-swap works. To swap models at runtime, call `model.close()` first, then
-`getActiveModel(...)` again. Switching backend (CPU ↔ GPU) works the same way.
+```dart
+final spec = (await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm,
+).fromFile(path).install(activate: false)).spec;
+
+final cpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.cpu);
+final gpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.gpu);
+// ... generate on either ...
+await gpu.close();
+await cpu.close();
+```
+
+- Each open model holds its own weights and KV cache, and the caller closes
+  it: the plugin has no memory policy. On iOS a process past its memory limit
+  is killed, with no exception to catch; read
+  `FlutterEdgeAiDiagnostics.memorySnapshot()` (`flutter_edge_ai_diagnostics`)
+  before opening another model.
+- The models share the engine cache directory `getActiveModel` uses (the
+  cache files of one model file serve every engine on it), the native
+  libraries the process loaded, and LiteRT-LM's log level. Engine creations
+  run one at a time; generation on open models does not wait for them.
+- An opened model is never cached: a `getActiveModel` rebuild leaves it open,
+  and closing it leaves the active model alone. Uninstalling a model does not
+  close the models opened on it.
+- `install(activate: false)` registers the file without making it the active
+  model, and `openModel` takes the spec it returns. A model is its file name
+  without the extension, so two files with the same name are one model; an
+  `activate: false` install that would replace the active model's file throws
+  a `StateError`.
+- Measured on macOS (Apple silicon): CPU and GPU engines on one file, two GPU
+  engines, and both created at the same time on an empty cache. On Windows
+  Lunar Lake, CPU, GPU and NPU engines ran together in the Intel NPU demo
+  (LiteRT-LM clients on `native-v0.18.0-f`). Not measured: Android, iOS,
+  Linux, and two GPU engines on Windows, which preloads LiteRT-LM's WebGPU
+  sampler: it keeps one `wgpu::Instance` per process, and a second one fails
+  with `wgpu::Instance already set`.
+
+To swap the active model, call `model.close()` first, then
+`getActiveModel(...)` again. Switching its backend (CPU ↔ GPU) works the same way.
 
 ## Known limitations
 

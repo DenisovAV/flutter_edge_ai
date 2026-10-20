@@ -72,7 +72,7 @@ not claim GGUF embedding files, so an unsupported install can fail its pre-check
 Inference remains independently available on the package's existing platforms.
 
 Source qualification uses the pinned fixture in `tool/embedding_model.json`,
-published llamadart 0.15.1 and the stacked core. The contribution PR records
+published llamadart 0.15.1 and the merged core source. The contribution PR records
 per-platform execution results; the dedicated source CI covers Linux/Windows CPU
 embeddings and Flutter 3.44 resolution. Hosted package qualification remains a
 release gate until core 2.5.0 is published.
@@ -93,8 +93,9 @@ API in this adapter.
 
 ## Reproducible qualification
 
-Before core publication, use the stacked #685 checkout through the monorepo
-workspace and the example's existing checkout-only core path override. Resolve
+Core embedding SPI #685 is merged. Before core 2.5.0 publication, use current
+main through the monorepo workspace and the example's existing checkout-only
+core path override. Resolve
 llamadart normally from pub.dev; no SDK override is needed. Source CI stages core,
 the adapter and the app in a temporary directory and retains only that core path
 override. The existing hosted package and minimum-SDK gates remain unchanged and

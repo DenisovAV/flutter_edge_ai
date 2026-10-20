@@ -110,6 +110,26 @@ Future<List<FileInstallStep>> planInstall(List<ModelFile> files) async {
   return steps;
 }
 
+/// Throws unless every file of [spec] is installed from the source [spec]
+/// names: what `FlutterEdgeAi.openModel` loads must be the installed model,
+/// not a spec built by hand under an installed name (which would load the
+/// caller's path) or one whose name was installed again from elsewhere.
+/// Reads records and files, changes nothing.
+Future<void> requireInstalledAsSpecified(InferenceModelSpec spec) async {
+  final notInstalled = [
+    for (final step in await planInstall(spec.files))
+      if (step.installs) step.file.filename,
+  ];
+  if (notInstalled.isEmpty) return;
+  // An Exception, as the shells' other "not installed" errors are.
+  throw Exception(
+    'Model ${spec.name} is not installed from the source its spec names '
+    '(${notInstalled.join(', ')}). Pass the spec install() returned, or '
+    'install it first with FlutterEdgeAi.installModel(...)'
+    '.install(activate: false).',
+  );
+}
+
 typedef _AppFile = ({String name, String location});
 
 Future<FileInstallStep> _plan(

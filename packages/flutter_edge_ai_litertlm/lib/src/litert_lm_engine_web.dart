@@ -1,6 +1,7 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart';
 
+import 'litert_lm_log_level.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 import 'web/litert_lm_web_inference.dart';
 
@@ -10,11 +11,14 @@ import 'web/litert_lm_web_inference.dart';
 /// — core owns the singleton lifecycle via [InferenceModel.addCloseListener].
 class LiteRtLmEngine
     implements InferenceEngineProvider, HuggingFaceResolverSource {
-  const LiteRtLmEngine({this.backendFallback = true});
+  const LiteRtLmEngine({this.backendFallback = true, this.nativeLogLevel});
 
   /// Read by the native engine only. The web engine runs on WebGPU and has no
   /// backend to fall back to.
   final bool backendFallback;
+
+  /// Read by the native engine only: the web runtime has no such setting.
+  final LiteRtLmLogLevel? nativeLogLevel;
 
   @override
   String get name => 'LiteRT-LM';

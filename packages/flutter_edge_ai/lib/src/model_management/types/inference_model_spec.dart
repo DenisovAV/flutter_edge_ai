@@ -1,27 +1,5 @@
 part of '../model_specs.dart';
 
-/// Maps a legacy URL string to a [ModelSource]: `http(s)://` is a network
-/// source, `asset://` an asset, `native://` a bundled resource, `file://` a
-/// file, and a schemeless string an asset.
-///
-/// The deprecated [InferenceModelSpec.fromLegacyUrl] builds its sources here
-/// until its removal in 2.5.0. Not exported.
-@internal
-ModelSource modelSourceFromLegacyUrl(String url) {
-  if (url.startsWith('https://') || url.startsWith('http://')) {
-    return ModelSource.network(url);
-  } else if (url.startsWith('asset://')) {
-    return ModelSource.asset(url.replaceFirst('asset://', ''));
-  } else if (url.startsWith('native://')) {
-    return ModelSource.bundled(url.replaceFirst('native://', ''));
-  } else if (url.startsWith('file://')) {
-    return ModelSource.file(url.replaceFirst('file://', ''));
-  } else {
-    // Schemeless = asset for backward compatibility
-    return ModelSource.asset(url);
-  }
-}
-
 /// Model file for inference models (.bin, .task files)
 class InferenceModelFile extends ModelFile {
   final ModelSource _source;
@@ -228,36 +206,6 @@ class InferenceModelSpec extends ModelSpec {
         );
       }
     }
-  }
-
-  /// Legacy compatibility constructor for String URLs.
-  ///
-  /// `http(s)://` becomes a network source, `asset://` an asset, `native://` a
-  /// bundled resource, `file://` a file, and a schemeless string an asset.
-  @Deprecated(
-    'Use InferenceModelSpec(modelSource: …, modelType: …) with the source '
-    'that matches the URL: ModelSource.network(url) for http(s)://, '
-    'ModelSource.asset(path) for asset:// or a bare path, '
-    'ModelSource.bundled(name) for native://, ModelSource.file(path) for '
-    'file://. This factory defaulted to modelType: ModelType.general; pass '
-    'it explicitly. Removed in 2.5.0.',
-  )
-  factory InferenceModelSpec.fromLegacyUrl({
-    required String name,
-    required String modelUrl,
-    String? loraUrl,
-    ModelReplacePolicy replacePolicy = ModelReplacePolicy.keep,
-    ModelType modelType = ModelType.general,
-    ModelFileType fileType = ModelFileType.task,
-  }) {
-    return InferenceModelSpec(
-      name: name,
-      modelSource: modelSourceFromLegacyUrl(modelUrl),
-      loraSource: loraUrl != null ? modelSourceFromLegacyUrl(loraUrl) : null,
-      replacePolicy: replacePolicy,
-      modelType: modelType,
-      fileType: fileType,
-    );
   }
 
   @override

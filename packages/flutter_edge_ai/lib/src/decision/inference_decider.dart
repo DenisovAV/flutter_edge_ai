@@ -1,8 +1,7 @@
 // The checks of InferenceModel.createDecider that need no engine. They run
-// before the call asks whether the model can score options at all, so an
-// argument that is wrong today fails the same way once an engine can: an app
-// that falls back to an embedding decider on DeciderUnsupportedException does
-// not start failing on ArgumentError after an upgrade. Not exported.
+// before the call asks whether the model can score options at all, so a wrong
+// argument fails the same way on every model, whether or not its engine
+// scores options. Not exported.
 
 import '../model_management/cancel_token.dart' show CancelToken;
 import 'decider.dart' show throwIfDeciderCancelled;

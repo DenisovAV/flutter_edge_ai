@@ -21,9 +21,9 @@ import 'embedding_decider.dart' show chooseAllWithSharedEmbeddings;
 /// Picks one of its options for an input — or abstains when none fits.
 ///
 /// Get one from a model: `EmbeddingModel.createDecider` (every embedding
-/// backend) or `InferenceModel.createDecider` (an engine that scores options;
-/// none does in this release). A decider BORROWS its model and never closes
-/// it.
+/// backend) or `InferenceModel.createDecider` (a model trained on the
+/// decision, whose engine scores options: `.litertlm` on the CPU). A decider
+/// BORROWS its model and never closes it.
 ///
 /// `abstract base`: outside core it can be extended (by a `base`, `final` or
 /// `sealed` class) but not implemented, so a member added here in a later
@@ -104,6 +104,12 @@ abstract base class Decider {
       rethrow;
     }
     throwIfDeciderCancelled(cancelToken);
+    if (!identical(answer.questionType, capabilities.questionType)) {
+      throw StateError(
+        '$runtimeType answered a ${answer.questionType.name} question; its '
+        'capabilities say ${capabilities.questionType.name}.',
+      );
+    }
     return answer;
   }
 
@@ -133,9 +139,10 @@ abstract base class Decider {
     'restore.',
   );
 
-  /// Whether [choose] can no longer answer: [close] was called, or — for an
-  /// embedding decider — its model is closed and core serves none in its
-  /// place (a model `getActiveEmbedder` did not build). A decider on a model
+  /// Whether [choose] can no longer answer: [close] was called, or its model
+  /// is closed — for an embedding decider, closed with no replacement core
+  /// serves in its place (a model `getActiveEmbedder` did not build); for a
+  /// language-model decider, closed at all. An embedding decider on a model
   /// core replaced is not closed: its next [choose] takes the replacement.
   bool get isClosed;
 
@@ -351,6 +358,49 @@ final class AbstainReason {
   String toString() => 'AbstainReason.$name';
 }
 
+/// The kind of question an answer answers, in Jev's terms: what
+/// [DeciderAnswer.toJevJson] writes.
+///
+/// A class with constant instances rather than an enum, as [DeciderMethod]
+/// is, so a type added in a later release does not break an app's
+/// exhaustive `switch`.
+@experimental
+@immutable
+final class DeciderQuestionType {
+  const DeciderQuestionType._(this.name);
+
+  /// One option of N, or an abstention. Every embedding decider answers
+  /// this.
+  static const choice = DeciderQuestionType._('choice');
+
+  /// Yes or no: the options are `no` and `yes`, and the answer carries the
+  /// probability of `yes` ([DeciderAnswer.noul]). Never abstains.
+  static const noul = DeciderQuestionType._('noul');
+
+  /// A level: the options are `0` … `K − 1`, lowest first, and the answer
+  /// carries the expected level ([DeciderAnswer.expectedLevel]) and each
+  /// level's text ([DeciderAnswer.legend]). Never abstains.
+  static const score = DeciderQuestionType._('score');
+
+  /// Every type this release knows, in declaration order.
+  static const values = [choice, noul, score];
+
+  /// Stable name, also Jev's `type`: `choice`, `noul`, `score`.
+  final String name;
+
+  @override
+  String toString() => 'DeciderQuestionType.$name';
+}
+
+/// The question type named [name], or null for a name this release does not
+/// know. Not exported.
+DeciderQuestionType? deciderQuestionTypeByName(String name) => switch (name) {
+  'choice' => DeciderQuestionType.choice,
+  'noul' => DeciderQuestionType.noul,
+  'score' => DeciderQuestionType.score,
+  _ => null,
+};
+
 /// What [DeciderProvenance.abstainSignal] is.
 ///
 /// For every kind, now and added later, a higher signal means a more
@@ -425,8 +475,8 @@ final class DeciderProvenance {
   final DeciderMethod method;
 
   /// The calibration kind: `none`, `crossFit`, `minSimilarity` or `labelled`
-  /// for an embedding decider; `none` or `supplied` (values fitted offline,
-  /// for one model and one question) for an inference decider.
+  /// for an embedding decider; `supplied` (values fitted offline, for one
+  /// model and one question) for an inference decider.
   final String calibration;
 
   /// The embedding space an embedding decider works in: the model's
@@ -437,7 +487,7 @@ final class DeciderProvenance {
 
   /// Time spent on the input once: its embedding (shared by
   /// `Decider.chooseAll`'s answers over one embedding), or an inference
-  /// decider's prompt prefill.
+  /// decider's prompt render and prefill.
   final Duration encodeTime;
 
   /// Time spent scoring the candidates.
@@ -449,8 +499,7 @@ final class DeciderProvenance {
 
   /// The value compared with [threshold], of the kind [abstainSignalKind]
   /// names; reported even when there is no threshold. Null when there was no
-  /// candidate, and when the decider has no such signal (an uncalibrated
-  /// inference decider).
+  /// candidate.
   final double? abstainSignal;
 
   /// What [abstainSignal] is; null exactly when it is null.
@@ -470,7 +519,13 @@ final class DeciderCapabilities {
     required this.supportsContext,
     required this.supportsAmong,
     required this.storable,
+    this.questionType = DeciderQuestionType.choice,
   });
+
+  /// The kind of question every answer of this decider answers;
+  /// [DeciderQuestionType.choice] for every embedding decider. `choose`
+  /// refuses an answer of another type.
+  final DeciderQuestionType questionType;
 
   /// What an input may carry.
   final Set<EmbeddingModality> modalities;
@@ -514,6 +569,14 @@ final class DeciderAnswer {
   /// have its signal on either side (the none option wins first);
   /// [AbstainReason.noCandidates] comes with nothing ranked, no signal, no
   /// probabilities and no confidence.
+  ///
+  /// [questionType] is [DeciderQuestionType.choice] unless given; then
+  /// [legend] is null. A [DeciderQuestionType.noul] or
+  /// [DeciderQuestionType.score] answer never abstains, has no threshold,
+  /// has [probabilities], and chooses its most probable option. A Noul
+  /// answer's probabilities are over `no` and `yes` exactly; a Score answer's
+  /// over the levels `0` … `K − 1` (K ≥ 2), and its [legend] has a non-empty
+  /// text for each level and nothing else. [legend] is copied.
   DeciderAnswer({
     required this.choice,
     required List<RankedOption> ranked,
@@ -523,10 +586,13 @@ final class DeciderAnswer {
     this.confidence,
     this.abstainReason,
     Map<String, double>? probabilities,
+    this.questionType = DeciderQuestionType.choice,
+    Map<String, String>? legend,
   }) : ranked = List.unmodifiable(ranked),
        probabilities = probabilities == null
            ? null
-           : Map.unmodifiable(probabilities) {
+           : Map.unmodifiable(probabilities),
+       legend = legend == null ? null : Map.unmodifiable(legend) {
     if ((choice == null) == (abstainReason == null)) {
       throw ArgumentError(
         'A DeciderAnswer has either a choice or an abstainReason, exactly '
@@ -567,6 +633,93 @@ final class DeciderAnswer {
     _checkRanked();
     _checkProbabilities();
     _checkAbstention();
+    _checkQuestionType();
+  }
+
+  void _checkQuestionType() {
+    final type = questionType;
+    if (identical(type, DeciderQuestionType.choice)) {
+      if (legend != null) {
+        throw ArgumentError.value(
+          legend,
+          'legend',
+          'a choice answer has no legend',
+        );
+      }
+      return;
+    }
+    if (!identical(type, DeciderQuestionType.noul) &&
+        !identical(type, DeciderQuestionType.score)) {
+      throw StateError('DeciderAnswer does not check the question type $type');
+    }
+    if (abstainReason != null) {
+      throw ArgumentError.value(
+        abstainReason,
+        'abstainReason',
+        'a ${type.name} answer never abstains: Jev has no abstention',
+      );
+    }
+    if (provenance.threshold != null) {
+      throw ArgumentError.value(
+        provenance.threshold,
+        'provenance.threshold',
+        'a ${type.name} answer never abstains, so it has no threshold',
+      );
+    }
+    final p = probabilities;
+    if (p == null) {
+      throw ArgumentError.value(
+        p,
+        'probabilities',
+        'a ${type.name} answer is read from its probabilities: they are '
+            'required',
+      );
+    }
+    final pmax = p.values.reduce((a, b) => a > b ? a : b);
+    if (!(p[choice]! >= pmax)) {
+      throw ArgumentError.value(
+        choice,
+        'choice',
+        'a ${type.name} answer chooses its most probable option '
+            '(p ${p[choice]} < $pmax)',
+      );
+    }
+    if (identical(type, DeciderQuestionType.noul)) {
+      if (p.length != 2 || !p.containsKey('no') || !p.containsKey('yes')) {
+        throw ArgumentError.value(
+          p.keys.toList(),
+          'probabilities',
+          'a noul answer has probabilities over "no" and "yes" exactly',
+        );
+      }
+      if (legend != null) {
+        throw ArgumentError.value(
+          legend,
+          'legend',
+          'a noul answer has no legend',
+        );
+      }
+      return;
+    }
+    final levels = [for (var i = 0; i < p.length; i++) '$i'];
+    if (p.length < 2 || !levels.every(p.containsKey)) {
+      throw ArgumentError.value(
+        p.keys.toList(),
+        'probabilities',
+        'a score answer has probabilities over the levels "0" … "K − 1", '
+            'K ≥ 2',
+      );
+    }
+    final l = legend;
+    if (l == null ||
+        l.length != levels.length ||
+        !levels.every((level) => (l[level] ?? '').isNotEmpty)) {
+      throw ArgumentError.value(
+        l?.keys.toList(),
+        'legend',
+        'a score answer has a non-empty text for each level and nothing else',
+      );
+    }
   }
 
   void _checkRanked() {
@@ -735,21 +888,66 @@ final class DeciderAnswer {
   /// Where this answer came from.
   final DeciderProvenance provenance;
 
-  /// The answer in Jev's Choice answer shape, e.g.
-  /// `{"type": "choice", "choice": "returns", "probabilities": {...},`
-  /// `"confidence": 0.93}`. `probabilities`
-  /// (every candidate, summing to 1) and `confidence` appear only when
-  /// calibrated. Jev has no abstention: an abstained answer has
-  /// `"choice": null`.
-  Map<String, Object?> toJevJson() => {
-    'type': 'choice',
-    'choice': choice,
-    if (probabilities case final p?) 'probabilities': {...p},
-    'confidence': ?confidence,
+  /// The kind of question this answers; what [toJevJson] writes.
+  /// [DeciderQuestionType.choice] for every embedding decider.
+  final DeciderQuestionType questionType;
+
+  /// A [DeciderQuestionType.noul] answer's probability of `yes`
+  /// (`probabilities['yes']`); null for other types.
+  double? get noul => identical(questionType, DeciderQuestionType.noul)
+      ? probabilities!['yes']
+      : null;
+
+  /// A [DeciderQuestionType.score] answer's expected level, `Σ pᵢ · i` over
+  /// the levels `0` … `K − 1`; null for other types. [choice] is the most
+  /// probable level, which can differ from the expected one.
+  double? get expectedLevel {
+    if (!identical(questionType, DeciderQuestionType.score)) return null;
+    final p = probabilities!;
+    var level = 0.0;
+    for (var i = 0; i < p.length; i++) {
+      level += p['$i']! * i;
+    }
+    return level;
+  }
+
+  /// A [DeciderQuestionType.score] answer's text for each level, by level id;
+  /// null for other types. Unmodifiable.
+  final Map<String, String>? legend;
+
+  /// The answer in Jev's answer shape for its [questionType]:
+  /// - choice: `{"type": "choice", "choice": "returns", "probabilities":
+  ///   {...}, "confidence": 0.93}`. `probabilities` (every candidate, summing
+  ///   to 1) and `confidence` appear only when calibrated. Jev has no
+  ///   abstention: an abstained answer has `"choice": null`;
+  /// - noul: `{"type": "noul", "noul": 0.82}`, the probability of `yes`;
+  /// - score: `{"type": "score", "score": 2.4, "legend": {"0": ..., ...},
+  ///   "probabilities": {...}, "confidence": 0.61}`, `score` the expected
+  ///   level.
+  Map<String, Object?> toJevJson() => switch (questionType) {
+    DeciderQuestionType.noul => {'type': 'noul', 'noul': noul},
+    DeciderQuestionType.score => {
+      'type': 'score',
+      'score': expectedLevel,
+      'legend': {...?legend},
+      'probabilities': {...?probabilities},
+      'confidence': ?confidence,
+    },
+    DeciderQuestionType.choice => {
+      'type': 'choice',
+      'choice': choice,
+      if (probabilities case final p?) 'probabilities': {...p},
+      'confidence': ?confidence,
+    },
+    _ => throw StateError(
+      'toJevJson does not write the question type '
+      '$questionType',
+    ),
   };
 
   @override
   String toString() =>
-      'DeciderAnswer(${choice ?? 'abstained: ${abstainReason?.name}'}, '
+      'DeciderAnswer(${identical(questionType, DeciderQuestionType.choice) ? '' : '${questionType.name} '}'
+      '${choice ?? 'abstained: ${abstainReason?.name}'}, '
       'margin $margin, ${ranked.join(', ')})';
 }

@@ -81,6 +81,7 @@ export 'src/decision/decider.dart'
         DeciderCapabilities,
         DeciderInput,
         DeciderProvenance,
+        DeciderQuestionType,
         DeciderRequest,
         RankedOption,
         ScoreKind;

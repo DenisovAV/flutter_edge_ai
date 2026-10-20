@@ -391,9 +391,9 @@ print(embedder.activeBackend); // PreferredBackend.npu
   MediaTek MT6991/MT6993 and Intel PTL builds: the Qualcomm ones load but are
   not verified by us, Tensor G5/G6 runs on matching Pixels
   ([below](#embeddinggemma-2-on-a-google-tensor-npu)), Intel PTL runs on Windows
-  ([below](#embeddinggemma-2-on-an-intel-npu)), and MediaTek MT6991/MT6993 load
-  in apps built with **mediatek_npu: true** (not run on an MT6991/MT6993 phone
-  yet). The
+  ([below](#embeddinggemma-2-on-an-intel-npu)), and MediaTek MT6991/MT6993 are
+  accepted in apps built with **mediatek_npu: true** but not run on an
+  MT6991/MT6993 phone yet. The
   package reads what a bundle is compiled for from the bundle, not from its
   file name.
 - **Fast, and close to the CPU vectors, not equal to them.** On an SM8650

@@ -24,15 +24,15 @@
         <!-- MediaTek NPU (flutter_edge_ai_litertlm with mediatek_npu): the
              dispatch opens the device's NeuroPilot adapters and runtime. The
              list is what Google's litert-npu-runtime-mediatek AAR declares,
-             plus libneuronusdk_adapter.10.mtk.so, which the dispatch tries
-             first and the AAR does not declare, and the two generic adapter
-             names it also tries. -->
+             plus libneuronusdk_adapter.10.mtk.so, which the dispatch asks for
+             on NeuroPilot 10 devices and the AAR does not declare. The two
+             generic adapter names the dispatch also tries are left out: it
+             keeps the last adapter that opens, so declaring them could replace
+             the device's own adapter with an older generic one. -->
         <uses-native-library android:name="libneuron_adapter_mgvi.so" android:required="false"/>
         <uses-native-library android:name="libneuronusdk_adapter.10.mtk.so" android:required="false"/>
         <uses-native-library android:name="libneuronusdk_adapter.9.mtk.so" android:required="false"/>
         <uses-native-library android:name="libneuronusdk_adapter.mtk.so" android:required="false"/>
-        <uses-native-library android:name="libneuronusdk_adapter.so" android:required="false"/>
-        <uses-native-library android:name="libneuron_adapter.so" android:required="false"/>
         <uses-native-library android:name="libneuron_sys_util.mtk.so" android:required="false"/>
         <uses-native-library android:name="libapuwareutils_v2.mtk.so" android:required="false"/>
         <uses-native-library android:name="libapuwareutils.mtk.so" android:required="false"/>

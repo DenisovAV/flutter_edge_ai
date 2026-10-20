@@ -299,13 +299,11 @@ String? get _androidMediaTekRuntimeError => (_mediaTekProbe ??= (
         DynamicLibrary.open(adapter);
         return null;
       } on Object catch (e) {
-        errors.add('$e');
+        errors.add('$adapter: $e');
       }
     }
-    return 'none of the NeuroPilot adapters '
-        '(${mediatekNeuronAdapters.join(', ')}) opened in this app, so the '
-        'device does not expose its NeuroPilot runtime to apps: '
-        '${errors.last}';
+    return 'none of the NeuroPilot adapters opened in this app, so the '
+        'device does not expose its NeuroPilot runtime to apps (${errors.join('; ')})';
   }(),
 )).$1;
 
@@ -317,14 +315,29 @@ String? get _androidMediaTekRuntimeError => (_mediaTekProbe ??= (
 /// or later, where the SoC manufacturer is readable, and a SoC manufacturer
 /// of `Mediatek` or `MTK`. Which SoC a bundle is compiled for is not checked
 /// here: the dispatch refuses a mismatch at engine_create.
+/// [property] answers null for a property that could not be read and an
+/// empty string for one the device does not set.
 @visibleForTesting
 String? mediaTekDeviceRefusal(String? Function(String key) property) {
-  final sdk = int.tryParse(property('ro.build.version.sdk') ?? '');
+  final sdkText = property('ro.build.version.sdk');
+  if (sdkText == null) {
+    return 'the Android API level (ro.build.version.sdk) could not be read';
+  }
+  final sdk = int.tryParse(sdkText.trim());
   if (sdk == null || sdk < 31) {
-    return 'Android API ${sdk ?? '(unknown)'}: the MediaTek NPU needs '
+    return 'Android API ${sdk ?? '"$sdkText"'}: the MediaTek NPU needs '
         'Android 12 (API 31) or later';
   }
-  final manufacturer = (property('ro.soc.manufacturer') ?? '').trim();
+  final manufacturerText = property('ro.soc.manufacturer');
+  if (manufacturerText == null) {
+    return 'the SoC manufacturer (ro.soc.manufacturer) could not be read';
+  }
+  final manufacturer = manufacturerText.trim();
+  if (manufacturer.isEmpty) {
+    return 'the device does not report its SoC manufacturer '
+        '(ro.soc.manufacturer is empty), and LiteRT runs the MediaTek NPU '
+        'only where it reads Mediatek or MTK';
+  }
   final lower = manufacturer.toLowerCase();
   if (lower != 'mediatek' && lower != 'mtk') {
     final model = property('ro.soc.model') ?? '';

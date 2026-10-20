@@ -3,8 +3,10 @@
 // 1. The device: LiteRT's MediaTek rule, which NeuroPilot adapters open in
 //    this app's linker namespace (the open question on an OEM image), and
 //    whether this build carries the dispatch. Needs no model.
-// 2. A bundle compiled for this phone's SoC on the NPU, when one is staged in
-//    /data/local/tmp/flutter_gemma_test/ and named by MTK_MODEL; skipped
+// 2. A MediaTek LLM bundle staged in /data/local/tmp/flutter_gemma_test/ and
+//    named by MTK_MODEL: generates on the NPU when it is compiled for this
+//    phone's SoC, else is refused when the engine is created (NeuroPilot
+//    rejects the other SoC's graph) and nothing else is tried; skipped
 //    without it.
 // 3. An EmbeddingGemma 2 MediaTek bundle named by MTK_EG2: embeds on the NPU
 //    when it is compiled for this phone's SoC, else is refused with the
@@ -15,7 +17,9 @@
 //
 // Run (DDP, see .claude/skills/ddp-device-test):
 //   run_instrumented.sh mtk integration_test/mediatek_npu_test.dart \
-//     MTK_MODEL=Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm MTK_MAX_TOKENS=1280
+//     MTK_MODEL=Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm
+// MTK_CONTEXT sets maxTokens (default 1280, what the Gemma 3 1B bundles are
+// compiled for); run_instrumented.sh refuses a define named *TOKEN*.
 // ignore_for_file: avoid_print
 import 'dart:ffi';
 import 'dart:io';
@@ -37,12 +41,19 @@ import 'inference_test_helpers.dart' show registerTestEngines;
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _model = String.fromEnvironment('MTK_MODEL');
-const _maxTokens = int.fromEnvironment('MTK_MAX_TOKENS', defaultValue: 1280);
+const _maxTokens = int.fromEnvironment('MTK_CONTEXT', defaultValue: 1280);
 const _eg2 = String.fromEnvironment('MTK_EG2');
 
 String? _prop(String key) {
   final r = Process.runSync('getprop', [key]);
   return r.exitCode == 0 ? '${r.stdout}'.trim() : null;
+}
+
+/// Whether [file] is compiled for this phone's SoC, from its name.
+bool _forThisSoc(String file) {
+  final soc = (_prop('ro.soc.model') ?? '').toLowerCase();
+  expect(soc, isNotEmpty, reason: 'ro.soc.model is not readable');
+  return file.toLowerCase().contains(soc);
 }
 
 void main() {
@@ -78,11 +89,11 @@ void main() {
     expect(probe, isNull);
   });
 
-  testWidgets('a bundle compiled for this SoC generates on the NPU', (
-    tester,
-  ) async {
+  testWidgets('a MediaTek LLM bundle generates on the NPU on its SoC, or is '
+      'refused at engine create on another', (tester) async {
     final path = await stagedModelPath(_model);
     expect(path, isNotNull, reason: 'stage $_model first');
+    final same = _forThisSoc(_model);
     await FlutterEdgeAi.initialize(
       inferenceEngines: const [LiteRtLmEngine(backendFallback: false)],
     );
@@ -92,10 +103,22 @@ void main() {
     ).fromFile(path!).install();
 
     final load = Stopwatch()..start();
-    final model = await FlutterEdgeAi.getActiveModel(
-      maxTokens: _maxTokens,
-      preferredBackend: PreferredBackend.npu,
-    );
+    final InferenceModel model;
+    try {
+      model = await FlutterEdgeAi.getActiveModel(
+        maxTokens: _maxTokens,
+        preferredBackend: PreferredBackend.npu,
+      );
+    } on BackendInitException catch (e) {
+      print('[mtk] refused after ${load.elapsedMilliseconds} ms: $e');
+      expect(same, isFalse, reason: '$e');
+      // Refused by NeuroPilot at engine create, nothing else tried; not by
+      // a missing stack, adapter or dispatch directory before it.
+      expect('$e', contains('Failed to create engine on npu'));
+      expect('$e', contains('compiled for the MediaTek'));
+      return;
+    }
+    expect(same, isTrue, reason: 'a bundle for another SoC loaded');
     try {
       print(
         '[mtk] loaded on ${model.activeBackend} in '
@@ -140,29 +163,37 @@ void main() {
       expect(path, isNotNull, reason: 'stage $_eg2 first');
       await registerTestEngines();
       await FlutterEdgeAi.installEmbedder().modelFromFile(path!).install();
-      final soc = (_prop('ro.soc.model') ?? '').toLowerCase();
-      final same = _eg2.toLowerCase().contains(soc);
+      final same = _forThisSoc(_eg2);
       final load = Stopwatch()..start();
+      final EmbeddingModel model;
       try {
-        final model = await FlutterEdgeAi.getActiveEmbedder(
+        model = await FlutterEdgeAi.getActiveEmbedder(
           preferredBackend: PreferredBackend.npu,
         );
+      } on EmbeddingLoadException catch (e) {
+        print('[mtk] eg2 refused after ${load.elapsedMilliseconds} ms: $e');
+        expect(same, isFalse, reason: '$e');
+        // Refused by NeuroPilot at engine create, not by a missing stack,
+        // adapter or dispatch directory before it.
+        expect('$e', contains('could not create the embedding engine'));
+        expect('$e', contains('on the MediaTek'));
+        return;
+      }
+      try {
         print(
           '[mtk] eg2 loaded on ${model.activeBackend} in '
           '${load.elapsedMilliseconds} ms',
         );
+        expect(same, isTrue, reason: 'a bundle for another SoC loaded');
+        expect(model.activeBackend, PreferredBackend.npu);
         final sw = Stopwatch()..start();
         final v = await model.embed(
           EmbeddingInput.text('a red bicycle'),
           taskType: TaskType.retrievalQuery,
         );
         print('[mtk] eg2 embed ${sw.elapsedMilliseconds} ms, dim ${v.length}');
-        expect(same, isTrue, reason: 'a bundle for another SoC loaded');
-        expect(model.activeBackend, PreferredBackend.npu);
+      } finally {
         await model.close();
-      } on EmbeddingLoadException catch (e) {
-        print('[mtk] eg2 refused after ${load.elapsedMilliseconds} ms: $e');
-        expect(same, isFalse, reason: '$e');
       }
     },
     skip: _eg2.isEmpty,

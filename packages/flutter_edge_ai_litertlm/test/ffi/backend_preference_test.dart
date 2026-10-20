@@ -116,13 +116,23 @@ void main() {
       expect(refusal(tab), isNull);
       expect(refusal({...tab, 'ro.soc.manufacturer': 'MTK'}), isNull);
       expect(refusal({...tab, 'ro.soc.manufacturer': ' MEDIATEK '}), isNull);
+      expect(refusal({...tab, 'ro.build.version.sdk': '31'}), isNull);
       expect(
         refusal({...tab, 'ro.build.version.sdk': '30'}),
         'Android API 30: the MediaTek NPU needs Android 12 (API 31) or later',
       );
+      // A property getprop could not read is not a wrong device.
       expect(
         refusal({...tab}..remove('ro.build.version.sdk')),
-        contains('API (unknown)'),
+        'the Android API level (ro.build.version.sdk) could not be read',
+      );
+      expect(
+        refusal({...tab}..remove('ro.soc.manufacturer')),
+        'the SoC manufacturer (ro.soc.manufacturer) could not be read',
+      );
+      expect(
+        refusal({...tab, 'ro.soc.manufacturer': ''}),
+        startsWith('the device does not report its SoC manufacturer'),
       );
       expect(
         refusal({

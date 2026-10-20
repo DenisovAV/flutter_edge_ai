@@ -172,22 +172,25 @@ const mediatekDispatchLib = 'LiteRtDispatch_MediaTek';
 const mediatekNpuLibs = [mediatekDispatchLib];
 
 /// The NeuroPilot adapters the MediaTek dispatch opens from the device, in the
-/// order it tries them (`neuron_adapter_api.cc` at the LiteRT pin; it keeps
-/// the last that opens). The device probe asks for any of them.
+/// order it tries them (`neuron_adapter_api.cc` at the LiteRT pin: the mgvi
+/// adapter, then one of the three `.mtk.so` chosen by the NeuroPilot
+/// version). The device probe asks for any of them. The dispatch also tries
+/// `libneuronusdk_adapter.so` and `libneuron_adapter.so` last and keeps the
+/// last adapter that opens; those two are not declared, so an app never
+/// opens a generic adapter in place of the device's own.
 const mediatekNeuronAdapters = [
   'libneuron_adapter_mgvi.so',
   'libneuronusdk_adapter.10.mtk.so',
   'libneuronusdk_adapter.9.mtk.so',
   'libneuronusdk_adapter.mtk.so',
-  'libneuronusdk_adapter.so',
-  'libneuron_adapter.so',
 ];
 
 /// The device libraries the MediaTek dispatch or NeuroPilot open: the
 /// adapters, the utility library the dispatch reads the NeuroPilot version
 /// from, and the APU/MVPU set Google's AAR declares (its AndroidManifest.xml
-/// at 2.3.0). `libneuronusdk_adapter.10.mtk.so`, which the dispatch tries
-/// first and the AAR does not declare, is among the adapters.
+/// at 2.3.0). `libneuronusdk_adapter.10.mtk.so`, which the dispatch asks for
+/// on NeuroPilot 10 devices and the AAR does not declare, is among the
+/// adapters.
 const mediatekAndroidSystemLibs = [
   ...mediatekNeuronAdapters,
   'libneuron_sys_util.mtk.so',

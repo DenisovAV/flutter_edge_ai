@@ -280,9 +280,9 @@ excludes — the GPU for the published Gemma 4 and Gemma 3n audio encoders,
 which declare cpu — is refused. `model.activeVisionBackend` and
 `model.activeAudioBackend` report the choice (null for a bundle without that
 encoder). A refusal is a `LiteRtLmBundleException` whose `problem`
-says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a Samsung bundle,
-a Qualcomm one on Windows or a Google Tensor or MediaTek one off Android), thrown before any engine
-exists. The device's SoC is not read up front: a bundle built for another
+says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a bundle of an NPU
+vendor this package does not know, a Qualcomm one on Windows or a Google Tensor
+or MediaTek one off Android), thrown before any engine exists. The device's SoC is not read up front: a bundle built for another
 Qualcomm SoC fails at engine create, and the error names the SoC it was built
 for.
 

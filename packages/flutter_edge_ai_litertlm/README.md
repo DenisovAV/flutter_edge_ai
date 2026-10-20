@@ -235,7 +235,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 and MediaTek MT6991/MT6993 (Android, opt-in) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in), MediaTek MT6991/MT6993 (Android, opt-in, not run on device yet) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -605,8 +605,9 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), the
   G6 270m and 440m run on a Pixel 11, Intel PTL runs on Windows
   ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek
-  MT6991/MT6993 load in apps built with `mediatek_npu`
-  ([below](#mediatek-npu-on-android-opt-in)), not run on such a device yet.
+  MT6991/MT6993 are accepted in apps built with `mediatek_npu`
+  ([below](#mediatek-npu-on-android-opt-in)) but not run on such a device
+  yet.
   What a bundle is compiled for is read from the bundle itself, not from its
   name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
@@ -880,8 +881,8 @@ chosen, and are null for a bundle without that encoder.
 A refusal is a `LiteRtLmBundleException` with a `problem`
 (`incomplete`, `wrongBackend`, `unsupportedNpu` for a text model, or an encoder
 the load turns on, compiled for an NPU this package has no dispatch for here —
-a Samsung bundle, a Qualcomm bundle on Windows, or a Google Tensor or MediaTek
-bundle off Android —
+a bundle of an NPU vendor this package does not know, a Qualcomm bundle on
+Windows, or a Google Tensor or MediaTek bundle off Android —
 or for an NPU encoder next to a text model that is not on the NPU) and a
 message that says
 what to do; no engine is created. An NPU bundle, or an encoder the load turns
@@ -1017,6 +1018,9 @@ application. The NeuroPilot runtime it drives is part of the phone's system,
 is never redistributed, and core declares its libraries as optional; a phone
 whose vendor does not expose them to apps is refused with the reason. An app
 can set this with the other opt-ins: the bundle's stamp picks the vendor.
+The AAR's `LICENSE` and `THIRD_PARTY_NOTICE.txt` stay in the hook's cache (the
+build prints where); an app that lists the open-source licences it ships should
+add them.
 
 Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug build: Gemma 3 1B (`…_mt6989`) generates on the NPU. Not run yet: EmbeddingGemma 2 on an MT6991/MT6993 and a release-signed build. Google publishes Gemma 3 1B (MT6989, MT6991,
 MT6993), Gemma 3 270M (MT6991, MT6993), Qwen3 0.6B (MT6993) and EmbeddingGemma 2

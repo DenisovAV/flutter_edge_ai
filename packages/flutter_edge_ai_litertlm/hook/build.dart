@@ -1109,6 +1109,11 @@ void _registerBundledNpuStack({
   required Uri prebuiltDir,
   required Uri Function(Uri) stage,
 }) {
+  if (!npuDispatchInNativeTarball(vendor)) {
+    throw StateError(
+      '${vendor.label}: its dispatch is not in the native bundle',
+    );
+  }
   for (final name in npuStackLibs(vendor, 'android')) {
     final fileName = _dylibFileName(OS.android, name);
     final file = prebuiltDir.resolve(fileName);
@@ -1143,6 +1148,11 @@ Future<void> _registerMediatekNpu({
   required BuildOutputBuilder output,
   required Uri Function(Uri) stage,
 }) async {
+  if (npuDispatchInNativeTarball(NpuVendor.mediatek)) {
+    throw StateError(
+      'MediaTek: its dispatch is in the native bundle, not fetched',
+    );
+  }
   final dir = await _ensureMediatekRuntime(input, output);
   for (final name in mediatekNpuLibs) {
     output.assets.code.add(
@@ -1173,6 +1183,12 @@ Future<Directory> _ensureMediatekRuntime(
   final entry = Directory('${root.path}/${mediatekCacheEntryName()}');
   if (isCompleteQnnCache(entry, fileNames: mediatekLibFileNames)) return entry;
 
+  final rawAar = input.userDefines[mediatekNpuAarUserDefine];
+  if (rawAar != null && rawAar is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$mediatekNpuAarUserDefine must be a path string',
+    );
+  }
   final localAar = input.userDefines.path(mediatekNpuAarUserDefine);
   if (localAar != null) {
     output.dependencies.add(localAar);
@@ -1283,8 +1299,14 @@ Future<Directory> _ensureQnnRuntime(
 ) async {
   final root = _qnnCacheRoot(input);
   final entry = Directory('${root.path}/${qnnCacheEntryName()}');
-  if (isCompleteQnnCache(entry)) return entry;
+  if (isCompleteQnnCache(entry, fileNames: qnnLibFileNames)) return entry;
 
+  final rawAar = input.userDefines[qualcommNpuAarUserDefine];
+  if (rawAar != null && rawAar is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$qualcommNpuAarUserDefine must be a path string',
+    );
+  }
   final localAar = input.userDefines.path(qualcommNpuAarUserDefine);
   if (localAar != null) {
     // The app points at an AAR it has (offline builds, mirrors that need

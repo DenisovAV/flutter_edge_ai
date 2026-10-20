@@ -92,7 +92,7 @@ Upgrading from 2.3: see [Migration](/docs/migration).
 ## What's new in 2.3
 
 - **2.3.2:** the active model keeps its LoRA across an app restart, and
-  `ModelFileType.gguf` selects the optional [llama.cpp engine](llama.md),
+  `ModelFileType.gguf` selects the optional [llama.cpp engine](/docs/llama),
   `flutter_edge_ai_llama`, on pub.dev since 0.0.1.
 - **EmbeddingGemma 2 on an Intel NPU** (`flutter_edge_ai_litertlm` 1.13.2): the
   Panther Lake bundles run on Windows x64 with
@@ -187,7 +187,7 @@ Upgrading from 2.3: see [Migration](/docs/migration).
 
 - **flutter_gemma is now Flutter Edge AI.** Every package has a new name — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, … Installed models, vector stores and platform setup carry over, and `dart fix --apply` renames the old Dart names. See [Migration](/docs/migration).
 
-Core through 1.11.3 (`flutter_gemma_litertlm` through 1.8.5) shipped under the `flutter_gemma*` names; the new names continue the same numbering (the table is in [Migration](/docs/migration)).
+Core through 1.11.4 (`flutter_gemma_litertlm` through 1.8.6) shipped under the `flutter_gemma*` names; the new names continue the same numbering (the table is in [Migration](/docs/migration)).
 
 ## What's new in 1.9
 
@@ -462,7 +462,7 @@ await chatA.session.close();  // closing one leaves the others usable
 
 **Concurrent contexts, serialized inference.** The sessions are logically
 independent, but **only one session generates at a time** — calling
-`generateResponse()` on a second session while another is still running blocks
+`getResponse()` or `generateChatResponse()` on a second session while another is still running blocks
 until the first finishes. Generation is *not* parallel. This is intentional:
 parallel on-device inference would contend for the accelerator and risk OOM.
 

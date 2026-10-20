@@ -88,7 +88,7 @@ abstract final class Moonshine {
       'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/'
       'moonshine_tiny_5s_f32.tflite';
   static const tokenizerUrl =
-      'https://huggingface.co/UsefulSensors/moonshine/resolve/main/'
+      'https://huggingface.co/moonshine-ai/moonshine/resolve/main/'
       'ctranslate2/tiny/tokenizer.json';
 
   /// What `isModelInstalled` is keyed by: the last segment of [modelUrl].

@@ -1,4 +1,5 @@
 ## 2.5.0
+- **Breaking:** remove the members deprecated for 2.5.0 (listed in MIGRATION.md).
 - `FlutterEdgeAi.openModel`: several caller-owned models at once; `FlutterEdgeAiPlugin.createModel` deprecated.
 
 ## 2.4.1

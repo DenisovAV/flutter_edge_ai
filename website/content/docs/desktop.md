@@ -13,7 +13,8 @@ no separate process, no IPC.
 LiteRT-LM (`.litertlm`) is the **primary** desktop engine (core registers no
 engine, so register `LiteRtLmEngine()`), but not the only one. **`flutter_edge_ai_onnx`** ([ONNX Runtime](/docs/onnx) — ORT-GenAI
 generation + ORT embeddings) also runs on desktop (macOS arm64, Linux x64 and
-Windows x64), and the OS built-in model is available through
+Windows x64), **`flutter_edge_ai_llama`** ([llama.cpp](/docs/llama), `.gguf`)
+runs on all three desktops, and the OS built-in model is available through
 **`flutter_edge_ai_builtin_ai`** ([Built-in AI](/docs/builtin-ai)) on **macOS**
 (Apple Foundation Models) and, since 0.3.0, on **Windows** (AI Foundry / Phi
 Silica — nothing to configure to build: `flutter_local_ai` resolves the Windows
@@ -70,8 +71,8 @@ desktop. Any `.litertlm` model works; see [Models](/docs/models). (The
 | macOS | x86_64 | — | — | — | Not supported (Apple Silicon only) |
 | Windows | x86_64 | DirectX 12 (via Dawn/WebGPU) | ✅ | ✅ | Nothing to install |
 | Windows | arm64 | — | — | — | Not supported |
-| Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL 9+) |
-| Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc requirement |
+| Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, RHEL 10+; RHEL 9 ships GCC 11's older libstdc++) |
+| Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc and libstdc++ requirement |
 
 Qualcomm Linux arm64 boards also run `PreferredBackend.npu` on the Hexagon DSP
 when the app opts in with `qualcomm_npu: true` — see
@@ -104,9 +105,9 @@ see [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2
 ## Requirements
 
 - **Flutter** ≥ 3.44.0
-- **macOS**: Apple Silicon (arm64)
-- **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed (see below).
-- **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
+- **macOS**: Apple Silicon (arm64); 12.0 with `flutter_edge_ai_builtin_ai`, 14.0 with `flutter_edge_ai_llama`
+- **Windows**: 10/11 64-bit. LiteRT-LM needs no Visual C++ Redistributable (see below); `flutter_edge_ai_llama` does — llamadart needs the matching Visual C++ runtime.
+- **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 10+ — RHEL 9 ships GCC 11's libstdc++, which is too old)
 - **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
 No Java/JVM/JRE required.
@@ -202,7 +203,7 @@ post_install do |installer|
   # build phase to stage them.
   #
   # The phase only LOCATES and RUNS a script; the staging logic itself lives in
-  # flutter_gemma_litertlm and is delivered next to the dylibs it stages. That
+  # flutter_edge_ai_litertlm and is delivered next to the dylibs it stages. That
   # is deliberate: this block is frozen into your Xcode project, and a copy of
   # the logic frozen there cannot be fixed by upgrading the package.
   installer.aggregate_targets.each do |aggregate_target|
@@ -241,7 +242,7 @@ post_install do |installer|
         STAGER="${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh"
         if [ ! -f "${STAGER}" ]; then
           echo "[flutter_gemma] ERROR: ${STAGER} not found." >&2
-          echo "  flutter_gemma_litertlm 1.6.2+ installs it there from its build hook." >&2
+          echo "  flutter_edge_ai_litertlm installs it there from its build hook." >&2
           echo "  Upgrade the package, then: flutter clean && flutter pub get" >&2
           exit 1
         fi
@@ -300,11 +301,12 @@ for secondary `LoadLibrary` calls — they would fail to find the GPU accelerato
 DLL and silently fall back to CPU.
 
 End-users need nothing installed. `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.18.0`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0-f`, 16 of its 24 DLLs import none.
 
 The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
-Intel's three `openvino*` and four `tbb*`. Each imports some of `msvcp140`,
+three of Intel's five `openvino*` (the NPU compiler and its loader import none)
+and its four `tbb*`. Each imports some of `msvcp140`,
 `vcruntime140` and `vcruntime140_1` — the runtimes any Flutter Windows app already
 resolves — and none imports `vcruntime140_threads.dll`, the Visual Studio 2022 17.8
 one that used to make this page ask for a redistributable and that failed a Microsoft
@@ -450,7 +452,7 @@ or audio encoder** backend follows the bundle — the section's
 delegate can't prepare the vision encoder's ops); set
 `preferredVisionBackend:` / `preferredAudioBackend:` on `getActiveModel(...)`
 only where the section allows it
-(`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint`).
+(`(await readLiteRtLmBundleInfo(path)).audioEncoder?.backendConstraint`).
 
 - **Windows** — GPU. `flutter_edge_ai_litertlm` preloads `libLiteRtTopKWebGpuSampler.dll`, which in `native-v0.18.0` exports its full C ABI (7 of 7 functions).
 - **macOS** — CPU. The bundle does not ship `libLiteRtTopKMetalSampler`: upstream opens it by bare file name, which cannot reach a library inside the app bundle, so the factory uses the CPU chain.
@@ -549,8 +551,9 @@ lifetime, because its integration tests run in the background.
 
 ### Model file not found
 
-On desktop the model is downloaded to the platform's standard "app support"
-directory (see [Troubleshooting → desktop storage](/docs/troubleshooting#desktop-storage-locations)). Use
+On desktop the model is downloaded to a `flutter_gemma/` folder in the
+platform's standard "app support" directory on macOS and Linux, and in
+`%LOCALAPPDATA%` on Windows (see [Troubleshooting → desktop storage](/docs/troubleshooting#desktop-storage-locations)). Use
 `FlutterEdgeAi.installModel(...).fromNetwork(...).install()` to download, or
 `.fromFile(absolutePath)` if you already have it locally.
 

@@ -1,5 +1,33 @@
 # Migration guide
 
+## flutter_edge_ai 2.4.1 / flutter_edge_ai_litertlm 1.15.0: `npu` on a generic bundle runs on the GPU or the CPU
+
+```yaml
+dependencies:
+  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai_litertlm: ^1.15.0
+```
+
+Only apps that pass `PreferredBackend.npu` with a generic `.litertlm` — one
+compiled for no NPU: no `tf_lite_aux` section and no `LiteRtStamp` on its text
+model — need to act. Where 1.14.0 tried such a bundle on the NPU, LiteRT ran it
+on the CPU while `activeBackend` said `npu`. 1.15.0 never tries the NPU for it
+([Where a model runs](https://pub.dev/packages/flutter_edge_ai_litertlm#where-a-model-runs)):
+
+- `npu` falls back to the GPU, then the CPU: the log says why, and
+  `activeBackend` names the backend that ran.
+- With `LiteRtLmEngine(backendFallback: false)` the load is refused with a
+  `LiteRtLmBundleException` (`wrongBackend`). Ask for `gpu` or `cpu`, or
+  install the bundle compiled for your device's NPU.
+
+A `.litertlm` the reader cannot read keeps the old rules.
+
+Google Tensor G5/G6 bundles run on the NPU of a Pixel with that Tensor
+generation and Android 16 or later (not a `BP2A` build). It is opt-in, as
+Qualcomm's is: `google_tensor_npu: true` in the same `user_defines` block.
+Without it such a bundle fails with a `BackendInitException` that says how to
+enable it.
+
 ## `flutter_edge_ai_agent` 0.4.0: `schedule_notification` is opt-in
 
 ```yaml
@@ -33,7 +61,27 @@ passed today moves to tomorrow at the same wall-clock time, across a clock
 change too. The mail and SMS intents write a space as `%20` instead of `+`.
 See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
 
-## flutter_edge_ai 2.5.0: `FlutterEdgeAiPlugin.createModel` is deprecated
+## flutter_edge_ai 2.5.0: several open models, removed and deprecated members
+
+### Removed members
+
+| Removed | Use |
+|---|---|
+| `EmbeddingModel.generateEmbedding(t)` | `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)` |
+| `EmbeddingModel.generateEmbeddings(ts)` | `embedAll([for (final t in ts) EmbeddingInput.text(t)], taskType: TaskType.retrievalQuery)` |
+| `EmbeddingModel.getDimension()` | `dimension` |
+| `InferenceModelSpec.fromLegacyUrl(name:, modelUrl:, loraUrl:)` | `InferenceModelSpec(name: …, modelSource: …, loraSource: …, modelType: …)` |
+
+The removed embedding methods embedded as `TaskType.retrievalQuery` unless given
+a `taskType:`; pass the same task to keep their vectors.
+`genkit_flutter_edge_ai` 0.9.0 and older call `generateEmbeddings` and do not
+compile against 2.5.0: upgrade it to 0.9.1 or later. For `fromLegacyUrl`, use
+the `ModelSource` that matches the URL: `ModelSource.network(url)` for
+`http(s)://`, `ModelSource.asset(path)` for `asset://` or a bare path,
+`ModelSource.bundled(name)` for `native://`, `ModelSource.file(path)` for
+`file://`. The factory defaulted to `modelType: ModelType.general`.
+
+### `FlutterEdgeAiPlugin.createModel` is deprecated
 
 `FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
 deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
@@ -147,7 +195,7 @@ dependencies:
 ### Embeddings
 
 `EmbeddingModel` takes an `EmbeddingInput` and a required `TaskType`. The three
-old methods still compile as deprecated forwarders and are removed in 2.5.0.
+old methods stayed as deprecated forwarders until 2.5.0 removed them.
 
 | Before (2.2) | After (2.3) |
 |---|---|
@@ -213,7 +261,7 @@ tokenizer packages; it re-exports the app library), `engine_io.dart`,
 | `ModelThinkingFilter` through `package:flutter_edge_ai/core/extensions.dart` | the app library |
 | `EmbeddingForwardPass`, `ForwardPassDescriptor`, `EmbeddingForwardPassFactory`, `CommonEmbeddingModel.create`, `EmbeddingBackendProvider.createModel` | `EmbeddingPass`, `EmbeddingPassInfo`, `EmbeddingPassDescriptor<C>`, `TokenEmbeddingPass` (if you tokenize in Dart) and `EmbeddingBackendProvider.describe()`, which returns `EmbeddingPassDescriptor(engineTag:, factory:, config:, activeBackend:)`. Core builds, hosts and closes the model. |
 | `CommonEmbeddingModel.inputSequenceLength`, `.outputDimension` | `EmbeddingModel.maxInputTokens`, `.dimension` |
-| `class MyBackend implements EmbeddingBackendProvider` | `extends EmbeddingBackendProvider` (an `abstract base class`) |
+| `class MyBackend implements EmbeddingBackendProvider` | `final class MyBackend extends EmbeddingBackendProvider` (an `abstract base class`) |
 | `flutter_edge_ai_embeddings` re-exported core's seam types | it exports only `GemmaEmbeddingTokenizers`; import the seam types from `engine.dart`. A SigLIP input over 63 tokens throws instead of truncating. |
 | onnx `OnnxEmbeddingForwardPass` | `OnnxEmbeddingPass` with `OnnxEmbeddingConfig`; it extends `TokenEmbeddingPass` |
 | litertlm `WebEmbeddingModel` (`web_embedding_model.dart`) | removed: `FlutterEdgeAi.getActiveEmbedder()` |
@@ -237,7 +285,7 @@ tokenizer packages; it re-exports the app library), `engine_io.dart`,
 | `EmbeddingModelSpec.fromLegacyUrl` | `EmbeddingModelSpec(name: …, modelSource: ModelSource.network(url), tokenizerSource: ModelSource.network(tokenizerUrl))` |
 | `MobileModelManager`/`WebModelManager.currentActiveModel`, `SmartDownloader.isHuggingFaceUrl` | these classes are internal now; read `FlutterEdgeAi.activeModelSpec` / `activeEmbedderSpec` |
 
-`InferenceModelSpec.fromLegacyUrl` is deprecated and removed in 2.5.0. Build
+`InferenceModelSpec.fromLegacyUrl` was deprecated here and removed in 2.5.0. Build
 the spec with the `ModelSource` that matches the URL:
 `ModelSource.network(url)` for `http(s)://`, `ModelSource.asset(path)` for
 `asset://` or a bare path, `ModelSource.bundled(name)` for `native://`,
@@ -577,11 +625,11 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**Current equivalents (2.3):**
+**Current equivalents (2.4):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.3.0                 # core — always required
-  flutter_edge_ai_litertlm: ^1.13.0       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai: ^2.4.1                 # core — always required
+  flutter_edge_ai_litertlm: ^1.15.0       # .litertlm + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.2.2       # .task / .bin
   flutter_edge_ai_embeddings: ^2.3.0      # tokenizer providers
   flutter_edge_ai_rag: ^1.1.0             # RAG orchestration + contracts
@@ -600,7 +648,8 @@ Pick by what you actually used in 0.16.x:
 | RAG on web | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 
 > Not sure which format your models are? Desktop runs `.litertlm`
-> (`flutter_edge_ai_litertlm`), ONNX or built-in AI — no MediaPipe. On
+> (`flutter_edge_ai_litertlm`), ONNX, GGUF (`flutter_edge_ai_llama`) or
+> built-in AI — no MediaPipe. On
 > mobile/web check the file extension you install.
 > You can add **both** engine packages and let the registry route each model by
 > its file type.
@@ -611,8 +660,9 @@ Pick by what you actually used in 0.16.x:
 > system models — Gemini Nano on Android and Web, Apple Foundation Models on
 > iOS/macOS, Windows AI Foundry on Windows; a thin adapter over
 > `flutter_local_ai`, which owns the native layer), `flutter_edge_ai_onnx` (ONNX
-> Runtime generation and embeddings) and `flutter_edge_ai_diagnostics` (memory
-> a model costs, read from the OS).
+> Runtime generation and embeddings), `flutter_edge_ai_llama` (GGUF models
+> through llama.cpp) and `flutter_edge_ai_diagnostics` (memory a model costs,
+> read from the OS).
 > Add any of them only if you want that feature — see the README **Features** list.
 
 ## 2. main.dart — the one new call

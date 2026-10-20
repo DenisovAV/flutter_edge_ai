@@ -140,8 +140,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_attachedImage != null) {
         final mime = _attachedMime ?? 'image/jpeg';
         final dataUri = 'data:$mime;base64,${base64Encode(_attachedImage!)}';
-        // contentType MUST be set: the on-device plugin drops media without an
-        // image/* contentType, and CapabilityStrategy reads it to detect vision.
+        // Gemini, the on-device plugin and CapabilityStrategy all read the type
+        // from the data: URI as well; contentType states it outright.
         content.add(
           MediaPart(
             media: Media(contentType: mime, url: dataUri),

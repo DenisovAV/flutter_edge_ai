@@ -62,8 +62,9 @@ await FlutterEdgeAi.initialize(
 alongside other engines (e.g. `LiteRtLmEngine` from `flutter_edge_ai_litertlm`) if
 your app uses both formats — the registry routes each model to the right one.
 
-> **iOS:** this package requires **iOS 16.0+** (MediaPipe GenAI's floor — it is
-> the only flutter_edge_ai package that needs it). Set `platform :ios, '16.0'` in
+> **iOS:** this package requires **iOS 16.0+** (MediaPipe GenAI's floor; core
+> builds from iOS 15, and [`flutter_edge_ai_llama`](/docs/llama) needs iOS
+> 16.4+). Set `platform :ios, '16.0'` in
 > the `Podfile` **and** the Runner's iOS Deployment Target in Xcode, and use
 > `use_frameworks! :linkage => :static` (MediaPipe ships static xcframeworks).
 > Android needs no extra setup — the MediaPipe Gradle deps are bundled.

@@ -213,35 +213,4 @@ abstract base class EmbeddingModel {
     Map<String, Object?> artifact, {
     String? embedderId,
   }) => loadEmbeddingDecider(this, artifact, embedderId: embedderId);
-
-  /// Deprecated: use `embed(EmbeddingInput.text(text), taskType: taskType)`.
-  @Deprecated(
-    'Use embed(EmbeddingInput.text(text), taskType: taskType). '
-    'Removed in 2.5.0.',
-  )
-  @nonVirtual
-  Future<List<double>> generateEmbedding(
-    String text, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) => embed(EmbeddingInput.text(text), taskType: taskType);
-
-  /// Deprecated: use `embedAll` over `EmbeddingInput.text` inputs.
-  @Deprecated(
-    'Use embedAll([for (final t in texts) EmbeddingInput.text(t)], '
-    'taskType: taskType). Removed in 2.5.0.',
-  )
-  @nonVirtual
-  Future<List<List<double>>> generateEmbeddings(
-    List<String> texts, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) => embedAll([
-    for (final t in texts) EmbeddingInput.text(t),
-  ], taskType: taskType);
-
-  /// Deprecated: use [dimension].
-  @Deprecated('Use dimension. Removed in 2.5.0.')
-  @nonVirtual
-  Future<int> getDimension() => isClosed
-      ? Future.error(const EmbedderClosedException())
-      : Future.sync(() => dimension);
 }

@@ -40,7 +40,7 @@ features to support (Phase 3).
 2. Fix all compilation errors. Files that depend on flutter_edge_ai's API:
    - [ ] `lib/src/flutter_edge_ai_runtime.dart` — `FlutterEdgeAi.getActiveModel()`, `getActiveEmbedder()` signatures
    - [ ] `lib/src/flutter_edge_ai_model.dart` — `InferenceModel.createChat()` signature, `ModelResponse` pattern matching, `InferenceChat` methods
-   - [ ] `lib/src/flutter_edge_ai_embedder.dart` — `EmbeddingModel.generateEmbeddings()`, `PreferredBackend` enum
+   - [ ] `lib/src/flutter_edge_ai_embedder.dart` — `EmbeddingModel.embedAll()`, `PreferredBackend` enum
    - [ ] `lib/src/converters/request_converter.dart` — `Message` constructors (`.withImage`, `.withAudio`, `.toolCall`, `.toolResponse`)
    - [ ] `lib/src/converters/response_converter.dart` — `ModelResponse` subtypes (`TextResponse`, `FunctionCallResponse`, `ParallelFunctionCallResponse`, `ThinkingResponse`)
    - [ ] `lib/src/converters/tool_converter.dart` — `Tool` constructor

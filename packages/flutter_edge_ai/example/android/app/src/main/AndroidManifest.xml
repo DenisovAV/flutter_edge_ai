@@ -60,9 +60,11 @@
              can't dlopen the vendor OpenCL ICD without declaring its loader.
              libvndksupport.so provides android_load_sphal_library(), which the
              v0.13.x OpenCL loader uses to reach libOpenCL.so in the sphal
-             namespace. Without it OpenCL fails to load and the engine falls
-             back to WebGPU, which hard-freezes some Mali drivers on the vision
-             encoder (#324). Required per Google's LiteRT-LM Android docs. -->
+             namespace. Without it OpenCL fails to load, and OpenCL is the only
+             Android GPU path since native-v0.18.0 (native-v0.13.x and earlier
+             fell back to WebGPU, which hard-froze some Mali drivers, #324).
+             Required per
+             Google's LiteRT-LM Android docs. -->
         <uses-native-library android:name="libvndksupport.so" android:required="false"/>
         <uses-native-library
             android:name="libOpenCL.so"

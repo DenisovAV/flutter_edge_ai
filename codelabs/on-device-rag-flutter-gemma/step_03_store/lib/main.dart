@@ -56,7 +56,9 @@ class _QuickstartAppState extends State<QuickstartApp> {
   }
 
   Future<void> _disposeOwnedResources() => _shutdown ??= () async {
-    // The RagIndex borrows core's active embedder, so ordering is load-bearing.
+    // The RagIndex first: it borrows core's active embedder.
+    // FlutterEdgeAi.dispose() then resets core's registries and closes no
+    // model.
     await widget.ragStore.dispose();
     await FlutterEdgeAi.dispose();
   }();

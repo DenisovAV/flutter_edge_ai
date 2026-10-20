@@ -27,7 +27,7 @@ import 'package:path_provider/path_provider.dart';
 const _sttModelUrl =
     'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite';
 const _sttTokenizerUrl =
-    'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json';
+    'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json';
 
 // ── LLM: Gemma 3 1B IT, .litertlm, gated repo (needsAuth: true in
 // example/lib/models/model.dart Model.gemma3_1B). Same desktopUrl used by

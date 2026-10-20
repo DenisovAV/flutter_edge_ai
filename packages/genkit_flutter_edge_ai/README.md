@@ -17,7 +17,7 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Wraps `flutter_edge_ai` as a Genkit model provider
 - Supports text generation (blocking and streaming)
 - Embeddings — register a `FlutterEdgeAiEmbedderConfig`, reference it with `flutterEdgeAi.embedder(...)`
-- Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (at most 20 MiB each, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
+- Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (each download at most 20 MiB, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
 - Parallel tool calls — several calls in one response, each with a `ref` that no other call of the turn has, so Genkit pairs every tool response with its request; the refs stay in the history as call ids
 - Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
@@ -47,8 +47,9 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 | `flutter_edge_ai_litertlm` | `LiteRtLmEngine()`, `LiteRtEmbeddingBackend()` | `.litertlm` models (every platform, incl. desktop) and LiteRT embeddings (EmbeddingGemma 1 and 2, Gecko) |
 | `flutter_edge_ai_mediapipe` | `MediaPipeEngine()` | `.task` / `.bin` models (Android, iOS, web; MediaPipe is maintenance-only upstream) |
 | `flutter_edge_ai_onnx` | `OnnxEngine()`, `OnnxEmbeddingBackend()` | ONNX models and embeddings |
+| `flutter_edge_ai_llama` | `LlamaEngineProvider()` | `.gguf` models through llama.cpp |
 | `flutter_edge_ai_builtin_ai` | `BuiltInAiEngine()` | the OS's own model (Gemini Nano, Apple Foundation Models, Phi Silica) or the browser's Prompt API (Chrome, Edge) |
-| `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | tokenizers for `.tflite` and `.onnx` text embeddings (an EmbeddingGemma 2 `.litertlm` needs none) |
+| `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | tokenizers for `.tflite` and `.onnx` text embeddings (on the web, `.onnx` only; an EmbeddingGemma 2 `.litertlm` needs none) |
 
 ```yaml
 # pubspec.yaml (your app)
@@ -71,8 +72,9 @@ await FlutterEdgeAi.initialize(
 ```
 
 > If you skip registration, `getActiveModel` throws a `StateError` naming the
-> engine package to add. Through Genkit that error comes back in the result of
-> `ai.generate`, not as an exception — see the check in the Quick Start.
+> model's `ModelFileType` and the engines that are registered. Through Genkit
+> that error comes back in the result of `ai.generate`, not as an exception —
+> see the check in the Quick Start.
 
 ## Quick Start
 
@@ -211,7 +213,7 @@ final response = await ai.generate(
 
 Tool `ref`s travel as call ids both ways (0.10.0, with `flutter_edge_ai`
 2.4.0): a tool request's `ref` is the call's `FunctionCallResponse.id`, or
-`call_0`, `call_1`, … when the engine gives none (no bundled engine does yet),
+`call_0`, `call_1`, … when the engine gives none (`flutter_edge_ai_llama` gives its own),
 and never repeats within a turn; in the history the plugin sends back, a
 request's `ref` becomes its call's id (`Message.toolCall(calls:)`) and a tool
 response's `ref` its `toolCallId`.
@@ -324,7 +326,7 @@ so it follows a model that core replaced or closed in between.
 
 ## Known Limitations
 
-- **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_onnx` for ONNX, `flutter_edge_ai_builtin_ai` for the OS's own model, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
+- **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_onnx` for ONNX, `flutter_edge_ai_llama` for `.gguf`, `flutter_edge_ai_builtin_ai` for the OS's own model, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
 - **Model installation**: The plugin does NOT manage model installation. The host app must install models via `FlutterEdgeAi.installModel()` and embedders via `FlutterEdgeAi.installEmbedder()` before using the plugin. Without one, a request fails with `UNAVAILABLE`.
 - **Model names are labels**: every configured `FlutterEdgeAiModelConfig` runs the model that is active in flutter_edge_ai, the one installed or selected last; `modelType` tells the plugin how to talk to it. The names share one queue, so generations run one at a time in the order they arrive. Each request asks flutter_edge_ai for the active model, which reuses the loaded one while nothing changed; a newly installed model, or other runtime arguments, give the next request a new one. Set `supportsTools: false` or `supportsMedia: false` on a config whose model takes no tools or media: its `supports` metadata says so, and a request that needs them fails with `UNIMPLEMENTED` instead of reaching a model that would ignore them.
 - **System role**: System messages are passed natively via `createChat(systemInstruction:)`. Only text content is supported in system messages. The capability first shipped under the old package name in `flutter_gemma` 0.13.0.

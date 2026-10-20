@@ -35,8 +35,8 @@ import 'package:flutter_local_ai/flutter_local_ai.dart'
 /// - **Windows** (AI Foundry / Phi Silica): all seven.
 /// - **Web** (Chrome Prompt API): `available`, `downloadable`, `downloading`,
 ///   `unavailableDeviceUnsupported`, `unavailableOther`. Chrome reports four
-///   states and its `'unavailable'` carries no reason, so disk floor, VRAM and
-///   a missing origin trial all fold into `unavailableOther`.
+///   states and its `'unavailable'` carries no reason, so the disk floor and
+///   the GPU/RAM floor both fold into `unavailableOther`.
 ///
 /// Treat it as a runtime property of the device, never as something the build
 /// can guarantee: the same binary answers differently across OS versions.

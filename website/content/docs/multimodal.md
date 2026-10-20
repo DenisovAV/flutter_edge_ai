@@ -45,7 +45,7 @@ encoder declares GPU), else the NPU its section is compiled for, else CPU (the
 Metal/WebGPU delegates can't prepare its `STABLEHLO_COMPOSITE` ops — routing
 it to GPU used to hard-fail at model load). Set
 `preferredVisionBackend` only where the section allows it —
-`readLiteRtLmBundleInfo(path).visionEncoder?.backendConstraint` shows what it
+`(await readLiteRtLmBundleInfo(path)).visionEncoder?.backendConstraint` shows what it
 declares, and a backend it excludes is refused before the model loads;
 `model.activeVisionBackend` says where it runs.
 
@@ -137,7 +137,7 @@ Android, iOS and desktop. The Gemma 3n MediaPipe `.task` files carry none
 `preferredAudioBackend` unset: the encoder follows the bundle, and the
 published Gemma 4 and Gemma 3n audio encoders declare `backend_constraint`
 cpu, so `PreferredBackend.gpu` is refused for them
-(`readLiteRtLmBundleInfo(path).audioEncoder?.backendConstraint` shows it).
+(`(await readLiteRtLmBundleInfo(path)).audioEncoder?.backendConstraint` shows it).
 `preferredBackend` only moves the text decoder.
 
 </Warning>

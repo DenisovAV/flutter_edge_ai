@@ -222,7 +222,7 @@ measured on `native-v0.18.0-g`, 17 of its 25 DLLs import none.
 
 The other eight belong to the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
-three of Intel's five `openvino*` (the NPU compiler and its loader import none) and
+three of Intel's six `openvino*` (the NPU compiler, its loader and the NPU VM runtime import none) and
 its four `tbb*`. Each imports some of `msvcp140`,
 `vcruntime140` and `vcruntime140_1` — the runtimes any Flutter Windows app already
 resolves — and none imports `vcruntime140_threads.dll`, the Visual Studio 2022 17.8

@@ -516,8 +516,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.16.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
+        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_litertlm 1.16.1"
        }
       },
       "windows_x64": {
@@ -4619,12 +4620,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
+        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_litertlm 1.16.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
+        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_litertlm 1.16.1"
        }
       },
       "windows_x64": {
@@ -5508,8 +5511,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:529"
+        "status": "verified",
+        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
+        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_speech 0.5.10"
        }
       },
       "windows_x64": {
@@ -5596,8 +5600,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:495-496"
+        "status": "verified",
+        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
+        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_speech 0.5.10"
        }
       },
       "windows_x64": {

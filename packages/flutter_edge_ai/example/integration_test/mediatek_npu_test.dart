@@ -6,6 +6,10 @@
 // 2. A bundle compiled for this phone's SoC on the NPU, when one is staged in
 //    /data/local/tmp/flutter_gemma_test/ and named by MTK_MODEL; skipped
 //    without it.
+// 3. An EmbeddingGemma 2 MediaTek bundle named by MTK_EG2: embeds on the NPU
+//    when it is compiled for this phone's SoC, else is refused with the
+//    reason (LiteRT's dispatch loaded, the engine refused the other SoC's
+//    graph); skipped without it.
 //
 // No setUp/setUpAll: everything that can fail runs inside the test body.
 //
@@ -26,10 +30,12 @@ import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'inference_test_helpers.dart' show registerTestEngines;
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _model = String.fromEnvironment('MTK_MODEL');
 const _maxTokens = int.fromEnvironment('MTK_MAX_TOKENS', defaultValue: 1280);
+const _eg2 = String.fromEnvironment('MTK_EG2');
 
 String? _prop(String key) {
   final r = Process.runSync('getprop', [key]);
@@ -122,4 +128,40 @@ void main() {
       await model.close();
     }
   }, skip: _model.isEmpty);
+
+  testWidgets(
+    'an EmbeddingGemma 2 MediaTek bundle embeds on this SoC, or is refused '
+    'for another',
+    (tester) async {
+      final path = await stagedModelPath(_eg2);
+      expect(path, isNotNull, reason: 'stage $_eg2 first');
+      await registerTestEngines();
+      await FlutterEdgeAi.installEmbedder().modelFromFile(path!).install();
+      final soc = (_prop('ro.soc.model') ?? '').toLowerCase();
+      final same = _eg2.toLowerCase().contains(soc);
+      final load = Stopwatch()..start();
+      try {
+        final model = await FlutterEdgeAi.getActiveEmbedder(
+          preferredBackend: PreferredBackend.npu,
+        );
+        print(
+          '[mtk] eg2 loaded on ${model.activeBackend} in '
+          '${load.elapsedMilliseconds} ms',
+        );
+        final sw = Stopwatch()..start();
+        final v = await model.embed(
+          EmbeddingInput.text('a red bicycle'),
+          taskType: TaskType.retrievalQuery,
+        );
+        print('[mtk] eg2 embed ${sw.elapsedMilliseconds} ms, dim ${v.length}');
+        expect(same, isTrue, reason: 'a bundle for another SoC loaded');
+        expect(model.activeBackend, PreferredBackend.npu);
+        await model.close();
+      } on EmbeddingLoadException catch (e) {
+        print('[mtk] eg2 refused after ${load.elapsedMilliseconds} ms: $e');
+        expect(same, isFalse, reason: '$e');
+      }
+    },
+    skip: _eg2.isEmpty,
+  );
 }

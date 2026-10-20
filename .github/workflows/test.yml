@@ -127,6 +127,37 @@ jobs:
       - name: Lint the skill files
         run: dart run skills_lint@0.5.1
 
+  # The model registry (model_registry/README.md): every rule
+  # `registry.dart check` applies — the schema, the facts read from the files'
+  # bytes, the documented claims, the recorded evidence — and that every file
+  # `generate` writes is current: the Dart catalogs in flutter_edge_ai_litertlm
+  # and flutter_edge_ai_speech, the website's registry page, models.json and
+  # the Models page's generated table. Full history: a docs claim cites lines at
+  # a commit, which check reads with git. Whether Hugging Face still serves the
+  # pinned files is model-registry-live.yml's job, not a pull request's.
+  model-registry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Check the registry and its generated files
+        working-directory: tool/model_registry
+        run: |
+          dart pub get
+          dart run bin/registry.dart check
+          dart test
+
   # The analyzer and the public-surface golden see only the NATIVE branch of
   # conditional imports and exports, so a web arm that no longer compiles (a
   # moved file, a renamed symbol, a signature that drifted from its native

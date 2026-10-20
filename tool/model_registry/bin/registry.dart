@@ -3,11 +3,14 @@
 //   dart run bin/registry.dart check
 //   dart run bin/registry.dart generate
 //   dart run bin/registry.dart evidence --device "<device>" <log>...
+//   dart run bin/registry.dart live
 //
 // `check` validates model_registry/ (the repo root's) and that every
 // generated file is what `generate` would write; it exits 1 on any problem.
 // `generate` writes the generated files. `evidence` turns the log of an
 // integration run into model_registry/evidence/<date>_<host>_<device>.json.
+// `live` asks Hugging Face for every pinned file (HF_TOKEN for gated ones)
+// and exits 1 when one is missing or differs.
 // See ../../model_registry/README.md.
 
 import 'dart:convert';
@@ -16,14 +19,15 @@ import 'dart:io';
 import 'package:model_registry/check.dart';
 import 'package:model_registry/evidence.dart';
 import 'package:model_registry/generate.dart';
+import 'package:model_registry/live.dart';
 import 'package:model_registry/site.dart';
 import 'package:path/path.dart' as p;
 
 Future<void> main(List<String> args) async {
   final command = args.isEmpty ? null : args.first;
-  if (!const {'check', 'generate', 'evidence'}.contains(command)) {
+  if (!const {'check', 'generate', 'evidence', 'live'}.contains(command)) {
     stderr.writeln(
-      'usage: dart run bin/registry.dart check|generate [--registry <dir>]\n'
+      'usage: dart run bin/registry.dart check|generate|live [--registry <dir>]\n'
       '       dart run bin/registry.dart evidence --device <device> '
       '[--log-url <url>] [--date <yyyy-mm-dd>] [--allow-dirty] <log>...',
     );
@@ -43,6 +47,9 @@ Future<void> main(List<String> args) async {
   checkEvidence(site, result.entries, result.problems);
   if (command == 'evidence') {
     exit(_evidence(args, option, registry, repoRoot, site, result));
+  }
+  if (command == 'live') {
+    exit(await _live(result));
   }
   for (final problem in result.problems) {
     stdout.writeln(problem);
@@ -191,6 +198,32 @@ int _evidence(
     '${run.host}; run `dart run bin/registry.dart generate`',
   );
   return 0;
+}
+
+/// `live`: every pinned file against Hugging Face. Exit code.
+Future<int> _live(CheckResult result) async {
+  if (result.problems.isNotEmpty) {
+    result.problems.forEach(stdout.writeln);
+    return 1;
+  }
+  final artifacts = liveArtifacts([
+    for (final e in result.entries)
+      for (final v in (e.data['variants'] as List? ?? const []))
+        if (v case final Map<String, Object?> variant) variant,
+  ]);
+  final token = Platform.environment['HF_TOKEN'];
+  final results = await checkLive(
+    artifacts,
+    token: token == null || token.isEmpty ? null : token,
+  );
+  final summary = liveSummary(results);
+  stdout.write(summary);
+  final out = Platform.environment['GITHUB_STEP_SUMMARY'];
+  if (out != null && out.isNotEmpty) {
+    File(out).writeAsStringSync(summary, mode: FileMode.append);
+  }
+  const failing = {LiveStatus.missing, LiveStatus.mismatch, LiveStatus.error};
+  return results.any((r) => failing.contains(r.status)) ? 1 : 0;
 }
 
 /// model_registry/ at the repo root, two levels above this package.

@@ -219,3 +219,15 @@ UPDATE_GOLDENS=1 flutter test test/catalog/litert_catalog_test.dart
 
 `dart test` proves each of those rules fails its own fixture, and that this
 directory passes.
+
+CI runs `check` and `dart test` on every pull request (`model-registry` in
+`.github/workflows/test.yml`). Weekly, `model-registry-live.yml` runs
+
+```sh
+HF_TOKEN=<token> dart run bin/registry.dart live
+```
+
+which asks Hugging Face for every pinned file: an LFS or Xet file must redirect
+with the registry's sha256 and size, a plain git file is fetched and hashed. A
+missing file, other bytes at the commit or no answer fails it; a gated
+repository the token cannot read is listed as `noAccess`.

@@ -34,14 +34,14 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  flutter_edge_ai: ^2.3.0
-  flutter_edge_ai_builtin_ai: ^0.3.5
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_builtin_ai: ^0.3.6
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   # FakeLocalAiHost stands in for the OS model in widget tests.
-  flutter_local_ai: ^0.2.1
+  flutter_local_ai: ^0.2.3
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

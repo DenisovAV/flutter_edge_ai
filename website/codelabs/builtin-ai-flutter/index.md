@@ -41,10 +41,12 @@ asks the user before the OS downloads them, and then talks through the same
 
 ### What you'll need
 
-* Flutter 3.47 or newer. Its app template targets iOS 15 and macOS 12; with an
-  older Flutter, raise the iOS deployment target to 15.0 and the macOS one to
-  12.0 yourself. The step apps use Swift Package Manager, so CocoaPods is not
-  needed.
+* Flutter 3.47 or newer, with Swift Package Manager enabled by running
+  `flutter config --enable-swift-package-manager`. Its app template targets
+  iOS 15 and macOS 12; with an older Flutter, raise the iOS deployment target
+  to 15.0 and the macOS one to 12.0 yourself. The step apps use Swift Package
+  Manager, so CocoaPods is not needed. If Swift Package Manager is disabled,
+  Flutter generates Podfiles and tries to use CocoaPods instead.
 * one device whose built-in model is usable:
   * **Android:** a phone on
     [Google's Prompt API device list](https://developers.google.com/ml-kit/genai#prompt-device),
@@ -92,8 +94,8 @@ Open `step_01_starter`. It already depends on both packages:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.3.0
-  flutter_edge_ai_builtin_ai: ^0.3.5
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_builtin_ai: ^0.3.6
 ```
 
 `flutter_edge_ai` supplies the common model, session and message APIs. It does

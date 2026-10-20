@@ -2,14 +2,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart';
 import 'package:flutter_edge_ai/src/domain/model_source.dart';
+import 'package:flutter_edge_ai/src/model.dart' show ModelType;
 
 void main() {
   group('ModelSpec Tests', () {
     group('InferenceModelSpec', () {
       test('creates valid inference model spec', () {
-        final spec = InferenceModelSpec.fromLegacyUrl(
+        final spec = InferenceModelSpec(
           name: 'test_model',
-          modelUrl: 'https://example.com/model.bin',
+          modelSource: ModelSource.network('https://example.com/model.bin'),
+          modelType: ModelType.general,
         );
 
         expect(spec.type, ModelManagementType.inference);
@@ -21,10 +23,11 @@ void main() {
       });
 
       test('creates inference model spec with LoRA', () {
-        final spec = InferenceModelSpec.fromLegacyUrl(
+        final spec = InferenceModelSpec(
           name: 'test_model',
-          modelUrl: 'https://example.com/model.bin',
-          loraUrl: 'https://example.com/lora.bin',
+          modelSource: ModelSource.network('https://example.com/model.bin'),
+          loraSource: ModelSource.network('https://example.com/lora.bin'),
+          modelType: ModelType.general,
         );
 
         expect(spec.files.length, 2);
@@ -38,10 +41,12 @@ void main() {
       });
 
       test('extracts filename from URL correctly', () {
-        final spec = InferenceModelSpec.fromLegacyUrl(
+        final spec = InferenceModelSpec(
           name: 'test_model',
-          modelUrl:
-              'https://huggingface.co/models/complex-path/model.bin?token=abc',
+          modelSource: ModelSource.network(
+            'https://huggingface.co/models/complex-path/model.bin?token=abc',
+          ),
+          modelType: ModelType.general,
         );
 
         // Test via files list instead of deprecated getter

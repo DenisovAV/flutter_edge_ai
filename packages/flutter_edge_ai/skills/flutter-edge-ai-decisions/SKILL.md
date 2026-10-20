@@ -5,7 +5,7 @@ description: Use when an on-device app must pick one of N options for an input �
 
 # Deciders: pick one of N options on device
 
-Experimental in `flutter_edge_ai` 2.4.0: names may change in a minor release.
+Experimental since `flutter_edge_ai` 2.4.0: names may change in a minor release.
 Every type and member is `@experimental`, so code using them gets the analyzer
 warning `experimental_member_use`; add
 `// ignore_for_file: experimental_member_use` to those files rather than let a
@@ -15,9 +15,10 @@ CI that fails on warnings fail.
 
 1. A decider comes from a model: `EmbeddingModel.createDecider` works with every
    embedding backend. `InferenceModel.createDecider(question:, options:,
-   calibration:)` — a small LLM trained on the question scores each option —
-   throws `DeciderUnsupportedException` in 2.4.0: no engine scores options
-   yet. Both return a `Decider` whose `DeciderAnswer` reads the same, so code
+   calibration:)` needs a small LLM TRAINED on that one decision (a `.litertlm`
+   tuned by LiteTune, which writes the decision into the file), on the CPU,
+   natively (`flutter_edge_ai_litertlm` 1.16.0); any other model, and every
+   model on the web, throws `DeciderUnsupportedException`. Both return a `Decider` whose `DeciderAnswer` reads the same, so code
    that reads answers (choice, ranked, abstainReason, provenance) needs no
    change when one replaces the other; check `decider.capabilities`
    (`supportsAmong`, `storable`, `calibratedProbabilities`, `modalities`)
@@ -78,9 +79,9 @@ CI that fails on warnings fail.
    `EmbeddingInputTooLongException`, naming the option and input when it is an
    option's. `DeciderInput.context` must be empty for every decider in this
    release, or `choose` throws `DeciderUnsupportedException`.
-8. `ScoreKind`, `AbstainReason`, `AbstainSignalKind` and `DeciderMethod` are
-   classes with constant values, not enums: a `switch` over them needs a
-   default branch. Describe an abstention from `abstainSignalKind`, not by
+8. `ScoreKind`, `AbstainReason`, `AbstainSignalKind`, `DeciderMethod` and
+   `DeciderQuestionType` are classes with constant values, not enums: a
+   `switch` over them needs a default branch. Describe an abstention from `abstainSignalKind`, not by
    assuming a cosine: a language-model decider abstains on a probability
    (`topProbability`) or with `AbstainReason.noneOption`.
 
@@ -307,6 +308,72 @@ final jevAnswer = await jevDecider.choose(
 final json = jevAnswer.toJevJson(); // {type, choice, probabilities?, confidence?}
 ```
 
-Choice questions only; `noul` and `score` throw `ArgumentError`. A `null`
-criterion uses the option name as its description. An abstained answer has
-`"choice": null`, which Jev itself never sends.
+`fromJevChoice` reads Choice questions only; `noul` and `score` throw
+`ArgumentError`. A `null` criterion uses the option name as its description.
+An abstained answer has `"choice": null`, which Jev itself never sends.
+`toJevJson()` writes the answer's own `questionType`: a language-model decider
+trained on a Noul or Score question returns `{"type": "noul", "noul": p}` or
+`{"type": "score", "score": …, "legend": {…}, "probabilities": {…},
+"confidence": …}`.
+
+## A language model trained on the decision
+
+For a few options that are a property of the text — a tone, an emotion, yes or
+no, a level — a small LLM tuned on exactly that question can decide by scoring
+each option's id as its reply. The model is an ordinary `.litertlm`; LiteTune
+(0.5.0 or later) writes the decision into it (a `litetune.decision` section:
+question, options, temperature, threshold). Pass the question and the trained
+options; take the rest from the file with
+`InferenceDeciderCalibration.fromModel()`. LiteTune 0.5.0's `bundle` prints
+only the `options:` part of the call; the question is in its `contract.json`.
+
+```dart
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+
+await FlutterEdgeAi.initialize(inferenceEngines: const [LiteRtLmEngine()]);
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemmaIt,
+  fileType: ModelFileType.litertlm,
+).fromFile(path).install();
+// Option scoring is measured on the CPU only; GPU and NPU are refused.
+final llm = await FlutterEdgeAi.getActiveModel(
+  preferredBackend: PreferredBackend.cpu,
+);
+final emotion = await llm.createDecider(
+  question: 'Which emotion does the text express?',
+  options: [
+    DeciderOption('sadness'), DeciderOption('joy'), DeciderOption('love'),
+    DeciderOption('anger'), DeciderOption('fear'), DeciderOption('surprise'),
+  ],
+  calibration: const InferenceDeciderCalibration.fromModel(),
+);
+const userText = 'im feeling far more mellow than normal';
+final answer = await emotion.choose(DeciderInput(EmbeddingInput.text(userText)));
+switch (answer.questionType) {
+  case DeciderQuestionType.noul:
+    print('P(yes) = ${answer.noul}');
+  case DeciderQuestionType.score:
+    print('level ${answer.expectedLevel} of ${answer.legend}');
+  default:
+    print(answer.choice ?? 'none of these (${answer.abstainReason})');
+}
+```
+
+- The call must be the trained one: another question, a missing or extra
+  option, or another description (one equal to the id is fine) throws
+  `ArgumentError` naming the trained value. Option order is free.
+- Prefer `fromModel()`: explicit temperature, threshold and `noneOption` must
+  equal the file's, which pins the app to one build of the model.
+- A model trained with a "none of these" option: with `fromModel()` it may be
+  left out of `options:` (the decider lists it last); when it ranks first the
+  answer abstains with `AbstainReason.noneOption`.
+- The decider borrows the active model: when core closes it (another model or
+  another `maxTokens` requested), the decider is closed too; create it again.
+- Noul (`no`/`yes`) and Score (levels `0`…`K − 1`) questions never abstain.
+- Text input only, no `among`, no `context`. Input containing chat-template
+  control text (`<start_of_turn>`, `<end_of_turn>`, `<bos>`, …), or whose
+  prompt does not fit `maxTokens`, throws `ArgumentError` — never truncated.
+- One decision costs one scoring pass per option (176 ms for 6 options on an
+  Apple M4 Pro CPU; LiteTune measured 5.0 s for 55 and 7.2 s for 151 on a server
+  CPU). Many options by topic belong to an embedding decider.

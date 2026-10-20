@@ -86,7 +86,7 @@ Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native embeddings with llamadart 0.15.1. This guide targets
 that version:
 
-```yaml
+```
 dependencies:
   flutter_edge_ai: ^2.5.0
   flutter_edge_ai_llama: ^0.0.3

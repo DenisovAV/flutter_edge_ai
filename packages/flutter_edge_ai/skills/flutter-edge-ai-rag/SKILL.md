@@ -155,9 +155,18 @@ tokenizer. A `.gguf` carries its own tokenizer: adding a `tokenizerFrom…()` ma
 `install()` throw `ArgumentError`, as on a `.litertlm`. When backends are registered, installation requires one that can run
 the file; with none registered, installation can proceed. The opt-in
 `LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3
-runs native EmbeddingGemma 2 GGUF text embeddings. Register it through
-`initialize(embeddingBackends: const [LlamaEmbeddingBackend()])`. Keep GGUF
-and LiteRT under separate RAG vector profile IDs, even for equal dimensions.
+runs native EmbeddingGemma 2 GGUF text embeddings:
+
+```dart
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
+
+await FlutterEdgeAi.initialize(
+  embeddingBackends: const [LlamaEmbeddingBackend()],
+);
+```
+
+Keep GGUF and LiteRT under separate RAG vector profile IDs, even for equal dimensions.
 `flutter_edge_ai_embeddings` contains tokenizer implementations only; runtime
 passes belong to their engine packages.
 

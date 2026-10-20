@@ -308,7 +308,7 @@ final npuIndex = await rag.open(
 - Verified SoCs: SM8850, SM8650 and QCS8275. Google also publishes SM8550,
   SM8750 (load, not verified by us), Intel PTL (Windows, below), Tensor G5/G6
   (below) and
-  MediaTek MT6991/MT6993 (refused). What a bundle targets is read from the
+  MediaTek MT6991/MT6993 (below). What a bundle targets is read from the
   bundle.
 - Its vectors are close to the CPU bundle's, not equal (SM8650: cosine
   0.79–0.86 for a few words, 0.99 from about 200 words; images 0.86–0.88), so
@@ -317,7 +317,8 @@ final npuIndex = await rag.open(
 - Nothing falls back: a per-SoC bundle without `npu`, the generic bundle with
   `npu`, `npu` on iOS/macOS/Linux x64/Web, a Qualcomm bundle on Windows, a
   Tensor bundle off Android, a build without the bundle vendor's flag
-  (`qualcomm_npu`, `google_tensor_npu`), a device without a reachable NPU of
+  (`qualcomm_npu`, `google_tensor_npu`, `mediatek_npu`), a device without a
+  reachable NPU of
   that vendor (for Tensor: not a Tensor Pixel on Android 16 or later, or a BP2A
   build), and a bundle the NPU cannot run (another SoC's or Tensor
   generation's) each throw
@@ -340,6 +341,12 @@ final npuIndex = await rag.open(
   build. Profile id: the CPU text id plus the SoC, e.g. `-npu-tensor_g6`,
   shared by the 270m and the 440m. Run on a Pixel 11 (Tensor G6) with a debug
   build; a Tensor G5 and a release-signed build are not run yet.
+- **MediaTek MT6991/MT6993 (Android arm64, `flutter_edge_ai_litertlm` 1.16.0).**
+  `…_MediaTek_MT6991.litertlm` / `…_MediaTek_MT6993.litertlm` load the same way
+  with `preferredBackend: PreferredBackend.npu`, in an app whose pubspec sets
+  `mediatek_npu: true`, on a phone with that SoC, Android 12 or later, whose
+  vendor exposes NeuroPilot to apps. Profile id: the CPU text id plus the SoC,
+  e.g. `-npu-mt6991`. Not run on a MediaTek phone yet.
 
 ### EmbeddingGemma 2 images (440m; `flutter_edge_ai_litertlm` 1.13.1 native, 1.13.1 Web)
 

@@ -142,13 +142,17 @@ dev_dependencies:
 # in flutter_edge_ai_litertlm itself. And to the Google Tensor NPU dispatch,
 # which the hook bundles from the native archive (built from LiteRT's
 # litert/vendors/google_tensor, covered by Google's Tensor SDK terms besides
-# its sources' own headers). This pubspec is the root that declares
+# its sources' own headers). And to the MediaTek NPU dispatch, which the hook
+# fetches from Google's litert-npu-runtime-mediatek AAR on Google Maven (it
+# drives the device's NeuroPilot runtime, under MediaTek's licence). This
+# pubspec is the root that declares
 # hooks: user_defines because the example is not a workspace member.
 hooks:
   user_defines:
     flutter_edge_ai_litertlm:
       qualcomm_npu: true
       google_tensor_npu: true
+      mediatek_npu: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

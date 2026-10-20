@@ -21,6 +21,39 @@
              LiteRT's own Kotlin manifest declare it too. Not measured as needed:
              a Tensor G6 run worked without it. -->
         <uses-native-library android:name="libedgetpu_util.so" android:required="false"/>
+        <!-- MediaTek NPU (flutter_edge_ai_litertlm with mediatek_npu): the
+             dispatch opens the device's NeuroPilot adapters and runtime. The
+             list is what Google's litert-npu-runtime-mediatek AAR declares,
+             plus libneuronusdk_adapter.10.mtk.so, which the dispatch tries
+             first and the AAR does not declare, and the two generic adapter
+             names it also tries. -->
+        <uses-native-library android:name="libneuron_adapter_mgvi.so" android:required="false"/>
+        <uses-native-library android:name="libneuronusdk_adapter.10.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libneuronusdk_adapter.9.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libneuronusdk_adapter.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libneuronusdk_adapter.so" android:required="false"/>
+        <uses-native-library android:name="libneuron_adapter.so" android:required="false"/>
+        <uses-native-library android:name="libneuron_sys_util.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libapuwareutils_v2.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libapuwareutils.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libapuwareapusys_v2.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop25_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop25_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_config.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpup30_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpup30_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop30_mtk_nn.mtk.so" android:required="false"/>
         <!-- Required for the GPU backend on Android 12+: the LiteRT-LM OpenCL
              loader (v0.13.x) uses libvndksupport.so's android_load_sphal_library()
              to dlopen the vendor OpenCL ICD from the app's linker namespace.

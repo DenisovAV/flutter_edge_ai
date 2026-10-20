@@ -3,6 +3,7 @@
 - `FlutterEdgeAi.openModel`: several caller-owned models at once; `FlutterEdgeAiPlugin.createModel` deprecated.
 - Experimental: `InferenceModel.createDecider` scores options on a model trained on it, Noul and Score too.
 - Self-contained GGUF embedders, provider-aware accelerator caching, and loaded backend reporting.
+- Android: the manifest declares MediaTek's NeuroPilot libraries for the MediaTek NPU.
 
 ## 2.4.1
 - Android NPU: one vendor's dispatch per load; the manifest declares Google Tensor's runtime libraries.

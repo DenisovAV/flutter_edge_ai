@@ -233,8 +233,9 @@ enum LiteRtLmBundleProblem {
   wrongBackend,
 
   /// The text model, or an encoder the load turns on, is compiled for an NPU
-  /// this package has no dispatch for on this platform (a MediaTek bundle, a
-  /// Qualcomm bundle on Windows, or a Google Tensor bundle off Android); the
+  /// this package has no dispatch for on this platform (a Samsung bundle, a
+  /// Qualcomm bundle on Windows, a Google Tensor or MediaTek bundle off
+  /// Android); the
   /// sections the load turns on are compiled for two different NPUs (one load
   /// runs one NPU's dispatch); or an encoder the load turns on runs on the NPU
   /// while the text model is not tried on the NPU alone: this package runs an

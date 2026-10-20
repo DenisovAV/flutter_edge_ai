@@ -324,6 +324,15 @@ runtime it drives is part of the Pixel system image. It runs on a Pixel with
 that Tensor generation and Android 16 or later, except on a build whose ID
 starts with `BP2A`, which LiteRT does not run the NPU on. See [LiteRT-LM](/docs/litertlm).
 
+**MediaTek NPU (opt-in).** A bundle compiled for a MediaTek SoC
+(`…_MediaTek_MT6991.litertlm`, `…_mt6991.litertlm`) needs `mediatek_npu: true`
+in the same `user_defines` block (`flutter_edge_ai_litertlm` 1.16.0). The build
+then fetches Google's `litert-npu-runtime-mediatek` AAR from Google Maven and
+bundles its dispatch; the NeuroPilot runtime it drives is part of the phone.
+It runs on a phone with that SoC and Android 12 or later whose vendor exposes
+NeuroPilot to apps. Offline, download the AAR and set
+`mediatek_npu_aar: <path>`. See [LiteRT-LM](/docs/litertlm).
+
 **ProGuard/R8 (only if you use `flutter_edge_ai_mediapipe`):** the package ships
 its own consumer ProGuard rules, so a release build needs no rules in your app
 (built on AGP 9.1). The old `flutter_gemma_mediapipe` 1.0.5 and earlier failed

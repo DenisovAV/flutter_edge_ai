@@ -8,6 +8,7 @@
 import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
+import 'package:flutter_edge_ai_litertlm/src/hook/mediatek_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -39,16 +40,29 @@ String _fileOf(String name, String os) =>
     os == 'windows' ? '$name.dll' : 'lib$name.so';
 
 void main() {
-  test('every vendor\'s dispatch is a required file of the tarball of each of '
-      'its ABIs', () {
+  test('a dispatch built from the pin is a required file of the tarball of '
+      'each of its vendor\'s ABIs; one the hook fetches is in none', () {
     final required = _requiredInTarballs();
     for (final vendor in NpuVendor.values) {
       for (final abi in vendor.abis) {
         final entry =
             '${_tarballOf(abi)}:${_fileOf(npuDispatchLib(vendor), _osOf(abi))}';
-        expect(required, contains(entry), reason: '${vendor.name} on $abi');
+        expect(
+          required,
+          npuDispatchInNativeTarball(vendor)
+              ? contains(entry)
+              : isNot(contains(entry)),
+          reason: '${vendor.name} on $abi',
+        );
       }
     }
+  });
+
+  test('the MediaTek dispatch the hook fetches is the one the table names', () {
+    expect(
+      mediatekLibFileNames,
+      contains(_fileOf(npuDispatchLib(NpuVendor.mediatek), 'android')),
+    );
   });
 
   test('every vendor\'s stack holds its dispatch, on each of its OSes', () {

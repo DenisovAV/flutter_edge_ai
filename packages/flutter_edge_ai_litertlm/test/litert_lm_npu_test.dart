@@ -142,7 +142,7 @@ void main() {
               allOf(
                 contains(
                   'Qualcomm Android and Qualcomm Linux arm64, and on Google '
-                  'Tensor G5/G6 Android devices, and on Intel NPUs with '
+                  'Tensor G5/G6 Android devices, and on MediaTek Dimensity Android devices, and on Intel NPUs with '
                   'Windows x64, only',
                 ),
                 contains('this is $os ($abi)'),
@@ -166,7 +166,7 @@ void main() {
           ..operatingSystem = os
           ..abi = abi;
         for (final target in const [
-          LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
+          LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955'),
           // Only LiteRT's OpenVINO stamp is an Intel bundle this runs.
           LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL'),
         ]) {
@@ -175,7 +175,9 @@ void main() {
             _refusal(
               allOf(
                 contains('compiled for a ${target.vendor} NPU (${target.soc})'),
-                contains('Qualcomm, Google Tensor and Intel NPUs only'),
+                contains(
+                  'Qualcomm, Google Tensor, MediaTek and Intel NPUs only',
+                ),
               ),
             ),
             reason: '$abi $target',
@@ -192,6 +194,15 @@ void main() {
       expect(placement.target, tensor);
       expect(host.asked, ['stack:googleTensor', 'reaches', 'dispatchDir']);
       expect(host.vendors, {NpuVendor.googleTensor});
+    });
+
+    test('a MediaTek bundle selects only the MediaTek dispatch', () async {
+      const mediatek = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991');
+      final placement = await place(target: mediatek);
+      expect(placement.backend, PreferredBackend.npu);
+      expect(placement.target, mediatek);
+      expect(host.asked, ['stack:mediatek', 'reaches', 'dispatchDir']);
+      expect(host.vendors, {NpuVendor.mediatek});
     });
 
     test('compiled for Qualcomm is refused on Windows x64, which runs Intel '
@@ -331,7 +342,7 @@ void main() {
               contains('compiled for the IntelOpenVINO PTL NPU'),
               contains(
                 'on $os ($abi) flutter_edge_ai_litertlm runs '
-                '${os == 'android' ? 'Qualcomm and Google Tensor' : 'Qualcomm'} '
+                '${os == 'android' ? 'Qualcomm, Google Tensor and MediaTek' : 'Qualcomm'} '
                 'NPU bundles only; Intel ones run on windows_x64',
               ),
             ),
@@ -372,8 +383,9 @@ void main() {
     expect(
       liteRtLmWebNpuRefusal,
       'EmbeddingGemma 2 runs on the NPU on Qualcomm Android and Qualcomm Linux '
-      'arm64, and on Google Tensor G5/G6 Android devices, and on Intel NPUs '
-      'with Windows x64, only, not on the web. Omit preferredBackend here.',
+      'arm64, and on Google Tensor G5/G6 Android devices, and on MediaTek '
+      'Dimensity Android devices, and on Intel NPUs with Windows x64, only, '
+      'not on the web. Omit preferredBackend here.',
     );
   });
 
@@ -455,6 +467,7 @@ final class _FakeHost implements LiteRtLmNpuHost {
   NpuStackCheck qualcomm = const NpuStackCheck.bundled();
 
   NpuStackCheck googleTensor = const NpuStackCheck.bundled();
+  NpuStackCheck mediatek = const NpuStackCheck.bundled();
 
   NpuStackCheck intel = const NpuStackCheck.bundled();
 
@@ -478,6 +491,7 @@ final class _FakeHost implements LiteRtLmNpuHost {
     return switch (vendor) {
       NpuVendor.qualcomm => qualcomm,
       NpuVendor.googleTensor => googleTensor,
+      NpuVendor.mediatek => mediatek,
       NpuVendor.intel => intel,
     };
   }

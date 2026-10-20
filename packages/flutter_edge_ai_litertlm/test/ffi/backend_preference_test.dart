@@ -91,6 +91,49 @@ void main() {
       expect(missing.asked, ['androidGoogleTensorRuntime']);
     });
 
+    test('MediaTek asks only for its NeuroPilot adapters', () {
+      final probes = _FakeProbes();
+      expect(npuUnreachable(NpuVendor.mediatek, 'android', probes), isNull);
+      expect(probes.asked, ['androidMediaTekRuntime']);
+
+      final missing = _FakeProbes(error: 'no adapter');
+      expect(
+        npuUnreachable(NpuVendor.mediatek, 'android', missing),
+        'the MediaTek NPU cannot run here: no adapter',
+      );
+      expect(missing.asked, ['androidMediaTekRuntime']);
+    });
+
+    test('MediaTek runs on LiteRT\'s devices only: Android 12+, a MediaTek or '
+        'MTK SoC manufacturer', () {
+      String? refusal(Map<String, String> props) =>
+          mediaTekDeviceRefusal((key) => props[key]);
+      const tab = {
+        'ro.build.version.sdk': '36',
+        'ro.soc.manufacturer': 'Mediatek',
+        'ro.soc.model': 'MT6989',
+      };
+      expect(refusal(tab), isNull);
+      expect(refusal({...tab, 'ro.soc.manufacturer': 'MTK'}), isNull);
+      expect(refusal({...tab, 'ro.soc.manufacturer': ' MEDIATEK '}), isNull);
+      expect(
+        refusal({...tab, 'ro.build.version.sdk': '30'}),
+        'Android API 30: the MediaTek NPU needs Android 12 (API 31) or later',
+      );
+      expect(
+        refusal({...tab}..remove('ro.build.version.sdk')),
+        contains('API (unknown)'),
+      );
+      expect(
+        refusal({
+          ...tab,
+          'ro.soc.manufacturer': 'QTI',
+          'ro.soc.model': 'SM8750',
+        }),
+        'this is not a MediaTek SoC (QTI SM8750)',
+      );
+    });
+
     test('Google Tensor runs on LiteRT\'s devices only: Android 16+, not BP2A, '
         'a Google SoC', () {
       String? refusal(Map<String, String> props) =>
@@ -140,6 +183,8 @@ void main() {
         (NpuVendor.qualcomm, 'macos'),
         (NpuVendor.googleTensor, 'windows'),
         (NpuVendor.googleTensor, 'linux'),
+        (NpuVendor.mediatek, 'linux'),
+        (NpuVendor.mediatek, 'windows'),
         (NpuVendor.intel, 'android'),
         (NpuVendor.intel, 'linux'),
       ]) {
@@ -547,6 +592,12 @@ final class _FakeProbes implements NpuProbes {
   @override
   String? androidGoogleTensorRuntime() {
     asked.add('androidGoogleTensorRuntime');
+    return error;
+  }
+
+  @override
+  String? androidMediaTekRuntime() {
+    asked.add('androidMediaTekRuntime');
     return error;
   }
 

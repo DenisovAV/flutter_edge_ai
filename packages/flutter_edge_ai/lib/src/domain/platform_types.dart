@@ -14,10 +14,10 @@ library;
 /// - [cpu]: All platforms
 /// - [gpu]: All platforms (Metal on macOS, DirectX on Windows, Vulkan on Linux,
 ///   OpenCL on Android)
-/// - [npu]: With LiteRT-LM (.litertlm models) — Android (Qualcomm Snapdragon
-///   only: the Android archive ships the Qualcomm QNN dispatch stack and
-///   nothing for MediaTek or Google Tensor) and Windows (Intel
-///   LunarLake/PantherLake). Asking for it elsewhere falls back rather than
+/// - [npu]: With LiteRT-LM (.litertlm models) and a bundle compiled for the
+///   device's NPU — Android (Qualcomm, Google Tensor G5/G6 and MediaTek, each
+///   opt-in through a `flutter_edge_ai_litertlm` user_define), Linux arm64
+///   (Qualcomm) and Windows (Intel LunarLake/PantherLake). Asking for it elsewhere falls back rather than
 ///   throwing; read `InferenceModel.activeBackend` for what actually ran.
 ///   On Windows the check is per OS, not per device: a PC without an Intel
 ///   NPU is still offered npu, and has been measured reporting

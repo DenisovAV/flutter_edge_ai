@@ -149,6 +149,7 @@ typedef NpuDispatch = ({String dir, bool disableHwMasking});
 bool npuDisablesHwMasking(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => false,
   NpuVendor.googleTensor => false,
+  NpuVendor.mediatek => false,
   NpuVendor.intel => true,
 };
 
@@ -161,6 +162,7 @@ bool npuDisablesHwMasking(NpuVendor vendor) => switch (vendor) {
 Future<NpuStackCheck> npuStackOf(NpuVendor vendor) async => switch (vendor) {
   NpuVendor.qualcomm => await checkNpuStackInManifest(vendor),
   NpuVendor.googleTensor => await checkNpuStackInManifest(vendor),
+  NpuVendor.mediatek => await checkNpuStackInManifest(vendor),
   NpuVendor.intel => checkIntelNpuStack(windowsNpuDispatchDir),
 };
 
@@ -194,6 +196,15 @@ Future<String> prepareNpuDispatchDir(
     ),
     final os => throw StateError(
       'NpuVendor.googleTensor has no dispatch directory on $os',
+    ),
+  },
+  NpuVendor.mediatek => switch (operatingSystem ?? Platform.operatingSystem) {
+    'android' => await prepareAndroidNpuDispatchDir(
+      npuStackLibs(vendor, 'android'),
+      vendor,
+    ),
+    final os => throw StateError(
+      'NpuVendor.mediatek has no dispatch directory on $os',
     ),
   },
   NpuVendor.intel => switch (operatingSystem ?? Platform.operatingSystem) {

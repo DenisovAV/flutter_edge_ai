@@ -67,6 +67,15 @@ the GPU or the CPU. Run so far on Tensor G6 Pixels with
 debug builds: Gemma 4 E2B text, images and audio, EmbeddingGemma 2 270m and
 440m.
 
+MediaTek takes `mediatek_npu: true` (`flutter_edge_ai_litertlm` 1.16.0): the
+build fetches Google's `litert-npu-runtime-mediatek` AAR from Google Maven and
+bundles its dispatch (about 330 KB); the NeuroPilot runtime it drives is part of
+the phone. A bundle compiled for a MediaTek SoC (Google publishes Gemma 3 1B,
+Gemma 3 270M, Qwen3 0.6B and EmbeddingGemma 2 ones; no Gemma 4) runs on a phone
+with that SoC and Android 12 or later whose vendor exposes NeuroPilot to apps;
+anything else is refused before any engine, and it never moves to the GPU or
+the CPU. Offline: `mediatek_npu_aar: <path>`. Not run on a MediaTek phone yet.
+
 ## iOS
 
 Minimum iOS 15.0 — 16.0 if the app includes `flutter_edge_ai_mediapipe`, 16.4

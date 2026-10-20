@@ -731,16 +731,21 @@ grep -qF 'absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int ne
 #
 # A real diff, applied like section 11, plus an anchor on the function it
 # extends.
+#
+# --ignore-whitespace: the Windows runner checks LiteRT-LM out with CRLF, and
+# the sed insertions of sections 1 and 4b/4c leave c/BUILD and c/engine.cc with
+# mixed line endings, which git does not normalise before applying. Content
+# must still match, so a moved upstream line still fails here.
 LOGSINK_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/windows_log_sink.patch"
-if git -C "$DIR" apply --check "$LOGSINK_PATCH" 2>/dev/null; then
-  git -C "$DIR" apply "$LOGSINK_PATCH"
+if git -C "$DIR" apply --check --ignore-whitespace "$LOGSINK_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply --ignore-whitespace "$LOGSINK_PATCH"
   echo "  OK: LiteRT-LM's log reaches stderr on Windows"
-elif git -C "$DIR" apply --reverse --check "$LOGSINK_PATCH" 2>/dev/null; then
+elif git -C "$DIR" apply --reverse --check --ignore-whitespace "$LOGSINK_PATCH" 2>/dev/null; then
   echo "  SKIP: Windows log sink already applied"
 else
   echo "  ERROR: $LOGSINK_PATCH does not apply to this LiteRT-LM revision —" >&2
   echo "         c/engine.cc or c/BUILD moved; re-create the patch against it." >&2
-  git -C "$DIR" apply --check "$LOGSINK_PATCH" >&2 || true
+  git -C "$DIR" apply --check --ignore-whitespace "$LOGSINK_PATCH" >&2 || true
   exit 1
 fi
 grep -qF 'litert::lm::c::InstallWindowsStderrLogSink();' "$DIR/c/engine.cc" || {

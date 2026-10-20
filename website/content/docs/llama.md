@@ -6,16 +6,16 @@ meta:
     content: https://flutteredge.ai/images/og-image.png
 ---
 
-This source contribution extends `flutter_edge_ai_llama` with an optional
-inference and native text-embedding engine powered by
+`flutter_edge_ai_llama` provides optional GGUF inference. Version 0.0.3 adds
+native text embeddings powered by
 [llamadart](https://pub.dev/packages/llamadart). The adapter registers through
 core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the example
 
 The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+** and
-published llamadart **0.15.1** with typed overflow reporting. Standalone hosted
-resolution requires core 2.5.0 publication. Connector CI uses Flutter 3.47.1
+published llamadart **0.15.1** with typed overflow reporting. Core 2.5.0 is
+published. Connector CI uses Flutter 3.47.1
 for reproducible checks. From the repository root:
 
 ```
@@ -82,10 +82,18 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 
 ## Add it to your app
 
-Published version 0.0.1 provides inference with llamadart 0.13.1. The SDK
-upgrade and GGUF embeddings in this source branch are pending release.
-Use the source workspace example with core 2.5.0 and published llamadart
-0.15.1; standalone hosted qualification requires core 2.5.0 publication.
+Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
+Version 0.0.3 adds native embeddings with llamadart 0.15.1. This guide targets
+that version:
+
+```yaml
+dependencies:
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_llama: ^0.0.3
+```
+
+Core 2.5.0+ supplies the embedding SPI and typed tool history.
+
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
 `llamadart_llama_cpp_flutter: 0.15.0` SwiftPM companion.
@@ -119,7 +127,9 @@ See the [workspace setup and qualification scope](https://github.com/DenisovAV/f
 Native EmbeddingGemma 2 GGUF text embeddings register through core's embedding
 SPI as `LlamaEmbeddingBackend` in this same engine package. The dedicated
 `flutter_edge_ai_embeddings` package remains tokenizer-only: GGUF carries its
-own tokenizer. This draft needs the core 2.5.0 SPI and published llamadart 0.15.1.
+own tokenizer. Version 0.0.3 requires the published core 2.5.0 SPI and llamadart
+0.15.1. Use separate GGUF and LiteRT RAG profile IDs; matching dimensions do
+not make their vectors interchangeable.
 See the [embedding design and qualification](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/embeddings.md).
 Media and Web embeddings remain unavailable in the initial profile.
 

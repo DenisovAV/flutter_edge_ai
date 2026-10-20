@@ -1,8 +1,9 @@
 # llama.cpp adapter maintenance
 
-This draft adapts core 2.5.0+ through public engine libraries and published
-llamadart 0.15.1. Source qualification uses the merged core source; standalone hosted
-qualification still requires publication of core 2.5.0. Inference routes by declared type. LlamaEmbeddingBackend
+Version 0.0.3 adapts published core 2.5.0+ through
+public engine libraries and published llamadart 0.15.1. Core 2.5.0 and adapter
+0.0.2 are already published. Keep source qualification separate from hosted
+consumer qualification. Inference routes by declared type. LlamaEmbeddingBackend
 registers self-contained GGUF through core's embedding SPI; see doc/embeddings.md.
 
 - Minimum Flutter/Dart follows core (3.44/3.12). Connector CI pins Flutter 3.47.1
@@ -27,6 +28,8 @@ registers self-contained GGUF through core's embedding SPI; see doc/embeddings.m
 
 - The SDK constraint targets one published patch (`>=0.15.1 <0.15.2`); the Apple
   companion is exact (`0.15.0`). Every SDK upgrade requires a coordinated
-  connector release, matching companion, Web bridge and full qualification.
+  connector release and qualification of the selected companion and Web bridge.
+  Companion patches are independent: both 0.15.0 and 0.15.1 accept SDK
+  `>=0.15.0 <0.16.0`; preserve the tested 0.15.1 / 0.15.0 pair.
   Pub enforces the companion/core minor pairing, backed by Apple build guards; SDK 0.15.0 also constrains workspace
   hooks/code_assets below 3.0. Never silently widen these constraints.

@@ -1,6 +1,6 @@
 name: genkit_flutter_edge_ai
 description: "Genkit Dart plugin for flutter_edge_ai: on-device inference with any model a registered engine runs, plus streaming, tool calling, JSON output and embeddings."
-version: 0.10.0
+version: 0.10.1
 homepage: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/genkit_flutter_edge_ai
 repository: https://github.com/DenisovAV/flutter_edge_ai
 issue_tracker: https://github.com/DenisovAV/flutter_edge_ai/issues

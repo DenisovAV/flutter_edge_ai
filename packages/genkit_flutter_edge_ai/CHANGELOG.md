@@ -1,3 +1,6 @@
+## 0.10.1
+- README: the llama.cpp engine, and engine errors arrive in `ai.generate`'s result.
+
 ## 0.10.0
 - Tool `ref`s travel as call ids both ways and never repeat in a turn; require `flutter_edge_ai` ^2.4.0.
 

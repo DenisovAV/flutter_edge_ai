@@ -4,9 +4,9 @@ The connector provides GGUF inference through llamadart on Android, iOS, macOS,
 Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and published llamadart 0.15.1 with typed overflow reporting.
 A passing build does not qualify every device, model or accelerator.
 
-Published version 0.0.1 pairs llamadart 0.13.1 with Apple companion
-`llamadart_llama_cpp_flutter` 0.13.0. This page describes the source on `main`,
-which pairs llamadart 0.15.0 with companion 0.15.0 for the next adapter release.
+Version 0.0.3 pairs llamadart 0.15.1 with Apple
+companion `llamadart_llama_cpp_flutter` 0.15.0. Published 0.0.2 pairs SDK
+0.15.0 with companion 0.15.0; 0.0.1 paired 0.13.1 with 0.13.0.
 
 | Feature | Native | Web |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ which pairs llamadart 0.15.0 with companion 0.15.0 for the next adapter release.
 | Tools and thinking | Compatible model/template required | Compatible model/template/grammar required |
 | Images and audio | Compatible app-owned projector required | Compatible projector and bridge capabilities required |
 | LoRA | Installed adapter loads with the model; temporary session overrides are serialized | This connector does not wire Web adapters; it rejects installed or session adapters |
-| GGUF embeddings | Native EmbeddingGemma 2 text profile; hosted core release pending | Web unavailable |
+| GGUF embeddings | Native EmbeddingGemma 2 text profile (0.0.3) | Web unavailable |
 | OPFS stream model handles | Not applicable | Unsupported; use cacheApi or network URLs |
 | NPU, separate encoder backends, LiteRT activation/MTP and MediaPipe LoRA ranks | Unsupported by this connector | Unsupported |
 
@@ -91,9 +91,11 @@ configuration consistent or split the workspaces.
 
 Qualification uses a workspace containing core, this connector and one app
 member, with root hook settings and a companion declared only in the app.
-The prior published SDK/companion pair is **0.15.0 / 0.15.0**. This draft
-uses published SDK **0.15.1** with companion **0.15.0**. Source qualification
-uses the stacked core 2.5.0; hosted qualification awaits that core release. The
+The selected SDK/companion pair is **0.15.1 / 0.15.0**. Both companion 0.15.0
+and 0.15.1 are published and accept SDK `>=0.15.0 <0.16.0`; this adapter retains
+the tested 0.15.0 companion rather than upgrading it incidentally. Core 2.5.0 is
+published. Source qualification and hosted consumer qualification remain
+independent gates. The
 [contribution PR](https://github.com/DenisovAV/flutter_edge_ai/pull/628) records
 the previous 0.13.1 / 0.13.0 qualification; upgrading the pins does not carry
 that qualification forward automatically.
@@ -111,15 +113,18 @@ while importing. Projector storage remains app-owned.
 
 ## Qualification
 
-The required CI baseline covers the builds and runtime lanes below. The 0.15.0
-upgrade passed local contracts and hosted-package validation, Android arm64
-emulator/iOS arm64 simulator/macOS CPU lifecycle, macOS Metal generation,
-selected native tools/thinking/image/audio fixtures and Web worker/Wasm inference.
-Android, iOS (unsigned), macOS and Web release builds passed; the Android APK
-passed ABI, native dependency and 16 KB alignment checks. Linux/Windows and the
-Flutter 3.44 minimum SDK are separate required CI lanes. These checks
-qualify the selected fixtures and lifecycle, not every combination in the support
-matrix.
+At revision `294c3c93`, SDK 0.15.1 / Apple companion 0.15.0 passed all six
+adapter release builds (Android, iOS, macOS, Linux, Windows and Web) and five
+native CPU chat/lifecycle baselines (macOS, Linux, Windows, Android emulator and
+iOS simulator). The shared CI had 22 passes and two hosted pub-resolution
+failures from the earlier core-publication state; those failures are not passes
+and must be rechecked against published core 2.5.0. These results qualify that
+revision and its selected fixtures. The post-merge revision requires fresh checks.
+
+The earlier SDK 0.15.0 qualification also covered macOS Metal generation,
+selected native tools/thinking/image/audio fixtures and Web worker/Wasm inference,
+plus Android ABI, native dependency and 16 KB alignment checks. That evidence
+is historical and does not extend to every device, model or accelerator.
 
 | Platform | Automated baseline | Additional qualification needed |
 | --- | --- | --- |
@@ -131,10 +136,15 @@ matrix.
 | Web | Wasm build and real worker/Wasm generation | Hardware WebGPU, advanced model/browser combinations |
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
-package minimum. The previous inference baseline pins llamadart 0.15.0 and
-native artifacts v0.7.0-1,
-Apple companion 0.15.0 and connector-pinned Web assets v0.1.65. Validate SDK
-upgrades with the matching companion; its patch version may differ. Web assets are checksum-verified. llamadart 0.15.0 verifies llama.cpp archive SHA-256 digests before extraction
+package minimum. The selected inference pair is llamadart 0.15.1 / Apple
+companion 0.15.0, with native artifacts v0.7.0-1 and connector-pinned Web assets
+v0.1.65. SDK 0.15.1 adds typed native embedding overflow reporting; its native
+inference artifacts are unchanged from 0.15.0. The SDK changelog also includes
+Web alignment context; the connector's Web bridge stays at v0.1.65. The
+0.15.1 CI results above provide current-pair inference evidence. Validate each
+SDK upgrade with the selected companion; its patch version may differ. Web
+assets are checksum-verified. llamadart verifies llama.cpp archive SHA-256
+digests before extraction
 ([#1039](https://github.com/leehack/llamadart/pull/1039)); SwiftPM verifies its
 companion archives. Existing extracted native caches and explicit local runtime
 paths retain the SDK's documented trust policy.
@@ -150,7 +160,11 @@ or absent model execution fails. Optional capability fixtures have their own
 
 GGUF embedding scope and independent qualification are tracked in the
 [embedding guide](embeddings.md). The inference evidence above does not qualify
-embedding models or hosted core 2.5.0 resolution.
+other embedding models or hosted core 2.5.0 resolution. A prior packaged macOS
+EmbeddingGemma 2 Q8_0 run passed CPU and Metal profiles, including three
+close/reload cycles, with CPU/Metal cosine 0.9999390842703205. That result does
+not qualify the post-merge revision. Physical phones, Linux/Windows/Android GPU
+and iOS Metal embedding execution remain unqualified.
 
 ## Core 2.5.0 model ownership
 

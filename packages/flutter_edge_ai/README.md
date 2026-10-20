@@ -43,7 +43,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 |---|---|
 | Run any `.litertlm` model, and LiteRT embeddings | [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm) |
 | Run `.task` / `.bin` models (MediaPipe; mobile and web; maintenance-only upstream, prefer `.litertlm`) | [`flutter_edge_ai_mediapipe`](https://pub.dev/packages/flutter_edge_ai_mediapipe) |
-| Run GGUF models through llama.cpp | [`flutter_edge_ai_llama`](https://pub.dev/packages/flutter_edge_ai_llama) |
+| Run GGUF chat and native EmbeddingGemma 2 text embeddings through llama.cpp | [`flutter_edge_ai_llama`](https://pub.dev/packages/flutter_edge_ai_llama) |
 | Run ONNX models — text generation and embeddings | [`flutter_edge_ai_onnx`](https://pub.dev/packages/flutter_edge_ai_onnx) |
 | Use the model built into the OS or browser | [`flutter_edge_ai_builtin_ai`](https://pub.dev/packages/flutter_edge_ai_builtin_ai) |
 | Tokenizers for text embeddings (needed for `.tflite` / `.onnx` embedders; an EmbeddingGemma 2 `.litertlm` carries its own) | [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) |
@@ -395,8 +395,12 @@ per platform, embedding and speech models:
 [models](https://flutteredge.ai/docs/models).
 
 Core 2.5.0 lets embedding providers accept self-contained `.gguf` files without
-a separate tokenizer. No GGUF embedding backend ships yet; execution requires
-an engine package that supports the file. Providers declare capabilities with
+a separate tokenizer. The opt-in `LlamaEmbeddingBackend` in
+`flutter_edge_ai_llama` 0.0.3 runs native EmbeddingGemma 2
+text embeddings through llamadart. Give GGUF its own RAG vector profile;
+equal dimensions do not make GGUF and LiteRT vectors interchangeable.
+`flutter_edge_ai_embeddings` supplies tokenizers only and owns no runtime.
+Providers declare capabilities with
 `EmbeddingBackendProvider.honouredBackends(spec)` and report the loaded
 accelerator through `EmbeddingPassInfo.activeBackend`. Automatic requests reuse
 the current non-NPU embedder for the same model. Repeated explicit CPU/GPU

@@ -22,10 +22,14 @@ inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
 Core accepts self-contained `.gguf` files without a separate tokenizer. When
 backends are registered, installation checks that one can serve the file; with
-none registered, installation can still proceed. No GGUF embedding backend ships
-yet; executing these files requires a supporting engine package.
-`flutter_edge_ai_embeddings` supplies tokenizers; engine packages own runtime
-passes, and core hosts, caches and closes those passes.
+none registered, installation can still proceed. The opt-in
+`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3
+runs native EmbeddingGemma 2 GGUF text embeddings with core 2.5.0 and llamadart
+0.15.1. Register it in `FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs
+no external tokenizer. Use separate GGUF and LiteRT RAG vector profile IDs,
+even when dimensions match. See [llama.cpp](/docs/llama).
+`flutter_edge_ai_embeddings` supplies tokenizer implementations only; engine
+packages own runtime passes, and core hosts, caches and closes those passes.
 
 Backend authors declare supported explicit requests through
 `EmbeddingBackendProvider.honouredBackends(spec)`. Core computes cache identity:
@@ -47,12 +51,12 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.4.1
-  flutter_edge_ai_litertlm: ^1.15.0
-  flutter_edge_ai_embeddings: ^2.3.0 # tokenizers for .tflite / .onnx models
-  flutter_edge_ai_rag: ^1.1.0
-  flutter_edge_ai_sqlite: ^2.1.0 # all six platforms, including Web
-  # flutter_edge_ai_qdrant: ^2.1.0 # native alternative
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_litertlm: ^1.16.0
+  flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
+  flutter_edge_ai_rag: ^1.1.2
+  flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
+  # flutter_edge_ai_qdrant: ^2.1.1 # native alternative
 ```
 
 <Warning>

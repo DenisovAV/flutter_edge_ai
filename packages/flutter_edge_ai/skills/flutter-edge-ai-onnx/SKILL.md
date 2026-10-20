@@ -51,7 +51,7 @@ await FlutterEdgeAi.installModel(
 ).fromFile('$path/genai_config.json').install();
 ```
 
-Sessions, chats and streaming work as in the flutter-edge-ai-inference skill, except `openSession` / `openChat`, which throw `UnsupportedError` here — one conversation at a time. Pass `modelType` to `createChat` for function calling; ONNX falls back to `ModelType.gemmaIt`.
+Sessions, chats and streaming work as in the flutter-edge-ai-inference skill, except `openSession` / `openChat`, which throw `UnsupportedError` here — one conversation at a time. `FlutterEdgeAi.openModel` is not supported either (`UnsupportedError` before anything loads; on a host outside ONNX's platforms no engine claims the spec, so `StateError`): use `getActiveModel`. Pass `modelType` to `createChat` for function calling; ONNX falls back to `ModelType.gemmaIt`.
 
 ## Web
 

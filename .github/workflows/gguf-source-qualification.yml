@@ -60,8 +60,25 @@ jobs:
       - name: Linux desktop dependencies
         if: matrix.platform == 'linux'
         run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
-      - name: Fetch the pinned embedding fixture
+      - name: Read the pinned embedding fixture digest
         if: matrix.runtime
+        id: embedding-fixture
+        run: |
+          python - <<'PYTHON'
+          import json, os, pathlib
+          spec = json.loads(pathlib.Path('packages/flutter_edge_ai_llama/tool/embedding_model.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"sha256={spec['sha256']}\n")
+          PYTHON
+      - name: Cache the pinned embedding fixture
+        if: matrix.runtime
+        id: embedding-fixture-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/gguf-source-qualification/packages/flutter_edge_ai_llama/embedding.gguf
+          key: gguf-embedding-${{ runner.os }}-${{ steps.embedding-fixture.outputs.sha256 }}
+      - name: Fetch the pinned embedding fixture
+        if: matrix.runtime && steps.embedding-fixture-cache.outputs.cache-hit != 'true'
         run: |
           python - <<'PYTHON'
           import json, os, pathlib, urllib.request
@@ -71,8 +88,8 @@ jobs:
           with urllib.request.urlopen(spec['url'], timeout=120) as source, target.open('wb') as output:
               while block := source.read(1024 * 1024):
                   output.write(block)
-          # verify_embeddings.py checks the immutable size and SHA-256 before
-          # running; download success alone is never a qualification verdict.
+          # verify_embeddings.py checks size and SHA-256 on both downloads and
+          # cache hits before running; cached bytes are never trusted blindly.
           PYTHON
       - name: Packaged CPU embeddings against source core
         if: matrix.runtime

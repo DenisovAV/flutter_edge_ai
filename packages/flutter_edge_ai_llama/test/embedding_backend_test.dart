@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
+// ignore: implementation_imports — verifies actual embedding registry selection without changing the public SPI.
+import 'package:flutter_edge_ai/src/registry/embedding_registry.dart';
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_edge_ai_llama/src/llama_embedding_backend.dart'
     show createLlamaEmbeddingBackendForTest;
@@ -14,9 +18,12 @@ RuntimeConfig _config({
   PreferredBackend? backend,
   bool image = false,
   bool audio = false,
+  String modelPath = '/models/eg2.gguf',
+  String? tokenizerPath,
 }) => RuntimeConfig(
   maxTokens: 0,
-  modelPath: '/models/eg2.gguf',
+  modelPath: modelPath,
+  tokenizerPath: tokenizerPath,
   preferredBackend: backend,
   supportImage: image,
   supportAudio: audio,
@@ -30,12 +37,53 @@ void main() {
       expect(backend.canHandle(_spec('eg2.GGUF')), !kIsWeb);
       expect(backend.canHandle(_spec('eg2.litertlm')), isFalse);
       expect(
+        backend.canHandle(
+          EmbeddingModelSpec(
+            name: 'opaque download',
+            modelSource: ModelSource.network(
+              'https://models.test/download?id=123',
+            ),
+            modelFilename: 'eg2.GGUF',
+          ),
+        ),
+        !kIsWeb,
+      );
+      expect(
+        backend.canHandle(
+          EmbeddingModelSpec(
+            name: 'separate tokenizer',
+            modelSource: ModelSource.network('https://models.test/model.onnx'),
+            tokenizerSource: ModelSource.network(
+              'https://models.test/tokenizer.json',
+            ),
+          ),
+        ),
+        isFalse,
+      );
+      expect(
         backend.honouredBackends(_spec('eg2.gguf')),
         kIsWeb ? isEmpty : {PreferredBackend.cpu, PreferredBackend.gpu},
       );
       expect(backend.backendFallback, isTrue);
     },
   );
+
+  test('registry selects GGUF over a generic fallback in either order', () {
+    final registry = EmbeddingRegistry.instance;
+    registry.reset();
+    addTearDown(registry.reset);
+    const llamaBackend = LlamaEmbeddingBackend();
+    const fallback = _GenericFallbackBackend();
+    for (final providers in [
+      [fallback, llamaBackend],
+      [llamaBackend, fallback],
+    ]) {
+      registry.reset();
+      registry.registerAll(providers);
+      expect(registry.findFor(_spec('eg2.GGUF')), same(llamaBackend));
+      expect(registry.findFor(_spec('eg2.litertlm')), same(fallback));
+    }
+  }, skip: kIsWeb);
 
   test('refuses unsupported configuration without loading a runtime', () async {
     final backend = createLlamaEmbeddingBackendForTest(
@@ -45,6 +93,9 @@ void main() {
       _config(image: true),
       _config(audio: true),
       _config(backend: PreferredBackend.npu),
+      _config(tokenizerPath: '/models/tokenizer.json'),
+      _config(modelPath: ''),
+      _config(modelPath: 'opfs://eg2.gguf'),
     ]) {
       await expectLater(
         backend.describe(_spec('eg2.gguf'), config),
@@ -69,10 +120,13 @@ void main() {
   group('native embedding pass', () {
     late _Engine engine;
     late LlamaEmbeddingBackend backend;
+    late int loadAttempts;
     setUp(() {
       engine = _Engine();
+      loadAttempts = 0;
       backend = createLlamaEmbeddingBackendForTest(
         loader: (_, params) async {
+          loadAttempts++;
           expect(params.contextSize, 1024);
           expect(params.batchSize, 1024);
           expect(params.microBatchSize, 1024);
@@ -180,38 +234,169 @@ void main() {
       },
     );
 
-    for (final strict in [false, true]) {
-      test(
-        'GPU unavailable: ${strict ? "strict makes one attempt" : "default retries CPU after cleanup"}',
-        () async {
-          final devices = <llama.ComputeDevice>[];
-          var cleanupFinished = false;
-          final candidate = createLlamaEmbeddingBackendForTest(
-            backendFallback: !strict,
-            loader: (_, params) async {
-              devices.add(params.device);
-              if (params.device == llama.ComputeDevice.gpu) {
-                await Future<void>.delayed(Duration.zero);
-                cleanupFinished = true; // atomic SDK load completed its cleanup
-                throw llama.LlamaUnsupportedException('GPU unavailable');
+    for (final request in [null, PreferredBackend.gpu, PreferredBackend.cpu]) {
+      for (final fallback in [false, true]) {
+        for (final cause in [
+          llama.LlamaUnsupportedException('backend unavailable'),
+          llama.LlamaBackendInitializationException('backend unavailable'),
+        ]) {
+          test(
+            '${request?.name ?? "auto"}, fallback=$fallback, '
+            '${cause.runtimeType}: retry policy and warning ordering',
+            () async {
+              final events = <String>[];
+              final paramsSeen = <llama.ModelParams>[];
+              final messages = <String>[];
+              final retries = fallback && request != PreferredBackend.cpu;
+              final candidate = createLlamaEmbeddingBackendForTest(
+                backendFallback: fallback,
+                loader: (_, params) async {
+                  paramsSeen.add(params);
+                  if (paramsSeen.length == 1) {
+                    events.add('load');
+                    await Future<void>.delayed(Duration.zero);
+                    events.add('cleanup'); // atomic SDK loader contract
+                    throw cause;
+                  }
+                  events.add('retry');
+                  expect(
+                    events,
+                    request == null
+                        ? ['load', 'cleanup', 'warning', 'retry']
+                        : ['load', 'cleanup', 'retry'],
+                  );
+                  expect(params.device, llama.ComputeDevice.cpu);
+                  expect(params.gpuLayers, 0);
+                  return engine;
+                },
+              );
+              final p = (await candidate.describe(
+                _spec('eg2.gguf'),
+                _config(backend: request),
+              )).build();
+              await runZoned(
+                () async {
+                  if (retries) {
+                    expect(
+                      (await p.load()).activeBackend,
+                      PreferredBackend.cpu,
+                    );
+                  } else {
+                    await expectLater(
+                      p.load(),
+                      throwsA(
+                        isA<EmbeddingLoadException>().having(
+                          (e) => e.cause,
+                          'cause',
+                          same(cause),
+                        ),
+                      ),
+                    );
+                  }
+                },
+                zoneSpecification: ZoneSpecification(
+                  print: (_, _, _, message) {
+                    messages.add(message);
+                    events.add('warning');
+                  },
+                ),
+              );
+              expect(paramsSeen.length, retries ? 2 : 1);
+              expect(paramsSeen.first.device, switch (request) {
+                PreferredBackend.cpu => llama.ComputeDevice.cpu,
+                PreferredBackend.gpu => llama.ComputeDevice.gpu,
+                _ => llama.ComputeDevice.auto,
+              });
+              expect(
+                paramsSeen.first.gpuLayers,
+                request == PreferredBackend.cpu
+                    ? 0
+                    : llama.ModelParams.maxGpuLayers,
+              );
+              if (retries && request == null) {
+                expect(messages, hasLength(1));
+                expect(messages.single, contains('WARNING: automatic'));
+                expect(
+                  messages.single,
+                  contains('loading failed; retrying on CPU'),
+                );
+              } else {
+                expect(messages, isEmpty);
               }
-              expect(cleanupFinished, isTrue);
-              expect(params.gpuLayers, 0);
-              return engine;
+              await p.close();
             },
           );
-          final p = (await candidate.describe(
-            _spec('eg2.gguf'),
-            _config(backend: PreferredBackend.gpu),
-          )).build();
-          if (strict) {
-            await expectLater(p.load(), throwsA(isA<EmbeddingLoadException>()));
-            expect(devices, [llama.ComputeDevice.gpu]);
-          } else {
-            expect((await p.load()).activeBackend, PreferredBackend.cpu);
-            expect(devices, [llama.ComputeDevice.gpu, llama.ComputeDevice.cpu]);
-          }
-          await p.close();
+        }
+      }
+    }
+
+    test('successful automatic CPU selection stays quiet', () async {
+      final messages = <String>[];
+      await runZoned(
+        () async {
+          expect(
+            (await (await pass()).load()).activeBackend,
+            PreferredBackend.cpu,
+          );
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, message) {
+            messages.add(message);
+          },
+        ),
+      );
+      expect(messages, isEmpty);
+    });
+
+    test(
+      'CPU request refuses GPU placement and disposes exactly once',
+      () async {
+        engine.backendName = 'Metal';
+        final p = await pass(request: PreferredBackend.cpu);
+        await expectLater(p.load(), throwsA(isA<EmbeddingLoadException>()));
+        await p.close();
+        await p.close();
+        expect(engine.disposals, 1);
+      },
+    );
+
+    test('a non-llama.cpp runtime is refused and disposed once', () async {
+      engine.loadedRuntime = llama.LlamaRuntime.liteRtLm;
+      final p = await pass();
+      await expectLater(p.load(), throwsA(isA<EmbeddingLoadException>()));
+      await p.close();
+      await p.close();
+      expect(engine.disposals, 1);
+    });
+
+    for (final invalid in <String, List<double>>{
+      'zero': [0, 0],
+      'nan': [double.nan, 0],
+      'infinity': [double.infinity, 0],
+      'non-unit': [0.5, 0],
+      'wrong dimension': [1, 0, 0],
+    }.entries) {
+      test(
+        'runtime ${invalid.key} vector fails once and permits recovery',
+        () async {
+          final p = await pass();
+          await p.load();
+          engine.vector = invalid.value;
+          await expectLater(
+            p.embed(EmbeddingInput.text('bad'), TaskType.none),
+            throwsA(
+              isA<EmbeddingEngineException>().having(
+                (e) => e.cause,
+                'no double wrapping',
+                isNull,
+              ),
+            ),
+          );
+          engine.vector = [1, 0];
+          expect(await p.embed(EmbeddingInput.text('good'), TaskType.none), [
+            1,
+            0,
+          ]);
         },
       );
     }
@@ -310,6 +495,7 @@ void main() {
         await expectLater(p.load(), throwsA(isA<EmbeddingLoadException>()));
         await p.close();
         expect(engine.disposals, 1);
+        expect(loadAttempts, 1);
       });
     }
   }, skip: kIsWeb);
@@ -324,6 +510,7 @@ final class _Engine extends llama.LlamaEngine {
     'gemma-embedding2.embedding_length_out': '2',
   };
   String backendName = 'CPU';
+  llama.LlamaRuntime? loadedRuntime = llama.LlamaRuntime.llamaCpp;
   bool supported = true;
   int context = 1024;
   int disposals = 0;
@@ -331,7 +518,7 @@ final class _Engine extends llama.LlamaEngine {
   List<double> vector = [1, 0];
   final inputs = <String>[];
   @override
-  llama.LlamaRuntime? get runtime => llama.LlamaRuntime.llamaCpp;
+  llama.LlamaRuntime? get runtime => loadedRuntime;
   @override
   Future<Map<String, String>> getMetadata() async => metadata;
   @override
@@ -353,4 +540,23 @@ final class _Engine extends llama.LlamaEngine {
   Future<void> dispose() async {
     disposals++;
   }
+}
+
+// This is an overlapping generic fallback, not a fake LiteRT implementation.
+// Real LiteRT does not claim self-contained GGUF; this deliberately overlaps
+// so the actual registry's priority ordering is exercised in both orders.
+final class _GenericFallbackBackend extends EmbeddingBackendProvider {
+  const _GenericFallbackBackend();
+
+  @override
+  String get name => 'generic test fallback';
+
+  @override
+  bool canHandle(EmbeddingModelSpec spec) => true;
+
+  @override
+  Future<EmbeddingPassDescriptor<Object>> describe(
+    EmbeddingModelSpec spec,
+    RuntimeConfig config,
+  ) async => throw UnsupportedError('routing-only test provider');
 }

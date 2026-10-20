@@ -7,6 +7,20 @@ import 'backend_config.dart';
 const _engineTag = 'llamadart GGUF embeddings';
 const _contextTokens = 1024;
 
+bool _isQualifiedVector(List<double> vector, int? dimension) {
+  if (dimension == null ||
+      dimension <= 0 ||
+      vector.length != dimension ||
+      !vector.every((value) => value.isFinite)) {
+    return false;
+  }
+  final normSquared = vector.fold<double>(
+    0,
+    (sum, value) => sum + value * value,
+  );
+  return (normSquared - 1).abs() <= 0.001;
+}
+
 typedef _EngineLoader =
     Future<llama.LlamaEngine> Function(String path, llama.ModelParams params);
 
@@ -28,17 +42,19 @@ typedef _EngineLoader =
 /// profile ID; equal dimensions do not make it interchangeable with LiteRT.
 final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
   /// Creates the qualified native text embedding provider.
-  /// With [backendFallback] true, an explicit GPU request may fall back to
-  /// CPU when GPU loading is unavailable. Core prints one release-visible
-  /// warning per new fallback load and activeBackend reports CPU. With false, exactly one load
-  /// attempt is allowed and a mismatch fails as EmbeddingLoadException.
+  /// With [backendFallback] true, automatic and explicit GPU requests may
+  /// retry on CPU after an unsupported-backend or initialization failure.
+  /// An automatic retry logs a release-visible warning from this backend;
+  /// core reports an explicit GPU fallback once per new fallback load.
+  /// With false, exactly one load attempt is allowed and an explicit placement
+  /// mismatch fails as EmbeddingLoadException.
   /// Automatic selection accepts CPU or GPU; unknown placement is refused.
   const LlamaEmbeddingBackend({this.backendFallback = true}) : _loader = null;
 
   const LlamaEmbeddingBackend._(this._loader, {this.backendFallback = true});
   final _EngineLoader? _loader;
 
-  /// Whether an explicit GPU request may fall back to CPU.
+  /// Whether an automatic or explicit GPU request may retry on CPU.
   final bool backendFallback;
 
   @override
@@ -51,7 +67,7 @@ final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
   bool canHandle(EmbeddingModelSpec spec) =>
       !kIsWeb &&
       spec.isSelfContained &&
-      !isLiteRtLmFilename(spec.files.first.filename);
+      spec.files.first.filename.toLowerCase().endsWith('.gguf');
 
   @override
   Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) =>
@@ -211,15 +227,7 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
     final declared = int.tryParse(
       metadata['gemma-embedding2.embedding_length_out'] ?? '',
     );
-    final normSquared = probe.fold<double>(
-      0,
-      (sum, value) => sum + value * value,
-    );
-    if (declared == null ||
-        declared <= 0 ||
-        probe.length != declared ||
-        !probe.every((v) => v.isFinite) ||
-        (normSquared - 1).abs() > 0.001) {
+    if (!_isQualifiedVector(probe, declared)) {
       throw const EmbeddingLoadException(
         'The GGUF runtime did not return the declared finite, normalized embedding.',
         engine: _engineTag,
@@ -242,13 +250,20 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
     try {
       return await loader(_config.path, params);
     } catch (error) {
-      final gpuUnavailable =
+      final backendUnavailable =
           error is llama.LlamaUnsupportedException ||
           error is llama.LlamaBackendInitializationException;
-      if (!_config.backendFallback ||
-          _config.backend != PreferredBackend.gpu ||
-          !gpuUnavailable) {
+      final canRetryOnCpu =
+          _config.backend == null || _config.backend == PreferredBackend.gpu;
+      if (!_config.backendFallback || !canRetryOnCpu || !backendUnavailable) {
         rethrow;
+      }
+      if (_config.backend == null) {
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_llama] WARNING: automatic GGUF embedding '
+          'backend loading failed; retrying on CPU.',
+        );
       }
       return loader(
         _config.path,
@@ -263,8 +278,9 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
     if (_closed || engine == null || _dimension == null) {
       throw const EmbedderClosedException();
     }
+    final List<double> vector;
     try {
-      return await engine.embed(
+      vector = await engine.embed(
         '${taskType.prefix}${input.text!}',
         normalize: true,
       );
@@ -281,6 +297,13 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
         cause: error,
       );
     }
+    if (!_isQualifiedVector(vector, _dimension)) {
+      throw const EmbeddingEngineException(
+        'The GGUF runtime returned an invalid embedding vector.',
+        engine: _engineTag,
+      );
+    }
+    return vector;
   }
 
   @override

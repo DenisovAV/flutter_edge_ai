@@ -1,13 +1,14 @@
 # GGUF text embeddings
 
-This draft adds `LlamaEmbeddingBackend` to the existing llama engine package.
-It requires the core 2.5.0 embedding SPI and published llamadart 0.15.1 with
-typed native overflow reporting. The core foundation is [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
+Version 0.0.3 adds `LlamaEmbeddingBackend` to the existing llama engine package.
+It requires published core 2.5.0 and llamadart
+0.15.1 with typed native overflow reporting. The core foundation is
+[flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
 the typed SDK error is [llamadart #1201](https://github.com/leehack/llamadart/pull/1201).
-The SDK release is available; core 2.5.0 remains a publication prerequisite.
-The manifest bounds the published SDK to `>=0.15.1 <0.15.2`. Source-core
-qualification does not qualify standalone hosted resolution. Do not use a
-dependency override in production.
+Core 2.5.0 and adapter 0.0.2 are already published; the new embedding feature
+belongs to 0.0.3. The manifest bounds the published SDK to `>=0.15.1 <0.15.2`.
+Source qualification does not replace standalone hosted qualification. Do not
+use a dependency override in production.
 
 `flutter_edge_ai_embeddings` remains a tokenizer implementation package. GGUF
 carries its own tokenizer; it needs no dependency on that package. Core owns
@@ -45,8 +46,12 @@ GGUF tokenizer. Register `LlamaEngineProvider` too when the app also uses chat.
 The initial native text profile checks `gemma-embedding2` architecture and mean
 pooling. It uses all nine core `TaskType` prefixes, the model's own tokenizer and
 output projection, and SDK L2 normalization. No second pooling or normalization
-is applied. The pinned Q8_0 fixture returns **768** values; its transformer width
-is **512**, which must not be mistaken for output dimension.
+is applied. The load probe and every returned vector are checked for the
+reported dimension, finite values and unit norm. An invalid load probe fails
+with `EmbeddingLoadException`; invalid output during embedding throws
+`EmbeddingEngineException`. The adapter never repairs vectors. The pinned Q8_0
+fixture returns **768** values; its transformer width is **512**, which must
+not be mistaken for output dimension.
 
 The input budget is **1024 tokens including task prefix and special tokens**.
 Context, batch and micro-batch are all configured to that size, so an entire
@@ -61,12 +66,15 @@ until a rebuild is needed or the model is closed. A CPU model loaded by an
 unrelated CPU/automatic request does not suppress the first explicit GPU attempt.
 Other explicit CPU/GPU switches replace the current model. The backend declares `{cpu, gpu}` through
 `honouredBackends(spec)` and reports actual loaded placement. Unknown placement
-is refused. By default an explicit GPU request can fall back to CPU with a
-release-visible core WARNING once when that fallback is loaded. Reuse does not
-repeat the warning. Register `LlamaEmbeddingBackend(backendFallback:
-false)` for exactly one load attempt that fails with `EmbeddingLoadException`
-when the request cannot be verified. Model validation failures are never retried
-as GPU availability failures. Other model architectures and pooling conventions,
+is refused. By default automatic and explicit GPU requests retry once on CPU
+when the SDK reports an unsupported backend or initialization failure. Before
+an automatic retry the backend emits a release-visible WARNING; an ordinary
+automatic load that selects CPU stays quiet. Core continues to report an explicit
+GPU fallback once when it is loaded; reuse does not repeat that warning.
+`activeBackend` always reports the verified loaded placement. Register
+`LlamaEmbeddingBackend(backendFallback: false)` for exactly one load attempt;
+an explicit placement mismatch fails with `EmbeddingLoadException`. Model
+validation failures are never retried as GPU availability failures. Other model architectures and pooling conventions,
 NPU, image/audio input and Web embeddings are refused. Browser registration does
 not claim GGUF embedding files, so an unsupported install can fail its pre-check.
 Inference remains independently available on the package's existing platforms.
@@ -75,7 +83,7 @@ Source qualification uses the pinned fixture in `tool/embedding_model.json`,
 published llamadart 0.15.1 and the merged core source. The contribution PR records
 per-platform execution results; the dedicated source CI covers Linux/Windows CPU
 embeddings and Flutter 3.44 resolution. Hosted package qualification remains a
-release gate until core 2.5.0 is published.
+separate release gate against the published core.
 Other EG2 quantizations need their own numerical qualification.
 
 ## RAG identity and lifecycle
@@ -93,15 +101,14 @@ API in this adapter.
 
 ## Reproducible qualification
 
-Core embedding SPI #685 is merged. Before core 2.5.0 publication, use current
-main through the monorepo workspace and the example's existing checkout-only
-core path override. Resolve
-llamadart normally from pub.dev; no SDK override is needed. Source CI stages core,
-the adapter and the app in a temporary directory and retains only that core path
-override. The existing hosted package and minimum-SDK gates remain unchanged and
-require the published core; source results never replace them.
+Core embedding SPI #685 and core 2.5.0 are published. Repository development
+uses the monorepo workspace and the example's checkout-only core path override.
+Resolve llamadart normally from pub.dev; no SDK override is needed. Source CI
+stages core, the adapter and the app in a temporary directory and retains only
+that core path override. This proves source compatibility; the hosted package
+and minimum-SDK gates must independently resolve the published core without it.
 
-After the prerequisite sources or releases resolve, from the package directory:
+From the package directory:
 
 ```sh
 python3 tool/verify_embeddings.py --model-path /absolute/embeddinggemma-2-Q8_0.gguf --backend cpu

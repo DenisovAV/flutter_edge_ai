@@ -102,8 +102,8 @@ This connector does not wire Web LoRA, even when the bridge supports it.
 Installed and per-session Web adapters are rejected explicitly.
 Core restores the model and its paired LoRA after restart. If the adapter is
 missing, it restores neither rather than silently loading the base model.
-GGUF adapter filenames use `model__adapter.gguf`; the connector requires core
-2.4.0 for typed tool history.
+GGUF adapter filenames use `model__adapter.gguf`. Typed tool history was added
+in core 2.4.0; this connector now requires core 2.5.0 for its embedding SPI.
 
 ## Compatibility boundaries
 
@@ -175,7 +175,7 @@ subset; schemas requiring richer constraints fail explicitly for those grammars.
 Other formats retain the full schema. If any tool cannot be represented as typed
 parameters, the entire set omits that typed view so shared XML grammars do not
 lose argument names. The adapter keeps its schema bridge: llamadart 0.15.0's
-(0.13.1's in the published 0.0.1) `ToolDefinition.fromJsonSchema` supports a
+`ToolDefinition.fromJsonSchema` supports a
 narrower set of formats and would reject XML tools. XML nullable-string decoding is a separate SDK limitation; nullable
 string arguments can come back as text instead of calls. Use scalar string
 properties for those models until the SDK parser is fixed.

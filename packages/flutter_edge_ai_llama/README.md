@@ -9,13 +9,13 @@ Tools, thinking, images/audio and native LoRA require compatible models and
 runtimes. See [advanced usage](doc/advanced_usage.md) and the
 [platform qualification matrix](doc/platforms.md) for their limits.
 
-Published version 0.0.1 provides inference with llamadart 0.13.1. This source
-branch adds the qualified SDK upgrade and native text embeddings for a future release.
+Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
+Version 0.0.3 adds native text embeddings with llamadart 0.15.1.
+The consumer setup below targets version 0.0.3.
 
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**,
 published llamadart **0.15.1** with typed overflow reporting and Apple
-companion **0.15.0**. Standalone hosted resolution requires publication of
-core 2.5.0. Connector CI uses Flutter
+companion **0.15.0**. Core 2.5.0 is published. Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
 [the embedding guide](doc/embeddings.md); media and Web embeddings are deferred.
 
@@ -87,18 +87,15 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-This draft uses published llamadart 0.15.1 and requires core 2.5.0 to be
-published before standalone hosted resolution can pass. Use the source
-workspace for development until then. The future standalone setup is shown
-below; adjust the source path for your app:
+Version 0.0.3 requires published core 2.5.0+ and llamadart 0.15.1.
+Add these hosted dependencies to your app:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
   flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_llama:
-    path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
+  flutter_edge_ai_llama: ^0.0.3
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.15.0
 
@@ -114,10 +111,10 @@ only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-The SDK constraint is bounded to published patch 0.15.1. Core 2.5.0 still
-needs publication; source qualification is not hosted artifact qualification.
-This candidate uses SDK 0.15.1 with companion 0.15.0; companion patches are versioned independently
-within the SDK minor.
+The SDK constraint is bounded to published patch 0.15.1. Version 0.0.3
+retains the tested SDK 0.15.1 / companion 0.15.0 pair. Companion 0.15.0 and
+0.15.1 both accept SDK `>=0.15.0 <0.16.0`; companion patches are versioned
+independently, so an SDK patch does not require a companion upgrade.
 Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
 For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting
 those two ABIs. With `--split-per-abi`, let Flutter own the filters and pass

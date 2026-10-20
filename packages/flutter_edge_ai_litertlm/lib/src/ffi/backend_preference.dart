@@ -27,7 +27,7 @@ export '../litert_lm_load_errors.dart'
 /// Hosts with no vendor at all never get here ([npuNoVendorReason]).
 ///
 /// Each vendor names its probe per operating system, and an operating system
-/// it has no probe for is a programming error: [NpuVendor.abis] decides where
+/// it has no probe for is a programming error: [NpuStack.abis] decides where
 /// a vendor is asked about at all, so a host added there without a probe here
 /// fails at once instead of borrowing another platform's answer.
 ///
@@ -36,11 +36,11 @@ export '../litert_lm_load_errors.dart'
 /// sockets, not the platform — so the Android and Windows arms are otherwise
 /// unreachable from a `flutter test` run on a Mac.
 String? npuUnreachable(
-  NpuVendor vendor,
+  NpuStack vendor,
   String operatingSystem,
   NpuProbes probes,
 ) => switch (vendor) {
-  NpuVendor.qualcomm => switch (operatingSystem) {
+  NpuStack.qualcomm => switch (operatingSystem) {
     'android' => switch (probes.androidFastRpc()) {
       null => null,
       final error =>
@@ -52,16 +52,16 @@ String? npuUnreachable(
       final error => 'the bundled Qualcomm NPU stack cannot run here: $error',
     },
     _ => throw StateError(
-      'NpuVendor.qualcomm has no device probe for $operatingSystem',
+      'NpuStack.qualcomm has no device probe for $operatingSystem',
     ),
   },
-  NpuVendor.googleTensor => switch (operatingSystem) {
+  NpuStack.googleTensor => switch (operatingSystem) {
     'android' => switch (probes.androidGoogleTensorRuntime()) {
       null => null,
       final error => 'the Google Tensor NPU cannot run here: $error',
     },
     _ => throw StateError(
-      'NpuVendor.googleTensor has no device probe for $operatingSystem',
+      'NpuStack.googleTensor has no device probe for $operatingSystem',
     ),
   },
   // Windows has no probe yet. What a bundle compiled for the Intel NPU does on
@@ -72,16 +72,16 @@ String? npuUnreachable(
   // bundle is no longer tried on the NPU. A probe can only be verified on
   // Intel NPU silicon, and one guessed without it could switch off the NPU on
   // the machines that have one.
-  NpuVendor.intel => switch (operatingSystem) {
+  NpuStack.intel => switch (operatingSystem) {
     'windows' => null,
     _ => throw StateError(
-      'NpuVendor.intel has no device probe for $operatingSystem',
+      'NpuStack.intel has no device probe for $operatingSystem',
     ),
   },
 };
 
 /// Why no NPU is on offer on [abi]: no vendor this package dispatches to runs
-/// there ([NpuVendor.forAbi] is empty).
+/// there ([NpuStack.forAbi] is empty).
 String npuNoVendorReason(String abi) => 'no NPU dispatch stack ships for $abi';
 
 /// Each vendor's device probe: null when it passes, else why not. One member
@@ -276,13 +276,13 @@ String? _androidProperty(String key) {
 }
 
 /// Where [vendor]'s NPU runs, for the notice that the NPU was not tried.
-String _whereNpuRuns(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm =>
+String _whereNpuRuns(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm =>
     'Qualcomm Android and Qualcomm Linux arm64 (in apps built with '
         'hooks.user_defines.flutter_edge_ai_litertlm.$qualcommNpuUserDefine: '
         'true)',
-  NpuVendor.googleTensor => 'Google Tensor G5/G6 Android devices',
-  NpuVendor.intel => 'on Windows (Intel LunarLake/PantherLake)',
+  NpuStack.googleTensor => 'Google Tensor G5/G6 Android devices',
+  NpuStack.intel => 'on Windows (Intel LunarLake/PantherLake)',
 };
 
 /// The backends to try, in order, for a [preferredBackend] request, the NPU
@@ -390,7 +390,7 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
     print(
       '[flutter_edge_ai] WARNING: $logTag npu was requested, but $reason — '
       'trying ${backends.map(ffiBackendWireName).join(" -> ")} instead. NPU '
-      'runs on ${npuSentenceList(NpuVendor.values.map(_whereNpuRuns))}. '
+      'runs on ${npuSentenceList(NpuStack.values.map(_whereNpuRuns))}. '
       'InferenceModel.activeBackend names what actually ran.',
     );
   }

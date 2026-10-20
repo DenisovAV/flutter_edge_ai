@@ -90,16 +90,13 @@ void main() {
   });
 
   test('the stack is our two libraries plus the QNN runtime', () {
-    expect(npuStackLibs(NpuVendor.qualcomm, 'linux'), [
+    expect(npuStackLibs(NpuStack.qualcomm, 'linux'), [
       qualcommDispatchLib,
       cdsprpcShimLib,
       ...qairtLinuxLibs,
     ]);
-    expect(npuStackLibs(NpuVendor.qualcomm, 'android'), qualcommNpuLibs);
-    expect(
-      () => npuStackLibs(NpuVendor.qualcomm, 'macos'),
-      throwsArgumentError,
-    );
+    expect(npuStackLibs(NpuStack.qualcomm, 'android'), qualcommNpuLibs);
+    expect(() => npuStackLibs(NpuStack.qualcomm, 'macos'), throwsArgumentError);
     // Every Stub needs its Skel: a Stub alone opens a session to nothing.
     for (final lib in qairtLinuxLibs.where((l) => l.endsWith('Stub'))) {
       expect(qairtLinuxLibs, contains(lib.replaceFirst('Stub', 'Skel')));

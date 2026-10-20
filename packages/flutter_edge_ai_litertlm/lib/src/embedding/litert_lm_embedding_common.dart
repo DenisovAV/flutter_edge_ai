@@ -78,7 +78,7 @@ final liteRtLmAudioFormats = Set<EncodedMediaFormat>.unmodifiable({
 });
 
 /// What the web arm says to `npu` for a `.litertlm` bundle: the NPU runs
-/// EmbeddingGemma 2 only through a native dispatch ([NpuVendor]).
+/// EmbeddingGemma 2 only through a native dispatch ([NpuStack]).
 final liteRtLmWebNpuRefusal =
     'EmbeddingGemma 2 runs on the NPU ${liteRtLmEmbeddingNpuHosts()}, not on '
     'the web. Omit preferredBackend here.';
@@ -86,10 +86,10 @@ final liteRtLmWebNpuRefusal =
 /// Where EmbeddingGemma 2 runs on an NPU, for a sentence: `on <vendor's
 /// hosts>, and on <…>, only`.
 String liteRtLmEmbeddingNpuHosts() =>
-    'on ${NpuVendor.values.map(_embeddingNpuHosts).join(', and on ')}, only';
+    'on ${NpuStack.values.map(_embeddingNpuHosts).join(', and on ')}, only';
 
-String _embeddingNpuHosts(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => 'Qualcomm Android and Qualcomm Linux arm64',
-  NpuVendor.googleTensor => 'Google Tensor G5/G6 Android devices',
-  NpuVendor.intel => 'Intel NPUs with Windows x64',
+String _embeddingNpuHosts(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => 'Qualcomm Android and Qualcomm Linux arm64',
+  NpuStack.googleTensor => 'Google Tensor G5/G6 Android devices',
+  NpuStack.intel => 'Intel NPUs with Windows x64',
 };

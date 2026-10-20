@@ -555,7 +555,7 @@ PreferredBackend _encoderDefault(LiteRtLmSection encoder) {
 }
 
 /// Refuses a [target] NPU this package has no dispatch for on [abi]
-/// ([NpuVendor.abis]). [encoder] is the kind (vision, audio) of the encoder
+/// ([NpuStack.abis]). [encoder] is the kind (vision, audio) of the encoder
 /// compiled for it, null for the text model.
 void _checkNpuVendor(
   String path,
@@ -576,7 +576,7 @@ void _checkNpuVendor(
     LiteRtLmBundleProblem.unsupportedNpu,
     vendor == null
         ? '$what is compiled for the $target NPU. flutter_edge_ai_litertlm '
-              'runs ${npuSentenceList(NpuVendor.values.map((v) => v.label))} '
+              'runs ${npuSentenceList(NpuStack.values.map((v) => v.label))} '
               'NPU bundles only; $instead the generic bundle of this model to '
               'run it on the GPU or the CPU.'
         : '$what is compiled for the $target NPU, which runs on '

@@ -67,25 +67,25 @@ void main() {
         ('linux', 'linuxQualcommNpu'),
       ]) {
         final ok = _FakeProbes();
-        expect(npuUnreachable(NpuVendor.qualcomm, os, ok), isNull);
+        expect(npuUnreachable(NpuStack.qualcomm, os, ok), isNull);
         expect(ok.asked, [probe], reason: os);
       }
     });
 
     test('Intel on Windows asks no probe at all', () {
       final probes = _FakeProbes(error: 'should not be asked');
-      expect(npuUnreachable(NpuVendor.intel, 'windows', probes), isNull);
+      expect(npuUnreachable(NpuStack.intel, 'windows', probes), isNull);
       expect(probes.asked, isEmpty);
     });
 
     test('Google Tensor asks only for the Pixel system runtime', () {
       final probes = _FakeProbes();
-      expect(npuUnreachable(NpuVendor.googleTensor, 'android', probes), isNull);
+      expect(npuUnreachable(NpuStack.googleTensor, 'android', probes), isNull);
       expect(probes.asked, ['androidGoogleTensorRuntime']);
 
       final missing = _FakeProbes(error: 'dlopen failed');
       expect(
-        npuUnreachable(NpuVendor.googleTensor, 'android', missing),
+        npuUnreachable(NpuStack.googleTensor, 'android', missing),
         'the Google Tensor NPU cannot run here: dlopen failed',
       );
       expect(missing.asked, ['androidGoogleTensorRuntime']);
@@ -136,12 +136,12 @@ void main() {
     test('an operating system a vendor has no probe for is a programming '
         'error, never another platform\'s answer', () {
       for (final (vendor, os) in [
-        (NpuVendor.qualcomm, 'windows'),
-        (NpuVendor.qualcomm, 'macos'),
-        (NpuVendor.googleTensor, 'windows'),
-        (NpuVendor.googleTensor, 'linux'),
-        (NpuVendor.intel, 'android'),
-        (NpuVendor.intel, 'linux'),
+        (NpuStack.qualcomm, 'windows'),
+        (NpuStack.qualcomm, 'macos'),
+        (NpuStack.googleTensor, 'windows'),
+        (NpuStack.googleTensor, 'linux'),
+        (NpuStack.intel, 'android'),
+        (NpuStack.intel, 'linux'),
       ]) {
         final probes = _FakeProbes();
         expect(
@@ -154,9 +154,9 @@ void main() {
     });
 
     test('every vendor answers on each OS of its ABIs and on no other: the '
-        'probe switch agrees with NpuVendor.abis', () {
+        'probe switch agrees with NpuStack.abis', () {
       const oses = ['android', 'ios', 'linux', 'macos', 'windows', 'fuchsia'];
-      for (final vendor in NpuVendor.values) {
+      for (final vendor in NpuStack.values) {
         final runsOn = {for (final abi in vendor.abis) abi.split('_').first};
         for (final os in oses) {
           final probes = _FakeProbes();
@@ -179,7 +179,7 @@ void main() {
 
     test('the reason is worded per platform, with the probe error kept', () {
       final android = npuUnreachable(
-        NpuVendor.qualcomm,
+        NpuStack.qualcomm,
         'android',
         _FakeProbes(error: 'dlopen failed: library "libcdsprpc.so" not found'),
       );
@@ -196,7 +196,7 @@ void main() {
       );
 
       final linux = npuUnreachable(
-        NpuVendor.qualcomm,
+        NpuStack.qualcomm,
         'linux',
         _FakeProbes(
           error:
@@ -223,7 +223,7 @@ void main() {
     test('the platform probes have not run on a host no vendor runs on', () {
       // `chooseNpuVendor` never asks a vendor of another ABI; the probes are
       // dlopens and device files, which do not belong on such a host.
-      if (NpuVendor.forAbi('${Abi.current()}').isNotEmpty) return;
+      if (NpuStack.forAbi('${Abi.current()}').isNotEmpty) return;
       expect(fastRpcProbed, isFalse);
       expect(linuxNpuProbed, isFalse);
     });

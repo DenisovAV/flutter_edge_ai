@@ -22,7 +22,7 @@ void main() {
       final host = _FakeHost('android_arm64');
       final choice = await chooseNpuVendor(target: target, host: host);
       expect(choice, isA<NpuChosen>(), reason: '$target');
-      expect((choice as NpuChosen).vendor, NpuVendor.qualcomm);
+      expect((choice as NpuChosen).vendor, NpuStack.qualcomm);
       expect(host.asked, [
         'stack:qualcomm',
         'probe:qualcomm',
@@ -59,7 +59,7 @@ void main() {
       final host = _FakeHost('android_arm64');
       final choice = await chooseNpuVendor(target: _tensorG5, host: host);
       expect(choice, isA<NpuChosen>());
-      expect((choice as NpuChosen).vendor, NpuVendor.googleTensor);
+      expect((choice as NpuChosen).vendor, NpuStack.googleTensor);
       expect(host.asked, ['stack:googleTensor', 'probe:googleTensor']);
     },
   );
@@ -139,7 +139,7 @@ void main() {
     await expectLater(
       prepareAndroidNpuDispatchDir(const [
         'LiteRtDispatch_Qualcomm',
-      ], NpuVendor.qualcomm),
+      ], NpuStack.qualcomm),
       throwsA(
         isA<NpuDispatchUnavailableException>().having(
           (e) => e.message,
@@ -151,9 +151,9 @@ void main() {
   });
 
   test('each vendor says whether it turns the HW mask update path off', () {
-    expect(npuDisablesHwMasking(NpuVendor.qualcomm), isFalse);
-    expect(npuDisablesHwMasking(NpuVendor.googleTensor), isFalse);
-    expect(npuDisablesHwMasking(NpuVendor.intel), isTrue);
+    expect(npuDisablesHwMasking(NpuStack.qualcomm), isFalse);
+    expect(npuDisablesHwMasking(NpuStack.googleTensor), isFalse);
+    expect(npuDisablesHwMasking(NpuStack.intel), isTrue);
   });
 }
 
@@ -175,18 +175,18 @@ final class _FakeHost implements LiteRtLmNpuHost {
   final asked = <String>[];
 
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) async {
+  Future<NpuStackCheck> stack(NpuStack vendor) async {
     asked.add('stack:${vendor.name}');
     return stackCheck;
   }
 
   @override
-  String? unreachable(NpuVendor vendor) {
+  String? unreachable(NpuStack vendor) {
     asked.add('probe:${vendor.name}');
     return unreachableReason;
   }
 
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) =>
+  Future<String> prepareDispatchDir(NpuStack vendor) =>
       throw StateError('choosing a vendor prepares nothing');
 }

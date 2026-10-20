@@ -62,7 +62,7 @@ const liteRtLmVerifiedNpuSocs = ['SM8850', 'SM8650', 'QCS8275'];
 /// order of the cheapest answer first: the platform, the vendor, the build's
 /// stack, the device, then the dispatch directory (Android extracts the
 /// libraries out of the APK there). Where EmbeddingGemma 2 runs on an NPU is
-/// [NpuVendor.abis]: Qualcomm on Android arm64 and Linux arm64 (VENTUNO Q /
+/// [NpuStack.abis]: Qualcomm on Android arm64 and Linux arm64 (VENTUNO Q /
 /// QCS8275), both verified on device; Intel on Windows x64 (Google's Panther
 /// Lake bundles), not yet run on an Intel NPU.
 Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
@@ -81,7 +81,7 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   if (requested != PreferredBackend.npu) {
     _refuse(liteRtLmNpuBundleWithoutNpuRefusal(file, target));
   }
-  final hostVendors = NpuVendor.forAbi(host.abi);
+  final hostVendors = NpuStack.forAbi(host.abi);
   if (hostVendors.isEmpty) {
     _refuse(
       '$file is compiled for the $target NPU. flutter_edge_ai_litertlm runs '
@@ -95,7 +95,7 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for a ${target.vendor} NPU (${target.soc}). '
       'flutter_edge_ai_litertlm runs EmbeddingGemma 2 NPU bundles on '
-      '${npuSentenceList(NpuVendor.values.map((v) => v.label))} NPUs only. '
+      '${npuSentenceList(NpuStack.values.map((v) => v.label))} NPUs only. '
       'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
     );
   }
@@ -139,15 +139,15 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
     '$file is the generic EmbeddingGemma 2 bundle: it has no NPU graph and '
     'runs on CPU only. To embed on the NPU, install the bundle compiled for '
     "this device's SoC (litert-community publishes "
-    '${npuSentenceList(NpuVendor.values.map(_bundleNames))} '
+    '${npuSentenceList(NpuStack.values.map(_bundleNames))} '
     'beside it; ${liteRtLmVerifiedNpuSocs.join(', ')} are verified) and load '
     'it with PreferredBackend.npu. To run this bundle, omit preferredBackend.';
 
 /// The file names litert-community gives [vendor]'s EmbeddingGemma 2 bundles.
-String _bundleNames(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => '`<model>_Qualcomm_<SoC>.litertlm`',
-  NpuVendor.googleTensor => '`<model>_Google_Tensor_G5|G6.litertlm`',
-  NpuVendor.intel => '`<model>_Intel_PTL.litertlm`',
+String _bundleNames(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => '`<model>_Qualcomm_<SoC>.litertlm`',
+  NpuStack.googleTensor => '`<model>_Google_Tensor_G5|G6.litertlm`',
+  NpuStack.intel => '`<model>_Intel_PTL.litertlm`',
 };
 
 /// A per-SoC bundle asked to run anywhere but the NPU.

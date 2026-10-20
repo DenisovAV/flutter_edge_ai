@@ -237,9 +237,13 @@ generated file are current, the frozen fields are written, and every cell
 `release_critical.yaml` lists for the package is verified: a run under
 `evidence/` on the native build the package ships, since that build or the
 package's minor version last moved. A patch on the same native build keeps its
-evidence. `.claude/hooks/guard-release-registry.py` runs `release-check` before
-`dart pub publish` of either package and refuses the publish unless it passes
-or the command carries `RELEASE_SKIP_REGISTRY="<reason>"`.
+evidence. On success `release-check` writes a stamp with the HEAD it passed at
+(`tool/model_registry/.dart_tool/release_check/<package>-<version>.ok`).
+`.claude/hooks/guard-release-registry.py` refuses `dart pub publish` of either
+package unless that stamp is for HEAD and nothing under `model_registry/`,
+`tool/model_registry/` or the package has changed since, or the command carries
+`RELEASE_SKIP_REGISTRY="<reason>"`. The hook reads the stamp and asks git; it
+runs no repository code, which a hook would run before the command is approved.
 
 CI runs `check` and `dart test` on every pull request (`model-registry` in
 `.github/workflows/test.yml`). Weekly, `model-registry-live.yml` runs

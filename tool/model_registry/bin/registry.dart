@@ -122,6 +122,28 @@ Future<void> main(List<String> args) async {
             '(${c.what})',
     ];
     if (reasons.isEmpty) {
+      // The release hook reads this instead of running the tool: a hook that
+      // executes repository code would run it before the publish is approved.
+      final head = Process.runSync('git', [
+        'rev-parse',
+        'HEAD',
+      ], workingDirectory: repoRoot);
+      File(
+          p.join(
+            p.dirname(p.dirname(p.fromUri(Platform.script))),
+            '.dart_tool',
+            'release_check',
+            '$package-$version.ok',
+          ),
+        )
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'package': package,
+            'version': version,
+            'head': '${head.stdout}'.trim(),
+          }),
+        );
       stdout.writeln('$package $version: ready to publish');
       exit(0);
     }

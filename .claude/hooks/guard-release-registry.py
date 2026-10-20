@@ -3,7 +3,7 @@
 
 `flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` ship catalogs generated
 from model_registry/. Before either is published, `registry.dart release-check
-<package>` (tool/model_registry) must pass:
+<package>` (tool/model_registry) must have passed at this HEAD:
   - the registry passes `check`, and every generated file is current;
   - published/<package>/<version>.json holds the frozen fields this version
     ships (write it with `dart run bin/registry.dart freeze <package>`), so a
@@ -11,6 +11,13 @@ from model_registry/. Before either is published, `registry.dart release-check
   - every cell release_critical.yaml lists for the package is verified: a run
     recorded under model_registry/evidence/ on the native build the package
     ships, since that build or the package's minor version last moved.
+
+The hook does not run the check itself: a PreToolUse hook that executes
+repository code would run it before the command is approved. It reads the
+stamp `release-check` writes on success
+(tool/model_registry/.dart_tool/release_check/<package>-<version>.ok, the HEAD
+it passed at) and asks git only: the stamp's HEAD is HEAD, and nothing under
+model_registry/, tool/model_registry/ or the package has changed since.
 
 The owner chose a hook over a checklist line for this (a checklist advises, a
 hook refuses — the same lesson as guard-publish.py and guard-release-docs.py).
@@ -176,25 +183,45 @@ def _package_name(root, prefix):
     raise GitUnavailable(f"no name: in {prefix}pubspec.yaml")
 
 
-def _release_check(root, name):
-    """None when `release-check` passes, else the reason to block."""
-    tool = os.path.join(root, "tool", "model_registry")
-    if not os.path.isfile(os.path.join(tool, "bin", "registry.dart")):
-        raise GitUnavailable(f"no tool/model_registry in {root}")
+def _version(root, prefix):
+    path = os.path.join(root, prefix, "pubspec.yaml")
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            m = re.match(r"version:\s*(\S+)", line)
+            if m:
+                return m.group(1)
+    raise GitUnavailable(f"no version: in {prefix}pubspec.yaml")
+
+
+def _release_check(root, prefix, name):
+    """None when release-check passed at this HEAD, else the reason to block."""
+    version = _version(root, prefix)
+    stamp = os.path.join(
+        root, "tool", "model_registry", ".dart_tool", "release_check",
+        f"{name}-{version}.ok",
+    )
+    run = (
+        f"run `dart run bin/registry.dart release-check {name}` in "
+        "tool/model_registry"
+    )
     try:
-        r = subprocess.run(
-            ["dart", "run", "bin/registry.dart", "release-check", name],
-            cwd=tool,
-            capture_output=True,
-            text=True,
-            timeout=900,
+        with open(stamp, encoding="utf-8") as fh:
+            passed = json.load(fh)
+    except (OSError, ValueError):
+        return f"release-check has not passed for {name} {version}: {run}"
+    head = git(root, "rev-parse", "HEAD")
+    if passed.get("head") != head:
+        return (
+            f"release-check passed at {str(passed.get('head'))[:10]}, HEAD is "
+            f"{head[:10]}: {run} again"
         )
-    except (OSError, subprocess.TimeoutExpired) as e:
-        raise GitUnavailable(f"registry.dart release-check: {e}") from e
-    if r.returncode == 0:
-        return None
-    out = (r.stdout + r.stderr).strip().splitlines()
-    return "\n    ".join(out[-40:])
+    changed = git(
+        root, "status", "--porcelain", "--", "model_registry",
+        "tool/model_registry", prefix.rstrip("/") or ".",
+    )
+    if changed:
+        return f"uncommitted changes since release-check:\n    {changed}"
+    return None
 
 
 def main():
@@ -219,7 +246,7 @@ def main():
         name = _package_name(root, prefix)
         if name not in CATALOG_PACKAGES:
             return 0
-        problem = _release_check(root, name)
+        problem = _release_check(root, prefix, name)
     except (GitUnavailable, OSError) as e:
         sys.stderr.write(
             f"BLOCKED: cannot verify the model registry for this release — {e}\n"

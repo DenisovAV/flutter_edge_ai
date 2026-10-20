@@ -220,6 +220,27 @@ UPDATE_GOLDENS=1 flutter test test/catalog/litert_catalog_test.dart
 `dart test` proves each of those rules fails its own fixture, and that this
 directory passes.
 
+## Release
+
+`flutter_edge_ai_litertlm` and `flutter_edge_ai_speech` ship catalogs
+generated from here. Before either is published:
+
+```sh
+cd tool/model_registry
+dart run bin/registry.dart freeze flutter_edge_ai_litertlm     # published/<package>/<version>.json
+dart run bin/registry.dart release-check flutter_edge_ai_litertlm
+```
+
+`freeze` records the frozen fields the version ships, which `check` then holds
+every later change to. `release-check` passes when the registry and every
+generated file are current, the frozen fields are written, and every cell
+`release_critical.yaml` lists for the package is verified: a run under
+`evidence/` on the native build the package ships, since that build or the
+package's minor version last moved. A patch on the same native build keeps its
+evidence. `.claude/hooks/guard-release-registry.py` runs `release-check` before
+`dart pub publish` of either package and refuses the publish unless it passes
+or the command carries `RELEASE_SKIP_REGISTRY="<reason>"`.
+
 CI runs `check` and `dart test` on every pull request (`model-registry` in
 `.github/workflows/test.yml`). Weekly, `model-registry-live.yml` runs
 

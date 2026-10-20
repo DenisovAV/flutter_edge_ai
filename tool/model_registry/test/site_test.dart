@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:model_registry/check.dart';
 import 'package:model_registry/evidence.dart';
+import 'package:model_registry/release.dart';
 import 'package:model_registry/site.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -660,6 +661,114 @@ void main() {
       expect(why([line('ios_arm64', simulator: true)]), contains('simulator'));
       expect(why([line('macos_arm64')], native: null), contains('no native'));
       expect(why([line('macos_arm64')]), isNull);
+    });
+  });
+
+  group('release', () {
+    List<CriticalCell> critical(String yaml, List<Problem> problems) {
+      final dir = Directory.systemTemp.createTempSync('release_test');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      File(p.join(dir.path, 'release_critical.yaml')).writeAsStringSync(yaml);
+      return readCritical(dir, problems);
+    }
+
+    const yaml = '''
+flutter_edge_ai_litertlm:
+  - what: the default
+    variants: [tiny/generic]
+    hosts: [macos_arm64, android_arm64]
+    backends: [gpu]
+''';
+
+    test('groups expand to cells; a malformed group is named', () {
+      final problems = <Problem>[];
+      final cells = critical(
+        '$yaml  - what: no hosts\n    variants: [tiny/generic]\n',
+        problems,
+      );
+      expect(
+        [for (final c in cells) '${c.variant} ${c.host} ${c.backend}'],
+        ['tiny/generic macos_arm64 gpu', 'tiny/generic android_arm64 gpu'],
+      );
+      expect(
+        [for (final x in problems) x.message],
+        ['needs what, variants, hosts, backends'],
+      );
+    });
+
+    test('check: another package, a withheld variant, a cell not run', () {
+      final problems = <Problem>[];
+      final cells = critical('''
+flutter_edge_ai_speech:
+  - what: wrong package
+    variants: [tiny/generic]
+    hosts: [macos_arm64]
+    backends: [gpu]
+flutter_edge_ai_litertlm:
+  - what: withheld
+    variants: [tiny/old]
+    hosts: [macos_arm64]
+    backends: [gpu]
+  - what: not run
+    variants: [tiny/generic]
+    hosts: [macos_arm64]
+    backends: [npu]
+''', problems);
+      checkCritical(_inputs('[]', problems), [_llm()], cells, problems);
+      expect(
+        [for (final x in problems) x.message],
+        [
+          '"tiny/generic" belongs to flutter_edge_ai_litertlm',
+          '"tiny/old" is withheld from the catalog',
+          'the package does not run it on macos_arm64 npu',
+        ],
+      );
+    });
+
+    test('a release waits for every critical cell to be verified', () {
+      final problems = <Problem>[];
+      final cells = critical(yaml, problems);
+      String missing(List<Map<String, Object?>> evidence) => [
+        for (final (c, status) in unverified(
+          _inputs('[]', problems, evidence: evidence),
+          [_llm()],
+          cells,
+          'flutter_edge_ai_litertlm',
+        ))
+          '${c.host} $status',
+      ].join(', ');
+      expect(missing([]), 'macos_arm64 untested, android_arm64 untested');
+      expect(missing([_run()]), 'android_arm64 untested');
+      expect(
+        missing([_run(native: 'e' * 64)]),
+        'macos_arm64 stale, android_arm64 untested',
+      );
+      expect(problems, isEmpty);
+    });
+
+    test('the frozen fields of what the catalog offers', () {
+      final snapshot = freezeSnapshot(
+        [_llm()],
+        'flutter_edge_ai_litertlm',
+        '1.16.1',
+      );
+      final variants = snapshot['variants']! as Map<String, Object?>;
+      expect(variants.keys, isNot(contains('tiny/old')));
+      expect(variants.keys, contains('tiny/generic'));
+      expect(
+        variants['tiny/generic'],
+        frozenValues(
+          (_llm().data['variants']! as List).first as Map<String, Object?>,
+        ),
+      );
+      expect(
+        freezeSnapshot(
+          [_llm()],
+          'flutter_edge_ai_speech',
+          '0.5.10',
+        )['variants'],
+        isEmpty,
+      );
     });
   });
 

@@ -96,6 +96,13 @@ silently do the other thing.
         "0 warnings" with no SKILL.md in the archive (#578)
 [ ] 8b  native bundle moved? → litertlm_native_tools_test.dart green on every
         platform in the release (the smoke suite never passes a tool), else N/A
+[ ] 8c  litertlm or speech in the release? → the model registry is ready:
+        record the runs of release_critical.yaml's cells (the release-gate
+        tests print FEA_EVIDENCE lines; `registry.dart evidence --device …
+        <log>` per host), `registry.dart freeze <package>`, `generate`, and
+        `registry.dart release-check <package>` prints "ready to publish".
+        guard-release-registry.py refuses the publish otherwise
+        (override: RELEASE_SKIP_REGISTRY="<reason>"), else N/A
 [ ] 10b  after publishing: pub.dev actually SERVES the new versions (its API
         lags minutes behind the upload); if a package's web/ changed
         (flutter_edge_ai_litertlm or flutter_edge_ai), sync every codelab copy to

@@ -4,13 +4,19 @@
 //   dart run bin/registry.dart generate
 //   dart run bin/registry.dart evidence --device "<device>" <log>...
 //   dart run bin/registry.dart live
+//   dart run bin/registry.dart freeze <package>
+//   dart run bin/registry.dart release-check <package>
 //
 // `check` validates model_registry/ (the repo root's) and that every
 // generated file is what `generate` would write; it exits 1 on any problem.
 // `generate` writes the generated files. `evidence` turns the log of an
 // integration run into model_registry/evidence/<date>_<host>_<device>.json.
 // `live` asks Hugging Face for every pinned file (HF_TOKEN for gated ones)
-// and exits 1 when one is missing or differs.
+// and exits 1 when one is missing or differs. `freeze` writes the frozen
+// fields a release of <package> ships (published/<package>/<version>.json);
+// `release-check` says whether <package> may be published: the registry and
+// every generated file are current, the frozen fields are written, and its
+// cells in release_critical.yaml are verified.
 // See ../../model_registry/README.md.
 
 import 'dart:convert';
@@ -20,14 +26,24 @@ import 'package:model_registry/check.dart';
 import 'package:model_registry/evidence.dart';
 import 'package:model_registry/generate.dart';
 import 'package:model_registry/live.dart';
+import 'package:model_registry/release.dart';
 import 'package:model_registry/site.dart';
 import 'package:path/path.dart' as p;
 
 Future<void> main(List<String> args) async {
   final command = args.isEmpty ? null : args.first;
-  if (!const {'check', 'generate', 'evidence', 'live'}.contains(command)) {
+  const commands = {
+    'check',
+    'generate',
+    'evidence',
+    'live',
+    'freeze',
+    'release-check',
+  };
+  if (!commands.contains(command)) {
     stderr.writeln(
       'usage: dart run bin/registry.dart check|generate|live [--registry <dir>]\n'
+      '       dart run bin/registry.dart freeze|release-check <package>\n'
       '       dart run bin/registry.dart evidence --device <device> '
       '[--log-url <url>] [--date <yyyy-mm-dd>] [--allow-dirty] <log>...',
     );
@@ -45,6 +61,8 @@ Future<void> main(List<String> args) async {
   checkClaims(site, result.entries, result.problems);
   checkBlocks(site, result.problems);
   checkEvidence(site, result.entries, result.problems);
+  final critical = readCritical(registry, result.problems);
+  checkCritical(site, result.entries, critical, result.problems);
   if (command == 'evidence') {
     exit(_evidence(args, option, registry, repoRoot, site, result));
   }
@@ -59,6 +77,75 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
 
+  final stale = await _generated(
+    registry,
+    repoRoot,
+    site,
+    result,
+    write: command == 'generate',
+  );
+  if (command == 'freeze' || command == 'release-check') {
+    final package = args.length > 1 && !args[1].startsWith('--')
+        ? args[1]
+        : null;
+    final version = site.versions[package];
+    if (package == null || version == null) {
+      stderr.writeln(
+        '$command needs a package with a snapshot: '
+        '${site.snapshots.keys.join(', ')}',
+      );
+      exit(64);
+    }
+    final snapshot = freezeJson(
+      freezeSnapshot(result.entries, package, version),
+    );
+    final published = publishedFile(registry, package, version);
+    if (command == 'freeze') {
+      published
+        ..createSync(recursive: true)
+        ..writeAsStringSync(snapshot);
+      stdout.writeln('wrote ${p.relative(published.path, from: repoRoot)}');
+      exit(0);
+    }
+    final reasons = <String>[
+      if (stale > 0) '$stale generated file(s) not current',
+      if (!published.existsSync() || published.readAsStringSync() != snapshot)
+        '${p.relative(published.path, from: repoRoot)} is not what '
+            '`dart run bin/registry.dart freeze $package` writes',
+      for (final (c, status) in unverified(
+        site,
+        result.entries,
+        critical,
+        package,
+      ))
+        '${c.variant} on ${c.host} ${c.backend} is $status, not verified '
+            '(${c.what})',
+    ];
+    if (reasons.isEmpty) {
+      stdout.writeln('$package $version: ready to publish');
+      exit(0);
+    }
+    reasons.forEach(stdout.writeln);
+    stdout.writeln(
+      '$package $version: ${reasons.length} reason(s) not to publish',
+    );
+    exit(1);
+  }
+  if (stale > 0) exit(1);
+  stdout.writeln(
+    '${result.entries.length} models, ${result.variantCount} variants: ok',
+  );
+}
+
+/// Writes ([write]) or compares every generated file; returns how many are
+/// not current.
+Future<int> _generated(
+  Directory registry,
+  String repoRoot,
+  SiteInputs site,
+  CheckResult result, {
+  required bool write,
+}) async {
   var stale = 0;
   for (final file in [
     ...generateAll(registry, result.entries),
@@ -70,7 +157,7 @@ Future<void> main(List<String> args) async {
         : file.content;
     final current = target.existsSync() ? target.readAsStringSync() : null;
     if (current == content) continue;
-    if (command == 'generate') {
+    if (write) {
       target
         ..createSync(recursive: true)
         ..writeAsStringSync(content);
@@ -83,10 +170,7 @@ Future<void> main(List<String> args) async {
       );
     }
   }
-  if (stale > 0) exit(1);
-  stdout.writeln(
-    '${result.entries.length} models, ${result.variantCount} variants: ok',
-  );
+  return stale;
 }
 
 /// `evidence`: one run's log into one evidence file. Exit code.

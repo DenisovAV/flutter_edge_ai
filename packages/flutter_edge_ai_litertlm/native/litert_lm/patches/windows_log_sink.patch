@@ -1,49 +1,31 @@
 --- a/c/BUILD
 +++ b/c/BUILD
-@@ -328,6 +328,8 @@
-         "error_reporter.cc",
-         "experimental.cc",
-         "model_info.cc",
-+        # flutter_gemma patch (section 17): LiteRT-LM's log on Windows.
-+        "windows_log_sink.cc",
-     ],
-     hdrs = [
-         "api_export.h",
-@@ -342,6 +344,12 @@
-     visibility = ["//visibility:public"],
-     deps = ENGINE_COMMON_DEPS + [
-         "//runtime/core:engine_impl",
+@@ -41,8 +41,25 @@
+     "model_info.h",
+ ])
+ 
++# flutter_gemma patch (section 17): LiteRT-LM's log on Windows. engine.cc calls
++# it from litert_lm_set_min_log_level; every target that compiles engine.cc
++# takes ENGINE_LITE_COMMON_DEPS, so it is listed there.
++cc_library(
++    name = "windows_log_sink",
++    srcs = ["windows_log_sink.cc"],
++    deps = [
 +        "@com_google_absl//absl/base:log_severity",
 +        "@com_google_absl//absl/log:globals",
 +        "@com_google_absl//absl/log:log_entry",
 +        "@com_google_absl//absl/log:log_sink",
 +        "@com_google_absl//absl/log:log_sink_registry",
 +        "@com_google_absl//absl/strings:string_view",
-     ],
-     alwayslink = True,
- )
-@@ -356,6 +364,8 @@
-         "error_reporter.cc",
-         "experimental.cc",
-         "model_info.cc",
-+        # flutter_gemma patch (section 17): LiteRT-LM's log on Windows.
-+        "windows_log_sink.cc",
-     ],
-     hdrs = [
-         "api_export.h",
-@@ -370,6 +380,12 @@
-     visibility = ["//visibility:public"],
-     deps = ENGINE_COMMON_DEPS + [
-         "//runtime/core:engine_advanced_impl_cpu_only",
-+        "@com_google_absl//absl/base:log_severity",
-+        "@com_google_absl//absl/log:globals",
-+        "@com_google_absl//absl/log:log_entry",
-+        "@com_google_absl//absl/log:log_sink",
-+        "@com_google_absl//absl/log:log_sink_registry",
-+        "@com_google_absl//absl/strings:string_view",
-     ],
-     alwayslink = True,
- )
++    ],
++)
++
+ ENGINE_LITE_COMMON_DEPS = [
+     ":engine_internal",
++    ":windows_log_sink",
+     ":error_reporter_headers",
+     ":error_reporter_internal",
+     "@com_google_absl//absl/base:core_headers",
 --- a/c/engine.cc
 +++ b/c/engine.cc
 @@ -203,11 +203,21 @@

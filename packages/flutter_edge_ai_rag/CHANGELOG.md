@@ -1,3 +1,6 @@
+## 1.1.2
+- README: current package versions.
+
 ## 1.1.1
 - README: image and audio indexes with FlutterEdgeAiActiveEmbedder.
 

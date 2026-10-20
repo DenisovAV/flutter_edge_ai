@@ -1,3 +1,6 @@
+## 2.3.2
+- README: the current embedding backend SPI.
+
 ## 2.3.1
 - README: a missing tokenizer fails getActiveEmbedder with EmbeddingLoadException.
 

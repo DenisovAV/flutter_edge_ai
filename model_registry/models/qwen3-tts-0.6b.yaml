@@ -11,7 +11,7 @@ license: apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 tts_type: qwen3
 variants:
-- slug: default
+- slug: bundle
   files:
   - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
     revision: 5ad41057956abe19b6a3b78e677a0356ea606663

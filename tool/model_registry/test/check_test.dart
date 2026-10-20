@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:model_registry/check.dart';
+import 'package:model_registry/dart_names.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 import 'package:yaml/yaml.dart';
@@ -127,7 +128,7 @@ Map<String, Object?> _tts() => {
   'tts_type': 'matcha',
   'variants': [
     {
-      'slug': 'default',
+      'slug': 'bundle',
       'files': [_artifact('a.tflite'), _artifact('b.json', sha: _sha2)],
     },
   ],
@@ -308,6 +309,28 @@ void main() {
         }),
       },
     );
+    fails(
+      'a slug whose Dart getter is a reserved word',
+      [_with(_llm(), (e) => _variant(e, 1)['slug'] = 'default')],
+      '"default" is a Dart reserved word',
+      extraFiles: _llmFacts(),
+    );
+    fails(
+      'a slug whose Dart getter shadows a CatalogModel member',
+      [_with(_llm(), (e) => _variant(e, 1)['slug'] = 'variants')],
+      '"variants" is taken',
+      extraFiles: _llmFacts(),
+    );
+    fails('two models with one Dart getter', [
+      _with(_llm(), (e) => e['id'] = 'tiny-2-5'),
+      _with(_llm(), (e) {
+        e['id'] = 'tiny-2.5';
+        for (final v in e['variants'] as List) {
+          final file = (v as Map)['file'] as Map;
+          file['install_filename'] = 'b_${file['install_filename']}';
+        }
+      }),
+    ], '"tiny2_5" is taken');
     fails('a .litertlm file never read', [
       _llm(),
     ], 'no facts read from its bytes');
@@ -383,6 +406,14 @@ void main() {
         }),
       },
     );
+  });
+
+  test('Dart names keep numbers apart', () {
+    expect(dartMemberName('gemma-4-e2b-it'), 'gemma4E2bIt');
+    expect(dartMemberName('qwen3-0.6b'), 'qwen3_0_6b');
+    expect(dartMemberName('qwen2.5-1.5b-instruct'), 'qwen2_5_1_5bInstruct');
+    expect(dartMemberName('npu-tensor-g6'), 'npuTensorG6');
+    expect(dartClassName('LiteRtLm', 'gemma-4-e2b-it'), 'LiteRtLmGemma4E2bIt');
   });
 
   test('the repo registry passes', () {

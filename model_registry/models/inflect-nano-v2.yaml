@@ -11,7 +11,7 @@ license: apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 tts_type: inflect
 variants:
-- slug: default
+- slug: bundle
   files:
   - repo: sasha-denisov/inflect-nano-v2-litert
     revision: 4f03cf68b5447ab22cdfa8bd052a78c6c9763891

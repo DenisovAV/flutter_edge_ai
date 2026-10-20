@@ -16,7 +16,14 @@ text-to-speech) in the repositories below. The schema already admits `task`,
 |---|---|---|
 | `models/<id>.yaml` | a model and its variants | hand |
 | `derived/<sha256>.json` | facts read from a file's bytes | `inspect_bundle_test.dart` |
+| `snapshots/<package>.json` | where each variant runs on each host, as the package answers | the package's catalog test |
 | `published/<package>/<version>.json` | the frozen fields a release shipped | the release |
+
+Generated from it, checked in, never edited by hand:
+- `packages/flutter_edge_ai_litertlm/lib/src/catalog/generated/litert_catalog.g.dart`:
+  `LiteRtLmModels` and `LiteRtEmbedders`, a class per model with a getter
+  per variant (`LiteRtLmModels.gemma4E2bIt.npuSm8750`). A variant withheld
+  from a release is left out.
 
 ## An entry
 
@@ -110,8 +117,21 @@ kilobytes per file) and writes `derived/<sha256>.json` for each file:
 
 ```sh
 cd tool/model_registry
-dart run bin/registry.dart check
+dart run bin/registry.dart generate   # write the generated files
+dart run bin/registry.dart check      # validate; fail on a stale one
 dart test
+```
+
+The Dart names come from the ids: words join in lowerCamelCase, and a word
+that starts with a digit after a digit is kept apart with `_`
+(`gemma-4-e2b-it` is `gemma4E2bIt`, `qwen3-0.6b` is `qwen3_0_6b`).
+
+After a registry change that moves where a variant runs, write the snapshot
+again:
+
+```sh
+cd packages/flutter_edge_ai_litertlm
+UPDATE_GOLDENS=1 flutter test test/catalog/litert_catalog_test.dart
 ```
 
 `check` fails on:
@@ -126,6 +146,9 @@ dart test
 - one install file name for two different files;
 - one profile id with two dimensions;
 - a withheld variant without an issue;
+- an id or slug whose Dart name is not an identifier, is a reserved word, or
+  clashes;
+- a generated file that is not what `generate` writes;
 - a frozen field changed after a release, or a published variant deleted;
 - Cyrillic text.
 

@@ -1,4 +1,5 @@
 ## 1.16.0
+- Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every `.litertlm` and `.tflite` build pinned to its Hugging Face commit, in `FlutterEdgeAi.catalog`.
 - `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.
 - Several open models at once (`FlutterEdgeAi.openModel`).
 - `LiteRtLmEngine(nativeLogLevel:)` sets LiteRT-LM's native log level.

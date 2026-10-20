@@ -10,6 +10,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
+import 'dart_names.dart';
+
 /// One broken rule, anchored to the file and the key path it was found at.
 final class Problem {
   Problem(this.file, this.where, this.message);
@@ -205,9 +207,36 @@ CheckResult checkRegistry(Directory registryDir) {
   }
 
   _checkAcrossEntries(entries, problems);
+  _checkDartNames(entries, problems);
   _checkDerived(registryDir, entries, problems);
   _checkPublished(registryDir, entries, problems);
   return CheckResult(entries, problems);
+}
+
+/// Each model's getter in its package's generated namespace class.
+void _checkDartNames(List<Entry> entries, List<Problem> problems) {
+  final taken = <String, Map<String, String>>{};
+  for (final e in entries) {
+    if (!_idPattern.hasMatch(e.id)) continue;
+    final scope = '${e.data['package']}/${e.data['kind']}';
+    final names = taken[scope] ??= {};
+    final name = dartMemberName(e.id);
+    final problem = dartNameProblem(name, {
+      ...catalogNamespaceMembers,
+      ...names.keys,
+    });
+    if (problem != null) {
+      final other = names[name];
+      problems.add(
+        Problem(
+          e.file,
+          '.id',
+          'its Dart getter: $problem${other == null ? '' : ' by $other'}',
+        ),
+      );
+    }
+    names[name] = e.file;
+  }
 }
 
 /// The vendor names LiteRT's compiler stamps, by registry vendor.
@@ -478,6 +507,12 @@ void _checkModel(Entry entry, String fileId, List<Problem> problems) {
           '$where.slug',
           '"$slug" must be lowercase words joined by - or .',
         );
+      } else if (dartNameProblem(dartMemberName(slug), {
+            ...catalogModelMembers,
+            for (final s in slugs) dartMemberName(s),
+          })
+          case final problem?) {
+        c.error('$where.slug', 'its Dart getter: $problem');
       }
       if (!slugs.add(slug)) c.error('$where.slug', 'duplicate "$slug"');
     }

@@ -9,11 +9,16 @@
 
 import 'dart:typed_data';
 
+import 'package:flutter_edge_ai/engine.dart' show NpuTarget, NpuVendor;
+
 import '../litertlm_flatbuffer.dart';
 import '../npu_stacks.dart' show NpuStack;
 
 /// The SoC a `.litertlm` bundle's compiled sections target.
-final class LiteRtLmNpuTarget {
+///
+/// It is the core [NpuTarget] of a catalog variant compiled for an NPU, with
+/// the vendor and SoC spelled as the compiler stamped them.
+final class LiteRtLmNpuTarget extends NpuTarget {
   const LiteRtLmNpuTarget({required this.vendor, required this.soc});
 
   /// The SoC manufacturer as the compiler stamped it: `Qualcomm`, `Google`,
@@ -23,6 +28,21 @@ final class LiteRtLmNpuTarget {
   /// The SoC model as the compiler stamped it, e.g. `SM8850`, `QCS8275`,
   /// `PTL`, `Tensor_G5`.
   final String soc;
+
+  /// The vendor by core's name, including MediaTek, whose bundles this
+  /// package does not run; null for a stamp core has no name for.
+  @override
+  NpuVendor? get npuVendor => switch (vendor.toLowerCase()) {
+    'qualcomm' => NpuVendor.qualcomm,
+    'google' => NpuVendor.googleTensor,
+    'mediatek' => NpuVendor.mediatek,
+    'intelopenvino' => NpuVendor.intel,
+    _ => null,
+  };
+
+  /// [soc], as the compiler stamped it.
+  @override
+  String get socModel => soc;
 
   bool get isQualcomm => npuVendorOf(this) == NpuStack.qualcomm;
 

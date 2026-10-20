@@ -11,7 +11,7 @@ license: mit
 license_url: https://opensource.org/license/mit
 tts_type: matcha
 variants:
-- slug: default
+- slug: bundle
   files:
   - repo: litert-community/Matcha-TTS
     revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5

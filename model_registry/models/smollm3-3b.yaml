@@ -30,7 +30,7 @@ variants:
     install_filename: SmolLM3-3B_q4_block32_ekv4096.litertlm
   example:
   - smolLM3_3B
-- slug: default
+- slug: standard
   file_type: litertlm
   file:
     repo: litert-community/SmolLM3-3B

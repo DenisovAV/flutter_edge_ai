@@ -29,6 +29,11 @@ export 'src/bundle/litertlm_bundle_reader_stub.dart'
     if (dart.library.ffi) 'src/bundle/litertlm_bundle_reader.dart'
     show readLiteRtLmBundleInfo;
 export 'src/litert_lm_load_errors.dart';
+
+// The models this package runs, generated from the project's model registry:
+// `LiteRtLmModels.gemma4E2bIt.npuSm8750`, `LiteRtEmbedders…`. Plain Dart on
+// every platform; `backendsHere` answers for the runtime it runs in.
+export 'src/catalog/litert_catalog.dart' hide debugLiteRtCatalogHost;
 export 'src/litert_lm_log_level.dart';
 
 // LiteRt interpreter FFI (arbitrary `.tflite` models) — used by

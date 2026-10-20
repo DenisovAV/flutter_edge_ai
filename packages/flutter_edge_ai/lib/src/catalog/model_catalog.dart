@@ -144,8 +144,9 @@ abstract base class InferenceVariant extends CatalogVariant {
   /// `FlutterEdgeAi.openModel` or `getActiveModel`.
   ModelRuntimeDefaults get runtimeDefaults;
 
-  /// The context the file is compiled for, which an NPU build needs passed
-  /// as `maxTokens`; null when the context is free.
+  /// The KV-cache length the file is compiled for, which bounds `maxTokens`
+  /// on an NPU build; null when the context is free.
+  /// [runtimeDefaults] carries the value the variant was run with.
   int? get requiredMaxTokens => null;
 
   /// Whether the variant takes images.

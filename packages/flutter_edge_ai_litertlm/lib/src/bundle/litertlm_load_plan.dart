@@ -34,6 +34,7 @@
 //   published bundle compiles an encoder for the NPU next to a generic text
 //   model; an all-NPU build compiles both.
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 
 import '../litert_lm_load_errors.dart';
@@ -372,6 +373,13 @@ List<PreferredBackend> _fallbackOrder(PreferredBackend requested) =>
 /// (Google's `litert-npu-runtime-mediatek` AAR carries one) makes that path
 /// real, and this rule then has to ask the vendor table. A file that could not
 /// be read keeps every backend.
+/// [_textBackendsAllowed], for the catalog test that checks the generated
+/// catalog against it.
+@visibleForTesting
+Set<PreferredBackend> textBackendsAllowedForTesting(
+  LiteRtLmBundleInfo? bundle,
+) => _textBackendsAllowed(bundle);
+
 Set<PreferredBackend> _textBackendsAllowed(LiteRtLmBundleInfo? bundle) {
   if (bundle == null) return PreferredBackend.values.toSet();
   if (bundle.isCompiledForNpu) return {PreferredBackend.npu};

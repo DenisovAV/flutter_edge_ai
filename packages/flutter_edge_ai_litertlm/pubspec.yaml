@@ -26,7 +26,8 @@ dependencies:
   flutter:
     sdk: flutter
   # ^2.5.0: this version implements the option-scoring SPI
-  # (`OptionScoringModel`, `OptionScorer`) that arrives in 2.5.0. 2.4.0 brought
+  # (`OptionScoringModel`, `OptionScorer`) and `MultiModelEngine` (for
+  # `FlutterEdgeAi.openModel`), which arrive in 2.5.0. 2.4.0 brought
   # what it fills: `InferenceModel.activeVisionBackend` /
   # `activeAudioBackend`, sends a message's media in the
   # `RuntimeConfig.multimodalOrder` (`MultimodalOrder`, `MediaPosition`) and

@@ -22,6 +22,7 @@ import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
 import '../thinking_context.dart';
 import '../litert_lm_load_errors.dart';
+import '../litert_lm_log_level.dart';
 
 export '../litert_lm_load_errors.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
@@ -539,6 +540,16 @@ class LiteRtLmFfiClient {
   bool _isInitialized = false;
   String? _nativeLogPath;
 
+  /// Where this client's part of the shared native log starts: every client
+  /// in the process writes to the one redirected file, so a client reads
+  /// only what was written since it started its engine, and never truncates.
+  int _nativeLogOffset = 0;
+
+  /// The redirected native log, shared by every client in the isolate: the
+  /// redirect is process-wide, so it runs once.
+  static String? _sharedNativeLogPath;
+  static bool _stderrRedirectTried = false;
+
   /// Backend the engine was initialised with, as the wire string ('cpu' /
   /// 'gpu' / 'npu'). Read only to warn that the NPU executor discards sampler
   /// params — it must never gate what we send again.
@@ -651,20 +662,37 @@ class LiteRtLmFfiClient {
   /// Also exposed publicly via [dumpNativeLog] for callers that want to dump
   /// at arbitrary points (e.g. after prefill, after a slow generate).
   ///
-  /// Truncates the log file after reading so subsequent dumps only show new
-  /// output — otherwise every dump would re-print everything since app start.
+  /// Prints only what was written since this client's previous dump. The
+  /// file is shared by every engine in the process and is never truncated,
+  /// so with several engines open their lines can interleave.
   void dumpNativeLog() => _dumpNativeLog();
+
+  /// The native log written since [_nativeLogOffset], and the file length it
+  /// was read up to; null when there is no log.
+  (String, int)? _readNativeLogSinceOffset() {
+    final p = _nativeLogPath;
+    if (p == null) return null;
+    final f = File(p);
+    if (!f.existsSync()) return null;
+    final bytes = f.readAsBytesSync();
+    final from = _nativeLogOffset <= bytes.length ? _nativeLogOffset : 0;
+    return (
+      utf8.decode(bytes.sublist(from), allowMalformed: true),
+      bytes.length,
+    );
+  }
 
   void _dumpNativeLog() {
     final p = _nativeLogPath;
     if (p == null) return;
     try {
-      final f = File(p);
-      if (!f.existsSync()) {
+      final read = _readNativeLogSinceOffset();
+      if (read == null) {
         edgeAiLog('[LiteRtLmFfi/native] log file missing: $p');
         return;
       }
-      final content = f.readAsStringSync();
+      final (content, end) = read;
+      _nativeLogOffset = end;
       if (content.isEmpty) {
         edgeAiLog('[LiteRtLmFfi/native] (no new native log output)');
         return;
@@ -680,32 +708,27 @@ class LiteRtLmFfiClient {
         edgeAiLog(content.substring(i, end), level: EdgeAiLogLevel.verbose);
       }
       edgeAiLog('[LiteRtLmFfi/native] === END native log ===');
-      // Truncate so the next dump only shows new output. If truncation fails
-      // (read-only fs etc.), next dump just re-prints — non-fatal.
-      try {
-        f.writeAsStringSync('');
-      } catch (_) {}
     } catch (e) {
       edgeAiLog('[LiteRtLmFfi/native] failed to read $p: $e');
     }
   }
 
   /// Extracts the first `section_backend_constraint` value from the native SDK
-  /// log without truncating it (unlike [_dumpNativeLog]) — the value is the
+  /// log this engine's create wrote (from [_nativeLogOffset]; another engine
+  /// created at the same moment can still write into that window) — the
+  /// value is the
   /// lowercase wire backend name (`gpu`/`cpu`/`npu`). Lets an opaque
   /// engine_create failure become an actionable "this model needs a specific
   /// backend" error — e.g. Gemma 4 12B is GPU-only. Returns null when the log
   /// is unavailable (release / Android / Windows, where stderr isn't wired) or
   /// the model declares no constraint.
   String? _backendConstraintFromNativeLog() {
-    final p = _nativeLogPath;
-    if (p == null) return null;
     try {
-      final f = File(p);
-      if (!f.existsSync()) return null;
+      final read = _readNativeLogSinceOffset();
+      if (read == null) return null;
       final match = RegExp(
         r'section_backend_constraint:\s*(\w+)',
-      ).firstMatch(f.readAsStringSync());
+      ).firstMatch(read.$1);
       return match?.group(1);
     } catch (_) {
       return null;
@@ -915,7 +938,9 @@ class LiteRtLmFfiClient {
     // this Linux integration tests get the same opaque 'Failed to create
     // engine' as iOS without any native diagnostics.
     if (kDebugMode &&
-        (Platform.isIOS || Platform.isLinux || Platform.isMacOS)) {
+        (Platform.isIOS || Platform.isLinux || Platform.isMacOS) &&
+        !_stderrRedirectTried) {
+      _stderrRedirectTried = true;
       _nativeLogPath = '${Directory.systemTemp.path}/litertlm_native.log';
       final redirect = proxyLib
           .lookupFunction<
@@ -936,6 +961,9 @@ class LiteRtLmFfiClient {
       } else {
         edgeAiLog('[LiteRtLmFfi] stderr redirected to $_nativeLogPath');
       }
+      _sharedNativeLogPath = _nativeLogPath;
+    } else {
+      _nativeLogPath = _sharedNativeLogPath;
     }
 
     edgeAiLog(
@@ -944,10 +972,34 @@ class LiteRtLmFfiClient {
     edgeAiLog('[LiteRtLmFfi] Libraries loaded');
   }
 
+  /// The level the last client in this isolate set, only to say when another
+  /// one replaces it: LiteRT-LM keeps one level for the whole process.
+  static LiteRtLmLogLevel? _nativeLogLevel;
+
+  /// Sets [level] every time, not only when it differs from the last one this
+  /// isolate set: a client on another isolate may have changed it since.
+  static void _applyNativeLogLevel(
+    LiteRtLmBindings bindings,
+    LiteRtLmLogLevel level,
+  ) {
+    final previous = _nativeLogLevel;
+    if (previous != null && previous != level) {
+      edgeAiLog(
+        '[LiteRtLmFfi] nativeLogLevel ${level.name} replaces ${previous.name} '
+        'for every LiteRT-LM engine in the process',
+      );
+    }
+    bindings.litert_lm_set_min_log_level(level.nativeValue);
+    _nativeLogLevel = level;
+  }
+
   /// Initialize the engine with model path and settings.
   ///
   /// [activationDataType] is the C API's number (see
   /// `activationDataTypeWireValue`); null leaves the engine's own choice.
+  ///
+  /// [nativeLogLevel], when set, is applied with `litert_lm_set_min_log_level`
+  /// before the engine is created.
   ///
   /// [npuDispatch] is what an `npu` [backend] hands LiteRT-LM: the dispatch
   /// directory of the vendor `chooseNpuVendor` chose, prepared by the caller,
@@ -966,6 +1018,7 @@ class LiteRtLmFfiClient {
     bool? enableSpeculativeDecoding,
     int? activationDataType,
     NpuDispatch? npuDispatch,
+    LiteRtLmLogLevel? nativeLogLevel,
   }) async {
     if (backend == 'npu' && npuDispatch == null) {
       throw ArgumentError.notNull('npuDispatch');
@@ -973,6 +1026,11 @@ class LiteRtLmFfiClient {
     final initSw = Stopwatch()..start();
     _ensureBindings();
     _backend = backend;
+    // This engine's part of the shared native log starts here.
+    final logPath = _nativeLogPath;
+    if (logPath != null && File(logPath).existsSync()) {
+      _nativeLogOffset = File(logPath).lengthSync();
+    }
     final bindingsMs = initSw.elapsedMilliseconds;
     edgeAiLog('[LiteRtLmFfi/perf] _ensureBindings: ${bindingsMs}ms');
     // Log the resolved per-encoder backends: vision/audio follow the bundle
@@ -987,6 +1045,7 @@ class LiteRtLmFfiClient {
       );
     }
     final b = _bindings!;
+    if (nativeLogLevel != null) _applyNativeLogLevel(b, nativeLogLevel);
 
     // Create engine settings
     final modelPathPtr = modelPath.toNativeUtf8();

@@ -10,7 +10,7 @@ import 'package:flutter_edge_ai/src/sampling.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
-import 'package:meta/meta.dart' show experimental, nonVirtual;
+import 'package:meta/meta.dart' show experimental, internal, nonVirtual;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 // Conditional default instance: the mobile/desktop default pulls dart:io;
@@ -25,6 +25,8 @@ import 'decision/option_scoring.dart' show OptionScoringModel;
 import 'decision/option_scoring_decider.dart' show createOptionScoringDecider;
 import 'decision/decider_option.dart' show DeciderOption;
 import 'model_management/cancel_token.dart' show CancelToken;
+import 'model_management/model_specs.dart' show InferenceModelSpec;
+import 'registry/runtime_config.dart' show ActiveModelParams;
 import 'embedding/embedding_model.dart';
 
 // Embedding types that used to be declared here; re-exported so the rest of
@@ -67,6 +69,10 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
 
   /// Creates and returns a new [InferenceModel] instance.
   ///
+  /// Deprecated: apps call `FlutterEdgeAi.getActiveModel()`, which this
+  /// forwards to on mobile and desktop, where [modelType] and [fileType] are
+  /// ignored (the active model's spec decides). Removed in 2.6.0.
+  ///
   /// [modelType] — model type to create.
   /// [maxTokens] — the model's CONTEXT WINDOW: the total number of tokens
   /// shared by input (system prompt + history + current message) AND the
@@ -108,6 +114,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// backward-compatible. When set, the (cap+1)-th [InferenceModel.openSession]
   /// throws [StateError]. Use this on mobile with large models to guard
   /// against OOM from multiple concurrent KV caches.
+  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
   Future<InferenceModel> createModel({
     required ModelType modelType,
     ModelFileType fileType = ModelFileType.task,
@@ -124,6 +131,59 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,
   });
+
+  /// The cached active model, as `FlutterEdgeAi.getActiveModel` gets it:
+  /// what [createModel] does, under a name that is not deprecated. The
+  /// built-in shells override it; a plugin that does not keeps its
+  /// [createModel].
+  @internal
+  Future<InferenceModel> obtainActiveModel({
+    required ModelType modelType,
+    ModelFileType fileType = ModelFileType.task,
+    int maxTokens = 1024,
+    PreferredBackend? preferredBackend,
+    PreferredBackend? preferredVisionBackend,
+    PreferredBackend? preferredAudioBackend,
+    List<int>? loraRanks,
+    int? maxNumImages,
+    bool supportImage = false,
+    bool supportAudio = false,
+    MultimodalOrder? multimodalOrder,
+    bool? enableSpeculativeDecoding,
+    ActivationDataType? activationDataType,
+    int? maxConcurrentSessions,
+  }) =>
+      // ignore: deprecated_member_use_from_same_package
+      createModel(
+        modelType: modelType,
+        fileType: fileType,
+        maxTokens: maxTokens,
+        preferredBackend: preferredBackend,
+        preferredVisionBackend: preferredVisionBackend,
+        preferredAudioBackend: preferredAudioBackend,
+        loraRanks: loraRanks,
+        maxNumImages: maxNumImages,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+        multimodalOrder: multimodalOrder,
+        enableSpeculativeDecoding: enableSpeculativeDecoding,
+        activationDataType: activationDataType,
+        maxConcurrentSessions: maxConcurrentSessions,
+      );
+
+  /// A new model for [spec] that the caller owns, as `FlutterEdgeAi.openModel`
+  /// gets it: never cached, and independent of the active model. Throws
+  /// [UnsupportedError] unless the platform overrides it (mobile and desktop
+  /// do; web does not).
+  @internal
+  Future<InferenceModel> openModel(
+    InferenceModelSpec spec,
+    ActiveModelParams params,
+  ) => Future.error(
+    UnsupportedError(
+      'FlutterEdgeAi.openModel is not supported on this platform.',
+    ),
+  );
 
   /// Returns the embedder for the active embedding model (set by
   /// `FlutterEdgeAi.installEmbedder()` or

@@ -400,6 +400,11 @@ await quick.close();
 final deep = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 ```
 
+An app that needs several models loaded at once, such as one per backend,
+opens them with `FlutterEdgeAi.openModel` instead: each call builds a model
+the app owns and closes, which a `getActiveModel` rebuild never touches. See
+[Desktop → Several models at once](/docs/desktop#several-models-at-once).
+
 To serve several dialogues from one loaded model, do not reload it — open
 several sessions instead (next section).
 

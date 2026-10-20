@@ -210,7 +210,9 @@ void main() {
       throwsA(isA<NoActiveModelError>()),
     );
     await expectLater(
-      FlutterEdgeAiPlugin.instance.createModel(modelType: ModelType.gemmaIt),
+      FlutterEdgeAiPlugin.instance.obtainActiveModel(
+        modelType: ModelType.gemmaIt,
+      ),
       throwsA(isA<NoActiveModelError>()),
     );
   });
@@ -223,22 +225,22 @@ void main() {
     // uncompared again: moved out of the comparator and into the call site,
     // where the unit test cannot see it because it never goes through a shell.
     //
-    // Driven through FlutterEdgeAiPlugin.instance.createModel rather than
-    // FlutterEdgeAi.getActiveModel: loraRanks is a createModel knob, and the
+    // Driven through FlutterEdgeAiPlugin.instance.obtainActiveModel rather than
+    // FlutterEdgeAi.getActiveModel: loraRanks is a shell knob, and the
     // facade does not expose it. That is also why the earlier count assertion
     // in runtime_config_test read "nine" and looked right.
     final engine = await installWithGatedEngine();
     engine.release();
 
     final plugin = FlutterEdgeAiPlugin.instance;
-    final a = await plugin.createModel(
+    final a = await plugin.obtainActiveModel(
       modelType: ModelType.gemmaIt,
       maxTokens: 1024,
       loraRanks: const [4],
     );
     expect(engine.createModelCallCount, 1);
 
-    final b = await plugin.createModel(
+    final b = await plugin.obtainActiveModel(
       modelType: ModelType.gemmaIt,
       maxTokens: 1024,
       loraRanks: const [16],
@@ -259,7 +261,7 @@ void main() {
 
     // An identical rank still reuses — the guard must not be so strict that
     // every call rebuilds.
-    final c = await plugin.createModel(
+    final c = await plugin.obtainActiveModel(
       modelType: ModelType.gemmaIt,
       maxTokens: 1024,
       loraRanks: const [16],

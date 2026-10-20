@@ -1,5 +1,7 @@
 ## 1.16.0
 - `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.
+- Several open models at once (`FlutterEdgeAi.openModel`).
+- `LiteRtLmEngine(nativeLogLevel:)` sets LiteRT-LM's native log level.
 - Require `flutter_edge_ai` ^2.5.0.
 
 ## 1.15.0

@@ -61,7 +61,9 @@ passed today moves to tomorrow at the same wall-clock time, across a clock
 change too. The mail and SMS intents write a space as `%20` instead of `+`.
 See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
 
-## flutter_edge_ai 2.5.0: the members deprecated for 2.5.0 are removed
+## flutter_edge_ai 2.5.0: several open models, removed and deprecated members
+
+### Removed members
 
 | Removed | Use |
 |---|---|
@@ -70,14 +72,27 @@ See [Agent → Setup](https://flutteredge.ai/docs/agent#setup).
 | `EmbeddingModel.getDimension()` | `dimension` |
 | `InferenceModelSpec.fromLegacyUrl(name:, modelUrl:, loraUrl:)` | `InferenceModelSpec(name: …, modelSource: …, loraSource: …, modelType: …)` |
 
-The removed embedding methods embedded as `TaskType.retrievalQuery` unless
-given a `taskType:`; pass the same task to keep their vectors.
+The removed embedding methods embedded as `TaskType.retrievalQuery` unless given
+a `taskType:`; pass the same task to keep their vectors.
 `genkit_flutter_edge_ai` 0.9.0 and older call `generateEmbeddings` and do not
-compile against 2.5.0: upgrade it to 0.9.1 or later. For `fromLegacyUrl`, use the `ModelSource` that matches the
-URL: `ModelSource.network(url)` for `http(s)://`, `ModelSource.asset(path)` for
-`asset://` or a bare path, `ModelSource.bundled(name)` for `native://`,
-`ModelSource.file(path)` for `file://`. The factory defaulted to
-`modelType: ModelType.general`.
+compile against 2.5.0: upgrade it to 0.9.1 or later. For `fromLegacyUrl`, use
+the `ModelSource` that matches the URL: `ModelSource.network(url)` for
+`http(s)://`, `ModelSource.asset(path)` for `asset://` or a bare path,
+`ModelSource.bundled(name)` for `native://`, `ModelSource.file(path)` for
+`file://`. The factory defaulted to `modelType: ModelType.general`.
+
+### `FlutterEdgeAiPlugin.createModel` is deprecated
+
+`FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
+deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
+`modelType` and `fileType` and returned the active model, which is what
+`FlutterEdgeAi.getActiveModel()` returns. The two ways to get a model are on
+`FlutterEdgeAi`:
+
+| Before | After |
+|---|---|
+| `FlutterEdgeAiPlugin.instance.createModel(modelType: …, maxTokens: …)` | `FlutterEdgeAi.getActiveModel(maxTokens: …)` |
+| several models through `src/` imports | `FlutterEdgeAi.openModel(spec, …)` on a spec from `install(activate: false)`, with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0) |
 
 ## flutter_edge_ai 2.4.0 / flutter_edge_ai_litertlm 1.14.0: backends follow the model file
 

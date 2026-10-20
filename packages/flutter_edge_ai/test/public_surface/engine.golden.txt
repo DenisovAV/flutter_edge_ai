@@ -102,6 +102,7 @@ ModelSpec class abstract
 ModelStorageException class
 ModelThinkingFilter class
 ModelType enum
+MultiModelEngine class abstract interface
 MultimodalImageHandler class
 MultimodalImageResult class
 MultimodalOrder class final

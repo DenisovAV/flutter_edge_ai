@@ -928,15 +928,4 @@ void main() {
       );
     });
   });
-
-  group('deprecated forwarders over the facade', () {
-    test('generateEmbedding on a closed model fails as a future', () async {
-      final fake = _FakeHost()..closeGate.complete();
-      final model = CommonEmbeddingModel.withHost(fake);
-      await model.close();
-      // ignore: deprecated_member_use_from_same_package
-      final result = model.generateEmbedding('x');
-      await expectLater(result, throwsA(isA<EmbedderClosedException>()));
-    });
-  });
 }

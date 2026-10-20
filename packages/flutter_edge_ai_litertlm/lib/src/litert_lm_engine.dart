@@ -9,6 +9,7 @@ import 'bundle/litertlm_bundle_reader.dart';
 import 'bundle/litertlm_load_plan.dart';
 import 'ffi/backend_preference.dart';
 import 'ffi/ffi_inference_model.dart';
+import 'litertlm_decision_section.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_vendor_host.dart';
 import 'litert_lm_engine_host.dart';
@@ -359,8 +360,12 @@ class LiteRtLmEngine
       );
     }
 
+    // Read with the model, so that a decider reads the file the engine
+    // loaded; a file without a decision costs one header read.
+    final decisionRead = await LitetuneDecisionRead.read(config.modelPath);
     return FfiInferenceModel(
       ffiClient: ffiRuntime.client,
+      decisionRead: decisionRead,
       // The value the engine was actually built with: the same rule, resolved
       // against the backend whose attempt succeeded rather than the requested
       // one, so a fallback to CPU reports the clamped context it really has.

@@ -13,7 +13,13 @@ class ModelDownloadService {
     required this.modelType,
     this.fileType = ModelFileType.task,
     this.foreground,
+    this.catalogVariant,
   });
+
+  /// The model registry build to install, when the model is one: then it is
+  /// installed with `FlutterEdgeAi.installFromCatalog`, which takes the type,
+  /// file type and pinned URL from it and checks the file's size.
+  final CatalogVariant? catalogVariant;
 
   final String modelUrl;
   final String modelFilename;
@@ -116,6 +122,16 @@ class ModelDownloadService {
       // Convert empty string to null for cleaner API
       final authToken = token.isEmpty ? null : token;
 
+      if (catalogVariant case final variant?) {
+        var install = FlutterEdgeAi.installFromCatalog(
+          variant,
+        ).withProgress((progress) => onProgress(progress.toDouble()));
+        if (authToken != null) install = install.withToken(authToken);
+        if (foreground case final value?)
+          install = install.withForeground(value);
+        await install.install();
+        return;
+      }
       // Modern API: Install inference model from network with progress tracking
       await FlutterEdgeAi.installModel(modelType: modelType, fileType: fileType)
           .fromNetwork(modelUrl, token: authToken, foreground: foreground)

@@ -1,4 +1,15 @@
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' show SttModelType;
+import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
+    show LiteRtSpeechModels, LiteRtSttVariant;
+
+// The model registry's builds (LiteRtSpeechModels), as functions: a variant is
+// read through a getter, which is not a constant.
+LiteRtSttVariant _moonshineTiny() => LiteRtSpeechModels.moonshineTiny.f32;
+LiteRtSttVariant _whisperTiny() => LiteRtSpeechModels.whisperTiny.f32;
+LiteRtSttVariant _parakeetCtc() => LiteRtSpeechModels.parakeetCtc0_6b.f32;
+LiteRtSttVariant _moonshineTinyInt8() => LiteRtSpeechModels.moonshineTiny.i8;
+LiteRtSttVariant _whisperTinyInt8() => LiteRtSpeechModels.whisperTiny.i8;
+LiteRtSttVariant _whisperBaseInt8() => LiteRtSpeechModels.whisperBase.i8;
 
 /// Catalog of on-device speech-to-text models the example can install.
 ///
@@ -20,52 +31,32 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' show SttModelType;
 /// Desktop-only: 2.35 GB f32, no small/int8 export.
 enum SttModel {
   moonshineTiny(
-    modelUrl:
-        'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
+    variant: _moonshineTiny,
     displayName: 'Moonshine Tiny',
     size: '109MB',
-    sttModelType: SttModelType.moonshine,
-    needsAuth: false,
     isSupported: true,
   ),
 
   whisperTiny(
-    modelUrl:
-        'https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_f32.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json',
+    variant: _whisperTiny,
     displayName: 'Whisper Tiny',
     size: '151MB',
-    sttModelType: SttModelType.whisper,
-    needsAuth: false,
     isSupported: true,
   ),
 
   parakeetCtc(
-    modelUrl:
-        'https://huggingface.co/litert-community/parakeet-ctc-0.6b/resolve/main/parakeet_ctc_0.6b_5s_f32.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/nvidia/parakeet-ctc-0.6b/resolve/main/tokenizer.json',
+    variant: _parakeetCtc,
     displayName: 'Parakeet CTC 0.6B (desktop)',
     size: '2.35GB',
-    sttModelType: SttModelType.parakeet,
-    needsAuth: false,
     // Desktop-only: 2.35 GB f32 (no small/int8 export) — highest-quality of the
     // three STT families. Runs the CTC path (NeMo mel + greedy CTC decode).
     isSupported: true,
   ),
 
   moonshineTinyInt8(
-    modelUrl:
-        'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_i8.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
+    variant: _moonshineTinyInt8,
     displayName: 'Moonshine Tiny (int8)',
     size: '52MB',
-    sttModelType: SttModelType.moonshine,
-    needsAuth: false,
     // Selectable, but int8 accuracy is materially lower than the f32 moonshine
     // (encoder cosine ~0.83 vs f32 on-device) — the tiny model doesn't quantize
     // cleanly. Kept enabled for comparison; expect degraded transcripts.
@@ -73,34 +64,29 @@ enum SttModel {
   ),
 
   whisperTinyInt8(
-    modelUrl:
-        'https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_i8.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json',
+    variant: _whisperTinyInt8,
     displayName: 'Whisper Tiny (int8)',
     size: '39MB',
-    sttModelType: SttModelType.whisper,
-    needsAuth: false,
     isSupported: true,
   ),
 
   whisperBaseInt8(
-    modelUrl:
-        'https://huggingface.co/litert-community/whisper-base/resolve/main/whisper_base_30s_i8.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/openai/whisper-base/resolve/main/tokenizer.json',
+    variant: _whisperBaseInt8,
     displayName: 'Whisper Base (int8)',
     size: '73MB',
-    sttModelType: SttModelType.whisper,
-    needsAuth: false,
     isSupported: true,
   );
 
-  /// STT model (`.tflite`) download URL.
-  final String modelUrl;
+  final LiteRtSttVariant Function() _variant;
 
-  /// Tokenizer (`tokenizer.json`) download URL.
-  final String tokenizerUrl;
+  /// The registry build this entry installs.
+  LiteRtSttVariant get catalogVariant => _variant();
+
+  /// STT model (`.tflite`) download URL, pinned to a commit.
+  String get modelUrl => _variant().model.url;
+
+  /// Tokenizer (`tokenizer.json`) download URL, pinned to a commit.
+  String get tokenizerUrl => _variant().tokenizer.url;
 
   /// Display name shown in the selection UI.
   final String displayName;
@@ -110,10 +96,10 @@ enum SttModel {
 
   /// Model family carried on the installed `SttModelSpec` — selects the
   /// runtime `SttModelProfile` in the generic `LiteRtSpeechRecognizer`.
-  final SttModelType sttModelType;
+  SttModelType get sttModelType => _variant().type;
 
   /// Whether downloading requires a HuggingFace access token.
-  final bool needsAuth;
+  bool get needsAuth => _variant().model.gated || _variant().tokenizer.gated;
 
   /// Whether this catalog entry has a shipped `SttModelProfile`. Entries
   /// with `isSupported: false` need a log-mel frontend that hasn't landed
@@ -125,17 +111,14 @@ enum SttModel {
   final String? unsupportedReason;
 
   const SttModel({
-    required this.modelUrl,
-    required this.tokenizerUrl,
+    required LiteRtSttVariant Function() variant,
     required this.displayName,
     required this.size,
-    required this.sttModelType,
-    required this.needsAuth,
     this.isSupported = true,
     // Every catalog entry is currently supported, so no value is passed today;
     // the field is retained for `stt_models_screen`'s disabled-entry rendering
     // and for future unsupported models.
     // ignore: unused_element_parameter
     this.unsupportedReason,
-  });
+  }) : _variant = variant;
 }

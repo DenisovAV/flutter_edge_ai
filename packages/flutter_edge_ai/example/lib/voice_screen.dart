@@ -115,19 +115,15 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading speech model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installStt()
-          .modelFromNetwork(widget.sttModel.modelUrl, token: sttToken)
-          .tokenizerFromNetwork(widget.sttModel.tokenizerUrl, token: sttToken)
-          .ofType(widget.sttModel.sttModelType)
-          .withModelProgress((percent) {
+      var sttInstall =
+          FlutterEdgeAi.installFromCatalog(
+            widget.sttModel.catalogVariant,
+          ).withProgress((percent) {
             if (!mounted) return;
             setState(() => _downloadPercent = percent);
-          })
-          .withTokenizerProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .install();
+          });
+      if (sttToken != null) sttInstall = sttInstall.withToken(sttToken);
+      await sttInstall.install();
       recognizer = await FlutterEdgeAi.getActiveStt();
 
       // --- TTS ---
@@ -139,14 +135,12 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading voice model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installTts()
-          .fromNetwork(widget.ttsModel.baseUrl)
-          .ofType(widget.ttsModel.ttsModelType)
-          .withProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .install();
+      await FlutterEdgeAi.installFromCatalog(
+        widget.ttsModel.catalogVariant,
+      ).withProgress((percent) {
+        if (!mounted) return;
+        setState(() => _downloadPercent = percent);
+      }).install();
       synth = await FlutterEdgeAi.getActiveTts();
 
       // --- LLM (no tools — see class doc) ---
@@ -162,15 +156,26 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading language model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installModel(
-        modelType: widget.llmModel.modelType,
-        fileType: widget.llmModel.fileType,
-      ).fromNetwork(widget.llmModel.url, token: llmToken).withProgress((
-        percent,
-      ) {
+      void onLlmProgress(int percent) {
         if (!mounted) return;
         setState(() => _downloadPercent = percent);
-      }).install();
+      }
+
+      if (widget.llmModel.catalogVariant case final variant?) {
+        var llmInstall = FlutterEdgeAi.installFromCatalog(
+          variant,
+        ).withProgress(onLlmProgress);
+        if (llmToken != null) llmInstall = llmInstall.withToken(llmToken);
+        await llmInstall.install();
+      } else {
+        await FlutterEdgeAi.installModel(
+              modelType: widget.llmModel.modelType,
+              fileType: widget.llmModel.fileType,
+            )
+            .fromNetwork(widget.llmModel.url, token: llmToken)
+            .withProgress(onLlmProgress)
+            .install();
+      }
 
       final model = await FlutterEdgeAi.getActiveModel(
         maxTokens: widget.llmModel.maxTokens,

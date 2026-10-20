@@ -1,22 +1,28 @@
 {
   "Model": {
     "gemma4_E2B_litertlm": {
-      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-      "webUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm",
-      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm",
+      "webUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm",
       "hfRepo": null,
       "filename": "gemma-4-E2B-it.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "gemma4",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-        "iOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-        "macOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-        "windows": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-        "linux": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm"
+        "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm",
+        "iOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm",
+        "macOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm",
+        "windows": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm",
+        "linux": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm"
       },
       "installedId": {
         "android": "gemma-4-E2B-it.litertlm",
@@ -34,22 +40,28 @@
       }
     },
     "gemma4_E4B_litertlm": {
-      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
-      "webUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.litertlm",
-      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
+      "webUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it-web.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
       "hfRepo": null,
       "filename": "gemma-4-E4B-it.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "gemma4",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
-        "iOS": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
-        "macOS": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
-        "windows": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm",
-        "linux": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm"
+        "android": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
+        "iOS": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
+        "macOS": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
+        "windows": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm",
+        "linux": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it.litertlm"
       },
       "installedId": {
         "android": "gemma-4-E4B-it.litertlm",
@@ -67,22 +79,28 @@
       }
     },
     "gemma4_E2B_intel_LNL": {
-      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_LNL.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_LNL.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm",
       "hfRepo": null,
       "filename": "gemma-4-E2B-it_intel_LNL.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "gemma4",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_LNL.litertlm",
-        "iOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_LNL.litertlm",
-        "macOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_LNL.litertlm",
-        "windows": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_LNL.litertlm",
-        "linux": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_LNL.litertlm"
+        "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm",
+        "iOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm",
+        "macOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm",
+        "windows": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm",
+        "linux": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm"
       },
       "installedId": {
         "android": "gemma-4-E2B-it_intel_LNL.litertlm",
@@ -100,22 +118,28 @@
       }
     },
     "gemma4_E2B_intel_PTL": {
-      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_PTL.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_PTL.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm",
       "hfRepo": null,
       "filename": "gemma-4-E2B-it_intel_PTL.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "gemma4",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_PTL.litertlm",
-        "iOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_PTL.litertlm",
-        "macOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_PTL.litertlm",
-        "windows": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_PTL.litertlm",
-        "linux": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_intel_PTL.litertlm"
+        "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm",
+        "iOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm",
+        "macOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm",
+        "windows": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm",
+        "linux": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm"
       },
       "installedId": {
         "android": "gemma-4-E2B-it_intel_PTL.litertlm",
@@ -133,22 +157,28 @@
       }
     },
     "gemma4_E2B_google_tensor_G6": {
-      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
       "webUrl": null,
-      "desktopUrl": null,
+      "desktopUrl": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
       "hfRepo": null,
       "filename": "gemma-4-E2B-it_Google_Tensor_G6.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "gemma4",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 1024,
       "url": {
-        "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
-        "iOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
-        "macOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
-        "windows": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
-        "linux": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G6.litertlm"
+        "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
+        "iOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
+        "macOS": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
+        "windows": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm",
+        "linux": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm"
       },
       "installedId": {
         "android": "gemma-4-E2B-it_Google_Tensor_G6.litertlm",
@@ -174,7 +204,13 @@
       "localModel": false,
       "needsAuth": false,
       "modelType": "gemma4",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 4096,
       "url": {
         "android": "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task",
@@ -207,7 +243,13 @@
       "localModel": false,
       "needsAuth": false,
       "modelType": "gemma4",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 4096,
       "url": {
         "android": "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it-web.task",
@@ -240,7 +282,13 @@
       "localModel": false,
       "needsAuth": true,
       "modelType": "gemmaIt",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 4096,
       "url": {
         "android": "https://huggingface.co/google/gemma-3n-E2B-it-litert-preview/resolve/main/gemma-3n-E2B-it-int4.task",
@@ -273,7 +321,13 @@
       "localModel": false,
       "needsAuth": true,
       "modelType": "gemmaIt",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 4096,
       "url": {
         "android": "https://huggingface.co/google/gemma-3n-E4B-it-litert-preview/resolve/main/gemma-3n-E4B-it-int4.task",
@@ -300,20 +354,26 @@
     "gemma3_1B": {
       "baseUrl": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task",
       "webUrl": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4-web.task",
-      "desktopUrl": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
       "hfRepo": null,
       "filename": "gemma3-1b-it-int4.task",
       "localModel": false,
       "needsAuth": true,
       "modelType": "gemmaIt",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task",
         "iOS": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/gemma3-1b-it-int4.task",
-        "macOS": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
-        "windows": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
-        "linux": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm"
+        "macOS": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
+        "windows": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
+        "linux": "https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm"
       },
       "installedId": {
         "android": "gemma3-1b-it-int4.task",
@@ -333,20 +393,26 @@
     "gemma3_270M": {
       "baseUrl": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task",
       "webUrl": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8-web.task",
-      "desktopUrl": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/9d2093270fb5aa49a986b49b5779d763dde7b630/gemma3-270m-it-q8.litertlm",
       "hfRepo": null,
       "filename": "gemma3-270m-it-q8.task",
       "localModel": false,
       "needsAuth": true,
       "modelType": "gemmaIt",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task",
         "iOS": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task",
-        "macOS": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm",
-        "windows": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm",
-        "linux": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm"
+        "macOS": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/9d2093270fb5aa49a986b49b5779d763dde7b630/gemma3-270m-it-q8.litertlm",
+        "windows": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/9d2093270fb5aa49a986b49b5779d763dde7b630/gemma3-270m-it-q8.litertlm",
+        "linux": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/9d2093270fb5aa49a986b49b5779d763dde7b630/gemma3-270m-it-q8.litertlm"
       },
       "installedId": {
         "android": "gemma3-270m-it-q8.task",
@@ -364,22 +430,28 @@
       }
     },
     "lfm25_230m": {
-      "baseUrl": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/58f0603b4576964013c87bbd75124a358d48cd44/LFM2.5-230M_int4.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm",
-      "hfRepo": "litert-community/LFM2.5-230M",
+      "desktopUrl": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/58f0603b4576964013c87bbd75124a358d48cd44/LFM2.5-230M_int4.litertlm",
+      "hfRepo": null,
       "filename": "LFM2.5-230M_int4.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm",
-        "iOS": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm",
-        "macOS": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm",
-        "windows": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm",
-        "linux": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm"
+        "android": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/58f0603b4576964013c87bbd75124a358d48cd44/LFM2.5-230M_int4.litertlm",
+        "iOS": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/58f0603b4576964013c87bbd75124a358d48cd44/LFM2.5-230M_int4.litertlm",
+        "macOS": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/58f0603b4576964013c87bbd75124a358d48cd44/LFM2.5-230M_int4.litertlm",
+        "windows": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/58f0603b4576964013c87bbd75124a358d48cd44/LFM2.5-230M_int4.litertlm",
+        "linux": "https://huggingface.co/litert-community/LFM2.5-230M/resolve/58f0603b4576964013c87bbd75124a358d48cd44/LFM2.5-230M_int4.litertlm"
       },
       "installedId": {
         "android": "LFM2.5-230M_int4.litertlm",
@@ -397,22 +469,28 @@
       }
     },
     "gemma3n_2B_litertlm": {
-      "baseUrl": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm",
-      "webUrl": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4-Web.litertlm",
-      "desktopUrl": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm",
+      "baseUrl": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm",
+      "webUrl": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4-Web.litertlm",
+      "desktopUrl": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm",
       "hfRepo": null,
       "filename": "gemma-3n-E2B-it-int4.litertlm",
       "localModel": false,
       "needsAuth": true,
       "modelType": "gemmaIt",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm",
-        "iOS": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm",
-        "macOS": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm",
-        "windows": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm",
-        "linux": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm"
+        "android": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm",
+        "iOS": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm",
+        "macOS": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm",
+        "windows": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm",
+        "linux": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm"
       },
       "installedId": {
         "android": "gemma-3n-E2B-it-int4.litertlm",
@@ -430,22 +508,28 @@
       }
     },
     "gemma3n_4B_litertlm": {
-      "baseUrl": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm",
-      "webUrl": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4-Web.litertlm",
-      "desktopUrl": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm",
+      "baseUrl": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
+      "webUrl": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4-Web.litertlm",
+      "desktopUrl": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
       "hfRepo": null,
       "filename": "gemma-3n-E4B-it-int4.litertlm",
       "localModel": false,
       "needsAuth": true,
       "modelType": "gemmaIt",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm",
-        "iOS": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm",
-        "macOS": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm",
-        "windows": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm",
-        "linux": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm"
+        "android": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
+        "iOS": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
+        "macOS": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
+        "windows": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm",
+        "linux": "https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/297ed75955702dec3503e00c2c2ecbbf475300bc/gemma-3n-E4B-it-int4.litertlm"
       },
       "installedId": {
         "android": "gemma-3n-E4B-it-int4.litertlm",
@@ -471,7 +555,13 @@
       "localModel": true,
       "needsAuth": false,
       "modelType": "gemmaIt",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "assets/models/gemma3-1b-it-int4-web.task",
@@ -504,7 +594,13 @@
       "localModel": true,
       "needsAuth": false,
       "modelType": "gemmaIt",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "assets/gemma-3n-E2B-it-int4.task",
@@ -537,7 +633,13 @@
       "localModel": true,
       "needsAuth": false,
       "modelType": "gemmaIt",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "assets/gemma-3n-E4B-it-int4-Web.litertlm",
@@ -562,22 +664,28 @@
       }
     },
     "qwen3_0_6B": {
-      "baseUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
       "hfRepo": null,
       "filename": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "qwen3",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
-        "iOS": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
-        "macOS": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
-        "windows": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
-        "linux": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm"
+        "android": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "iOS": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "macOS": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "windows": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+        "linux": "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm"
       },
       "installedId": {
         "android": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
@@ -603,7 +711,13 @@
       "localModel": false,
       "needsAuth": false,
       "modelType": "deepSeek",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/deepseek_q8_ekv1280.task",
@@ -630,20 +744,26 @@
     "qwen25_1_5B_Instruct": {
       "baseUrl": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/5068b3fd9788a4ed5633dc868687f778143b73f3/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
       "hfRepo": null,
       "filename": "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
       "localModel": false,
       "needsAuth": false,
       "modelType": "qwen",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
         "iOS": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
-        "macOS": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
-        "windows": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
-        "linux": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm"
+        "macOS": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/5068b3fd9788a4ed5633dc868687f778143b73f3/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        "windows": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/5068b3fd9788a4ed5633dc868687f778143b73f3/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        "linux": "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/5068b3fd9788a4ed5633dc868687f778143b73f3/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm"
       },
       "installedId": {
         "android": "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
@@ -669,7 +789,13 @@
       "localModel": false,
       "needsAuth": false,
       "modelType": "qwen",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task",
@@ -702,7 +828,13 @@
       "localModel": false,
       "needsAuth": false,
       "modelType": "qwen",
-      "fileType": "onnx",
+      "fileType": {
+        "android": "onnx",
+        "iOS": "onnx",
+        "macOS": "onnx",
+        "windows": "onnx",
+        "linux": "onnx"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct",
@@ -735,7 +867,13 @@
       "localModel": false,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/litert-community/SmolLM-135M-Instruct/resolve/main/SmolLM-135M-Instruct_multi-prefill-seq_q8_ekv1280.task",
@@ -760,22 +898,28 @@
       }
     },
     "fastVLM_0_5B": {
-      "baseUrl": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/main/FastVLM-0.5B.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/460013246392191f8532e45e518576bb6513eace/FastVLM-0.5B.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/main/FastVLM-0.5B.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/460013246392191f8532e45e518576bb6513eace/FastVLM-0.5B.litertlm",
       "hfRepo": null,
       "filename": "FastVLM-0.5B.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 2048,
       "url": {
-        "android": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/main/FastVLM-0.5B.litertlm",
-        "iOS": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/main/FastVLM-0.5B.litertlm",
-        "macOS": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/main/FastVLM-0.5B.litertlm",
-        "windows": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/main/FastVLM-0.5B.litertlm",
-        "linux": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/main/FastVLM-0.5B.litertlm"
+        "android": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/460013246392191f8532e45e518576bb6513eace/FastVLM-0.5B.litertlm",
+        "iOS": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/460013246392191f8532e45e518576bb6513eace/FastVLM-0.5B.litertlm",
+        "macOS": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/460013246392191f8532e45e518576bb6513eace/FastVLM-0.5B.litertlm",
+        "windows": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/460013246392191f8532e45e518576bb6513eace/FastVLM-0.5B.litertlm",
+        "linux": "https://huggingface.co/litert-community/FastVLM-0.5B/resolve/460013246392191f8532e45e518576bb6513eace/FastVLM-0.5B.litertlm"
       },
       "installedId": {
         "android": "FastVLM-0.5B.litertlm",
@@ -793,22 +937,28 @@
       }
     },
     "smolLM3_3B": {
-      "baseUrl": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/main/SmolLM3-3B_q4_block32_ekv4096.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/main/SmolLM3-3B_q4_block32_ekv4096.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm",
       "hfRepo": null,
       "filename": "SmolLM3-3B_q4_block32_ekv4096.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/main/SmolLM3-3B_q4_block32_ekv4096.litertlm",
-        "iOS": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/main/SmolLM3-3B_q4_block32_ekv4096.litertlm",
-        "macOS": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/main/SmolLM3-3B_q4_block32_ekv4096.litertlm",
-        "windows": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/main/SmolLM3-3B_q4_block32_ekv4096.litertlm",
-        "linux": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/main/SmolLM3-3B_q4_block32_ekv4096.litertlm"
+        "android": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm",
+        "iOS": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm",
+        "macOS": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm",
+        "windows": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm",
+        "linux": "https://huggingface.co/litert-community/SmolLM3-3B/resolve/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm"
       },
       "installedId": {
         "android": "SmolLM3-3B_q4_block32_ekv4096.litertlm",
@@ -826,22 +976,28 @@
       }
     },
     "qwen2VL_2B": {
-      "baseUrl": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/98723e7d59acce5f56befd5c25164510e1fe790a/Qwen2-VL-2B.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/98723e7d59acce5f56befd5c25164510e1fe790a/Qwen2-VL-2B.litertlm",
       "hfRepo": null,
       "filename": "Qwen2-VL-2B.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm",
-        "iOS": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm",
-        "macOS": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm",
-        "windows": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm",
-        "linux": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/main/Qwen2-VL-2B.litertlm"
+        "android": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/98723e7d59acce5f56befd5c25164510e1fe790a/Qwen2-VL-2B.litertlm",
+        "iOS": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/98723e7d59acce5f56befd5c25164510e1fe790a/Qwen2-VL-2B.litertlm",
+        "macOS": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/98723e7d59acce5f56befd5c25164510e1fe790a/Qwen2-VL-2B.litertlm",
+        "windows": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/98723e7d59acce5f56befd5c25164510e1fe790a/Qwen2-VL-2B.litertlm",
+        "linux": "https://huggingface.co/litert-community/Qwen2-VL-2B/resolve/98723e7d59acce5f56befd5c25164510e1fe790a/Qwen2-VL-2B.litertlm"
       },
       "installedId": {
         "android": "Qwen2-VL-2B.litertlm",
@@ -859,22 +1015,28 @@
       }
     },
     "phi4MiniReasoning": {
-      "baseUrl": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/main/model.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/main/model.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm",
       "hfRepo": null,
-      "filename": "Phi-4-mini-reasoning.litertlm",
+      "filename": "model.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "phi",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/main/model.litertlm",
-        "iOS": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/main/model.litertlm",
-        "macOS": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/main/model.litertlm",
-        "windows": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/main/model.litertlm",
-        "linux": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/main/model.litertlm"
+        "android": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm",
+        "iOS": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm",
+        "macOS": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm",
+        "windows": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm",
+        "linux": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm"
       },
       "installedId": {
         "android": "model.litertlm",
@@ -892,22 +1054,28 @@
       }
     },
     "smolVLM2_500M": {
-      "baseUrl": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/SmolVLM2-500M.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/78a25681a0811230bfa3079504a717e9a4a139d1/SmolVLM2-500M.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/SmolVLM2-500M.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/78a25681a0811230bfa3079504a717e9a4a139d1/SmolVLM2-500M.litertlm",
       "hfRepo": null,
       "filename": "SmolVLM2-500M.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/SmolVLM2-500M.litertlm",
-        "iOS": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/SmolVLM2-500M.litertlm",
-        "macOS": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/SmolVLM2-500M.litertlm",
-        "windows": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/SmolVLM2-500M.litertlm",
-        "linux": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/SmolVLM2-500M.litertlm"
+        "android": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/78a25681a0811230bfa3079504a717e9a4a139d1/SmolVLM2-500M.litertlm",
+        "iOS": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/78a25681a0811230bfa3079504a717e9a4a139d1/SmolVLM2-500M.litertlm",
+        "macOS": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/78a25681a0811230bfa3079504a717e9a4a139d1/SmolVLM2-500M.litertlm",
+        "windows": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/78a25681a0811230bfa3079504a717e9a4a139d1/SmolVLM2-500M.litertlm",
+        "linux": "https://huggingface.co/litert-community/SmolVLM2-500M/resolve/78a25681a0811230bfa3079504a717e9a4a139d1/SmolVLM2-500M.litertlm"
       },
       "installedId": {
         "android": "SmolVLM2-500M.litertlm",
@@ -925,22 +1093,28 @@
       }
     },
     "llavaOneVision_0_5B": {
-      "baseUrl": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/main/LLaVA-OneVision-0.5B.litertlm",
+      "baseUrl": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/f7e470a3f4c9de3b980fbd845358eaa958c70c67/LLaVA-OneVision-0.5B.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/main/LLaVA-OneVision-0.5B.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/f7e470a3f4c9de3b980fbd845358eaa958c70c67/LLaVA-OneVision-0.5B.litertlm",
       "hfRepo": null,
       "filename": "LLaVA-OneVision-0.5B.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
-        "android": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/main/LLaVA-OneVision-0.5B.litertlm",
-        "iOS": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/main/LLaVA-OneVision-0.5B.litertlm",
-        "macOS": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/main/LLaVA-OneVision-0.5B.litertlm",
-        "windows": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/main/LLaVA-OneVision-0.5B.litertlm",
-        "linux": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/main/LLaVA-OneVision-0.5B.litertlm"
+        "android": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/f7e470a3f4c9de3b980fbd845358eaa958c70c67/LLaVA-OneVision-0.5B.litertlm",
+        "iOS": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/f7e470a3f4c9de3b980fbd845358eaa958c70c67/LLaVA-OneVision-0.5B.litertlm",
+        "macOS": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/f7e470a3f4c9de3b980fbd845358eaa958c70c67/LLaVA-OneVision-0.5B.litertlm",
+        "windows": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/f7e470a3f4c9de3b980fbd845358eaa958c70c67/LLaVA-OneVision-0.5B.litertlm",
+        "linux": "https://huggingface.co/litert-community/LLaVA-OneVision-0.5B/resolve/f7e470a3f4c9de3b980fbd845358eaa958c70c67/LLaVA-OneVision-0.5B.litertlm"
       },
       "installedId": {
         "android": "LLaVA-OneVision-0.5B.litertlm",
@@ -960,20 +1134,26 @@
     "phi4_mini": {
       "baseUrl": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+      "desktopUrl": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/edafb1440931b748aeb7d0ae767109903d3d6d8d/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
       "hfRepo": null,
       "filename": "Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task",
       "localModel": false,
       "needsAuth": false,
       "modelType": "phi",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 4096,
       "url": {
         "android": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task",
         "iOS": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task",
-        "macOS": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
-        "windows": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
-        "linux": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm"
+        "macOS": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/edafb1440931b748aeb7d0ae767109903d3d6d8d/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        "windows": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/edafb1440931b748aeb7d0ae767109903d3d6d8d/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+        "linux": "https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/edafb1440931b748aeb7d0ae767109903d3d6d8d/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm"
       },
       "installedId": {
         "android": "Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task",
@@ -991,22 +1171,28 @@
       }
     },
     "functionGemma_270M_litertlm": {
-      "baseUrl": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
+      "baseUrl": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm",
       "webUrl": null,
-      "desktopUrl": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
+      "desktopUrl": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm",
       "hfRepo": null,
       "filename": "functiongemma-270M-it.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "functionGemma",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 1024,
       "url": {
-        "android": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
-        "iOS": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
-        "macOS": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
-        "windows": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm",
-        "linux": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm"
+        "android": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm",
+        "iOS": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm",
+        "macOS": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm",
+        "windows": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm",
+        "linux": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm"
       },
       "installedId": {
         "android": "functiongemma-270M-it.litertlm",
@@ -1032,7 +1218,13 @@
       "localModel": false,
       "needsAuth": false,
       "modelType": "functionGemma",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.task",
@@ -1065,7 +1257,13 @@
       "localModel": true,
       "needsAuth": false,
       "modelType": "functionGemma",
-      "fileType": "litertlm",
+      "fileType": {
+        "android": "litertlm",
+        "iOS": "litertlm",
+        "macOS": "litertlm",
+        "windows": "litertlm",
+        "linux": "litertlm"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "assets/models/functiongemma-270M-it.litertlm",
@@ -1098,7 +1296,13 @@
       "localModel": false,
       "needsAuth": false,
       "modelType": "functionGemma",
-      "fileType": "task",
+      "fileType": {
+        "android": "task",
+        "iOS": "task",
+        "macOS": "task",
+        "windows": "task",
+        "linux": "task"
+      },
       "maxTokens": 1024,
       "url": {
         "android": "https://huggingface.co/sasha-denisov/functiongemma-flutter-gemma-demo/resolve/main/functiongemma-flutter_q8_ekv1024.task",
@@ -1131,7 +1335,13 @@
       "localModel": true,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "builtIn",
+      "fileType": {
+        "android": "builtIn",
+        "iOS": "builtIn",
+        "macOS": "builtIn",
+        "windows": "builtIn",
+        "linux": "builtIn"
+      },
       "maxTokens": 4096,
       "url": {
         "android": "https://developers.google.com/ml-kit/genai/prompt/android",
@@ -1164,7 +1374,13 @@
       "localModel": true,
       "needsAuth": false,
       "modelType": "general",
-      "fileType": "builtIn",
+      "fileType": {
+        "android": "builtIn",
+        "iOS": "builtIn",
+        "macOS": "builtIn",
+        "windows": "builtIn",
+        "linux": "builtIn"
+      },
       "maxTokens": 4096,
       "url": {
         "android": "https://developer.apple.com/documentation/foundationmodels",
@@ -1196,7 +1412,7 @@
       "tokenizerUrl": "https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model",
       "tokenizerFilename": "embeddinggemma-300m-seq1024__sentencepiece__rev-29888fcee321.model",
       "sourceType": "network",
-      "sha256": null,
+      "sha256": "8b0b8bbd0aa95f9f747c25a6c87cd05a8286933282660f6a50da877662917e31",
       "ragProfileId": "embeddinggemma-300m-seq1024-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1",
       "imageRagProfileId": null,
       "dimension": 768,
@@ -1221,7 +1437,7 @@
       "tokenizerUrl": "https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model",
       "tokenizerFilename": "embeddinggemma-300m-seq2048__sentencepiece__rev-29888fcee321.model",
       "sourceType": "network",
-      "sha256": null,
+      "sha256": "d39b0bb3346bfb4f884f3bbce3196b261895aeece7e7ac02ffb44ed6e0f39381",
       "ragProfileId": "embeddinggemma-300m-seq2048-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1",
       "imageRagProfileId": null,
       "dimension": 768,
@@ -1246,7 +1462,7 @@
       "tokenizerUrl": "https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model",
       "tokenizerFilename": "embeddinggemma-300m-seq256__sentencepiece__rev-29888fcee321.model",
       "sourceType": "network",
-      "sha256": null,
+      "sha256": "37115ef7bff76cd37dd86abe503ff511b1032bf85fc624a85c49c84899e92bc5",
       "ragProfileId": "embeddinggemma-300m-seq256-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1",
       "imageRagProfileId": null,
       "dimension": 768,
@@ -1296,7 +1512,7 @@
       "tokenizerUrl": "https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model",
       "tokenizerFilename": "embeddinggemma-300m-seq512__sentencepiece__rev-29888fcee321.model",
       "sourceType": "network",
-      "sha256": null,
+      "sha256": "ad09e81557203cb0e177abf9bf8727dfe138a7d394aa0f70f0b2ed16432e121a",
       "ragProfileId": "embeddinggemma-300m-seq512-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1",
       "imageRagProfileId": null,
       "dimension": 768,
@@ -1634,7 +1850,7 @@
       "tokenizerUrl": "https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/sentencepiece.model",
       "tokenizerFilename": "gecko-110m-en-seq64__sentencepiece__rev-61a0d0c2cdc9.model",
       "sourceType": "network",
-      "sha256": null,
+      "sha256": "19f04c9397c814c293d8c6caa045b89da298c77064d65e90d8f85f4c02ad466f",
       "ragProfileId": "gecko-110m-en-seq64-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
       "imageRagProfileId": null,
       "dimension": 768,
@@ -1659,7 +1875,7 @@
       "tokenizerUrl": "https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/sentencepiece.model",
       "tokenizerFilename": "gecko-110m-en-seq256__sentencepiece__rev-61a0d0c2cdc9.model",
       "sourceType": "network",
-      "sha256": null,
+      "sha256": "81505c2a296878467fba5bb066fe3646f75e04d19220fbf219c0c968f5ea2ce4",
       "ragProfileId": "gecko-110m-en-seq256-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
       "imageRagProfileId": null,
       "dimension": 768,
@@ -1684,7 +1900,7 @@
       "tokenizerUrl": "https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/sentencepiece.model",
       "tokenizerFilename": "gecko-110m-en-seq512__sentencepiece__rev-61a0d0c2cdc9.model",
       "sourceType": "network",
-      "sha256": null,
+      "sha256": "2b11bb47da36b6085e65f46af28609f64ec13feb039e8d319cdaa0a10d608b19",
       "ragProfileId": "gecko-110m-en-seq512-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
       "imageRagProfileId": null,
       "dimension": 768,
@@ -1706,7 +1922,7 @@
   },
   "TranslateModel": {
     "translateGemma4Int4": {
-      "url": "https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/resolve/main/artifacts/int4-generic/translategemma-4b-it-int4-generic.litertlm",
+      "url": "https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/resolve/a45b06a66177e5cbc6d95babe2f89c1df75c0219/artifacts/int4-generic/translategemma-4b-it-int4-generic.litertlm",
       "installedId": "translategemma-4b-it-int4-generic.litertlm",
       "filename": "translategemma-4b-it-int4-generic.litertlm",
       "needsAuth": false,
@@ -1716,7 +1932,7 @@
       "maxTokens": 1024
     },
     "translateGemma4Int8": {
-      "url": "https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/resolve/main/artifacts/dynamic_int8-generic/translategemma-4b-it-dynamic_int8-generic.litertlm",
+      "url": "https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/resolve/a45b06a66177e5cbc6d95babe2f89c1df75c0219/artifacts/dynamic_int8-generic/translategemma-4b-it-dynamic_int8-generic.litertlm",
       "installedId": "translategemma-4b-it-dynamic_int8-generic.litertlm",
       "filename": "translategemma-4b-it-dynamic_int8-generic.litertlm",
       "needsAuth": false,
@@ -1728,43 +1944,43 @@
   },
   "SttModel": {
     "moonshineTiny": {
-      "modelUrl": "https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite",
-      "tokenizerUrl": "https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json",
+      "modelUrl": "https://huggingface.co/litert-community/moonshine-tiny/resolve/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_f32.tflite",
+      "tokenizerUrl": "https://huggingface.co/moonshine-ai/moonshine/resolve/48b4e427b587bcf67797a5be706d6ddc4a298149/ctranslate2/tiny/tokenizer.json",
       "sttModelType": "moonshine",
       "needsAuth": false,
       "isSupported": true
     },
     "whisperTiny": {
-      "modelUrl": "https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_f32.tflite",
-      "tokenizerUrl": "https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json",
+      "modelUrl": "https://huggingface.co/litert-community/whisper-tiny/resolve/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_f32.tflite",
+      "tokenizerUrl": "https://huggingface.co/openai/whisper-tiny/resolve/169d4a4341b33bc18d8881c4b69c2e104e1cc0af/tokenizer.json",
       "sttModelType": "whisper",
       "needsAuth": false,
       "isSupported": true
     },
     "parakeetCtc": {
-      "modelUrl": "https://huggingface.co/litert-community/parakeet-ctc-0.6b/resolve/main/parakeet_ctc_0.6b_5s_f32.tflite",
-      "tokenizerUrl": "https://huggingface.co/nvidia/parakeet-ctc-0.6b/resolve/main/tokenizer.json",
+      "modelUrl": "https://huggingface.co/litert-community/parakeet-ctc-0.6b/resolve/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32.tflite",
+      "tokenizerUrl": "https://huggingface.co/nvidia/parakeet-ctc-0.6b/resolve/ad09ba1cc62743fbc9814de5d2016fca9096485a/tokenizer.json",
       "sttModelType": "parakeet",
       "needsAuth": false,
       "isSupported": true
     },
     "moonshineTinyInt8": {
-      "modelUrl": "https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_i8.tflite",
-      "tokenizerUrl": "https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json",
+      "modelUrl": "https://huggingface.co/litert-community/moonshine-tiny/resolve/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_i8.tflite",
+      "tokenizerUrl": "https://huggingface.co/moonshine-ai/moonshine/resolve/48b4e427b587bcf67797a5be706d6ddc4a298149/ctranslate2/tiny/tokenizer.json",
       "sttModelType": "moonshine",
       "needsAuth": false,
       "isSupported": true
     },
     "whisperTinyInt8": {
-      "modelUrl": "https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_i8.tflite",
-      "tokenizerUrl": "https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json",
+      "modelUrl": "https://huggingface.co/litert-community/whisper-tiny/resolve/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_i8.tflite",
+      "tokenizerUrl": "https://huggingface.co/openai/whisper-tiny/resolve/169d4a4341b33bc18d8881c4b69c2e104e1cc0af/tokenizer.json",
       "sttModelType": "whisper",
       "needsAuth": false,
       "isSupported": true
     },
     "whisperBaseInt8": {
-      "modelUrl": "https://huggingface.co/litert-community/whisper-base/resolve/main/whisper_base_30s_i8.tflite",
-      "tokenizerUrl": "https://huggingface.co/openai/whisper-base/resolve/main/tokenizer.json",
+      "modelUrl": "https://huggingface.co/litert-community/whisper-base/resolve/ba2c613646edc2b72f5a51fa0b5b0b322e436101/whisper_base_30s_i8.tflite",
+      "tokenizerUrl": "https://huggingface.co/openai/whisper-base/resolve/e37978b90ca9030d5170a5c07aadb050351a65bb/tokenizer.json",
       "sttModelType": "whisper",
       "needsAuth": false,
       "isSupported": true
@@ -1772,7 +1988,7 @@
   },
   "TtsModel": {
     "matcha": {
-      "baseUrl": "https://huggingface.co/litert-community/Matcha-TTS/resolve/main/",
+      "baseUrl": "https://huggingface.co/litert-community/Matcha-TTS/resolve/6dd0418da3204f5704d7afb66722d795e84fcbe5/",
       "ttsModelType": "matcha",
       "isSupported": true
     },
@@ -1782,19 +1998,9 @@
       "isSupported": true
     },
     "inflect": {
-      "baseUrl": "https://huggingface.co/sasha-denisov/inflect-nano-v2-litert/resolve/main/",
+      "baseUrl": "https://huggingface.co/sasha-denisov/inflect-nano-v2-litert/resolve/4f03cf68b5447ab22cdfa8bd052a78c6c9763891/",
       "ttsModelType": "inflect",
       "isSupported": true
-    },
-    "kokoro": {
-      "baseUrl": "https://huggingface.co/litert-community/Kokoro-82M/resolve/main/",
-      "ttsModelType": "kokoro",
-      "isSupported": false
-    },
-    "supertonic": {
-      "baseUrl": "https://huggingface.co/soniqo/Supertonic-3-LiteRT/resolve/main/",
-      "ttsModelType": "supertonic",
-      "isSupported": false
     }
   }
 }

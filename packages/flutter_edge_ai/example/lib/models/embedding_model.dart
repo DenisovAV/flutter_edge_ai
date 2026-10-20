@@ -1,7 +1,55 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter_edge_ai/flutter_edge_ai.dart' show PreferredBackend;
+import 'package:flutter_edge_ai/flutter_edge_ai.dart'
+    show EmbeddingModality, NpuVendor, PreferredBackend;
+
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
+    show LiteRtEmbedderVariant, LiteRtEmbedders;
 
 import 'base_model.dart';
+
+// The model registry's builds (LiteRtEmbedders), as functions: a variant is
+// read through a getter, which is not a constant. Their files, install
+// names, profile ids, sizes and NPU targets are fixed there; a published
+// one never changes, so an installed model and a stored index keep working.
+LiteRtEmbedderVariant _embeddingGemma1024() =>
+    LiteRtEmbedders.embeddinggemma300m.seq1024;
+LiteRtEmbedderVariant _embeddingGemma2048() =>
+    LiteRtEmbedders.embeddinggemma300m.seq2048;
+LiteRtEmbedderVariant _embeddingGemma256() =>
+    LiteRtEmbedders.embeddinggemma300m.seq256;
+LiteRtEmbedderVariant _embeddingGemma512() =>
+    LiteRtEmbedders.embeddinggemma300m.seq512;
+LiteRtEmbedderVariant _embeddingGemma2Text270m() =>
+    LiteRtEmbedders.embeddinggemma2Text270m.generic;
+LiteRtEmbedderVariant _embeddingGemma2TextVision440m() =>
+    LiteRtEmbedders.embeddinggemma2TextVision440m.generic;
+LiteRtEmbedderVariant _embeddingGemma2TextVisionAudio740m() =>
+    LiteRtEmbedders.embeddinggemma2_740m.generic;
+LiteRtEmbedderVariant _embeddingGemma2Text270mSm8850() =>
+    LiteRtEmbedders.embeddinggemma2Text270m.npuSm8850;
+LiteRtEmbedderVariant _embeddingGemma2TextVision440mSm8850() =>
+    LiteRtEmbedders.embeddinggemma2TextVision440m.npuSm8850;
+LiteRtEmbedderVariant _embeddingGemma2TextVisionAudio740mSm8850() =>
+    LiteRtEmbedders.embeddinggemma2_740m.npuSm8850;
+LiteRtEmbedderVariant _embeddingGemma2Text270mSm8650() =>
+    LiteRtEmbedders.embeddinggemma2Text270m.npuSm8650;
+LiteRtEmbedderVariant _embeddingGemma2TextVision440mSm8650() =>
+    LiteRtEmbedders.embeddinggemma2TextVision440m.npuSm8650;
+LiteRtEmbedderVariant _embeddingGemma2Text270mQcs8275() =>
+    LiteRtEmbedders.embeddinggemma2Text270m.npuQcs8275;
+LiteRtEmbedderVariant _embeddingGemma2TextVision440mQcs8275() =>
+    LiteRtEmbedders.embeddinggemma2TextVision440m.npuQcs8275;
+LiteRtEmbedderVariant _embeddingGemma2Text270mPtl() =>
+    LiteRtEmbedders.embeddinggemma2Text270m.npuPtl;
+LiteRtEmbedderVariant _embeddingGemma2TextVision440mPtl() =>
+    LiteRtEmbedders.embeddinggemma2TextVision440m.npuPtl;
+LiteRtEmbedderVariant _embeddingGemma2Text270mTensorG6() =>
+    LiteRtEmbedders.embeddinggemma2Text270m.npuTensorG6;
+LiteRtEmbedderVariant _embeddingGemma2TextVision440mTensorG6() =>
+    LiteRtEmbedders.embeddinggemma2TextVision440m.npuTensorG6;
+LiteRtEmbedderVariant _gecko64() => LiteRtEmbedders.gecko110mEn.seq64Quant;
+LiteRtEmbedderVariant _gecko256() => LiteRtEmbedders.gecko110mEn.seq256Quant;
+LiteRtEmbedderVariant _gecko512() => LiteRtEmbedders.gecko110mEn.seq512Quant;
 
 /// Vision tokens per EmbeddingGemma 2 image in this app: the
 /// `LiteRtEmbeddingBackend` default, registered in gemma_bootstrap.dart.
@@ -16,57 +64,21 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // EmbeddingGemma-300M models (all generate 768D embeddings)
   // Numbers in names indicate max sequence length, not embedding dimension
   embeddingGemma1024(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/embeddinggemma-300M_seq1024_mixed-precision.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model',
-    filename:
-        'embeddinggemma-300M_seq1024_mixed-precision__rev-29888fcee321.tflite',
-    tokenizerFilename:
-        'embeddinggemma-300m-seq1024__sentencepiece__rev-29888fcee321.model',
+    variant: _embeddingGemma1024,
     displayName: 'EmbeddingGemma (seq=1024)',
     size: '183MB',
-    dimension: 768, // Fixed embedding dimension for EmbeddingGemma-300M
-    maxSeqLen: 1024,
-    needsAuth: true,
-    ragProfileId:
-        'embeddinggemma-300m-seq1024-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1',
   ),
 
   embeddingGemma2048(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/embeddinggemma-300M_seq2048_mixed-precision.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model',
-    filename:
-        'embeddinggemma-300M_seq2048_mixed-precision__rev-29888fcee321.tflite',
-    tokenizerFilename:
-        'embeddinggemma-300m-seq2048__sentencepiece__rev-29888fcee321.model',
+    variant: _embeddingGemma2048,
     displayName: 'EmbeddingGemma (seq=2048)',
     size: '196MB',
-    dimension: 768, // Fixed embedding dimension for EmbeddingGemma-300M
-    maxSeqLen: 2048,
-    needsAuth: true,
-    ragProfileId:
-        'embeddinggemma-300m-seq2048-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1',
   ),
 
   embeddingGemma256(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/embeddinggemma-300M_seq256_mixed-precision.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model',
-    filename:
-        'embeddinggemma-300M_seq256_mixed-precision__rev-29888fcee321.tflite',
-    tokenizerFilename:
-        'embeddinggemma-300m-seq256__sentencepiece__rev-29888fcee321.model',
+    variant: _embeddingGemma256,
     displayName: 'EmbeddingGemma (seq=256)',
     size: '179MB',
-    dimension: 768, // Fixed embedding dimension for EmbeddingGemma-300M
-    maxSeqLen: 256,
-    needsAuth: true,
-    ragProfileId:
-        'embeddinggemma-300m-seq256-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1',
   ),
 
   // Local model for fast testing (no auth required)
@@ -83,7 +95,6 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     size: '171MB (Local - No Auth)',
     dimension: 768, // Fixed embedding dimension for EmbeddingGemma-300M
     maxSeqLen: 256,
-    needsAuth: false,
     sourceType: ModelSourceType
         .asset, // Use Flutter assets - works in debug and production
     // Kept separate from the hosted seq=256 profile until the checked-in asset
@@ -93,21 +104,9 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   ),
 
   embeddingGemma512(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/embeddinggemma-300M_seq512_mixed-precision.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/29888fcee3216acadc7e844906e5fe0d79a61875/sentencepiece.model',
-    filename:
-        'embeddinggemma-300M_seq512_mixed-precision__rev-29888fcee321.tflite',
-    tokenizerFilename:
-        'embeddinggemma-300m-seq512__sentencepiece__rev-29888fcee321.model',
+    variant: _embeddingGemma512,
     displayName: 'EmbeddingGemma (seq=512)',
     size: '179MB',
-    dimension: 768, // Fixed embedding dimension for EmbeddingGemma-300M
-    maxSeqLen: 512,
-    needsAuth: true,
-    ragProfileId:
-        'embeddinggemma-300m-seq512-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1',
   ),
 
   // EmbeddingGemma 2 text (270M): ONE self-contained `.litertlm` bundle that
@@ -116,20 +115,9 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // flutter_edge_ai_litertlm 1.13.1; no CPU path there). Input cap 1024 tokens
   // (prefix, BOS and EOS included) — keep RAG chunks at 512 or below.
   embeddingGemma2Text270m(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm',
-    filename: 'embeddinggemma-2-text-270m__rev-9be6e8b90982.litertlm',
+    variant: _embeddingGemma2Text270m,
     displayName: 'EmbeddingGemma 2 Text (270M)',
     size: '165MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '2d079ee2f6f066b1f368e8d7c819f55214eaef1d0513b312321901f30ab286fb',
-    // Keyed by the text-encoder weights section (sha256 prefix 4410a540ce75):
-    // byte-identical in the 270m, 440m and 740m generic bundles, which give
-    // identical text vectors, so one id serves all three. Never shared with
-    // EmbeddingGemma 1 or an ONNX export of EG2.
-    ragProfileId: 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1',
   ),
 
   // EmbeddingGemma 2 Text + Vision (440M): the 270M's text tower (the same
@@ -141,19 +129,9 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // web keeps no weight cache), and about 385 MB more RAM from the first image
   // on. For text alone the 270M is the better choice.
   embeddingGemma2TextVision440m(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m.litertlm',
-    filename: 'embeddinggemma-2-text-vision-440m__rev-e301f74d5551.litertlm',
+    variant: _embeddingGemma2TextVision440m,
     displayName: 'EmbeddingGemma 2 Text + Vision (440M)',
     size: '388MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '92dcbea108899e5d6e30d919b0744f90d9967e80c67a4ab5503ac16d54f62eb0',
-    // Text vectors are identical to the 270M's, so text stores share its id.
-    // An image index uses imageRagProfileId.
-    ragProfileId: 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1',
-    embedsImages: true,
   ),
 
   // EmbeddingGemma 2 (740M): the 440M's text and vision towers (the same
@@ -167,18 +145,9 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // use), and more RAM on the first clip. Audio vectors do not depend on the
   // vision budget, so an audio index keeps the text id.
   embeddingGemma2TextVisionAudio740m(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/resolve/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m.litertlm',
-    filename: 'embeddinggemma-2-740m__rev-24d962e906c7.litertlm',
+    variant: _embeddingGemma2TextVisionAudio740m,
     displayName: 'EmbeddingGemma 2 Text + Vision + Audio (740M)',
     size: '485MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: 'e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c',
-    ragProfileId: 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1',
-    embedsImages: true,
-    embedsAudio: true,
   ),
 
   // EmbeddingGemma 2 compiled for one Qualcomm NPU (Google's per-SoC
@@ -195,36 +164,15 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // towers (sha256 prefix aaae57a31475 for SM8850, d6db62a3616b for SM8650,
   // 685619825c4e for QCS8275), so they share it, as the generic bundles do.
   embeddingGemma2Text270mSm8850(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm',
-    filename:
-        'embeddinggemma-2-text-270m_Qualcomm_SM8850__rev-9be6e8b90982.litertlm',
+    variant: _embeddingGemma2Text270mSm8850,
     displayName: 'EmbeddingGemma 2 Text (270M) · Qualcomm SM8850 NPU',
     size: '202MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '72992b649c812ae9e30ffa9ad88fc662e649f7b643500d28051fbd457ad0d22a',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850',
-    npuSoc: 'SM8850',
   ),
 
   embeddingGemma2TextVision440mSm8850(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Qualcomm_SM8850.litertlm',
-    filename:
-        'embeddinggemma-2-text-vision-440m_Qualcomm_SM8850__rev-e301f74d5551.litertlm',
+    variant: _embeddingGemma2TextVision440mSm8850,
     displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Qualcomm SM8850 NPU',
     size: '463MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '661369235aa9fc23cf04a213d4e445c4634073832279f5a261ed22650a8ebc5b',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850',
-    embedsImages: true,
-    npuSoc: 'SM8850',
   ),
 
   // The 740M for SM8850 carries the 440M SM8850's text and vision towers
@@ -232,88 +180,34 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // bundle's audio encoder, so it shares their ids. Run on a Galaxy S26+
   // (SM8850, DDP): text and images on the NPU, audio on the CPU.
   embeddingGemma2TextVisionAudio740mSm8850(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/resolve/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m_Qualcomm_SM8850.litertlm',
-    filename:
-        'embeddinggemma-2-740m_Qualcomm_SM8850__rev-24d962e906c7.litertlm',
+    variant: _embeddingGemma2TextVisionAudio740mSm8850,
     displayName:
         'EmbeddingGemma 2 Text + Vision + Audio (740M) · Qualcomm SM8850 NPU',
     size: '559MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '19f6e8db6aa74b116d1c558c862ee131f60ce093576d3c8dd1898f656ca8080b',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850',
-    embedsImages: true,
-    embedsAudio: true,
-    npuSoc: 'SM8850',
   ),
 
   embeddingGemma2Text270mSm8650(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Qualcomm_SM8650.litertlm',
-    filename:
-        'embeddinggemma-2-text-270m_Qualcomm_SM8650__rev-9be6e8b90982.litertlm',
+    variant: _embeddingGemma2Text270mSm8650,
     displayName: 'EmbeddingGemma 2 Text (270M) · Qualcomm SM8650 NPU',
     size: '208MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '7dabcb17eed982d6de4435aaf29cc56147a627f6ab20a1e37aadd7af5399457b',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650',
-    npuSoc: 'SM8650',
   ),
 
   embeddingGemma2TextVision440mSm8650(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Qualcomm_SM8650.litertlm',
-    filename:
-        'embeddinggemma-2-text-vision-440m_Qualcomm_SM8650__rev-e301f74d5551.litertlm',
+    variant: _embeddingGemma2TextVision440mSm8650,
     displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Qualcomm SM8650 NPU',
     size: '466MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: 'ec7d2ee513830337343567409f32fea4a3e4f8f7b94facd0a20f3d3523cd7480',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650',
-    embedsImages: true,
-    npuSoc: 'SM8650',
   ),
 
   embeddingGemma2Text270mQcs8275(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Qualcomm_QCS8275.litertlm',
-    filename:
-        'embeddinggemma-2-text-270m_Qualcomm_QCS8275__rev-9be6e8b90982.litertlm',
+    variant: _embeddingGemma2Text270mQcs8275,
     displayName: 'EmbeddingGemma 2 Text (270M) · Qualcomm QCS8275 NPU',
     size: '208MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '128c32151613a5bbf8b5695b2d9ae271057338febbf06e3aeebf29e1353cb51d',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275',
-    npuSoc: 'QCS8275',
   ),
 
   embeddingGemma2TextVision440mQcs8275(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275.litertlm',
-    filename:
-        'embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275__rev-e301f74d5551.litertlm',
+    variant: _embeddingGemma2TextVision440mQcs8275,
     displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Qualcomm QCS8275 NPU',
     size: '466MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: 'ce8ccce80a12f6bc9acfe664b76c3cc46a698f0da81ae857f706b06b9a4c7d38',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275',
-    embedsImages: true,
-    npuSoc: 'QCS8275',
   ),
 
   // EmbeddingGemma 2 compiled for the Intel Panther Lake NPU (Google's
@@ -326,38 +220,16 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // 440m carry byte-identical text towers (sha256 prefix 84f8711d914c; the
   // tokenizer and token-embedding sections match too), so they share it.
   embeddingGemma2Text270mPtl(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Intel_PTL.litertlm',
-    filename: 'embeddinggemma-2-text-270m_Intel_PTL__rev-9be6e8b90982.litertlm',
+    variant: _embeddingGemma2Text270mPtl,
     displayName: 'EmbeddingGemma 2 Text (270M) · Intel Panther Lake NPU',
     size: '317MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '048e219d702d23cf19cb9a75e7595e61e320bc61a3919e0cbf1a30dfb5cc64f4',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-ptl',
-    npuSoc: 'PTL',
-    npuVendor: EmbeddingNpuVendor.intel,
   ),
 
   embeddingGemma2TextVision440mPtl(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Intel_PTL.litertlm',
-    filename:
-        'embeddinggemma-2-text-vision-440m_Intel_PTL__rev-e301f74d5551.litertlm',
+    variant: _embeddingGemma2TextVision440mPtl,
     displayName:
         'EmbeddingGemma 2 Text + Vision (440M) · Intel Panther Lake NPU',
     size: '752MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '7f4c104b30ea6185516439aef534b84d9e7066366112506d5d8843e350fd08c9',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-ptl',
-    embedsImages: true,
-    npuSoc: 'PTL',
-    npuVendor: EmbeddingNpuVendor.intel,
   ),
 
   // EmbeddingGemma 2 compiled for the Google Tensor G6 NPU (Google's
@@ -370,141 +242,94 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // carry byte-identical text towers (sha256 prefix 4130ab1123ab; the
   // tokenizer and token-embedding sections match too), so they share it.
   embeddingGemma2Text270mTensorG6(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Google_Tensor_G6.litertlm',
-    filename:
-        'embeddinggemma-2-text-270m_Google_Tensor_G6__rev-9be6e8b90982.litertlm',
+    variant: _embeddingGemma2Text270mTensorG6,
     displayName: 'EmbeddingGemma 2 Text (270M) · Google Tensor G6 NPU',
     size: '200MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '4cd282395a7b611ec8dec95160cd31a1f471a7b1cde1fc71717aa539c2a29883',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6',
-    npuSoc: 'Tensor_G6',
-    npuVendor: EmbeddingNpuVendor.googleTensor,
   ),
 
   embeddingGemma2TextVision440mTensorG6(
-    url:
-        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Google_Tensor_G6.litertlm',
-    filename:
-        'embeddinggemma-2-text-vision-440m_Google_Tensor_G6__rev-e301f74d5551.litertlm',
+    variant: _embeddingGemma2TextVision440mTensorG6,
     displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Google Tensor G6 NPU',
     size: '513MB',
-    dimension: 768,
-    maxSeqLen: 1024,
-    needsAuth: false,
-    sha256: '40e98aeed9ef08abfd91d5d309f64f4fa06195c513931e917bcf5ea41a910668',
-    ragProfileId:
-        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6',
-    embedsImages: true,
-    npuSoc: 'Tensor_G6',
-    npuVendor: EmbeddingNpuVendor.googleTensor,
   ),
 
   // Gecko-110m models (generate 768D embeddings)
   // Gecko 64 is the smallest and fastest model - ideal for short queries
-  gecko64(
-    url:
-        'https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_64_quant.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/sentencepiece.model',
-    filename: 'Gecko_64_quant__rev-61a0d0c2cdc9.tflite',
-    tokenizerFilename:
-        'gecko-110m-en-seq64__sentencepiece__rev-61a0d0c2cdc9.model',
-    displayName: 'Gecko (seq=64)',
-    size: '112MB',
-    dimension: 768, // Fixed embedding dimension for Gecko-110m
-    maxSeqLen: 64,
-    needsAuth: false,
-    ragProfileId:
-        'gecko-110m-en-seq64-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1',
-  ),
+  gecko64(variant: _gecko64, displayName: 'Gecko (seq=64)', size: '112MB'),
 
-  gecko256(
-    url:
-        'https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_256_quant.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/sentencepiece.model',
-    filename: 'Gecko_256_quant__rev-61a0d0c2cdc9.tflite',
-    tokenizerFilename:
-        'gecko-110m-en-seq256__sentencepiece__rev-61a0d0c2cdc9.model',
-    displayName: 'Gecko (seq=256)',
-    size: '114MB',
-    dimension: 768, // Fixed embedding dimension for Gecko-110m
-    maxSeqLen: 256,
-    needsAuth: false,
-    ragProfileId:
-        'gecko-110m-en-seq256-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1',
-  ),
+  gecko256(variant: _gecko256, displayName: 'Gecko (seq=256)', size: '114MB'),
 
-  gecko512(
-    url:
-        'https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_512_quant.tflite',
-    tokenizerUrl:
-        'https://huggingface.co/litert-community/Gecko-110m-en/resolve/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/sentencepiece.model',
-    filename: 'Gecko_512_quant__rev-61a0d0c2cdc9.tflite',
-    tokenizerFilename:
-        'gecko-110m-en-seq512__sentencepiece__rev-61a0d0c2cdc9.model',
-    displayName: 'Gecko (seq=512)',
-    size: '120MB',
-    dimension: 768, // Fixed embedding dimension for Gecko-110m
-    maxSeqLen: 512,
-    needsAuth: false,
-    ragProfileId:
-        'gecko-110m-en-seq512-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1',
-  );
+  gecko512(variant: _gecko512, displayName: 'Gecko (seq=512)', size: '120MB');
 
-  /// Enum fields
+  /// The registry build this entry installs; null for the bundled asset.
+  final LiteRtEmbedderVariant Function()? _variant;
+
+  /// The registry build this entry installs; null for the bundled asset.
+  LiteRtEmbedderVariant? get catalogVariant => _variant?.call();
+
+  final String? _url;
+  final String? _tokenizerUrl;
+  final String? _filename;
+  final String? _tokenizerFilename;
+  final int? _dimension;
+  final int? _maxSeqLen;
+  final String? _ragProfileId;
+
   @override
-  final String url;
+  String get url => catalogVariant?.model.url ?? _url!;
   @override
-  final String? tokenizerUrl;
+  String? get tokenizerUrl =>
+      catalogVariant == null ? _tokenizerUrl : catalogVariant!.tokenizer?.url;
   @override
-  final String filename;
+  String get filename => catalogVariant?.model.installFilename ?? _filename!;
   @override
-  final String? tokenizerFilename;
+  String? get tokenizerFilename => catalogVariant == null
+      ? _tokenizerFilename
+      : catalogVariant!.tokenizer?.installFilename;
   @override
   final String displayName;
   @override
   final String size;
   @override
-  final int dimension;
+  int get dimension => catalogVariant?.dimension ?? _dimension!;
   @override
-  final int maxSeqLen;
+  int get maxSeqLen => catalogVariant?.maxInputTokens ?? _maxSeqLen!;
   @override
-  final bool needsAuth;
+  bool get needsAuth => catalogVariant?.model.gated ?? false;
   @override
   final ModelSourceType sourceType;
 
-  /// Stable identity of the complete embedding space used by the RAG demo.
-  ///
-  /// Bump this whenever weights, tokenizer, task prefixes, pooling, or
-  /// normalization change. It must never be derived from a mutable URL, local
-  /// path, or vector dimension.
-  final String ragProfileId;
+  /// Stable identity of the complete embedding space used by the RAG demo,
+  /// fixed by the registry for a published build: weights, tokenizer, task
+  /// prefixes, pooling and normalization. Never derived from a mutable URL,
+  /// a local path or the vector dimension.
+  String get ragProfileId => catalogVariant?.ragProfileId ?? _ragProfileId!;
 
-  /// SHA-256 of the pinned model file, where the catalog records one. The
-  /// EmbeddingGemma 2 integration suite checks the installed bundle against
-  /// it.
-  final String? sha256;
+  /// SHA-256 of the pinned model file. The EmbeddingGemma 2 integration
+  /// suite checks the installed bundle against it.
+  String? get sha256 => catalogVariant?.model.sha256;
 
   /// Whether the model embeds images (a bundle with a vision encoder).
-  final bool embedsImages;
+  bool get embedsImages =>
+      catalogVariant?.modalities.contains(EmbeddingModality.image) ?? false;
 
   /// Whether the model embeds audio (a bundle with an audio encoder; native
   /// platforms, and the web from flutter_edge_ai_litertlm 1.13.2).
-  final bool embedsAudio;
+  bool get embedsAudio =>
+      catalogVariant?.modalities.contains(EmbeddingModality.audio) ?? false;
 
-  /// The SoC a per-SoC EmbeddingGemma 2 bundle is compiled for, as its file
-  /// name spells it (`SM8850`, `PTL`), or null for a model that runs on CPU.
-  final String? npuSoc;
+  /// The SoC a per-SoC bundle is compiled for, as its compiler stamped it
+  /// (`SM8850`, `PTL`, `Tensor_G6`), or null for a model that runs on CPU.
+  String? get npuSoc => catalogVariant?.npuTarget?.soc;
 
-  /// Whose NPU [npuSoc] is: Qualcomm (the default for a per-SoC bundle) or
-  /// Intel. Decides where the bundle is listed ([listedEmbeddingModels]).
-  final EmbeddingNpuVendor npuVendor;
+  /// Whose NPU [npuSoc] is. Decides where the bundle is listed
+  /// ([listedEmbeddingModels]).
+  EmbeddingNpuVendor get npuVendor =>
+      switch (catalogVariant?.npuTarget?.npuVendor) {
+        NpuVendor.intel => EmbeddingNpuVendor.intel,
+        NpuVendor.googleTensor => EmbeddingNpuVendor.googleTensor,
+        _ => EmbeddingNpuVendor.qualcomm,
+      };
 
   /// What to pass `getActiveEmbedder(preferredBackend:)` for this model: npu
   /// for a per-SoC bundle (it runs nowhere else), null — the default, CPU —
@@ -521,27 +346,39 @@ enum EmbeddingModel implements EmbeddingModelInterface {
 
   /// Constructor
   const EmbeddingModel({
-    required this.url,
-    this.tokenizerUrl,
-    required this.filename,
-    this.tokenizerFilename,
+    LiteRtEmbedderVariant Function()? variant,
+    String? url,
+    String? tokenizerUrl,
+    String? filename,
+    String? tokenizerFilename,
     required this.displayName,
     required this.size,
-    required this.dimension,
-    required this.maxSeqLen,
-    required this.needsAuth,
-    required this.ragProfileId,
-    this.sha256,
-    this.embedsImages = false,
-    this.embedsAudio = false,
-    this.npuSoc,
-    this.npuVendor = EmbeddingNpuVendor.qualcomm,
+    int? dimension,
+    int? maxSeqLen,
+    String? ragProfileId,
     this.sourceType = ModelSourceType
         .network, // Default to network for backward compatibility
   }) : assert(
+         variant != null ||
+             (url != null &&
+                 filename != null &&
+                 dimension != null &&
+                 maxSeqLen != null &&
+                 ragProfileId != null),
+         'a model without a registry build names its files and profile',
+       ),
+       assert(
          (tokenizerUrl == null) == (tokenizerFilename == null),
          'a tokenizer has both a URL and a file name, or neither',
-       );
+       ),
+       _variant = variant,
+       _url = url,
+       _tokenizerUrl = tokenizerUrl,
+       _filename = filename,
+       _tokenizerFilename = tokenizerFilename,
+       _dimension = dimension,
+       _maxSeqLen = maxSeqLen,
+       _ragProfileId = ragProfileId;
 
   /// A self-contained `.litertlm` bundle: no tokenizer file, and no web
   /// engine yet.

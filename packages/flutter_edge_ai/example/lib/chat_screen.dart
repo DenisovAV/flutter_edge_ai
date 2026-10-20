@@ -132,7 +132,20 @@ class ChatScreenState extends State<ChatScreen> {
       // `hfRepo`; everything else keeps the fromNetwork branch below.
       ModelRuntimeDefaults? hfDefaults;
 
-      if (widget.model.hfRepo != null) {
+      if (widget.model.catalogVariant case final variant?) {
+        // A model registry build: installFromCatalog takes the model type,
+        // file type and pinned URL from it and checks the file's size.
+        var catalogInstall = FlutterEdgeAi.installFromCatalog(variant)
+            .withProgress((percent) {
+              if (!mounted) return;
+              setState(() => _downloadPercent = percent);
+            });
+        if (variant.file.gated) {
+          final token = await AuthTokenService.loadToken();
+          if (token != null) catalogInstall = catalogInstall.withToken(token);
+        }
+        await catalogInstall.install();
+      } else if (widget.model.hfRepo != null) {
         final installation = await installer
             .fromHuggingFace(widget.model.hfRepo!)
             .withProgress((percent) {

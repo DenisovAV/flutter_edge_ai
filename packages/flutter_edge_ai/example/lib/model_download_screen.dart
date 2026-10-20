@@ -40,6 +40,7 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
       modelType: widget.model.modelType,
       fileType: widget.model.fileType,
       foreground: widget.model.foreground,
+      catalogVariant: widget.model.catalogVariant,
     );
     _initialize();
   }

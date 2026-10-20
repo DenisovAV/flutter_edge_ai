@@ -86,14 +86,12 @@ class _TtsScreenState extends State<TtsScreen> {
     _synth = null;
     await oldSynth?.close();
     try {
-      await FlutterEdgeAi.installTts()
-          .fromNetwork(_model.baseUrl)
-          .ofType(_model.ttsModelType)
-          .withProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .install();
+      await FlutterEdgeAi.installFromCatalog(
+        _model.catalogVariant,
+      ).withProgress((percent) {
+        if (!mounted) return;
+        setState(() => _downloadPercent = percent);
+      }).install();
 
       final synth = await FlutterEdgeAi.getActiveTts(
         language: _isQwen3 ? _language : null,

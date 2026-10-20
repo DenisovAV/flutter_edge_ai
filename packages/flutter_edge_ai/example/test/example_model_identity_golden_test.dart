@@ -64,7 +64,7 @@ Map<String, Object?> _inference(Model m) => {
   'localModel': m.localModel,
   'needsAuth': m.needsAuth,
   'modelType': m.modelType.name,
-  'fileType': m.fileType.name,
+  'fileType': _perPlatform(() => m.fileType.name),
   'maxTokens': m.maxTokens,
   'url': _perPlatform(() => m.url),
   'installedId': _perPlatform(() => _lastSegment(m.url)),

@@ -85,6 +85,7 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
           licenseUrl: t.licenseUrl ?? '',
           modelType: t.modelType,
           fileType: t.fileType,
+          catalogVariant: t.catalogVariant,
         );
         break;
       case ModelKind.inference:
@@ -96,6 +97,7 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
           modelType: inferenceModel.modelType,
           fileType: inferenceModel.fileType,
           foreground: inferenceModel.foreground,
+          catalogVariant: inferenceModel.catalogVariant,
         );
         break;
     }
